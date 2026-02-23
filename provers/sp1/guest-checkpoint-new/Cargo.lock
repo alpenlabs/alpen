@@ -3,12 +3,6 @@
 version = 4
 
 [[package]]
-name = "anyhow"
-version = "1.0.100"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
-
-[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -107,12 +101,9 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94fb19ad225b5555a3c99796fe9c5d14b18eb0130eee5c39875bb642f173be6f"
 dependencies = [
- "arbitrary",
  "bitcoin",
- "borsh",
  "hex-conservative",
  "secp256k1",
- "serde",
 ]
 
 [[package]]
@@ -153,9 +144,9 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
-version = "2.10.0"
+version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
 name = "blake3"
@@ -205,9 +196,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.55"
+version = "1.2.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47b26a0954ae34af09b50f0de26458fa95369a0d478d8236d3f93082b219bd29"
+checksum = "aebf35691d1bfb0ac386a69bac2fde4dd276fb618cf8bf4f5318fe285e821bb2"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -351,26 +342,12 @@ dependencies = [
 [[package]]
 name = "ecdsa"
 version = "0.16.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee27f32b5c5292967d2d4a9d7f1e0b0aed2c15daded5a60300e4abb9d8020bca"
-dependencies = [
- "der",
- "digest",
- "elliptic-curve",
- "rfc6979 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "signature",
- "spki",
-]
-
-[[package]]
-name = "ecdsa"
-version = "0.16.9"
 source = "git+https://github.com/sp1-patches/signatures.git?tag=patch-16.9-sp1-4.1.0#1880299a48fe7ef249edaa616fd411239fb5daf1"
 dependencies = [
  "der",
  "digest",
  "elliptic-curve",
- "rfc6979 0.4.0 (git+https://github.com/sp1-patches/signatures.git?tag=patch-16.9-sp1-4.1.0)",
+ "rfc6979",
  "signature",
  "spki",
 ]
@@ -481,10 +458,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-sp1-checkpoint"
+name = "guest-sp1-checkpoint-new"
 version = "0.1.0"
 dependencies = [
- "strata-proofimpl-checkpoint",
+ "strata-proofimpl-checkpoint-new",
  "zkaleido-sp1-guest-env",
 ]
 
@@ -585,24 +562,10 @@ dependencies = [
 [[package]]
 name = "k256"
 version = "0.13.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6e3919bbaa2945715f0bb6d3934a173d1e9a59ac23767fbaaef277265a7411b"
-dependencies = [
- "cfg-if",
- "ecdsa 0.16.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "elliptic-curve",
- "once_cell",
- "sha2",
- "signature",
-]
-
-[[package]]
-name = "k256"
-version = "0.13.4"
 source = "git+https://github.com/sp1-patches/elliptic-curves?tag=patch-k256-13.4-sp1-5.0.0#f7d8998e05d8cbcbd8e543eba1030a7385011fa8"
 dependencies = [
  "cfg-if",
- "ecdsa 0.16.9 (git+https://github.com/sp1-patches/signatures.git?tag=patch-16.9-sp1-4.1.0)",
+ "ecdsa",
  "elliptic-curve",
  "hex",
  "once_cell",
@@ -619,9 +582,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.180"
+version = "0.2.182"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
+checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
 
 [[package]]
 name = "libm"
@@ -631,9 +594,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "memchr"
-version = "2.7.6"
+version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
+checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "musig2"
@@ -888,9 +851,9 @@ dependencies = [
 
 [[package]]
 name = "proptest"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bee689443a2bd0a16ab0348b52ee43e3b2d1b1f931c8aa5c9f8de4c86fbe8c40"
+checksum = "37566cb3fdacef14c0737f9546df7cfeadbfbc9fef10991038bf5015d0c80532"
 dependencies = [
  "bitflags",
  "num-traits",
@@ -993,16 +956,6 @@ checksum = "a96887878f22d7bad8a3b6dc5b7440e0ada9a245242924394987b21cf2210a4c"
 [[package]]
 name = "rfc6979"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
-dependencies = [
- "hmac",
- "subtle",
-]
-
-[[package]]
-name = "rfc6979"
-version = "0.4.0"
 source = "git+https://github.com/sp1-patches/signatures.git?tag=patch-16.9-sp1-4.1.0#1880299a48fe7ef249edaa616fd411239fb5daf1"
 dependencies = [
  "hmac",
@@ -1067,11 +1020,10 @@ dependencies = [
 [[package]]
 name = "secp256k1"
 version = "0.29.1"
-source = "git+https://github.com/sp1-patches/rust-secp256k1?tag=patch-0.29.1-sp1-5.0.0#14136bdd2fafe651e3d0ce680f930473e848cf56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
  "bitcoin_hashes",
- "cfg-if",
- "k256 0.13.4 (git+https://github.com/sp1-patches/elliptic-curves?tag=patch-k256-13.4-sp1-5.0.0)",
  "rand 0.8.5",
  "secp256k1-sys",
  "serde",
@@ -1080,7 +1032,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-sys"
 version = "0.10.0"
-source = "git+https://github.com/sp1-patches/rust-secp256k1?tag=patch-0.29.1-sp1-5.0.0#14136bdd2fafe651e3d0ce680f930473e848cf56"
+source = "git+https://github.com/sp1-patches/rust-secp256k1?tag=patch-0.30.0-sp1-5.0.0#04d87db04bcc2dc5dd8e1ab3f046cc655440d07a"
 dependencies = [
  "cc",
 ]
@@ -1303,6 +1255,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-acct-types"
+version = "0.1.0"
+dependencies = [
+ "digest",
+ "sha2",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-btc-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-merkle",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
@@ -1317,20 +1289,6 @@ dependencies = [
  "strata-msg-fmt",
  "thiserror 2.0.18",
  "tracing",
-]
-
-[[package]]
-name = "strata-asm-logs"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "strata-asm-common",
- "strata-checkpoint-types",
- "strata-codec",
- "strata-codec-utils",
- "strata-msg-fmt",
- "strata-predicate",
- "strata-primitives",
 ]
 
 [[package]]
@@ -1354,13 +1312,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-stf"
+name = "strata-asm-txs-checkpoint"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "ssz",
  "strata-asm-common",
- "strata-identifiers",
+ "strata-checkpoint-types-ssz",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1369,16 +1330,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-btc-types",
  "strata-btc-verification",
-]
-
-[[package]]
-name = "strata-bridge-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "borsh",
- "serde",
- "strata-identifiers",
- "strata-primitives",
 ]
 
 [[package]]
@@ -1417,50 +1368,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-chainexec"
+name = "strata-checkpoint-types-ssz"
 version = "0.1.0"
 dependencies = [
- "strata-chaintsn",
- "strata-identifiers",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-chaintsn"
-version = "0.3.0-alpha.1"
-dependencies = [
- "rand_chacha 0.3.1",
- "rand_core 0.6.4",
- "strata-asm-common",
- "strata-asm-logs",
- "strata-asm-types",
- "strata-bridge-types",
- "strata-checkpoint-types",
- "strata-identifiers",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-predicate",
- "strata-primitives",
- "strata-state",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "strata-checkpoint-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-crypto",
  "strata-identifiers",
- "zkaleido",
+ "strata-ol-chain-types-new",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1509,16 +1432,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-csm-types"
-version = "0.3.0-alpha.1"
+name = "strata-da-framework"
+version = "0.1.0"
 dependencies = [
- "arbitrary",
- "borsh",
- "serde",
- "strata-btc-types",
- "strata-checkpoint-types",
- "strata-identifiers",
- "strata-primitives",
+ "strata-codec",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1545,6 +1463,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-l1-envelope-fmt"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
+dependencies = [
+ "bitcoin",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
@@ -1557,6 +1484,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ledger-types"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-asm-manifest-types",
+ "strata-identifiers",
+ "strata-predicate",
+ "strata-snark-acct-types",
+]
+
+[[package]]
 name = "strata-merkle"
 version = "0.2.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
@@ -1565,8 +1503,15 @@ dependencies = [
  "digest",
  "serde",
  "sha2",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1578,45 +1523,106 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-ol-chain-types"
-version = "0.3.0-alpha.1"
+name = "strata-ol-chain-types-new"
+version = "0.1.0"
 dependencies = [
- "arbitrary",
- "borsh",
- "serde",
+ "int-enum",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
  "strata-asm-common",
- "strata-crypto",
- "strata-params",
- "strata-primitives",
- "strata-state",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "strata-ol-chainstate-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "strata-bridge-types",
+ "strata-codec",
  "strata-crypto",
  "strata-identifiers",
- "strata-primitives",
- "strata-state",
+ "strata-snark-acct-types",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
-name = "strata-params"
+name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
+ "strata-acct-types",
+ "strata-asm-common",
+ "strata-asm-txs-checkpoint",
+ "strata-btc-types",
+ "strata-codec",
+ "strata-da-framework",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-ledger-types",
+ "strata-predicate",
+ "strata-snark-acct-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-ol-msg-types"
+version = "0.1.0"
+dependencies = [
+ "strata-codec",
+ "strata-identifiers",
+ "strata-msg-fmt",
+]
+
+[[package]]
+name = "strata-ol-params"
+version = "0.1.0"
+dependencies = [
  "serde",
  "strata-btc-types",
  "strata-identifiers",
- "strata-l1-txfmt",
  "strata-predicate",
+]
+
+[[package]]
+name = "strata-ol-state-types"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
+ "strata-asm-manifest-types",
+ "strata-codec",
+ "strata-codec-utils",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-ol-params",
+ "strata-predicate",
+ "strata-snark-acct-types",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
+name = "strata-ol-stf"
+version = "0.1.0"
+dependencies = [
+ "strata-acct-types",
+ "strata-asm-common",
+ "strata-asm-manifest-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-msg-fmt",
+ "strata-ol-chain-types-new",
+ "strata-ol-da",
+ "strata-ol-msg-types",
+ "strata-ol-state-types",
+ "strata-snark-acct-sys",
+ "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
 
@@ -1639,60 +1645,47 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-primitives"
-version = "0.3.0-alpha.1"
+name = "strata-proofimpl-checkpoint-new"
+version = "0.1.0"
 dependencies = [
- "bitcoin",
- "bitcoin-bosd",
- "borsh",
- "hex",
- "serde",
- "strata-btc-types",
+ "ssz",
+ "ssz_primitives",
+ "strata-asm-manifest-types",
+ "strata-checkpoint-types-ssz",
  "strata-crypto",
+ "strata-ledger-types",
+ "strata-ol-chain-types-new",
+ "strata-ol-state-types",
+ "strata-ol-stf",
+ "zkaleido",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
+name = "strata-snark-acct-sys"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "strata-acct-types",
+ "strata-ledger-types",
+ "strata-merkle",
+ "strata-snark-acct-types",
+]
+
+[[package]]
+name = "strata-snark-acct-types"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
  "strata-identifiers",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-proofimpl-checkpoint"
-version = "0.3.0-alpha.1"
-dependencies = [
- "strata-checkpoint-types",
- "strata-proofimpl-cl-stf",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
-name = "strata-proofimpl-cl-stf"
-version = "0.3.0-alpha.1"
-dependencies = [
- "borsh",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
-name = "strata-state"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "arbitrary",
- "async-trait",
- "borsh",
- "serde",
- "strata-asm-common",
- "strata-asm-stf",
- "strata-bridge-types",
- "strata-csm-types",
- "strata-identifiers",
- "strata-primitives",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1709,9 +1702,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
-version = "2.0.114"
+version = "2.0.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4d107df263a3013ef9b1879b0df87d706ff80f65a86ea879bd9c31f9b307c2a"
+checksum = "3df424c70518695237746f84cede799c9c58fcb37450d7b23716568cc8bc69cb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1816,9 +1809,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.0.6+spec-1.1.0"
+version = "1.0.9+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3198b4b0a8e11f09dd03e133c0280504d0801269e9afa46362ffde1cbeebf44"
+checksum = "702d4415e08923e7e1ef96cd5727c0dfed80b4d2fa25db9647fe5eb6f7c5a4c4"
 dependencies = [
  "winnow",
 ]
@@ -1897,9 +1890,9 @@ checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.22"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9312f7c4f6ff9069b165498234ce8be658059c6728633667c526e27dc2cf1df5"
+checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "valuable"
@@ -1945,18 +1938,18 @@ checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"
 
 [[package]]
 name = "zerocopy"
-version = "0.8.37"
+version = "0.8.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7456cf00f0685ad319c5b1693f291a650eaf345e941d082fc4e03df8a03996ac"
+checksum = "db6d35d663eadb6c932438e763b262fe1a70987f9ae936e60158176d710cae4a"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.37"
+version = "0.8.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1328722bbf2115db7e19d69ebcc15e795719e2d66b60827c6a69a117365e37a0"
+checksum = "4122cd3169e94605190e77839c9a40d40ed048d305bfdc146e7df40ab0f3e517"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2005,7 +1998,7 @@ dependencies = [
  "bincode",
  "borsh",
  "hex",
- "k256 0.13.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "k256",
  "rand_core 0.6.4",
  "serde",
  "zkaleido",
@@ -2023,3 +2016,18 @@ dependencies = [
  "sp1-zkvm",
  "zkaleido",
 ]
+
+[[patch.unused]]
+name = "substrate-bn"
+version = "0.6.0"
+source = "git+https://github.com/sp1-patches/bn?tag=patch-0.6.0-sp1-5.0.0#e0d67f219b2ad6a1887e3275b7ba09ada4b1afb6"
+
+[[patch.unused]]
+name = "secp256k1"
+version = "0.30.0"
+source = "git+https://github.com/sp1-patches/rust-secp256k1?tag=patch-0.30.0-sp1-5.0.0#04d87db04bcc2dc5dd8e1ab3f046cc655440d07a"
+
+[[patch.unused]]
+name = "sha3"
+version = "0.10.8"
+source = "git+https://github.com/sp1-patches/RustCrypto-hashes?tag=patch-sha3-0.10.8-sp1-4.0.0#8f6d303c0861ba7e5adcc36207c0f41fe5edaabc"

@@ -20,6 +20,7 @@ cfg_if! {
 const EVM_EE_STF: &str = "guest-evm-ee-stf";
 const CL_STF: &str = "guest-cl-stf";
 const CHECKPOINT: &str = "guest-checkpoint";
+const CHECKPOINT_NEW: &str = "guest-checkpoint-new";
 
 /// Returns a map of program dependencies.
 fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
@@ -31,7 +32,7 @@ fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
 
 fn main() {
     // List of guest programs to build
-    let guest_programs = [EVM_EE_STF, CL_STF, CHECKPOINT];
+    let guest_programs = [EVM_EE_STF, CL_STF, CHECKPOINT, CHECKPOINT_NEW];
 
     // HashSet to keep track of programs that have been built
     let mut built_programs = HashSet::new();

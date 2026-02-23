@@ -1,7 +1,6 @@
 use bitcoin::consensus::encode;
 use strata_acct_types::AccountSerial;
 use strata_asm_txs_checkpoint::CheckpointTxError;
-use strata_btc_types::BitcoinTxid;
 use strata_codec::CodecError;
 use strata_da_framework::DaError as FrameworkDaError;
 use strata_l1_txfmt::TxFmtError;
@@ -33,9 +32,6 @@ pub type DaExtractorResult<T> = Result<T, DaExtractorError>;
 pub enum DaExtractorError {
     #[error("failed to decode raw bitcoin transaction: {0}")]
     BitcoinTxDecodeError(#[from] encode::Error),
-
-    #[error("failed to fetch checkpoint transaction: {0:?}")]
-    BitcoinTxNotFound(BitcoinTxid),
 
     #[error("checkpoint transaction failed: {0}")]
     CheckpointTxError(#[from] CheckpointTxError),

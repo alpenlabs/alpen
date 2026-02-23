@@ -4681,7 +4681,6 @@ dependencies = [
 name = "strata-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
- "arbitrary",
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
