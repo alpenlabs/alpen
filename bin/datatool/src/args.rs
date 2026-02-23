@@ -237,6 +237,12 @@ pub(crate) struct SubcAsmParams {
     )]
     pub(crate) genesis_l1_view_file: Option<String>,
 
+    #[argh(
+        option,
+        description = "path to JSON-serialized OL params (required to compute genesis OL block ID)"
+    )]
+    pub(crate) ol_params: PathBuf,
+
     #[argh(option, description = "assignment duration in blocks (default 64)")]
     pub(crate) assignment_duration: Option<u16>,
 

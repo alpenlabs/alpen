@@ -13,8 +13,9 @@ use strata_btc_types::BitcoinAmount;
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig, EvenPublicKey,
 };
-use strata_identifiers::OLBlockId;
 use strata_l1_txfmt::MagicBytes;
+use strata_ol_genesis::build_genesis_artifacts;
+use strata_ol_params::OLParams;
 use strata_predicate::PredicateKey;
 
 use crate::{
@@ -102,6 +103,15 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         cmd.max_seqno_gap.unwrap_or(DEFAULT_MAX_SEQNO_GAP),
     );
 
+    // Compute genesis OL block ID from OL params.
+    let ol_params_str = fs::read_to_string(&cmd.ol_params)
+        .map_err(|e| anyhow::anyhow!("failed to read OL params file {:?}: {e}", cmd.ol_params))?;
+    let ol_params: OLParams = serde_json::from_str(&ol_params_str)
+        .map_err(|e| anyhow::anyhow!("failed to parse OL params: {e}"))?;
+    let genesis_artifacts = build_genesis_artifacts(&ol_params)
+        .map_err(|e| anyhow::anyhow!("failed to build genesis artifacts: {e}"))?;
+    let genesis_ol_blkid = *genesis_artifacts.commitment.blkid();
+
     // Build checkpoint config.
     let checkpoint_predicate = resolve_checkpoint_predicate();
     let genesis_l1_height = genesis_l1_view.blk.height_u32();
@@ -110,7 +120,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         sequencer_predicate: PredicateKey::always_accept(),
         checkpoint_predicate,
         genesis_l1_height,
-        genesis_ol_blkid: OLBlockId::null(),
+        genesis_ol_blkid,
     };
 
     // Build bridge config.
