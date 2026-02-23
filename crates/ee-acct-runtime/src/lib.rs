@@ -1,15 +1,10 @@
 //! Basic EE account runtime framework.
-//!
-//! This is expected to be used within the SNARK proof program used as a snark
-//! account in order to implement an execution environment host account on the
-//! Strata orchestration layer.  There are a collection of utilities in order to
-//! help manipulate EE accounts like by building chain segments and updates.
 
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
 
 mod block_assembly;
 mod commit;
-pub mod ee_program;
+mod ee_program;
 mod errors;
 mod exec_processing;
 mod private_input;
@@ -19,9 +14,6 @@ mod verification_state;
 pub use block_assembly::apply_input_messages;
 pub use ee_program::EeSnarkAccountProgram;
 pub use private_input::SharedPrivateInput;
-pub use update_processing::{
-    apply_update_operation_unconditionally, verify_and_apply_update_operation,
-};
 pub use verification_state::{EeVerificationInput, EeVerificationState};
 
 // Builder utils

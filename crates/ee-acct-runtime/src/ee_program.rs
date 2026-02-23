@@ -94,7 +94,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         coinput: &[u8],
         _extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
-        // For both Valid and Unknown messages: require empty coinput.
+        // For both Valid and Unknown messages, require empty coinput.
         // We don't need any message coinputs for the EE right now.
         if !coinput.is_empty() {
             return Err(ProgramError::MalformedCoinput);
