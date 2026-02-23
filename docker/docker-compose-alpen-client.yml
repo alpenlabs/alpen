@@ -1,0 +1,122 @@
+# docker-compose-alpen-client.yml
+#
+# Single alpen-client sequencer + strata (OL) + bitcoind (regtest).
+#
+# Prerequisites:
+#   1. Run ./init-alpen-client-keys.sh to generate keys and .env.alpen-client
+#   2. Place params.json in configs/ (gitignored — obtain from the team)
+#   3. Build:  docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
+#   4. Start:  docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
+
+services:
+
+  # ---- L1 -------------------------------------------------------------------
+  bitcoind:
+    build:
+      context: ./bitcoind/
+    image: strata_bitcoind:latest
+    container_name: alpen_bitcoind
+    environment:
+      RPC_ALLOW_IP: "0.0.0.0/0"
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      BITCOIND_WALLET: default
+      BRIDGE_WALLET_1: bridge1
+      BRIDGE_WALLET_2: bridge2
+      BRIDGE_WALLET_3: bridge3
+      GENERATE_BLOCKS: ${GENERATE_BLOCKS:-}
+    volumes:
+      - ./data/bitcoind:/root/.bitcoin
+      - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
+    ports:
+      - "${BITCOIND_RPC_PORT:-18443}:18443"
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+  # ---- OL (sequencer) -------------------------------------------------------
+  strata:
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile
+    image: strata:latest
+    container_name: alpen_strata
+    user: "0:0"
+    depends_on:
+      - bitcoind
+    environment:
+      CONFIG_PATH: /app/configs/config.regtest.toml
+      PARAM_PATH: /app/configs/params.json
+      RUST_LOG: ${RUST_LOG:-info}
+      RUST_BACKTRACE: 1
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data/strata:/app/data
+    ports:
+      - "${STRATA_RPC_PORT:-8432}:8432"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+  # ---- EE sequencer ----------------------------------------------------------
+  alpen-client:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    container_name: alpen_client
+    depends_on:
+      - strata
+    command:
+      - --sequencer
+      - --sequencer-pubkey
+      - ${SEQUENCER_PUBKEY}
+      - --ol-client-url
+      - ws://strata:8432
+      - --custom-chain
+      - ${CHAIN_SPEC:-testnet}
+      - --disable-discovery
+      - --http
+      - --http.addr
+      - "0.0.0.0"
+      - --http.port
+      - "8545"
+      - --http.api
+      - eth,net,web3,txpool
+      - --ws
+      - --ws.addr
+      - "0.0.0.0"
+      - --ws.port
+      - "8546"
+      - --ws.api
+      - eth,net,web3,txpool
+      - --authrpc.addr
+      - "0.0.0.0"
+      - --authrpc.port
+      - "8551"
+      - --authrpc.jwtsecret
+      - /app/keys/jwt.hex
+      - --datadir
+      - /app/data
+      - --color
+      - never
+    environment:
+      SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${HTTP_PORT:-8545}:8545"
+      - "${WS_PORT:-8546}:8546"
+      - "${P2P_PORT:-30303}:30303"
+    volumes:
+      - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
+      - ./data/alpen-client:/app/data
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+networks:
+  alpen_network:
+    driver: bridge
+    name: alpen_network
