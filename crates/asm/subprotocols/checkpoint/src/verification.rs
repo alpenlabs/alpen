@@ -5,7 +5,7 @@ use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::{VerifiedAuxData, logging};
 use strata_checkpoint_types_ssz::{
     CheckpointClaim, CheckpointSidecar, CheckpointTip, L2BlockRange, OLLog,
-    SignedCheckpointPayload, compute_asm_manifests_hash,
+    SignedCheckpointPayload, compute_asm_manifests_hash_from_leaves,
 };
 use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
@@ -37,7 +37,11 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .map_err(InvalidCheckpointPayload::SequencerPredicateVerification)?;
 
     // 2. Validate epoch progression
-    let expected_epoch = state.verified_tip().epoch + 1;
+    let expected_epoch = state
+        .verified_tip()
+        .epoch
+        .checked_add(1)
+        .ok_or(InvalidCheckpointPayload::EpochOverflow)?;
     if payload.inner().new_tip().epoch != expected_epoch {
         return Err(InvalidCheckpointPayload::InvalidEpoch {
             expected: expected_epoch,
@@ -59,9 +63,11 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .into());
     }
 
-    // 3b. Invalid: checkpoint goes backwards in L1 height
-    if l1_height_covered_in_last_checkpoint > l1_height_covered_in_new_checkpoint {
-        return Err(InvalidCheckpointPayload::L1HeightGoesBackwards {
+    // 3b. Invalid: checkpoint must advance L1 height by at least one block.
+    // Zero L1 progress would allow the sequencer to censor L1 messages
+    // (deposits, forced inclusions) indefinitely.
+    if l1_height_covered_in_last_checkpoint >= l1_height_covered_in_new_checkpoint {
+        return Err(InvalidCheckpointPayload::L1HeightDoesNotAdvance {
             prev_height: l1_height_covered_in_last_checkpoint,
             new_height: l1_height_covered_in_new_checkpoint,
         }
@@ -80,8 +86,11 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     }
 
     // 5. Construct full checkpoint claim
+    let l1_start_height = l1_height_covered_in_last_checkpoint
+        .checked_add(1)
+        .ok_or(InvalidCheckpointPayload::L1HeightOverflow)?;
     let asm_manifests_hash = compute_asm_manifests_hash_for_checkpoint(
-        l1_height_covered_in_last_checkpoint + 1,
+        l1_start_height,
         l1_height_covered_in_new_checkpoint,
         verified_aux_data,
     )?;
@@ -120,6 +129,11 @@ fn construct_full_claim(
     // Hash SSZ-encoded OL logs (convert to Vec for SSZ encoding)
     let ol_logs_vec = sidecar.ol_logs().to_vec();
     let ol_logs_hash = hash::raw(&ol_logs_vec.as_ssz_bytes()).into();
+    // Reconstruct terminal_header_supplement_hash from the sidecar data posted on L1.
+    // The ZK proof committed to this same hash derived from the executed terminal header,
+    // so matching it here cryptographically binds the sidecar fields to proven execution.
+    let terminal_header_supplement_hash =
+        hash::raw(&sidecar.terminal_header_supplement().as_ssz_bytes()).into();
 
     Ok(CheckpointClaim::new(
         new_tip.epoch,
@@ -127,6 +141,7 @@ fn construct_full_claim(
         asm_manifests_hash,
         state_diff_hash,
         ol_logs_hash,
+        terminal_header_supplement_hash,
     ))
 }
 
@@ -141,7 +156,7 @@ fn compute_asm_manifests_hash_for_checkpoint(
     let manifest_hashes =
         verified_aux_data.get_manifest_hashes(start_height as u64, end_height as u64)?;
 
-    Ok(compute_asm_manifests_hash(&manifest_hashes))
+    Ok(compute_asm_manifests_hash_from_leaves(&manifest_hashes))
 }
 
 /// Extracts and validates withdrawal intent logs from OL logs.
@@ -184,6 +199,7 @@ fn extract_and_validate_withdrawal_intents(
 #[cfg(test)]
 mod tests {
     use strata_asm_common::{AsmHistoryAccumulatorState, AuxData, VerifiedAuxData};
+    use strata_checkpoint_types_ssz::TerminalHeaderSupplement;
     use strata_identifiers::{AccountSerial, Buf64};
     use strata_ol_chain_types_new::OLLog;
     use strata_test_utils_l2::CheckpointTestHarness;
@@ -322,13 +338,13 @@ mod tests {
         assert!(matches!(
             err,
             CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::L1HeightGoesBackwards { .. }
+                InvalidCheckpointPayload::L1HeightDoesNotAdvance { .. }
             )
         ))
     }
 
     #[test]
-    fn test_new_l1_tip_same_as_last_verified() {
+    fn test_new_l1_tip_same_as_last_verified_is_rejected() {
         let (state, harness) = test_setup();
 
         let mut new_tip = harness.gen_new_tip();
@@ -340,13 +356,19 @@ mod tests {
 
         let current_l1_height = state.verified_tip().l1_height + 1;
 
-        let res = validate_checkpoint_and_extract_withdrawal_intents(
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
             &signed_payload,
             &verified_aux_data,
-        );
-        assert!(res.is_ok());
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::L1HeightDoesNotAdvance { .. }
+            )
+        ));
     }
 
     #[test]
@@ -432,6 +454,38 @@ mod tests {
         // Modify the payload to include OL Logs that wasn't covered by the proof.
         let dummy_log = OLLog::new(AccountSerial::zero(), Vec::new());
         payload.sidecar.ol_logs = vec![dummy_log].into();
+
+        let signed_payload = harness.sign_payload(payload);
+
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::CheckpointPredicateVerification(_)
+            )
+        ));
+    }
+
+    #[test]
+    fn test_invalid_terminal_header_supplement() {
+        let (state, harness) = test_setup();
+        let mut payload = harness.build_payload();
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let current_l1_height = payload.new_tip().l1_height + 1;
+
+        let terminal_header_supplement = payload.sidecar.terminal_header_supplement();
+        payload.sidecar.terminal_header_supplement = TerminalHeaderSupplement::new(
+            terminal_header_supplement.timestamp() + 1,
+            *terminal_header_supplement.parent_blkid(),
+            *terminal_header_supplement.body_root(),
+            *terminal_header_supplement.logs_root(),
+        );
 
         let signed_payload = harness.sign_payload(payload);
 
