@@ -13,6 +13,9 @@ use bitcoind_async_client::{traits::Reader, Client};
 use strata_asm_manifest_types::AsmManifest;
 use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
 use strata_btc_types::{GenesisL1View, RawBitcoinTx};
+use strata_db_types::mmr_helpers::{
+    leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm, MmrError, MmrMetadata,
+};
 use strata_primitives::{
     buf::Buf32,
     hash::Hash,
@@ -37,10 +40,10 @@ pub struct TestAsmWorkerContext {
     pub asm_states: Arc<Mutex<HashMap<L1BlockCommitment, AsmState>>>,
     /// Latest ASM state
     pub latest_asm_state: Arc<Mutex<Option<(L1BlockCommitment, AsmState)>>>,
-    /// In-memory MMR for manifest hashes (leaf index -> hash)
-    pub mmr_leaves: Arc<Mutex<Vec<[u8; 32]>>>,
-    /// Manifest hash lookup by index
-    pub manifest_hashes: Arc<Mutex<HashMap<u64, [u8; 32]>>>,
+    /// In-memory MMR nodes (position -> hash), mirrors real MMR structure
+    pub mmr_nodes: Arc<Mutex<HashMap<u64, [u8; 32]>>>,
+    /// MMR metadata tracking leaves count, size, and peaks
+    pub mmr_metadata: Arc<Mutex<MmrMetadata>>,
     /// Stored manifests in insertion order
     pub manifests: Arc<Mutex<Vec<AsmManifest>>>,
 }
@@ -53,8 +56,8 @@ impl TestAsmWorkerContext {
             block_cache: Arc::new(Mutex::new(HashMap::new())),
             asm_states: Arc::new(Mutex::new(HashMap::new())),
             latest_asm_state: Arc::new(Mutex::new(None)),
-            mmr_leaves: Arc::new(Mutex::new(Vec::new())),
-            manifest_hashes: Arc::new(Mutex::new(HashMap::new())),
+            mmr_nodes: Arc::new(Mutex::new(HashMap::new())),
+            mmr_metadata: Arc::new(Mutex::new(MmrMetadata::empty())),
             manifests: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -172,30 +175,41 @@ impl WorkerContext for TestAsmWorkerContext {
     }
 
     fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64> {
-        let mut leaves = self.mmr_leaves.lock().unwrap();
-        let index = leaves.len() as u64;
-        let hash_bytes = *manifest_hash.as_ref();
-        leaves.push(hash_bytes);
-        // Keep manifest_hashes in sync so get_manifest_hash lookups work.
-        self.manifest_hashes
-            .lock()
-            .unwrap()
-            .insert(index, hash_bytes);
-        Ok(index)
+        let hash_bytes: [u8; 32] = *manifest_hash.as_ref();
+        let mut nodes = self.mmr_nodes.lock().unwrap();
+        let mut metadata = self.mmr_metadata.lock().unwrap();
+
+        let result = BitManipulatedMmrAlgorithm::append_leaf(hash_bytes, &metadata, |pos| {
+            nodes.get(&pos).copied().ok_or(MmrError::LeafNotFound(pos))
+        })
+        .map_err(|_: MmrError| WorkerError::DbError)?;
+
+        for (pos, h) in &result.nodes_to_write {
+            nodes.insert(*pos, *h);
+        }
+        let leaf_index = result.leaf_index;
+        *metadata = result.new_metadata;
+
+        Ok(leaf_index)
     }
 
-    fn generate_mmr_proof(&self, _index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
-        // TODO: Implement proper MMR proof generation when needed
-        // For now, this is not used in basic tests
-        Err(WorkerError::Unimplemented)
+    fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
+        let nodes = self.mmr_nodes.lock().unwrap();
+        let metadata = self.mmr_metadata.lock().unwrap();
+
+        BitManipulatedMmrAlgorithm::generate_proof(index, metadata.mmr_size, |pos| {
+            nodes.get(&pos).copied().ok_or(MmrError::LeafNotFound(pos))
+        })
+        .map_err(|_: MmrError| WorkerError::MmrProofFailed { index })
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>> {
+        let pos = leaf_index_to_pos(index);
         Ok(self
-            .manifest_hashes
+            .mmr_nodes
             .lock()
             .unwrap()
-            .get(&index)
+            .get(&pos)
             .map(|h| Buf32::from(*h)))
     }
 

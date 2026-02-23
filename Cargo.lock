@@ -6241,6 +6241,7 @@ dependencies = [
  "strata-bridge-types",
  "strata-btc-types",
  "strata-crypto",
+ "strata-db-types",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-params",

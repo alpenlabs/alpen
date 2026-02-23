@@ -59,6 +59,7 @@ use strata_asm_params::{
     AdministrationSubprotoParams, AsmParams, BridgeV1Config, CheckpointConfig, SubprotocolInstance,
 };
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
+use strata_db_types::mmr_helpers::leaf_index_to_pos;
 use strata_l1_txfmt::{ParseConfig, SubprotocolId, TagDataRef, TxType};
 use strata_primitives::{
     buf::Buf32,
@@ -306,10 +307,10 @@ impl AsmTestHarness {
 
     /// Get the number of MMR leaves (manifest hashes) stored.
     pub fn get_mmr_leaf_count(&self) -> usize {
-        self.context.mmr_leaves.lock().unwrap().len()
+        self.context.mmr_metadata.lock().unwrap().num_leaves as usize
     }
 
-    /// Get a manifest hash by index.
+    /// Get a manifest hash by leaf index.
     pub fn get_manifest_hash(&self, index: u64) -> anyhow::Result<Option<Buf32>> {
         Ok(self.context.get_manifest_hash(index)?)
     }
@@ -319,9 +320,16 @@ impl AsmTestHarness {
         self.context.manifests.lock().unwrap().clone()
     }
 
-    /// Get a snapshot of all external MMR leaf hashes.
+    /// Get all MMR leaf hashes in leaf-index order.
     pub fn get_mmr_leaves(&self) -> Vec<[u8; 32]> {
-        self.context.mmr_leaves.lock().unwrap().clone()
+        let nodes = self.context.mmr_nodes.lock().unwrap();
+        let metadata = self.context.mmr_metadata.lock().unwrap();
+        (0..metadata.num_leaves)
+            .map(|leaf_idx| {
+                let pos = leaf_index_to_pos(leaf_idx);
+                nodes[&pos]
+            })
+            .collect()
     }
 
     // ========================================================================
