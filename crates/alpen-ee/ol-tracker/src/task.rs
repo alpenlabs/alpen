@@ -30,7 +30,7 @@ pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
 
         match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_epochs_fetch).await {
             Ok(TrackOLAction::Extend(epoch_operations, chain_status)) => {
-                info!(?epoch_operations, ?chain_status, "Received track action");
+                debug!(?epoch_operations, ?chain_status, "Received track action");
                 if let Err(error) =
                     handle_extend_ee_state(&epoch_operations, &chain_status, &mut state, &ctx).await
                 {
@@ -38,13 +38,13 @@ pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
                 }
             }
             Ok(TrackOLAction::Reorg) => {
-                info!("Received reorg action");
+                debug!("Received reorg action");
                 if let Err(error) = handle_reorg(&mut state, &ctx).await {
                     handle_tracker_error(error, "reorg");
                 }
             }
             Ok(TrackOLAction::Noop) => {
-                info!("received noop action");
+                debug!("received noop action");
             }
             Err(error) => {
                 handle_tracker_error(error, "track ol state");

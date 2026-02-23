@@ -52,7 +52,6 @@ strata-ol-rpc-types.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
-threadpool.workspace = true
 
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
@@ -74,6 +73,7 @@ reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
 ssz.workspace = true
+threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 

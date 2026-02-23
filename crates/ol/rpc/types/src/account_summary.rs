@@ -12,13 +12,13 @@ use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateS
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcAccountEpochSummary {
     /// The epoch commitment.
-    pub epoch_commitment: EpochCommitment,
+    epoch_commitment: EpochCommitment,
     /// Previous epoch commitment.
-    pub prev_epoch_commitment: EpochCommitment,
+    prev_epoch_commitment: EpochCommitment,
     /// Balance of account at the end of this epoch in sats.
-    pub balance: u64,
+    balance: u64,
     /// Update input for this epoch if present
-    pub update_input: Option<RpcUpdateInputData>,
+    update_input: Option<RpcUpdateInputData>,
 }
 
 impl RpcAccountEpochSummary {
@@ -51,6 +51,14 @@ impl RpcAccountEpochSummary {
 
     pub fn update_input(&self) -> Option<&RpcUpdateInputData> {
         self.update_input.as_ref()
+    }
+
+    pub fn epoch_commitment(&self) -> EpochCommitment {
+        self.epoch_commitment
+    }
+
+    pub fn prev_epoch_commitment(&self) -> EpochCommitment {
+        self.prev_epoch_commitment
     }
 }
 

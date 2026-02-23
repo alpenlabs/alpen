@@ -13,7 +13,7 @@ use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::{block_builder::BlockBuilderConfig, ol_chain_tracker::OLChainTrackerHandle};
 
@@ -113,10 +113,10 @@ pub async fn block_builder_task<
         .await
         .expect("next_block_target_timestamp: failed to get best exec block");
     let last_hash = last_local_block.parent_blockhash();
-    info!(%last_hash, "LAST LOCAL BLOCK parent");
+    debug!(%last_hash, "last local block parent");
 
     let mut next_block_target = compute_next_block_target(&last_local_block, &config);
-    info!(?next_block_target, "next block target");
+    debug!(?next_block_target, "next block target");
 
     let clock = SystemClock;
     loop {
@@ -132,7 +132,7 @@ pub async fn block_builder_task<
         .await
         {
             Ok((blockhash, next_target)) => {
-                info!(?blockhash, "built new block");
+                debug!(?blockhash, "built new block");
                 next_block_target = next_target;
             }
             Err(BlockBuilderError::BlocktimeConstraintViolated) => {

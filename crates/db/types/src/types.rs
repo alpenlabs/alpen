@@ -473,7 +473,9 @@ impl ChunkedEnvelopeEntry {
 
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AccountExtraDataEntry {
+    /// Extra data for an account
     extra_data: Vec<u8>,
+    /// The block in which the data is present
     block: OLBlockCommitment,
 }
 

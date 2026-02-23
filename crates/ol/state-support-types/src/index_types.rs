@@ -198,6 +198,7 @@ impl SnarkAcctStateUpdate {
         }
     }
 
+    /// Returns the extra data for this update.
     pub fn extra_data(&self) -> Option<&[u8]> {
         match self {
             Self::DirectSet(_) => None,

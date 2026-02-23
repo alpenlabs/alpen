@@ -152,8 +152,8 @@ impl OLClient for RpcOLClient {
                 };
 
                 Ok(OLEpochSummary::new(
-                    epoch_summary.epoch_commitment,
-                    epoch_summary.prev_epoch_commitment,
+                    epoch_summary.epoch_commitment(),
+                    epoch_summary.prev_epoch_commitment(),
                     updates,
                 ))
             },
