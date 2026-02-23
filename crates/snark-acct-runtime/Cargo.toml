@@ -8,6 +8,8 @@ strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-snark-acct-types.workspace = true
 
+rkyv.workspace = true
+rkyv_impl.workspace = true
 ssz.workspace = true
 thiserror.workspace = true
 
