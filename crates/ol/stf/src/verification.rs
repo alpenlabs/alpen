@@ -324,7 +324,25 @@ fn compute_logs_root(logs: &[OLLog]) -> Buf32 {
 /// This is derived from data in the checkpoint. (right?)
 #[derive(Clone, Debug)]
 pub struct EpochExecExpectations {
+    preseal_state_root: Buf32,
     epoch_post_state_root: Buf32,
+}
+
+impl EpochExecExpectations {
+    pub fn new(preseal_state_root: Buf32, epoch_post_state_root: Buf32) -> Self {
+        Self {
+            preseal_state_root,
+            epoch_post_state_root,
+        }
+    }
+
+    pub fn preseal_state_root(&self) -> &Buf32 {
+        &self.preseal_state_root
+    }
+
+    pub fn epoch_post_state_root(&self) -> &Buf32 {
+        &self.epoch_post_state_root
+    }
 }
 
 /// Verifies a full-epoch transition, relying on a diff.
@@ -345,14 +363,49 @@ pub fn verify_epoch_with_diff<S: IStateAccessor, D: DaScheme<S>>(
     // 2. Apply the DA diff.
     D::apply_to_state(diff, state).map_err(|_| ExecError::ChainIntegrity)?;
 
-    // 3. As if it were the last block of an epoch, call process_block_manifests.
+    // 3. Verify the pre-seal state root after applying the DA diff.
+    let preseal_state_root = state.compute_state_root()?;
+    if &preseal_state_root != exp.preseal_state_root() {
+        return Err(ExecError::ChainIntegrity);
+    }
+
+    // 4. As if it were the last block of an epoch, call process_block_manifests.
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
     let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
     manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
 
-    // 4. Verify the final state root.
+    // 5. Verify the final state root.
     let final_state_root = state.compute_state_root()?;
-    if final_state_root != exp.epoch_post_state_root {
+    if &final_state_root != exp.epoch_post_state_root() {
+        return Err(ExecError::ChainIntegrity);
+    }
+
+    Ok(())
+}
+
+/// Verifies the preseal state root of an epoch using a DA diff only.
+///
+/// Unlike [`verify_epoch_with_diff`], this does **not** replay manifest
+/// processing or check the final post-manifest state root. Use this when
+/// manifest processing has already been proven separately (e.g. during
+/// block-by-block execution in the checkpoint proof program) to avoid
+/// duplicate proving work inside the zkVM guest.
+pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
+    state: &mut S,
+    epoch_info: &EpochInfo,
+    diff: D::Diff,
+    expected_preseal_root: &Buf32,
+) -> ExecResult<()> {
+    // 1. Apply the initial processing by calling process_epoch_initial.
+    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+    chain_processing::process_epoch_initial(state, &init_ctx)?;
+
+    // 2. Apply the DA diff.
+    D::apply_to_state(diff, state).map_err(|_| ExecError::ChainIntegrity)?;
+
+    // 3. Verify the pre-seal state root after applying the DA diff.
+    let preseal_state_root = state.compute_state_root()?;
+    if &preseal_state_root != expected_preseal_root {
         return Err(ExecError::ChainIntegrity);
     }
 
@@ -361,11 +414,14 @@ pub fn verify_epoch_with_diff<S: IStateAccessor, D: DaScheme<S>>(
 
 #[cfg(test)]
 mod tests {
+    use strata_identifiers::OLBlockCommitment;
     use strata_ol_chain_types_new::{
         BlockFlags, OLBlockId, OLL1ManifestContainer, OLL1Update, OLTxSegment,
     };
+    use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1, StateDiff};
 
     use super::*;
+    use crate::test_utils::create_test_genesis_state;
 
     #[test]
     fn test_verify_header_continuity_happy_path() {
@@ -557,5 +613,46 @@ mod tests {
             verify_block_structure(&header, &body).unwrap_err(),
             ExecError::BlockStructureMismatch
         ));
+    }
+
+    #[test]
+    fn test_verify_epoch_with_diff_preseal_mismatch() {
+        let mut state = create_test_genesis_state();
+        let terminal_info = BlockInfo::new(1_000_000, 1, state.cur_epoch());
+        let epoch_info = EpochInfo::new(terminal_info, OLBlockCommitment::null());
+        let diff = OLDaPayloadV1::new(StateDiff::default());
+        let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests");
+        let exp = EpochExecExpectations::new(Buf32::from([7u8; 32]), Buf32::from([8u8; 32]));
+
+        let res = verify_epoch_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            diff,
+            &manifests,
+            &exp,
+        );
+        assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
+    }
+
+    #[test]
+    fn test_verify_epoch_with_diff_final_root_mismatch() {
+        let mut state = create_test_genesis_state();
+        let preseal_root = state
+            .compute_state_root()
+            .expect("compute genesis/preseal root");
+        let terminal_info = BlockInfo::new(1_000_000, 1, state.cur_epoch());
+        let epoch_info = EpochInfo::new(terminal_info, OLBlockCommitment::null());
+        let diff = OLDaPayloadV1::new(StateDiff::default());
+        let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests");
+        let exp = EpochExecExpectations::new(preseal_root, Buf32::from([9u8; 32]));
+
+        let res = verify_epoch_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            diff,
+            &manifests,
+            &exp,
+        );
+        assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
     }
 }
