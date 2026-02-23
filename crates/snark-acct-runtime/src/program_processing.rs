@@ -12,18 +12,21 @@
 //! different account types to reuse the same processing logic.
 
 use strata_codec::decode_buf_exact;
+use strata_snark_acct_types::MessageEntry;
 
 use crate::{
     IInnerState, InputMessage,
     errors::{ProgramError, ProgramResult},
-    private_input::PrivateInput,
+    private_input::{Coinput, PrivateInput},
     traits::{SnarkAccountProgram, SnarkAccountProgramVerification},
 };
 
-pub fn process_update<'a, P: SnarkAccountProgramVerification>(
+/// Verifies an update using proof's private inputs and a supplementary
+/// verification input.
+pub fn verify_and_process_update<P: SnarkAccountProgramVerification>(
     program: &P,
     private_input: &PrivateInput,
-    vinput: P::VInput<'a>,
+    vinput: P::VInput<'_>,
 ) -> ProgramResult<(), P::Error> {
     // 1. Decode fields and verify consistency.
     let update = private_input.try_decode_update_pub_params()?;
@@ -51,43 +54,81 @@ pub fn process_update<'a, P: SnarkAccountProgramVerification>(
     let extra_data = decode_buf_exact::<P::ExtraData>(update.extra_data())
         .map_err(|_| ProgramError::MalformedExtraData)?;
 
-    // 3. Create verification context and start verification.
-    let mut vstate = program.start_verification(&state, &extra_data, vinput)?;
-    program.start_update(&mut state, &extra_data)?;
+    // 3. Verify the update itself using the decoded structures.
+    // TODO figure out how to expose ledger refs and IO
+    verify_update_inner(
+        program,
+        &mut state,
+        vinput,
+        update.message_inputs(),
+        private_input.coinputs(),
+        extra_data,
+    )?;
 
-    // 4. Process each message and coinput.
-    for i in 0..msg_count {
-        let msg_entry = &update.message_inputs()[i];
-        let raw_coinp = private_input.coinputs()[i].raw_data();
-
-        // Decode the message payload itself.
-        let inp_msg = InputMessage::<P::Msg>::from_msg_entry(msg_entry);
-        if !inp_msg.is_valid() && !raw_coinp.is_empty() {
-            return Err(ProgramError::InvalidCoinput.at_msg(i));
-        }
-
-        // Verify the coinput against the message and then process the message itself.
-        program
-            .verify_coinput(&mut state, &mut vstate, &inp_msg, raw_coinp, &extra_data)
-            .map_err(|e| e.at_msg(i))?;
-        program
-            .process_message(&mut state, inp_msg, &extra_data)
-            .map_err(|e| e.at_msg(i))?;
-    }
-
-    // 5. Pre-finalize state to prepare for final verification.
-    program.pre_finalize_state(&mut state, &extra_data)?;
-
-    // 6. Final verification step.
-    program.finalize_verification(&state, vstate, &extra_data)?;
-
-    // 7. Final state update.
-    program.finalize_state(&mut state, extra_data)?;
-
-    // 8. Verify final state is consistent with proof.
+    // 4. Verify final state is consistent with update.
     if state.compute_state_root() != update.new_state().inner_state() {
         return Err(ProgramError::MismatchedPostState);
     }
+
+    Ok(())
+}
+
+fn verify_update_inner<P: SnarkAccountProgramVerification>(
+    program: &P,
+    state: &mut P::State,
+    vinput: P::VInput<'_>,
+    messages: &[MessageEntry],
+    coinputs: &[Coinput],
+    extra_data: P::ExtraData,
+) -> ProgramResult<(), P::Error> {
+    // 1. Create verification context and start verification.
+    let mut vstate = program.start_verification(&state, &extra_data, vinput)?;
+    program.start_update(state, &extra_data)?;
+
+    // 2. Process each message and coinput.
+    for i in 0..messages.len() {
+        verify_coinput_and_process_message(
+            program,
+            state,
+            &mut vstate,
+            &messages[i],
+            coinputs[i].raw_data(),
+            &extra_data,
+        )
+        .map_err(|e| e.at_msg(i))?;
+    }
+
+    // 3. Pre-finalize state to prepare for final verification.
+    program.pre_finalize_state(state, &extra_data)?;
+
+    // 4. Final verification step.
+    program.finalize_verification(&state, vstate, &extra_data)?;
+
+    // 5. Final state changes.
+    program.finalize_state(state, extra_data)?;
+
+    Ok(())
+}
+
+fn verify_coinput_and_process_message<P: SnarkAccountProgramVerification>(
+    program: &P,
+    state: &mut P::State,
+    vstate: &mut P::VState<'_>,
+    msg_entry: &MessageEntry,
+    raw_coinput: &[u8],
+    extra_data: &P::ExtraData,
+) -> ProgramResult<(), P::Error> {
+    // 1. Decode the message payload, maybe erroring.
+    let inp_msg = InputMessage::<P::Msg>::from_msg_entry(msg_entry);
+    if !inp_msg.is_valid() && !raw_coinput.is_empty() {
+        return Err(ProgramError::InvalidCoinput);
+    }
+
+    // 2. Verify the coinput against the message.
+    program.verify_coinput(state, vstate, &inp_msg, raw_coinput, &extra_data)?;
+
+    // 3. Process the message itself.
+    program.process_message(state, inp_msg, &extra_data)?;
 
     Ok(())
 }
