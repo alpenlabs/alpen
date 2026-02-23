@@ -1,14 +1,19 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
 use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
+use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_codec::Codec;
 use strata_codec_utils::CodecBorsh;
 use strata_msg_fmt::TypeId;
 use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
-use crate::constants::CHECKPOINT_UPDATE_LOG_TYPE;
+use crate::constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE};
 
-/// Details for a checkpoint update event.
+/// V0 checkpoint log. Emitted by the v0 checkpoint subprotocol.
+///
+/// Contains full checkpoint metadata including batch info, chainstate transition,
+/// and the L1 transaction ID. Superseded by [`CheckpointTipUpdate`] in the main
+/// (v1) checkpoint subprotocol.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
 pub struct CheckpointUpdate {
     /// Commitment to the epoch terminal block.
@@ -73,4 +78,32 @@ impl CheckpointUpdate {
 
 impl AsmLog for CheckpointUpdate {
     const TY: TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
+}
+
+/// Checkpoint tip log. Emitted by the main (v1) checkpoint subprotocol.
+///
+/// A simplified checkpoint log that only records the new verified
+/// [`CheckpointTip`] (epoch, L1 height, L2 commitment).
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
+pub struct CheckpointTipUpdate {
+    /// The new verified checkpoint tip.
+    tip: CodecBorsh<CheckpointTip>,
+}
+
+impl CheckpointTipUpdate {
+    /// Creates a new [`CheckpointTipUpdate`] from a [`CheckpointTip`].
+    pub fn new(tip: CheckpointTip) -> Self {
+        Self {
+            tip: CodecBorsh::new(tip),
+        }
+    }
+
+    /// Returns a reference to the checkpoint tip.
+    pub fn tip(&self) -> &CheckpointTip {
+        self.tip.inner()
+    }
+}
+
+impl AsmLog for CheckpointTipUpdate {
+    const TY: TypeId = CHECKPOINT_TIP_UPDATE_LOG_TYPE;
 }

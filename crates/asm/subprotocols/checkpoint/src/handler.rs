@@ -1,5 +1,6 @@
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
-use strata_asm_common::{MsgRelayer, TxInputRef, VerifiedAuxData, logging};
+use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
+use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
 
@@ -43,7 +44,16 @@ pub(crate) fn handle_checkpoint_tx(
         Ok(withdrawal_intents) => {
             logging::info!(epoch, "checkpoint validated successfully");
 
-            state.update_verified_tip(payload.inner().new_tip);
+            let new_tip = payload.inner().new_tip;
+            state.update_verified_tip(new_tip);
+
+            let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
+            match AsmLogEntry::from_log(&checkpoint_tip_update) {
+                Ok(log_entry) => relayer.emit_log(log_entry),
+                Err(err) => {
+                    logging::error!(error = ?err, "failed to encode checkpoint tip update log")
+                }
+            }
 
             for withdraw_output in withdrawal_intents {
                 let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
