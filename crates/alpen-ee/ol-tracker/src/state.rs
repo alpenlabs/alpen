@@ -130,12 +130,12 @@ mod tests {
             let chain = create_epochs(&[100, 101, 102]);
 
             let mut mock_storage = MockStorage::new();
-            setup_mock_storage_with_chain(&mut mock_storage, chain);
+            setup_mock_storage_with_chain(&mut mock_storage, chain.clone());
 
-            let local = make_epoch_commitment(1, 10, 101);
+            let local = &chain[1];
             let ol = make_epoch_commitment(2, 20, 102);
 
-            let result = effective_account_state(&local, &ol, &mock_storage)
+            let result = effective_account_state(local, &ol, &mock_storage)
                 .await
                 .unwrap();
 
@@ -153,12 +153,12 @@ mod tests {
             let chain = create_epochs(&[100, 101, 102]);
 
             let mut mock_storage = MockStorage::new();
-            setup_mock_storage_with_chain(&mut mock_storage, chain);
+            setup_mock_storage_with_chain(&mut mock_storage, chain.clone());
 
-            let local = make_epoch_commitment(2, 20, 102);
+            let local = &chain[2];
             let ol = make_epoch_commitment(1, 10, 101);
 
-            let result = effective_account_state(&local, &ol, &mock_storage)
+            let result = effective_account_state(local, &ol, &mock_storage)
                 .await
                 .unwrap();
 
@@ -171,31 +171,34 @@ mod tests {
             // Scenario: Local and OL epochs have equal slots
             // Local:    epoch 1 at slot 10 with terminal block ID 101
             // OL:       epoch 2 at slot 10 with terminal block ID 102
-            // Expected: Returns state for OL epoch (takes ol when equal)
+            // Expected: Returns state for local epoch (takes local when slots equal due to <=
+            // check)
 
             let chain = create_epochs(&[100, 101, 102]);
 
             let mut mock_storage = MockStorage::new();
-            setup_mock_storage_with_chain(&mut mock_storage, chain);
+            setup_mock_storage_with_chain(&mut mock_storage, chain.clone());
 
-            let local = make_epoch_commitment(1, 10, 101);
+            let local = &chain[1];
+            // Note: Setting slot to 10 to match the test description (not 20 as epoch 2 would
+            // normally have)
             let ol = make_epoch_commitment(2, 10, 102);
 
-            let result = effective_account_state(&local, &ol, &mock_storage)
+            let result = effective_account_state(local, &ol, &mock_storage)
                 .await
                 .unwrap();
 
-            assert_eq!(result.epoch_commitment().epoch(), 2);
-            assert_eq!(result.epoch_commitment().last_blkid().as_ref()[0], 102);
+            assert_eq!(result.epoch_commitment().epoch(), 1);
+            assert_eq!(result.epoch_commitment().last_blkid().as_ref()[0], 101);
         }
 
         #[tokio::test]
         async fn test_returns_missing_block_error_when_epoch_not_found() {
             // Scenario: Storage doesn't have the requested epoch
-            // Local:    epoch 1 at slot 10 with terminal block ID 101
-            // OL:       epoch 2 at slot 20 with terminal block ID 102
+            // Local:    epoch 2 at slot 20 with terminal block ID 102
+            // OL:       epoch 1 at slot 10 with terminal block ID 101
             // Storage:  empty (no epochs stored)
-            // Expected: MissingBlock error
+            // Expected: MissingBlock error (because local slot > OL slot, so it tries storage)
 
             let mut mock_storage = MockStorage::new();
 
@@ -204,8 +207,8 @@ mod tests {
                 .times(1)
                 .returning(|_| Ok(None));
 
-            let local = make_epoch_commitment(1, 10, 101);
-            let ol = make_epoch_commitment(2, 20, 102);
+            let local = make_state_at_epoch(2, 20, 102, 102);
+            let ol = make_epoch_commitment(1, 10, 101);
 
             let result = effective_account_state(&local, &ol, &mock_storage).await;
 
@@ -218,9 +221,10 @@ mod tests {
         #[tokio::test]
         async fn test_propagates_storage_error() {
             // Scenario: Storage returns an error
-            // Local:    epoch 1 at slot 10 with terminal block ID 101
-            // OL:       epoch 2 at slot 20 with terminal block ID 102
-            // Expected: Storage error propagated
+            // Local:    epoch 2 at slot 20 with terminal block ID 102
+            // OL:       epoch 1 at slot 10 with terminal block ID 101
+            // Expected: Storage error propagated (because local slot > OL slot, so it tries
+            // storage)
 
             let mut mock_storage = MockStorage::new();
 
@@ -229,8 +233,8 @@ mod tests {
                 .times(1)
                 .returning(|_| Err(StorageError::database("database connection failed")));
 
-            let local = make_epoch_commitment(1, 10, 101);
-            let ol = make_epoch_commitment(2, 20, 102);
+            let local = make_state_at_epoch(2, 20, 102, 102);
+            let ol = make_epoch_commitment(1, 10, 101);
 
             let result = effective_account_state(&local, &ol, &mock_storage).await;
 
