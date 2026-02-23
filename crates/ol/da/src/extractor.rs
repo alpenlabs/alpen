@@ -1,29 +1,25 @@
 //! # Checkpoint transaction extraction helpers for OL DA payload consumption.
 //!
-//! This is a very simple module that given any bitcoin client that implements the [`Reader`] trait,
-//! can fetch a checkpoint transaction by [`BitcoinTxid`] and decode its OL DA payload, namely
-//! [`OLDaPayloadV1`].
+//! This is a very simple module that given a raw Bitcoin transaction,
+//! can decode its OL DA payload, namely [`OLDaPayloadV1`].
 
 use bitcoin::Transaction;
-use bitcoind_async_client::traits::Reader;
 use strata_asm_common::TxInputRef;
 use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
-use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
+use strata_btc_types::RawBitcoinTx;
 use strata_codec::decode_buf_exact;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
-use crate::{DaExtractorError, DaExtractorResult, OLDaPayloadV1};
+use crate::{DaExtractorResult, OLDaPayloadV1};
 
-/// Decodes the OL DA payload from a checkpoint transaction.
-pub async fn decode_ol_da_payload<R>(
-    reader: &R,
-    checkpoint_txid: &BitcoinTxid,
+/// Decodes the OL DA payload from a raw checkpoint transaction.
+///
+/// It is the caller's responsibility to fetch the raw transaction (e.g., via `btcio` or the
+/// consensus layer). This function only handles decoding.
+pub fn decode_ol_da_payload(
+    raw_tx: RawBitcoinTx,
     magic_bytes: MagicBytes,
-) -> DaExtractorResult<OLDaPayloadV1>
-where
-    R: Reader,
-{
-    let raw_tx = fetch_raw_tx_from_reader(reader, checkpoint_txid).await?;
+) -> DaExtractorResult<OLDaPayloadV1> {
     let tx: Transaction = raw_tx.try_into()?;
     let tag = ParseConfig::new(magic_bytes).try_parse_tx(&tx)?;
     let signed_checkpoint = extract_signed_checkpoint_from_envelope(&TxInputRef::new(&tx, tag))?;
@@ -31,32 +27,13 @@ where
     Ok(da_payload)
 }
 
-/// Fetches a raw Bitcoin transaction from a [`Reader`] by [`BitcoinTxid`].
-async fn fetch_raw_tx_from_reader<R>(
-    reader: &R,
-    checkpoint_txid: &BitcoinTxid,
-) -> DaExtractorResult<RawBitcoinTx>
-where
-    R: Reader,
-{
-    let txid = checkpoint_txid.inner();
-    let raw_tx_response = reader
-        .get_raw_transaction_verbosity_zero(&txid)
-        .await
-        .map_err(|_| DaExtractorError::BitcoinTxNotFound(*checkpoint_txid))?;
-
-    Ok(RawBitcoinTx::from(raw_tx_response.0))
-}
-
 #[cfg(test)]
 mod tests {
-
-    use bitcoin::ScriptBuf;
+    use bitcoin::{ScriptBuf, Transaction};
     use strata_asm_txs_checkpoint::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
     use strata_asm_txs_test_utils::create_reveal_transaction_stub;
     use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
-    use super::*;
     use crate::DaExtractorError;
 
     /// Creates a checkpoint transaction with the given payload, subprotocol, tx type, and secret
@@ -66,7 +43,7 @@ mod tests {
     }
 
     /// Extracts the leaf script from a transaction.
-    fn extract_leaf_script(tx: &Transaction) -> DaExtractorResult<ScriptBuf> {
+    fn extract_leaf_script(tx: &Transaction) -> Result<ScriptBuf, DaExtractorError> {
         if tx.input.is_empty() {
             return Err(DaExtractorError::CheckpointTxError(
                 CheckpointTxError::MissingInputs,

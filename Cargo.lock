@@ -15074,7 +15074,6 @@ name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "bitcoind-async-client",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-txs-checkpoint",

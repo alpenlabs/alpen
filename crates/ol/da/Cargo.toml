@@ -17,7 +17,6 @@ strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 
 bitcoin.workspace = true
-bitcoind-async-client.workspace = true
 thiserror.workspace = true
 
 [lints]
