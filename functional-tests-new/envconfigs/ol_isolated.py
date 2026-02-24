@@ -95,12 +95,24 @@ class OLIsolatedEnvConfig(flexitest.EnvConfig):
         # Pre-fund the strata-test-cli BDK wallet so it can build Bitcoin
         # transactions (e.g. create-mock-deposit). The BDK wallet uses a
         # hardcoded test xpriv; get its address and send coins to it.
-        bdk_addr = subprocess.run(
-            ["strata-test-cli", "get-address", "--index", "0"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
+        try:
+            bdk_result = subprocess.run(
+                ["strata-test-cli", "get-address", "--index", "0"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if bdk_result.returncode != 0:
+                raise RuntimeError(
+                    f"strata-test-cli get-address failed (exit {bdk_result.returncode}):\n"
+                    f"  stderr: {bdk_result.stderr.strip()}"
+                )
+            bdk_addr = bdk_result.stdout.strip()
+        except FileNotFoundError:
+            raise RuntimeError(
+                "strata-test-cli binary not found. "
+                "Ensure it is built with: cargo build --bin strata-test-cli"
+            )
         btc_rpc.proxy.sendtoaddress(bdk_addr, 10)
         # Mine a block to confirm the funding transaction
         mine_addr = btc_rpc.proxy.getnewaddress()
@@ -137,6 +149,3 @@ class OLIsolatedEnvConfig(flexitest.EnvConfig):
 
         return flexitest.LiveEnv(services)
 
-
-# Convenience instances for common configurations
-OL_ISOLATED_DEFAULT = OLIsolatedEnvConfig()
