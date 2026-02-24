@@ -16,7 +16,6 @@ pub(crate) fn init_ol_genesis(
 ) -> Result<OLBlockCommitment> {
     info!("initializing OL genesis block and state");
 
-    // Wait for ASM manifest for genesis to be available.
     let GenesisArtifacts {
         ol_state,
         ol_block,

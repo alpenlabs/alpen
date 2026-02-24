@@ -14600,6 +14600,7 @@ dependencies = [
  "strata-asm-types",
  "strata-btc-types",
  "strata-crypto",
+ "strata-identifiers",
  "strata-key-derivation",
  "strata-l1-txfmt",
  "strata-ol-genesis",
