@@ -63,11 +63,11 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .into());
     }
 
-    // 3b. Invalid: checkpoint must advance L1 height by at least one block.
-    // Zero L1 progress would allow the sequencer to censor L1 messages
-    // (deposits, forced inclusions) indefinitely.
-    if l1_height_covered_in_last_checkpoint >= l1_height_covered_in_new_checkpoint {
-        return Err(InvalidCheckpointPayload::L1HeightDoesNotAdvance {
+    // 3b. Invalid: checkpoint must not regress L1 height.
+    // Zero L1 progress (same height) is allowed.
+    // NOTE: censorship prevention via ALLOWED_L1_LAG is planned for a future milestone.
+    if l1_height_covered_in_last_checkpoint > l1_height_covered_in_new_checkpoint {
+        return Err(InvalidCheckpointPayload::L1HeightRegresses {
             prev_height: l1_height_covered_in_last_checkpoint,
             new_height: l1_height_covered_in_new_checkpoint,
         }
@@ -338,37 +338,9 @@ mod tests {
         assert!(matches!(
             err,
             CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::L1HeightDoesNotAdvance { .. }
+                InvalidCheckpointPayload::L1HeightRegresses { .. }
             )
         ))
-    }
-
-    #[test]
-    fn test_new_l1_tip_same_as_last_verified_is_rejected() {
-        let (state, harness) = test_setup();
-
-        let mut new_tip = harness.gen_new_tip();
-        new_tip.l1_height = state.verified_tip().l1_height;
-        let payload = harness.build_payload_with_tip(new_tip);
-
-        let verified_aux_data = harness.gen_verified_aux(&new_tip);
-        let signed_payload = harness.sign_payload(payload);
-
-        let current_l1_height = state.verified_tip().l1_height + 1;
-
-        let err = validate_checkpoint_and_extract_withdrawal_intents(
-            &state,
-            current_l1_height,
-            &signed_payload,
-            &verified_aux_data,
-        )
-        .unwrap_err();
-        assert!(matches!(
-            err,
-            CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::L1HeightDoesNotAdvance { .. }
-            )
-        ));
     }
 
     #[test]

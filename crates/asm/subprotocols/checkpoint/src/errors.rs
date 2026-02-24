@@ -33,15 +33,14 @@ pub enum InvalidCheckpointPayload {
     #[error("invalid epoch: (expected {expected}, got {actual})")]
     InvalidEpoch { expected: Epoch, actual: Epoch },
 
-    /// Checkpoint does not advance L1 height.
+    /// Checkpoint L1 height regresses below the last verified height.
     ///
-    /// Each checkpoint must process at least one new L1 block. This prevents
-    /// the sequencer from censoring L1 messages (deposits, forced inclusions)
-    /// by producing epochs that ignore L1 progress.
+    /// A checkpoint may cover the same L1 height as its predecessor (zero L1
+    /// progress), but it must never claim a lower height.
     #[error(
-        "checkpoint does not advance L1 height: new checkpoint covers up to L1 height {new_height}, but previous checkpoint already covered up to L1 height {prev_height}"
+        "checkpoint L1 height regresses: new checkpoint covers up to L1 height {new_height}, but previous checkpoint already covered up to L1 height {prev_height}"
     )]
-    L1HeightDoesNotAdvance { prev_height: u32, new_height: u32 },
+    L1HeightRegresses { prev_height: u32, new_height: u32 },
 
     /// Checkpoint L1 height exceeds current block.
     ///

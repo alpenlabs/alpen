@@ -231,9 +231,9 @@ fn execute_block_batch(
     initial_parent: &OLBlockHeader,
 ) -> (Vec<OLLog>, FixedBytes<32>, OLBlockHeader) {
     // Exactly one block per epoch must carry an L1 update (the terminal block).
-    // Zero L1 updates would allow the sequencer to censor L1 messages (deposits,
-    // forced inclusions) indefinitely. Multiple would silently drop earlier
-    // manifest hashes.
+    // The manifest hash is computed by overwriting a single `Option` in the loop
+    // below, so multiple L1 updates would silently drop earlier hashes and zero
+    // would leave it as `None`.
     let l1_update_count = blocks
         .iter()
         .filter(|b| b.body().l1_update().is_some())
