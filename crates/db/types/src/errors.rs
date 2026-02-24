@@ -137,10 +137,6 @@ pub enum DbError {
     #[error("MMR leaf hash mismatch at index {idx} (expected {expected:?}, got {got:?})")]
     MmrLeafHashMismatch { idx: u64, expected: Hash, got: Hash },
 
-    /// A compare-and-set precondition in an MMR batch update failed.
-    #[error("MMR precondition failed")]
-    MmrPreconditionFailed,
-
     /// Requested leaf index is out of range for current leaf count.
     #[error("MMR index out of range (requested {requested}, cur {cur})")]
     MmrIndexOutOfRange { requested: u64, cur: u64 },
@@ -160,6 +156,10 @@ pub enum DbError {
     /// MMR node not found at the given tree position.
     #[error("MMR node not found at position {0}")]
     MmrNodeNotFound(NodePos),
+
+    /// MMR index batch precondition failed.
+    #[error("MMR precondition failed for {mmr_id:?}: {detail}")]
+    MmrPreconditionFailed { mmr_id: Vec<u8>, detail: String },
 
     /// Operation retried but failed all attempts.
     #[error("retries exhausted after {attempts} attempts: {last_error}")]
