@@ -382,7 +382,7 @@ where
     for (txid, mempool_tx) in mempool_txs {
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
         // This only reads from state, so no rollback needed on failure.
-        let tx = match convert_mempool_tx_to_ol_tx(proof_gen, mempool_tx) {
+        let tx = match convert_mempool_tx_to_ol_tx(proof_gen, &staging_state, mempool_tx) {
             Ok(tx) => tx,
             Err(e) => {
                 debug!(?txid, %e, "failed to validate/generate proofs for transaction");
@@ -524,8 +524,9 @@ where
 /// 1. Validates message index against account state
 /// 2. Generates MessageEntryProof for each message using `AccumulatorProofGenerator`
 /// 3. Generates MmrEntryProof for each L1 header reference using `AccumulatorProofGenerator`
-fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator>(
+fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
+    state: &S,
     mempool_tx: OLMempoolTransaction,
 ) -> BlockAssemblyResult<OLTransaction> {
     let attachment = mempool_tx.attachment().clone();
@@ -537,7 +538,7 @@ fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator>(
         }
 
         OLMempoolTxPayload::SnarkAccountUpdate(mempool_payload) => {
-            convert_snark_account_update(proof_gen, mempool_payload)?
+            convert_snark_account_update(proof_gen, state, mempool_payload)?
         }
     };
 
@@ -547,8 +548,9 @@ fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator>(
 /// Converts a snark account update mempool payload to a full transaction payload.
 ///
 /// Validates message index against account state and generates accumulator proofs.
-fn convert_snark_account_update<P: AccumulatorProofGenerator>(
+fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
+    state: &S,
     mempool_payload: &OLMempoolSnarkAcctUpdateTxPayload,
 ) -> BlockAssemblyResult<TransactionPayload> {
     let target = *mempool_payload.target();
@@ -567,7 +569,7 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator>(
 
     // Generate L1 header proofs using AccumulatorProofGenerator
     let l1_header_refs = operation.ledger_refs().l1_header_refs();
-    let l1_header_proofs = proof_gen.generate_l1_header_proofs(l1_header_refs)?;
+    let l1_header_proofs = proof_gen.generate_l1_header_proofs(state, l1_header_refs)?;
 
     // Create accumulator proofs
     let accumulator_proofs = UpdateAccumulatorProofs::new(inbox_proofs, l1_header_proofs);
@@ -623,7 +625,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
 
         assert!(
             result.is_ok(),
@@ -673,7 +675,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
 
         assert!(
             result.is_ok(),
@@ -735,7 +737,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
@@ -772,7 +774,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
 
         assert!(result.is_err(), "Should fail with nonexistent index");
         let err = result.unwrap_err();
@@ -807,7 +809,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -910,7 +912,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
 
         assert!(
             result.is_err(),
@@ -956,7 +958,7 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, mempool_payload);
+        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
 
         assert!(
             result.is_err(),

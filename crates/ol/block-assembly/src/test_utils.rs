@@ -76,7 +76,7 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
 /// Uses unit types for mempool and state provider since
 /// proof generation only requires storage access.
 pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyContext<(), ()> {
-    BlockAssemblyContext::new(storage, (), (), 0)
+    BlockAssemblyContext::new(storage, (), ())
 }
 
 /// Mock mempool provider for tests that stores transactions in memory.
@@ -876,6 +876,6 @@ pub(crate) fn create_test_block_assembly_context(
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
     let state_provider = StateProviderHandle(storage.ol_state().clone());
-    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider, 0);
+    let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider);
     (ctx, mempool_provider)
 }
