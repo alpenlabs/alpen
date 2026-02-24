@@ -59,13 +59,49 @@ class GenesisL1View:
     epoch_start_timestamp: int = field(default=1000)
     last_11_timestamps: list[int] = field(default_factory=lambda: [0] * 11)  # TODO: more type safe
 
+    _TIMESTAMPS_FOR_MEDIAN = 11
+    _DIFFICULTY_ADJUSTMENT_INTERVAL = 2016
+
+    @staticmethod
+    def _fetch_block_header_by_height(btc_rpc, height: int) -> dict:
+        block_hash = btc_rpc.proxy.getblockhash(height)
+        return btc_rpc.proxy.getblockheader(block_hash, True)
+
     @staticmethod
     def at_latest_block(btc_rpc) -> "GenesisL1View":
         blkid = btc_rpc.proxy.getbestblockhash()
-        blkheight = btc_rpc.proxy.getblock(blkid, 1)["height"]
+        block = btc_rpc.proxy.getblock(blkid, 1)
+        blkheight = block["height"]
         l1blk_commitment = L1BlockCommitment(blkheight, blkid)
-        # TODO: add timestamps as needed
-        return GenesisL1View(l1blk_commitment)
+
+        current_epoch_start_height = (
+            blkheight // GenesisL1View._DIFFICULTY_ADJUSTMENT_INTERVAL
+        ) * GenesisL1View._DIFFICULTY_ADJUSTMENT_INTERVAL
+        epoch_start_timestamp = GenesisL1View._fetch_block_header_by_height(
+            btc_rpc, current_epoch_start_height
+        )["time"]
+
+        last_11_timestamps = []
+        for i in range(GenesisL1View._TIMESTAMPS_FOR_MEDIAN):
+            current_height = blkheight - i
+            if current_height < 1:
+                last_11_timestamps.append(0)
+                continue
+
+            header = GenesisL1View._fetch_block_header_by_height(btc_rpc, current_height)
+            last_11_timestamps.append(header["time"])
+        last_11_timestamps.reverse()
+
+        # For all current functional-test setups (regtest, pre-adjustment), the
+        # next target equals the tip header bits.
+        next_target = int(block["bits"], 16)
+
+        return GenesisL1View(
+            blk=l1blk_commitment,
+            next_target=next_target,
+            epoch_start_timestamp=epoch_start_timestamp,
+            last_11_timestamps=last_11_timestamps,
+        )
 
 
 # TODO: move this to some place common as this should be useful for other purposes as well
