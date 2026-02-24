@@ -52,6 +52,7 @@ pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
                     entries: 0,
                     roots: Default::default(),
                 },
+                manifests_mmr_offset: 1,
             },
         )
 }

@@ -103,3 +103,30 @@ pub trait IStateAccessor {
     // TODO maybe don't use `AcctResult`, actually convert all/most of these to use a new error type
     fn compute_state_root(&self) -> AcctResult<Buf32>;
 }
+
+/// Resolves the first L1 block height represented by the ASM manifests MMR.
+///
+/// This is derived from canonical state as:
+/// `mmr_start_height = last_l1_height + 1 - (manifests_mmr_entries - 1)`.
+///
+/// For an empty MMR, this reduces to `last_l1_height + 1`.
+pub fn asm_manifests_mmr_start_height(state: &impl IStateAccessor) -> Option<L1Height> {
+    let last_l1_height_u64 = state.last_l1_height() as u64;
+    let num_entries = state.asm_manifests_mmr().num_entries();
+    let last_entry_idx = num_entries.saturating_sub(1);
+    let start_height_u64 = last_l1_height_u64
+        .checked_add(1)?
+        .checked_sub(last_entry_idx)?;
+    start_height_u64.try_into().ok()
+}
+
+/// Resolves an L1 block height into the corresponding ASM manifests MMR leaf index.
+///
+/// Returns `None` when the height is before the MMR start height.
+pub fn asm_manifest_mmr_index_for_height(
+    state: &impl IStateAccessor,
+    height: L1Height,
+) -> Option<u64> {
+    let start_height_u64 = asm_manifests_mmr_start_height(state)? as u64;
+    (height as u64).checked_sub(start_height_u64)
+}

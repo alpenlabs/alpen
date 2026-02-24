@@ -101,6 +101,10 @@ impl SequencerOLClient for DummyOLClient {
         })
     }
 
+    async fn get_l1_header_commitment(&self, l1_height: u64) -> Result<Hash, OLClientError> {
+        Ok(Hash::from(u64_to_256(l1_height)))
+    }
+
     async fn submit_update(&self, _update: SnarkAccountUpdate) -> Result<(), OLClientError> {
         Ok(())
     }

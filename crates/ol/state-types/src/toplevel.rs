@@ -26,12 +26,14 @@ impl OLState {
         let total_ledger_funds = ledger.calculate_total_funds();
 
         let global = GlobalState::new(params.header.slot);
+        let manifests_mmr_offset = params.last_l1_block.height_u64() + 1;
         let epoch = EpochalState::new(
             total_ledger_funds,
             params.header.epoch,
             params.last_l1_block,
             checkpointed_epoch,
             manifests_mmr,
+            manifests_mmr_offset,
         );
         Ok(Self {
             epoch,

@@ -17,6 +17,7 @@ impl EpochalState {
         last_l1_block: L1BlockCommitment,
         checkpointed_epoch: EpochCommitment,
         manifests_mmr: Mmr64,
+        manifests_mmr_offset: u64,
     ) -> Self {
         Self {
             total_ledger_funds,
@@ -24,6 +25,7 @@ impl EpochalState {
             last_l1_block,
             checkpointed_epoch,
             manifests_mmr,
+            manifests_mmr_offset,
         }
     }
 
@@ -89,6 +91,11 @@ impl EpochalState {
     /// Gets the ASM manifests MMR.
     pub fn asm_manifests_mmr(&self) -> &Mmr64 {
         &self.manifests_mmr
+    }
+
+    /// Gets the offset for mapping L1 block heights to MMR leaf indices.
+    pub fn manifests_mmr_offset(&self) -> u64 {
+        self.manifests_mmr_offset
     }
 }
 

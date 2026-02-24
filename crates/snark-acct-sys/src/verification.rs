@@ -2,7 +2,8 @@ use ssz::Encode as _;
 use strata_acct_types::{
     AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash,
 };
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
+use strata_identifiers::L1Height;
+use strata_ledger_types::{ISnarkAccountState, IStateAccessor, asm_manifest_mmr_index_for_height};
 use strata_merkle::MerkleProof;
 use strata_snark_acct_types::{
     LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, ProofState, SnarkAccountUpdate,
@@ -31,7 +32,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     // 3. Verify ledger references using the provided state accessor
     verify_ledger_refs(
         target,
-        state_accessor.asm_manifests_mmr(),
+        state_accessor,
         accum_proofs.ledger_ref_proofs(),
         update.operation().ledger_refs(),
     )?;
@@ -94,31 +95,64 @@ pub fn verify_message_index(
 }
 
 /// Verifies the ledger ref proofs against the provided asm mmr for an account.
+///
+/// The operation carries manifest commitment references keyed by L1 height
+/// (`AccumulatorClaim.idx`). The verifier resolves those heights into ASM
+/// manifest MMR indices from canonical state view for proof verification.
 fn verify_ledger_refs(
     target: AccountId,
-    mmr: &Mmr64,
+    state_accessor: &impl IStateAccessor,
     ledger_ref_proofs: &LedgerRefProofs,
     ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
-    let generic_mmr = mmr.to_generic();
+    let asm_manifest_mmr: &Mmr64 = state_accessor.asm_manifests_mmr();
+    let generic_mmr = asm_manifest_mmr.to_generic();
+    let manifest_refs = ledger_refs.l1_header_refs();
+    let manifest_ref_proofs = ledger_ref_proofs.l1_headers_proofs();
 
-    // Check if the refs and refs in proofs are the same
-    if ledger_refs.l1_header_refs().len() != ledger_ref_proofs.l1_headers_proofs().len() {
+    // Claims and proofs must line up one-to-one.
+    if manifest_refs.len() != manifest_ref_proofs.len() {
         return Err(AcctError::InvalidLedgerRefProofsCount { account_id: target });
     }
 
-    for (lref, proof) in ledger_refs
-        .l1_header_refs()
-        .iter()
-        .zip(ledger_ref_proofs.l1_headers_proofs())
-    {
-        let hash = lref.entry_hash();
-        let cohashes = proof.proof().cohashes();
-        let generic_proof = MerkleProof::from_cohashes(cohashes, lref.idx());
-        if !generic_mmr.verify::<StrataHasher>(&generic_proof, hash.as_ref()) {
+    for (manifest_ref, manifest_ref_proof) in manifest_refs.iter().zip(manifest_ref_proofs) {
+        let l1_height: L1Height =
+            manifest_ref
+                .idx()
+                .try_into()
+                .map_err(|_| AcctError::InvalidLedgerReference {
+                    account_id: target,
+                    ref_idx: manifest_ref.idx(),
+                })?;
+        let mmr_idx =
+            asm_manifest_mmr_index_for_height(state_accessor, l1_height).ok_or_else(|| {
+                AcctError::InvalidLedgerReference {
+                    account_id: target,
+                    ref_idx: manifest_ref.idx(),
+                }
+            })?;
+        if manifest_ref_proof.entry_idx() != mmr_idx {
             return Err(AcctError::InvalidLedgerReference {
                 account_id: target,
-                ref_idx: proof.entry_idx(),
+                ref_idx: manifest_ref.idx(),
+            });
+        }
+        if manifest_ref_proof.entry_hash() != manifest_ref.entry_hash() {
+            return Err(AcctError::InvalidLedgerReference {
+                account_id: target,
+                ref_idx: manifest_ref.idx(),
+            });
+        }
+        let is_valid = verify_mmr_entry(
+            mmr_idx,
+            manifest_ref.entry_hash().into(),
+            manifest_ref_proof.proof().cohashes(),
+            |proof, leaf_hash| generic_mmr.verify::<StrataHasher>(proof, leaf_hash),
+        );
+        if !is_valid {
+            return Err(AcctError::InvalidLedgerReference {
+                account_id: target,
+                ref_idx: manifest_ref.idx(),
             });
         }
     }
@@ -141,12 +175,15 @@ pub(crate) fn verify_inbox_mmr_proofs(
     }
 
     for (msg, msg_proof) in processed_msgs.iter().zip(msg_proofs) {
-        let hash = <MessageEntry as TreeHash>::tree_hash_root(msg);
+        let msg_hash = <MessageEntry as TreeHash>::tree_hash_root(msg).into_inner();
+        let is_valid = verify_mmr_entry(
+            cur_index,
+            msg_hash,
+            msg_proof.raw_proof().cohashes(),
+            |proof, leaf_hash| generic_mmr.verify::<StrataHasher>(proof, leaf_hash),
+        );
 
-        let cohashes: Vec<[u8; 32]> = msg_proof.raw_proof().cohashes();
-        let proof = MerkleProof::from_cohashes(cohashes, cur_index);
-
-        if !generic_mmr.verify::<StrataHasher>(&proof, &hash.into_inner()) {
+        if !is_valid {
             return Err(AcctError::InvalidMessageProof {
                 account_id: target,
                 msg_idx: cur_index,
@@ -158,6 +195,20 @@ pub(crate) fn verify_inbox_mmr_proofs(
             .ok_or(AcctError::MsgIndexOverflow { account_id: target })?;
     }
     Ok(())
+}
+
+/// Verifies a single MMR inclusion proof against an expected leaf hash.
+fn verify_mmr_entry<F>(
+    entry_idx: u64,
+    entry_hash: [u8; 32],
+    cohashes: Vec<[u8; 32]>,
+    verify: F,
+) -> bool
+where
+    F: FnOnce(&MerkleProof<[u8; 32]>, &[u8; 32]) -> bool,
+{
+    let proof = MerkleProof::from_cohashes(cohashes, entry_idx);
+    verify(&proof, &entry_hash)
 }
 
 /// Verifies that the outputs in the update are valid i.e. checks balances and that the receipents

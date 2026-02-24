@@ -73,8 +73,10 @@ fn test_snark_update_with_valid_ledger_reference() {
     assert_eq!(manifest1_index, 0, "First manifest should be at index 0");
 
     // Step 2: Create a snark update that references the manifest
+    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
+    let manifest1_height = manifest1_index + 1;
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_index,
+        manifest1_height,
         manifest1_hash.into_inner(),
     )]);
 
@@ -174,8 +176,10 @@ fn test_snark_update_with_invalid_ledger_reference() {
     let (manifest1_index, _valid_proof) = manifest_tracker.add_manifest(&manifest1);
 
     // Step 2: Create a snark update with INVALID ledger reference proof
+    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
+    let manifest1_height = manifest1_index + 1;
     let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_index,
+        manifest1_height,
         manifest1_hash.into_inner(),
     )]);
 
@@ -184,7 +188,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
         manifest1_hash.into_inner(),
         strata_acct_types::MerkleProof::from_cohashes(
             vec![[0xff; 32]], // Invalid cohash
-            manifest1_index,
+            manifest1_index,  // proof uses raw MMR index
         ),
     );
 
@@ -232,7 +236,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
             assert_eq!(
-                ref_idx, manifest1_index,
+                ref_idx, manifest1_height,
                 "Should fail on the invalid reference"
             );
         }
@@ -246,4 +250,86 @@ fn test_snark_update_with_invalid_ledger_reference() {
         BitcoinAmount::from_sat(100_000_000),
         "Balance should be unchanged after failed update"
     );
+}
+
+#[test]
+fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    // Setup: genesis with snark account
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    // Create parallel MMR tracker
+    let mut manifest_tracker = ManifestMmrTracker::new();
+
+    // Step 1: Execute a block with an ASM manifest
+    let manifest1 = AsmManifest::new(
+        1,
+        test_l1_block_id(1),
+        WtxidsRoot::from(Buf32::from([1u8; 32])),
+        vec![],
+    );
+    let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
+
+    let block1_info = BlockInfo::new(1001000, 1, 0); // slot 1, epoch 0
+    let block1_components = BlockComponents::new_manifests(vec![manifest1.clone()]);
+    let block1_output = execute_block_with_outputs(
+        &mut state,
+        &block1_info,
+        Some(genesis_block.header()),
+        block1_components,
+    )
+    .expect("Block 1 should execute");
+
+    let (manifest1_index, manifest1_proof) = manifest_tracker.add_manifest(&manifest1);
+
+    // Step 2: Create a reference claim with a proof that carries a wrong entry index.
+    let manifest1_height = manifest1_index + 1;
+    let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
+        manifest1_height,
+        manifest1_hash.into_inner(),
+    )]);
+
+    let mismatched_index_proof = MmrEntryProof::new(
+        manifest1_hash.into_inner(),
+        strata_acct_types::MerkleProof::from_cohashes(
+            manifest1_proof.proof().cohashes(),
+            manifest1_index + 1,
+        ),
+    );
+
+    let operation_data = UpdateOperationData::new(
+        0,
+        ProofState::new(get_test_state_root(2), 0),
+        vec![],
+        ledger_refs,
+        UpdateOutputs::new_empty(),
+        vec![],
+    );
+    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
+    let accumulator_proofs =
+        UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![mismatched_index_proof]));
+    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
+        snark_id,
+        update_container,
+    ));
+
+    // Step 3: Execute and expect failure due to proof index mismatch.
+    let result = execute_tx_in_block(
+        &mut state,
+        block1_output.completed_block().header(),
+        tx,
+        2,
+        1,
+    );
+
+    match result {
+        Err(ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. })) => {
+            assert_eq!(ref_idx, manifest1_height);
+        }
+        Err(err) => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+        Ok(_) => panic!("Update with mismatched proof index should fail"),
+    }
 }
