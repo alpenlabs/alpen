@@ -24,16 +24,17 @@ use strata_primitives::{
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
-use crate::types::AccountExtraDataEntry;
 #[expect(
     deprecated,
     reason = "legacy old code CheckpointEntry is retained for compatibility"
 )]
+use crate::types::CheckpointEntry;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_helpers::MmrAlgorithm,
+    mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
-        BundledPayloadEntry, CheckpointEntry, ChunkedEnvelopeEntry, IntentEntry, L1TxEntry,
+        AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1TxEntry,
         MempoolTxData, OLCheckpointEntry,
     },
     DbError, DbResult,
@@ -526,6 +527,36 @@ pub trait GlobalMmrDatabase: Send + Sync + 'static {
     fn get_preimage(&self, _mmr_id: RawMmrId, _index: u64) -> DbResult<Option<Vec<u8>>> {
         Err(DbError::Unimplemented)
     }
+}
+
+/// Storage-only MMR indexing database interface.
+///
+/// This interface intentionally contains only primitive reads and one
+/// backend-agnostic atomic batch write entry point.
+pub trait MmrIndexDatabase: Send + Sync + 'static {
+    /// Returns the node hash for a namespace and node position.
+    fn get_node(&self, mmr_id: RawMmrId, pos: NodePos) -> DbResult<Option<Hash>>;
+
+    /// Returns optional preimage bytes for a namespace and leaf position.
+    fn get_preimage(&self, mmr_id: RawMmrId, pos: LeafPos) -> DbResult<Option<Vec<u8>>>;
+
+    /// Returns the current leaf count for a namespace.
+    ///
+    /// Implementations should return `0` when the namespace has no leaves.
+    fn get_leaf_count(&self, mmr_id: RawMmrId) -> DbResult<u64>;
+
+    /// Fetches requested nodes and available parent path nodes in one read.
+    ///
+    /// If `preimages` is true, implementations should also include available
+    /// preimages for requested leaf positions.
+    // NOTE: Takes an owned Vec so generated async/chan wrappers can move the
+    // argument into 'static worker closures without borrowing/lifetime issues.
+    fn fetch_node_paths(&self, nodes: Vec<MmrNodePos>, preimages: bool) -> DbResult<MmrNodeTable>;
+
+    /// Applies an atomic batch write with compare-and-set preconditions.
+    ///
+    /// If any precondition fails, no writes are applied.
+    fn apply_update(&self, batch: MmrBatchWrite) -> DbResult<()>;
 }
 
 // =============================================================================

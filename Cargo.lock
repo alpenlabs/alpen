@@ -14673,6 +14673,7 @@ dependencies = [
  "bitcoin",
  "borsh",
  "parking_lot 0.12.5",
+ "proptest",
  "serde",
  "serde_json",
  "strata-acct-types",
