@@ -22,7 +22,7 @@ use crate::{
 ///
 /// This is the single validation function for checkpoint payloads. Once validation succeeds,
 /// the payload can be safely acted upon. Returns extracted withdrawal intents on success.
-// TODO: Protocol team to decide on how to properly pack `(WithdrawOutput, OperatorSelection)`
+// TODO: To decide on how to properly pack `(WithdrawOutput, OperatorSelection)` during review
 // if a named struct is preferred over the tuple.
 pub fn validate_checkpoint_and_extract_withdrawal_intents(
     state: &CheckpointState,
