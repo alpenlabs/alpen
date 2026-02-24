@@ -1,5 +1,8 @@
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
-use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
+use strata_asm_common::{
+    AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData,
+    logging,
+};
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
@@ -43,6 +46,23 @@ pub(crate) fn handle_checkpoint_tx(
     ) {
         Ok(withdrawal_intents) => {
             logging::info!(epoch, "checkpoint validated successfully");
+
+            // Gate withdrawal dispatch on deposit availability.
+            // If the checkpoint's withdrawal intents exceed the deposits tracked so far,
+            // reject this checkpoint to prevent the bridge from panicking.
+            if !state.can_honor_withdrawals(&withdrawal_intents) {
+                let required: u64 =
+                    withdrawal_intents.iter().map(|w| w.amt().to_sat()).sum();
+                logging::warn!(
+                    epoch,
+                    available_sat = state.available_deposit_sum(),
+                    required_sat = required,
+                    "checkpoint rejected: withdrawal intents exceed available deposit backing"
+                );
+                return;
+            }
+
+            state.deduct_withdrawals(&withdrawal_intents);
 
             let new_tip = payload.inner().new_tip;
             state.update_verified_tip(new_tip);

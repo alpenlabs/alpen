@@ -130,6 +130,8 @@ impl Subprotocol for CheckpointV0Subproto {
                 CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
                     apply_rollup_vk_update(state, new_predicate);
                 }
+                // Deposit tracking is handled by the new checkpoint subprotocol (ID=1).
+                CheckpointIncomingMsg::DepositProcessed(_) => {}
             }
         }
     }

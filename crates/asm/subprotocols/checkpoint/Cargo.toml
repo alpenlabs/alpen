@@ -12,6 +12,7 @@ ssz.workspace = true
 ssz_primitives.workspace = true
 strata-asm-bridge-msgs.workspace = true
 strata-asm-checkpoint-msgs.workspace = true
+strata-btc-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-params.workspace = true
