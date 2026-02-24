@@ -10,4 +10,5 @@ workspace = true
 alloy-sol-types.workspace = true
 serde.workspace = true
 
+strata-bridge-types.workspace = true
 strata-primitives.workspace = true

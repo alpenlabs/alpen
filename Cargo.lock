@@ -1013,6 +1013,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "aes-gcm-siv",
  "alloy",
+ "alpen-reth-primitives",
  "argh",
  "argon2",
  "async-trait",
@@ -1036,6 +1037,7 @@ dependencies = [
  "shrex",
  "sled",
  "strata-asm-txs-bridge-v1",
+ "strata-bridge-types",
  "strata-cli-common",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -1059,7 +1061,6 @@ dependencies = [
  "alpen-chainspec",
  "alpen-ee-common",
  "alpen-ee-config",
- "alpen-ee-da",
  "alpen-ee-database",
  "alpen-ee-engine",
  "alpen-ee-exec-chain",
@@ -1067,10 +1068,9 @@ dependencies = [
  "alpen-ee-ol-tracker",
  "alpen-ee-sequencer",
  "alpen-reth-evm",
- "alpen-reth-exex",
  "alpen-reth-node",
  "async-trait",
- "bitcoind-async-client",
+ "bitcoin",
  "clap",
  "eyre",
  "jsonrpsee",
@@ -1089,16 +1089,13 @@ dependencies = [
  "reth-provider",
  "ssz",
  "strata-acct-types",
- "strata-btcio",
  "strata-common",
- "strata-config",
  "strata-identifiers",
- "strata-l1-txfmt",
+ "strata-ol-genesis",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-primitives",
  "strata-snark-acct-types",
- "threadpool",
  "tokio",
  "tracing",
 ]
@@ -1113,6 +1110,7 @@ dependencies = [
  "bitcoin-bosd",
  "eyre",
  "strata-acct-types",
+ "strata-bridge-types",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
@@ -1129,10 +1127,8 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",
- "alloy-rlp",
  "alloy-rpc-types-engine",
  "alpen-reth-node",
- "alpen-reth-statediff",
  "async-trait",
  "bincode",
  "bitcoin",
@@ -1144,12 +1140,9 @@ dependencies = [
  "reth-primitives-traits",
  "serde",
  "strata-acct-types",
- "strata-codec",
- "strata-crypto",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
- "strata-l1-envelope-fmt",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
  "tokio",
@@ -1166,31 +1159,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-ee-da"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alloy-primitives",
- "alpen-ee-common",
- "alpen-ee-database",
- "alpen-reth-db",
- "alpen-reth-statediff",
- "async-trait",
- "bitcoin",
- "eyre",
- "strata-btcio",
- "strata-db-types",
- "strata-identifiers",
- "strata-l1-txfmt",
- "strata-primitives",
- "tracing",
-]
-
-[[package]]
 name = "alpen-ee-database"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
- "alpen-reth-db",
  "async-trait",
  "bitcoin",
  "borsh",
@@ -1203,7 +1175,6 @@ dependencies = [
  "strata-ee-chain-types",
  "strata-identifiers",
  "strata-snark-acct-types",
- "strata-storage",
  "strata-storage-common",
  "thiserror 2.0.18",
  "threadpool",
@@ -1267,7 +1238,9 @@ dependencies = [
 name = "alpen-ee-ol-tracker"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-primitives",
  "alpen-ee-common",
+ "alpen-ee-config",
  "eyre",
  "strata-acct-types",
  "strata-ee-acct-runtime",
@@ -1283,11 +1256,9 @@ dependencies = [
 name = "alpen-ee-sequencer"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-primitives",
  "alpen-ee-block-assembly",
  "alpen-ee-common",
  "alpen-ee-exec-chain",
- "alpen-reth-db",
  "async-trait",
  "bitcoin",
  "eyre",
@@ -1341,7 +1312,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-proofimpl-evm-ee-stf",
- "tracing",
  "typed-sled",
 ]
 
@@ -1358,6 +1328,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
+ "strata-bridge-types",
  "strata-crypto",
  "strata-identifiers",
  "strata-primitives",
@@ -1443,6 +1414,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-sol-types",
  "serde",
+ "strata-bridge-types",
  "strata-primitives",
 ]
 
@@ -1581,7 +1553,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1592,7 +1564,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2739,7 +2711,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2759,7 +2731,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2777,7 +2749,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -3175,9 +3147,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.11.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 dependencies = [
  "serde",
 ]
@@ -4278,17 +4250,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive-syn-parse"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e79116f119dd1dba1abf1f3405f03b9b0e79a27a3883864bfebded8a3dc768cd"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
 name = "derive-where"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4404,6 +4365,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
+name = "difflib"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6184e33543162437515c2e2b48714794e37845ec9851711914eec9d308f6ebe8"
+
+[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4482,7 +4449,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4781,7 +4748,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5016,6 +4983,15 @@ checksum = "b375d6465b98090a5f25b1c7703f3859783755aa9a80433b36e0379a3ec2f369"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "float-cmp"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -5313,9 +5289,9 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "git2"
-version = "0.20.4"
+version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b88256088d75a56f8ecfa070513a775dd9107f6530ef14919dac831af9cfe2b"
+checksum = "3e2b37e2f62729cdada11f0e6b3b6fe383c69c29fc619e391223e12856af308c"
 dependencies = [
  "bitflags 2.10.0",
  "libc",
@@ -6218,7 +6194,6 @@ dependencies = [
  "rand_chacha 0.3.1",
  "strata-asm-common",
  "strata-asm-manifest-types",
- "strata-asm-params",
  "strata-asm-proto-administration",
  "strata-asm-proto-checkpoint-v0",
  "strata-asm-txs-admin",
@@ -6226,7 +6201,6 @@ dependencies = [
  "strata-bridge-types",
  "strata-btc-types",
  "strata-crypto",
- "strata-db-types",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-params",
@@ -6234,7 +6208,6 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-tasks",
- "strata-test-utils",
  "strata-test-utils-btcio",
  "strata-test-utils-l2",
  "tokio",
@@ -6603,9 +6576,9 @@ dependencies = [
 
 [[package]]
 name = "keccak"
-version = "0.1.6"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
+checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
 ]
@@ -7107,13 +7080,14 @@ dependencies = [
 
 [[package]]
 name = "mockall"
-version = "0.14.0"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f58d964098a5f9c6b63d0798e5372fd04708193510a7af313c22e9f29b7b620b"
+checksum = "4c84490118f2ee2d74570d114f3d0493cbf02790df303d2707606c3e14e07c96"
 dependencies = [
  "cfg-if",
  "downcast",
  "fragile",
+ "lazy_static",
  "mockall_derive",
  "predicates",
  "predicates-tree",
@@ -7121,14 +7095,14 @@ dependencies = [
 
 [[package]]
 name = "mockall_derive"
-version = "0.14.0"
+version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca41ce716dda6a9be188b385aa78ee5260fc25cd3802cb2a8afdc6afbe6b6dbf"
+checksum = "22ce75669015c4f47b289fd4d4f56e894e4c96003ffdf3ac51313126f94c6cbb"
 dependencies = [
  "cfg-if",
  "proc-macro2",
  "quote",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7299,6 +7273,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "normalize-line-endings"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
+
+[[package]]
 name = "notify"
 version = "8.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7337,7 +7317,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7386,9 +7366,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.2.0"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
+checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
 name = "num-format"
@@ -7503,7 +7483,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -8488,12 +8468,16 @@ dependencies = [
 
 [[package]]
 name = "predicates"
-version = "3.1.4"
+version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ada8f2932f28a27ee7b70dd6c1c39ea0675c55a36879ab92f3a715eaa1e63cfe"
+checksum = "59230a63c37f3e18569bdb90e4a89cbf5bf8b06fea0b84e65ea10cc4df47addd"
 dependencies = [
- "anstyle",
+ "difflib",
+ "float-cmp",
+ "itertools 0.10.5",
+ "normalize-line-endings",
  "predicates-core",
+ "regex",
 ]
 
 [[package]]
@@ -12181,7 +12165,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12396,21 +12380,8 @@ checksum = "54e910108742c57a770f492731f99be216a52fadd361b06c8fb59d74ccc267d2"
 dependencies = [
  "dyn-clone",
  "ref-cast",
- "schemars_derive",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "schemars_derive"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4908ad288c5035a8eb12cfdf0d49270def0a268ee162b75eeee0f85d155a7c45"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde_derive_internals",
- "syn 2.0.114",
 ]
 
 [[package]]
@@ -12657,17 +12628,6 @@ name = "serde_derive"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.114",
-]
-
-[[package]]
-name = "serde_derive_internals"
-version = "0.29.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13696,8 +13656,7 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
- "strata-asm-params",
- "strata-asm-txs-checkpoint",
+ "strata-asm-proto-checkpoint-txs",
  "strata-asm-worker",
  "strata-btcio",
  "strata-chain-worker-new",
@@ -13712,6 +13671,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-key-derivation",
+ "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-node-context",
  "strata-ol-block-assembly",
@@ -13719,7 +13679,6 @@ dependencies = [
  "strata-ol-checkpoint",
  "strata-ol-genesis",
  "strata-ol-mempool",
- "strata-ol-params",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
@@ -13769,6 +13728,7 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",
+ "strata-bridge-types",
  "strata-primitives",
 ]
 
@@ -13778,7 +13738,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
- "strata-asm-txs-checkpoint-v0",
+ "strata-asm-proto-checkpoint-txs",
  "strata-predicate",
  "strata-primitives",
 ]
@@ -13791,8 +13751,8 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-manifest-types",
+ "strata-asm-types",
  "strata-btc-types",
- "strata-btc-verification",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-merkle",
@@ -13809,10 +13769,8 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-checkpoint-types",
- "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
- "strata-identifiers",
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
@@ -13859,21 +13817,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-params"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "borsh",
- "serde",
- "serde_json",
- "strata-btc-types",
- "strata-crypto",
- "strata-identifiers",
- "strata-l1-txfmt",
- "strata-predicate",
-]
-
-[[package]]
 name = "strata-asm-proto-administration"
 version = "0.1.0"
 dependencies = [
@@ -13883,7 +13826,6 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
- "strata-asm-params",
  "strata-asm-txs-admin",
  "strata-crypto",
  "strata-predicate",
@@ -13907,7 +13849,6 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-params",
  "strata-asm-txs-bridge-v1",
  "strata-bridge-types",
  "strata-btc-types",
@@ -13929,18 +13870,32 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
- "strata-asm-logs",
- "strata-asm-params",
- "strata-asm-txs-checkpoint",
+ "strata-asm-proto-checkpoint-txs",
+ "strata-bridge-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types-new",
- "strata-ol-msg-types",
  "strata-ol-stf",
  "strata-predicate",
  "strata-test-utils-l2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-asm-proto-checkpoint-txs"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "ssz",
+ "strata-asm-common",
+ "strata-bridge-types",
+ "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
+ "strata-l1-envelope-fmt",
+ "strata-ol-chainstate-types",
  "thiserror 2.0.18",
 ]
 
@@ -13953,10 +13908,9 @@ dependencies = [
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-txs-checkpoint-v0",
+ "strata-asm-proto-checkpoint-txs",
  "strata-checkpoint-types",
  "strata-identifiers",
- "strata-ol-msg-types",
  "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.18",
@@ -13971,9 +13925,9 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-bridge-types",
  "strata-codec",
  "strata-l1-txfmt",
- "strata-ol-msg-types",
  "strata-primitives",
  "thiserror 2.0.18",
 ]
@@ -13982,13 +13936,14 @@ dependencies = [
 name = "strata-asm-spec"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "strata-asm-common",
- "strata-asm-params",
  "strata-asm-proto-administration",
  "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-v0",
+ "strata-crypto",
  "strata-l1-txfmt",
+ "strata-params",
  "strata-primitives",
 ]
 
@@ -13997,6 +13952,9 @@ name = "strata-asm-spec-debug"
 version = "0.1.0"
 dependencies = [
  "strata-asm-common",
+ "strata-asm-proto-administration",
+ "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpoint-v0",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",
@@ -14021,8 +13979,6 @@ dependencies = [
  "borsh",
  "rand 0.8.5",
  "strata-asm-common",
- "strata-asm-params",
- "strata-asm-txs-test-utils",
  "strata-crypto",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
@@ -14041,7 +13997,6 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "strata-asm-common",
- "strata-asm-txs-test-utils",
  "strata-bridge-types",
  "strata-codec",
  "strata-crypto",
@@ -14053,42 +14008,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-txs-checkpoint"
-version = "0.1.0"
+name = "strata-asm-types"
+version = "0.3.0-alpha.1"
 dependencies = [
- "bitcoin",
- "ssz",
- "strata-asm-common",
- "strata-checkpoint-types-ssz",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-asm-txs-checkpoint-v0"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "borsh",
- "ssz",
- "strata-asm-common",
- "strata-bridge-types",
- "strata-checkpoint-types",
- "strata-l1-envelope-fmt",
- "strata-ol-chainstate-types",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-asm-txs-test-utils"
-version = "0.1.0"
-dependencies = [
- "bitcoin",
- "rand 0.8.5",
- "strata-asm-common",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
+ "strata-btc-types",
+ "strata-btc-verification",
 ]
 
 [[package]]
@@ -14103,18 +14027,18 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-manifest-types",
- "strata-asm-params",
  "strata-asm-spec",
  "strata-asm-stf",
+ "strata-asm-types",
  "strata-btc-types",
- "strata-btc-verification",
  "strata-merkle",
+ "strata-params",
  "strata-primitives",
  "strata-service",
  "strata-state",
  "strata-tasks",
- "strata-test-utils",
  "strata-test-utils-btcio",
+ "strata-test-utils-l2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -14124,6 +14048,7 @@ dependencies = [
 name = "strata-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "arbitrary",
  "borsh",
  "serde",
  "strata-identifiers",
@@ -14182,7 +14107,7 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "reqwest 0.12.28",
- "strata-btc-verification",
+ "strata-asm-types",
  "strata-config",
  "strata-csm-types",
  "strata-db-store-sled",
@@ -14274,8 +14199,8 @@ dependencies = [
  "rand_core 0.6.4",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-asm-types",
  "strata-bridge-types",
- "strata-btc-verification",
  "strata-checkpoint-types",
  "strata-identifiers",
  "strata-ol-chain-types",
@@ -14312,7 +14237,7 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
- "strata-asm-manifest-types",
+ "strata-crypto",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "strata-test-utils-ssz",
@@ -14340,10 +14265,9 @@ dependencies = [
  "futures",
  "jsonrpsee",
  "serde_json",
- "strata-asm-params",
  "strata-asm-proto-bridge-v1",
+ "strata-asm-proto-checkpoint-txs",
  "strata-asm-txs-bridge-v1",
- "strata-asm-txs-checkpoint-v0",
  "strata-bridge-types",
  "strata-btcio",
  "strata-checkpoint-types",
@@ -14442,7 +14366,6 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "strata-asm-common",
- "strata-asm-params",
  "strata-asm-worker",
  "strata-btc-types",
  "strata-chain-worker",
@@ -14492,10 +14415,8 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
- "serde_json",
  "sha2",
  "strata-identifiers",
- "strata-test-utils",
  "thiserror 2.0.18",
  "zeroize",
 ]
@@ -14566,15 +14487,10 @@ dependencies = [
  "reth-chainspec",
  "serde_json",
  "sp1-verifier",
- "strata-asm-params",
- "strata-btc-types",
- "strata-btc-verification",
+ "strata-asm-types",
  "strata-crypto",
- "strata-identifiers",
  "strata-key-derivation",
  "strata-l1-txfmt",
- "strata-ol-genesis",
- "strata-ol-params",
  "strata-params",
  "strata-predicate",
  "strata-primitives",
@@ -14623,13 +14539,12 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "strata-asm-common",
- "strata-btc-verification",
+ "strata-asm-types",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-db-types",
  "strata-identifiers",
- "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
@@ -14659,7 +14574,6 @@ dependencies = [
  "strata-checkpoint-types-ssz",
  "strata-csm-types",
  "strata-identifiers",
- "strata-l1-txfmt",
  "strata-merkle",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
@@ -14845,7 +14759,6 @@ dependencies = [
  "hex",
  "int-enum",
  "proptest",
- "schemars 1.2.0",
  "serde",
  "serde_json",
  "ssz",
@@ -14952,9 +14865,7 @@ name = "strata-node-context"
 version = "0.1.0"
 dependencies = [
  "bitcoind-async-client",
- "strata-asm-params",
  "strata-config",
- "strata-ol-params",
  "strata-params",
  "strata-status",
  "strata-storage",
@@ -14970,13 +14881,12 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "proptest",
- "schemars 1.2.0",
  "serde",
  "ssz",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-manifest-types",
- "strata-btc-verification",
+ "strata-asm-types",
  "strata-config",
  "strata-crypto",
  "strata-db-store-sled",
@@ -14986,7 +14896,6 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-ol-mempool",
- "strata-ol-params",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
@@ -14997,7 +14906,6 @@ dependencies = [
  "strata-state",
  "strata-storage",
  "strata-tasks",
- "strata-test-utils-l2",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
@@ -15067,13 +14975,11 @@ dependencies = [
  "serde",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
- "strata-codec",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-node-context",
  "strata-ol-chain-types-new",
- "strata-ol-da",
  "strata-primitives",
  "strata-service",
  "strata-storage",
@@ -15088,20 +14994,12 @@ dependencies = [
 name = "strata-ol-da"
 version = "0.1.0"
 dependencies = [
- "bitcoin",
  "strata-acct-types",
- "strata-asm-common",
- "strata-asm-txs-checkpoint",
- "strata-asm-txs-test-utils",
- "strata-btc-types",
  "strata-codec",
  "strata-da-framework",
  "strata-identifiers",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
  "strata-ledger-types",
  "strata-ol-state-types",
- "strata-ol-stf",
  "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
@@ -15114,10 +15012,13 @@ dependencies = [
  "strata-acct-types",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-params",
  "strata-ol-state-types",
  "strata-ol-stf",
+ "strata-params",
+ "strata-predicate",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -15140,7 +15041,6 @@ dependencies = [
  "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-chain-types-new",
- "strata-ol-params",
  "strata-ol-state-types",
  "strata-ol-stf",
  "strata-predicate",
@@ -15183,12 +15083,9 @@ name = "strata-ol-rpc-api"
 version = "0.1.0"
 dependencies = [
  "jsonrpsee",
- "serde_json",
  "strata-identifiers",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
- "strata-open-rpc",
- "strata-open-rpc-macros",
  "strata-primitives",
 ]
 
@@ -15197,7 +15094,6 @@ name = "strata-ol-rpc-types"
 version = "0.1.0"
 dependencies = [
  "hex",
- "schemars 1.2.0",
  "serde",
  "serde_json",
  "ssz",
@@ -15251,7 +15147,6 @@ dependencies = [
  "strata-ledger-types",
  "strata-merkle",
  "strata-ol-da",
- "strata-ol-params",
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-types",
@@ -15263,6 +15158,7 @@ dependencies = [
 name = "strata-ol-state-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "proptest",
  "ssz",
  "ssz_codegen",
@@ -15301,34 +15197,11 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-msg-types",
- "strata-ol-params",
- "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-open-rpc"
-version = "0.1.0"
-dependencies = [
- "schemars 1.2.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "strata-open-rpc-macros"
-version = "0.1.0"
-dependencies = [
- "derive-syn-parse",
- "itertools 0.14.0",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "unescape",
 ]
 
 [[package]]
@@ -15389,11 +15262,11 @@ dependencies = [
 name = "strata-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "arbitrary",
  "bitcoin",
  "bitcoin-bosd",
  "borsh",
  "hex",
- "schemars 1.2.0",
  "serde",
  "strata-btc-types",
  "strata-crypto",
@@ -15419,13 +15292,10 @@ dependencies = [
  "ssz_primitives",
  "strata-asm-manifest-types",
  "strata-checkpoint-types-ssz",
- "strata-codec",
  "strata-crypto",
- "strata-da-framework",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-chain-types-new",
- "strata-ol-da",
  "strata-ol-state-types",
  "strata-ol-stf",
  "zkaleido",
@@ -15540,15 +15410,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde_json",
  "sp1-sdk",
- "strata-codec",
- "strata-da-framework",
- "strata-identifiers",
- "strata-ledger-types",
- "strata-ol-chain-types-new",
- "strata-ol-da",
- "strata-ol-stf",
  "strata-proofimpl-checkpoint",
- "strata-proofimpl-checkpoint-new",
  "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
@@ -15700,7 +15562,6 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
- "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
  "strata-snark-acct-types",
@@ -15802,7 +15663,7 @@ dependencies = [
 name = "strata-storage-common"
 version = "0.3.0-alpha.1"
 dependencies = [
- "lru 0.16.3",
+ "lru 0.12.5",
  "paste",
  "thiserror 2.0.18",
  "threadpool",
@@ -15880,7 +15741,7 @@ dependencies = [
  "bitcoind-async-client",
  "hex",
  "strata-asm-common",
- "strata-btc-verification",
+ "strata-asm-types",
  "strata-btcio",
  "strata-identifiers",
  "strata-primitives",
@@ -16203,7 +16064,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -16278,9 +16139,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.47"
+version = "0.3.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
+checksum = "f9e442fc33d7fdb45aa9bfeb312c095964abdf596f7567261062b2a7107aaabd"
 dependencies = [
  "deranged",
  "itoa",
@@ -16295,15 +16156,15 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.8"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
+checksum = "8b36ee98fd31ec7426d599183e8fe26932a8dc1fb76ddb6214d05493377d34ca"
 
 [[package]]
 name = "time-macros"
-version = "0.2.27"
+version = "0.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
+checksum = "71e552d1249bf61ac2a52db88179fd0673def1e1ad8243a00d9ec9ed71fee3dd"
 dependencies = [
  "num-conv",
  "time-core",
@@ -17041,12 +16902,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
-name = "unescape"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccb97dac3243214f8d8507998906ca3e2e0b900bf9bf4870477f125b82e68f6e"
-
-[[package]]
 name = "unicase"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -17487,7 +17342,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

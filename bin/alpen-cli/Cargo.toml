@@ -11,7 +11,9 @@ name = "alpen"
 path = "src/main.rs"
 
 [dependencies]
+alpen-reth-primitives.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
+strata-bridge-types.workspace = true
 strata-cli-common.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true

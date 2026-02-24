@@ -13,7 +13,7 @@ use rand_chacha::{
     rand_core::{RngCore, SeedableRng},
 };
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::OperatorIdx;
+use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::{
     L1BlockCommitment,
     buf::Buf32,
@@ -161,7 +161,7 @@ impl AssignmentEntry {
         fulfillment_deadline: BitcoinBlockHeight,
         current_active_operators: &OperatorBitmap,
         seed: L1BlockId,
-        selected_operator: Option<OperatorIdx>,
+        selected_operator: OperatorSelection,
     ) -> Result<Self, WithdrawalAssignmentError> {
         // No previous assignees at creation
         let previous_assignees =
@@ -181,19 +181,21 @@ impl AssignmentEntry {
         }
 
         // Honor selected operator if eligible, otherwise fall back to random selection
-        let current_assignee =
-            if let Some(idx) = selected_operator.filter(|&idx| eligible_operators.is_active(idx)) {
-                idx
-            } else {
-                // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
-                let seed_bytes: [u8; 32] = Buf32::from(seed).into();
-                let mut rng = ChaChaRng::from_seed(seed_bytes);
-                let random_index = (rng.next_u32() as usize) % active_count;
-                eligible_operators
-                    .active_indices()
-                    .nth(random_index)
-                    .expect("random_index is within bounds of active_count")
-            };
+        let current_assignee = if let Some(idx) = selected_operator
+            .as_specific()
+            .filter(|&idx| eligible_operators.is_active(idx))
+        {
+            idx
+        } else {
+            // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
+            let seed_bytes: [u8; 32] = Buf32::from(seed).into();
+            let mut rng = ChaChaRng::from_seed(seed_bytes);
+            let random_index = (rng.next_u32() as usize) % active_count;
+            eligible_operators
+                .active_indices()
+                .nth(random_index)
+                .expect("random_index is within bounds of active_count")
+        };
 
         Ok(Self {
             deposit_entry: deposit_entry.clone(),
@@ -468,7 +470,7 @@ impl AssignmentTable {
         withdrawal_cmd: WithdrawalCommand,
         current_active_operators: &OperatorBitmap,
         l1_block: &L1BlockCommitment,
-        selected_operator: Option<OperatorIdx>,
+        selected_operator: OperatorSelection,
     ) -> Result<(), WithdrawalCommandError> {
         // Create assignment with deadline calculated from current block height + assignment
         // duration
@@ -513,7 +515,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
-            None,
+            OperatorSelection::any(),
         );
 
         assert!(result.is_ok());
@@ -556,7 +558,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
-            Some(selected_idx),
+            OperatorSelection::specific(selected_idx),
         )
         .unwrap();
 
@@ -587,7 +589,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
-            Some(bogus_idx),
+            OperatorSelection::specific(bogus_idx),
         )
         .unwrap();
 
@@ -614,7 +616,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap_err();
 
@@ -650,7 +652,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed1,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -691,7 +693,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed1,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -731,7 +733,7 @@ mod tests {
             initial_deadline,
             &current_active_operators,
             seed1,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -769,7 +771,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -824,7 +826,7 @@ mod tests {
             expired_deadline,
             &current_active_operators,
             seed,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -850,7 +852,7 @@ mod tests {
             future_deadline,
             &current_active_operators,
             seed,
-            None,
+            OperatorSelection::any(),
         )
         .unwrap();
 

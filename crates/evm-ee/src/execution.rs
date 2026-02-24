@@ -55,7 +55,7 @@ fn convert_withdrawal_intents_to_messages(
         let withdrawal_msg = WithdrawalMsgData::new(
             DEFAULT_OPERATOR_FEE,
             intent.destination.to_bytes().to_vec(),
-            intent.selected_operator,
+            intent.selected_operator.raw(),
         )
         .expect("invalid withdrawal destination descriptor");
 

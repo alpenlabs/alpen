@@ -3,6 +3,7 @@ use ssz::Encode;
 use ssz_primitives::FixedBytes;
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::{VerifiedAuxData, logging};
+use strata_bridge_types::OperatorSelection;
 use strata_checkpoint_types_ssz::{
     CheckpointClaim, CheckpointSidecar, CheckpointTip, L2BlockRange, OLLog,
     SignedCheckpointPayload, compute_asm_manifests_hash_from_leaves,
@@ -10,7 +11,6 @@ use strata_checkpoint_types_ssz::{
 use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
-use strata_ol_msg_types::resolve_selected_operator;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
 use crate::{
@@ -22,12 +22,14 @@ use crate::{
 ///
 /// This is the single validation function for checkpoint payloads. Once validation succeeds,
 /// the payload can be safely acted upon. Returns extracted withdrawal intents on success.
+// TODO: Protocol team to decide on how to properly pack `(WithdrawOutput, OperatorSelection)`
+// if a named struct is preferred over the tuple.
 pub fn validate_checkpoint_and_extract_withdrawal_intents(
     state: &CheckpointState,
     current_l1_height: u32,
     payload: &SignedCheckpointPayload,
     verified_aux_data: &VerifiedAuxData,
-) -> CheckpointValidationResult<Vec<WithdrawOutput>> {
+) -> CheckpointValidationResult<Vec<(WithdrawOutput, OperatorSelection)>> {
     // 1. Verify sequencer signature over payload
     // BIP-340 Schnorr verification hashes the message internally using tagged hashing,
     // so we pass raw SSZ-encoded bytes (not pre-hashed)
@@ -165,7 +167,7 @@ fn compute_asm_manifests_hash_for_checkpoint(
 /// destination descriptors can be parsed, and returns the extracted withdrawal outputs.
 fn extract_and_validate_withdrawal_intents(
     logs: &[OLLog],
-) -> CheckpointValidationResult<Vec<WithdrawOutput>> {
+) -> CheckpointValidationResult<Vec<(WithdrawOutput, OperatorSelection)>> {
     let mut withdrawal_intents = Vec::new();
 
     for log in logs
@@ -189,11 +191,9 @@ fn extract_and_validate_withdrawal_intents(
             return Err(InvalidCheckpointPayload::MalformedWithdrawalDestDesc.into());
         };
 
-        let selected_operator = resolve_selected_operator(withdrawal_data.selected_operator);
-
-        let withdraw_output =
-            WithdrawOutput::new(destination, withdrawal_data.amt().into(), selected_operator);
-        withdrawal_intents.push(withdraw_output);
+        let selected_operator = OperatorSelection::from_raw(withdrawal_data.selected_operator);
+        let withdraw_output = WithdrawOutput::new(destination, withdrawal_data.amt().into());
+        withdrawal_intents.push((withdraw_output, selected_operator));
     }
 
     Ok(withdrawal_intents)

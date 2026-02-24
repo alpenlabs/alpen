@@ -150,8 +150,13 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment) {
         for msg in msgs {
             match msg {
-                BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
-                    if let Err(e) = state.create_withdrawal_assignment(withdrawal_cmd, l1ref) {
+                BridgeIncomingMsg::DispatchWithdrawal {
+                    output,
+                    selected_operator,
+                } => {
+                    if let Err(e) =
+                        state.create_withdrawal_assignment(output, *selected_operator, l1ref)
+                    {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.
                         panic!("Failed to create withdrawal assignment: {e}",);

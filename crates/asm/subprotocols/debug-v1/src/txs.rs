@@ -5,8 +5,8 @@
 
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::TxInputRef;
+use strata_bridge_types::OperatorSelection;
 use strata_l1_txfmt::TxType;
-use strata_ol_msg_types::resolve_selected_operator;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 use thiserror::Error;
 
@@ -37,7 +37,7 @@ pub(crate) struct MockAsmLogInfo {
 }
 
 /// Type alias for mock withdrawal info.
-pub(crate) type MockWithdrawInfo = WithdrawOutput;
+pub(crate) type MockWithdrawInfo = (WithdrawOutput, OperatorSelection);
 
 /// Parsed debug transaction types.
 pub(crate) enum ParsedDebugTx {
@@ -86,40 +86,59 @@ fn parse_mock_asm_log_tx(tx: &TxInputRef<'_>) -> Result<ParsedDebugTx, DebugTxPa
     Ok(ParsedDebugTx::MockAsmLog(asm_log_info))
 }
 
-/// Parses withdrawal data from auxiliary data bytes.
+/// Structured auxiliary data for mock withdrawal intent transactions.
 ///
-/// Format: `[amount: 8 bytes][selected_operator: 4 bytes (big-endian u32)][descriptor: variable]`
-/// - `u32::MAX`: no operator selection (`selected_operator = None`)
-/// - Any other value: `selected_operator = Some(value)`
-fn parse_withdrawal_from_aux_data(aux_data: &[u8]) -> Result<WithdrawOutput, DebugTxParseError> {
-    if aux_data.len() < MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN {
-        return Err(DebugTxParseError::AuxDataTooShort {
-            expected: MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
-            actual: aux_data.len(),
-        });
+/// Wire format: `[amount: 8 bytes (big-endian u64)][operator: 4 bytes (big-endian u32)][descriptor:
+/// variable]`
+struct MockWithdrawalAuxData {
+    amount: u64,
+    selected_operator: OperatorSelection,
+    descriptor_bytes: Vec<u8>,
+}
+
+impl MockWithdrawalAuxData {
+    /// Parses raw auxiliary data bytes into structured fields.
+    fn parse(aux_data: &[u8]) -> Result<Self, DebugTxParseError> {
+        if aux_data.len() < MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN {
+            return Err(DebugTxParseError::AuxDataTooShort {
+                expected: MIN_MOCK_WITHDRAW_INTENT_AUX_DATA_LEN,
+                actual: aux_data.len(),
+            });
+        }
+
+        let amount_end = AMOUNT_OFFSET + AMOUNT_SIZE;
+        let amount_bytes: [u8; AMOUNT_SIZE] =
+            aux_data[AMOUNT_OFFSET..amount_end].try_into().unwrap();
+        let amount = u64::from_be_bytes(amount_bytes);
+
+        let operator_end = OPERATOR_INDEX_OFFSET + OPERATOR_INDEX_SIZE;
+        let operator_bytes: [u8; OPERATOR_INDEX_SIZE] = aux_data
+            [OPERATOR_INDEX_OFFSET..operator_end]
+            .try_into()
+            .unwrap();
+        let selected_operator = OperatorSelection::from_raw(u32::from_be_bytes(operator_bytes));
+
+        let descriptor_bytes = aux_data[DESCRIPTOR_OFFSET..].to_vec();
+
+        Ok(Self {
+            amount,
+            selected_operator,
+            descriptor_bytes,
+        })
     }
+}
 
-    // Extract amount (8 bytes, big-endian)
-    let amount_end = AMOUNT_OFFSET + AMOUNT_SIZE;
-    let amount_bytes: [u8; AMOUNT_SIZE] = aux_data[AMOUNT_OFFSET..amount_end].try_into().unwrap();
-    let amount = u64::from_be_bytes(amount_bytes);
-    let amt = BitcoinAmount::from_sat(amount);
+/// Parses withdrawal data from auxiliary data bytes and validates the descriptor.
+fn parse_withdrawal_from_aux_data(
+    aux_data: &[u8],
+) -> Result<(WithdrawOutput, OperatorSelection), DebugTxParseError> {
+    let parsed = MockWithdrawalAuxData::parse(aux_data)?;
 
-    // Extract selected operator (4 bytes, big-endian u32)
-    let operator_end = OPERATOR_INDEX_OFFSET + OPERATOR_INDEX_SIZE;
-    let operator_bytes: [u8; OPERATOR_INDEX_SIZE] = aux_data[OPERATOR_INDEX_OFFSET..operator_end]
-        .try_into()
-        .unwrap();
-    let operator_raw = u32::from_be_bytes(operator_bytes);
-    let selected_operator = resolve_selected_operator(operator_raw);
-
-    // Extract descriptor (self-describing, variable length, consumes rest of aux_data)
-    let desc_bytes = &aux_data[DESCRIPTOR_OFFSET..];
-    let dest = Descriptor::from_bytes(desc_bytes)
+    let dest = Descriptor::from_bytes(&parsed.descriptor_bytes)
         .map_err(|e| DebugTxParseError::InvalidDescriptorFormat(e.to_string()))?;
 
-    let withdraw_output = WithdrawOutput::new(dest, amt, selected_operator);
-    Ok(withdraw_output)
+    let amt = BitcoinAmount::from_sat(parsed.amount);
+    Ok((WithdrawOutput::new(dest, amt), parsed.selected_operator))
 }
 
 /// Parses a mock withdrawal transaction.
@@ -186,14 +205,11 @@ mod tests {
         aux_data.extend_from_slice(&u32::MAX.to_be_bytes());
         aux_data.extend_from_slice(&p2wpkh_descriptor.to_bytes());
 
-        let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
+        let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(100_000));
-        assert_eq!(
-            withdraw_output.destination.to_bytes(),
-            p2wpkh_descriptor.to_bytes()
-        );
-        assert_eq!(withdraw_output.selected_operator, None);
+        assert_eq!(output.amt, BitcoinAmount::from_sat(100_000));
+        assert_eq!(output.destination.to_bytes(), p2wpkh_descriptor.to_bytes());
+        assert_eq!(selected_operator, OperatorSelection::any());
     }
 
     #[test]
@@ -209,14 +225,11 @@ mod tests {
         aux_data.extend_from_slice(&42u32.to_be_bytes());
         aux_data.extend_from_slice(&p2wsh_descriptor.to_bytes());
 
-        let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
+        let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(200_000));
-        assert_eq!(
-            withdraw_output.destination.to_bytes(),
-            p2wsh_descriptor.to_bytes()
-        );
-        assert_eq!(withdraw_output.selected_operator, Some(42));
+        assert_eq!(output.amt, BitcoinAmount::from_sat(200_000));
+        assert_eq!(output.destination.to_bytes(), p2wsh_descriptor.to_bytes());
+        assert_eq!(selected_operator, OperatorSelection::specific(42));
     }
 
     #[test]
@@ -237,14 +250,11 @@ mod tests {
         aux_data.extend_from_slice(&u32::MAX.to_be_bytes());
         aux_data.extend_from_slice(&p2tr_descriptor.to_bytes());
 
-        let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
+        let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(300_000));
-        assert_eq!(
-            withdraw_output.destination.to_bytes(),
-            p2tr_descriptor.to_bytes()
-        );
-        assert_eq!(withdraw_output.selected_operator, None);
+        assert_eq!(output.amt, BitcoinAmount::from_sat(300_000));
+        assert_eq!(output.destination.to_bytes(), p2tr_descriptor.to_bytes());
+        assert_eq!(selected_operator, OperatorSelection::any());
     }
 
     #[test]
@@ -274,14 +284,11 @@ mod tests {
         aux_data.extend_from_slice(&operator_idx.to_be_bytes());
         aux_data.extend_from_slice(&descriptor.to_bytes());
 
-        let withdraw_output = parse_withdrawal_from_aux_data(&aux_data).unwrap();
+        let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(withdraw_output.amt, BitcoinAmount::from_sat(500_000));
-        assert_eq!(withdraw_output.selected_operator, Some(0x01020304));
-        assert_eq!(
-            withdraw_output.destination.to_bytes(),
-            descriptor.to_bytes()
-        );
+        assert_eq!(output.amt, BitcoinAmount::from_sat(500_000));
+        assert_eq!(selected_operator, OperatorSelection::specific(0x01020304));
+        assert_eq!(output.destination.to_bytes(), descriptor.to_bytes());
     }
 
     #[test]

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use strata_identifiers::SubjectId;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
 
+use crate::OperatorSelection;
+
 /// Describes an intent to withdraw that hasn't been dispatched yet.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct WithdrawalIntent {
@@ -17,17 +19,16 @@ pub struct WithdrawalIntent {
     /// withdrawal request transaction id
     withdrawal_txid: Buf32,
 
-    /// User's selected operator index for withdrawal assignment.
-    /// `u32::MAX` means no selection (random assignment).
-    selected_operator: u32,
+    /// User's operator selection for withdrawal assignment.
+    selected_operator: OperatorSelection,
 }
 
 impl WithdrawalIntent {
-    pub const fn new(
+    pub fn new(
         amt: BitcoinAmount,
         destination: Descriptor,
         withdrawal_txid: Buf32,
-        selected_operator: u32,
+        selected_operator: OperatorSelection,
     ) -> Self {
         Self {
             amt,
@@ -41,19 +42,19 @@ impl WithdrawalIntent {
         (self.amt.to_sat(), &self.destination)
     }
 
-    pub const fn amt(&self) -> &BitcoinAmount {
+    pub fn amt(&self) -> &BitcoinAmount {
         &self.amt
     }
 
-    pub const fn destination(&self) -> &Descriptor {
+    pub fn destination(&self) -> &Descriptor {
         &self.destination
     }
 
-    pub const fn withdrawal_txid(&self) -> &Buf32 {
+    pub fn withdrawal_txid(&self) -> &Buf32 {
         &self.withdrawal_txid
     }
 
-    pub const fn selected_operator(&self) -> u32 {
+    pub fn selected_operator(&self) -> OperatorSelection {
         self.selected_operator
     }
 }

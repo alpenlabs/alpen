@@ -15,15 +15,6 @@ pub const WITHDRAWAL_REJECTION_MSG_TYPE_ID: u16 = 0x05;
 /// Maximum length for withdrawal destination descriptor.
 pub const MAX_WITHDRAWAL_DESC_LEN: usize = 255;
 
-/// Sentinel value indicating no selected operator for withdrawal assignment.
-pub const NO_SELECTED_OPERATOR: u32 = u32::MAX;
-
-/// Converts a raw operator index to `Option<u32>`, treating
-/// [`NO_SELECTED_OPERATOR`] as `None`.
-pub fn resolve_selected_operator(raw: u32) -> Option<u32> {
-    (raw != NO_SELECTED_OPERATOR).then_some(raw)
-}
-
 // TODO: allow users to specify operator fee
 pub const DEFAULT_OPERATOR_FEE: u32 = 0;
 
@@ -32,19 +23,19 @@ pub const DEFAULT_OPERATOR_FEE: u32 = 0;
 /// This message type is sent by accounts that want to trigger a withdrawal.
 /// The value sent with the message should be equal to the predetermined
 /// static withdrawal size.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct WithdrawalMsgData {
     /// Fees in satoshis to be paid to the operator.
     ///
     /// Currently, this is just ignored.
     fees: u32,
 
+    /// User's selected operator index for withdrawal assignment.
+    selected_operator: u32,
+
     /// Bitcoin Output Script Descriptor describing the withdrawal output.
     // TODO idk why, but I can't make the MAX_WITHDRAWAL_DESC_LEN const generic work
     dest_desc: VarVec<u8>,
-
-    /// User's selected operator index for withdrawal assignment.
-    selected_operator: u32,
 }
 
 impl WithdrawalMsgData {
@@ -58,8 +49,8 @@ impl WithdrawalMsgData {
         let dest_desc = VarVec::from_vec(dest_desc)?;
         Some(Self {
             fees,
-            dest_desc,
             selected_operator,
+            dest_desc,
         })
     }
 
@@ -81,35 +72,6 @@ impl WithdrawalMsgData {
     /// Gets the user's selected operator index.
     pub fn selected_operator(&self) -> u32 {
         self.selected_operator
-    }
-}
-
-impl Codec for WithdrawalMsgData {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.fees.encode(enc)?;
-        self.dest_desc.encode(enc)?;
-        self.selected_operator.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let fees = u32::decode(dec)?;
-        let dest_desc = VarVec::<u8>::decode(dec)?;
-
-        // Validate the length constraint.
-        //
-        // TODO remove this when we fix the const generic type
-        if dest_desc.len() > MAX_WITHDRAWAL_DESC_LEN {
-            return Err(CodecError::OverflowContainer);
-        }
-
-        let selected_operator = u32::decode(dec)?;
-
-        Ok(Self {
-            fees,
-            dest_desc,
-            selected_operator,
-        })
     }
 }
 
@@ -244,19 +206,11 @@ mod tests {
         #[test]
         fn test_withdrawal_msg_data_codec(
             fees in 0u32..=u32::MAX,
-            // Use a reasonable size limit for the descriptor (up to 255 bytes for safety)
             dest_desc_bytes in prop::collection::vec(any::<u8>(), 0..=255),
             selected_operator in any::<u32>(),
         ) {
-            // Create test data with random values
-            let dest_desc = VarVec::from_vec(dest_desc_bytes.clone())
-                .expect("VarVec creation should succeed for valid byte vectors");
-
-            let msg_data = WithdrawalMsgData {
-                fees,
-                dest_desc,
-                selected_operator,
-            };
+            let msg_data = WithdrawalMsgData::new(fees, dest_desc_bytes, selected_operator)
+                .expect("WithdrawalMsgData creation should succeed");
 
             // Encode
             let encoded = encode_to_vec(&msg_data).expect("Encoding should succeed");

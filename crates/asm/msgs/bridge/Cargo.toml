@@ -13,4 +13,5 @@ serde.workspace = true
 
 strata-asm-common.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
+strata-bridge-types.workspace = true
 strata-primitives.workspace = true

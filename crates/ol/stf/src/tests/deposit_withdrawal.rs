@@ -7,9 +7,7 @@ use strata_identifiers::{Buf32, SubjectId, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
-use strata_ol_msg_types::{
-    DEFAULT_OPERATOR_FEE, NO_SELECTED_OPERATOR, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData,
-};
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{
@@ -133,7 +131,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     let withdrawal_msg_data = WithdrawalMsgData::new(
         DEFAULT_OPERATOR_FEE,
         withdrawal_dest_desc.clone(),
-        NO_SELECTED_OPERATOR,
+        u32::MAX, // "any operator" sentinel
     )
     .expect("Valid withdrawal data");
 

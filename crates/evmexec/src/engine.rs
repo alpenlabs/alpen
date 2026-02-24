@@ -445,6 +445,7 @@ mod tests {
     use alpen_reth_node::AlpenExecutionPayloadEnvelopeV4;
     use rand::{rngs::OsRng, Rng};
     use revm_primitives::{alloy_primitives::Bloom, Address, Bytes, FixedBytes, U256};
+    use strata_bridge_types::OperatorSelection;
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
     use strata_ol_chain_types::{L2Block, L2BlockAccessory};
     use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
@@ -688,7 +689,7 @@ mod tests {
             amt: 100_000,
             destination: descriptor.clone(),
             withdrawal_txid: txid,
-            selected_operator: 42,
+            selected_operator: OperatorSelection::specific(42),
         };
 
         let bridge_intent = to_bridge_withdrawal_intent(rpc_intent);
@@ -696,6 +697,9 @@ mod tests {
         assert_eq!(bridge_intent.amt().to_sat(), 100_000);
         assert_eq!(*bridge_intent.destination(), descriptor);
         assert_eq!(*bridge_intent.withdrawal_txid(), txid);
-        assert_eq!(bridge_intent.selected_operator(), 42);
+        assert_eq!(
+            bridge_intent.selected_operator(),
+            OperatorSelection::specific(42)
+        );
     }
 }

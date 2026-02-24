@@ -83,16 +83,13 @@ fn process_parsed_debug_tx(
             logging::info!("Successfully emitted ASM log");
         }
 
-        ParsedDebugTx::MockWithdrawIntent(withdraw_output) => {
-            logging::info!(
-                amount = withdraw_output.amt.to_sat(),
-                "Processing mock withdrawal"
-            );
+        ParsedDebugTx::MockWithdrawIntent((output, selected_operator)) => {
+            logging::info!(amount = output.amt.to_sat(), "Processing mock withdrawal");
 
-            // Wrap it in [`BridgeIncomingMsg`]
-            let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(withdraw_output);
-
-            // Send to bridge subprotocol
+            let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
+                output,
+                selected_operator,
+            };
             relayer.relay_msg(&bridge_msg);
 
             logging::info!("Successfully sent mock withdrawal intent to bridge");
