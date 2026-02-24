@@ -20,6 +20,7 @@ define_ids! {TypeId, LOG_TYPE_IDS,
     OL_STF_UPDATE_LOG_TYPE = 4,
     ASM_STF_UPDATE_LOG_TYPE = 5,
     NEW_EXPORT_ENTRY_LOG_TYPE = 6,
+    CHECKPOINT_TIP_UPDATE_LOG_TYPE = 7,
 }
 
 #[cfg(test)]
