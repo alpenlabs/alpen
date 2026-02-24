@@ -10,7 +10,10 @@ use strata_identifiers::{Hash, RawMmrId};
 ///
 /// A thin newtype over `u64` that prevents accidental use of internal-node
 /// positions in preimage APIs, which are leaf-only by definition.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct LeafPos(u64);
 
 impl LeafPos {
@@ -46,7 +49,9 @@ impl fmt::Debug for LeafPos {
 ///
 /// `height` is 0 for leaves. `index` is the zero-based offset within the
 /// level at `height`. Fields are private to keep the encoding details stable.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct NodePos {
     height: u8,
     index: u64,
@@ -339,6 +344,8 @@ impl BatchWrite {
     }
 
     /// Iterates over pending preimage writes in position order.
+    // NOTE: Returns `&Vec<u8>` (instead of `&[u8]`) so typed-sled insert callers
+    // can pass preimages through without allocating a temporary `Vec<u8>`.
     pub fn preimage_puts(&self) -> impl Iterator<Item = (LeafPos, &Vec<u8>)> + '_ {
         // NOTE: Returns `&Vec<u8>` because preimage schema `Value = Vec<u8>` and
         // typed-sled transaction insert requires `&Value` (`&Vec<u8>` here).

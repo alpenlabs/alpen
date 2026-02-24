@@ -14630,6 +14630,7 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "proptest",
  "strata-asm-common",
  "strata-btc-verification",
  "strata-checkpoint-types",

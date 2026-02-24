@@ -15,6 +15,7 @@ pub mod l1;
 pub mod l2;
 pub mod macros;
 pub mod mempool;
+pub mod mmr_index;
 pub mod ol;
 pub mod ol_checkpoint;
 pub mod ol_state;
