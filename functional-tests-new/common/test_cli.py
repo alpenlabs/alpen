@@ -18,7 +18,7 @@ def _run_command(args: list[str]) -> str:
         RuntimeError: If command fails (includes stderr in message).
     """
     cmd = [BINARY_PATH] + args
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         raise RuntimeError(
             f"strata-test-cli failed (exit {result.returncode}):\n"

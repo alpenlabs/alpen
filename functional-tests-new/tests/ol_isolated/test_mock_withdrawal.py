@@ -104,7 +104,7 @@ class TestMockWithdrawal(StrataNodeTest):
         # Step 2: Mine Bitcoin blocks to mature the tx and let ASM process it
         logger.info("Mining Bitcoin blocks to mature deposit tx...")
         addr = btc_rpc.proxy.getnewaddress()
-        btc_rpc.proxy.generatetoaddress(6, addr)
+        btc_rpc.proxy.generatetoaddress(8, addr)
 
         # Step 3: Wait for OL to reach a terminal block (epoch boundary).
         # L1 manifests are only processed during terminal blocks. With
