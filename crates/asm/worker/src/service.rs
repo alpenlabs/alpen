@@ -174,8 +174,20 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                     info!(%block_id, %height, leaf_index, "ASM transition complete, manifest and state stored");
                 }
                 Err(e) => {
-                    error!(%e, "ASM transition error");
-                    return Ok(Response::ShouldExit);
+                    error!(
+                        %e,
+                        %block_id,
+                        height = block_id.height().to_consensus_u32(),
+                        "ASM transition error"
+                    );
+                    // A single transition failure can be transient (for example, temporary
+                    // upstream inconsistency while syncing). Keep worker alive so later
+                    // inputs can retry from the last good pivot.
+                    warn!(
+                        %block_id,
+                        "ASM transition failed; deferring block and continuing service"
+                    );
+                    return Ok(Response::Continue);
                 }
             }
             info!(%block_id, "ASM transition success");
@@ -202,5 +214,222 @@ impl AsmWorkerStatus {
             .as_ref()
             .map(|s| s.logs().as_slice())
             .unwrap_or(&[])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::{Arc, Mutex},
+    };
+
+    use async_trait::async_trait;
+    use bitcoin::{
+        Block, CompactTarget, Network, TxMerkleNode,
+        block::{Header, Version},
+        hashes::Hash as BitcoinHash,
+    };
+    use strata_asm_common::AuxData;
+    use strata_asm_params::AsmParams;
+    use strata_btc_types::BitcoinTxid;
+    use strata_primitives::{
+        L1BlockId,
+        hash::Hash,
+        l1::{L1BlockCommitment, RawBitcoinTx},
+    };
+    use strata_service::{Response, SyncService};
+    use strata_state::asm_state::AsmState;
+    use strata_test_utils::ArbitraryGenerator;
+
+    use super::AsmWorkerService;
+    use crate::{AsmWorkerServiceState, WorkerContext, WorkerError, WorkerResult};
+
+    #[derive(Clone, Default)]
+    struct MockWorkerContext {
+        blocks: Arc<Mutex<HashMap<L1BlockId, Block>>>,
+        asm_states: Arc<Mutex<HashMap<L1BlockCommitment, AsmState>>>,
+        latest_asm_state: Arc<Mutex<Option<(L1BlockCommitment, AsmState)>>>,
+        forced_missing_anchors: Arc<Mutex<HashSet<L1BlockCommitment>>>,
+    }
+
+    impl MockWorkerContext {
+        fn insert_block(&self, block: Block) -> L1BlockId {
+            let block_id: L1BlockId = block.block_hash().into();
+            self.blocks
+                .lock()
+                .expect("poisoned lock")
+                .insert(block_id, block);
+            block_id
+        }
+
+        fn mark_anchor_missing(&self, blockid: L1BlockCommitment) {
+            self.forced_missing_anchors
+                .lock()
+                .expect("poisoned lock")
+                .insert(blockid);
+        }
+    }
+
+    #[async_trait]
+    impl WorkerContext for MockWorkerContext {
+        fn get_l1_block(&self, blockid: &L1BlockId) -> WorkerResult<Block> {
+            self.blocks
+                .lock()
+                .expect("poisoned lock")
+                .get(blockid)
+                .cloned()
+                .ok_or(WorkerError::MissingL1Block(*blockid))
+        }
+
+        fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AsmState> {
+            if self
+                .forced_missing_anchors
+                .lock()
+                .expect("poisoned lock")
+                .contains(blockid)
+            {
+                return Err(WorkerError::MissingAsmState(*blockid.blkid()));
+            }
+
+            self.asm_states
+                .lock()
+                .expect("poisoned lock")
+                .get(blockid)
+                .cloned()
+                .or_else(|| {
+                    self.latest_asm_state
+                        .lock()
+                        .expect("poisoned lock")
+                        .as_ref()
+                        .map(|(_, state)| state.clone())
+                })
+                .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
+        }
+
+        fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AsmState)>> {
+            Ok(self.latest_asm_state.lock().expect("poisoned lock").clone())
+        }
+
+        fn store_anchor_state(
+            &self,
+            blockid: &L1BlockCommitment,
+            state: &AsmState,
+        ) -> WorkerResult<()> {
+            self.asm_states
+                .lock()
+                .expect("poisoned lock")
+                .insert(*blockid, state.clone());
+            *self.latest_asm_state.lock().expect("poisoned lock") = Some((*blockid, state.clone()));
+            Ok(())
+        }
+
+        fn store_l1_manifest(&self, _manifest: strata_asm_common::AsmManifest) -> WorkerResult<()> {
+            Ok(())
+        }
+
+        fn get_network(&self) -> WorkerResult<Network> {
+            Ok(Network::Regtest)
+        }
+
+        fn get_bitcoin_tx(&self, _txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
+            Err(WorkerError::Unimplemented)
+        }
+
+        fn append_manifest_to_mmr(&self, _manifest_hash: Hash) -> WorkerResult<u64> {
+            Ok(0)
+        }
+
+        fn generate_mmr_proof(&self, _index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
+            Err(WorkerError::Unimplemented)
+        }
+
+        fn get_manifest_hash(&self, _index: u64) -> WorkerResult<Option<Hash>> {
+            Ok(None)
+        }
+
+        fn store_aux_data(
+            &self,
+            _blockid: &L1BlockCommitment,
+            _data: &AuxData,
+        ) -> WorkerResult<()> {
+            Ok(())
+        }
+
+        fn get_aux_data(&self, _blockid: &L1BlockCommitment) -> WorkerResult<Option<AuxData>> {
+            Ok(None)
+        }
+
+        fn has_l1_manifest(&self, _blockid: &L1BlockId) -> WorkerResult<bool> {
+            Ok(true)
+        }
+    }
+
+    fn setup_state() -> (AsmWorkerServiceState<MockWorkerContext>, MockWorkerContext) {
+        let mut asm_params: AsmParams = ArbitraryGenerator::new().generate();
+        let genesis_block_id = *asm_params.l1_view.blk.blkid();
+        asm_params.l1_view.blk = L1BlockCommitment::from_height_u64(100, genesis_block_id)
+            .expect("valid genesis height");
+        let asm_params = Arc::new(asm_params);
+
+        let context = MockWorkerContext::default();
+        let mut state = AsmWorkerServiceState::new(context.clone(), asm_params);
+        state
+            .load_latest_or_create_genesis()
+            .expect("genesis state must initialize");
+        (state, context)
+    }
+
+    #[test]
+    fn process_input_keeps_worker_alive_on_transition_error() {
+        let (mut state, _) = setup_state();
+        let genesis = state.blkid.expect("genesis block must be set");
+
+        // Build a synthetic child block that points to genesis but does not satisfy
+        // consensus validation. This should force `state.transition()` to return an error.
+        let header = Header {
+            version: Version::ONE,
+            prev_blockhash: (*genesis.blkid()).into(),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0),
+            nonce: 0,
+        };
+        let invalid_block = Block {
+            header,
+            txdata: vec![],
+        };
+
+        // Ensure the parent commitment derived from the synthetic header is present in the
+        // anchor-state map, regardless of any hash-byte-order conversion details.
+        let parent_id: L1BlockId = invalid_block.header.prev_blockhash.into();
+        let parent_commitment = L1BlockCommitment::from_height_u64(genesis.height_u64(), parent_id)
+            .expect("valid parent height");
+        if parent_commitment != genesis {
+            let anchor_state = state.anchor.clone().expect("anchor state should exist");
+            state
+                .context
+                .store_anchor_state(&parent_commitment, &anchor_state)
+                .expect("parent anchor should be insertable");
+        }
+
+        let invalid_block_id = state.context.insert_block(invalid_block);
+        assert!(
+            state.context.get_l1_block(&invalid_block_id).is_ok(),
+            "synthetic block should be retrievable from mock context"
+        );
+        let incoming =
+            L1BlockCommitment::from_height_u64(genesis.height_u64() + 1, invalid_block_id)
+                .expect("valid incoming height");
+        state.context.mark_anchor_missing(incoming);
+
+        let response = <AsmWorkerService<MockWorkerContext> as SyncService>::process_input(
+            &mut state, &incoming,
+        )
+        .expect("service should handle transition error");
+
+        assert!(matches!(response, Response::Continue));
+        assert!(state.initialized);
+        assert_eq!(state.blkid, Some(genesis));
     }
 }
