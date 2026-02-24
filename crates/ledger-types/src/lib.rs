@@ -38,7 +38,9 @@ pub use account::{
     ISnarkAccountStateConstructible, ISnarkAccountStateMut, NewAccountData,
 };
 pub use coin::Coin;
-pub use state_accessor::IStateAccessor;
+pub use state_accessor::{
+    IStateAccessor, asm_manifest_mmr_index_for_height, asm_manifests_mmr_start_height,
+};
 // transitional crap
 pub use strata_asm_manifest_types::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};

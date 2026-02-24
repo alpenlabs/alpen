@@ -3,7 +3,7 @@ use strata_acct_types::{
     AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash,
 };
 use strata_identifiers::L1Height;
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
+use strata_ledger_types::{ISnarkAccountState, IStateAccessor, asm_manifest_mmr_index_for_height};
 use strata_merkle::MerkleProof;
 use strata_snark_acct_types::{
     LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, ProofState, SnarkAccountUpdate,
@@ -97,8 +97,8 @@ pub fn verify_message_index(
 /// Verifies the ledger ref proofs against the provided asm mmr for an account.
 ///
 /// The operation carries manifest commitment references keyed by L1 height
-/// (`AccumulatorClaim.idx`). The state accessor resolves those heights into
-/// ASM manifest MMR indices for proof verification.
+/// (`AccumulatorClaim.idx`). The verifier resolves those heights into ASM
+/// manifest MMR indices from canonical state view for proof verification.
 fn verify_ledger_refs(
     target: AccountId,
     state_accessor: &impl IStateAccessor,
@@ -124,11 +124,12 @@ fn verify_ledger_refs(
                     account_id: target,
                     ref_idx: manifest_ref.idx(),
                 })?;
-        let mmr_idx = state_accessor
-            .asm_manifest_mmr_index_for_height(l1_height)
-            .ok_or_else(|| AcctError::InvalidLedgerReference {
-                account_id: target,
-                ref_idx: manifest_ref.idx(),
+        let mmr_idx =
+            asm_manifest_mmr_index_for_height(state_accessor, l1_height).ok_or_else(|| {
+                AcctError::InvalidLedgerReference {
+                    account_id: target,
+                    ref_idx: manifest_ref.idx(),
+                }
             })?;
         if manifest_ref_proof.entry_idx() != mmr_idx {
             return Err(AcctError::InvalidLedgerReference {

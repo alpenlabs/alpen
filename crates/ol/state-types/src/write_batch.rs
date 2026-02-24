@@ -7,7 +7,9 @@ use strata_acct_types::{AccountId, AccountSerial};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
 use strata_identifiers::L1BlockCommitment;
-use strata_ledger_types::{IAccountStateConstructible, IStateAccessor, NewAccountData};
+use strata_ledger_types::{
+    IAccountStateConstructible, IStateAccessor, NewAccountData, asm_manifests_mmr_start_height,
+};
 
 use crate::{
     SerialMap,
@@ -44,6 +46,8 @@ impl<A> WriteBatch<A> {
     {
         // TODO provide accessors/constructors to simplify this
         let global = GlobalState::new(state.cur_slot());
+        let manifests_mmr_start_height = asm_manifests_mmr_start_height(state)
+            .expect("state: invalid manifests MMR start height derivation");
         let epochal = EpochalState::new(
             state.total_ledger_balance(),
             state.cur_epoch(),
@@ -54,7 +58,7 @@ impl<A> WriteBatch<A> {
             .expect("state: invalid L1 height"),
             *state.asm_recorded_epoch(),
             state.asm_manifests_mmr().clone(),
-            state.asm_manifests_mmr_start_height() as u64,
+            manifests_mmr_start_height as u64,
         );
         WriteBatch::new(global, epochal)
     }
