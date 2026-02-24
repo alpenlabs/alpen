@@ -11,8 +11,11 @@ strata-asm-common.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-params = { workspace = true, features = ["arbitrary"] }
 strata-asm-proto-administration.workspace = true
+strata-asm-proto-bridge-v1.workspace = true
+strata-asm-proto-checkpoint.workspace = true
 strata-asm-proto-checkpoint-v0.workspace = true
 strata-asm-txs-admin = { workspace = true, features = ["test-utils"] }
+strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
 strata-asm-worker.workspace = true
 strata-bridge-types.workspace = true
 strata-btc-types.workspace = true
@@ -29,12 +32,20 @@ strata-test-utils.workspace = true
 strata-test-utils-btcio.workspace = true
 strata-test-utils-l2.workspace = true
 
+strata-checkpoint-types-ssz.workspace = true
+strata-codec.workspace = true
+strata-identifiers.workspace = true
+strata-ol-chain-types-new.workspace = true
+strata-ol-stf.workspace = true
+
 anyhow.workspace = true
+bitcoin-bosd.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
 corepc-node.workspace = true
 rand.workspace = true
+ssz.workspace = true
 rand_chacha.workspace = true
 tokio.workspace = true
 
@@ -63,3 +74,7 @@ path = "asm/admin_to_checkpoint.rs"
 [[test]]
 name = "asm_checkpoint"
 path = "asm/checkpoint.rs"
+
+[[test]]
+name = "asm_bridge_to_checkpoint"
+path = "asm/bridge_to_checkpoint.rs"

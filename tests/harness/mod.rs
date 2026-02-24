@@ -17,9 +17,11 @@
 //! - `harness`: Core test harness (Bitcoin regtest + ASM worker) - subprotocol-agnostic
 //! - `worker_context`: ASM worker context implementation for tests
 //! - `admin`: Admin subprotocol utilities (AdminExt trait, action builders)
+//! - `bridge`: Bridge subprotocol utilities (BridgeExt trait, deposit building)
 //! - `checkpoint`: Checkpoint subprotocol utilities (CheckpointExt trait)
 
 pub mod admin;
+pub mod bridge;
 pub mod checkpoint;
 pub mod test_harness;
 pub mod worker_context;

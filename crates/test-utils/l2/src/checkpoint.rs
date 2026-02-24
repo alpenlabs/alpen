@@ -8,8 +8,9 @@ use strata_asm_common::{
     AsmHistoryAccumulatorState, AuxData, VerifiableManifestHash, VerifiedAuxData,
 };
 use strata_checkpoint_types_ssz::{
-    compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
-    CheckpointTip, L2BlockRange, SignedCheckpointPayload, TerminalHeaderComplement,
+    compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload,
+    CheckpointSidecar, CheckpointTip, L2BlockRange, OLLog, SignedCheckpointPayload,
+    TerminalHeaderComplement,
 };
 use strata_crypto::hash;
 use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId};
@@ -41,6 +42,27 @@ impl CheckpointTestHarness {
         let genesis_l1_height: u32 = rng.gen_range(800_000..1_000_000);
 
         let genesis_ol_blkid = ArbitraryGenerator::new().generate();
+        let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
+
+        let sequencer_predicate = SigningKey::random(&mut rng);
+        let checkpoint_predicate = SigningKey::random(&mut rng);
+
+        let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
+        Self {
+            genesis_l1_height,
+            sequencer_predicate,
+            checkpoint_predicate,
+            verified_tip: genesis_tip,
+        }
+    }
+
+    /// Creates a test harness with the given genesis L1 height and OL block ID.
+    ///
+    /// Generates random sequencer and checkpoint signing keys while using the
+    /// provided genesis values. This ensures the harness's `verified_tip` matches
+    /// the live ASM's checkpoint state when used in integration tests.
+    pub fn new_with_genesis(genesis_l1_height: u32, genesis_ol_blkid: OLBlockId) -> Self {
+        let mut rng = thread_rng();
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
         let sequencer_predicate = SigningKey::random(&mut rng);
@@ -194,6 +216,54 @@ impl CheckpointTestHarness {
 
         let manifest_hashes = self.gen_manifest_leaves(&new_tip);
         let asm_manifests_hash = compute_asm_manifests_hash_from_leaves(&manifest_hashes);
+
+        let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
+        let claim = CheckpointClaim::new(
+            new_tip.epoch,
+            l2_range,
+            asm_manifests_hash,
+            state_diff_hash,
+            ol_logs_hash,
+            terminal_header_complement_hash,
+        );
+
+        let proof = self
+            .checkpoint_predicate
+            .sign(&claim.as_ssz_bytes())
+            .to_vec();
+
+        CheckpointPayload::new(new_tip, sidecar, proof).unwrap()
+    }
+
+    /// Generates a valid checkpoint payload with custom OL logs and externally provided
+    /// manifest hashes.
+    ///
+    /// Unlike [`Self::build_payload_with_tip`] which uses empty OL logs and internally
+    /// generated manifest hashes, this method accepts OL logs (e.g., containing withdrawal
+    /// intents) and manifest hashes obtained from the live ASM's MMR.
+    pub fn build_payload_with_tip_and_logs(
+        &self,
+        new_tip: CheckpointTip,
+        ol_logs: Vec<OLLog>,
+        manifest_hashes: &[[u8; 32]],
+    ) -> CheckpointPayload {
+        let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
+        let mut arb = ArbitraryGenerator::new();
+        let terminal_header_complement = TerminalHeaderComplement::new(
+            thread_rng().gen(),
+            arb.generate(),
+            arb.generate(),
+            arb.generate(),
+        );
+        let terminal_header_complement_hash = terminal_header_complement.compute_hash();
+        let sidecar =
+            CheckpointSidecar::new(state_diff.clone(), ol_logs.clone(), terminal_header_complement)
+                .unwrap();
+
+        let state_diff_hash = hash::raw(&state_diff).into();
+        let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();
+
+        let asm_manifests_hash = compute_asm_manifests_hash_from_leaves(manifest_hashes);
 
         let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
         let claim = CheckpointClaim::new(

@@ -22,10 +22,7 @@ use strata_primitives::{
     l1::{BitcoinTxid, L1BlockCommitment, L1BlockId},
 };
 use strata_state::asm_state::AsmState;
-use tokio::{
-    runtime::{Handle, Runtime},
-    task::block_in_place,
-};
+use tokio::{runtime::Handle, task::block_in_place};
 
 /// Test implementation of WorkerContext for integration tests
 ///
@@ -34,6 +31,9 @@ use tokio::{
 pub struct TestAsmWorkerContext {
     /// Bitcoin RPC client for fetching blocks
     pub client: Arc<Client>,
+    /// Tokio runtime handle from the test runtime, used for async operations
+    /// from the worker's dedicated OS thread (which has no tokio context).
+    pub tokio_handle: Handle,
     /// Block cache (optional - fetches from client if not cached)
     pub block_cache: Arc<Mutex<HashMap<L1BlockId, Block>>>,
     /// ASM states indexed by L1 block commitment
@@ -49,10 +49,15 @@ pub struct TestAsmWorkerContext {
 }
 
 impl TestAsmWorkerContext {
-    /// Create a new test context with a Bitcoin RPC client
+    /// Create a new test context with a Bitcoin RPC client.
+    ///
+    /// Captures the current tokio runtime handle so the worker's dedicated OS
+    /// thread can drive async operations on the original runtime (where the
+    /// HTTP client's connection pool lives).
     pub fn new(client: Client) -> Self {
         Self {
             client: Arc::new(client),
+            tokio_handle: Handle::current(),
             block_cache: Arc::new(Mutex::new(HashMap::new())),
             asm_states: Arc::new(Mutex::new(HashMap::new())),
             latest_asm_state: Arc::new(Mutex::new(None)),
@@ -81,22 +86,19 @@ impl WorkerContext for TestAsmWorkerContext {
             return Ok(block);
         }
 
-        // If not cached, fetch from regtest (synchronously)
+        // Fetch from regtest. We must handle two calling contexts:
+        // 1. From within a tokio runtime (test thread) — use `block_in_place`
+        //    to avoid "cannot start a runtime from within a runtime" panic.
+        // 2. From the worker's dedicated OS thread (spawned by `spawn_critical`,
+        //    no tokio context) — use the stored handle to drive the future on
+        //    the original runtime where the HTTP client's connection pool lives.
         let block_hash: BlockHash = (*blockid).into();
-
-        // Try to use current runtime if available, otherwise create a new one
-        let block = match Handle::try_current() {
-            Ok(handle) => {
-                // We're in a Tokio context, use block_in_place
-                block_in_place(|| {
-                    handle.block_on(async { self.client.get_block(&block_hash).await })
-                })
-            }
-            Err(_) => {
-                // No runtime available, create a temporary one
-                let rt = Runtime::new().map_err(|_| WorkerError::MissingL1Block(*blockid))?;
-                rt.block_on(async { self.client.get_block(&block_hash).await })
-            }
+        let client = self.client.clone();
+        let fetch = || async { client.get_block(&block_hash).await };
+        let block = if Handle::try_current().is_ok() {
+            block_in_place(|| self.tokio_handle.block_on(fetch()))
+        } else {
+            self.tokio_handle.block_on(fetch())
         }
         .map_err(|_| WorkerError::MissingL1Block(*blockid))?;
 
@@ -140,38 +142,20 @@ impl WorkerContext for TestAsmWorkerContext {
     }
 
     fn get_bitcoin_tx(&self, txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
-        // Convert BitcoinTxid to Txid
         let txid_inner: Txid = (*txid).into();
 
-        // Fetch transaction from regtest synchronously
-        // Try to use current runtime if available, otherwise create a new one
-        let raw_tx_result = match Handle::try_current() {
-            Ok(handle) => {
-                // We're in a Tokio context, use block_in_place
-                block_in_place(|| {
-                    handle.block_on(async {
-                        self.client
-                            .get_raw_transaction_verbosity_zero(&txid_inner)
-                            .await
-                    })
-                })
-            }
-            Err(_) => {
-                // No runtime available, create a temporary one
-                let rt = Runtime::new().map_err(|_| WorkerError::BitcoinTxNotFound(*txid))?;
-                rt.block_on(async {
-                    self.client
-                        .get_raw_transaction_verbosity_zero(&txid_inner)
-                        .await
-                })
-            }
+        // See `get_l1_block` for the two-context branching rationale.
+        let client = self.client.clone();
+        let fetch =
+            || async move { client.get_raw_transaction_verbosity_zero(&txid_inner).await };
+        let raw_tx_result = if Handle::try_current().is_ok() {
+            block_in_place(|| self.tokio_handle.block_on(fetch()))
+        } else {
+            self.tokio_handle.block_on(fetch())
         }
         .map_err(|_| WorkerError::BitcoinTxNotFound(*txid))?;
 
-        // Extract the transaction and convert to RawBitcoinTx
-        let tx = raw_tx_result.0;
-
-        Ok(RawBitcoinTx::from(tx))
+        Ok(RawBitcoinTx::from(raw_tx_result.0))
     }
 
     fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64> {

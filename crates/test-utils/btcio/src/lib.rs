@@ -15,7 +15,7 @@ pub mod transaction;
 pub mod utils;
 
 // Re-export commonly used functions
-pub use client::get_bitcoind_and_client;
+pub use client::{get_bitcoind_and_client, get_bitcoind_and_client_with_txindex};
 pub use harness::BtcioTestHarness;
 pub use mining::mine_blocks;
 pub use submit::{submit_transaction_with_key, submit_transaction_with_keys};
