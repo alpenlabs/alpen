@@ -177,9 +177,11 @@ pub fn process_ol_stf_core(
     // preventing a malicious sequencer from posting valid proofs with mismatched
     // sidecar data (the L1 verifier reconstructs this hash from sidecar fields and
     // checks it against the proof).
-    let expected_terminal_header_supplement = TerminalHeaderSupplement::from_full_header(&terminal_header);
-    let terminal_header_supplement_hash =
-        FixedBytes::<32>::from(hash::raw(&expected_terminal_header_supplement.as_ssz_bytes()));
+    let expected_terminal_header_supplement =
+        TerminalHeaderSupplement::from_full_header(&terminal_header);
+    let terminal_header_supplement_hash = FixedBytes::<32>::from(hash::raw(
+        &expected_terminal_header_supplement.as_ssz_bytes(),
+    ));
 
     // Compute the hash of all accumulated OL logs for the checkpoint claim
     let ol_logs_hash = FixedBytes::<32>::from(hash::raw(&logs.as_ssz_bytes()));
@@ -268,7 +270,9 @@ fn execute_block_batch(
             .body()
             .l1_update()
             .map(|update| {
-                asm_manifests_hash = Some(compute_asm_manifests_hash(update.manifest_cont().manifests()));
+                asm_manifests_hash = Some(compute_asm_manifests_hash(
+                    update.manifest_cont().manifests(),
+                ));
                 update.manifest_cont()
             })
             .cloned();
@@ -299,8 +303,8 @@ fn execute_block_batch(
     }
 
     // Guaranteed by the l1_update_count == 1 assertion above.
-    let asm_manifests_hash = asm_manifests_hash
-        .expect("exactly one L1 update per epoch is enforced above");
+    let asm_manifests_hash =
+        asm_manifests_hash.expect("exactly one L1 update per epoch is enforced above");
 
     (logs, asm_manifests_hash, parent)
 }

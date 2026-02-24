@@ -9,7 +9,7 @@ use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_btc_types::RawBitcoinTx;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
-use crate::{DaExtractorError, DaExtractorResult, OLDaPayloadV1, decode_ol_da_payload_bytes};
+use crate::{DaExtractorResult, OLDaPayloadV1, decode_ol_da_payload_bytes};
 
 /// Decodes the OL DA payload from a raw checkpoint transaction.
 ///

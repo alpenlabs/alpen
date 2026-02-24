@@ -16,11 +16,7 @@ use crate::{
 
 /// Creates a minimal [`CheckpointPayload`] for the given epoch using validated constructors.
 pub fn create_test_checkpoint_payload(epoch: u32) -> CheckpointPayload {
-    let tip = CheckpointTip::new(
-        epoch,
-        200,
-        OLBlockCommitment::new(1, Buf32::zero().into()),
-    );
+    let tip = CheckpointTip::new(epoch, 200, OLBlockCommitment::new(1, Buf32::zero().into()));
     let sidecar = CheckpointSidecar::new(
         vec![2; 100],
         vec![],

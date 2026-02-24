@@ -19,8 +19,8 @@
 //! - The [`CheckpointClaim::terminal_header_supplement_hash`] commits to
 //!   [`CheckpointSidecar::terminal_header_supplement`], which carries the four terminal header
 //!   fields not derivable from L1 checkpoint data (`timestamp`, `parent_blkid`, `body_root`,
-//!   `logs_root`). The ZK proof binds this hash to the executed terminal header, so the L1
-//!   verifier can enforce sidecar integrity without a full header preimage check
+//!   `logs_root`). The ZK proof binds this hash to the executed terminal header, so the L1 verifier
+//!   can enforce sidecar integrity without a full header preimage check
 //!
 //! [`CheckpointPayload`] posted to L1 omits redundant information:
 //! - The last verified [`OLBlockCommitment`](strata_identifiers::OLBlockCommitment) (L2 start) is
@@ -78,9 +78,8 @@ pub const MAX_LOG_PAYLOAD_BYTES: usize = 512;
 pub const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
 // Re-export OLLog for consumers parsing checkpoint sidecar logs
-pub use strata_ol_chain_types_new::OLLog;
-
 // Re-export manifest hash functions from the canonical source.
 pub use strata_asm_manifest_types::{
     compute_asm_manifests_hash, compute_asm_manifests_hash_from_leaves,
 };
+pub use strata_ol_chain_types_new::OLLog;

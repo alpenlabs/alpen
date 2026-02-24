@@ -40,7 +40,7 @@ impl_borsh_via_ssz_fixed!(CheckpointTip);
 /// `new_tip.epoch`, `state_root` from DA + manifest reconstruction, `is_terminal`
 /// by checkpoint semantics), but these four are not available from L1 data.
 ///
-/// The proof commits to `hash(SSZ(TerminalHeaderSupplement))` in [`CheckpointClaim`],
+/// The proof commits to `hash(SSZ(TerminalHeaderSupplement))` in [`crate::CheckpointClaim`],
 /// so the L1 verifier can enforce sidecar integrity without a full header preimage.
 impl TerminalHeaderSupplement {
     pub fn new(
@@ -219,10 +219,11 @@ mod tests {
     #[test]
     fn test_checkpoint_sidecar_rejects_oversize_log_payload() {
         let log = OLLog::new(AccountSerial::one(), vec![0u8; MAX_LOG_PAYLOAD_BYTES + 1]);
-        let result = CheckpointSidecar::new(vec![], vec![log], default_terminal_header_supplement());
+        let result =
+            CheckpointSidecar::new(vec![], vec![log], default_terminal_header_supplement());
 
         assert!(matches!(
-        result,
+            result,
             Err(CheckpointPayloadError::OLLogPayloadTooLarge { .. })
         ));
     }

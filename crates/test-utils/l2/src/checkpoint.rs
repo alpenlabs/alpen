@@ -181,10 +181,14 @@ impl CheckpointTestHarness {
             arb.generate(),
             arb.generate(),
         );
-        let terminal_header_supplement_hash = hash::raw(&terminal_header_supplement.as_ssz_bytes()).into();
-        let sidecar =
-            CheckpointSidecar::new(state_diff.clone(), ol_logs.clone(), terminal_header_supplement)
-                .unwrap();
+        let terminal_header_supplement_hash =
+            hash::raw(&terminal_header_supplement.as_ssz_bytes()).into();
+        let sidecar = CheckpointSidecar::new(
+            state_diff.clone(),
+            ol_logs.clone(),
+            terminal_header_supplement,
+        )
+        .unwrap();
 
         let state_diff_hash = hash::raw(&state_diff).into();
         let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();

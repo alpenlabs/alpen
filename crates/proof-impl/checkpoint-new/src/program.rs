@@ -144,7 +144,8 @@ mod tests {
             hash::raw(&input.da_state_diff_bytes).into()
         );
         let terminal_header = input.blocks.last().expect("non-empty block list").header();
-        let terminal_header_supplement = TerminalHeaderSupplement::from_full_header(terminal_header);
+        let terminal_header_supplement =
+            TerminalHeaderSupplement::from_full_header(terminal_header);
         assert_eq!(
             *claim.terminal_header_supplement_hash(),
             hash::raw(&terminal_header_supplement.as_ssz_bytes()).into()
