@@ -1,7 +1,7 @@
 use std::env;
 
 use bitcoind_async_client::{Auth, Client};
-use corepc_node::Node;
+use corepc_node::{Conf, Node};
 
 /// Get the authentication credentials for a given `bitcoind` instance.
 fn get_auth(bitcoind: &Node) -> (String, String) {
@@ -22,6 +22,24 @@ pub fn get_bitcoind_and_client() -> (Node, Client) {
         env::set_var("BITCOIN_XPRIV_RETRIEVABLE", "true");
     }
     let bitcoind = Node::new("bitcoind").unwrap();
+    let url = bitcoind.rpc_url();
+    let (user, password) = get_auth(&bitcoind);
+    let auth = Auth::UserPass(user, password);
+    let client = Client::new(url, auth, None, None, None).unwrap();
+    (bitcoind, client)
+}
+
+/// Like [`get_bitcoind_and_client`] but with `-txindex` enabled.
+///
+/// Required when subprotocols need to fetch confirmed non-wallet transactions
+/// as auxiliary data (e.g., bridge deposit processing fetches the DRT).
+pub fn get_bitcoind_and_client_with_txindex() -> (Node, Client) {
+    unsafe {
+        env::set_var("BITCOIN_XPRIV_RETRIEVABLE", "true");
+    }
+    let mut conf = Conf::default();
+    conf.args.push("-txindex");
+    let bitcoind = Node::with_conf("bitcoind", &conf).unwrap();
     let url = bitcoind.rpc_url();
     let (user, password) = get_auth(&bitcoind);
     let auth = Auth::UserPass(user, password);
