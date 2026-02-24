@@ -27,7 +27,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         ctx.set_env("el_ol")
 
     def main(self, ctx):
-        alpen_seq: AlpenClientService = self.get_service("alpen_sequencer")
+        alpen_seq: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         strata_seq: StrataService = self.get_service(ServiceType.Strata)
         bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
         btc_rpc = bitcoin.create_rpc()

@@ -6,7 +6,7 @@ import flexitest
 
 from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
-from common.config.constants import DEV_ADDRESS
+from common.config.constants import DEV_ADDRESS, ServiceType
 from common.evm_utils import create_funded_account, wait_for_receipt
 
 logger = logging.getLogger(__name__)
@@ -18,8 +18,8 @@ class TestTxForwarding(AlpenClientTest):
         ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
-        ee_fullnode = self.get_service("ee_fullnode")
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
+        ee_fullnode = self.get_service(ServiceType.AlpenFullNode)
 
         seq_rpc = ee_sequencer.create_rpc()
         fn_rpc = ee_fullnode.create_rpc()

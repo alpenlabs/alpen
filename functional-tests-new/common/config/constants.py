@@ -58,6 +58,8 @@ class ServiceType(str, Enum):
     AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
     Strata = "strata"
+    AlpenSequencer = "alpen_sequencer"
+    AlpenFullNode = "alpen_fullnode"
 
     def __str__(self) -> str:
         """Allow direct use in f-strings and format operations."""

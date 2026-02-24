@@ -5,6 +5,7 @@ import logging
 import flexitest
 
 from common.base_test import AlpenClientTest
+from common.config.constants import ServiceType
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class TestBlockQueries(AlpenClientTest):
         ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
         rpc = ee_sequencer.create_rpc()
 
         ee_sequencer.wait_for_block(3, timeout=10)

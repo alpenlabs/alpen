@@ -123,7 +123,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 genesis_l1_height=genesis_l1_height,
                 batch_sealing_block_count=batch_sealing_block_count,
             )
-            services["bitcoin"] = bitcoin
+            services[ServiceType.Bitcoin] = bitcoin
 
         # Start sequencer
         sequencer = factory.create_sequencer(
@@ -137,7 +137,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         seq_enode = sequencer.get_enode()
         seq_http_url = sequencer.props["http_url"]
 
-        services["alpen_sequencer"] = sequencer
+        services[ServiceType.AlpenSequencer] = sequencer
         fullnodes = []
         fn_enodes = []  # Track fullnode enodes for mesh bootnodes
 
@@ -167,7 +167,11 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 fn_enodes.append(fullnode.get_enode())
 
             # Use "fullnode" for single, "fullnode_N" for multiple
-            key = "alpen_fullnode" if fullnode_count == 1 else f"alpen_fullnode_{i}"
+            key = (
+                ServiceType.AlpenFullNode
+                if fullnode_count == 1
+                else f"{ServiceType.AlpenFullNode}_{i}"
+            )
             services[key] = fullnode
 
         # Connect fullnodes to sequencer via admin_addPeer (unless pure_discovery mode)

@@ -6,6 +6,7 @@ import time
 import flexitest
 
 from common.base_test import BaseTest
+from common.config.constants import ServiceType
 from common.services import AlpenClientService, BitcoinService
 from envconfigs.alpen_client import AlpenClientEnv
 from tests.alpen_client.ee_da.codec import reassemble_blobs_from_envelopes
@@ -28,8 +29,8 @@ class TestDaEmptyBatchTest(BaseTest):
         )
 
     def main(self, ctx) -> bool:
-        bitcoin: BitcoinService = self.runctx.get_service("bitcoin")
-        sequencer: AlpenClientService = self.runctx.get_service("alpen_sequencer")
+        bitcoin: BitcoinService = self.runctx.get_service(ServiceType.Bitcoin)
+        sequencer: AlpenClientService = self.runctx.get_service(ServiceType.AlpenSequencer)
         btc_rpc = bitcoin.create_rpc()
         baseline_l1_height = btc_rpc.proxy.getblockcount()
 

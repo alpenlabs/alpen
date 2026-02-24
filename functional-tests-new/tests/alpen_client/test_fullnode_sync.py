@@ -14,6 +14,7 @@ import tempfile
 import flexitest
 
 from common.base_test import AlpenClientTest
+from common.config.constants import ServiceType
 from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypair
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,8 @@ class TestFullnodeSync(AlpenClientTest):
         ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("alpen_sequencer")
-        ee_fullnode_0 = self.get_service("alpen_fullnode")
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
+        ee_fullnode_0 = self.get_service(ServiceType.AlpenFullNode)
 
         _, pubkey = generate_sequencer_keypair()
         factory = AlpenClientFactory(range(30600, 30700))
