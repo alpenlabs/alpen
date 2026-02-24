@@ -6,6 +6,7 @@ import logging
 from typing import TypedDict
 
 from common.rpc import JsonRpcClient
+from common.rpc_types.strata import *
 from common.services.base import RpcService
 from common.wait import wait_until, wait_until_with_value
 
@@ -20,23 +21,6 @@ class StrataProps(TypedDict):
     rpc_url: str
     datadir: str
     mode: str
-
-
-class OLBlockCommitment(TypedDict):
-    slot: int
-    blkid: str  # hex string
-
-
-class EpochCommitment(TypedDict):
-    epoch: int
-    last_slot: int
-    last_blkid: str  # hex string
-
-
-class ChainSyncStatus(TypedDict):
-    latest: OLBlockCommitment
-    confirmed: EpochCommitment
-    finalized: EpochCommitment
 
 
 class StrataService(RpcService):

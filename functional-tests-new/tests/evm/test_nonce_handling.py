@@ -6,7 +6,7 @@ import flexitest
 
 from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
-from common.config.constants import DEV_ADDRESS
+from common.config.constants import DEV_ADDRESS, ServiceType
 from common.evm_utils import create_funded_account, wait_for_receipt
 from common.rpc import RpcError
 
@@ -19,7 +19,7 @@ class TestNonceHandling(AlpenClientTest):
         ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
         rpc = ee_sequencer.create_rpc()
 
         dev_account = get_dev_account()

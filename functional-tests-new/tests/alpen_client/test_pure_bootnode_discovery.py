@@ -7,6 +7,7 @@ import logging
 import flexitest
 
 from common.base_test import AlpenClientTest
+from common.config.constants import ServiceType
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ class TestPureBootnodeDiscovery(AlpenClientTest):
         ctx.set_env("alpen_ee_discovery")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
-        ee_fullnode = self.get_service("ee_fullnode")
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
+        ee_fullnode = self.get_service(ServiceType.AlpenFullNode)
 
         logger.info("Waiting for discv5 peer discovery...")
         ee_sequencer.wait_for_peers(1, timeout=60)

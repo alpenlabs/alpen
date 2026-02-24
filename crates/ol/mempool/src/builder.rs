@@ -8,7 +8,7 @@ use std::{
 
 use strata_identifiers::OLBlockCommitment;
 use strata_service::{AsyncServiceInput, ServiceBuilder, ServiceInput};
-use strata_status::{ChainSyncStatusUpdate, StatusChannel};
+use strata_status::{OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::sync::{mpsc, watch};
@@ -61,7 +61,7 @@ impl MempoolBuilder {
     /// Creates the service with FCM chain sync integration via tokio::select!.
     pub async fn launch(self, texec: &TaskExecutor) -> anyhow::Result<MempoolHandle> {
         // Subscribe to chain sync updates
-        let chain_sync_rx = self.status_channel.subscribe_chain_sync();
+        let ol_sync_rx = self.status_channel.subscribe_ol_sync();
 
         let ctx = Arc::new(MempoolContext::new(
             self.config.clone(),
@@ -79,7 +79,7 @@ impl MempoolBuilder {
         let (command_tx, command_rx) = mpsc::channel(self.config.command_buffer_size);
 
         // Create mempool input with fan-in
-        let mempool_input = MempoolInput::new(command_rx, chain_sync_rx);
+        let mempool_input = MempoolInput::new(command_rx, ol_sync_rx);
 
         // Launch service with mempool input
         let monitor = ServiceBuilder::<MempoolService<_>, _>::new()
@@ -100,24 +100,24 @@ pub(crate) enum MempoolInputMessage {
     /// Command from RPC or handle
     Command(MempoolCommand),
     /// Chain tip update from fork-choice manager
-    ChainUpdate(ChainSyncStatusUpdate),
+    ChainUpdate(OLSyncStatusUpdate),
 }
 
 /// Mempool input that fans-in commands and chain sync updates.
 struct MempoolInput {
     command_rx: mpsc::Receiver<MempoolCommand>,
-    chain_sync_rx: watch::Receiver<Option<ChainSyncStatusUpdate>>,
+    ol_sync_rx: watch::Receiver<Option<OLSyncStatusUpdate>>,
     closed: bool,
 }
 
 impl MempoolInput {
     fn new(
         command_rx: mpsc::Receiver<MempoolCommand>,
-        chain_sync_rx: watch::Receiver<Option<ChainSyncStatusUpdate>>,
+        ol_sync_rx: watch::Receiver<Option<OLSyncStatusUpdate>>,
     ) -> Self {
         Self {
             command_rx,
-            chain_sync_rx,
+            ol_sync_rx,
             closed: false,
         }
     }
@@ -146,13 +146,13 @@ impl AsyncServiceInput for MempoolInput {
                     biased;
 
                     // Chain sync update from FCM (checked first - maintains state consistency)
-                    result = self.chain_sync_rx.changed() => {
+                    result = self.ol_sync_rx.changed() => {
                         match result {
                             Ok(()) => {
                                 // Clone the update to avoid holding the borrow
-                                let update = self.chain_sync_rx.borrow_and_update().clone();
-                                if let Some(chain_update) = update {
-                                    return Ok(Some(MempoolInputMessage::ChainUpdate(chain_update)));
+                                let update = self.ol_sync_rx.borrow_and_update().clone();
+                                if let Some(ol_update) = update {
+                                    return Ok(Some(MempoolInputMessage::ChainUpdate(ol_update)));
                                 } else {
                                     // No update yet, loop back to wait for next message
                                     continue;

@@ -10,6 +10,7 @@ import logging
 import flexitest
 
 from common.base_test import AlpenClientTest
+from common.config.constants import ServiceType
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,10 @@ class TestMeshDiscovery(AlpenClientTest):
         ctx.set_env("alpen_ee_mesh")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
-        ee_fullnodes = [self.get_service(f"ee_fullnode_{i}") for i in range(FULLNODE_COUNT)]
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
+        ee_fullnodes = [
+            self.get_service(f"{ServiceType.AlpenFullNode}_{i}") for i in range(FULLNODE_COUNT)
+        ]
 
         # Get node IDs for topology analysis
         seq_id = ee_sequencer.get_enode().split("@")[0].replace("enode://", "")

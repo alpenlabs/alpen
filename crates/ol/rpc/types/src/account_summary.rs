@@ -12,19 +12,13 @@ use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateS
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcAccountEpochSummary {
     /// The epoch commitment.
-    pub epoch_commitment: EpochCommitment,
+    epoch_commitment: EpochCommitment,
     /// Previous epoch commitment.
-    pub prev_epoch_commitment: EpochCommitment,
+    prev_epoch_commitment: EpochCommitment,
     /// Balance of account at the end of this epoch in sats.
-    pub balance: u64,
-    /// Next expected sequence number for account at the end of this epoch.
-    pub next_seq_no: u64,
-    /// Account state at end of this epoch.
-    pub proof_state: RpcProofState,
-    /// Final extra data sent in updates to account during this epoch.
-    pub extra_data: HexBytes,
-    /// Messages processed by account in this epoch.
-    pub processed_msgs: Vec<RpcMessageEntry>,
+    balance: u64,
+    /// Update input for this epoch if present
+    update_input: Option<RpcUpdateInputData>,
 }
 
 impl RpcAccountEpochSummary {
@@ -33,19 +27,13 @@ impl RpcAccountEpochSummary {
         epoch_commitment: EpochCommitment,
         prev_epoch_commitment: EpochCommitment,
         balance: u64,
-        next_seq_no: u64,
-        proof_state: ProofState,
-        extra_data: Vec<u8>,
-        processed_msgs: Vec<MessageEntry>,
+        update_input: Option<RpcUpdateInputData>,
     ) -> Self {
         Self {
             epoch_commitment,
             prev_epoch_commitment,
             balance,
-            next_seq_no,
-            proof_state: proof_state.into(),
-            extra_data: extra_data.into(),
-            processed_msgs: processed_msgs.into_iter().map(Into::into).collect(),
+            update_input,
         }
     }
 
@@ -61,23 +49,16 @@ impl RpcAccountEpochSummary {
         self.balance
     }
 
-    pub fn next_seq_no(&self) -> u64 {
-        self.next_seq_no
+    pub fn update_input(&self) -> Option<&RpcUpdateInputData> {
+        self.update_input.as_ref()
     }
 
-    /// Returns the new state.
-    pub fn proof_state(&self) -> &RpcProofState {
-        &self.proof_state
+    pub fn epoch_commitment(&self) -> EpochCommitment {
+        self.epoch_commitment
     }
 
-    /// Returns the extra data.
-    pub fn extra_data(&self) -> &HexBytes {
-        &self.extra_data
-    }
-
-    /// Returns the processed messages in this epoch.
-    pub fn processed_msgs(&self) -> &[RpcMessageEntry] {
-        &self.processed_msgs
+    pub fn prev_epoch_commitment(&self) -> EpochCommitment {
+        self.prev_epoch_commitment
     }
 }
 
@@ -163,13 +144,13 @@ impl RpcAccountBlockSummary {
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcUpdateInputData {
     /// Sequence number of the update.
-    seq_no: u64,
+    pub seq_no: u64,
     /// Expected final state after update.
-    proof_state: RpcProofState,
+    pub proof_state: RpcProofState,
     /// Extra data posted with this update.
-    extra_data: HexBytes,
+    pub extra_data: HexBytes,
     /// Account inbox messages processed in this update.
-    messages: Vec<RpcMessageEntry>,
+    pub messages: Vec<RpcMessageEntry>,
 }
 
 impl From<UpdateInputData> for RpcUpdateInputData {

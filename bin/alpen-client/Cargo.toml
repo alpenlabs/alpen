@@ -52,13 +52,14 @@ strata-ol-rpc-types.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
+
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
 clap.workspace = true
 eyre.workspace = true
-jsonrpsee = { workspace = true, features = ["http-client"] }
+jsonrpsee = { workspace = true, features = ["http-client", "server", "macros"] }
 reth-chainspec.workspace = true
 reth-cli-commands.workspace = true
 reth-cli-runner.workspace = true

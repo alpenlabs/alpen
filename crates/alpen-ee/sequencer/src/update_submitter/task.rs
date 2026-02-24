@@ -137,6 +137,7 @@ async fn process_ready_batches(
 ) -> Result<()> {
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
+    debug!(?account_state, "Latest account state");
     let next_sequence_no = *account_state.seq_no.inner();
     // NOTE: ensure batch 0 (genesis batch) is never sent in an update.
     let next_batch_idx = next_sequence_no
@@ -151,12 +152,15 @@ async fn process_ready_batches(
     loop {
         let Some((batch, status)) = batch_storage.get_batch_by_idx(batch_idx).await? else {
             // No more batches
+            debug!(%batch_idx, "Got no batch. breaking");
             break;
         };
+        debug!(?batch, ?status, "Got batch");
 
         // Only process ProofReady batches
         let BatchStatus::ProofReady { da: _, proof } = status else {
             // Batch not ready yet, stop processing (must be sent in order)
+            debug!(%batch_idx, "Batch not ready");
             break;
         };
 

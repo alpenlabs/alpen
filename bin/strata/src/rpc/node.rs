@@ -11,7 +11,7 @@ use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
-    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
+    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_primitives::HexBytes;
 use strata_snark_acct_types::ProofState;
@@ -147,14 +147,35 @@ impl OLClientRpcServer for OLRpcServer {
             EpochCommitment::null()
         };
 
+        let update = if let Some(extra_data) = self
+            .storage
+            .account()
+            .get_account_extra_data_async((account_id, epoch))
+            .await
+            .map_err(db_error)?
+        {
+            let update = RpcUpdateInputData {
+                seq_no: next_seq_no,
+                proof_state: proof_state.into(),
+                extra_data: extra_data
+                    .last() // FIXME: check if this is canonical or not and account for reorgs.
+                    .cloned()
+                    .expect("Should be present")
+                    .into_parts()
+                    .0
+                    .into(),
+                messages: vec![], // TODO: Compute and fetch from mmr db
+            };
+            Some(update)
+        } else {
+            None
+        };
+
         Ok(RpcAccountEpochSummary::new(
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
-            next_seq_no,
-            proof_state,
-            vec![], // extra_data - not tracked per-epoch currently
-            vec![], // processed_msgs - requires additional tracking infrastructure
+            update,
         ))
     }
 
@@ -309,7 +330,7 @@ impl OLClientRpcServer for OLRpcServer {
     ) -> RpcResult<EpochCommitment> {
         let epoch = self
             .storage
-            .account_genesis()
+            .account()
             .get_account_creation_epoch_blocking(account_id)
             .map_err(db_error)?
             .ok_or_else(|| {

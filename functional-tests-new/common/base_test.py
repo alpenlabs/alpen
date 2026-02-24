@@ -2,13 +2,12 @@
 Base test class with common utilities.
 """
 
-from typing import Literal, overload
+from typing import Any, Literal, overload
 
 import flexitest
 
 from common.config import ServiceType
 from common.services import (
-    AlpenClientService,
     BitcoinService,
     StrataService,
 )
@@ -38,38 +37,14 @@ class BaseTest(flexitest.Test):
     def main(self, ctx) -> bool:  # type: ignore[override]
         raise NotImplementedError
 
-
-class StrataNodeTest(BaseTest):
-    """
-    Base Test class for testing strata. Assumes related services like strata, bitcoin, reth, etc.
-    """
-
     @overload
     def get_service(self, typ: Literal[ServiceType.Bitcoin]) -> BitcoinService: ...
 
     @overload
     def get_service(self, typ: Literal[ServiceType.Strata]) -> StrataService: ...
 
-    def get_service(self, typ: ServiceType):
-        svc = self.runctx.get_service(typ)
-        if svc is None:
-            raise RuntimeError(
-                f"Service '{typ}' not found. Available services: "
-                f"{list(self.runctx.env.services.keys())}"
-            )
-        return svc
-
-
-class AlpenClientTest(BaseTest):
-    """
-    Base Test class for alpen-client P2P tests.
-    """
-
     @overload
-    def get_service(self, typ: Literal[ServiceType.AlpenClient]) -> AlpenClientService: ...
-
-    @overload
-    def get_service(self, typ: str) -> AlpenClientService: ...
+    def get_service(self, typ: Any) -> Any: ...
 
     def get_service(self, typ):
         svc = self.runctx.get_service(typ)
@@ -79,3 +54,19 @@ class AlpenClientTest(BaseTest):
                 f"{list(self.runctx.env.services.keys())}"
             )
         return svc
+
+
+class StrataNodeTest(BaseTest):
+    """
+    Base Test class for testing strata. Assumes related services like strata, bitcoin, reth, etc.
+    """
+
+    pass
+
+
+class AlpenClientTest(BaseTest):
+    """
+    Base Test class for alpen-client P2P tests.
+    """
+
+    pass

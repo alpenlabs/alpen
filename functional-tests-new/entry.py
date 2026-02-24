@@ -20,13 +20,13 @@ import sys
 import flexitest
 from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
 
+# Import environments
 from common.config import ServiceType
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
-
-# Import environments
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
+from envconfigs.el_ol import EeOLEnv
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
@@ -273,6 +273,8 @@ def main(argv: list[str]) -> int:
             mesh_bootnodes=True,
             enable_l1_da=True,
         ),
+        # Environments containing both ee and ol
+        "el_ol": EeOLEnv(pre_generate_blocks=110),
     }
 
     # Set up test runtime

@@ -1,6 +1,6 @@
 //! Sled store for the Alpen codebase.
 
-pub mod account_genesis;
+pub mod account;
 pub mod asm;
 pub mod broadcaster;
 pub mod chain_state;
@@ -27,7 +27,7 @@ pub mod writer;
 use std::{path::Path, sync::Arc};
 
 // Re-exports
-pub use account_genesis::db::AccountGenesisDBSled;
+pub use account::db::AccountGenesisDBSled;
 pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
@@ -47,10 +47,10 @@ use strata_db_types::{
     DbResult,
     chainstate::ChainstateDatabase,
     traits::{
-        AccountGenesisDatabase, AsmDatabase, CheckpointDatabase, ClientStateDatabase,
-        DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database,
-        L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase,
-        OLStateDatabase, ProofDatabase,
+        AccountDatabase, AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend,
+        L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database, L1WriterDatabase,
+        L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
+        ProofDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -204,7 +204,7 @@ impl DatabaseBackend for SledBackend {
         self.mempool_db.clone()
     }
 
-    fn account_genesis_db(&self) -> Arc<impl AccountGenesisDatabase> {
+    fn account_genesis_db(&self) -> Arc<impl AccountDatabase> {
         self.account_genesis_db.clone()
     }
 }

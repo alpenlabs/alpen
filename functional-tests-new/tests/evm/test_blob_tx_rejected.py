@@ -8,7 +8,7 @@ from eth_abi import abi
 from eth_account import Account
 
 from common.base_test import AlpenClientTest
-from common.config.constants import DEV_CHAIN_ID
+from common.config.constants import DEV_CHAIN_ID, ServiceType
 from common.rpc import RpcError
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class TestBlobTransactionRejected(AlpenClientTest):
         ctx.set_env("alpen_ee")
 
     def main(self, ctx):
-        ee_sequencer = self.get_service("ee_sequencer")
+        ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
         rpc = ee_sequencer.create_rpc()
 
         private_key = hex(random.getrandbits(256))

@@ -39,6 +39,9 @@ GWEI_TO_WEI = 1_000_000_000
 # Service Types
 # =============================================================================
 
+# Account Id of Alpen EE in Strata
+ALPEN_ACCOUNT_ID = "01" * 32
+
 
 class ServiceType(str, Enum):
     """
@@ -55,6 +58,8 @@ class ServiceType(str, Enum):
     AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
     Strata = "strata"
+    AlpenSequencer = "alpen_sequencer"
+    AlpenFullNode = "alpen_fullnode"
 
     def __str__(self) -> str:
         """Allow direct use in f-strings and format operations."""
