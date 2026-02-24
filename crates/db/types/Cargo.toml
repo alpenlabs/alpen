@@ -39,4 +39,5 @@ mocks = []
 stubs = ["dep:parking_lot"]
 
 [dev-dependencies]
+proptest.workspace = true
 serde_json.workspace = true

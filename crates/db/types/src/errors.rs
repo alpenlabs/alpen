@@ -1,4 +1,4 @@
-use strata_identifiers::AccountId;
+use strata_identifiers::{AccountId, Hash};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
@@ -8,7 +8,9 @@ use typed_sled::error::Error;
 use crate::{
     chainstate::WriteBatchId,
     mmr_helpers::{self, MmrError},
+    mmr_index::{LeafPos, NodePos},
 };
+
 #[derive(Debug, Error, Clone)]
 pub enum DbError {
     #[error("entry with idx does not exist")]
@@ -36,7 +38,7 @@ pub enum DbError {
     #[error("OL canonical chain is empty")]
     OLCanonicalChainEmpty,
 
-    #[error("Revert height {0} above chain tip height {0}")]
+    #[error("Revert height {0} above chain tip height {1}")]
     L1InvalidRevertHeight(u64, u64),
 
     #[error("Block does not extend canonical chain tip")]
@@ -103,19 +105,19 @@ pub enum DbError {
     Busy,
 
     /// A database worker task failed in an way that could not be determined.
-    #[error("worked task exited strangely")]
+    #[error("worker task exited strangely")]
     WorkerFailedStrangely,
 
     /// This happens in a cache when we were a second call to a database entry after a primary one
-    /// was startedd whose result we would use failed.  This is meant to be a transient error that
+    /// was started whose result we would use failed.  This is meant to be a transient error that
     /// typically could be retried, but the specifics depend on the underlying database semantics.
     #[error("failed to load a cache entry")]
     CacheLoadFail,
 
-    #[error("codec error {0}")]
+    #[error("codec: {0}")]
     CodecError(String),
 
-    #[error("transaction error {0}")]
+    #[error("transaction: {0}")]
     TransactionError(String),
 
     #[error("not yet implemented")]
@@ -129,9 +131,42 @@ pub enum DbError {
     #[error("MMR leaf not found at index {0} for account {1}")]
     MmrLeafNotFoundForAccount(u64, AccountId),
 
+    /// MMR leaf hash mismatched expected hash at index.
+    ///
+    /// This variant is produced by storage-manager level validation logic.
+    #[error("MMR leaf hash mismatch at index {idx} (expected {expected:?}, got {got:?})")]
+    MmrLeafHashMismatch { idx: u64, expected: Hash, got: Hash },
+
+    /// A compare-and-set precondition in an MMR batch update failed.
+    #[error("MMR precondition failed")]
+    MmrPreconditionFailed,
+
+    /// Requested leaf index is out of range for current leaf count.
+    #[error("MMR index out of range (requested {requested}, cur {cur})")]
+    MmrIndexOutOfRange { requested: u64, cur: u64 },
+
+    /// MMR preimage payload not found at leaf position.
+    #[error("MMR preimage payload not found at leaf position {0}")]
+    MmrPayloadNotFound(LeafPos),
+
+    /// Tree position is out of bounds for current MMR size.
+    #[error("MMR pos out of bounds (pos {pos}, max {max})")]
+    MmrPositionOutOfBounds { pos: u64, max: u64 },
+
     /// Invalid MMR index range
     #[error("Invalid MMR index range: {start}..{end}")]
     MmrInvalidRange { start: u64, end: u64 },
+
+    /// MMR node not found at the given tree position.
+    #[error("MMR node not found at position {0}")]
+    MmrNodeNotFound(NodePos),
+
+    /// Operation retried but failed all attempts.
+    #[error("retries exhausted after {attempts} attempts: {last_error}")]
+    RetriesExhausted {
+        attempts: usize,
+        last_error: Box<DbError>,
+    },
 
     #[error("{0}")]
     Other(String),
@@ -162,10 +197,9 @@ impl From<mmr_helpers::MmrError> for DbError {
         match value {
             MmrError::LeafNotFound(idx) => DbError::MmrLeafNotFound(idx),
             MmrError::InvalidRange { start, end } => DbError::MmrInvalidRange { start, end },
-            MmrError::PositionOutOfBounds { pos, max_size } => DbError::Other(format!(
-                "Position {} out of bounds (max size {})",
-                pos, max_size
-            )),
+            MmrError::PositionOutOfBounds { pos, max_size } => {
+                DbError::MmrPositionOutOfBounds { pos, max: max_size }
+            }
         }
     }
 }
