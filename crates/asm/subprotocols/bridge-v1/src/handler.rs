@@ -1,3 +1,4 @@
+use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     AsmLogEntry, AuxRequestCollector, MsgRelayer, VerifiedAuxData, logging::error,
 };
@@ -53,6 +54,10 @@ pub(crate) fn handle_parsed_tx(
 
             validate_deposit_info(state, &info, &drt_info)?;
             state.add_deposit(&info)?;
+
+            // Notify checkpoint subprotocol about the processed deposit so it can
+            // track available deposit value for withdrawal gating.
+            relayer.relay_msg(&CheckpointIncomingMsg::DepositProcessed(info.amt()));
 
             let deposit_log = DepositLog::new(
                 drt_info.header_aux().destination().clone(),

@@ -13786,7 +13786,9 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "strata-asm-common",
+ "strata-asm-txs-checkpoint",
  "strata-asm-txs-checkpoint-v0",
+ "strata-btc-types",
  "strata-predicate",
  "strata-primitives",
 ]
@@ -13913,6 +13915,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "serde",
  "strata-asm-bridge-msgs",
+ "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-params",
@@ -13941,6 +13944,7 @@ dependencies = [
  "strata-asm-params",
  "strata-asm-txs-checkpoint",
  "strata-bridge-types",
+ "strata-btc-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-crypto",
