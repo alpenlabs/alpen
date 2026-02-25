@@ -7,6 +7,8 @@ mod builder;
 mod command;
 mod error;
 mod handle;
+mod ordering;
+mod package;
 mod service;
 mod state;
 #[cfg(test)]
@@ -18,6 +20,7 @@ pub use builder::MempoolBuilder;
 pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use handle::MempoolHandle;
+pub use ordering::{FifoPriority, MempoolPriorityPolicy};
 pub use service::MempoolServiceStatus;
 pub use types::*;
 

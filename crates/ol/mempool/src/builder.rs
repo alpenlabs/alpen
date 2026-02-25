@@ -3,6 +3,7 @@
 use std::{
     fmt::{Debug, Formatter},
     future::Future,
+    marker::PhantomData,
     sync::Arc,
 };
 
@@ -15,6 +16,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::{
     MempoolCommand, MempoolHandle,
+    ordering::MempoolPriorityPolicy,
     service::MempoolService,
     state::{MempoolContext, MempoolServiceState},
     types::OLMempoolConfig,
@@ -23,14 +25,15 @@ use crate::{
 /// Builder for creating and launching mempool service.
 ///
 /// Separates service initialization logic from the handle interface.
-pub struct MempoolBuilder {
+pub struct MempoolBuilder<Prio: MempoolPriorityPolicy> {
     config: OLMempoolConfig,
     storage: Arc<NodeStorage>,
     status_channel: StatusChannel,
     current_tip: OLBlockCommitment,
+    _phantom: PhantomData<Prio>,
 }
 
-impl Debug for MempoolBuilder {
+impl<Prio: MempoolPriorityPolicy> Debug for MempoolBuilder<Prio> {
     #[expect(clippy::absolute_paths, reason = "qualified Result avoids ambiguity")]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MempoolBuilder")
@@ -40,7 +43,7 @@ impl Debug for MempoolBuilder {
     }
 }
 
-impl MempoolBuilder {
+impl<Prio: MempoolPriorityPolicy> MempoolBuilder<Prio> {
     /// Create a new mempool builder.
     pub fn new(
         config: OLMempoolConfig,
@@ -53,6 +56,7 @@ impl MempoolBuilder {
             storage,
             status_channel,
             current_tip,
+            _phantom: PhantomData,
         }
     }
 
@@ -70,7 +74,7 @@ impl MempoolBuilder {
 
         // Create mempool state with context and current tip
         let mut state =
-            MempoolServiceState::new_with_context(ctx.clone(), self.current_tip).await?;
+            MempoolServiceState::<_, Prio>::new_with_context(ctx.clone(), self.current_tip).await?;
 
         // Load existing transactions from database
         state.load_from_db().await?;
@@ -82,7 +86,7 @@ impl MempoolBuilder {
         let mempool_input = MempoolInput::new(command_rx, ol_sync_rx);
 
         // Launch service with mempool input
-        let monitor = ServiceBuilder::<MempoolService<_>, _>::new()
+        let monitor = ServiceBuilder::<MempoolService<_, Prio>, _>::new()
             .with_state(state)
             .with_input(mempool_input)
             .launch_async("mempool", texec)

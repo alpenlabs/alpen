@@ -8,7 +8,8 @@ use strata_ol_state_types::StateProvider;
 use strata_service::{AsyncService, Response, Service};
 
 use crate::{
-    MempoolCommand, builder::MempoolInputMessage, state::MempoolServiceState, types::OLMempoolStats,
+    MempoolCommand, builder::MempoolInputMessage, ordering::MempoolPriorityPolicy,
+    state::MempoolServiceState, types::OLMempoolStats,
 };
 
 /// Service status for mempool.
@@ -21,14 +22,15 @@ pub struct MempoolServiceStatus {
 ///
 /// # Type Parameters
 ///
-/// - `P`: The state provider type that implements [`StateProvider`].
+/// - `SP`: The state provider type that implements [`StateProvider`].
+/// - `Prio`: The mempool priority policy.
 #[derive(Debug)]
-pub(crate) struct MempoolService<P: StateProvider> {
-    _phantom: PhantomData<P>,
+pub(crate) struct MempoolService<SP: StateProvider, Prio: MempoolPriorityPolicy> {
+    _phantom: PhantomData<(SP, Prio)>,
 }
 
-impl<P: StateProvider> Service for MempoolService<P> {
-    type State = MempoolServiceState<P>;
+impl<SP: StateProvider, Prio: MempoolPriorityPolicy> Service for MempoolService<SP, Prio> {
+    type State = MempoolServiceState<SP, Prio>;
     type Msg = MempoolInputMessage;
     type Status = MempoolServiceStatus;
 
@@ -39,7 +41,7 @@ impl<P: StateProvider> Service for MempoolService<P> {
     }
 }
 
-impl<P: StateProvider> AsyncService for MempoolService<P> {
+impl<SP: StateProvider, Prio: MempoolPriorityPolicy> AsyncService for MempoolService<SP, Prio> {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
     }
@@ -85,6 +87,7 @@ mod tests {
     use super::*;
     use crate::{
         MempoolTxInvalidReason, OLMempoolResult, OLTransaction,
+        ordering::FifoPriority,
         test_utils::{
             create_test_block_commitment, create_test_context, create_test_snark_tx_with_seq_no,
             create_test_state_provider,
@@ -101,7 +104,7 @@ mod tests {
             provider.clone(),
         ));
 
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -134,7 +137,7 @@ mod tests {
                 let provider = Arc::new(create_test_state_provider(tip));
                 let context = Arc::new(create_test_context(OLMempoolConfig::default(), provider.clone()));
 
-                let mut state = MempoolServiceState::new_with_context(context.clone(), tip).await.unwrap();
+                let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context.clone(), tip).await.unwrap();
 
                 // Add some transactions via handle_submit_transaction
                 // Use sequential seq_nos (0, 1) for the same account to pass gap checking
@@ -181,9 +184,10 @@ mod tests {
             provider.clone(),
         ));
 
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::<_, FifoPriority>::new_with_context(context.clone(), tip)
+                .await
+                .unwrap();
 
         // Account 1: tx1 (seq 0), tx2 (seq 1) - tx2 cascades when tx1 removed
         // Account 2: tx3 (seq 0) - independent
@@ -233,9 +237,10 @@ mod tests {
             OLMempoolConfig::default(),
             provider.clone(),
         ));
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::<_, FifoPriority>::new_with_context(context.clone(), tip)
+                .await
+                .unwrap();
 
         // Add a transaction via handle_submit_transaction
         let tx = create_test_snark_tx_with_seq_no(1, 0);

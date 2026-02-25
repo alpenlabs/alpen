@@ -13,8 +13,11 @@ use proptest::{
     test_runner::TestRunner,
 };
 use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_crypto::hash;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{
+    Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, OLTxId, Slot,
+};
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
@@ -56,6 +59,11 @@ pub(crate) fn create_test_constraints() -> TxConstraints {
         .new_tree(&mut runner)
         .unwrap()
         .current()
+}
+
+/// Create a deterministic test transaction ID from a byte.
+pub(crate) fn create_test_txid_with(id: u8) -> OLTxId {
+    OLTxId::from(hash::raw(&[id]))
 }
 
 /// Create a test snark account update (base_update only, no accumulator proofs).
