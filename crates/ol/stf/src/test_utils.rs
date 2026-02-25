@@ -87,7 +87,7 @@ pub fn build_empty_chain(
     // Execute genesis block (always terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis_manifest = AsmManifest::new(
-        0,
+        1, // Genesis manifest should be at height 1 when last_l1_height is 0
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -112,7 +112,7 @@ pub fn build_empty_chain(
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
-                0,
+                (state.last_l1_height() + 1) as u64, // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
@@ -185,7 +185,7 @@ pub fn build_chain_with_transactions(
 
     // Terminal genesis (with manifest) so epoch advances from 0 to 1
     let genesis_manifest = AsmManifest::new(
-        0,
+        1, // Genesis manifest should be at height 1 when last_l1_height is 0
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -212,7 +212,7 @@ pub fn build_chain_with_transactions(
 
         let components = if is_terminal {
             let dummy_manifest = AsmManifest::new(
-                0,
+                (state.last_l1_height() + 1) as u64, // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],

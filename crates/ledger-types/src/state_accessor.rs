@@ -107,16 +107,15 @@ pub trait IStateAccessor {
 /// Resolves the first L1 block height represented by the ASM manifests MMR.
 ///
 /// This is derived from canonical state as:
-/// `mmr_start_height = last_l1_height + 1 - (manifests_mmr_entries - 1)`.
+/// `mmr_start_height = last_l1_height + 1 - manifests_mmr_entries`.
 ///
 /// For an empty MMR, this reduces to `last_l1_height + 1`.
 pub fn asm_manifests_mmr_start_height(state: &impl IStateAccessor) -> Option<L1Height> {
     let last_l1_height_u64 = state.last_l1_height() as u64;
     let num_entries = state.asm_manifests_mmr().num_entries();
-    let last_entry_idx = num_entries.saturating_sub(1);
     let start_height_u64 = last_l1_height_u64
         .checked_add(1)?
-        .checked_sub(last_entry_idx)?;
+        .checked_sub(num_entries)?;
     start_height_u64.try_into().ok()
 }
 

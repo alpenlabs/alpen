@@ -751,9 +751,9 @@ impl TestEnvBuilder {
                 // Slot 0 is genesis - create terminal block
                 let block_info = BlockInfo::new_genesis(1000000);
 
-                // Create genesis manifest at height 0
+                // Create genesis manifest at height 1 (when last_l1_height is 0)
                 let genesis_manifest = AsmManifest::new(
-                    0,
+                    1,
                     L1BlockId::from(Buf32::zero()),
                     WtxidsRoot::from(Buf32::zero()),
                     vec![],

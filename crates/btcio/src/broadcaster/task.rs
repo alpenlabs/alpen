@@ -40,7 +40,16 @@ pub async fn broadcaster_task(
                     ok_or(BroadcasterError::TxNotFound(idx))
                     .map(Into::into)?;
                 info!(%idx, %txid, "Received txentry");
-                state.unfinalized_entries.push(IndexedEntry::new(idx, txentry));
+                // Keep at most one in-memory entry per db index to avoid stale duplicates.
+                if let Some(existing) = state
+                    .unfinalized_entries
+                    .iter_mut()
+                    .find(|entry| *entry.index() == idx)
+                {
+                    *existing = IndexedEntry::new(idx, txentry);
+                } else {
+                    state.unfinalized_entries.push(IndexedEntry::new(idx, txentry));
+                }
             }
         }
 
@@ -78,7 +87,10 @@ async fn process_unfinalized_entries(
 
     for entry in unfinalized_entries {
         let idx = *entry.index();
-        let txentry = entry.item();
+        let txentry = ops
+            .get_tx_entry_async(idx)
+            .await?
+            .ok_or(BroadcasterError::TxNotFound(idx))?;
         let txid_raw = ops
             .get_txid_async(idx)
             .await?
@@ -87,10 +99,10 @@ async fn process_unfinalized_entries(
         let txid = Txid::from_slice(txid_raw.0.as_slice())
             .map_err(|e| BroadcasterError::Other(e.to_string()))?;
 
-        let updated_status = process_entry(rpc_client, txentry, &txid, params).await?;
+        let updated_status = process_entry(rpc_client, &txentry, &txid, params).await?;
 
         if let Some(status) = updated_status {
-            let mut new_txentry = txentry.clone();
+            let mut new_txentry = txentry;
             new_txentry.status = status.clone();
             updated_entries.push(IndexedEntry::new(idx, new_txentry.clone()));
         }

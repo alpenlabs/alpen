@@ -4,23 +4,23 @@ Creates Strata sequencer and fullnode instances.
 """
 
 import contextlib
-import shutil
-import subprocess
 from pathlib import Path
 
 import flexitest
 
 from common.config import (
-    AsmParams,
     BitcoindConfig,
     ClientConfig,
     OLParams,
-    RollupParams,
     SequencerConfig,
     ServiceType,
     StrataConfig,
 )
 from common.config.params import GenesisL1View
+from common.datatool import (
+    generate_asm_params,
+    generate_rollup_params,
+)
 from common.services import StrataProps, StrataService
 
 
@@ -28,32 +28,6 @@ class StrataFactory(flexitest.Factory):
     """
     Factory for creating Strata nodes.
     """
-
-    def _ensure_sequencer_key(self, path: Path) -> None:
-        if path.exists():
-            return
-
-        tool = shutil.which("strata-datatool")
-        if tool is not None:
-            cmd = [
-                tool,
-                "-b",
-                "regtest",
-                "genxpriv",
-                "-f",
-                str(path),
-            ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            if res.returncode != 0:
-                details = res.stderr.strip() or res.stdout.strip()
-                raise RuntimeError(f"Failed to generate sequencer key: {details}")
-            return
-
-        # Fallback: deterministic testnet/regtest xpriv used for tests.
-        # Keep this in sync with known-good test vectors to avoid dependency on binaries.
-        path.write_text(
-            "tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7"
-        )
 
     def __init__(self, port_range: range):
         ports = list(port_range)
@@ -101,11 +75,10 @@ class StrataFactory(flexitest.Factory):
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
 
-        # Create rollup params
-        params = RollupParams().with_genesis_l1(genesis_l1)
-        params_path = datadir / "rollup-params.json"
-        with open(params_path, "w") as f:
-            f.write(params.as_json_string())
+        genesis_l1_height = genesis_l1.blk.height
+
+        # Generate rollup params via datatool.
+        params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
         # Create OL params
         ol_params = OLParams().with_genesis_l1(genesis_l1)
@@ -113,11 +86,13 @@ class StrataFactory(flexitest.Factory):
         with open(ol_params_path, "w") as f:
             f.write(ol_params.as_json_string())
 
-        # Create ASM params
-        asm_params = AsmParams().with_genesis_l1(genesis_l1)
-        asm_params_path = datadir / "asm-params.json"
-        with open(asm_params_path, "w") as f:
-            f.write(asm_params.as_json_string())
+        # Generate ASM params via datatool to keep the L1 view consistent.
+        asm_params_path = generate_asm_params(
+            datadir,
+            bconfig,
+            genesis_l1_height,
+            params_data.operator_keys,
+        )
 
         # Build command
         cmd = [
@@ -127,7 +102,7 @@ class StrataFactory(flexitest.Factory):
             "--datadir",
             str(datadir),
             "--rollup-params",
-            str(params_path),
+            str(params_data.params_path),
             "--ol-params",
             str(ol_params_path),
             "--asm-params",
@@ -139,9 +114,7 @@ class StrataFactory(flexitest.Factory):
         ]
 
         if is_sequencer:
-            sequencer_key_path = datadir / "sequencer_root_key"
-            self._ensure_sequencer_key(sequencer_key_path)
-            cmd.extend(["--sequencer", "--sequencer-key", str(sequencer_key_path)])
+            cmd.extend(["--sequencer", "--sequencer-key", str(params_data.sequencer_key_path)])
 
         # Add config overrides
         if config_overrides:
