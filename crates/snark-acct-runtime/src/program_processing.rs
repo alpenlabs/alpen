@@ -12,7 +12,7 @@
 //! different account types to reuse the same processing logic.
 
 use strata_codec::decode_buf_exact;
-use strata_snark_acct_types::MessageEntry;
+use strata_snark_acct_types::{MessageEntry, UpdateManifest};
 
 use crate::{
     IInnerState, InputMessage,
@@ -136,43 +136,44 @@ fn verify_coinput_and_process_message<P: SnarkAccountProgramVerification>(
 /// Applies an update unconditionally without verification.
 ///
 /// This is used outside the proof, after verifying the proof, to reconstruct
-/// the actual state from DA. It skips coinput verification and the
-/// `finalize_verification` step.
+/// the actual state from DA.  It decodes the extra data and messages from the
+/// [`UpdateManifest`] and applies them to the state, skipping coinput
+/// verification and the `finalize_verification` step.
 ///
-/// Messages are wrapped in [`InputMessage`] - can be `Valid` or `Unknown`.
-///
-/// # Type Parameters
-///
-/// - `P`: The snark account program implementation.
-/// - `M`: Iterator over input messages.
-// TODO refactor this like the above function to do less of the decoding itself
-pub fn apply_update_unconditionally<P, M>(
+/// Correctness is implied by the orchestration layer permitting the state
+/// transition in the first place, since that requires a snark proof.
+pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
     program: &P,
     state: &mut P::State,
-    messages: M,
-    extra_data: P::ExtraData,
-) -> ProgramResult<(), P::Error>
-where
-    P: SnarkAccountProgram,
-    M: IntoIterator<Item = InputMessage<P::Msg>>,
-{
-    // 1. Start update.
+    manifest: &UpdateManifest,
+) -> ProgramResult<(), P::Error> {
+    // 1. Decode extra data from the manifest.
+    let extra_data = decode_buf_exact::<P::ExtraData>(manifest.extra_data())
+        .map_err(|_| ProgramError::MalformedExtraData)?;
+
+    // 2. Start update.
     program.start_update(state, &extra_data)?;
 
-    // 2. Process messages without verification.
-    for (idx, msg) in messages.into_iter().enumerate() {
+    // 3. Process messages without verification.
+    for (idx, msg_entry) in manifest.messages().iter().enumerate() {
+        let inp_msg = InputMessage::<P::Msg>::from_msg_entry(msg_entry);
         program
-            .process_message(state, msg, &extra_data)
+            .process_message(state, inp_msg, &extra_data)
             .map_err(|e| e.at_msg(idx))?;
     }
 
-    // 3. Pre-finalize state.
+    // 4. Pre-finalize state.
     program.pre_finalize_state(state, &extra_data)?;
 
-    // (4. Skip finalize_verification.)
+    // (5. Skip finalize_verification.)
 
-    // 5. Finalize state.
+    // 6. Finalize state.
     program.finalize_state(state, extra_data)?;
+
+    // 7. Verify post-state matches manifest.
+    if state.compute_state_root() != manifest.new_state().inner_state() {
+        return Err(ProgramError::MismatchedPostState);
+    }
 
     Ok(())
 }
@@ -180,12 +181,13 @@ where
 #[cfg(test)]
 mod tests {
     use ssz_derive::{Decode, Encode};
-    use strata_acct_types::{AccountId, BitcoinAmount, Hash};
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
     use strata_codec::impl_type_flat_struct;
+    use strata_snark_acct_types::{MessageEntry, ProofState, UpdateManifest};
 
     use super::*;
     use crate::{
-        MsgMeta,
+        private_input::Coinput,
         traits::{IAcctMsg, IExtraData, IInnerState},
     };
 
@@ -198,7 +200,9 @@ mod tests {
 
     impl IInnerState for TestState {
         fn compute_state_root(&self) -> Hash {
-            Hash::default()
+            let mut buf = [0u8; 32];
+            buf[..8].copy_from_slice(&self.value.to_le_bytes());
+            Hash::from(buf)
         }
     }
 
@@ -300,29 +304,39 @@ mod tests {
             // Verify that the accumulated deltas match expectation
             let expected = vstate * extra_data.multiplier;
             if state.value != expected && extra_data.multiplier != 0 {
-                return Err(ProgramError::MismatchedState);
+                return Err(ProgramError::MismatchedPostState);
             }
             Ok(())
         }
     }
 
-    fn make_valid_msg(delta: u64) -> InputMessage<TestMsg> {
-        InputMessage::Valid(
-            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::ZERO),
-            TestMsg { delta },
-        )
+    fn make_msg_entry(delta: u64) -> MessageEntry {
+        let data = strata_codec::encode_to_vec(&TestMsg { delta }).unwrap();
+        let payload = MsgPayload::new(BitcoinAmount::ZERO, data);
+        MessageEntry::new(AccountId::zero(), 0, payload)
+    }
+
+    fn make_manifest(
+        msg_entries: Vec<MessageEntry>,
+        extra: TestExtraData,
+        expected_post_value: u64,
+    ) -> UpdateManifest {
+        let extra_data = strata_codec::encode_to_vec(&extra).unwrap();
+        let expected_state = TestState { value: expected_post_value };
+        let new_state = ProofState::new(expected_state.compute_state_root(), 0);
+        UpdateManifest::new(new_state, extra_data, msg_entries)
     }
 
     #[test]
-    fn test_verify_and_apply_update_basic() {
+    fn test_verify_inner_basic() {
         let program = TestProgram;
         let mut state = TestState { value: 0 };
-        let messages = vec![make_valid_msg(5), make_valid_msg(3)];
-        let coinputs: Vec<&[u8]> = vec![&[], &[]];
+        let msg_entries = vec![make_msg_entry(5), make_msg_entry(3)];
+        let coinputs = vec![Coinput::new(vec![]), Coinput::new(vec![])];
         let extra = TestExtraData { multiplier: 1 };
 
         let result =
-            verify_and_apply_update_old(&program, &mut state, messages, coinputs, extra, ());
+            verify_update_inner(&program, &mut state, (), &msg_entries, &coinputs, extra);
         assert!(result.is_ok());
         // (5 + 3) * 1 = 8
         assert_eq!(state.value, 8);
@@ -332,12 +346,15 @@ mod tests {
     fn test_apply_unconditionally_basic() {
         let program = TestProgram;
         let mut state = TestState { value: 0 };
-        let messages = vec![make_valid_msg(5), make_valid_msg(3)];
-        let extra = TestExtraData { multiplier: 2 };
-
-        let result = apply_update_unconditionally(&program, &mut state, messages, extra);
-        assert!(result.is_ok());
         // (5 + 3) * 2 = 16
+        let manifest = make_manifest(
+            vec![make_msg_entry(5), make_msg_entry(3)],
+            TestExtraData { multiplier: 2 },
+            16,
+        );
+
+        let result = apply_update_unconditionally(&program, &mut state, &manifest);
+        assert!(result.is_ok());
         assert_eq!(state.value, 16);
     }
 
@@ -345,12 +362,12 @@ mod tests {
     fn test_verify_fails_with_nonempty_coinput() {
         let program = TestProgram;
         let mut state = TestState { value: 0 };
-        let messages = vec![make_valid_msg(5)];
-        let coinputs: Vec<&[u8]> = vec![&[1, 2, 3]]; // Non-empty coinput
+        let msg_entries = vec![make_msg_entry(5)];
+        let coinputs = vec![Coinput::new(vec![1, 2, 3])]; // Non-empty coinput
         let extra = TestExtraData { multiplier: 1 };
 
         let result =
-            verify_and_apply_update_old(&program, &mut state, messages, coinputs, extra, ());
+            verify_update_inner(&program, &mut state, (), &msg_entries, &coinputs, extra);
         assert!(matches!(
             result,
             Err(ProgramError::AtMessage { idx: 0, .. })
@@ -359,24 +376,22 @@ mod tests {
 
     #[test]
     fn test_unknown_messages_processed() {
-        use strata_acct_types::{AccountId, BitcoinAmount};
-
-        use crate::MsgMeta;
-
         let program = TestProgram;
         let mut state = TestState { value: 0 };
-        let messages = vec![
-            make_valid_msg(5),
-            InputMessage::Unknown(MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::ZERO)),
-            make_valid_msg(3),
-        ];
-        let coinputs: Vec<&[u8]> = vec![&[], &[], &[]];
-        let extra = TestExtraData { multiplier: 1 };
 
-        let result =
-            verify_and_apply_update_old(&program, &mut state, messages, coinputs, extra, ());
-        assert!(result.is_ok());
+        // Create a message entry with garbage payload data to trigger Unknown
+        let unknown_payload = MsgPayload::new(BitcoinAmount::ZERO, vec![0xff]);
+        let unknown_entry = MessageEntry::new(AccountId::zero(), 0, unknown_payload);
+
         // Only valid messages contribute: (5 + 3) * 1 = 8
+        let manifest = make_manifest(
+            vec![make_msg_entry(5), unknown_entry, make_msg_entry(3)],
+            TestExtraData { multiplier: 1 },
+            8,
+        );
+
+        let result = apply_update_unconditionally(&program, &mut state, &manifest);
+        assert!(result.is_ok());
         assert_eq!(state.value, 8);
     }
 }
