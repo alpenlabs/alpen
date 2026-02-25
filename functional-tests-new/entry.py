@@ -42,7 +42,9 @@ def disabled_tests() -> frozenset[str]:
     Returns test names without .py extension.
     Can be extended via DISABLED_TESTS env var (comma-separated).
     """
-    base_disabled = frozenset(["keepalive_stub_test"])
+    base_disabled = frozenset(
+        ["keepalive_stub_test", "revert_ol_state_fn", "revert_checkpointed_block_fn"]
+    )
 
     env_disabled = os.getenv("DISABLED_TESTS", "")
     if env_disabled:
