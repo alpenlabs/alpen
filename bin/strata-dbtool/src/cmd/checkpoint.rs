@@ -1,11 +1,11 @@
 use argh::FromArgs;
 use strata_asm_logs::CheckpointUpdate;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
-    traits::{AsmDatabase, CheckpointDatabase, DatabaseBackend, L1Database},
-    types::CheckpointEntry,
+    traits::{AsmDatabase, DatabaseBackend, L1Database, OLCheckpointDatabase},
+    types::{OLCheckpointEntry, OLCheckpointStatus},
 };
+use strata_identifiers::Epoch;
 use strata_primitives::l1::L1BlockCommitment;
 
 use crate::{
@@ -18,11 +18,11 @@ use crate::{
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-checkpoint")]
-/// Get checkpoint
+/// Shows detailed information about a specific OL checkpoint epoch.
 pub(crate) struct GetCheckpointArgs {
-    /// checkpoint index
+    /// checkpoint epoch
     #[argh(positional)]
-    pub(crate) checkpoint_index: u64,
+    pub(crate) checkpoint_epoch: Epoch,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -31,9 +31,9 @@ pub(crate) struct GetCheckpointArgs {
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-checkpoints-summary")]
-/// Get checkpoints summary
+/// Shows a summary of all OL checkpoints in the database.
 pub(crate) struct GetCheckpointsSummaryArgs {
-    /// start l1 height to query checkpoints from
+    /// start L1 height to query checkpoints from
     #[argh(positional)]
     pub(crate) height_from: u64,
 
@@ -44,11 +44,11 @@ pub(crate) struct GetCheckpointsSummaryArgs {
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-epoch-summary")]
-/// Get epoch summary
+/// Shows detailed information about a specific OL epoch summary.
 pub(crate) struct GetEpochSummaryArgs {
-    /// epoch index
+    /// epoch
     #[argh(positional)]
-    pub(crate) epoch_index: u64,
+    pub(crate) epoch: Epoch,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -96,7 +96,6 @@ fn count_checkpoints_in_asm_logs(
         })?;
 
     let mut checkpoint_count = 0u64;
-
     // Batch size for iteration to avoid loading everything at once
     const BATCH_SIZE: usize = 1000;
     let mut current_l1_commitment = start_l1_commitment;
@@ -126,7 +125,7 @@ fn count_checkpoints_in_asm_logs(
             }
         }
 
-        let (next_l1_commitment, _) = asm_states.last().unwrap();
+        let (next_l1_commitment, _) = asm_states.last().expect("asm_states is non-empty");
         if *next_l1_commitment >= latest_l1_commitment {
             break;
         }
@@ -137,61 +136,61 @@ fn count_checkpoints_in_asm_logs(
     Ok(checkpoint_count)
 }
 
-/// Get a checkpoint entry at a specific index.
+/// Get a checkpoint entry at a specific epoch.
 ///
-/// Returns `None` if no checkpoint exists at that index.
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-pub(crate) fn get_checkpoint_at_index(
+/// Returns `None` if no checkpoint exists at that epoch.
+pub(crate) fn get_checkpoint_at_epoch(
     db: &impl DatabaseBackend,
-    index: u64,
-) -> Result<Option<CheckpointEntry>, DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let chkpt_db = db.checkpoint_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    chkpt_db
-        .get_checkpoint(index)
-        .internal_error(format!("Failed to get checkpoint at index {}", index))
+    epoch: Epoch,
+) -> Result<Option<OLCheckpointEntry>, DisplayedError> {
+    db.ol_checkpoint_db()
+        .get_checkpoint(epoch)
+        .internal_error(format!("Failed to get OL checkpoint at epoch {epoch}"))
 }
 
-/// Get the range of checkpoint indices (0 to latest).
+/// Get the range of checkpoint epochs (0 to latest).
 ///
-/// Returns `None` if no checkpoints exist, otherwise returns `Some((0, latest_idx))`.
-pub(crate) fn get_checkpoint_index_range(
+/// Returns `None` if no checkpoints exist, otherwise returns `Some((0, latest_epoch))`.
+pub(crate) fn get_checkpoint_epoch_range(
     db: &impl DatabaseBackend,
-) -> Result<Option<(u64, u64)>, DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let chkpt_db = db.checkpoint_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    if let Some(last_idx) = chkpt_db
-        .get_last_checkpoint_idx()
-        .internal_error("Failed to get last checkpoint index")?
-    {
-        Ok(Some((0, last_idx)))
-    } else {
-        Ok(None)
-    }
+) -> Result<Option<(Epoch, Epoch)>, DisplayedError> {
+    db.ol_checkpoint_db()
+        .get_last_checkpoint_epoch()
+        .internal_error("Failed to get last OL checkpoint epoch")
+        .map(|opt| opt.map(|last| (0, last)))
 }
 
-/// Get checkpoint details by index.
+/// Get checkpoint details by epoch.
 pub(crate) fn get_checkpoint(
     db: &impl DatabaseBackend,
     args: GetCheckpointArgs,
 ) -> Result<(), DisplayedError> {
-    let checkpoint_idx = args.checkpoint_index;
-    let entry = get_checkpoint_at_index(db, checkpoint_idx)?.ok_or_else(|| {
+    let checkpoint_epoch = args.checkpoint_epoch;
+    let entry = get_checkpoint_at_epoch(db, checkpoint_epoch)?.ok_or_else(|| {
         DisplayedError::UserError(
-            "No checkpoint found at index".to_string(),
-            Box::new(checkpoint_idx),
+            "No checkpoint found at epoch".to_string(),
+            Box::new(checkpoint_epoch),
         )
     })?;
 
+    let tip = entry.checkpoint.new_tip();
+    let (status, intent_index) = match &entry.status {
+        OLCheckpointStatus::Unsigned => ("Unsigned".to_string(), None),
+        OLCheckpointStatus::Signed(idx) => ("Signed".to_string(), Some(*idx)),
+    };
+
     // Create the output data structure
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
     let checkpoint_info = CheckpointInfo {
-        checkpoint_index: checkpoint_idx,
-        checkpoint: &entry.checkpoint,
-        confirmation_status: &entry.confirmation_status,
-        proving_status: &entry.proving_status,
+        checkpoint_epoch: u64::from(checkpoint_epoch),
+        tip_epoch: tip.epoch,
+        tip_l1_height: tip.l1_height(),
+        tip_l2_slot: tip.l2_commitment().slot(),
+        tip_l2_blkid: format!("{:?}", tip.l2_commitment().blkid()),
+        ol_state_diff_len: entry.checkpoint.sidecar().ol_state_diff().len(),
+        ol_logs_len: entry.checkpoint.sidecar().ol_logs().len(),
+        proof_len: entry.checkpoint.proof().len(),
+        status,
+        intent_index,
     };
 
     // Use the output utility
@@ -203,28 +202,29 @@ pub(crate) fn get_checkpoints_summary(
     db: &impl DatabaseBackend,
     args: GetCheckpointsSummaryArgs,
 ) -> Result<(), DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let chkpt_db = db.checkpoint_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let last_idx = chkpt_db
-        .get_last_checkpoint_idx()
-        .internal_error("Failed to get last checkpoint index")?
-        .expect("valid checkpoint index");
+    let Some(last_epoch) = db
+        .ol_checkpoint_db()
+        .get_last_checkpoint_epoch()
+        .internal_error("Failed to get last OL checkpoint epoch")?
+    else {
+        let summary_info = CheckpointsSummaryInfo {
+            expected_checkpoints_count: 0,
+            checkpoints_found_in_db: 0,
+            checkpoints_in_l1_blocks: count_checkpoints_in_asm_logs(db, args.height_from)?,
+            unexpected_checkpoints: Vec::new(),
+        };
+        return output(&summary_info, args.output_format);
+    };
 
-    let expected_checkpoints_count = last_idx + 1;
-    let mut checkpoint_commitments = Vec::new();
-    for idx in 0..=last_idx {
-        #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-        let entry = chkpt_db
-            .get_checkpoint(idx)
-            .internal_error(format!("Failed to get checkpoint at index {idx}"))?;
+    // Checkpoint for epoch 0 is not expected: checkpoint building starts from epoch 1.
+    let expected_checkpoints_count = u64::from(last_epoch);
+    let mut checkpoints_found_in_db = 0u64;
 
-        if let Some(checkpoint_entry) = entry {
-            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-            checkpoint_commitments.push(checkpoint_entry.checkpoint.commitment().clone());
+    for idx in 0..=last_epoch {
+        if get_checkpoint_at_epoch(db, idx)?.is_some() {
+            checkpoints_found_in_db += 1;
         }
     }
-    let checkpoints_found_in_db = checkpoint_commitments.len() as u64;
 
     // Count unique checkpoints found in ASM logs from L1 blocks
     let checkpoints_in_l1_blocks = count_checkpoints_in_asm_logs(db, args.height_from)?;
@@ -247,38 +247,36 @@ pub(crate) fn get_epoch_summary(
     db: &impl DatabaseBackend,
     args: GetEpochSummaryArgs,
 ) -> Result<(), DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let chkpt_db = db.checkpoint_db();
-    let epoch_idx = args.epoch_index;
+    let epoch = args.epoch;
 
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let epoch_commitments = chkpt_db
-        .get_epoch_commitments_at(epoch_idx)
+    let epoch_commitments = db
+        .ol_checkpoint_db()
+        .get_epoch_commitments_at(u64::from(epoch))
         .internal_error(format!(
-            "Failed to get epoch commitments for epoch {epoch_idx}"
+            "Failed to get OL epoch commitments for epoch {epoch}"
         ))?;
 
     if epoch_commitments.is_empty() {
         return Err(DisplayedError::UserError(
             "No epoch summary found for epoch".to_string(),
-            Box::new(epoch_idx),
+            Box::new(epoch),
         ));
     }
 
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let epoch_summary = chkpt_db
+    let epoch_summary = db
+        .ol_checkpoint_db()
         .get_epoch_summary(epoch_commitments[0])
-        .internal_error(format!("Failed to get epoch summary for epoch {epoch_idx}",))?
+        .internal_error(format!("Failed to get OL epoch summary for epoch {epoch}"))?
         .ok_or_else(|| {
             DisplayedError::UserError(
-                format!("No epoch summary found for epoch {epoch_idx}"),
-                Box::new(epoch_idx),
+                format!("No epoch summary found for epoch {epoch}"),
+                Box::new(epoch),
             )
         })?;
 
     // Create the output data structure
     let epoch_info = EpochInfo {
-        epoch_index: epoch_idx,
+        epoch: u64::from(epoch),
         epoch_summary: &epoch_summary,
     };
 

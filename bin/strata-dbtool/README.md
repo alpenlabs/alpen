@@ -193,14 +193,14 @@ strata-dbtool get-ol-block 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01
 ```
 
 ### `get-checkpoints-summary`
-Shows a summary of all checkpoints in the database.
+Shows a summary of all OL checkpoints in the database.
 
 ```bash
-strata-dbtool get-checkpoints-summary <height_from>  [OPTIONS]
+strata-dbtool get-checkpoints-summary <height_from> [OPTIONS]
 ```
 
 **Arguments:**
-- `height_from` - Start l1 height to query checkpoints from
+- `height_from` - Start L1 height to query checkpoints from
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -211,14 +211,14 @@ strata-dbtool get-checkpoints-summary 10
 ```
 
 ### `get-checkpoint`
-Shows detailed information about a specific checkpoint.
+Shows detailed information about a specific OL checkpoint epoch.
 
 ```bash
-strata-dbtool get-checkpoint <checkpoint_index> [OPTIONS]
+strata-dbtool get-checkpoint <checkpoint_epoch> [OPTIONS]
 ```
 
 **Arguments:**
-- `checkpoint_index` - The checkpoint index (number)
+- `checkpoint_epoch` - Checkpoint epoch (number)
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -228,15 +228,19 @@ strata-dbtool get-checkpoint <checkpoint_index> [OPTIONS]
 strata-dbtool get-checkpoint 5
 ```
 
+**Notes:**
+- Checkpoint status is reported from OL checkpoint DB as `Unsigned` or `Signed`.
+- For `Signed`, output includes `checkpoint.status.intent_index`.
+
 ### `get-epoch-summary`
-Shows detailed information about a specific epoch.
+Shows detailed information about a specific OL epoch summary.
 
 ```bash
-strata-dbtool get-epoch-summary <epoch_index> [OPTIONS]
+strata-dbtool get-epoch-summary <epoch> [OPTIONS]
 ```
 
 **Arguments:**
-- `epoch_index` - The epoch index (number)
+- `epoch` - epoch
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
