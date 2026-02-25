@@ -17,7 +17,6 @@ use crate::{
     cmd::{
         broadcaster::{get_broadcaster_summary, get_broadcaster_tx},
         checkpoint::{get_checkpoint, get_checkpoints_summary, get_epoch_summary},
-        client_state::get_client_state_update,
         l1::{get_l1_manifest, get_l1_summary},
         ol::{get_ol_block, get_ol_summary},
         olstate::{get_ol_state, revert_ol_state},
@@ -53,7 +52,6 @@ fn main() {
         Command::GetBroadcasterTx(args) => get_broadcaster_tx(db.broadcast_db(), args),
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),
         Command::GetSyncinfo(args) => get_syncinfo(db, args),
-        Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
     };
 
     if let Err(e) = result {

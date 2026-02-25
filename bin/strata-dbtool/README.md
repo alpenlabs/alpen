@@ -50,23 +50,6 @@ strata-dbtool get-syncinfo [OPTIONS]
 strata-dbtool get-syncinfo
 ```
 
-### `get-client-state-update`
-Shows client state update information for a given L1 block.
-
-```bash
-strata-dbtool get-client-state-update <block_id> [OPTIONS]
-```
-**Arguments:**
-- `block_id` - L1 block ID (hex string)
-
-**Options:**
-- `-o, --output-format <format>` - Output format (default: porcelain)
-
-**Example:**
-```bash
-strata-dbtool get-client-state-update 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
-```
-
 ### `get-l1-summary`
 Shows a summary of all L1 manifests in the database.
 

@@ -9,7 +9,6 @@ use argh::FromArgs;
 use crate::cmd::{
     broadcaster::{GetBroadcasterSummaryArgs, GetBroadcasterTxArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
-    client_state::GetClientStateUpdateArgs,
     l1::{GetL1ManifestArgs, GetL1SummaryArgs},
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
     olstate::{GetOLStateArgs, RevertOLStateArgs},
@@ -41,7 +40,6 @@ pub(crate) enum Command {
     GetBroadcasterTx(GetBroadcasterTxArgs),
     GetOlBlock(GetOLBlockArgs),
     GetOlSummary(GetOLSummaryArgs),
-    GetClientStateUpdate(GetClientStateUpdateArgs),
     GetCheckpoint(GetCheckpointArgs),
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
     GetEpochSummary(GetEpochSummaryArgs),
