@@ -1,6 +1,6 @@
 //! Core mempool types.
 
-use std::{cmp::Ordering, collections::BTreeMap};
+use std::{cmp::Ordering, collections::BTreeMap, fmt::Debug};
 
 use ssz_derive::{Decode, Encode};
 use strata_acct_types::AccountId;
@@ -10,6 +10,38 @@ use strata_ol_chain_types_new::{GamTxPayload, TransactionAttachment};
 use strata_snark_acct_types::SnarkAccountUpdate;
 
 use crate::error::OLMempoolError;
+
+/// Policy trait for computing mempool ordering keys.
+///
+/// Implementations define how priority keys are computed from transaction data and insertion
+/// metadata. Key ordering is interpreted with the invariant that iterating keys in ascending order
+/// yields highest-priority transactions first.
+pub trait MempoolPriorityPolicy: Clone + Copy + Debug + Send + Sync + 'static {
+    /// Ordering key used by the policy.
+    type Key: Ord + Copy + Debug;
+
+    /// Compute an ordering key for a transaction.
+    ///
+    /// `txid` is provided for deterministic tie-breaking when two transactions otherwise share the
+    /// same priority.
+    fn compute_key(tx: &OLMempoolTransaction, timestamp_micros: u64, txid: OLTxId) -> Self::Key;
+}
+
+/// FIFO priority policy.
+///
+/// This is the current default behavior and will continue to be used unless another policy is
+/// explicitly selected.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct FifoPriority;
+
+impl MempoolPriorityPolicy for FifoPriority {
+    type Key = MempoolOrderingKey;
+
+    fn compute_key(tx: &OLMempoolTransaction, timestamp_micros: u64, _txid: OLTxId) -> Self::Key {
+        // `txid` tie-breaking is deferred until key-level tie-break fields are added.
+        MempoolOrderingKey::for_transaction(tx, timestamp_micros)
+    }
+}
 
 /// Default maximum number of transactions in the mempool.
 pub const DEFAULT_MAX_TX_COUNT: usize = 10_000;
