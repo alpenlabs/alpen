@@ -19,9 +19,9 @@ use tracing::warn;
 
 use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
+    ordering::MempoolOrderingKey,
     types::{
-        MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-        OLMempoolTransaction,
+        MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats, OLMempoolTransaction,
     },
     validation::validate_transaction,
 };
