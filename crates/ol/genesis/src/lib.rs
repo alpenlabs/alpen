@@ -64,7 +64,7 @@ pub fn default_genesis_manifest(params: &OLParams) -> AsmManifest {
 #[instrument(skip_all, fields(component = "ol_genesis"))]
 pub fn build_genesis_artifacts_with_manifest(
     params: &OLParams,
-    genesis_manifest: AsmManifest,
+    _genesis_manifest: AsmManifest,
 ) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
@@ -75,8 +75,13 @@ pub fn build_genesis_artifacts_with_manifest(
     let genesis_ts = params.header.timestamp;
     let genesis_info = BlockInfo::new_genesis(genesis_ts);
 
-    // Build genesis block components.
-    let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
+    // Do not include the genesis manifest in OL state's ASM manifest accumulator.
+    //
+    // ASM worker stores genesis manifest for data consumers, but intentionally starts the
+    // external/global ASM MMR at `genesis_l1_height + 1` (first post-genesis manifest at leaf 0).
+    // If OL genesis appends the genesis manifest here, OL state's MMR gets an extra leading leaf
+    // and ledger-reference proofs become permanently off-by-one against the global ASM MMR.
+    let genesis_components = BlockComponents::new_manifests(vec![]);
 
     // Execute genesis block through the OL STF.
     let block_context = BlockContext::new(&genesis_info, None);
