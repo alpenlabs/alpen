@@ -56,8 +56,25 @@ if [ -n "${OL_PARAMS_PATH}" ] && [ -f "${OL_PARAMS_PATH}" ]; then
     EXTRA_ARGS="--ol-params ${OL_PARAMS_PATH}"
 fi
 
+# Override config values from environment variables so a single config TOML
+# works for both regtest and signet.
+CONFIG_OVERRIDES=""
+if [ -n "${BITCOIND_RPC_URL}" ]; then
+    CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.rpc_url=${BITCOIND_RPC_URL}"
+fi
+if [ -n "${BITCOIND_RPC_USER}" ]; then
+    CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.rpc_user=${BITCOIND_RPC_USER}"
+fi
+if [ -n "${BITCOIND_RPC_PASSWORD}" ]; then
+    CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.rpc_password=${BITCOIND_RPC_PASSWORD}"
+fi
+
+BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
+CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.network=${BITCOIN_NETWORK}"
+
 exec strata \
   --config "${CONFIG_PATH}" \
   --rollup-params "${PARAM_PATH}" \
   ${EXTRA_ARGS} \
+  ${CONFIG_OVERRIDES} \
   "$@"

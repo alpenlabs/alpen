@@ -1,37 +1,30 @@
-FROM ubuntu:24.04 AS build
+FROM debian:bookworm-slim
 
-WORKDIR /build
-
-RUN apt-get update && \
-    apt-get install -y build-essential cmake pkg-config python3 \
-    libevent-dev libboost-dev libsqlite3-dev libssl-dev git
-
-RUN git clone -b 'v29.0' --single-branch --depth 1 https://github.com/bitcoin/bitcoin.git
-
-COPY configurable_blocktime_patch.diff configurable_blocktime_patch.diff
-RUN cd bitcoin && git apply /build/configurable_blocktime_patch.diff
-
-RUN cd bitcoin && \
-    cmake -B build && \
-    cmake --build build -j$(($(nproc) - 1)) && \
-    cmake --install build
-
-FROM ubuntu:24.04 AS runtime
+ARG BITCOIN_VERSION=30.2
+ARG TARGETARCH
 
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y libevent-dev libsqlite3-dev libssl-dev && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-COPY --from=build /usr/local/bin/bitcoind /usr/local/bin/bitcoind
-COPY --from=build /usr/local/bin/bitcoin-cli /usr/local/bin/bitcoin-cli
+    apt-get install -y --no-install-recommends ca-certificates wget && \
+    case "${TARGETARCH}" in \
+        amd64) ARCH="x86_64-linux-gnu" ;; \
+        arm64) ARCH="aarch64-linux-gnu" ;; \
+        *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    wget -q "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-${ARCH}.tar.gz" && \
+    tar -xzf "bitcoin-${BITCOIN_VERSION}-${ARCH}.tar.gz" && \
+    install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoind" /usr/local/bin/ && \
+    install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli" /usr/local/bin/ && \
+    rm -rf "bitcoin-${BITCOIN_VERSION}"* && \
+    apt-get purge -y wget && apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /root/.bitcoin
 
 COPY bcli.sh bcli.sh
 RUN chmod +x /app/bcli.sh
 
-EXPOSE 18443 18444
+EXPOSE 18443 18444 38332 38333
 
 ENTRYPOINT ["/app/entrypoint.sh"]

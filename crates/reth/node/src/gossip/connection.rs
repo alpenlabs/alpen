@@ -13,7 +13,7 @@ use reth_network::protocol::{ConnectionHandler, OnNotSupported};
 use reth_network_api::{Direction, PeerId};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 use crate::{
     gossip::{
@@ -62,12 +62,24 @@ impl ConnectionHandler for AlpenGossipConnectionHandler {
         direction: Direction,
         peer_id: PeerId,
     ) -> OnNotSupported {
-        warn!(
-            target: "alpen-gossip",
-            %peer_id,
-            ?direction,
-            "Peer does not support alpen_gossip protocol, disconnecting"
-        );
+        match direction {
+            Direction::Incoming => {
+                warn!(
+                    target: "alpen-gossip",
+                    %peer_id,
+                    ?direction,
+                    "Peer does not support alpen_gossip protocol, disconnecting"
+                );
+            }
+            Direction::Outgoing(_) => {
+                debug!(
+                    target: "alpen-gossip",
+                    %peer_id,
+                    ?direction,
+                    "Peer does not support alpen_gossip protocol, disconnecting"
+                );
+            }
+        }
         OnNotSupported::Disconnect
     }
 
