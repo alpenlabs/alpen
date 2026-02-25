@@ -7,7 +7,7 @@ import flexitest
 from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
 from common.config.constants import DEV_ADDRESS, ServiceType
-from common.evm_utils import create_funded_account, wait_for_receipt
+from common.evm_utils import create_funded_account, send_raw_transaction, wait_for_receipt
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class TestTxForwarding(AlpenClientTest):
         )
 
         logger.info("Sending transaction to fullnode...")
-        tx_hash = fn_rpc.eth_sendRawTransaction(raw_tx)
+        tx_hash = send_raw_transaction(fn_rpc, raw_tx)
         logger.info(f"Transaction sent to fullnode: {tx_hash}")
 
         logger.info("Waiting for receipt from sequencer...")

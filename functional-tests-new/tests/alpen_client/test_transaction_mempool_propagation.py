@@ -12,6 +12,7 @@ import flexitest
 from common.accounts import get_dev_account, get_recipient_account
 from common.base_test import AlpenClientTest
 from common.config.constants import ServiceType
+from common.evm_utils import send_raw_transaction
 from common.wait import wait_until
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
             gas_price=gas_price,
         )
 
-        tx_hash = fn_rpc.eth_sendRawTransaction(raw_tx)
+        tx_hash = send_raw_transaction(fn_rpc, raw_tx)
         logger.info(f"Sent tx {tx_hash} to fullnode_0")
 
         # Wait for transaction to be mined
