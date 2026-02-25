@@ -1,16 +1,12 @@
-# docker-compose-alpen-client.yml
-#
-# Single alpen-client sequencer + strata (OL) + bitcoind (regtest).
+# 1 alpen-client sequencer + 1 fullnode + strata (OL) + bitcoind (regtest).
 #
 # Prerequisites:
-#   1. Run ./init-alpen-client-keys.sh to generate keys and .env.alpen-client
-#   2. Place params.json in configs/ (gitignored — obtain from the team)
-#   3. Build:  docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
-#   4. Start:  docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
+#   1. Run ./init-alpen-client-keys.sh
+#   2. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
+#   3. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
 
 services:
 
-  # ---- L1 -------------------------------------------------------------------
   bitcoind:
     build:
       context: ./bitcoind/
@@ -21,9 +17,6 @@ services:
       BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
       BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
       BITCOIND_WALLET: default
-      BRIDGE_WALLET_1: bridge1
-      BRIDGE_WALLET_2: bridge2
-      BRIDGE_WALLET_3: bridge3
       GENERATE_BLOCKS: ${GENERATE_BLOCKS:-}
     volumes:
       - ./data/bitcoind:/root/.bitcoin
@@ -34,7 +27,6 @@ services:
       - alpen_network
     restart: unless-stopped
 
-  # ---- OL (sequencer) -------------------------------------------------------
   strata:
     build:
       context: ..
@@ -44,11 +36,20 @@ services:
     user: "0:0"
     depends_on:
       - bitcoind
+    command:
+      - "--sequencer"
+      - "--sequencer-key"
+      - /app/configs/alpen-client/sequencer.key
+      - "--ol-params"
+      - /app/configs/alpen-client/ol-params.json
+      - "--rpc-host"
+      - "0.0.0.0"
     environment:
       CONFIG_PATH: /app/configs/config.regtest.toml
-      PARAM_PATH: /app/configs/params.json
+      PARAM_PATH: /app/configs/alpen-client/rollup-params.json
       RUST_LOG: ${RUST_LOG:-info}
       RUST_BACKTRACE: 1
+      NO_COLOR: 1
     volumes:
       - ./configs:/app/configs:ro
       - ./data/strata:/app/data
@@ -59,15 +60,15 @@ services:
       - alpen_network
     restart: unless-stopped
 
-  # ---- EE sequencer ----------------------------------------------------------
   alpen-client:
     build:
       context: ..
       dockerfile: docker/alpen-client/Dockerfile
     image: alpen-client:latest
-    container_name: alpen_client
+    container_name: alpen_client_seq
     depends_on:
       - strata
+      - bitcoind
     command:
       - --sequencer
       - --sequencer-pubkey
@@ -76,6 +77,16 @@ services:
       - ws://strata:8432
       - --custom-chain
       - ${CHAIN_SPEC:-testnet}
+      - --datadir
+      - /app/data
+      - --p2p-secret-key
+      - /app/keys/seq-p2p.hex
+      - --addr
+      - "0.0.0.0"
+      - --port
+      - "30303"
+      - --nat
+      - none
       - --disable-discovery
       - --http
       - --http.addr
@@ -83,7 +94,7 @@ services:
       - --http.port
       - "8545"
       - --http.api
-      - eth,net,web3,txpool
+      - eth,net,web3,txpool,admin,debug
       - --ws
       - --ws.addr
       - "0.0.0.0"
@@ -97,20 +108,98 @@ services:
       - "8551"
       - --authrpc.jwtsecret
       - /app/keys/jwt.hex
-      - --datadir
-      - /app/data
+      - --ee-da-magic-bytes
+      - ${EE_DA_MAGIC_BYTES:-ALPT}
+      - --btc-rpc-url
+      - http://bitcoind:${BITCOIND_RPC_PORT:-18443}
+      - --btc-rpc-user
+      - ${BITCOIND_RPC_USER:-rpcuser}
+      - --btc-rpc-password
+      - ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      - --l1-reorg-safe-depth
+      - "${L1_REORG_SAFE_DEPTH:-1}"
+      - --genesis-l1-height
+      - "${GENESIS_L1_HEIGHT:-0}"
+      - --batch-sealing-block-count
+      - "${BATCH_SEALING_BLOCK_COUNT:-5}"
       - --color
       - never
     environment:
       SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
-      - "${HTTP_PORT:-8545}:8545"
-      - "${WS_PORT:-8546}:8546"
-      - "${P2P_PORT:-30303}:30303"
+      - "${SEQ_HTTP_PORT:-8545}:8545"
+      - "${SEQ_WS_PORT:-8546}:8546"
+      - "${SEQ_P2P_PORT:-30303}:30303"
     volumes:
       - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
-      - ./data/alpen-client:/app/data
+      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+      - ./data/alpen-client-seq:/app/data
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+  alpen-client-fullnode:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    container_name: alpen_client_fn
+    depends_on:
+      - strata
+      - alpen-client
+    command:
+      - --sequencer-pubkey
+      - ${SEQUENCER_PUBKEY}
+      - --ol-client-url
+      - ws://strata:8432
+      - --custom-chain
+      - ${CHAIN_SPEC:-testnet}
+      - --datadir
+      - /app/data
+      - --sequencer-http
+      - http://alpen-client:8545
+      - --p2p-secret-key
+      - /app/keys/fn-p2p.hex
+      - --addr
+      - "0.0.0.0"
+      - --port
+      - "30303"
+      - --nat
+      - none
+      - --disable-discovery
+      - --trusted-peers
+      - enode://${SEQ_P2P_PUBKEY}@alpen-client:30303
+      - --http
+      - --http.addr
+      - "0.0.0.0"
+      - --http.port
+      - "8545"
+      - --http.api
+      - eth,net,web3,txpool,admin,debug
+      - --ws
+      - --ws.addr
+      - "0.0.0.0"
+      - --ws.port
+      - "8546"
+      - --ws.api
+      - eth,net,web3,txpool
+      - --authrpc.addr
+      - "0.0.0.0"
+      - --authrpc.port
+      - "8551"
+      - --color
+      - never
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${FN_HTTP_PORT:-9545}:8545"
+      - "${FN_WS_PORT:-9546}:8546"
+      - "${FN_P2P_PORT:-31303}:30303"
+    volumes:
+      - ./configs/alpen-client/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
+      - ./data/alpen-client-fn:/app/data
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
       - alpen_network

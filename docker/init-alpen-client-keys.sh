@@ -1,23 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate cryptographic keys for a single alpen-client sequencer deployment.
-#
-# Produces:
-#   configs/alpen-client/sequencer-schnorr.hex  (Schnorr private key)
-#   configs/alpen-client/jwt.hex                (Engine API JWT secret)
-#   .env.alpen-client                           (environment file for docker-compose)
-#
-# Usage:
-#   ./init-alpen-client-keys.sh
-#   docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up
+# Generate keys and params for alpen-client docker deployment (sequencer + fullnode).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/configs/alpen-client"
 
-echo "==> Checking prerequisites..."
-
-# Find a Python interpreter that has coincurve installed.
 PYTHON=""
 for candidate in python3 python3.12 python3.11 python3.10 python; do
     if command -v "${candidate}" &>/dev/null && "${candidate}" -c "import coincurve" 2>/dev/null; then
@@ -27,111 +15,156 @@ for candidate in python3 python3.12 python3.11 python3.10 python; do
 done
 
 if [ -z "${PYTHON}" ]; then
-    echo "ERROR: No Python interpreter with 'coincurve' found."
-    echo "Install it with: pip install coincurve"
+    echo "error: no python with 'coincurve' found. install: pip install coincurve" >&2
     exit 1
 fi
 
-echo "    Using Python: $(command -v "${PYTHON}") ($(${PYTHON} --version 2>&1))"
-
-echo "==> Creating output directory: ${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
 
-# ---------------------------------------------------------------------------
-# Helper: generate 32 random bytes as hex
-# ---------------------------------------------------------------------------
 generate_secret_key() {
     od -An -tx1 -N32 /dev/urandom | tr -d ' \n'
 }
 
-# ---------------------------------------------------------------------------
-# Helper: derive x-only (Schnorr) public key from a 32-byte hex private key.
-# Returns 64 hex chars (32 bytes) — the x-coordinate of the public key.
-# ---------------------------------------------------------------------------
 derive_schnorr_pubkey() {
     local privkey_hex="$1"
     echo -n "${privkey_hex}" | "${PYTHON}" -c "
-import coincurve
-import sys
-
-privkey_bytes = bytes.fromhex(sys.stdin.read())
-pk = coincurve.PublicKey.from_secret(privkey_bytes)
-# Compressed is 33 bytes: prefix || x-coordinate
-compressed = pk.format(compressed=True)
-# x-only = drop the 1-byte prefix
-sys.stdout.write(compressed[1:].hex())
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=True)[1:].hex())
 "
 }
 
-# ---------------------------------------------------------------------------
-# Generate Sequencer Schnorr keypair (for gossip signing)
-# ---------------------------------------------------------------------------
-echo "==> Generating sequencer Schnorr keypair..."
+derive_enode_pubkey() {
+    local privkey_hex="$1"
+    echo -n "${privkey_hex}" | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=False)[1:].hex())
+"
+}
 
+generate_key_file() {
+    local filepath="$1"
+    if [ -f "${filepath}" ]; then
+        return
+    fi
+    generate_secret_key > "${filepath}"
+}
+
+# Schnorr keypair (gossip signing)
 SCHNORR_KEY="${OUTPUT_DIR}/sequencer-schnorr.hex"
-
-if [ -f "${SCHNORR_KEY}" ]; then
-    echo "    ${SCHNORR_KEY} already exists, skipping."
-else
-    generate_secret_key > "${SCHNORR_KEY}"
-    echo "    Created ${SCHNORR_KEY}"
-fi
-
+generate_key_file "${SCHNORR_KEY}"
 SCHNORR_PRIVKEY=$(cat "${SCHNORR_KEY}")
 SCHNORR_PUBKEY=$(derive_schnorr_pubkey "${SCHNORR_PRIVKEY}")
 
-echo "    Sequencer Schnorr pubkey: ${SCHNORR_PUBKEY}"
+# P2P keys
+SEQ_P2P_KEY="${OUTPUT_DIR}/seq-p2p.hex"
+FN_P2P_KEY="${OUTPUT_DIR}/fn-p2p.hex"
+generate_key_file "${SEQ_P2P_KEY}"
+generate_key_file "${FN_P2P_KEY}"
 
-# ---------------------------------------------------------------------------
-# Generate JWT secret (shared between strata OL and alpen-client for
-# Engine API authentication)
-# ---------------------------------------------------------------------------
-echo "==> Generating JWT secret..."
+SEQ_P2P_PRIVKEY=$(cat "${SEQ_P2P_KEY}")
+FN_P2P_PRIVKEY=$(cat "${FN_P2P_KEY}")
+SEQ_P2P_PUBKEY=$(derive_enode_pubkey "${SEQ_P2P_PRIVKEY}")
+FN_P2P_PUBKEY=$(derive_enode_pubkey "${FN_P2P_PRIVKEY}")
 
+# JWT secret (Engine API auth between strata and alpen-client)
 JWT_FILE="${OUTPUT_DIR}/jwt.hex"
+generate_key_file "${JWT_FILE}"
 
-if [ -f "${JWT_FILE}" ]; then
-    echo "    ${JWT_FILE} already exists, skipping."
-else
-    generate_secret_key > "${JWT_FILE}"
-    echo "    Created ${JWT_FILE}"
+# Sequencer root key (xpriv)
+SEQ_ROOT_KEY="${OUTPUT_DIR}/sequencer.key"
+if [ ! -f "${SEQ_ROOT_KEY}" ]; then
+    # Hardcoded test xpriv. In production use: strata-datatool genxpriv
+    echo -n "tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7" > "${SEQ_ROOT_KEY}"
 fi
 
-# ---------------------------------------------------------------------------
-# Write .env.alpen-client
-# ---------------------------------------------------------------------------
-ENV_FILE="${SCRIPT_DIR}/.env.alpen-client"
+# rollup-params.json
+ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
+if [ ! -f "${ROLLUP_PARAMS}" ]; then
+    OPERATOR_PUBKEY=$(generate_secret_key | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=True)[1:].hex())
+")
 
-echo "==> Writing ${ENV_FILE}..."
+    cat > "${ROLLUP_PARAMS}" <<REOF
+{
+  "magic_bytes": "ALPN",
+  "block_time": 5000,
+  "cred_rule": "unchecked",
+  "genesis_l1_view": {
+    "blk": {
+      "height": 0,
+      "blkid": "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+    },
+    "next_target": 1000,
+    "epoch_start_timestamp": 1000,
+    "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "operators": ["${OPERATOR_PUBKEY}"],
+  "evm_genesis_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "evm_genesis_block_state_root": "0000000000000000000000000000000000000000000000000000000000000000",
+  "l1_reorg_safe_depth": 1,
+  "target_l2_batch_size": 64,
+  "deposit_amount": 100000,
+  "recovery_delay": 1008,
+  "checkpoint_predicate": "AlwaysAccept",
+  "dispatch_assignment_dur": 144,
+  "proof_publish_mode": {"timeout": 30},
+  "max_deposits_in_block": 10,
+  "network": "regtest"
+}
+REOF
+fi
+
+# ol-params.json
+OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
+if [ ! -f "${OL_PARAMS}" ]; then
+    cat > "${OL_PARAMS}" <<OEOF
+{
+  "accounts": {},
+  "last_l1_block": {
+    "height": 0,
+    "blkid": "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+  }
+}
+OEOF
+fi
+
+# .env.alpen-client
+ENV_FILE="${SCRIPT_DIR}/.env.alpen-client"
 
 cat > "${ENV_FILE}" <<EOF
 # Generated by init-alpen-client-keys.sh — do not edit manually.
 # Re-run the script to regenerate (existing keys are preserved).
 
-# --- Sequencer Schnorr keys (gossip signing) --------------------------------
 SEQUENCER_PRIVATE_KEY=${SCHNORR_PRIVKEY}
 SEQUENCER_PUBKEY=${SCHNORR_PUBKEY}
 
-# --- Chain spec (dev | devnet | testnet) ------------------------------------
+SEQ_P2P_PUBKEY=${SEQ_P2P_PUBKEY}
+FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
+
 CHAIN_SPEC=${CHAIN_SPEC:-testnet}
 
-# --- Bitcoin RPC -------------------------------------------------------------
+EE_DA_MAGIC_BYTES=${EE_DA_MAGIC_BYTES:-ALPT}
+L1_REORG_SAFE_DEPTH=${L1_REORG_SAFE_DEPTH:-1}
+GENESIS_L1_HEIGHT=${GENESIS_L1_HEIGHT:-0}
+BATCH_SEALING_BLOCK_COUNT=${BATCH_SEALING_BLOCK_COUNT:-5}
+
 BITCOIND_RPC_USER=${BITCOIND_RPC_USER:-rpcuser}
 BITCOIND_RPC_PASSWORD=${BITCOIND_RPC_PASSWORD:-rpcpassword}
+BITCOIND_RPC_PORT=${BITCOIND_RPC_PORT:-18443}
 
-# --- Logging ----------------------------------------------------------------
+STRATA_RPC_PORT=${STRATA_RPC_PORT:-8432}
+
+SEQ_HTTP_PORT=${SEQ_HTTP_PORT:-8545}
+SEQ_WS_PORT=${SEQ_WS_PORT:-8546}
+SEQ_P2P_PORT=${SEQ_P2P_PORT:-30303}
+
+FN_HTTP_PORT=${FN_HTTP_PORT:-9545}
+FN_WS_PORT=${FN_WS_PORT:-9546}
+FN_P2P_PORT=${FN_P2P_PORT:-31303}
+
 RUST_LOG=${RUST_LOG:-info}
 EOF
-
-echo ""
-echo "=== Done ==="
-echo ""
-echo "Generated files:"
-echo "  Schnorr key:    ${SCHNORR_KEY}"
-echo "  JWT secret:     ${JWT_FILE}"
-echo "  Environment:    ${ENV_FILE}"
-echo ""
-echo "Next steps:"
-echo "  cd ${SCRIPT_DIR}"
-echo "  docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build"
-echo "  docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up"

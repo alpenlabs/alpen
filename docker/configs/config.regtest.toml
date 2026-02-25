@@ -41,7 +41,7 @@ client_poll_dur_ms = 2000
 client_checkpoint_interval = 10
 
 [exec.reth]
-rpc_url = "alpen-client-seq:8551"
+rpc_url = "alpen-client:8551"
 secret = "/app/configs/alpen-client/jwt.hex"
 
 [relayer]
