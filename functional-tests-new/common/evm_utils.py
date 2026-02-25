@@ -43,8 +43,9 @@ def send_raw_transaction(rpc, raw_tx: str) -> str:
     includes the tx in a block and gossips it back before the fullnode's
     local pool insertion completes, causing an "already known" error.
 
-    This is benign: the tx was successfully forwarded and processed.
-    We recover by computing the tx hash from the raw bytes.
+    When this happens the tx was already processed, but the RPC error means
+    no hash is returned. We derive it ourselves as keccak256(raw_tx_bytes),
+    which is the standard Ethereum transaction hash definition.
     """
     try:
         return rpc.eth_sendRawTransaction(raw_tx)
