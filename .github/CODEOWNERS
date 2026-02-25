@@ -19,29 +19,44 @@ flake.lock @alpenlabs/ci
 /crates/ @alpenlabs/rust # fallback catch all
 /crates/acct-types/ @alpenlabs/chain-protocol @alpenlabs/chain-core
 /crates/asm*/ @alpenlabs/chain-protocol
+/crates/bridge-types/ @alpenlabs/TODO
 /crates/btc*/ @alpenlabs/chain-protocol
 /crates/chain*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/checkpoint-types/ @alpenlabs/TODO
+/crates/checkpoint-types-ssz/ @alpenlabs/TODO
+/crates/cli-common/ @alpenlabs/TODO
+/crates/codec-utils/ @alpenlabs/TODO
 /crates/common/ @alpenlabs/rust
 /crates/config/ @alpenlabs/rust
 /crates/consensus*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
 /crates/crypto/ @alpenlabs/crypto @alpenlabs/rust
+/crates/csm-types/ @alpenlabs/TODO
+/crates/csm-worker/ @alpenlabs/TODO
+/crates/da-framework/ @alpenlabs/TODO
 /crates/db*/ @alpenlabs/chain-core
 /crates/*ee*/ @alpenlabs/chain-core
 /crates/evm*/ @alpenlabs/chain-core
+/crates/identifiers/ @alpenlabs/TODO
 /crates/key-derivation/ @alpenlabs/crypto @alpenlabs/rust
 /crates/l1tx/ @alpenlabs/chain-protocol
+/crates/ledger-types/ @alpenlabs/TODO
 /crates/mpt/ @alpenlabs/chain-protocol @alpenlabs/crypto
+/crates/node-context/ @alpenlabs/TODO
 /crates/ol*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
+/crates/paas/ @alpenlabs/TODO
+/crates/params/ @alpenlabs/TODO
 /crates/primitives/ @alpenlabs/crypto @alpenlabs/rust
 /crates/proof*/ @alpenlabs/chain-protocol
 /crates/reth*/ @alpenlabs/chain-protocol @alpenlabs/chain-core
 /crates/rpc/ @alpenlabs/chain-core
 /crates/sequencer/ @alpenlabs/chain-protocol @alpenlabs/chain-core
 /crates/service/ @alpenlabs/rust
+/crates/services/ @alpenlabs/TODO
 /crates/snark*/ @alpenlabs/chain-protocol
 /crates/state/ @alpenlabs/chain-core
 /crates/status/ @alpenlabs/chain-core
 /crates/storage/ @alpenlabs/chain-core
+/crates/storage-common/ @alpenlabs/TODO
 /crates/strata-cli*/ @alpenlabs/rust
 /crates/sync/ @alpenlabs/chain-core
 /crates/tasks/ @alpenlabs/chain-core
@@ -65,6 +80,14 @@ functional-tests/fn_*.py @alpenlabs/python @alpenlabs/ci
 functional-tests/constants.py @alpenlabs/python @alpenlabs/ci
 functional-tests/entry.py @alpenlabs/python @alpenlabs/ci
 functional-tests/uv.lock @alpenlabs/python
+
+# Functional tests new
+functional-tests-new/ @alpenlabs/python # catch all
+functional-tests-new/fn_*.py @alpenlabs/python @alpenlabs/ci
+functional-tests-new/constants.py @alpenlabs/python @alpenlabs/ci
+functional-tests-new/entry.py @alpenlabs/python @alpenlabs/ci
+functional-tests-new/uv.lock @alpenlabs/python
+
 
 # Docker/Containers
 **/Docker* @alpenlabs/docker
