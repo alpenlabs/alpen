@@ -123,7 +123,12 @@ OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
 if [ ! -f "${OL_PARAMS}" ]; then
     cat > "${OL_PARAMS}" <<OEOF
 {
-  "accounts": {},
+  "accounts": {
+    "0101010101010101010101010101010101010101010101010101010101010101": {
+      "predicate": "AlwaysAccept",
+      "inner_state": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
   "last_l1_block": {
     "height": 0,
     "blkid": "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"

@@ -23,6 +23,12 @@ services:
       - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
     ports:
       - "${BITCOIND_RPC_PORT:-18443}:18443"
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=rpcuser", "-rpcpassword=rpcpassword", "getblockchaininfo"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     networks:
       - alpen_network
     restart: unless-stopped
@@ -35,18 +41,21 @@ services:
     container_name: alpen_strata
     user: "0:0"
     depends_on:
-      - bitcoind
+      bitcoind:
+        condition: service_healthy
     command:
       - "--sequencer"
       - "--sequencer-key"
       - /app/configs/alpen-client/sequencer.key
-      - "--ol-params"
-      - /app/configs/alpen-client/ol-params.json
       - "--rpc-host"
       - "0.0.0.0"
     environment:
       CONFIG_PATH: /app/configs/config.regtest.toml
       PARAM_PATH: /app/configs/alpen-client/rollup-params.json
+      OL_PARAMS_PATH: /app/configs/alpen-client/ol-params.json
+      BITCOIND_RPC_URL: http://bitcoind:18443/wallet/default
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
       RUST_LOG: ${RUST_LOG:-info}
       RUST_BACKTRACE: 1
       NO_COLOR: 1
@@ -111,7 +120,7 @@ services:
       - --ee-da-magic-bytes
       - ${EE_DA_MAGIC_BYTES:-ALPT}
       - --btc-rpc-url
-      - http://bitcoind:${BITCOIND_RPC_PORT:-18443}
+      - http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
       - --btc-rpc-user
       - ${BITCOIND_RPC_USER:-rpcuser}
       - --btc-rpc-password

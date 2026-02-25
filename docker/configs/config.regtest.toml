@@ -17,7 +17,7 @@ db_retry_count = 5
 is_sequencer = true
 
 [bitcoind]
-rpc_url = "bitcoind:18443/wallet/default"
+rpc_url = "http://bitcoind:18443/wallet/default"
 rpc_user = "rpcuser"
 rpc_password = "rpcpassword"
 network = "regtest"
@@ -43,6 +43,12 @@ client_checkpoint_interval = 10
 [exec.reth]
 rpc_url = "alpen-client:8551"
 secret = "/app/configs/alpen-client/jwt.hex"
+
+[sequencer]
+
+[epoch_sealing]
+policy = "FixedSlot"
+slots_per_epoch = 64
 
 [relayer]
 refresh_interval = 10
