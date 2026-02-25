@@ -11,17 +11,44 @@ from pathlib import Path
 import flexitest
 
 from common.config import (
-    AsmParams,
     BitcoindConfig,
     ClientConfig,
     OLParams,
-    RollupParams,
     SequencerConfig,
     ServiceType,
     StrataConfig,
 )
 from common.config.params import GenesisL1View
 from common.services import StrataProps, StrataService
+
+
+def _run_datatool(
+    args: list[str], bconfig: BitcoindConfig | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Runs strata-datatool with optional Bitcoin RPC credentials."""
+    tool = shutil.which("strata-datatool")
+    if tool is None:
+        raise RuntimeError("strata-datatool not found on PATH")
+
+    cmd = [tool, "-b", "regtest"]
+    if bconfig is not None:
+        cmd.extend(
+            [
+                "--bitcoin-rpc-url",
+                bconfig.rpc_url,
+                "--bitcoin-rpc-user",
+                bconfig.rpc_user,
+                "--bitcoin-rpc-password",
+                bconfig.rpc_password,
+            ]
+        )
+    cmd.extend(args)
+
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        details = res.stderr.strip() or res.stdout.strip()
+        raise RuntimeError(f"strata-datatool {args[0]} failed: {details}")
+    return res
 
 
 class StrataFactory(flexitest.Factory):
@@ -54,6 +81,64 @@ class StrataFactory(flexitest.Factory):
         path.write_text(
             "tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7"
         )
+
+    def _generate_sequencer_pubkey(self, sequencer_key_path: Path) -> str:
+        res = _run_datatool(["genseqpubkey", "-f", str(sequencer_key_path)])
+        sequencer_pubkey = res.stdout.strip()
+        if not sequencer_pubkey:
+            raise RuntimeError("strata-datatool genseqpubkey returned empty output")
+        return sequencer_pubkey
+
+    def _generate_rollup_params(
+        self,
+        datadir: Path,
+        bconfig: BitcoindConfig,
+        genesis_l1_height: int,
+        sequencer_pubkey: str,
+        operator_xprivs: list[str],
+    ) -> Path:
+        params_path = datadir / "rollup-params.json"
+
+        args = [
+            "genparams",
+            "--name",
+            "ALPN",
+            "--genesis-l1-height",
+            str(genesis_l1_height),
+            "--seqkey",
+            sequencer_pubkey,
+            "-o",
+            str(params_path),
+        ]
+        for opkey in operator_xprivs:
+            args.extend(["--opkey", opkey])
+
+        _run_datatool(args, bconfig)
+        return params_path
+
+    def _generate_asm_params(
+        self,
+        datadir: Path,
+        bconfig: BitcoindConfig,
+        genesis_l1_height: int,
+        operator_xprivs: list[str],
+    ) -> Path:
+        params_path = datadir / "asm-params.json"
+
+        args = [
+            "gen-asm-params",
+            "--name",
+            "ALPN",
+            "--genesis-l1-height",
+            str(genesis_l1_height),
+            "-o",
+            str(params_path),
+        ]
+        for opkey in operator_xprivs:
+            args.extend(["--opkey", opkey])
+
+        _run_datatool(args, bconfig)
+        return params_path
 
     def __init__(self, port_range: range):
         ports = list(port_range)
@@ -101,11 +186,22 @@ class StrataFactory(flexitest.Factory):
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
 
-        # Create rollup params
-        params = RollupParams().with_genesis_l1(genesis_l1)
-        params_path = datadir / "rollup-params.json"
-        with open(params_path, "w") as f:
-            f.write(params.as_json_string())
+        genesis_l1_height = genesis_l1.blk.height
+
+        # Generate rollup params via datatool.
+        sequencer_key_path = datadir / "sequencer_root_key"
+        self._ensure_sequencer_key(sequencer_key_path)
+        sequencer_pubkey = self._generate_sequencer_pubkey(sequencer_key_path)
+        operator_key_path = datadir / "operator_root_key"
+        self._ensure_sequencer_key(operator_key_path)
+        operator_xpriv = operator_key_path.read_text().strip()
+        params_path = self._generate_rollup_params(
+            datadir,
+            bconfig,
+            genesis_l1_height,
+            sequencer_pubkey,
+            [operator_xpriv],
+        )
 
         # Create OL params
         ol_params = OLParams().with_genesis_l1(genesis_l1)
@@ -113,11 +209,13 @@ class StrataFactory(flexitest.Factory):
         with open(ol_params_path, "w") as f:
             f.write(ol_params.as_json_string())
 
-        # Create ASM params
-        asm_params = AsmParams().with_genesis_l1(genesis_l1)
-        asm_params_path = datadir / "asm-params.json"
-        with open(asm_params_path, "w") as f:
-            f.write(asm_params.as_json_string())
+        # Generate ASM params via datatool to keep the L1 view consistent.
+        asm_params_path = self._generate_asm_params(
+            datadir,
+            bconfig,
+            genesis_l1_height,
+            [operator_xpriv],
+        )
 
         # Build command
         cmd = [
@@ -139,8 +237,6 @@ class StrataFactory(flexitest.Factory):
         ]
 
         if is_sequencer:
-            sequencer_key_path = datadir / "sequencer_root_key"
-            self._ensure_sequencer_key(sequencer_key_path)
             cmd.extend(["--sequencer", "--sequencer-key", str(sequencer_key_path)])
 
         # Add config overrides

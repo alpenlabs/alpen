@@ -19,7 +19,7 @@ setup_path() {
 build() {
     # TODO: add conditional builds as we go
     # TODO: different binaries for sequencer and full nodes
-    cargo build  -F sequencer -F debug-utils -F test-mode --bin strata --bin alpen-client
+    cargo build  -F sequencer -F debug-utils -F test-mode --bin strata --bin alpen-client --bin strata-datatool
 }
 
 # Runs tests.
