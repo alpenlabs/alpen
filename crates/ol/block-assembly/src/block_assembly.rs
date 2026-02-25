@@ -1228,7 +1228,8 @@ mod tests {
 
         let block_template = result.unwrap().into_template();
         check_block_slot_epoch(&block_template, 10, 1);
-        check_terminal_block_with_manifests(&block_template, &[1, 2, 3]);
+        // After genesis processes manifest 1, only manifests 2 and 3 remain
+        check_terminal_block_with_manifests(&block_template, &[2, 3]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1471,7 +1472,7 @@ mod tests {
         let account1 = test_account_id(1);
         let account2 = test_account_id(2);
         let env = TestEnvBuilder::new()
-            .with_parent_slot(0)
+            .with_parent_slot(1) // Start from slot 1 instead of genesis to avoid genesis manifest conflicts
             .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
             .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
             .with_claim_manifests(2)

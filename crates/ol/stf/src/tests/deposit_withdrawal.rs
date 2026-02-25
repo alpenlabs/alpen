@@ -61,7 +61,7 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Create manifest with the deposit log
     let genesis_manifest = AsmManifest::new(
-        0,
+        1, // Genesis manifest should be at height 1 when last_l1_height is 0
         test_l1_block_id(1),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![deposit_log],
