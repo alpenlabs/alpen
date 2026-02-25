@@ -1,4 +1,4 @@
-"""EVM account management with thread-safe nonce tracking."""
+"""EVM account management with per-instance nonce tracking."""
 
 import threading
 
@@ -12,15 +12,14 @@ from .config.constants import (
     DEV_RECIPIENT_PRIVATE_KEY,
 )
 
-_dev_account_lock = threading.Lock()
-_dev_account_nonce: int = 0
-
-_recipient_account_lock = threading.Lock()
-_recipient_account_nonce: int = 0
-
 
 class ManagedAccount:
-    """EVM account with thread-safe nonce management."""
+    """EVM account with thread-safe nonce management.
+
+    Each instance maintains its own nonce counter. Use ``sync_nonce`` to
+    initialize it from chain state, then ``get_nonce`` / ``sign_transfer``
+    to auto-increment.
+    """
 
     def __init__(self, account: LocalAccount, chain_id: int = DEV_CHAIN_ID):
         self._account = account
@@ -105,50 +104,22 @@ class ManagedAccount:
         return "0x" + signed.raw_transaction.hex()
 
 
-class _SharedDevAccount(ManagedAccount):
-    """Dev account using module-level shared nonce state."""
+def get_dev_account(rpc) -> ManagedAccount:
+    """Get the primary dev account with nonce synced from chain.
 
-    def __init__(
-        self,
-        account: LocalAccount,
-        shared_lock: threading.Lock,
-        chain_id: int = DEV_CHAIN_ID,
-    ):
-        super().__init__(account, chain_id)
-        self._shared_lock = shared_lock
-
-    def get_nonce(self) -> int:
-        global _dev_account_nonce, _recipient_account_nonce
-
-        with self._shared_lock:
-            if self._shared_lock is _dev_account_lock:
-                nonce = _dev_account_nonce
-                _dev_account_nonce += 1
-            else:
-                nonce = _recipient_account_nonce
-                _recipient_account_nonce += 1
-            return nonce
-
-    def sync_nonce(self, nonce: int) -> None:
-        global _dev_account_nonce, _recipient_account_nonce
-
-        with self._shared_lock:
-            if self._shared_lock is _dev_account_lock:
-                _dev_account_nonce = nonce
-            else:
-                _recipient_account_nonce = nonce
-
-
-def get_dev_account() -> ManagedAccount:
-    """Get the primary dev account (Foundry/Hardhat account #0)."""
-    account = Account.from_key(DEV_PRIVATE_KEY)
-    return _SharedDevAccount(account, _dev_account_lock)
+    Returns a fresh instance whose nonce counter is initialized from
+    the pending on-chain nonce. No module-level state is shared, so
+    different tests and environments cannot interfere with each other.
+    """
+    account = ManagedAccount.from_key(DEV_PRIVATE_KEY)
+    nonce = int(rpc.eth_getTransactionCount(account.address, "pending"), 16)
+    account.sync_nonce(nonce)
+    return account
 
 
 def get_recipient_account() -> ManagedAccount:
     """Get the secondary dev account (Foundry/Hardhat account #1)."""
-    account = Account.from_key(DEV_RECIPIENT_PRIVATE_KEY)
-    return _SharedDevAccount(account, _recipient_account_lock)
+    return ManagedAccount.from_key(DEV_RECIPIENT_PRIVATE_KEY)
 
 
 RECIPIENT_ADDRESS = DEV_RECIPIENT_ADDRESS

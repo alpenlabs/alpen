@@ -42,7 +42,7 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         seq_rpc = ee_sequencer.create_rpc()
         fn_rpc = ee_fullnodes[0].create_rpc()
 
-        dev_account = get_dev_account()
+        dev_account = get_dev_account(seq_rpc)
         recipient_account = get_recipient_account()
 
         # Verify dev account has funds
@@ -50,8 +50,6 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         assert balance > 0, "Dev account has no balance"
 
         # Build and send transaction to fullnode (not sequencer)
-        nonce = int(seq_rpc.eth_getTransactionCount(dev_account.address, "pending"), 16)
-        dev_account.sync_nonce(nonce)
         gas_price = int(int(seq_rpc.eth_gasPrice(), 16) * 1.5)
 
         raw_tx = dev_account.sign_transfer(

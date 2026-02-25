@@ -6,7 +6,7 @@ import flexitest
 
 from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
-from common.config.constants import DEV_ADDRESS, ServiceType
+from common.config.constants import ServiceType
 from common.evm_utils import create_funded_account, send_raw_transaction, wait_for_receipt
 
 logger = logging.getLogger(__name__)
@@ -26,10 +26,7 @@ class TestTxForwarding(AlpenClientTest):
 
         ee_sequencer.wait_for_block(2, timeout=10)
 
-        dev_account = get_dev_account()
-        dev_nonce = int(seq_rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
-        dev_account.sync_nonce(dev_nonce)
-
+        dev_account = get_dev_account(seq_rpc)
         account = create_funded_account(seq_rpc, dev_account, 10**18)
         logger.info(f"Created test account: {account.address}")
 
