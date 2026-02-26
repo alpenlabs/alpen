@@ -132,8 +132,7 @@ fn construct_full_claim(
     // Reconstruct terminal_header_complement_hash from the sidecar data posted on L1.
     // The ZK proof committed to this same hash derived from the executed terminal header,
     // so matching it here cryptographically binds the sidecar fields to proven execution.
-    let terminal_header_complement_hash =
-        sidecar.terminal_header_complement().compute_hash();
+    let terminal_header_complement_hash = sidecar.terminal_header_complement().compute_hash();
 
     Ok(CheckpointClaim::new(
         new_tip.epoch,
