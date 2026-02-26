@@ -15,7 +15,7 @@ use strata_codec::decode_buf_exact;
 use strata_snark_acct_types::{MessageEntry, UpdateManifest};
 
 use crate::{
-    IInnerState, InputMessage,
+    IInnerState, InputMessage, UpdateLedgerInfo,
     errors::{ProgramError, ProgramResult},
     private_input::{Coinput, PrivateInput},
     traits::{SnarkAccountProgram, SnarkAccountProgramVerification},
@@ -23,10 +23,10 @@ use crate::{
 
 /// Verifies an update using proof's private inputs and a supplementary
 /// verification input.
-pub fn verify_and_process_update<P: SnarkAccountProgramVerification>(
+pub fn verify_and_process_update<'i, P: SnarkAccountProgramVerification>(
     program: &P,
     private_input: &PrivateInput,
-    vinput: P::VInput<'_>,
+    vinput: P::VInput<'i>,
 ) -> ProgramResult<(), P::Error> {
     // 1. Decode fields and verify consistency.
     let update = private_input.try_decode_update_pub_params()?;
@@ -55,7 +55,7 @@ pub fn verify_and_process_update<P: SnarkAccountProgramVerification>(
         .map_err(|_| ProgramError::MalformedExtraData)?;
 
     // 3. Verify the update itself using the decoded structures.
-    // TODO figure out how to expose ledger refs and IO
+    let ulinfo = UpdateLedgerInfo::from_update(&update);
     verify_update_inner(
         program,
         &mut state,
@@ -63,6 +63,7 @@ pub fn verify_and_process_update<P: SnarkAccountProgramVerification>(
         update.message_inputs(),
         private_input.coinputs(),
         extra_data,
+        ulinfo,
     )?;
 
     // 4. Verify final state is consistent with update.
@@ -73,16 +74,17 @@ pub fn verify_and_process_update<P: SnarkAccountProgramVerification>(
     Ok(())
 }
 
-fn verify_update_inner<P: SnarkAccountProgramVerification>(
+fn verify_update_inner<'i, 'u, P: SnarkAccountProgramVerification>(
     program: &P,
     state: &mut P::State,
-    vinput: P::VInput<'_>,
+    vinput: P::VInput<'i>,
     messages: &[MessageEntry],
     coinputs: &[Coinput],
     extra_data: P::ExtraData,
+    ulinfo: UpdateLedgerInfo<'u>,
 ) -> ProgramResult<(), P::Error> {
     // 1. Create verification context and start verification.
-    let mut vstate = program.start_verification(&state, &extra_data, vinput)?;
+    let mut vstate = program.start_verification(&state, &extra_data, vinput, ulinfo)?;
     program.start_update(state, &extra_data)?;
 
     // 2. Process each message and coinput.
@@ -183,10 +185,13 @@ mod tests {
     use ssz_derive::{Decode, Encode};
     use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
     use strata_codec::impl_type_flat_struct;
-    use strata_snark_acct_types::{MessageEntry, ProofState, UpdateManifest};
+    use strata_snark_acct_types::{
+        LedgerRefs, MessageEntry, ProofState, UpdateManifest, UpdateOutputs,
+    };
 
     use super::*;
     use crate::{
+        UpdateLedgerInfo,
         private_input::Coinput,
         traits::{IAcctMsg, IExtraData, IInnerState},
     };
@@ -265,12 +270,13 @@ mod tests {
         type VState<'a> = u64; // Just track sum of deltas for verification
         type VInput<'a> = (); // No additional verification input needed for tests
 
-        fn start_verification<'a>(
+        fn start_verification<'i, 'u>(
             &self,
             _state: &Self::State,
             _extra_data: &Self::ExtraData,
-            _vinput: Self::VInput<'a>,
-        ) -> ProgramResult<Self::VState<'a>, Self::Error> {
+            _vinput: Self::VInput<'i>,
+            _ulinfo: UpdateLedgerInfo<'u>,
+        ) -> ProgramResult<Self::VState<'i>, Self::Error> {
             Ok(0)
         }
 
@@ -322,7 +328,9 @@ mod tests {
         expected_post_value: u64,
     ) -> UpdateManifest {
         let extra_data = strata_codec::encode_to_vec(&extra).unwrap();
-        let expected_state = TestState { value: expected_post_value };
+        let expected_state = TestState {
+            value: expected_post_value,
+        };
         let new_state = ProofState::new(expected_state.compute_state_root(), 0);
         UpdateManifest::new(new_state, extra_data, msg_entries)
     }
@@ -335,8 +343,19 @@ mod tests {
         let coinputs = vec![Coinput::new(vec![]), Coinput::new(vec![])];
         let extra = TestExtraData { multiplier: 1 };
 
-        let result =
-            verify_update_inner(&program, &mut state, (), &msg_entries, &coinputs, extra);
+        let lr = LedgerRefs::new_empty();
+        let uo = UpdateOutputs::new_empty();
+        let uli = UpdateLedgerInfo::new(&lr, &uo);
+
+        let result = verify_update_inner(
+            &program,
+            &mut state,
+            (),
+            &msg_entries,
+            &coinputs,
+            extra,
+            uli,
+        );
         assert!(result.is_ok());
         // (5 + 3) * 1 = 8
         assert_eq!(state.value, 8);
@@ -366,8 +385,19 @@ mod tests {
         let coinputs = vec![Coinput::new(vec![1, 2, 3])]; // Non-empty coinput
         let extra = TestExtraData { multiplier: 1 };
 
-        let result =
-            verify_update_inner(&program, &mut state, (), &msg_entries, &coinputs, extra);
+        let lr = LedgerRefs::new_empty();
+        let uo = UpdateOutputs::new_empty();
+        let uli = UpdateLedgerInfo::new(&lr, &uo);
+
+        let result = verify_update_inner(
+            &program,
+            &mut state,
+            (),
+            &msg_entries,
+            &coinputs,
+            extra,
+            uli,
+        );
         assert!(matches!(
             result,
             Err(ProgramError::AtMessage { idx: 0, .. })

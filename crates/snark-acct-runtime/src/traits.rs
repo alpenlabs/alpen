@@ -6,7 +6,7 @@ use ssz::{Decode, Encode};
 use strata_acct_types::Hash;
 use strata_codec::Codec;
 
-use crate::{InputMessage, errors::ProgramResult};
+use crate::{InputMessage, UpdateLedgerInfo, errors::ProgramResult};
 
 /// Describes a snark account program in terms of its state, the messages it
 /// receives, and the kinds of checks that get performed secretly as part of the
@@ -95,12 +95,13 @@ pub trait SnarkAccountProgramVerification: SnarkAccountProgram {
     /// The `vinput` parameter provides private input data needed for verification.
     /// It is passed by value so that its contents (typically references) can be
     /// moved into the returned `VState`.
-    fn start_verification<'a>(
+    fn start_verification<'i, 'u>(
         &self,
         state: &Self::State,
         extra_data: &Self::ExtraData,
-        vinput: Self::VInput<'a>,
-    ) -> ProgramResult<Self::VState<'a>, Self::Error>;
+        vinput: Self::VInput<'i>,
+        ulinfo: UpdateLedgerInfo<'u>,
+    ) -> ProgramResult<Self::VState<'i>, Self::Error>;
 
     /// Verifies a coinput for a message against the current state.
     ///
