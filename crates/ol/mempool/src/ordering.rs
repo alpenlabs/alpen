@@ -20,11 +20,7 @@ pub trait MempoolPriorityPolicy: Clone + Copy + Debug + Send + Sync + 'static {
     ///
     /// `txid` is provided for deterministic tie-breaking when two transactions otherwise share the
     /// same priority.
-    fn compute_priority(
-        tx: &OLMempoolTransaction,
-        timestamp_micros: u64,
-        txid: OLTxId,
-    ) -> Self::Priority;
+    fn compute_priority(tx: &OLMempoolTransaction, txid: OLTxId) -> Self::Priority;
 }
 
 /// FIFO priority policy.
@@ -37,13 +33,8 @@ pub struct FifoPriority;
 impl MempoolPriorityPolicy for FifoPriority {
     type Priority = MempoolOrderingKey;
 
-    fn compute_priority(
-        tx: &OLMempoolTransaction,
-        timestamp_micros: u64,
-        _txid: OLTxId,
-    ) -> Self::Priority {
-        // `txid` tie-breaking is deferred until key-level tie-break fields are added.
-        MempoolOrderingKey::for_transaction(tx, timestamp_micros)
+    fn compute_priority(tx: &OLMempoolTransaction, txid: OLTxId) -> Self::Priority {
+        MempoolOrderingKey::for_transaction(tx, txid)
     }
 }
 
@@ -69,6 +60,8 @@ pub enum MempoolOrderingKey {
         seq_no: u64,
         /// Timestamp (microseconds since UNIX epoch) for cross-account FIFO ordering.
         timestamp_micros: u64,
+        /// Transaction ID for deterministic tie-breaking.
+        txid: OLTxId,
     },
 
     /// Generic account message transaction.
@@ -77,19 +70,26 @@ pub enum MempoolOrderingKey {
     Gam {
         /// Timestamp (microseconds since UNIX epoch) for FIFO ordering.
         timestamp_micros: u64,
+        /// Transaction ID for deterministic tie-breaking.
+        txid: OLTxId,
     },
 }
 
 impl MempoolOrderingKey {
-    /// Create ordering key for a transaction with the given timestamp_micros.
-    pub(crate) fn for_transaction(tx: &OLMempoolTransaction, timestamp_micros: u64) -> Self {
+    /// Create ordering key for a transaction.
+    pub(crate) fn for_transaction(tx: &OLMempoolTransaction, txid: OLTxId) -> Self {
+        let timestamp_micros = tx.timestamp_micros();
         match tx.payload() {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => Self::Snark {
                 account_id: *payload.target(),
                 seq_no: payload.base_update().operation().seq_no(),
                 timestamp_micros,
+                txid,
             },
-            OLMempoolTxPayload::GenericAccountMessage(_) => Self::Gam { timestamp_micros },
+            OLMempoolTxPayload::GenericAccountMessage(_) => Self::Gam {
+                timestamp_micros,
+                txid,
+            },
         }
     }
 
@@ -99,7 +99,9 @@ impl MempoolOrderingKey {
             Self::Snark {
                 timestamp_micros, ..
             } => *timestamp_micros,
-            Self::Gam { timestamp_micros } => *timestamp_micros,
+            Self::Gam {
+                timestamp_micros, ..
+            } => *timestamp_micros,
         }
     }
 }
@@ -119,17 +121,19 @@ impl Ord for MempoolOrderingKey {
                     account_id: a1,
                     seq_no: s1,
                     timestamp_micros: t1,
+                    txid: tx1,
                 },
                 Self::Snark {
                     account_id: a2,
                     seq_no: s2,
                     timestamp_micros: t2,
+                    txid: tx2,
                 },
             ) => {
                 if a1 == a2 {
-                    s1.cmp(s2)
+                    s1.cmp(s2).then_with(|| tx1.cmp(tx2))
                 } else {
-                    t1.cmp(t2)
+                    t1.cmp(t2).then_with(|| tx1.cmp(tx2))
                 }
             }
 
@@ -137,28 +141,37 @@ impl Ord for MempoolOrderingKey {
             (
                 Self::Gam {
                     timestamp_micros: t1,
+                    txid: tx1,
                 },
                 Self::Gam {
                     timestamp_micros: t2,
+                    txid: tx2,
                 },
-            ) => t1.cmp(t2),
+            ) => t1.cmp(t2).then_with(|| tx1.cmp(tx2)),
 
             // Mixed Snark/GAM: use `timestamp_micros` for fair interleaving
             (
                 Self::Snark {
-                    timestamp_micros, ..
+                    timestamp_micros,
+                    txid: tx1,
+                    ..
                 },
                 Self::Gam {
                     timestamp_micros: t2,
+                    txid: tx2,
                 },
             )
             | (
-                Self::Gam { timestamp_micros },
+                Self::Gam {
+                    timestamp_micros,
+                    txid: tx1,
+                },
                 Self::Snark {
                     timestamp_micros: t2,
+                    txid: tx2,
                     ..
                 },
-            ) => timestamp_micros.cmp(t2),
+            ) => timestamp_micros.cmp(t2).then_with(|| tx1.cmp(tx2)),
         }
     }
 }
@@ -171,7 +184,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        test_utils::{create_test_generic_tx, create_test_snark_tx},
+        test_utils::{create_test_generic_tx, create_test_snark_tx, create_test_txid_with},
         types::MempoolEntry,
     };
 
@@ -180,10 +193,11 @@ mod tests {
         let tx = create_test_generic_tx();
         let entries: Vec<_> = (1..=3)
             .map(|ts| {
-                MempoolEntry::new(
+                MempoolEntry::<FifoPriority>::new(
                     tx.clone(),
                     MempoolOrderingKey::Gam {
                         timestamp_micros: ts,
+                        txid: create_test_txid_with(ts as u8),
                     },
                     100,
                 )
@@ -207,12 +221,13 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(i, &ts)| {
-                MempoolEntry::new(
+                MempoolEntry::<FifoPriority>::new(
                     tx.clone(),
                     MempoolOrderingKey::Snark {
                         account_id: account,
                         seq_no: i as u64 + 1,
                         timestamp_micros: ts,
+                        txid: create_test_txid_with((i + 1) as u8),
                     },
                     100,
                 )
@@ -238,22 +253,24 @@ mod tests {
         let tx_b = create_test_snark_tx();
 
         // Lower seq_no, later timestamp
-        let entry_a = MempoolEntry::new(
+        let entry_a = MempoolEntry::<FifoPriority>::new(
             tx_a,
             MempoolOrderingKey::Snark {
                 account_id: account_a,
                 seq_no: 5,
                 timestamp_micros: 2_000_100,
+                txid: create_test_txid_with(1),
             },
             100,
         );
         // Higher seq_no, earlier timestamp
-        let entry_b = MempoolEntry::new(
+        let entry_b = MempoolEntry::<FifoPriority>::new(
             tx_b,
             MempoolOrderingKey::Snark {
                 account_id: account_b,
                 seq_no: 7,
                 timestamp_micros: 1_000_050,
+                txid: create_test_txid_with(2),
             },
             100,
         );
@@ -273,19 +290,21 @@ mod tests {
         let tx_gam = create_test_generic_tx();
 
         // Snark with earlier `timestamp_micros` should come first
-        let entry_snark = MempoolEntry::new(
+        let entry_snark = MempoolEntry::<FifoPriority>::new(
             tx_snark,
             MempoolOrderingKey::Snark {
                 account_id: account,
                 seq_no: 1,
                 timestamp_micros: 1_000_050,
+                txid: create_test_txid_with(1),
             },
             100,
         );
-        let entry_gam = MempoolEntry::new(
+        let entry_gam = MempoolEntry::<FifoPriority>::new(
             tx_gam,
             MempoolOrderingKey::Gam {
                 timestamp_micros: 2_000_100,
+                txid: create_test_txid_with(2),
             },
             100,
         );
@@ -303,44 +322,49 @@ mod tests {
         let (tx_gam, tx_snark) = (create_test_generic_tx(), create_test_snark_tx());
 
         let mut entries = [
-            MempoolEntry::new(
+            MempoolEntry::<FifoPriority>::new(
                 tx_gam.clone(),
                 MempoolOrderingKey::Gam {
                     timestamp_micros: 1_000_010,
+                    txid: create_test_txid_with(1),
                 },
                 100,
             ),
-            MempoolEntry::new(
+            MempoolEntry::<FifoPriority>::new(
                 tx_snark.clone(),
                 MempoolOrderingKey::Snark {
                     account_id: acc_a,
                     seq_no: 1,
                     timestamp_micros: 1_000_020,
+                    txid: create_test_txid_with(2),
                 },
                 100,
             ),
-            MempoolEntry::new(
+            MempoolEntry::<FifoPriority>::new(
                 tx_gam,
                 MempoolOrderingKey::Gam {
                     timestamp_micros: 1_000_030,
+                    txid: create_test_txid_with(3),
                 },
                 100,
             ),
-            MempoolEntry::new(
+            MempoolEntry::<FifoPriority>::new(
                 tx_snark.clone(),
                 MempoolOrderingKey::Snark {
                     account_id: acc_a,
                     seq_no: 2,
                     timestamp_micros: 1_000_040,
+                    txid: create_test_txid_with(4),
                 },
                 100,
             ),
-            MempoolEntry::new(
+            MempoolEntry::<FifoPriority>::new(
                 tx_snark,
                 MempoolOrderingKey::Snark {
                     account_id: acc_b,
                     seq_no: 1,
                     timestamp_micros: 1_000_050,
+                    txid: create_test_txid_with(5),
                 },
                 100,
             ),
@@ -355,5 +379,18 @@ mod tests {
             timestamps,
             vec![1_000_010, 1_000_020, 1_000_030, 1_000_040, 1_000_050]
         );
+    }
+
+    #[test]
+    fn test_gam_equal_timestamp_orders_by_txid() {
+        let lower = MempoolOrderingKey::Gam {
+            timestamp_micros: 1_000_000,
+            txid: create_test_txid_with(1),
+        };
+        let higher = MempoolOrderingKey::Gam {
+            timestamp_micros: 1_000_000,
+            txid: create_test_txid_with(2),
+        };
+        assert_eq!(lower.cmp(&higher), Ordering::Less);
     }
 }

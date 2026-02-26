@@ -9,7 +9,10 @@ use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::{GamTxPayload, TransactionAttachment};
 use strata_snark_acct_types::SnarkAccountUpdate;
 
-use crate::{error::OLMempoolError, ordering::MempoolOrderingKey};
+use crate::{
+    error::OLMempoolError,
+    ordering::{FifoPriority, MempoolPriorityPolicy},
+};
 
 /// Default maximum number of transactions in the mempool.
 pub const DEFAULT_MAX_TX_COUNT: usize = 10_000;
@@ -157,6 +160,15 @@ pub struct OLMempoolTransaction {
 
     /// Transaction attachment (min_slot, max_slot constraints).
     pub attachment: TransactionAttachment,
+
+    /// Insertion timestamp in microseconds since UNIX epoch.
+    pub timestamp_micros: u64,
+}
+
+#[derive(Encode)]
+struct MempoolTxIdPreimage<'a> {
+    payload: &'a OLMempoolTxPayload,
+    attachment: &'a TransactionAttachment,
 }
 
 impl OLMempoolTransaction {
@@ -169,6 +181,7 @@ impl OLMempoolTransaction {
         Ok(Self {
             payload: OLMempoolTxPayload::new_generic_account_message(target, payload)?,
             attachment,
+            timestamp_micros: 0,
         })
     }
 
@@ -181,6 +194,7 @@ impl OLMempoolTransaction {
         Self {
             payload: OLMempoolTxPayload::new_snark_account_update(target, base_update),
             attachment,
+            timestamp_micros: 0,
         }
     }
 
@@ -199,6 +213,11 @@ impl OLMempoolTransaction {
         &self.attachment
     }
 
+    /// Get insertion timestamp in microseconds since UNIX epoch.
+    pub fn timestamp_micros(&self) -> u64 {
+        self.timestamp_micros
+    }
+
     /// Get the base update if this is a snark account update transaction.
     pub fn base_update(&self) -> Option<&SnarkAccountUpdate> {
         match &self.payload {
@@ -210,12 +229,19 @@ impl OLMempoolTransaction {
     /// Compute the transaction ID by hashing the SSZ-encoded transaction data.
     ///
     /// This follows the established pattern: SSZ encode → SHA256 hash.
+    /// The hash is computed from canonical transaction content (payload + attachment), excluding
+    /// mempool-local metadata such as `timestamp_micros`.
+    ///
     /// The hash of [`OLMempoolTransaction`] should equal the hash of
     /// [`OLTransaction`](strata_ol_chain_types_new::OLTransaction) without accumulator_proofs,
     /// and also equal the hash of `RpcOLTransaction`
     /// when properly converted.
     pub fn compute_txid(&self) -> OLTxId {
-        let encoded = ssz::Encode::as_ssz_bytes(self);
+        let preimage = MempoolTxIdPreimage {
+            payload: &self.payload,
+            attachment: &self.attachment,
+        };
+        let encoded = ssz::Encode::as_ssz_bytes(&preimage);
         let hash_bytes = hash::raw(&encoded);
         OLTxId::from(hash_bytes)
     }
@@ -225,22 +251,22 @@ impl OLMempoolTransaction {
 ///
 /// This is used internally by the mempool implementation and not exposed in the public API.
 #[derive(Clone, Debug)]
-pub(crate) struct MempoolEntry {
+pub(crate) struct MempoolEntry<P: MempoolPriorityPolicy = FifoPriority> {
     /// The transaction data.
     pub(crate) tx: OLMempoolTransaction,
 
     /// Ordering key.
-    pub(crate) ordering_key: MempoolOrderingKey,
+    pub(crate) ordering_key: P::Priority,
 
     /// Size of the transaction in bytes (for capacity management).
     pub(crate) size_bytes: usize,
 }
 
-impl MempoolEntry {
+impl<P: MempoolPriorityPolicy> MempoolEntry<P> {
     /// Create a new mempool entry.
     pub(crate) fn new(
         tx: OLMempoolTransaction,
-        ordering_key: MempoolOrderingKey,
+        ordering_key: P::Priority,
         size_bytes: usize,
     ) -> Self {
         Self {
@@ -513,11 +539,15 @@ mod tests {
         (
             mempool_tx_payload_strategy(),
             test_utils::transaction_attachment_strategy(),
+            any::<u64>(),
         )
-            .prop_map(|(payload, attachment)| OLMempoolTransaction {
-                payload,
-                attachment,
-            })
+            .prop_map(
+                |(payload, attachment, timestamp_micros)| OLMempoolTransaction {
+                    payload,
+                    attachment,
+                    timestamp_micros,
+                },
+            )
     }
 
     #[test]
@@ -666,7 +696,7 @@ mod tests {
         assert_eq!(tx, decoded);
     }
 
-    proptest::proptest! {
+    proptest! {
         #[test]
         fn test_mempool_tx_ssz_roundtrip(tx in mempool_transaction_strategy()) {
             let encoded = ssz::Encode::as_ssz_bytes(&tx);

@@ -19,7 +19,7 @@ use tracing::warn;
 
 use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
-    ordering::MempoolOrderingKey,
+    ordering::{FifoPriority, MempoolOrderingKey, MempoolPriorityPolicy},
     types::{
         MempoolEntry, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats, OLMempoolTransaction,
     },
@@ -230,8 +230,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 continue;
             }
 
-            // Create entry using stored timestamp from database
-            let ordering_key = MempoolOrderingKey::for_transaction(&tx, tx_data.timestamp_micros);
+            // Create entry using timestamp metadata embedded in the transaction.
+            let ordering_key = FifoPriority::compute_priority(&tx, txid);
             let tx_size = tx_data.tx_bytes.len();
             let entry = MempoolEntry::new(tx, ordering_key, tx_size);
 
@@ -370,7 +370,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Returns the transaction ID. Idempotent - returns existing txid if duplicate.
     pub(crate) async fn add_transaction(
         &mut self,
-        tx: OLMempoolTransaction,
+        mut tx: OLMempoolTransaction,
     ) -> OLMempoolResult<OLTxId> {
         let txid = tx.compute_txid();
 
@@ -380,7 +380,14 @@ impl<P: StateProvider> MempoolServiceState<P> {
             return Ok(txid);
         }
 
-        // Encode transaction once for both size validation and database persistence
+        // Set insertion timestamp before encoding so size checks match persisted bytes.
+        let timestamp_micros = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before UNIX epoch")
+            .as_micros() as u64;
+        tx.timestamp_micros = timestamp_micros;
+
+        // Encode once and reuse for both validation accounting and persistence.
         let tx_bytes = ssz::Encode::as_ssz_bytes(&tx);
         let tx_size = tx_bytes.len();
 
@@ -409,13 +416,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             self.remove_transactions(&[old_txid], false);
         }
 
-        // Generate timestamp for ordering
-        let timestamp_micros = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before UNIX epoch")
-            .as_micros() as u64;
-
-        let ordering_key = MempoolOrderingKey::for_transaction(&tx, timestamp_micros);
+        let ordering_key = FifoPriority::compute_priority(&tx, txid);
         let entry = MempoolEntry::new(tx.clone(), ordering_key, tx_size);
 
         // Persist to database first
