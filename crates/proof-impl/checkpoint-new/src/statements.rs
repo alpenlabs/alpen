@@ -179,9 +179,7 @@ pub fn process_ol_stf_core(
     // checks it against the proof).
     let expected_terminal_header_supplement =
         TerminalHeaderSupplement::from_full_header(&terminal_header);
-    let terminal_header_supplement_hash = FixedBytes::<32>::from(hash::raw(
-        &expected_terminal_header_supplement.as_ssz_bytes(),
-    ));
+    let terminal_header_supplement_hash = expected_terminal_header_supplement.compute_hash();
 
     // Compute the hash of all accumulated OL logs for the checkpoint claim
     let ol_logs_hash = FixedBytes::<32>::from(hash::raw(&logs.as_ssz_bytes()));

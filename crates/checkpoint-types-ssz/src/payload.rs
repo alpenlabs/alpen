@@ -1,10 +1,12 @@
 //! Impl blocks for checkpoint payload types.
 
+use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_identifiers::{
     Buf32, Buf64, Epoch, OLBlockCommitment, OLBlockId, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed,
 };
 use strata_ol_chain_types_new::{OLBlockHeader, OLLog};
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{
     CheckpointPayload, CheckpointPayloadError, CheckpointSidecar, CheckpointTip,
@@ -40,8 +42,9 @@ impl_borsh_via_ssz_fixed!(CheckpointTip);
 /// `new_tip.epoch`, `state_root` from DA + manifest reconstruction, `is_terminal`
 /// by checkpoint semantics), but these four are not available from L1 data.
 ///
-/// The proof commits to `hash(SSZ(TerminalHeaderSupplement))` in [`crate::CheckpointClaim`],
-/// so the L1 verifier can enforce sidecar integrity without a full header preimage.
+/// The proof commits to the SSZ tree hash root of [`TerminalHeaderSupplement`] in
+/// [`crate::CheckpointClaim`], so the L1 verifier can enforce sidecar integrity
+/// without a full header preimage.
 impl TerminalHeaderSupplement {
     pub fn new(
         timestamp: u64,
@@ -81,6 +84,11 @@ impl TerminalHeaderSupplement {
 
     pub fn logs_root(&self) -> &Buf32 {
         &self.logs_root
+    }
+
+    /// Computes the SSZ tree hash root of this supplement.
+    pub fn compute_hash(&self) -> FixedBytes<32> {
+        FixedBytes::<32>::from(TreeHash::<Sha256Hasher>::tree_hash_root(self).0)
     }
 }
 

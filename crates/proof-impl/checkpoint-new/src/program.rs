@@ -70,7 +70,6 @@ impl CheckpointProgram {
 mod tests {
     use std::panic::catch_unwind;
 
-    use ssz::Encode;
     use strata_checkpoint_types_ssz::TerminalHeaderSupplement;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
@@ -148,7 +147,7 @@ mod tests {
             TerminalHeaderSupplement::from_full_header(terminal_header);
         assert_eq!(
             *claim.terminal_header_supplement_hash(),
-            hash::raw(&terminal_header_supplement.as_ssz_bytes()).into()
+            terminal_header_supplement.compute_hash()
         );
     }
 

@@ -133,7 +133,7 @@ fn construct_full_claim(
     // The ZK proof committed to this same hash derived from the executed terminal header,
     // so matching it here cryptographically binds the sidecar fields to proven execution.
     let terminal_header_supplement_hash =
-        hash::raw(&sidecar.terminal_header_supplement().as_ssz_bytes()).into();
+        sidecar.terminal_header_supplement().compute_hash();
 
     Ok(CheckpointClaim::new(
         new_tip.epoch,
@@ -316,6 +316,29 @@ mod tests {
                 InvalidCheckpointPayload::CheckpointBeyondL1Tip { .. }
             )
         ))
+    }
+
+    #[test]
+    fn test_zero_l1_progress_is_accepted() {
+        let (state, harness) = test_setup();
+
+        // Build a tip that keeps the same L1 height (zero progress)
+        let mut new_tip = harness.gen_new_tip();
+        new_tip.l1_height = state.verified_tip().l1_height;
+
+        let payload = harness.build_payload_with_tip(new_tip);
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let signed_payload = harness.sign_payload(payload);
+
+        let current_l1_height = state.verified_tip().l1_height + 1;
+
+        let res = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &signed_payload,
+            &verified_aux_data,
+        );
+        assert!(res.is_ok());
     }
 
     #[test]
