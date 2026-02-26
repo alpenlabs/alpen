@@ -4,13 +4,13 @@
 //! processing in SNARK proofs.
 
 use strata_acct_types::{BitcoinAmount, Hash};
-use strata_ee_acct_types::{CommitChainSegment, EeAccountState, EnvResult, ExecutionEnvironment};
-use strata_ee_chain_types::ExecOutputs;
+use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult, ExecutionEnvironment};
+use strata_ee_chain_types::{ExecOutputs, SequenceTracker};
 use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
 
-use crate::{commit::PendingCommit, private_input::SharedPrivateInput};
+use crate::private_input::ChunkInput;
 
 /// Verification input for EE accounts.
 ///
@@ -22,35 +22,38 @@ use crate::{commit::PendingCommit, private_input::SharedPrivateInput};
 /// path, so that its contents (the references) can be moved into `VState`.
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
-    /// Raw header corresponding to the blkid we have stored in the account.
-    raw_prev_header: &'a [u8],
+    /// Execution environment for block execution.
+    ee: &'a E,
+
+    /// Chunk transitions that we've already proven.
+    input_chunks: &'a [ChunkInput],
 
     /// Pre-state needed for processing and verifying the update transitions.
     raw_partial_pre_state: &'a [u8],
-
-    /// Execution environment for block execution.
-    ee: &'a E,
 }
 
 impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
-    pub fn new(raw_prev_header: &'a [u8], raw_partial_pre_state: &'a [u8], ee: &'a E) -> Self {
+    /// Constructs a new instance.
+    ///
+    /// The input chunk transitions MUST already be verified.
+    pub fn new(ee: &'a E, input_chunks: &'a [ChunkInput], raw_partial_pre_state: &'a [u8]) -> Self {
         Self {
-            raw_prev_header,
-            raw_partial_pre_state,
             ee,
+            input_chunks,
+            raw_partial_pre_state,
         }
-    }
-
-    pub fn raw_prev_header(&self) -> &'a [u8] {
-        self.raw_prev_header
-    }
-
-    pub fn raw_partial_pre_state(&self) -> &'a [u8] {
-        self.raw_partial_pre_state
     }
 
     pub fn ee(&self) -> &'a E {
         self.ee
+    }
+
+    pub fn input_chunks(&self) -> &'a [ChunkInput] {
+        self.input_chunks
+    }
+
+    pub fn raw_partial_pre_state(&self) -> &'a [u8] {
+        self.raw_partial_pre_state
     }
 }
 
@@ -61,38 +64,26 @@ impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
 /// the private input data needed for chain segment verification.
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
-    // Balance bookkeeping as additional checks to avoid overdraw
-    #[expect(dead_code, reason = "for future use")]
-    orig_tracked_balance: BitcoinAmount,
+    /// Execution environment for block execution.
+    ee: &'a E,
 
+    /// Current verified chain tip.
+    cur_verified_exec_blkid: Hash,
+
+    /// Tracks the total value sent.
     total_val_sent: BitcoinAmount,
 
-    #[expect(dead_code, reason = "for future use")]
-    total_val_recv: BitcoinAmount,
-
-    /// Commits to check
-    pending_commits: Vec<PendingCommit>,
-
-    /// Number of inputs we've consumed.
-    consumed_inputs: usize,
+    /// Outputs we expect to have.
+    expected_outputs: UpdateOutputs,
 
     /// Recorded outputs we'll check later.
     accumulated_outputs: UpdateOutputs,
 
-    // Recorded DA.
-    #[expect(dead_code, reason = "for future use")]
-    l1_da_blob_hashes: Vec<Hash>,
-
-    /// Execution environment for block execution.
-    ee: &'a E,
-
-    /// Chain segments to verify.
-    commit_data: &'a [CommitChainSegment],
-
-    /// Previous header that we already have in our state.
-    raw_prev_header: &'a [u8],
+    /// Chunk that we'll verify with inputs.
+    input_chunks: SequenceTracker<'a, ChunkInput>,
 
     /// Partial pre-state corresponding to the previous header.
+    // TODO do something with this
     raw_partial_pre_state: &'a [u8],
 }
 
@@ -100,52 +91,35 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Constructs a verification state using the account's initial state as a
     /// reference, along with the verification input data.
     pub fn new_from_state(
-        state: &EeAccountState,
         ee: &'a E,
-        commit_data: &'a [CommitChainSegment],
-        raw_prev_header: &'a [u8],
+        state: &EeAccountState,
+        expected_outputs: UpdateOutputs,
+        input_chunks: &'a [ChunkInput],
         raw_partial_pre_state: &'a [u8],
     ) -> Self {
         Self {
-            orig_tracked_balance: state.tracked_balance(),
-            total_val_sent: 0.into(),
-            total_val_recv: 0.into(),
-            pending_commits: Vec::new(),
-            consumed_inputs: 0,
-            accumulated_outputs: UpdateOutputs::new_empty(),
-            l1_da_blob_hashes: Vec::new(),
             ee,
-            commit_data,
-            raw_prev_header,
+            cur_verified_exec_blkid: state.last_exec_blkid(),
+            total_val_sent: 0.into(),
+            expected_outputs,
+            accumulated_outputs: UpdateOutputs::new_empty(),
+            input_chunks: SequenceTracker::new(input_chunks),
             raw_partial_pre_state,
         }
     }
 
-    /// Returns the pending commits.
-    pub(crate) fn pending_commits(&self) -> &[PendingCommit] {
-        &self.pending_commits
+    /// Returns the execution environment.
+    pub fn ee(&self) -> &'a E {
+        self.ee
     }
 
-    /// Adds a pending commit.
-    pub(crate) fn add_pending_commit(&mut self, commit: PendingCommit) {
-        self.pending_commits.push(commit);
+    pub fn cur_verified_exec_blkid(&self) -> Hash {
+        self.cur_verified_exec_blkid
     }
 
-    /// Returns the number of consumed inputs.
-    #[expect(dead_code, reason = "for future use")]
-    pub(crate) fn consumed_inputs(&self) -> usize {
-        self.consumed_inputs
-    }
-
-    /// Increments the number of consumed inputs by some amount.
-    pub(crate) fn inc_consumed_inputs(&mut self, amt: usize) {
-        self.consumed_inputs += amt;
-    }
-
-    /// Returns the accumulated outputs.
-    #[expect(dead_code, reason = "for future use")]
-    pub(crate) fn accumulated_outputs(&self) -> &UpdateOutputs {
-        &self.accumulated_outputs
+    /// Returns the raw partial pre-state.
+    pub fn raw_partial_pre_state(&self) -> &'a [u8] {
+        self.raw_partial_pre_state
     }
 
     /// Appends a package block's outputs into the pending outputs being
@@ -212,28 +186,16 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Final checks to see if there's anything in the verification state that
     /// were supposed to have been dealt with but weren't.
     pub(crate) fn check_obligations(&self) -> EnvResult<()> {
-        // TODO check these obligations!  this is all being refactored for
-        // chunk/multiproof updates soon so this is fine to be a no-op
+        // Check that the expected outputs match the ones we accumulated.
+        if self.expected_outputs != self.accumulated_outputs {
+            return Err(EnvError::UnsatisfiedObligations(
+                "expected and accumulated outputs mismatch",
+            ));
+        }
+
+        // TODO check more of these obligations!  this is all being refactored
+        // for chunk/multiproof updates so there might need to be more here
+
         Ok(())
-    }
-
-    /// Returns the chain segments to verify.
-    pub fn commit_data(&self) -> &'a [CommitChainSegment] {
-        self.commit_data
-    }
-
-    /// Returns the raw previous header.
-    pub fn raw_prev_header(&self) -> &'a [u8] {
-        self.raw_prev_header
-    }
-
-    /// Returns the raw partial pre-state.
-    pub fn raw_partial_pre_state(&self) -> &'a [u8] {
-        self.raw_partial_pre_state
-    }
-
-    /// Returns the execution environment.
-    pub fn ee(&self) -> &'a E {
-        self.ee
     }
 }
