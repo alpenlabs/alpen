@@ -60,6 +60,10 @@ pub enum EnvError {
     #[error("blocks in a chunk did not match the chunk's attested io")]
     InconsistentChunkIo,
 
+    /// Chunk transition proof failed verification against the predicate key.
+    #[error("invalid chunk proof")]
+    InvalidChunkProof,
+
     /// Codec error during encoding or decoding.
     #[error("codec: {0}")]
     Codec(#[from] strata_codec::CodecError),

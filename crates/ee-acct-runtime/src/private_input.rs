@@ -115,7 +115,7 @@ impl ChunkInput {
 
 #[archive_impl]
 impl ChunkInput {
-    fn chunk_transition_ssz(&self) -> &[u8] {
+    pub fn chunk_transition_ssz(&self) -> &[u8] {
         &self.chunk_transition_ssz
     }
 

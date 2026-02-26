@@ -3,9 +3,13 @@
 #![allow(unreachable_pub, reason = "test utilities")]
 #![allow(dead_code, reason = "utilities used by different test files")]
 
+use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{ChainSegmentBuilder, UpdateBuilder};
+use strata_ee_acct_runtime::{
+    ChainSegmentBuilder, EeSnarkAccountProgram, EeVerificationInput, SharedPrivateInput,
+    UpdateBuilder,
+};
 use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
 use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
@@ -13,50 +17,82 @@ use strata_simple_ee::{
     SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
     SimplePartialState,
 };
-use strata_snark_acct_types::{MessageEntry, UpdateOperationData};
+use strata_snark_acct_runtime::{Coinput, ProgramResult, PrivateInput as SnarkPrivateInput};
+use strata_snark_acct_types::{
+    MessageEntry, ProofState, UpdateManifest, UpdateOperationData, UpdateProofPubParams,
+};
 
-/// Helper to assert that both update application paths yield the same final state.
-///
-/// This tests that `verify_and_apply_update_operation` and
-/// `apply_update_operation_unconditionally` produce identical results.
-pub fn assert_update_paths_match(
+use strata_ee_acct_types::EnvError;
+
+/// Applies an update unconditionally (DA reconstruction path).
+pub fn apply_unconditionally(
     initial_state: &EeAccountState,
     operation: &UpdateOperationData,
-    shared_private: &strata_ee_acct_runtime::SharedPrivateInput,
+) -> ProgramResult<(), EnvError> {
+    let mut state = initial_state.clone();
+
+    let manifest = UpdateManifest::new(
+        ProofState::new(Hash::default(), operation.processed_messages().len() as u64),
+        operation.extra_data().to_vec(),
+        operation.processed_messages().to_vec(),
+    );
+
+    strata_ee_acct_runtime::process_update_unconditionally::<SimpleExecutionEnvironment>(
+        &mut state, &manifest,
+    )?;
+
+    Ok(())
+}
+
+/// Runs the verified (SNARK proof) path and returns the result.
+pub fn verify_update(
+    initial_state: &EeAccountState,
+    operation: &UpdateOperationData,
+    shared_private: &SharedPrivateInput,
+    coinputs: &[Vec<u8>],
+    ee: &SimpleExecutionEnvironment,
+) -> ProgramResult<(), EnvError> {
+    let pub_params = UpdateProofPubParams::new(
+        ProofState::new(Hash::default(), 0),
+        ProofState::new(Hash::default(), operation.processed_messages().len() as u64),
+        operation.processed_messages().to_vec(),
+        operation.ledger_refs().clone(),
+        operation.outputs().clone(),
+        operation.extra_data().to_vec(),
+    );
+
+    let coinputs_typed: Vec<Coinput> = coinputs.iter().map(|v| Coinput::new(v.clone())).collect();
+
+    let snark_priv =
+        SnarkPrivateInput::new(pub_params, initial_state.as_ssz_bytes(), coinputs_typed);
+
+    let vinput = EeVerificationInput::new(ee, &[], shared_private.raw_partial_pre_state());
+
+    let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
+    strata_snark_acct_runtime::verify_and_process_update(&program, &snark_priv, vinput)
+}
+
+/// Asserts that both verified and unconditional paths succeed.
+///
+/// Only works for tests where the verified path can succeed (e.g., no-segment
+/// tests where `new_tip_blkid == initial last_exec_blkid`).
+pub fn assert_both_paths_succeed(
+    initial_state: &EeAccountState,
+    operation: &UpdateOperationData,
+    shared_private: &SharedPrivateInput,
     coinputs: &[Vec<u8>],
     ee: &SimpleExecutionEnvironment,
 ) {
-    // Apply with verification
-    let mut verified_state = initial_state.clone();
+    verify_update(initial_state, operation, shared_private, coinputs, ee)
+        .expect("verified path should succeed");
 
-    strata_ee_acct_runtime::verify_and_apply_update_operation(
-        &mut verified_state,
-        operation,
-        coinputs.iter().map(|v| v.as_slice()),
-        shared_private,
-        ee,
-    )
-    .expect("verify_and_apply should succeed");
-
-    // Apply unconditionally
-    let mut unconditional_state = initial_state.clone();
-    let input_data: strata_snark_acct_types::UpdateInputData = operation.clone().into();
-    strata_ee_acct_runtime::apply_update_operation_unconditionally(
-        &mut unconditional_state,
-        &input_data,
-    )
-    .expect("apply_unconditionally should succeed");
-
-    // Compare the two states
-    assert_eq!(
-        verified_state, unconditional_state,
-        "Verified and unconditional application paths should yield identical states"
-    );
+    apply_unconditionally(initial_state, operation).expect("unconditional path should succeed");
 }
 
 /// Creates a simple initial state for testing.
 pub(crate) fn create_initial_state() -> (EeAccountState, SimplePartialState, SimpleHeader) {
     let ee_state = EeAccountState::new(
+        Vec::new(),
         Hash::new([0u8; 32]),
         BitcoinAmount::from(0u64),
         Vec::new(),
