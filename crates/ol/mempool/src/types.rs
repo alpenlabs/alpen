@@ -18,7 +18,7 @@ use crate::error::OLMempoolError;
 /// yields highest-priority transactions first.
 pub trait MempoolPriorityPolicy: Clone + Copy + Debug + Send + Sync + 'static {
     /// Ordering key used by the policy.
-    type Key: Ord + Copy + Debug;
+    type Key: Ord + Copy + Debug + Send + Sync + 'static;
 
     /// Compute an ordering key for a transaction.
     ///
