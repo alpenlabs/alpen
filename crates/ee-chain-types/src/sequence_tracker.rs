@@ -54,6 +54,24 @@ impl<'a, T> SequenceTracker<'a, T> {
     fn expected_next_rel(&self, off: usize) -> Option<&'a T> {
         self.expected_inputs.get(self.consumed + off)
     }
+
+    /// Checks if the next entry satisfies a predicate. If it does, increments
+    /// the pointer. Errors on mismatch or overrun.
+    ///
+    /// This is like [`consume_input`](SequenceTracker::consume_input) but
+    /// works with types that don't implement `Eq`.
+    pub fn consume_input_with(&mut self, f: impl FnOnce(&T) -> bool) -> SeqResult<()> {
+        let Some(exp_next) = self.expected_next() else {
+            return Err(SeqError::Overrun);
+        };
+
+        if !f(exp_next) {
+            return Err(SeqError::Mismatch(self.consumed));
+        }
+
+        self.consumed += 1;
+        Ok(())
+    }
 }
 
 impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {

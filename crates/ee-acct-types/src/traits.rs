@@ -94,7 +94,6 @@ pub trait ExecutionEnvironment: Sized + 'static {
     ) -> EnvResult<()>;
 
     /// Applies a pending write batch into the partial state.
-    // NOTE: should this be moved to BlockAssembler?
     fn merge_write_into_state(
         &self,
         state: &mut Self::PartialState,

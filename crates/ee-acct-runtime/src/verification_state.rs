@@ -4,8 +4,11 @@
 //! processing in SNARK proofs.
 
 use strata_acct_types::{BitcoinAmount, Hash};
-use strata_ee_acct_types::{EeAccountState, EnvError, EnvResult, ExecutionEnvironment};
+use strata_ee_acct_types::{
+    EeAccountState, EnvError, EnvResult, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
+};
 use strata_ee_chain_types::{ExecOutputs, SequenceTracker};
+use strata_predicate::PredicateKeyBuf;
 use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
@@ -79,8 +82,8 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Recorded outputs we'll check later.
     accumulated_outputs: UpdateOutputs,
 
-    /// Chunk that we'll verify with inputs.
-    input_chunks: SequenceTracker<'a, ChunkInput>,
+    /// Chunk transitions to verify.
+    input_chunks: &'a [ChunkInput],
 
     /// Partial pre-state corresponding to the previous header.
     // TODO do something with this
@@ -103,7 +106,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             total_val_sent: 0.into(),
             expected_outputs,
             accumulated_outputs: UpdateOutputs::new_empty(),
-            input_chunks: SequenceTracker::new(input_chunks),
+            input_chunks,
             raw_partial_pre_state,
         }
     }
@@ -125,7 +128,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Appends a package block's outputs into the pending outputs being
     /// built internally. This way we can compare it against the update op data
     /// later.
-    pub(crate) fn merge_block_outputs(&mut self, outputs: &ExecOutputs) {
+    pub(crate) fn merge_new_outputs(&mut self, outputs: &ExecOutputs) {
         // Just merge the entries into the buffer. This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
@@ -181,6 +184,65 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             );
 
         self.total_val_sent = BitcoinAmount::sum(sent_amts_iter);
+    }
+
+    /// Verifies all chunk transitions against the account's predicate key,
+    /// checks chain linkage, matches inputs against pending inputs, and
+    /// merges outputs.
+    pub(crate) fn process_chunks_on_acct(
+        &mut self,
+        state: &EeAccountState,
+        extra_data: &UpdateExtraData,
+    ) -> EnvResult<()> {
+        let mut pending_inp_tracker = SequenceTracker::new(state.pending_inputs());
+
+        for chunk in self.input_chunks {
+            // Verify the proof against the chunk predicate key.
+            let predicate_key = PredicateKeyBuf::try_from(state.chunk_predicate_key())
+                .map_err(|_| EnvError::InvalidChunkProof)?;
+            predicate_key
+                .verify_claim_witness(chunk.chunk_transition_ssz(), chunk.proof())
+                .map_err(|_| EnvError::InvalidChunkProof)?;
+
+            // Decode the transition for linkage, input matching, and outputs.
+            let transition = chunk
+                .try_decode_chunk_transition()
+                .map_err(|_| EnvError::MalformedChainSegment)?;
+
+            // Chain linkage: parent must match current verified tip.
+            if transition.parent_exec_blkid() != self.cur_verified_exec_blkid {
+                return Err(EnvError::MismatchedChainSegment);
+            }
+
+            // Match inputs in the transition with our pending inputs.
+            //
+            // Each chunk deposit must match the next pending input in order by
+            // type.
+            for deposit in transition.inputs().subject_deposits() {
+                pending_inp_tracker
+                    .consume_input_with(|pending| {
+                        matches!(
+                            pending,
+                            PendingInputEntry::Deposit(expected) if deposit == expected,
+                        )
+                    })
+                    .map_err(|_| EnvError::InconsistentChunkIo)?;
+            }
+
+            // Merge outputs into accumulated state.
+            self.merge_new_outputs(transition.outputs());
+
+            // Advance the verified tip.
+            self.cur_verified_exec_blkid = transition.tip_exec_blkid();
+        }
+
+        // Check that the number of consumed pending inputs matches what
+        // extra_data claims were processed.
+        if pending_inp_tracker.consumed() != *extra_data.processed_inputs() as usize {
+            return Err(EnvError::InconsistentChunkIo);
+        }
+
+        Ok(())
     }
 
     /// Final checks to see if there's anything in the verification state that

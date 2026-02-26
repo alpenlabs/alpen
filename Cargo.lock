@@ -15164,6 +15164,7 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-msg-fmt",
+ "strata-predicate",
  "strata-simple-ee",
  "strata-snark-acct-runtime",
  "strata-snark-acct-types",

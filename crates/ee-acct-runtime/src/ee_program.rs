@@ -112,9 +112,12 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
     fn finalize_verification<'a>(
         &self,
         state: &Self::State,
-        vstate: Self::VState<'a>,
+        mut vstate: Self::VState<'a>,
         extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
+        // Process and verify all chunks sequentially.
+        vstate.process_chunks_on_acct(state, extra_data)?;
+
         // Make sure the state matches the extra data.
         if state.last_exec_blkid() != *extra_data.new_tip_blkid() {
             return Err(ProgramError::InvalidExtraData);
@@ -122,7 +125,6 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
 
         // Make sure the state matches what we verified.
         if state.last_exec_blkid() != vstate.cur_verified_exec_blkid() {
-            // FIXME use more correct error
             return Err(ProgramError::InvalidExtraData);
         }
 
