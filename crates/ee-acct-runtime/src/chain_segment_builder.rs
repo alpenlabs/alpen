@@ -10,7 +10,7 @@ use strata_ee_acct_types::{
 };
 use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, SequenceTracker};
 
-use crate::{builder_errors::BuilderResult, exec_processing::validate_block_inputs};
+use crate::builder_errors::BuilderResult;
 
 /// Builder for constructing a chain of blocks as a segment.
 ///
@@ -84,7 +84,7 @@ impl<E: ExecutionEnvironment + BlockAssembler> ChainSegmentBuilder<E> {
     ) -> BuilderResult<()> {
         // 1. Validate provided inputs against pending inputs using InputTracker.
         let mut tracker = SequenceTracker::new(self.pending_inputs());
-        validate_block_inputs(&mut tracker, &inputs)?;
+        //validate_block_inputs(&mut tracker, &inputs)?; // FIXME this was removed
         let input_count = inputs.total_inputs();
 
         // 2. Execute the block body.

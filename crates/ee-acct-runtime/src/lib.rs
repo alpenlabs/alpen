@@ -1,6 +1,7 @@
 //! Basic EE account runtime framework.
 
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
+#![expect(unused, reason = "lots of stuff being refactored")]
 
 mod block_assembly;
 mod commit;
@@ -14,6 +15,7 @@ mod verification_state;
 pub use block_assembly::apply_input_messages;
 pub use ee_program::EeSnarkAccountProgram;
 pub use private_input::SharedPrivateInput;
+pub use update_processing::verify_and_process_update;
 pub use verification_state::{EeVerificationInput, EeVerificationState};
 
 // Builder utils
