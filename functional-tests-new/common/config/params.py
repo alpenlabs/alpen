@@ -8,8 +8,6 @@ from typing import Literal
 
 from bitcoinlib.keys import Key
 
-from common.config.constants import ALPEN_ACCOUNT_ID
-
 
 def hex_bytes_repeated(n: int, repeat: int = 32) -> str:
     """Generate hex string of repeated byte value.
@@ -36,23 +34,6 @@ class L1BlockCommitment:
 
 
 @dataclass
-class GenesisHeaderParams:
-    timestamp: int = field(default=0)
-    slot: int = field(default=0)
-    epoch: int = field(default=0)
-    parent_blkid: str = field(default_factory=lambda: hex_bytes_repeated(0))
-    body_root: str = field(default_factory=lambda: hex_bytes_repeated(0))
-    logs_root: str = field(default_factory=lambda: hex_bytes_repeated(0))
-
-
-@dataclass
-class GenesisAccountData:
-    predicate: str = field(default="AlwaysAccept")
-    inner_state: str = field(default_factory=lambda: hex_bytes_repeated(0))
-    balance: int = field(default=0)
-
-
-@dataclass
 class GenesisL1View:
     blk: L1BlockCommitment = field(default_factory=L1BlockCommitment)
     next_target: int = field(default=1000)
@@ -74,17 +55,6 @@ def gen_random_keypair() -> tuple[str, Key]:
     key = Key()
     xpubkey = format(key.x, "064x")
     return xpubkey, key
-
-
-def compressed_pubkey(key: Key) -> str:
-    """Returns the 33-byte compressed public key hex (02/03 prefix + x)."""
-    prefix = "02" if key.y % 2 == 0 else "03"
-    return prefix + format(key.x, "064x")
-
-
-def even_pubkey(key: Key) -> str:
-    """Returns the 33-byte even-parity compressed public key hex (02 prefix + x)."""
-    return "02" + format(key.x, "064x")
 
 
 @dataclass
@@ -128,93 +98,6 @@ class RollupParams:
 
     def with_genesis_l1(self, genesis_l1: GenesisL1View):
         self.genesis_l1_view = genesis_l1
-        return self
-
-
-def default_accounts():
-    return {ALPEN_ACCOUNT_ID: GenesisAccountData()}
-
-
-@dataclass
-class OLParams:
-    header: GenesisHeaderParams | None = field(default=None)
-    accounts: dict[str, GenesisAccountData] = field(default_factory=default_accounts)
-    last_l1_block: L1BlockCommitment = field(default_factory=L1BlockCommitment)
-
-    def as_json_string(self) -> str:
-        d = asdict(self)
-        if d.get("header") is None:
-            d.pop("header", None)
-        return json.dumps(d, indent=2)
-
-    def with_genesis_l1(self, genesis_l1: GenesisL1View):
-        self.last_l1_block = genesis_l1.blk
-        return self
-
-
-@dataclass
-class ThresholdConfig:
-    keys: list[str]
-    threshold: int = 1
-
-
-@dataclass
-class AdminSubprotocolConfig:
-    strata_administrator: ThresholdConfig
-    strata_sequencer_manager: ThresholdConfig
-    confirmation_depth: int = 144
-    max_seqno_gap: int = 100
-
-
-@dataclass
-class CheckpointSubprotocolConfig:
-    sequencer_predicate: str = "AlwaysAccept"
-    checkpoint_predicate: str = "AlwaysAccept"
-    genesis_l1_height: int = 0
-    genesis_ol_blkid: str = field(default_factory=lambda: hex_bytes_repeated(0))
-
-
-@dataclass
-class BridgeV1SubprotocolConfig:
-    operators: list[str] = field(default_factory=list)
-    denomination: int = field(default=1_000_000_000)
-    assignment_duration: int = field(default=64)
-    operator_fee: int = field(default=50_000_000)
-    recovery_delay: int = field(default=1008)
-
-
-@dataclass
-class AsmParams:
-    magic: str = "ALPN"
-    l1_view: GenesisL1View = field(default_factory=GenesisL1View)
-    admin: AdminSubprotocolConfig = field(
-        default_factory=lambda: AdminSubprotocolConfig(
-            strata_administrator=ThresholdConfig(keys=[compressed_pubkey(Key())]),
-            strata_sequencer_manager=ThresholdConfig(keys=[compressed_pubkey(Key())]),
-        )
-    )
-    checkpoint: CheckpointSubprotocolConfig = field(default_factory=CheckpointSubprotocolConfig)
-    bridge: BridgeV1SubprotocolConfig = field(
-        default_factory=lambda: BridgeV1SubprotocolConfig(
-            operators=[even_pubkey(Key())],
-        )
-    )
-
-    def as_json_string(self) -> str:
-        d = {
-            "magic": self.magic,
-            "l1_view": asdict(self.l1_view),
-            "subprotocols": [
-                {"Admin": asdict(self.admin)},
-                {"Checkpoint": asdict(self.checkpoint)},
-                {"Bridge": asdict(self.bridge)},
-            ],
-        }
-        return json.dumps(d, indent=2)
-
-    def with_genesis_l1(self, genesis_l1: GenesisL1View):
-        self.l1_view = genesis_l1
-        self.checkpoint.genesis_l1_height = genesis_l1.blk.height
         return self
 
 

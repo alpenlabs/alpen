@@ -11,7 +11,6 @@ import flexitest
 from common.config import (
     BitcoindConfig,
     ClientConfig,
-    OLParams,
     SequencerConfig,
     ServiceType,
     StrataConfig,
@@ -19,6 +18,7 @@ from common.config import (
 from common.config.params import GenesisL1View
 from common.datatool import (
     generate_asm_params,
+    generate_ol_params,
     generate_rollup_params,
 )
 from common.services import StrataProps, StrataService
@@ -80,18 +80,16 @@ class StrataFactory(flexitest.Factory):
         # Generate rollup params via datatool.
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
-        # Create OL params
-        ol_params = OLParams().with_genesis_l1(genesis_l1)
-        ol_params_path = datadir / "ol-params.json"
-        with open(ol_params_path, "w") as f:
-            f.write(ol_params.as_json_string())
+        # Generate OL params via datatool (uses Bitcoin RPC to fetch genesis L1 block).
+        ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
 
-        # Generate ASM params via datatool to keep the L1 view consistent.
+        # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
         asm_params_path = generate_asm_params(
             datadir,
             bconfig,
             genesis_l1_height,
             params_data.operator_keys,
+            ol_params_path=ol_params_path,
         )
 
         # Build command

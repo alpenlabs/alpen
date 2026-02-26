@@ -119,11 +119,32 @@ def generate_sequencer_pubkey(sequencer_key_path: Path) -> str:
     return sequencer_pubkey
 
 
+def generate_ol_params(
+    datadir: Path,
+    bconfig: BitcoindConfig,
+    genesis_l1_height: int,
+) -> Path:
+    """Generates OL params via ``strata-datatool gen-ol-params``."""
+    params_path = datadir / "ol-params.json"
+
+    args = [
+        "gen-ol-params",
+        "--genesis-l1-height",
+        str(genesis_l1_height),
+        "-o",
+        str(params_path),
+    ]
+
+    run_datatool(args, bconfig)
+    return params_path
+
+
 def generate_asm_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
     operator_xprivs: list[str],
+    ol_params_path: Path | None = None,
 ) -> Path:
     params_path = datadir / "asm-params.json"
 
@@ -136,6 +157,8 @@ def generate_asm_params(
         "-o",
         str(params_path),
     ]
+    if ol_params_path is not None:
+        args.extend(["--ol-params", str(ol_params_path)])
     for opkey in operator_xprivs:
         args.extend(["--opkey", opkey])
 

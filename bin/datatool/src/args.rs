@@ -51,6 +51,7 @@ pub(crate) enum Subcommand {
     SeqPrivkey(SubcSeqPrivkey),
     Params(SubcParams),
     AsmParams(SubcAsmParams),
+    OlParams(SubcOlParams),
     #[cfg(feature = "btc-client")]
     GenL1View(SubcGenL1View),
 }
@@ -237,6 +238,12 @@ pub(crate) struct SubcAsmParams {
     )]
     pub(crate) genesis_l1_view_file: Option<String>,
 
+    #[argh(
+        option,
+        description = "path to JSON-serialized OL params (required to compute genesis OL block ID)"
+    )]
+    pub(crate) ol_params: PathBuf,
+
     #[argh(option, description = "assignment duration in blocks (default 64)")]
     pub(crate) assignment_duration: Option<u16>,
 
@@ -257,6 +264,35 @@ pub(crate) struct SubcAsmParams {
         description = "confirmation depth for admin subprotocol (default 100)"
     )]
     pub(crate) max_seqno_gap: Option<NonZero<u8>>,
+}
+
+/// Generate an OL params file from inputs.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(
+    subcommand,
+    name = "gen-ol-params",
+    description = "generates OL params from inputs"
+)]
+pub(crate) struct SubcOlParams {
+    #[argh(
+        option,
+        description = "output file path .json (default stdout)",
+        short = 'o'
+    )]
+    pub(crate) output: Option<PathBuf>,
+
+    #[argh(
+        option,
+        description = "genesis L1 block height (default 100)",
+        short = 'g'
+    )]
+    pub(crate) genesis_l1_height: Option<u64>,
+
+    #[argh(
+        option,
+        description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
+    )]
+    pub(crate) genesis_l1_view_file: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
