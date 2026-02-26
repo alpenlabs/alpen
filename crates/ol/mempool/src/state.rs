@@ -20,8 +20,8 @@ use tracing::warn;
 use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
     types::{
-        MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-        OLMempoolTransaction,
+        FifoPriority, MempoolEntry, MempoolOrderingKey, MempoolPriorityPolicy, OLMempoolConfig,
+        OLMempoolRejectReason, OLMempoolStats, OLMempoolTransaction,
     },
     validation::validate_transaction,
 };
@@ -231,7 +231,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             }
 
             // Create entry using stored timestamp from database
-            let ordering_key = MempoolOrderingKey::for_transaction(&tx, tx_data.timestamp_micros);
+            let ordering_key = FifoPriority::compute_key(&tx, tx_data.timestamp_micros, txid);
             let tx_size = tx_data.tx_bytes.len();
             let entry = MempoolEntry::new(tx, ordering_key, tx_size);
 
@@ -415,7 +415,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             .expect("system time before UNIX epoch")
             .as_micros() as u64;
 
-        let ordering_key = MempoolOrderingKey::for_transaction(&tx, timestamp_micros);
+        let ordering_key = FifoPriority::compute_key(&tx, timestamp_micros, txid);
         let entry = MempoolEntry::new(tx.clone(), ordering_key, tx_size);
 
         // Persist to database first
