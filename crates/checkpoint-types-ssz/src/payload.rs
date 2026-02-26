@@ -11,7 +11,7 @@ use tree_hash::{Sha256Hasher, TreeHash};
 use crate::{
     CheckpointPayload, CheckpointPayloadError, CheckpointSidecar, CheckpointTip,
     MAX_LOG_PAYLOAD_BYTES, MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, MAX_TOTAL_LOG_PAYLOAD_BYTES,
-    OL_DA_DIFF_MAX_SIZE, SignedCheckpointPayload, TerminalHeaderSupplement,
+    OL_DA_DIFF_MAX_SIZE, SignedCheckpointPayload, TerminalHeaderComplement,
 };
 
 impl CheckpointTip {
@@ -42,10 +42,10 @@ impl_borsh_via_ssz_fixed!(CheckpointTip);
 /// `new_tip.epoch`, `state_root` from DA + manifest reconstruction, `is_terminal`
 /// by checkpoint semantics), but these four are not available from L1 data.
 ///
-/// The proof commits to the SSZ tree hash root of [`TerminalHeaderSupplement`] in
+/// The proof commits to the SSZ tree hash root of [`TerminalHeaderComplement`] in
 /// [`crate::CheckpointClaim`], so the L1 verifier can enforce sidecar integrity
 /// without a full header preimage.
-impl TerminalHeaderSupplement {
+impl TerminalHeaderComplement {
     pub fn new(
         timestamp: u64,
         parent_blkid: OLBlockId,
@@ -60,7 +60,7 @@ impl TerminalHeaderSupplement {
         }
     }
 
-    /// Constructs [`TerminalHeaderSupplement`] from a full [`OLBlockHeader`].
+    /// Constructs [`TerminalHeaderComplement`] from a full [`OLBlockHeader`].
     pub fn from_full_header(header: &OLBlockHeader) -> Self {
         Self::new(
             header.timestamp(),
@@ -86,7 +86,7 @@ impl TerminalHeaderSupplement {
         &self.logs_root
     }
 
-    /// Computes the SSZ tree hash root of this supplement.
+    /// Computes the SSZ tree hash root of this complement.
     pub fn compute_hash(&self) -> FixedBytes<32> {
         FixedBytes::<32>::from(TreeHash::<Sha256Hasher>::tree_hash_root(self).0)
     }
@@ -96,7 +96,7 @@ impl CheckpointSidecar {
     pub fn new(
         ol_state_diff: Vec<u8>,
         ol_logs: Vec<OLLog>,
-        terminal_header_supplement: TerminalHeaderSupplement,
+        terminal_header_complement: TerminalHeaderComplement,
     ) -> Result<Self, CheckpointPayloadError> {
         let state_diff_len = ol_state_diff.len() as u64;
 
@@ -119,7 +119,7 @@ impl CheckpointSidecar {
         Ok(Self {
             ol_state_diff,
             ol_logs,
-            terminal_header_supplement,
+            terminal_header_complement,
         })
     }
 
@@ -134,8 +134,8 @@ impl CheckpointSidecar {
     }
 
     /// Get the terminal header subset.
-    pub fn terminal_header_supplement(&self) -> &TerminalHeaderSupplement {
-        &self.terminal_header_supplement
+    pub fn terminal_header_complement(&self) -> &TerminalHeaderComplement {
+        &self.terminal_header_complement
     }
 }
 
@@ -220,15 +220,15 @@ mod tests {
 
     use super::*;
 
-    fn default_terminal_header_supplement() -> TerminalHeaderSupplement {
-        TerminalHeaderSupplement::new(0, OLBlockId::null(), Buf32::zero(), Buf32::zero())
+    fn default_terminal_header_complement() -> TerminalHeaderComplement {
+        TerminalHeaderComplement::new(0, OLBlockId::null(), Buf32::zero(), Buf32::zero())
     }
 
     #[test]
     fn test_checkpoint_sidecar_rejects_oversize_log_payload() {
         let log = OLLog::new(AccountSerial::one(), vec![0u8; MAX_LOG_PAYLOAD_BYTES + 1]);
         let result =
-            CheckpointSidecar::new(vec![], vec![log], default_terminal_header_supplement());
+            CheckpointSidecar::new(vec![], vec![log], default_terminal_header_complement());
 
         assert!(matches!(
             result,
@@ -246,7 +246,7 @@ mod tests {
             ));
         }
 
-        let result = CheckpointSidecar::new(vec![], logs, default_terminal_header_supplement());
+        let result = CheckpointSidecar::new(vec![], logs, default_terminal_header_complement());
 
         assert!(matches!(
             result,

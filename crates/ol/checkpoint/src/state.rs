@@ -2,7 +2,7 @@
 
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{
-    CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderSupplement,
+    CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
 };
 use strata_codec::encode_to_vec;
 use strata_db_types::types::OLCheckpointEntry;
@@ -171,9 +171,9 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     // Extract the four header fields not derivable from L1 checkpoint data
     // (timestamp, parent_blkid, body_root, logs_root). Other header fields are
     // derivable: slot/blkid from new_tip, state_root from DA + manifests.
-    let terminal_header_supplement = TerminalHeaderSupplement::from_full_header(&terminal_header);
+    let terminal_header_complement = TerminalHeaderComplement::from_full_header(&terminal_header);
 
-    let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_supplement)?;
+    let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
     let proof = ctx.get_proof(&commitment)?;
 
     Ok(CheckpointPayload::new(new_tip, sidecar, proof)?)
@@ -360,7 +360,7 @@ mod tests {
                 .get_checkpoint_blocking(epoch)
                 .expect("get checkpoint")
                 .expect("checkpoint should be stored");
-            let sidecar_terminal_subset = stored.checkpoint.sidecar().terminal_header_supplement();
+            let sidecar_terminal_subset = stored.checkpoint.sidecar().terminal_header_complement();
 
             prop_assert_eq!(sidecar_terminal_subset.timestamp(), terminal_header.timestamp());
             prop_assert_eq!(*sidecar_terminal_subset.parent_blkid(), *terminal_header.parent_blkid());

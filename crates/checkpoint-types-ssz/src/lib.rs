@@ -16,8 +16,8 @@
 //!   [`CheckpointClaim::ol_logs_hash`])
 //! - The [`CheckpointClaim::state_diff_hash`] is the hash of the state diff in
 //!   [`CheckpointSidecar`] between [`L2BlockRange::start`] and [`L2BlockRange::end`]
-//! - The [`CheckpointClaim::terminal_header_supplement_hash`] commits to
-//!   [`CheckpointSidecar::terminal_header_supplement`], which carries the four terminal header
+//! - The [`CheckpointClaim::terminal_header_complement_hash`] commits to
+//!   [`CheckpointSidecar::terminal_header_complement`], which carries the four terminal header
 //!   fields not derivable from L1 checkpoint data (`timestamp`, `parent_blkid`, `body_root`,
 //!   `logs_root`). The ZK proof binds this hash to the executed terminal header, so the L1 verifier
 //!   can enforce sidecar integrity without a full header preimage check
@@ -64,7 +64,7 @@ pub use ssz_generated::ssz::claim::{
 pub use ssz_generated::ssz::payload::{
     CheckpointPayload, CheckpointPayloadRef, CheckpointSidecar, CheckpointSidecarRef,
     CheckpointTip, CheckpointTipRef, SignedCheckpointPayload, SignedCheckpointPayloadRef,
-    TerminalHeaderSupplement, TerminalHeaderSupplementRef,
+    TerminalHeaderComplement, TerminalHeaderComplementRef,
 };
 // Re-export constants from payload.ssz
 pub use ssz_generated::ssz::payload::{

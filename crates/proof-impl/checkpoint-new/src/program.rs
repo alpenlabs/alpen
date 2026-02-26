@@ -70,7 +70,7 @@ impl CheckpointProgram {
 mod tests {
     use std::panic::catch_unwind;
 
-    use strata_checkpoint_types_ssz::TerminalHeaderSupplement;
+    use strata_checkpoint_types_ssz::TerminalHeaderComplement;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
@@ -143,11 +143,11 @@ mod tests {
             hash::raw(&input.da_state_diff_bytes).into()
         );
         let terminal_header = input.blocks.last().expect("non-empty block list").header();
-        let terminal_header_supplement =
-            TerminalHeaderSupplement::from_full_header(terminal_header);
+        let terminal_header_complement =
+            TerminalHeaderComplement::from_full_header(terminal_header);
         assert_eq!(
-            *claim.terminal_header_supplement_hash(),
-            terminal_header_supplement.compute_hash()
+            *claim.terminal_header_complement_hash(),
+            terminal_header_complement.compute_hash()
         );
     }
 

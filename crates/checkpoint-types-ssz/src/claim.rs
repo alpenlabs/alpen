@@ -29,7 +29,7 @@ impl CheckpointClaim {
         asm_manifests_hash: FixedBytes<32>,
         state_diff_hash: FixedBytes<32>,
         ol_logs_hash: FixedBytes<32>,
-        terminal_header_supplement_hash: FixedBytes<32>,
+        terminal_header_complement_hash: FixedBytes<32>,
     ) -> Self {
         Self {
             epoch,
@@ -37,7 +37,7 @@ impl CheckpointClaim {
             asm_manifests_hash,
             state_diff_hash,
             ol_logs_hash,
-            terminal_header_supplement_hash,
+            terminal_header_complement_hash,
         }
     }
 
@@ -66,8 +66,8 @@ impl CheckpointClaim {
         self.as_ssz_bytes()
     }
 
-    pub fn terminal_header_supplement_hash(&self) -> &FixedBytes<32> {
-        &self.terminal_header_supplement_hash
+    pub fn terminal_header_complement_hash(&self) -> &FixedBytes<32> {
+        &self.terminal_header_complement_hash
     }
 }
 

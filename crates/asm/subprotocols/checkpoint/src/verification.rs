@@ -129,11 +129,11 @@ fn construct_full_claim(
     // Hash SSZ-encoded OL logs (convert to Vec for SSZ encoding)
     let ol_logs_vec = sidecar.ol_logs().to_vec();
     let ol_logs_hash = hash::raw(&ol_logs_vec.as_ssz_bytes()).into();
-    // Reconstruct terminal_header_supplement_hash from the sidecar data posted on L1.
+    // Reconstruct terminal_header_complement_hash from the sidecar data posted on L1.
     // The ZK proof committed to this same hash derived from the executed terminal header,
     // so matching it here cryptographically binds the sidecar fields to proven execution.
-    let terminal_header_supplement_hash =
-        sidecar.terminal_header_supplement().compute_hash();
+    let terminal_header_complement_hash =
+        sidecar.terminal_header_complement().compute_hash();
 
     Ok(CheckpointClaim::new(
         new_tip.epoch,
@@ -141,7 +141,7 @@ fn construct_full_claim(
         asm_manifests_hash,
         state_diff_hash,
         ol_logs_hash,
-        terminal_header_supplement_hash,
+        terminal_header_complement_hash,
     ))
 }
 
@@ -199,7 +199,7 @@ fn extract_and_validate_withdrawal_intents(
 #[cfg(test)]
 mod tests {
     use strata_asm_common::{AsmHistoryAccumulatorState, AuxData, VerifiedAuxData};
-    use strata_checkpoint_types_ssz::TerminalHeaderSupplement;
+    use strata_checkpoint_types_ssz::TerminalHeaderComplement;
     use strata_identifiers::{AccountSerial, Buf64};
     use strata_ol_chain_types_new::OLLog;
     use strata_test_utils_l2::CheckpointTestHarness;
@@ -468,18 +468,18 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_terminal_header_supplement() {
+    fn test_invalid_terminal_header_complement() {
         let (state, harness) = test_setup();
         let mut payload = harness.build_payload();
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
         let current_l1_height = payload.new_tip().l1_height + 1;
 
-        let terminal_header_supplement = payload.sidecar.terminal_header_supplement();
-        payload.sidecar.terminal_header_supplement = TerminalHeaderSupplement::new(
-            terminal_header_supplement.timestamp() + 1,
-            *terminal_header_supplement.parent_blkid(),
-            *terminal_header_supplement.body_root(),
-            *terminal_header_supplement.logs_root(),
+        let terminal_header_complement = payload.sidecar.terminal_header_complement();
+        payload.sidecar.terminal_header_complement = TerminalHeaderComplement::new(
+            terminal_header_complement.timestamp() + 1,
+            *terminal_header_complement.parent_blkid(),
+            *terminal_header_complement.body_root(),
+            *terminal_header_complement.logs_root(),
         );
 
         let signed_payload = harness.sign_payload(payload);

@@ -11,7 +11,7 @@ use strata_identifiers::{
 
 use crate::{
     CheckpointClaim, CheckpointPayload, CheckpointSidecar, CheckpointTip, L2BlockRange,
-    MAX_LOG_PAYLOAD_BYTES, SignedCheckpointPayload, TerminalHeaderSupplement,
+    MAX_LOG_PAYLOAD_BYTES, SignedCheckpointPayload, TerminalHeaderComplement,
 };
 
 /// Creates a minimal [`CheckpointPayload`] for the given epoch using validated constructors.
@@ -20,7 +20,7 @@ pub fn create_test_checkpoint_payload(epoch: u32) -> CheckpointPayload {
     let sidecar = CheckpointSidecar::new(
         vec![2; 100],
         vec![],
-        TerminalHeaderSupplement::new(0, Buf32::zero().into(), Buf32::zero(), Buf32::zero()),
+        TerminalHeaderComplement::new(0, Buf32::zero().into(), Buf32::zero(), Buf32::zero()),
     )
     .expect("test sidecar is within size limits");
 
@@ -61,8 +61,8 @@ fn ol_logs_strategy() -> impl Strategy<Value = Vec<crate::OLLog>> {
     )
 }
 
-/// Strategy for generating random [`crate::TerminalHeaderSupplement`] values.
-fn terminal_header_supplement_strategy() -> impl Strategy<Value = crate::TerminalHeaderSupplement> {
+/// Strategy for generating random [`crate::TerminalHeaderComplement`] values.
+fn terminal_header_complement_strategy() -> impl Strategy<Value = crate::TerminalHeaderComplement> {
     (
         any::<u64>(),
         ol_block_id_strategy(),
@@ -70,7 +70,7 @@ fn terminal_header_supplement_strategy() -> impl Strategy<Value = crate::Termina
         buf32_strategy(),
     )
         .prop_map(|(timestamp, parent_blkid, body_root, logs_root)| {
-            crate::TerminalHeaderSupplement::new(timestamp, parent_blkid, body_root, logs_root)
+            crate::TerminalHeaderComplement::new(timestamp, parent_blkid, body_root, logs_root)
         })
 }
 
@@ -79,10 +79,10 @@ pub fn checkpoint_sidecar_strategy() -> impl Strategy<Value = CheckpointSidecar>
     (
         state_diff_strategy(),
         ol_logs_strategy(),
-        terminal_header_supplement_strategy(),
+        terminal_header_complement_strategy(),
     )
-        .prop_map(|(state_diff, ol_logs, terminal_header_supplement)| {
-            CheckpointSidecar::new(state_diff, ol_logs, terminal_header_supplement)
+        .prop_map(|(state_diff, ol_logs, terminal_header_complement)| {
+            CheckpointSidecar::new(state_diff, ol_logs, terminal_header_complement)
                 .expect("valid sidecar")
         })
 }
@@ -131,7 +131,7 @@ pub fn checkpoint_claim_strategy() -> impl Strategy<Value = CheckpointClaim> {
                 asm_manifests_hash,
                 state_diff_hash,
                 ol_logs_hash,
-                terminal_header_supplement_hash,
+                terminal_header_complement_hash,
             )| {
                 CheckpointClaim::new(
                     epoch,
@@ -139,7 +139,7 @@ pub fn checkpoint_claim_strategy() -> impl Strategy<Value = CheckpointClaim> {
                     asm_manifests_hash,
                     state_diff_hash,
                     ol_logs_hash,
-                    terminal_header_supplement_hash,
+                    terminal_header_complement_hash,
                 )
             },
         )

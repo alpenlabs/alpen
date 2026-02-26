@@ -6,7 +6,7 @@
 use ssz::{Decode, Encode};
 use ssz_primitives::FixedBytes;
 use strata_asm_manifest_types::compute_asm_manifests_hash;
-use strata_checkpoint_types_ssz::{CheckpointClaim, L2BlockRange, TerminalHeaderSupplement};
+use strata_checkpoint_types_ssz::{CheckpointClaim, L2BlockRange, TerminalHeaderComplement};
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
@@ -173,13 +173,13 @@ pub fn process_ol_stf_core(
     let state_diff_hash = FixedBytes::<32>::from(hash::raw(&da_state_diff_bytes));
 
     // Derive the terminal header subset hash from the proven terminal header.
-    // This binds the sidecar's TerminalHeaderSupplement to the actual executed header,
+    // This binds the sidecar's TerminalHeaderComplement to the actual executed header,
     // preventing a malicious sequencer from posting valid proofs with mismatched
     // sidecar data (the L1 verifier reconstructs this hash from sidecar fields and
     // checks it against the proof).
-    let expected_terminal_header_supplement =
-        TerminalHeaderSupplement::from_full_header(&terminal_header);
-    let terminal_header_supplement_hash = expected_terminal_header_supplement.compute_hash();
+    let expected_terminal_header_complement =
+        TerminalHeaderComplement::from_full_header(&terminal_header);
+    let terminal_header_complement_hash = expected_terminal_header_complement.compute_hash();
 
     // Compute the hash of all accumulated OL logs for the checkpoint claim
     let ol_logs_hash = FixedBytes::<32>::from(hash::raw(&logs.as_ssz_bytes()));
@@ -190,14 +190,14 @@ pub fn process_ol_stf_core(
     // - asm_manifests_hash: Hash of all ASM manifests in the batch
     // - state_diff_hash: Hash of witnessed DA diff bytes validated against preseal/final roots
     // - ol_logs_hash: Hash of all logs emitted during batch execution
-    // - terminal_header_supplement_hash: Hash binding terminal header subset from sidecar data
+    // - terminal_header_complement_hash: Hash binding terminal header subset from sidecar data
     CheckpointClaim::new(
         epoch,
         l2_range,
         asm_manifests_hash,
         state_diff_hash,
         ol_logs_hash,
-        terminal_header_supplement_hash,
+        terminal_header_complement_hash,
     )
 }
 

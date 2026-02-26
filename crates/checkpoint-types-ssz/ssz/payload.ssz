@@ -43,7 +43,7 @@ class CheckpointPayload(Container):
     ### ZK proof attesting to the validity of the checkpoint claim.
     proof: List[uint8, MAX_PROOF_LEN]
 
-### Minimal terminal header supplement for L1 reconstruction.
+### Minimal terminal header complement for L1 reconstruction.
 ###
 ### A fresh sequencer can reconstruct OL state from L1 checkpoint payloads
 ### and ASM manifests, but cannot recover the terminal OLBlockHeader needed
@@ -54,15 +54,15 @@ class CheckpointPayload(Container):
 ### available from existing L1 checkpoint data.
 ###
 ### Why not publish the full OLBlockHeader (150 bytes) instead?
-### This supplement is 104 bytes, saving 46 bytes of L1 data per
-### checkpoint. The tradeoff: a 32-byte `terminal_header_supplement_hash`
+### This complement is 104 bytes, saving 46 bytes of L1 data per
+### checkpoint. The tradeoff: a 32-byte `terminal_header_complement_hash`
 ### is added to CheckpointClaim (inside the proof, no L1 data cost).
 ### This hash is necessary because the ASM checkpoint verifier cannot
 ### reconstruct the full header to verify via `blkid` — it does not have
 ### `state_root` at verification time. The proof commits
-### `hash(TerminalHeaderSupplement)` so the verifier can bind the sidecar
+### `hash(TerminalHeaderComplement)` so the verifier can bind the sidecar
 ### fields to proven execution without needing the full header.
-class TerminalHeaderSupplement(Container):
+class TerminalHeaderComplement(Container):
     ### Terminal block timestamp.
     timestamp: uint64
 
@@ -95,13 +95,13 @@ class CheckpointSidecar(Container):
     #~# external_kind: container
     ol_logs: List[strata_ol_chain_types_new.OLLog, MAX_OL_LOGS_PER_CHECKPOINT]
 
-    ### Terminal header subset for L1 reconstruction (see TerminalHeaderSupplement).
+    ### Terminal header subset for L1 reconstruction (see TerminalHeaderComplement).
     ###
     ### A reconstructor combines these fields with derivable header data
     ### (slot/blkid from new_tip, epoch from new_tip, state_root from DA +
     ### manifest reconstruction) to rebuild the full terminal OLBlockHeader
     ### needed as parent for the next epoch's first block.
-    terminal_header_supplement: TerminalHeaderSupplement
+    terminal_header_complement: TerminalHeaderComplement
 
 ### Signed checkpoint payload for L1 posting.
 ### The signature is over the hash of the inner payload.
