@@ -12,6 +12,7 @@ import flexitest
 from common.accounts import get_dev_account, get_recipient_account
 from common.base_test import AlpenClientTest
 from common.config.constants import ServiceType
+from common.evm_utils import send_raw_transaction
 from common.wait import wait_until
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         seq_rpc = ee_sequencer.create_rpc()
         fn_rpc = ee_fullnodes[0].create_rpc()
 
-        dev_account = get_dev_account()
+        dev_account = get_dev_account(seq_rpc)
         recipient_account = get_recipient_account()
 
         # Verify dev account has funds
@@ -49,8 +50,6 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
         assert balance > 0, "Dev account has no balance"
 
         # Build and send transaction to fullnode (not sequencer)
-        nonce = int(seq_rpc.eth_getTransactionCount(dev_account.address, "pending"), 16)
-        dev_account.sync_nonce(nonce)
         gas_price = int(int(seq_rpc.eth_gasPrice(), 16) * 1.5)
 
         raw_tx = dev_account.sign_transfer(
@@ -59,7 +58,7 @@ class TestTransactionMempoolPropagation(AlpenClientTest):
             gas_price=gas_price,
         )
 
-        tx_hash = fn_rpc.eth_sendRawTransaction(raw_tx)
+        tx_hash = send_raw_transaction(fn_rpc, raw_tx)
         logger.info(f"Sent tx {tx_hash} to fullnode_0")
 
         # Wait for transaction to be mined

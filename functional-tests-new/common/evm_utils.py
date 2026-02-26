@@ -1,9 +1,15 @@
 """EVM utilities for functional tests."""
 
+import logging
+
 from eth_account import Account
+from eth_hash.auto import keccak
 
 from .accounts import ManagedAccount
+from .rpc import RpcError
 from .wait import wait_until
+
+logger = logging.getLogger(__name__)
 
 
 def get_balance(rpc, address: str, block_tag: str = "latest") -> int:
@@ -29,6 +35,28 @@ def wait_for_receipt(rpc, tx_hash: str, timeout: int = 10) -> dict:
     return receipt
 
 
+def send_raw_transaction(rpc, raw_tx: str) -> str:
+    """Send a raw transaction, handling the sequencer forwarding race.
+
+    Fullnodes forward transactions to the sequencer via --sequencer-http
+    before adding them to the local pool. A race exists where the sequencer
+    includes the tx in a block and gossips it back before the fullnode's
+    local pool insertion completes, causing an "already known" error.
+
+    When this happens the tx was already processed, but the RPC error means
+    no hash is returned. We derive it ourselves as keccak256(raw_tx_bytes),
+    which is the standard Ethereum transaction hash definition.
+    """
+    try:
+        return rpc.eth_sendRawTransaction(raw_tx)
+    except RpcError as e:
+        if "already known" not in str(e):
+            raise
+        tx_hash = "0x" + keccak(bytes.fromhex(raw_tx[2:])).hex()
+        logger.info(f"Tx already known (sequencer forwarding race), hash: {tx_hash}")
+        return tx_hash
+
+
 def create_funded_account(
     rpc,
     funding_account: ManagedAccount,
@@ -46,7 +74,7 @@ def create_funded_account(
         gas_price=gas_price,
         gas=gas,
     )
-    tx_hash = rpc.eth_sendRawTransaction(raw_tx)
+    tx_hash = send_raw_transaction(rpc, raw_tx)
     wait_for_receipt(rpc, tx_hash)
 
     return new_managed

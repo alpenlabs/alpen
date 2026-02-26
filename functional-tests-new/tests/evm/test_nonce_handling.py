@@ -6,7 +6,7 @@ import flexitest
 
 from common.accounts import get_dev_account
 from common.base_test import AlpenClientTest
-from common.config.constants import DEV_ADDRESS, ServiceType
+from common.config.constants import ServiceType
 from common.evm_utils import create_funded_account, wait_for_receipt
 from common.rpc import RpcError
 
@@ -22,10 +22,7 @@ class TestNonceHandling(AlpenClientTest):
         ee_sequencer = self.get_service(ServiceType.AlpenSequencer)
         rpc = ee_sequencer.create_rpc()
 
-        dev_account = get_dev_account()
-        dev_nonce = int(rpc.eth_getTransactionCount(DEV_ADDRESS, "pending"), 16)
-        dev_account.sync_nonce(dev_nonce)
-
+        dev_account = get_dev_account(rpc)
         account = create_funded_account(rpc, dev_account, 10**18)
         logger.info(f"Created test account: {account.address}")
 
