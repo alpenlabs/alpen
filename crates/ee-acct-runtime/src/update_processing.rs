@@ -1,4 +1,4 @@
-// TODO this is being refactored
+//! High-level entrypoint functions for EE account update processing.
 
 use strata_ee_acct_types::{EeAccountState, EnvError, ExecutionEnvironment};
 use strata_snark_acct_runtime::{

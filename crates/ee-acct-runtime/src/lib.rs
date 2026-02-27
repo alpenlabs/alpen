@@ -4,10 +4,8 @@
 #![expect(unused, reason = "lots of stuff being refactored")]
 
 mod block_assembly;
-mod commit;
 mod ee_program;
 mod errors;
-mod exec_processing;
 mod private_input;
 mod update_processing;
 mod verification_state;
