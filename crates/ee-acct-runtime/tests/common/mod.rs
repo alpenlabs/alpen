@@ -14,7 +14,9 @@ use strata_ee_acct_types::{EeAccountState, EnvError};
 use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
 use strata_simple_ee::SimpleExecutionEnvironment;
-use strata_snark_acct_runtime::{Coinput, IInnerState, ProgramResult, PrivateInput as SnarkPrivateInput};
+use strata_snark_acct_runtime::{
+    Coinput, IInnerState, PrivateInput as SnarkPrivateInput, ProgramResult,
+};
 use strata_snark_acct_types::{
     MessageEntry, ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData,
     UpdateOutputs, UpdateProofPubParams,
@@ -90,8 +92,7 @@ pub fn assert_both_paths_succeed(
     coinputs: &[Vec<u8>],
     ee: &SimpleExecutionEnvironment,
 ) {
-    verify_update(initial_state, operation, coinputs, ee)
-        .expect("verified path should succeed");
+    verify_update(initial_state, operation, coinputs, ee).expect("verified path should succeed");
 
     apply_unconditionally(initial_state, operation).expect("unconditional path should succeed");
 }
@@ -145,13 +146,9 @@ pub(crate) fn build_update_operation(
 ) -> (UpdateOperationData, Vec<Vec<u8>>, SnarkPrivateInput) {
     let vinput = EeVerificationInput::new(ee, &[], &[]);
 
-    let mut builder = UpdateBuilder::new(
-        seq_no,
-        snark_state.clone(),
-        initial_state.clone(),
-        vinput,
-    )
-    .expect("create builder");
+    let mut builder =
+        UpdateBuilder::new(seq_no, snark_state.clone(), initial_state.clone(), vinput)
+            .expect("create builder");
 
     builder.add_messages(messages).expect("add messages");
 

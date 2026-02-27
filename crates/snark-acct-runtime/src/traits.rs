@@ -32,10 +32,7 @@ pub trait SnarkAccountProgram {
 
     /// Starts an update, making whatever initial changes there are before
     /// handling messages.
-    fn start_update(
-        &self,
-        _state: &mut Self::State,
-    ) -> ProgramResult<(), Self::Error> {
+    fn start_update(&self, _state: &mut Self::State) -> ProgramResult<(), Self::Error> {
         Ok(())
     }
 

@@ -10,8 +10,8 @@ mod common;
 use std::iter;
 
 use common::{
-    build_update_operation, create_deposit_message, create_initial_state, create_vstate,
-    simple_chunk, verify_update,
+    build_update_operation, create_chunk_transition, create_deposit_message, create_initial_state,
+    create_vstate, simple_chunk, verify_update,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
 use strata_codec::encode_to_vec;
@@ -23,8 +23,6 @@ use strata_snark_acct_runtime::ProgramError;
 use strata_snark_acct_types::{
     LedgerRefs, OutputTransfer, ProofState, UpdateOperationData, UpdateOutputs,
 };
-
-use common::create_chunk_transition;
 
 // ---- Coinput validation ----
 
@@ -38,14 +36,8 @@ fn test_mismatched_coinput_count() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let (operation, _coinputs, _snark_priv) = build_update_operation(
-        1,
-        vec![message],
-        &[],
-        &initial_state,
-        &snark_state,
-        &ee,
-    );
+    let (operation, _coinputs, _snark_priv) =
+        build_update_operation(1, vec![message], &[], &initial_state, &snark_state, &ee);
 
     // Too many coinputs
     let wrong_coinputs = [vec![], vec![]];
@@ -80,14 +72,8 @@ fn test_nonempty_coinput_rejected() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let (operation, _coinputs, _snark_priv) = build_update_operation(
-        1,
-        vec![message],
-        &[],
-        &initial_state,
-        &snark_state,
-        &ee,
-    );
+    let (operation, _coinputs, _snark_priv) =
+        build_update_operation(1, vec![message], &[], &initial_state, &snark_state, &ee);
 
     // Non-empty coinput should be rejected (EE requires empty coinputs)
     let nonempty_coinputs = vec![vec![1, 2, 3]];
@@ -176,13 +162,8 @@ fn test_builder_rejects_wrong_parent() {
     let ee = SimpleExecutionEnvironment;
 
     let vinput = EeVerificationInput::new(&ee, &[], &[]);
-    let mut builder = UpdateBuilder::new(
-        1,
-        snark_state,
-        initial_state,
-        vinput,
-    )
-    .expect("create builder");
+    let mut builder =
+        UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
 
     // Chunk with wrong parent
     let wrong_parent = Hash::new([0xCC; 32]);
@@ -207,13 +188,8 @@ fn test_builder_rejects_wrong_deposit() {
     let message = create_deposit_message(dest, value, source, 1);
 
     let vinput = EeVerificationInput::new(&ee, &[], &[]);
-    let mut builder = UpdateBuilder::new(
-        1,
-        snark_state,
-        initial_state,
-        vinput,
-    )
-    .expect("create builder");
+    let mut builder =
+        UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
 
     builder.add_messages(vec![message]).expect("add messages");
 
@@ -250,15 +226,12 @@ fn test_builder_advances_tip() {
     let msg2 = create_deposit_message(dest2, value, source, 1);
 
     let vinput = EeVerificationInput::new(&ee, &[], &[]);
-    let mut builder = UpdateBuilder::new(
-        1,
-        snark_state,
-        initial_state,
-        vinput,
-    )
-    .expect("create builder");
+    let mut builder =
+        UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
 
-    builder.add_messages(vec![msg1, msg2]).expect("add messages");
+    builder
+        .add_messages(vec![msg1, msg2])
+        .expect("add messages");
 
     let initial_tip = builder.cur_tip_blkid();
 
@@ -296,8 +269,12 @@ fn test_process_decoded_transition_happy_path() {
     let parent = initial_state.last_exec_blkid();
     let tip = Hash::new([0xBB; 32]);
 
-    let transition =
-        create_chunk_transition(parent, tip, ExecInputs::new_empty(), ExecOutputs::new_empty());
+    let transition = create_chunk_transition(
+        parent,
+        tip,
+        ExecInputs::new_empty(),
+        ExecOutputs::new_empty(),
+    );
 
     let mut vstate = create_vstate(&ee, &initial_state, UpdateOutputs::new_empty());
 
@@ -331,7 +308,10 @@ fn test_chain_linkage_mismatch() {
 
     let result = vstate.process_decoded_transition(&transition, &mut tracker);
     assert!(
-        matches!(result, Err(strata_ee_acct_types::EnvError::MismatchedChainSegment)),
+        matches!(
+            result,
+            Err(strata_ee_acct_types::EnvError::MismatchedChainSegment)
+        ),
         "expected MismatchedChainSegment, got: {result:?}"
     );
 }
@@ -369,7 +349,10 @@ fn test_deposit_mismatch_in_chunk() {
 
     let result = vstate.process_decoded_transition(&transition, &mut tracker);
     assert!(
-        matches!(result, Err(strata_ee_acct_types::EnvError::InconsistentChunkIo)),
+        matches!(
+            result,
+            Err(strata_ee_acct_types::EnvError::InconsistentChunkIo)
+        ),
         "expected InconsistentChunkIo, got: {result:?}"
     );
 }
@@ -404,7 +387,10 @@ fn test_input_count_mismatch() {
 
     let result = vstate.process_decoded_transition(&transition, &mut tracker);
     assert!(
-        matches!(result, Err(strata_ee_acct_types::EnvError::InconsistentChunkIo)),
+        matches!(
+            result,
+            Err(strata_ee_acct_types::EnvError::InconsistentChunkIo)
+        ),
         "expected InconsistentChunkIo, got: {result:?}"
     );
 }

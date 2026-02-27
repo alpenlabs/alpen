@@ -31,7 +31,8 @@ pub fn apply_input_messages(
 
         // Apply the decoded message effects.
         // Errors here indicate internal issues since we successfully decoded.
-        apply_decoded_message(astate, &decoded, meta.value()).map_err(|_| EnvError::InvalidBlock)?;
+        apply_decoded_message(astate, &decoded, meta.value())
+            .map_err(|_| EnvError::InvalidBlock)?;
 
         parsed_messages.push(InputMessage::Valid(meta, decoded));
     }
