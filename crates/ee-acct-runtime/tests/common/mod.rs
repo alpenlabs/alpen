@@ -11,13 +11,13 @@ use strata_ee_acct_runtime::{
     ArchivedEePrivateInput, ChunkInput, EePrivateInput, EeSnarkAccountProgram, EeVerificationInput,
     EeVerificationState, UpdateBuilder,
 };
-use strata_ee_acct_types::{EeAccountState, EnvError};
+use strata_ee_acct_types::{DecodedEeMessageData, EeAccountState, EnvError, UpdateExtraData};
 use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
 use strata_simple_ee::SimpleExecutionEnvironment;
 use strata_snark_acct_runtime::{
-    ArchivedPrivateInput as ArchivedSnarkPrivateInput, Coinput, IInnerState,
-    PrivateInput as SnarkPrivateInput, ProgramResult,
+    ArchivedPrivateInput as ArchivedSnarkPrivateInput, Coinput, IInnerState, InputMessage,
+    PrivateInput as SnarkPrivateInput, ProgramResult, SnarkAccountProgram,
 };
 use strata_snark_acct_types::{
     MessageEntry, ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData,
@@ -48,10 +48,10 @@ fn with_archived_inputs<R>(
 
 /// Creates a [`SnarkAccountState`] that matches the given [`EeAccountState`].
 ///
-/// Uses default hash for inner_state (matches `EeAccountState::compute_state_root()`
-/// which currently returns `Hash::default()`).
+/// Computes the real state root from the EE state via its `IInnerState` impl.
 pub fn make_snark_state(ee_state: &EeAccountState) -> SnarkAccountState {
     SnarkAccountState {
+        // Dummy VK since we don't actually care about it in any of these tests.
         update_vk: Vec::new().into(),
         proof_state: ProofState::new(ee_state.compute_state_root(), 0),
         seq_no: 0,
@@ -62,6 +62,35 @@ pub fn make_snark_state(ee_state: &EeAccountState) -> SnarkAccountState {
     }
 }
 
+/// Computes the post-state by manually applying program steps without root checking.
+///
+/// Used to derive the correct post-state root for test helpers that need to construct
+/// [`UpdateProofPubParams`] or [`UpdateManifest`] with real state commitments.
+fn compute_post_state(
+    initial_state: &EeAccountState,
+    operation: &UpdateOperationData,
+) -> EeAccountState {
+    let prog = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
+    let mut state = initial_state.clone();
+
+    prog.start_update(&mut state).expect("start_update");
+
+    for msg_entry in operation.processed_messages() {
+        let inp_msg = InputMessage::<DecodedEeMessageData>::from_msg_entry(msg_entry);
+        prog.process_message(&mut state, inp_msg)
+            .expect("process_message");
+    }
+
+    let extra_data: UpdateExtraData =
+        strata_codec::decode_buf_exact(operation.extra_data()).expect("decode extra data");
+    prog.pre_finalize_state(&mut state, &extra_data)
+        .expect("pre_finalize");
+    prog.finalize_state(&mut state, extra_data)
+        .expect("finalize");
+
+    state
+}
+
 /// Applies an update unconditionally (DA reconstruction path).
 pub fn apply_unconditionally(
     initial_state: &EeAccountState,
@@ -69,8 +98,11 @@ pub fn apply_unconditionally(
 ) -> ProgramResult<(), EnvError> {
     let mut state = initial_state.clone();
 
+    let post_state = compute_post_state(initial_state, operation);
+    let post_root = post_state.compute_state_root();
+
     let manifest = UpdateManifest::new(
-        ProofState::new(Hash::default(), operation.processed_messages().len() as u64),
+        ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.extra_data().to_vec(),
         operation.processed_messages().to_vec(),
     );
@@ -89,9 +121,13 @@ pub fn verify_update(
     coinputs: &[Vec<u8>],
     ee: &SimpleExecutionEnvironment,
 ) -> ProgramResult<(), EnvError> {
+    let pre_root = initial_state.compute_state_root();
+    let post_state = compute_post_state(initial_state, operation);
+    let post_root = post_state.compute_state_root();
+
     let pub_params = UpdateProofPubParams::new(
-        ProofState::new(Hash::default(), 0),
-        ProofState::new(Hash::default(), operation.processed_messages().len() as u64),
+        ProofState::new(pre_root, 0),
+        ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),
         operation.ledger_refs().clone(),
         operation.outputs().clone(),
@@ -239,9 +275,13 @@ pub(crate) fn verify_with_chunks(
     chunks: &[ChunkTransition],
     ee: &SimpleExecutionEnvironment,
 ) -> ProgramResult<(), EnvError> {
+    let pre_root = initial_state.compute_state_root();
+    let post_state = compute_post_state(initial_state, operation);
+    let post_root = post_state.compute_state_root();
+
     let pub_params = UpdateProofPubParams::new(
-        ProofState::new(Hash::default(), 0),
-        ProofState::new(Hash::default(), operation.processed_messages().len() as u64),
+        ProofState::new(pre_root, 0),
+        ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),
         operation.ledger_refs().clone(),
         operation.outputs().clone(),
