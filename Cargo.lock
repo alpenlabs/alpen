@@ -14117,7 +14117,6 @@ dependencies = [
 name = "strata-asm-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "strata-btc-types",
  "strata-btc-verification",
 ]
 

@@ -7,7 +7,6 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
 
 [dev-dependencies]
