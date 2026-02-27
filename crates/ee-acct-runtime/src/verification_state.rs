@@ -13,7 +13,7 @@ use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
 };
 
-use crate::private_input::ChunkInput;
+use crate::private_input::ArchivedChunkInput;
 
 /// Verification input for EE accounts.
 ///
@@ -29,7 +29,7 @@ pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
     ee: &'a E,
 
     /// Chunk transitions that we've already proven.
-    input_chunks: &'a [ChunkInput],
+    input_chunks: &'a [ArchivedChunkInput],
 
     /// Pre-state needed for processing and verifying the update transitions.
     raw_partial_pre_state: &'a [u8],
@@ -39,7 +39,11 @@ impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
     /// Constructs a new instance.
     ///
     /// The input chunk transitions MUST already be verified.
-    pub fn new(ee: &'a E, input_chunks: &'a [ChunkInput], raw_partial_pre_state: &'a [u8]) -> Self {
+    pub fn new(
+        ee: &'a E,
+        input_chunks: &'a [ArchivedChunkInput],
+        raw_partial_pre_state: &'a [u8],
+    ) -> Self {
         Self {
             ee,
             input_chunks,
@@ -51,7 +55,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
         self.ee
     }
 
-    pub fn input_chunks(&self) -> &'a [ChunkInput] {
+    pub fn input_chunks(&self) -> &'a [ArchivedChunkInput] {
         self.input_chunks
     }
 
@@ -83,7 +87,7 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     accumulated_outputs: UpdateOutputs,
 
     /// Chunk transitions to verify.
-    input_chunks: &'a [ChunkInput],
+    input_chunks: &'a [ArchivedChunkInput],
 
     /// Partial pre-state corresponding to the previous header.
     // TODO do something with this
@@ -112,7 +116,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         ee: &'a E,
         state: &EeAccountState,
         expected_outputs: UpdateOutputs,
-        input_chunks: &'a [ChunkInput],
+        input_chunks: &'a [ArchivedChunkInput],
         raw_partial_pre_state: &'a [u8],
     ) -> Self {
         Self {

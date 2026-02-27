@@ -3,24 +3,48 @@
 #![allow(unreachable_pub, reason = "test utilities")]
 #![allow(dead_code, reason = "utilities used by different test files")]
 
+use rkyv::rancor::Error as RkyvError;
 use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{
-    ChunkInput, EePrivateInput, EeSnarkAccountProgram, EeVerificationInput, EeVerificationState,
-    UpdateBuilder,
+    ArchivedEePrivateInput, ChunkInput, EePrivateInput, EeSnarkAccountProgram, EeVerificationInput,
+    EeVerificationState, UpdateBuilder,
 };
 use strata_ee_acct_types::{EeAccountState, EnvError};
 use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
 use strata_simple_ee::SimpleExecutionEnvironment;
 use strata_snark_acct_runtime::{
-    Coinput, IInnerState, PrivateInput as SnarkPrivateInput, ProgramResult,
+    ArchivedPrivateInput as ArchivedSnarkPrivateInput, Coinput, IInnerState,
+    PrivateInput as SnarkPrivateInput, ProgramResult,
 };
 use strata_snark_acct_types::{
     MessageEntry, ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData,
     UpdateOutputs, UpdateProofPubParams,
 };
+
+/// Serializes an [`EePrivateInput`] and a [`SnarkPrivateInput`] with rkyv, then
+/// calls `f` with the archived references.
+///
+/// This helper manages buffer lifetimes so callers don't have to deal with the
+/// raw rkyv plumbing.
+fn with_archived_inputs<R>(
+    ee_priv: &EePrivateInput,
+    snark_priv: &SnarkPrivateInput,
+    f: impl FnOnce(&ArchivedEePrivateInput, &ArchivedSnarkPrivateInput) -> R,
+) -> R {
+    let ee_bytes = rkyv::to_bytes::<RkyvError>(ee_priv).expect("rkyv encode EE priv input");
+    let snark_bytes =
+        rkyv::to_bytes::<RkyvError>(snark_priv).expect("rkyv encode snark priv input");
+
+    // SAFETY: Buffers were just produced by `rkyv::to_bytes` above.
+    let archived_ee: &ArchivedEePrivateInput = unsafe { rkyv::access_unchecked(&ee_bytes) };
+    let archived_snark: &ArchivedSnarkPrivateInput =
+        unsafe { rkyv::access_unchecked(&snark_bytes) };
+
+    f(archived_ee, archived_snark)
+}
 
 /// Creates a [`SnarkAccountState`] that matches the given [`EeAccountState`].
 ///
@@ -79,10 +103,14 @@ pub fn verify_update(
     let snark_priv =
         SnarkPrivateInput::new(pub_params, initial_state.as_ssz_bytes(), coinputs_typed);
 
-    let vinput = EeVerificationInput::new(ee, &[], &[]);
+    let ee_priv = EePrivateInput::new(vec![], vec![], vec![]);
 
-    let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
-    strata_snark_acct_runtime::verify_and_process_update(&program, &snark_priv, vinput)
+    with_archived_inputs(&ee_priv, &snark_priv, |archived_ee, archived_snark| {
+        let vinput = EeVerificationInput::new(ee, archived_ee.chunks(), &[]);
+
+        let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
+        strata_snark_acct_runtime::verify_and_process_update(&program, archived_snark, vinput)
+    })
 }
 
 /// Asserts that both verified and unconditional paths succeed.
@@ -227,7 +255,12 @@ pub(crate) fn verify_with_chunks(
 
     let chunk_inputs = make_chunk_inputs(chunks);
     let ee_priv = EePrivateInput::new(vec![], vec![], chunk_inputs);
-    strata_ee_acct_runtime::verify_and_process_update(ee, ee_priv, snark_priv)
+
+    with_archived_inputs(&ee_priv, &snark_priv, |archived_ee, archived_snark| {
+        let vinput = EeVerificationInput::new(ee, archived_ee.chunks(), &[]);
+        let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
+        strata_snark_acct_runtime::verify_and_process_update(&program, archived_snark, vinput)
+    })
 }
 
 /// Verifies an update through the full verified path using a pre-built
@@ -242,7 +275,12 @@ pub(crate) fn verify_with_private_input(
 ) -> ProgramResult<(), EnvError> {
     let chunk_inputs = make_chunk_inputs(chunks);
     let ee_priv = EePrivateInput::new(vec![], vec![], chunk_inputs);
-    strata_ee_acct_runtime::verify_and_process_update(ee, ee_priv, snark_priv.clone())
+
+    with_archived_inputs(&ee_priv, snark_priv, |archived_ee, archived_snark| {
+        let vinput = EeVerificationInput::new(ee, archived_ee.chunks(), &[]);
+        let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
+        strata_snark_acct_runtime::verify_and_process_update(&program, archived_snark, vinput)
+    })
 }
 
 /// Asserts that the verified path succeeds using the builder's private input.
