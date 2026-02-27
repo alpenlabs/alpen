@@ -23,14 +23,8 @@ fn test_empty_update_no_chunks() {
     let (initial_state, snark_state) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
-    let (operation, coinputs, snark_priv) = build_update_operation(
-        1,
-        vec![],
-        &[],
-        &initial_state,
-        &snark_state,
-        &ee,
-    );
+    let (operation, coinputs, snark_priv) =
+        build_update_operation(1, vec![], &[], &initial_state, &snark_state, &ee);
 
     assert_both_paths_succeed(&initial_state, &operation, &coinputs, &ee);
     assert_verified_path_succeeds(&snark_priv, &[], &ee);
@@ -46,14 +40,8 @@ fn test_single_deposit_no_chunks() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let (operation, _coinputs, snark_priv) = build_update_operation(
-        1,
-        vec![message],
-        &[],
-        &initial_state,
-        &snark_state,
-        &ee,
-    );
+    let (operation, _coinputs, snark_priv) =
+        build_update_operation(1, vec![message], &[], &initial_state, &snark_state, &ee);
 
     apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
     assert_verified_path_succeeds(&snark_priv, &[], &ee);
@@ -91,14 +79,8 @@ fn test_empty_update_verified_path() {
     let (initial_state, snark_state) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
-    let (operation, coinputs, snark_priv) = build_update_operation(
-        1,
-        vec![],
-        &[],
-        &initial_state,
-        &snark_state,
-        &ee,
-    );
+    let (operation, coinputs, snark_priv) =
+        build_update_operation(1, vec![], &[], &initial_state, &snark_state, &ee);
 
     assert_both_paths_succeed(&initial_state, &operation, &coinputs, &ee);
     assert_verified_path_succeeds(&snark_priv, &[], &ee);
@@ -117,13 +99,8 @@ fn test_single_deposit_with_chunk() {
 
     // Build using the builder to get correct pending inputs
     let vinput = EeVerificationInput::new(&ee, &[], &[]);
-    let mut builder = UpdateBuilder::new(
-        1,
-        snark_state,
-        initial_state.clone(),
-        vinput,
-    )
-    .expect("create builder");
+    let mut builder =
+        UpdateBuilder::new(1, snark_state, initial_state.clone(), vinput).expect("create builder");
 
     builder.add_messages(vec![message]).expect("add messages");
 
@@ -149,8 +126,7 @@ fn test_single_deposit_with_chunk() {
     let (operation, coinputs) = builder.build().expect("build should succeed");
 
     // Unconditional path should succeed
-    apply_unconditionally(&initial_state, &operation)
-        .expect("unconditional path should succeed");
+    apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
 
     // Verified path with chunk proof verification should succeed
     assert_verified_chunks_succeed(&initial_state, &operation, &coinputs, &[chunk], &ee);
@@ -171,15 +147,12 @@ fn test_multiple_deposits_multiple_chunks() {
     let msg2 = create_deposit_message(dest2, value2, source, 1);
 
     let vinput = EeVerificationInput::new(&ee, &[], &[]);
-    let mut builder = UpdateBuilder::new(
-        1,
-        snark_state,
-        initial_state.clone(),
-        vinput,
-    )
-    .expect("create builder");
+    let mut builder =
+        UpdateBuilder::new(1, snark_state, initial_state.clone(), vinput).expect("create builder");
 
-    builder.add_messages(vec![msg1, msg2]).expect("add messages");
+    builder
+        .add_messages(vec![msg1, msg2])
+        .expect("add messages");
 
     assert_eq!(builder.remaining_input_count(), 2);
 
@@ -221,8 +194,7 @@ fn test_multiple_deposits_multiple_chunks() {
 
     let (operation, coinputs) = builder.build().expect("build");
 
-    apply_unconditionally(&initial_state, &operation)
-        .expect("unconditional path should succeed");
+    apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
 
     // Verified path with chunk proof verification should succeed
     assert_verified_chunks_succeed(

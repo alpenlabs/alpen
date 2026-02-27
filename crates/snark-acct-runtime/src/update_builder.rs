@@ -159,12 +159,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
 
         // Verify coinput.
         self.program
-            .verify_coinput(
-                &self.current_state,
-                &mut self.vstate,
-                &inp_msg,
-                &coinput,
-            )
+            .verify_coinput(&self.current_state, &mut self.vstate, &inp_msg, &coinput)
             .map_err(|e| e.at_msg(idx))?;
 
         // Process the message.
@@ -243,8 +238,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
 
         // Finalize state.
         let extra_data_clone = extra_data.clone();
-        self.program
-            .finalize_state(&mut post_state, extra_data)?;
+        self.program.finalize_state(&mut post_state, extra_data)?;
 
         Ok(FinalizedUpdate {
             pre_state: self.pre_state.clone(),
@@ -278,8 +272,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
 
         // Finalize state.
         let extra_data_clone = extra_data.clone();
-        self.program
-            .finalize_state(&mut post_state, extra_data)?;
+        self.program.finalize_state(&mut post_state, extra_data)?;
 
         Ok(FinalizedUpdate {
             pre_state: self.pre_state.clone(),
