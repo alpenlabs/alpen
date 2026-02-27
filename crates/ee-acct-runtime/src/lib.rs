@@ -14,7 +14,7 @@ mod verification_state;
 
 pub use block_assembly::apply_input_messages;
 pub use ee_program::EeSnarkAccountProgram;
-pub use private_input::SharedPrivateInput;
+pub use private_input::{ChunkInput, PrivateInput as EePrivateInput, SharedPrivateInput};
 pub use update_processing::{process_update_unconditionally, verify_and_process_update};
 pub use verification_state::{EeVerificationInput, EeVerificationState};
 

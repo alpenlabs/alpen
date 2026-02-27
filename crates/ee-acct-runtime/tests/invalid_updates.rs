@@ -38,7 +38,7 @@ fn test_mismatched_coinput_count() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let (operation, _coinputs) = build_update_operation(
+    let (operation, _coinputs, _snark_priv) = build_update_operation(
         1,
         vec![message],
         &[],
@@ -80,7 +80,7 @@ fn test_nonempty_coinput_rejected() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let (operation, _coinputs) = build_update_operation(
+    let (operation, _coinputs, _snark_priv) = build_update_operation(
         1,
         vec![message],
         &[],
@@ -180,7 +180,6 @@ fn test_builder_rejects_wrong_parent() {
         1,
         snark_state,
         initial_state,
-        vec![],
         vinput,
     )
     .expect("create builder");
@@ -212,10 +211,11 @@ fn test_builder_rejects_wrong_deposit() {
         1,
         snark_state,
         initial_state,
-        vec![message],
         vinput,
     )
     .expect("create builder");
+
+    builder.add_messages(vec![message]).expect("add messages");
 
     assert_eq!(builder.remaining_input_count(), 1);
 
@@ -254,10 +254,11 @@ fn test_builder_advances_tip() {
         1,
         snark_state,
         initial_state,
-        vec![msg1, msg2],
         vinput,
     )
     .expect("create builder");
+
+    builder.add_messages(vec![msg1, msg2]).expect("add messages");
 
     let initial_tip = builder.cur_tip_blkid();
 
