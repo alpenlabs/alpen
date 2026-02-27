@@ -8,12 +8,7 @@ use std::{
 use async_trait::async_trait;
 use strata_acct_types::{AccountId, tree_hash::TreeHash};
 use strata_asm_manifest_types::AsmManifest;
-use strata_db_types::{
-    errors::DbError,
-    mmr_helpers::{
-        BitManipulatedMmrAlgorithm, MmrAlgorithm, leaf_index_to_pos, num_leaves_to_mmr_size,
-    },
-};
+use strata_db_types::errors::DbError;
 use strata_identifiers::{Hash, MmrId, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     IAccountStateConstructible, IAccountStateMut, IStateAccessor, asm_manifests_mmr_start_height,
@@ -164,9 +159,8 @@ impl<M, S> BlockAssemblyContext<M, S> {
             if mmr_idx >= mmr_num_leaves {
                 return Err(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx));
             }
-            let pos = leaf_index_to_pos(mmr_idx);
             let actual_hash = mmr_handle
-                .get_node_blocking(pos)
+                .get_leaf_blocking(mmr_idx)
                 .map_err(map_l1_header_mmr_error)?
                 .ok_or(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx))?;
             let claimed_hash = claim.entry_hash();
@@ -196,10 +190,9 @@ impl<M, S> BlockAssemblyContext<M, S> {
             .get_handle(MmrId::SnarkMsgInbox(target));
         for (offset, message) in messages.iter().enumerate() {
             let idx = start_idx + offset as u64;
-            let pos = leaf_index_to_pos(idx);
             let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(message).into();
             let actual_hash = mmr_handle
-                .get_node_blocking(pos)
+                .get_leaf_blocking(idx)
                 .map_err(|e| map_inbox_mmr_error(e, target))?
                 .ok_or(BlockAssemblyError::InboxLeafNotFound {
                     idx,
@@ -389,22 +382,15 @@ where
         l1_header_refs: &[AccumulatorClaim],
         state: &T,
     ) -> BlockAssemblyResult<LedgerRefProofs> {
-        let mmr_num_leaves = state.asm_manifests_mmr().num_entries();
         let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
 
         let resolved_refs = self.validate_l1_header_claims(l1_header_refs, state)?;
-        let mmr_size = num_leaves_to_mmr_size(mmr_num_leaves);
 
-        // Generate proofs using MMR indices (height -> index conversion)
+        // Generate proofs using MMR leaf indices
         let mut l1_header_proofs = Vec::new();
         for (mmr_idx, entry_hash) in resolved_refs {
-            let merkle_proof =
-                BitManipulatedMmrAlgorithm::generate_proof(mmr_idx, mmr_size, |pos| {
-                    mmr_handle
-                        .get_node_blocking(pos)?
-                        .map(|x| x.0)
-                        .ok_or(DbError::MmrLeafNotFound(pos))
-                })
+            let merkle_proof = mmr_handle
+                .generate_proof(mmr_idx)
                 .map_err(map_l1_header_mmr_error)?;
 
             let mmr_proof = MmrEntryProof::new(entry_hash, merkle_proof);

@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::{
-    mmr_helpers::{BitManipulatedMmrAlgorithm, MmrAlgorithm},
+    mmr_helpers::{leaf_index_to_pos, BitManipulatedMmrAlgorithm, MmrAlgorithm},
     traits::GlobalMmrDatabase,
     DbError, DbResult,
 };
@@ -99,8 +99,16 @@ impl MmrHandle {
         self.ops.append_leaf_blocking(self.mmr_id.to_bytes(), hash)
     }
 
-    /// Get a node at a specific position (blocking)
-    pub fn get_node_blocking(&self, pos: u64) -> DbResult<Option<Hash>> {
+    /// Get a leaf hash by leaf index (blocking).
+    ///
+    /// Converts the leaf index to the internal MMR position automatically.
+    pub fn get_leaf_blocking(&self, leaf_index: u64) -> DbResult<Option<Hash>> {
+        let pos = leaf_index_to_pos(leaf_index);
+        self.get_node_blocking(pos)
+    }
+
+    /// Get a node at a specific MMR position (blocking).
+    fn get_node_blocking(&self, pos: u64) -> DbResult<Option<Hash>> {
         self.ops.get_node_blocking(self.mmr_id.to_bytes(), pos)
     }
 
