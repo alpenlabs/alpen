@@ -11,18 +11,18 @@ pub fn verify_input<E: ExecutionEnvironment>(
     input: &ArchivedPrivateInput,
 ) -> EnvResult<()> {
     // 1. Parse the various basic inputs.
-    // FIXME better error variants here
     let tsn = input
         .try_decode_chunk_transition()
         .map_err(|_| EnvError::MalformedChainSegment)?;
 
+    // FIXME do we actually need the header or just the blkid+state?
     let prev_header = input
         .try_decode_prev_header::<E>()
-        .map_err(|_| EnvError::MalformedCoinput)?;
+        .map_err(|_| EnvError::MalformedChainSegment)?;
 
     let mut pre_state = input
         .try_decode_pre_state::<E>()
-        .map_err(|_| EnvError::MalformedCoinput)?;
+        .map_err(|_| EnvError::MalformedChainState)?;
 
     // 2. Parse the blocks into a chunk we can execute.
     // TODO rework borrowings here because this is really ugly
