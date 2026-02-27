@@ -84,8 +84,8 @@ fn verify_update_inner<'i, 'u, P: SnarkAccountProgramVerification>(
     ulinfo: UpdateLedgerInfo<'u>,
 ) -> ProgramResult<(), P::Error> {
     // 1. Create verification context and start verification.
-    let mut vstate = program.start_verification(&state, &extra_data, vinput, ulinfo)?;
-    program.start_update(state, &extra_data)?;
+    let mut vstate = program.start_verification(&state, vinput, ulinfo)?;
+    program.start_update(state)?;
 
     // 2. Process each message and coinput.
     for i in 0..messages.len() {
@@ -95,7 +95,6 @@ fn verify_update_inner<'i, 'u, P: SnarkAccountProgramVerification>(
             &mut vstate,
             &messages[i],
             coinputs[i].raw_data(),
-            &extra_data,
         )
         .map_err(|e| e.at_msg(i))?;
     }
@@ -118,7 +117,6 @@ fn verify_coinput_and_process_message<P: SnarkAccountProgramVerification>(
     vstate: &mut P::VState<'_>,
     msg_entry: &MessageEntry,
     raw_coinput: &[u8],
-    extra_data: &P::ExtraData,
 ) -> ProgramResult<(), P::Error> {
     // 1. Decode the message payload, maybe erroring.
     let inp_msg = InputMessage::<P::Msg>::from_msg_entry(msg_entry);
@@ -127,10 +125,10 @@ fn verify_coinput_and_process_message<P: SnarkAccountProgramVerification>(
     }
 
     // 2. Verify the coinput against the message.
-    program.verify_coinput(state, vstate, &inp_msg, raw_coinput, &extra_data)?;
+    program.verify_coinput(state, vstate, &inp_msg, raw_coinput)?;
 
     // 3. Process the message itself.
-    program.process_message(state, inp_msg, &extra_data)?;
+    program.process_message(state, inp_msg)?;
 
     Ok(())
 }
@@ -154,13 +152,13 @@ pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
         .map_err(|_| ProgramError::MalformedExtraData)?;
 
     // 2. Start update.
-    program.start_update(state, &extra_data)?;
+    program.start_update(state)?;
 
     // 3. Process messages without verification.
     for (idx, msg_entry) in manifest.messages().iter().enumerate() {
         let inp_msg = InputMessage::<P::Msg>::from_msg_entry(msg_entry);
         program
-            .process_message(state, inp_msg, &extra_data)
+            .process_message(state, inp_msg)
             .map_err(|e| e.at_msg(idx))?;
     }
 
@@ -247,7 +245,6 @@ mod tests {
             &self,
             state: &mut Self::State,
             msg: InputMessage<Self::Msg>,
-            _extra_data: &Self::ExtraData,
         ) -> ProgramResult<(), Self::Error> {
             if let InputMessage::Valid(_, m) = msg {
                 state.value += m.delta;
@@ -273,7 +270,6 @@ mod tests {
         fn start_verification<'i, 'u>(
             &self,
             _state: &Self::State,
-            _extra_data: &Self::ExtraData,
             _vinput: Self::VInput<'i>,
             _ulinfo: UpdateLedgerInfo<'u>,
         ) -> ProgramResult<Self::VState<'i>, Self::Error> {
@@ -286,7 +282,6 @@ mod tests {
             vstate: &mut Self::VState<'a>,
             msg: &InputMessage<Self::Msg>,
             coinput: &[u8],
-            _extra_data: &Self::ExtraData,
         ) -> ProgramResult<(), Self::Error> {
             // Require empty coinput for this test program
             if !coinput.is_empty() {

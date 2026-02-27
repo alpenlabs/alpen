@@ -26,15 +26,12 @@ pub use verification_state::{EeVerificationInput, EeVerificationState};
 #[cfg(feature = "builders")]
 mod builder_errors;
 #[cfg(feature = "builders")]
-mod chain_segment_builder;
-#[cfg(feature = "builders")]
 mod update_builder;
 
 #[cfg(feature = "builders")]
 mod builder_reexports {
     pub use super::{
         builder_errors::{BuilderError, BuilderResult},
-        chain_segment_builder::ChainSegmentBuilder,
         update_builder::UpdateBuilder,
     };
 }

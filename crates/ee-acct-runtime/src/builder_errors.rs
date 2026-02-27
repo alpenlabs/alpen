@@ -1,5 +1,6 @@
-//! Error types for test utilities.
+//! Error types for builder utilities.
 
+use strata_acct_types::Hash;
 use strata_codec::CodecError;
 use strata_ee_acct_types::{EnvError, MessageDecodeError};
 use strata_snark_acct_runtime::ProgramError;
@@ -23,17 +24,13 @@ pub enum BuilderError {
     #[error("snark program: {0}")]
     Program(ProgramError<EnvError>),
 
-    /// State root mismatch when building a block.
-    #[error("state root mismatch")]
-    StateRootMismatch,
+    /// Chain linkage mismatch when accepting a chunk transition.
+    #[error("chunk parent {parent} does not match current tip {expected}")]
+    ChainLinkage { expected: Hash, parent: Hash },
 
-    /// Not enough pending inputs available.
-    #[error("not enough pending inputs: requested {requested}, available {available}")]
-    InsufficientInputs { requested: usize, available: usize },
-
-    /// No blocks in chain segment.
-    #[error("chain segment has no blocks")]
-    EmptyChainSegment,
+    /// Pending input mismatch when accepting a chunk transition.
+    #[error("chunk input at position {position} does not match pending input")]
+    InputMismatch { position: usize },
 }
 
 /// Manual impl for this trait due to macro inflexibility, I guess?

@@ -15153,10 +15153,8 @@ dependencies = [
 name = "strata-ee-acct-runtime"
 version = "0.1.0"
 dependencies = [
- "digest 0.10.7",
  "rkyv",
  "rkyv_impl",
- "sha2",
  "ssz",
  "ssz_derive",
  "strata-acct-types",

@@ -7,7 +7,7 @@ use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::{
     EeAccountState, EnvError, EnvResult, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
 };
-use strata_ee_chain_types::{ExecOutputs, SequenceTracker};
+use strata_ee_chain_types::{ChunkTransition, ExecOutputs, SequenceTracker};
 use strata_predicate::PredicateKeyBuf;
 use strata_snark_acct_types::{
     MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
@@ -186,6 +186,44 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         self.total_val_sent = BitcoinAmount::sum(sent_amts_iter);
     }
 
+    /// Processes a single decoded chunk transition: validates chain linkage,
+    /// matches inputs against pending inputs, merges outputs, advances tip.
+    ///
+    /// Separated from proof verification for independent testability.
+    pub fn process_decoded_transition(
+        &mut self,
+        transition: &ChunkTransition,
+        pending_inp_tracker: &mut SequenceTracker<'_, PendingInputEntry>,
+    ) -> EnvResult<()> {
+        // Chain linkage: parent must match current verified tip.
+        if transition.parent_exec_blkid() != self.cur_verified_exec_blkid {
+            return Err(EnvError::MismatchedChainSegment);
+        }
+
+        // Match inputs in the transition with our pending inputs.
+        //
+        // Each chunk deposit must match the next pending input in order by
+        // type.
+        for deposit in transition.inputs().subject_deposits() {
+            pending_inp_tracker
+                .consume_input_with(|pending| {
+                    matches!(
+                        pending,
+                        PendingInputEntry::Deposit(expected) if deposit == expected,
+                    )
+                })
+                .map_err(|_| EnvError::InconsistentChunkIo)?;
+        }
+
+        // Merge outputs into accumulated state.
+        self.merge_new_outputs(transition.outputs());
+
+        // Advance the verified tip.
+        self.cur_verified_exec_blkid = transition.tip_exec_blkid();
+
+        Ok(())
+    }
+
     /// Verifies all chunk transitions against the account's predicate key,
     /// checks chain linkage, matches inputs against pending inputs, and
     /// merges outputs.
@@ -209,31 +247,8 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
                 .try_decode_chunk_transition()
                 .map_err(|_| EnvError::MalformedChainSegment)?;
 
-            // Chain linkage: parent must match current verified tip.
-            if transition.parent_exec_blkid() != self.cur_verified_exec_blkid {
-                return Err(EnvError::MismatchedChainSegment);
-            }
-
-            // Match inputs in the transition with our pending inputs.
-            //
-            // Each chunk deposit must match the next pending input in order by
-            // type.
-            for deposit in transition.inputs().subject_deposits() {
-                pending_inp_tracker
-                    .consume_input_with(|pending| {
-                        matches!(
-                            pending,
-                            PendingInputEntry::Deposit(expected) if deposit == expected,
-                        )
-                    })
-                    .map_err(|_| EnvError::InconsistentChunkIo)?;
-            }
-
-            // Merge outputs into accumulated state.
-            self.merge_new_outputs(transition.outputs());
-
-            // Advance the verified tip.
-            self.cur_verified_exec_blkid = transition.tip_exec_blkid();
+            // Process the decoded transition.
+            self.process_decoded_transition(&transition, &mut pending_inp_tracker)?;
         }
 
         // Check that the number of consumed pending inputs matches what

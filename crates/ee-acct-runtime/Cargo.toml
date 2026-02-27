@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = ["builders"]
-builders = ["dep:thiserror"]
+builders = ["dep:thiserror", "strata-snark-acct-runtime/builders"]
 test-utils = []
 
 [dependencies]
@@ -17,10 +17,8 @@ strata-predicate.workspace = true
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
 
-digest.workspace = true
 rkyv.workspace = true
 rkyv_impl.workspace = true
-sha2.workspace = true
 ssz.workspace = true
 thiserror = { workspace = true, optional = true }
 

@@ -41,7 +41,6 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
         &self,
         state: &mut Self::State,
         msg: InputMessage<Self::Msg>,
-        _extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
         // Add value to tracked balance, always do this.
         if !msg.meta().value().is_zero() {
@@ -79,7 +78,6 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
     fn start_verification<'i, 'u>(
         &self,
         state: &Self::State,
-        _extra_data: &Self::ExtraData,
         vinput: Self::VInput<'i>,
         ulinfo: UpdateLedgerInfo<'u>,
     ) -> ProgramResult<Self::VState<'i>, Self::Error> {
@@ -98,7 +96,6 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         _vstate: &mut Self::VState<'a>,
         _msg: &InputMessage<Self::Msg>,
         coinput: &[u8],
-        _extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
         // For both Valid and Unknown messages, require empty coinput.
         // We don't need any message coinputs for the EE right now.

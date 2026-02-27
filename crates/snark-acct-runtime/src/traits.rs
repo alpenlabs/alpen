@@ -35,7 +35,6 @@ pub trait SnarkAccountProgram {
     fn start_update(
         &self,
         _state: &mut Self::State,
-        _extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
         Ok(())
     }
@@ -45,7 +44,6 @@ pub trait SnarkAccountProgram {
         &self,
         _state: &mut Self::State,
         _msg: InputMessage<Self::Msg>,
-        _extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
         Ok(())
     }
@@ -98,7 +96,6 @@ pub trait SnarkAccountProgramVerification: SnarkAccountProgram {
     fn start_verification<'i, 'u>(
         &self,
         state: &Self::State,
-        extra_data: &Self::ExtraData,
         vinput: Self::VInput<'i>,
         ulinfo: UpdateLedgerInfo<'u>,
     ) -> ProgramResult<Self::VState<'i>, Self::Error>;
@@ -114,7 +111,6 @@ pub trait SnarkAccountProgramVerification: SnarkAccountProgram {
         _vstate: &mut Self::VState<'a>,
         _msg: &InputMessage<Self::Msg>,
         _coinput: &[u8],
-        _extra_data: &Self::ExtraData,
     ) -> ProgramResult<(), Self::Error> {
         // By default apply no constraints.
         Ok(())
