@@ -1,12 +1,17 @@
 //! Service state for OL checkpoint builder.
 
 use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::{CheckpointPayload, CheckpointSidecar, CheckpointTip};
+use strata_checkpoint_types_ssz::{
+    CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
+};
+use strata_codec::encode_to_vec;
 use strata_db_types::types::OLCheckpointEntry;
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_ol_chain_types_new::OLBlockHeader;
+use strata_ol_da::{OLDaPayloadV1, StateDiff};
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{context::CheckpointWorkerContext, errors::CheckpointNotReady};
 
@@ -86,13 +91,13 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         let commitment = self
             .ctx
             .get_canonical_epoch_commitment_at(epoch_index)?
-            .ok_or(CheckpointNotReady::MissingEpochCommitment(epoch_index))?;
+            .ok_or(CheckpointNotReady::EpochCommitment(epoch_index))?;
 
         // Get summary - must exist to proceed
         let summary = self
             .ctx
             .get_epoch_summary(commitment)?
-            .ok_or(CheckpointNotReady::MissingEpochSummary(commitment))?;
+            .ok_or(CheckpointNotReady::EpochSummary(commitment))?;
 
         let epoch = summary.epoch();
 
@@ -158,11 +163,39 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
 
     let state_bytes = compute_da(&commitment, ctx)?;
     let ol_logs = ctx.get_epoch_logs(&commitment)?;
+    let terminal_header = ctx
+        .get_terminal_block_header(&l2_commitment)?
+        .ok_or(CheckpointNotReady::TerminalBlock(l2_commitment))?;
+    assert_terminal_commitment_matches(&terminal_header, l2_commitment)?;
 
-    let sidecar = CheckpointSidecar::new(state_bytes, ol_logs)?;
+    // Extract the four header fields not derivable from L1 checkpoint data
+    // (timestamp, parent_blkid, body_root, logs_root). Other header fields are
+    // derivable: slot/blkid from new_tip, state_root from DA + manifests.
+    let terminal_header_complement = TerminalHeaderComplement::from_full_header(&terminal_header);
+
+    let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
     let proof = ctx.get_proof(&commitment)?;
 
     Ok(CheckpointPayload::new(new_tip, sidecar, proof)?)
+}
+
+fn assert_terminal_commitment_matches(
+    terminal_header: &OLBlockHeader,
+    expected_terminal: OLBlockCommitment,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        terminal_header.slot() == expected_terminal.slot(),
+        "terminal header slot mismatch: expected {}, got {}",
+        expected_terminal.slot(),
+        terminal_header.slot()
+    );
+    anyhow::ensure!(
+        terminal_header.compute_blkid() == *expected_terminal.blkid(),
+        "terminal header block id mismatch: expected {:?}, got {:?}",
+        expected_terminal.blkid(),
+        terminal_header.compute_blkid()
+    );
+    Ok(())
 }
 
 /// Computes the DA state diff for the epoch.
@@ -174,8 +207,11 @@ fn compute_da<C: CheckpointWorkerContext>(
     _commitment: &EpochCommitment,
     _ctx: &C,
 ) -> anyhow::Result<Vec<u8>> {
-    // V1: empty DA bytes
-    Ok(Vec::new())
+    // TODO: Replace with real DA payload generation from epoch execution.
+    // This encodes an empty StateDiff so the proof guest can decode it without panic.
+    warn!("compute_da: returning empty DA payload (real DA generation not yet implemented)");
+    let payload = OLDaPayloadV1::new(StateDiff::default());
+    encode_to_vec(&payload).map_err(|e| anyhow::anyhow!("failed to encode empty DA payload: {e}"))
 }
 
 #[cfg(test)]
@@ -189,8 +225,11 @@ mod tests {
     };
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
-        Epoch, OLBlockCommitment,
+        Buf64, Epoch, OLBlockCommitment,
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
+    };
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_storage::create_node_storage;
 
@@ -266,7 +305,9 @@ mod tests {
     proptest! {
         #[test]
         fn builds_checkpoint_from_epoch_summary(
-            terminal in ol_block_commitment_strategy(),
+            terminal_slot in any::<u64>(),
+            body_root in buf32_strategy(),
+            logs_root in buf32_strategy(),
             prev_terminal in ol_block_commitment_strategy(),
             new_l1 in l1_block_commitment_strategy(),
             final_state in buf32_strategy(),
@@ -276,8 +317,31 @@ mod tests {
                 create_node_storage(backend, threadpool::ThreadPool::new(1)).expect("test storage"),
             );
             let checkpoint_mgr = storage.ol_checkpoint();
+            let ol_block_mgr = storage.ol_block();
 
             let epoch: Epoch = 0;
+            let terminal_header = OLBlockHeader::new(
+                1_700_000_000,
+                BlockFlags::zero(),
+                terminal_slot,
+                epoch,
+                *prev_terminal.blkid(),
+                body_root,
+                final_state,
+                logs_root,
+            );
+            let terminal_block = OLBlock::new(
+                SignedOLBlockHeader::new(terminal_header.clone(), Buf64::zero()),
+                OLBlockBody::new_common(
+                    OLTxSegment::new(vec![])
+                        .expect("empty tx segment construction is infallible"),
+                ),
+            );
+            ol_block_mgr
+                .put_block_data_blocking(terminal_block)
+                .expect("insert terminal block");
+
+            let terminal = terminal_header.compute_block_commitment();
             let summary = EpochSummary::new(epoch, terminal, prev_terminal, new_l1, final_state);
             let commitment = summary.get_epoch_commitment();
             checkpoint_mgr
@@ -294,8 +358,14 @@ mod tests {
 
             let stored = checkpoint_mgr
                 .get_checkpoint_blocking(epoch)
-                .expect("get checkpoint");
-            prop_assert!(stored.is_some());
+                .expect("get checkpoint")
+                .expect("checkpoint should be stored");
+            let sidecar_terminal_subset = stored.checkpoint.sidecar().terminal_header_complement();
+
+            prop_assert_eq!(sidecar_terminal_subset.timestamp(), terminal_header.timestamp());
+            prop_assert_eq!(*sidecar_terminal_subset.parent_blkid(), *terminal_header.parent_blkid());
+            prop_assert_eq!(*sidecar_terminal_subset.body_root(), *terminal_header.body_root());
+            prop_assert_eq!(*sidecar_terminal_subset.logs_root(), *terminal_header.logs_root());
         }
     }
 }

@@ -15,8 +15,12 @@ strata-proofimpl-checkpoint-new.workspace = true
 strata-proofimpl-cl-stf.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
+strata-codec.workspace = true
+strata-da-framework.workspace = true
 strata-identifiers.workspace = true
+strata-ledger-types.workspace = true
 strata-ol-chain-types-new.workspace = true
+strata-ol-da.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
 strata-test-utils-evm-ee.workspace = true
 strata-test-utils-l2.workspace = true

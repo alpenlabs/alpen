@@ -3,7 +3,7 @@
 use std::{collections::BTreeSet, marker::PhantomData};
 
 use strata_acct_types::{AccountId, BitcoinAmount};
-use strata_codec::Codec;
+use strata_codec::{Codec, CodecError, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
@@ -21,6 +21,8 @@ use super::{
 use crate::DaError;
 
 /// Versioned OL DA payload containing the state diff.
+///
+/// Wire format is `strata_codec` (not SSZ).
 #[derive(Debug, Codec)]
 pub struct OLDaPayloadV1 {
     /// State diff for the epoch.
@@ -32,6 +34,11 @@ impl OLDaPayloadV1 {
     pub fn new(state_diff: StateDiff) -> Self {
         Self { state_diff }
     }
+}
+
+/// Decodes [`OLDaPayloadV1`] from raw bytes using exact `strata_codec` decoding.
+pub fn decode_ol_da_payload_bytes(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecError> {
+    decode_buf_exact(bytes)
 }
 
 /// Preseal OL state diff (global + ledger).
@@ -143,7 +150,8 @@ where
         target.set_cur_slot(cur_slot);
 
         let pre_state_next_serial = target.next_account_serial();
-        validate_ledger_entries(pre_state_next_serial, &self.diff)?;
+        // NOTE: `validate_ledger_entries` is intentionally not called here;
+        // it was already called in `poll_context` which runs before `apply`.
         let mut expected_serial = pre_state_next_serial;
         for entry in self.diff.ledger.new_accounts.entries() {
             let exists = target
@@ -308,20 +316,14 @@ mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
     use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
-    use strata_identifiers::{AccountSerial, L1BlockCommitment};
+    use strata_identifiers::AccountSerial;
     use strata_ledger_types::{AccountTypeState, NewAccountData};
-    use strata_ol_params::OLParams;
     use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
+    use strata_ol_stf::test_utils::create_test_genesis_state;
     use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::{AccountDiffEntry, DaProofStateDiff, NewAccountEntry, U16LenList};
-
-    /// Creates a genesis OLState using minimal empty parameters.
-    fn create_test_genesis_state() -> OLState {
-        let params = OLParams::new_empty(L1BlockCommitment::default());
-        OLState::from_genesis_params(&params).expect("valid params")
-    }
 
     fn test_account_id(seed: u8) -> AccountId {
         AccountId::from([seed; 32])
@@ -334,6 +336,27 @@ mod tests {
         let payload_bytes = encode_to_vec(&payload).expect("encode payload");
 
         assert_eq!(payload_bytes, diff_bytes);
+    }
+
+    #[test]
+    fn test_decode_ol_da_payload_bytes_roundtrip() {
+        let payload = OLDaPayloadV1::new(StateDiff::default());
+        let encoded = encode_to_vec(&payload).expect("encode payload");
+
+        let decoded = decode_ol_da_payload_bytes(&encoded).expect("decode payload");
+        let reencoded = encode_to_vec(&decoded).expect("re-encode payload");
+
+        assert_eq!(encoded, reencoded);
+    }
+
+    #[test]
+    fn test_decode_ol_da_payload_bytes_rejects_trailing_bytes() {
+        let payload = OLDaPayloadV1::new(StateDiff::default());
+        let mut encoded = encode_to_vec(&payload).expect("encode payload");
+        encoded.push(0u8);
+
+        let decoded = decode_ol_da_payload_bytes(&encoded);
+        assert!(decoded.is_err());
     }
 
     #[test]

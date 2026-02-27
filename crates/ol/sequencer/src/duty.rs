@@ -171,28 +171,10 @@ impl CheckpointSigningDuty {
 
 #[cfg(test)]
 mod tests {
-    use strata_checkpoint_types_ssz::{CheckpointSidecar, CheckpointTip};
+    use strata_checkpoint_types_ssz::test_utils::create_test_checkpoint_payload;
     use strata_ol_chain_types_new::{BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment};
-    use strata_primitives::OLBlockCommitment;
 
     use super::*;
-
-    fn create_checkpoint_payload(epoch: u32) -> CheckpointPayload {
-        let tip = CheckpointTip {
-            epoch,
-            l1_height: 200,
-            l2_commitment: OLBlockCommitment::new(1, Buf32::zero().into()),
-        };
-        let sidecar = CheckpointSidecar {
-            ol_state_diff: vec![2; 100].into(),
-            ol_logs: vec![].into(),
-        };
-        CheckpointPayload {
-            new_tip: tip,
-            sidecar,
-            proof: vec![0].into(),
-        }
-    }
 
     fn create_test_template(timestamp: u64, slot: u64, epoch: u32) -> FullBlockTemplate {
         let header = OLBlockHeader {
@@ -297,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_duty_generate_id_for_checkpoint() {
-        let checkpoint = create_checkpoint_payload(0);
+        let checkpoint = create_test_checkpoint_payload(0);
 
         let duty = Duty::SignCheckpoint(CheckpointSigningDuty {
             checkpoint: checkpoint.clone(),
@@ -318,7 +300,7 @@ mod tests {
 
         // Checkpoint duty expires when checkpoint is finalized
         let ep = 5;
-        let checkpoint = create_checkpoint_payload(ep);
+        let checkpoint = create_test_checkpoint_payload(ep);
 
         let checkpoint_duty = Duty::SignCheckpoint(CheckpointSigningDuty::new(checkpoint));
         assert!(matches!(
@@ -330,7 +312,7 @@ mod tests {
     #[test]
     fn test_checkpoint_signing_duty_accessors() {
         let ep = 7;
-        let checkpoint = create_checkpoint_payload(ep);
+        let checkpoint = create_test_checkpoint_payload(ep);
 
         let duty = CheckpointSigningDuty {
             checkpoint: checkpoint.clone(),

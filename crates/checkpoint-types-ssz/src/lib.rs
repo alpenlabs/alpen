@@ -16,6 +16,11 @@
 //!   [`CheckpointClaim::ol_logs_hash`])
 //! - The [`CheckpointClaim::state_diff_hash`] is the hash of the state diff in
 //!   [`CheckpointSidecar`] between [`L2BlockRange::start`] and [`L2BlockRange::end`]
+//! - The [`CheckpointClaim::terminal_header_complement_hash`] commits to
+//!   [`CheckpointSidecar::terminal_header_complement`], which carries the four terminal header
+//!   fields not derivable from L1 checkpoint data (`timestamp`, `parent_blkid`, `body_root`,
+//!   `logs_root`). The ZK proof binds this hash to the executed terminal header, so the L1 verifier
+//!   can enforce sidecar integrity without a full header preimage check
 //!
 //! [`CheckpointPayload`] posted to L1 omits redundant information:
 //! - The last verified [`OLBlockCommitment`](strata_identifiers::OLBlockCommitment) (L2 start) is
@@ -38,8 +43,6 @@ mod payload;
 pub mod test_utils;
 
 pub use error::CheckpointPayloadError;
-use ssz_types::FixedBytes;
-use strata_crypto::hash;
 
 /// SSZ-generated types for serialization and merkleization.
 #[allow(
@@ -61,6 +64,7 @@ pub use ssz_generated::ssz::claim::{
 pub use ssz_generated::ssz::payload::{
     CheckpointPayload, CheckpointPayloadRef, CheckpointSidecar, CheckpointSidecarRef,
     CheckpointTip, CheckpointTipRef, SignedCheckpointPayload, SignedCheckpointPayloadRef,
+    TerminalHeaderComplement, TerminalHeaderComplementRef,
 };
 // Re-export constants from payload.ssz
 pub use ssz_generated::ssz::payload::{
@@ -74,16 +78,8 @@ pub const MAX_LOG_PAYLOAD_BYTES: usize = 512;
 pub const MAX_TOTAL_LOG_PAYLOAD_BYTES: usize = 16 * 1024;
 
 // Re-export OLLog for consumers parsing checkpoint sidecar logs
+// Re-export manifest hash functions from the canonical source.
+pub use strata_asm_manifest_types::{
+    compute_asm_manifests_hash, compute_asm_manifests_hash_from_leaves,
+};
 pub use strata_ol_chain_types_new::OLLog;
-
-/// Computes a hash commitment over all ASM manifests in an L1 block range.
-///
-/// If the input is empty, returns a zero hash. Otherwise, hashes the manifest
-/// hashes for all L1 blocks in sequence and returns a single hash commitment over them.
-pub fn compute_asm_manifests_hash(manifest_hashes: &[[u8; 32]]) -> FixedBytes<32> {
-    if manifest_hashes.is_empty() {
-        return FixedBytes::ZERO;
-    }
-    let hash = hash::sha256_iter(manifest_hashes.iter().map(|h| h.as_slice()));
-    hash.into()
-}

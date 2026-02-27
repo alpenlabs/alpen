@@ -81,21 +81,27 @@ impl<'a> Arbitrary<'a> for AsmManifest {
 
 /// Computes a commitment hash over a sequence of ASM manifests.
 ///
-/// This function concatenates the individual hashes of each manifest and
-/// hashes the resulting byte sequence to produce a single commitment value.
+/// Hashes each manifest individually via [`AsmManifest::compute_hash`] and
+/// delegates to [`compute_asm_manifests_hash_from_leaves`].
+///
+/// Returns [`FixedBytes::ZERO`] when `manifests` is empty.
 pub fn compute_asm_manifests_hash(manifests: &[AsmManifest]) -> FixedBytes<32> {
-    // Pre-allocate buffer for concatenated manifest hashes
-    // Each manifest hash is 32 bytes
-    let mut manifest_hashes_buf = Vec::with_capacity(manifests.len() * 32);
+    let leaves: Vec<Hash32> = manifests.iter().map(AsmManifest::compute_hash).collect();
+    compute_asm_manifests_hash_from_leaves(&leaves)
+}
 
-    // Concatenate individual manifest hashes
-    for manifest in manifests {
-        let manifest_hash = manifest.compute_hash();
-        manifest_hashes_buf.extend_from_slice(&manifest_hash);
+/// Computes a commitment hash over pre-hashed ASM manifest leaves.
+///
+/// This is the low-level counterpart of [`compute_asm_manifests_hash`] for
+/// callers that already have individual manifest hashes (e.g. from auxiliary
+/// data).
+///
+/// Returns [`FixedBytes::ZERO`] when `leaves` is empty.
+pub fn compute_asm_manifests_hash_from_leaves(leaves: &[[u8; 32]]) -> FixedBytes<32> {
+    if leaves.is_empty() {
+        return FixedBytes::ZERO;
     }
-
-    // Compute final commitment hash over the concatenated hashes
-    hash::raw(&manifest_hashes_buf).into()
+    hash::sha256_iter(leaves.iter().map(|h| h.as_slice())).into()
 }
 
 #[cfg(test)]

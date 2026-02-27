@@ -33,15 +33,14 @@ pub enum InvalidCheckpointPayload {
     #[error("invalid epoch: (expected {expected}, got {actual})")]
     InvalidEpoch { expected: Epoch, actual: Epoch },
 
-    /// Checkpoint goes backwards in L1 height.
+    /// Checkpoint L1 height regresses below the last verified height.
     ///
-    /// This error occurs when a checkpoint claims an L1 height that is before
-    /// the L1 height of the previously verified checkpoint. Checkpoints must
-    /// advance forward or stay at the same L1 height, never go backwards.
+    /// A checkpoint may cover the same L1 height as its predecessor (zero L1
+    /// progress), but it must never claim a lower height.
     #[error(
-        "checkpoint goes backwards in L1 height: new checkpoint covers up to L1 height {new_height}, but previous checkpoint covered up to L1 height {prev_height}"
+        "checkpoint L1 height regresses: new checkpoint covers up to L1 height {new_height}, but previous checkpoint already covered up to L1 height {prev_height}"
     )]
-    L1HeightGoesBackwards { prev_height: u32, new_height: u32 },
+    L1HeightRegresses { prev_height: u32, new_height: u32 },
 
     /// Checkpoint L1 height exceeds current block.
     ///
@@ -70,4 +69,12 @@ pub enum InvalidCheckpointPayload {
     /// this prevents the funds from being withdrawn on L1.
     #[error("malformed withdrawal destination descriptor")]
     MalformedWithdrawalDestDesc,
+
+    /// Epoch counter overflow.
+    #[error("epoch overflow: verified tip epoch is at maximum value")]
+    EpochOverflow,
+
+    /// L1 height counter overflow.
+    #[error("L1 height overflow: verified tip L1 height is at maximum value")]
+    L1HeightOverflow,
 }

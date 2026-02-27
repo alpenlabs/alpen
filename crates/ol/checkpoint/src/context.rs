@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::types::OLCheckpointEntry;
-use strata_identifiers::Epoch;
-use strata_ol_chain_types_new::OLLog;
+use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_ol_chain_types_new::{OLBlockHeader, OLLog};
 use strata_primitives::epoch::EpochCommitment;
 use strata_storage::NodeStorage;
 
@@ -43,6 +43,12 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
 
     /// Gets proof bytes for the checkpoint.
     fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>>;
+
+    /// Gets the terminal OL block header for the checkpoint epoch.
+    fn get_terminal_block_header(
+        &self,
+        terminal: &OLBlockCommitment,
+    ) -> anyhow::Result<Option<OLBlockHeader>>;
 }
 
 /// Production context implementation with v1 defaults.
@@ -116,5 +122,16 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
     fn get_proof(&self, _epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
         // V1: empty placeholder proof
         Ok(Vec::new())
+    }
+
+    fn get_terminal_block_header(
+        &self,
+        terminal: &OLBlockCommitment,
+    ) -> anyhow::Result<Option<OLBlockHeader>> {
+        let maybe_block = self
+            .storage
+            .ol_block()
+            .get_block_data_blocking(*terminal.blkid())?;
+        Ok(maybe_block.map(|block| block.header().clone()))
     }
 }

@@ -34,3 +34,11 @@ class CheckpointClaim(Container):
 
     ### Hash of output messages produced during execution.
     ol_logs_hash: Bytes32
+
+    ### Hash commitment to the terminal header subset in the sidecar.
+    ###
+    ### The ZK proof derives this from the executed terminal block header,
+    ### binding the sidecar's TerminalHeaderComplement to proven execution. The
+    ### L1 verifier reconstructs the same hash from sidecar data and checks
+    ### it against the proof, preventing substitution of sidecar fields.
+    terminal_header_complement_hash: Bytes32
