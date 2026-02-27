@@ -3,6 +3,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum EnvError {
+    #[error("malformed chain state data")]
+    MalformedChainState,
+
     /// Malformed extra data.
     #[error("malformed extra data")]
     MalformedExtraData,
