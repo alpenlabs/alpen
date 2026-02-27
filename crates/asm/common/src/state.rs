@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_asm_types::HeaderVerificationState;
+use strata_btc_verification::HeaderVerificationState;
 
 use crate::{AsmError, AsmHistoryAccumulatorState, Mismatched, Subprotocol, SubprotocolId};
 

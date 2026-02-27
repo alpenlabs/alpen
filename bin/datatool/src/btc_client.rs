@@ -5,7 +5,7 @@
 
 use bitcoin::{params::Params, CompactTarget};
 use bitcoind_async_client::{traits::Reader, Auth, Client};
-use strata_asm_types::get_relative_difficulty_adjustment_height;
+use strata_btc_verification::get_relative_difficulty_adjustment_height;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
     l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1BlockId},

@@ -7,7 +7,7 @@ use std::{
 use anyhow::bail;
 use bitcoin::{params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
-use strata_asm_types::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
+use strata_btc_verification::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
