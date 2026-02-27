@@ -15,9 +15,8 @@ use strata_codec::decode_buf_exact;
 use strata_snark_acct_types::{MessageEntry, UpdateManifest};
 
 use crate::{
-    IInnerState, InputMessage, UpdateLedgerInfo,
+    ArchivedCoinput, ArchivedPrivateInput, IInnerState, InputMessage, UpdateLedgerInfo,
     errors::{ProgramError, ProgramResult},
-    private_input::{Coinput, PrivateInput},
     traits::{SnarkAccountProgram, SnarkAccountProgramVerification},
 };
 
@@ -25,7 +24,7 @@ use crate::{
 /// verification input.
 pub fn verify_and_process_update<'i, P: SnarkAccountProgramVerification>(
     program: &P,
-    private_input: &PrivateInput,
+    private_input: &ArchivedPrivateInput,
     vinput: P::VInput<'i>,
 ) -> ProgramResult<(), P::Error> {
     // 1. Decode fields and verify consistency.
@@ -79,7 +78,7 @@ fn verify_update_inner<'i, 'u, P: SnarkAccountProgramVerification>(
     state: &mut P::State,
     vinput: P::VInput<'i>,
     messages: &[MessageEntry],
-    coinputs: &[Coinput],
+    coinputs: &[ArchivedCoinput],
     extra_data: P::ExtraData,
     ulinfo: UpdateLedgerInfo<'u>,
 ) -> ProgramResult<(), P::Error> {
@@ -180,6 +179,7 @@ pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
 
 #[cfg(test)]
 mod tests {
+    use rkyv::{rancor::Error as RkyvError, util::AlignedVec};
     use ssz_derive::{Decode, Encode};
     use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
     use strata_codec::impl_type_flat_struct;
@@ -193,6 +193,22 @@ mod tests {
         private_input::Coinput,
         traits::{IAcctMsg, IExtraData, IInnerState},
     };
+
+    /// Serializes a list of [`Coinput`]s with rkyv and returns the backing
+    /// buffer.  Callers can access the archived slice via
+    /// [`access_archived_coinputs`].
+    fn archive_coinputs(coinputs: Vec<Coinput>) -> AlignedVec {
+        rkyv::to_bytes::<RkyvError>(&coinputs).expect("rkyv encode coinputs")
+    }
+
+    /// Accesses the archived coinput slice from a buffer produced by
+    /// [`archive_coinputs`].
+    fn access_archived_coinputs(bytes: &AlignedVec) -> &[ArchivedCoinput] {
+        // SAFETY: `bytes` was just produced by `rkyv::to_bytes` on a
+        // `&[Coinput]` in the same test, so the root is valid.
+        let archived = unsafe { rkyv::access_unchecked::<rkyv::Archived<Vec<Coinput>>>(bytes) };
+        archived.as_slice()
+    }
 
     // Simple test types for the generic processing functions.
 
@@ -335,22 +351,16 @@ mod tests {
         let program = TestProgram;
         let mut state = TestState { value: 0 };
         let msg_entries = vec![make_msg_entry(5), make_msg_entry(3)];
-        let coinputs = vec![Coinput::new(vec![]), Coinput::new(vec![])];
+        let coinputs_buf = archive_coinputs(vec![Coinput::new(vec![]), Coinput::new(vec![])]);
+        let coinputs = access_archived_coinputs(&coinputs_buf);
         let extra = TestExtraData { multiplier: 1 };
 
         let lr = LedgerRefs::new_empty();
         let uo = UpdateOutputs::new_empty();
         let uli = UpdateLedgerInfo::new(&lr, &uo);
 
-        let result = verify_update_inner(
-            &program,
-            &mut state,
-            (),
-            &msg_entries,
-            &coinputs,
-            extra,
-            uli,
-        );
+        let result =
+            verify_update_inner(&program, &mut state, (), &msg_entries, coinputs, extra, uli);
         assert!(result.is_ok());
         // (5 + 3) * 1 = 8
         assert_eq!(state.value, 8);
@@ -377,22 +387,16 @@ mod tests {
         let program = TestProgram;
         let mut state = TestState { value: 0 };
         let msg_entries = vec![make_msg_entry(5)];
-        let coinputs = vec![Coinput::new(vec![1, 2, 3])]; // Non-empty coinput
+        let coinputs_buf = archive_coinputs(vec![Coinput::new(vec![1, 2, 3])]); // Non-empty
+        let coinputs = access_archived_coinputs(&coinputs_buf);
         let extra = TestExtraData { multiplier: 1 };
 
         let lr = LedgerRefs::new_empty();
         let uo = UpdateOutputs::new_empty();
         let uli = UpdateLedgerInfo::new(&lr, &uo);
 
-        let result = verify_update_inner(
-            &program,
-            &mut state,
-            (),
-            &msg_entries,
-            &coinputs,
-            extra,
-            uli,
-        );
+        let result =
+            verify_update_inner(&program, &mut state, (), &msg_entries, coinputs, extra, uli);
         assert!(matches!(
             result,
             Err(ProgramError::AtMessage { idx: 0, .. })

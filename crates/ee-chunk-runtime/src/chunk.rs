@@ -3,6 +3,8 @@
 use strata_ee_acct_types::ExecutionEnvironment;
 use strata_ee_chain_types::{ExecInputs, ExecOutputs};
 
+/// Chunk of decoded exec env blocks.
+#[expect(missing_debug_implementations, reason = "impossible")]
 pub struct Chunk<'c, E: ExecutionEnvironment> {
     blocks: Vec<ChunkBlock<'c, E>>,
 }
@@ -17,6 +19,8 @@ impl<'c, E: ExecutionEnvironment> Chunk<'c, E> {
     }
 }
 
+/// Decoded execution env block within a chunk.
+#[expect(missing_debug_implementations, reason = "impossible")]
 pub struct ChunkBlock<'c, E: ExecutionEnvironment> {
     inputs: &'c ExecInputs,
     outputs: &'c ExecOutputs,
