@@ -44,13 +44,13 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     /// Creates a new update builder.
     ///
     /// Calls `start_verification` and `start_update` on the program, but does
-    /// NOT process any messages yet. Messages are processed one at a time via
+    /// NOT process any messages yet. Messages are added incrementally via
+    /// [`add_message`] or [`add_message_with_coinput`], then processed via
     /// [`provide_coinput`].
     pub fn new(
         program: P,
         snark_state: SnarkAccountState,
         state: P::State,
-        messages: Vec<MessageEntry>,
         vinput: P::VInput<'i>,
         ledger_refs: LedgerRefs,
         outputs: UpdateOutputs,
@@ -76,12 +76,31 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
             pre_state,
             current_state,
             vstate,
-            messages,
+            messages: Vec::new(),
             coinputs: Vec::new(),
             next_msg_idx: 0,
             ledger_refs,
             outputs,
         })
+    }
+
+    /// Appends a message without processing it.
+    ///
+    /// The caller must later call [`provide_coinput`] to process this message.
+    pub fn add_message(&mut self, msg: MessageEntry) {
+        self.messages.push(msg);
+    }
+
+    /// Appends a message and immediately processes it with the given coinput.
+    ///
+    /// Equivalent to calling [`add_message`] followed by [`provide_coinput`].
+    pub fn add_message_with_coinput(
+        &mut self,
+        msg: MessageEntry,
+        coinput: Vec<u8>,
+    ) -> ProgramResult<(), P::Error> {
+        self.messages.push(msg);
+        self.provide_coinput(coinput)
     }
 
     /// Returns the current inner state of the snark account, accounting for the
@@ -201,76 +220,90 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     /// Shared finalization: pre_finalize, finalize_verification, finalize_state.
     ///
     /// Returns the finalized state, extra data, raw pre-state, and coinputs.
+    /// Clones internal state so the builder can be reused.
     fn finalize_verified(
-        mut self,
+        &mut self,
         extra_data: P::ExtraData,
-    ) -> ProgramResult<FinalizedUpdate<P>, P::Error> {
+    ) -> ProgramResult<FinalizedUpdate<P>, P::Error>
+    where
+        P::VState<'i>: Clone,
+    {
         self.assert_all_coinputs_provided()?;
+
+        let mut post_state = self.current_state.clone();
 
         // Pre-finalize state.
         self.program
-            .pre_finalize_state(&mut self.current_state, &extra_data)?;
+            .pre_finalize_state(&mut post_state, &extra_data)?;
 
-        // Final verification.
+        // Final verification (consumes a clone of vstate).
+        let vstate_clone = self.vstate.clone();
         self.program
-            .finalize_verification(&self.current_state, self.vstate, &extra_data)?;
+            .finalize_verification(&post_state, vstate_clone, &extra_data)?;
 
         // Finalize state.
         let extra_data_clone = extra_data.clone();
         self.program
-            .finalize_state(&mut self.current_state, extra_data)?;
+            .finalize_state(&mut post_state, extra_data)?;
 
         Ok(FinalizedUpdate {
-            pre_state: self.pre_state,
-            post_state: self.current_state,
-            snark_state: self.snark_state,
+            pre_state: self.pre_state.clone(),
+            post_state,
+            snark_state: self.snark_state.clone(),
             extra_data: extra_data_clone,
-            messages: self.messages,
-            coinputs: self.coinputs,
-            ledger_refs: self.ledger_refs,
-            outputs: self.outputs,
+            messages: self.messages.clone(),
+            coinputs: self.coinputs.clone(),
+            ledger_refs: self.ledger_refs.clone(),
+            outputs: self.outputs.clone(),
         })
     }
 
     /// Shared finalization for the unconditional (manifest) path.
     ///
-    /// Skips `finalize_verification`.
+    /// Skips `finalize_verification`. Clones internal state so the builder can
+    /// be reused.
     fn finalize_unverified(
-        mut self,
+        &mut self,
         extra_data: P::ExtraData,
     ) -> ProgramResult<FinalizedUpdate<P>, P::Error> {
         self.assert_all_coinputs_provided()?;
 
+        let mut post_state = self.current_state.clone();
+
         // Pre-finalize state.
         self.program
-            .pre_finalize_state(&mut self.current_state, &extra_data)?;
+            .pre_finalize_state(&mut post_state, &extra_data)?;
 
         // Skip finalize_verification.
 
         // Finalize state.
         let extra_data_clone = extra_data.clone();
         self.program
-            .finalize_state(&mut self.current_state, extra_data)?;
+            .finalize_state(&mut post_state, extra_data)?;
 
         Ok(FinalizedUpdate {
-            pre_state: self.pre_state,
-            post_state: self.current_state,
-            snark_state: self.snark_state,
+            pre_state: self.pre_state.clone(),
+            post_state,
+            snark_state: self.snark_state.clone(),
             extra_data: extra_data_clone,
-            messages: self.messages,
-            coinputs: self.coinputs,
-            ledger_refs: self.ledger_refs,
-            outputs: self.outputs,
+            messages: self.messages.clone(),
+            coinputs: self.coinputs.clone(),
+            ledger_refs: self.ledger_refs.clone(),
+            outputs: self.outputs.clone(),
         })
     }
 
     /// Builds a [`PrivateInput`] for proof generation.
     ///
     /// Calls `pre_finalize_state`, `finalize_verification`, `finalize_state`.
+    /// Clones internal state so the builder can be reused.
     pub fn build_private_input(
-        self,
+        &mut self,
         extra_data: P::ExtraData,
-    ) -> ProgramResult<PrivateInput, P::Error> {
+    ) -> ProgramResult<PrivateInput, P::Error>
+    where
+        P::VState<'i>: Clone,
+    {
         let finalized = self.finalize_verified(extra_data)?;
         finalized.into_private_input()
     }
@@ -279,9 +312,10 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     /// path.
     ///
     /// Calls `pre_finalize_state`, `finalize_state` (skips
-    /// `finalize_verification`).
+    /// `finalize_verification`). Clones internal state so the builder can be
+    /// reused.
     pub fn build_manifest(
-        self,
+        &mut self,
         extra_data: P::ExtraData,
     ) -> ProgramResult<UpdateManifest, P::Error> {
         let finalized = self.finalize_unverified(extra_data)?;
@@ -291,11 +325,15 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     /// Builds [`UpdateOperationData`] and raw coinputs.
     ///
     /// Calls `pre_finalize_state`, `finalize_verification`, `finalize_state`.
+    /// Clones internal state so the builder can be reused.
     pub fn build_operation_data(
-        self,
+        &mut self,
         seq_no: u64,
         extra_data: P::ExtraData,
-    ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {
+    ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error>
+    where
+        P::VState<'i>: Clone,
+    {
         let finalized = self.finalize_verified(extra_data)?;
         finalized.into_operation_data(seq_no)
     }
@@ -305,9 +343,10 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     ///
     /// Calls `pre_finalize_state`, `finalize_state` (skips
     /// `finalize_verification`). Useful for the construction side where
-    /// the builder has already validated chunks locally.
+    /// the builder has already validated chunks locally. Clones internal state
+    /// so the builder can be reused.
     pub fn build_operation_data_unverified(
-        self,
+        &mut self,
         seq_no: u64,
         extra_data: P::ExtraData,
     ) -> ProgramResult<(UpdateOperationData, Vec<Vec<u8>>), P::Error> {

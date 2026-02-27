@@ -7,7 +7,8 @@ use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{
-    EeSnarkAccountProgram, EeVerificationInput, EeVerificationState, UpdateBuilder,
+    ChunkInput, EePrivateInput, EeSnarkAccountProgram, EeVerificationInput, EeVerificationState,
+    UpdateBuilder,
 };
 use strata_ee_acct_types::{EeAccountState, EnvError};
 use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
@@ -98,7 +99,7 @@ pub fn assert_both_paths_succeed(
 /// Creates a simple initial state for testing.
 pub(crate) fn create_initial_state() -> (EeAccountState, SnarkAccountState) {
     let ee_state = EeAccountState::new(
-        Vec::new(),
+        vec![0x01],
         Hash::new([0u8; 32]),
         BitcoinAmount::from(0u64),
         Vec::new(),
@@ -141,17 +142,18 @@ pub(crate) fn build_update_operation(
     initial_state: &EeAccountState,
     snark_state: &SnarkAccountState,
     ee: &SimpleExecutionEnvironment,
-) -> (UpdateOperationData, Vec<Vec<u8>>) {
+) -> (UpdateOperationData, Vec<Vec<u8>>, SnarkPrivateInput) {
     let vinput = EeVerificationInput::new(ee, &[], &[]);
 
     let mut builder = UpdateBuilder::new(
         seq_no,
         snark_state.clone(),
         initial_state.clone(),
-        messages,
         vinput,
     )
     .expect("create builder");
+
+    builder.add_messages(messages).expect("add messages");
 
     for chunk in chunks {
         builder
@@ -159,7 +161,11 @@ pub(crate) fn build_update_operation(
             .expect("accept chunk should succeed");
     }
 
-    builder.build().expect("build should succeed")
+    let snark_priv = builder
+        .build_private_input()
+        .expect("build_private_input should succeed");
+    let (op, coinputs) = builder.build().expect("build should succeed");
+    (op, coinputs, snark_priv)
 }
 
 /// Creates a simple [`ChunkTransition`] from deposits and outputs.
@@ -184,6 +190,83 @@ pub(crate) fn create_chunk_transition(
     outputs: ExecOutputs,
 ) -> ChunkTransition {
     ChunkTransition::new(parent, tip, inputs, outputs)
+}
+
+/// Wraps chunk transitions into [`ChunkInput`]s with empty proofs.
+///
+/// The always-accept predicate (type ID `0x01`) will pass with any proof bytes.
+pub(crate) fn make_chunk_inputs(chunks: &[ChunkTransition]) -> Vec<ChunkInput> {
+    chunks
+        .iter()
+        .map(|c| ChunkInput::new(c.clone(), vec![]))
+        .collect()
+}
+
+/// Verifies an update through the full verified path with chunk proof checking.
+///
+/// Constructs a [`SnarkPrivateInput`] from the operation data and initial state,
+/// wraps chunk transitions into [`ChunkInput`]s, and delegates to the EE
+/// `verify_and_process_update`.
+pub(crate) fn verify_with_chunks(
+    initial_state: &EeAccountState,
+    operation: &UpdateOperationData,
+    coinputs: &[Vec<u8>],
+    chunks: &[ChunkTransition],
+    ee: &SimpleExecutionEnvironment,
+) -> ProgramResult<(), EnvError> {
+    let pub_params = UpdateProofPubParams::new(
+        ProofState::new(Hash::default(), 0),
+        ProofState::new(Hash::default(), operation.processed_messages().len() as u64),
+        operation.processed_messages().to_vec(),
+        operation.ledger_refs().clone(),
+        operation.outputs().clone(),
+        operation.extra_data().to_vec(),
+    );
+
+    let coinputs_typed: Vec<Coinput> = coinputs.iter().map(|v| Coinput::new(v.clone())).collect();
+
+    let snark_priv =
+        SnarkPrivateInput::new(pub_params, initial_state.as_ssz_bytes(), coinputs_typed);
+
+    let chunk_inputs = make_chunk_inputs(chunks);
+    let ee_priv = EePrivateInput::new(vec![], vec![], chunk_inputs);
+    strata_ee_acct_runtime::verify_and_process_update(ee, ee_priv, snark_priv)
+}
+
+/// Verifies an update through the full verified path using a pre-built
+/// [`SnarkPrivateInput`].
+///
+/// Wraps chunk transitions into [`ChunkInput`]s and delegates to the EE
+/// `verify_and_process_update`.
+pub(crate) fn verify_with_private_input(
+    snark_priv: &SnarkPrivateInput,
+    chunks: &[ChunkTransition],
+    ee: &SimpleExecutionEnvironment,
+) -> ProgramResult<(), EnvError> {
+    let chunk_inputs = make_chunk_inputs(chunks);
+    let ee_priv = EePrivateInput::new(vec![], vec![], chunk_inputs);
+    strata_ee_acct_runtime::verify_and_process_update(ee, ee_priv, snark_priv.clone())
+}
+
+/// Asserts that the verified path succeeds using the builder's private input.
+pub(crate) fn assert_verified_path_succeeds(
+    snark_priv: &SnarkPrivateInput,
+    chunks: &[ChunkTransition],
+    ee: &SimpleExecutionEnvironment,
+) {
+    verify_with_private_input(snark_priv, chunks, ee).expect("verified path should succeed");
+}
+
+/// Asserts that the verified path with chunks succeeds.
+pub(crate) fn assert_verified_chunks_succeed(
+    initial_state: &EeAccountState,
+    operation: &UpdateOperationData,
+    coinputs: &[Vec<u8>],
+    chunks: &[ChunkTransition],
+    ee: &SimpleExecutionEnvironment,
+) {
+    verify_with_chunks(initial_state, operation, coinputs, chunks, ee)
+        .expect("verified path with chunks should succeed");
 }
 
 /// Creates an [`EeVerificationState`] for testing.

@@ -9,7 +9,7 @@ use strata_ee_acct_types::{
     EeAccountState, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::ChunkTransition;
-use strata_snark_acct_runtime::UpdateBuilder as GenericUpdateBuilder;
+use strata_snark_acct_runtime::{PrivateInput, UpdateBuilder as GenericUpdateBuilder};
 use strata_snark_acct_types::{
     LedgerRefs, MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, OutputMessage, OutputTransfer,
     SnarkAccountState, UpdateOperationData, UpdateOutputs,
@@ -49,34 +49,27 @@ pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
 impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     /// Creates a new EE update builder.
     ///
-    /// Processes all messages immediately (with empty coinputs, as required by
-    /// the EE program), then snapshots the resulting pending inputs and chain
-    /// tip for chunk validation.
+    /// Initializes with an empty message set. Messages are added incrementally
+    /// via [`add_message`] or [`add_messages`].
     pub fn new(
         seq_no: u64,
         snark_state: SnarkAccountState,
         initial_state: EeAccountState,
-        messages: Vec<MessageEntry>,
         vinput: EeVerificationInput<'i, E>,
     ) -> BuilderResult<Self> {
+        let pending_inputs = initial_state.pending_inputs().to_vec();
+        let cur_tip_blkid = initial_state.last_exec_blkid();
+
         let program = EeSnarkAccountProgram::new();
 
-        let mut inner = GenericUpdateBuilder::new(
+        let inner = GenericUpdateBuilder::new(
             program,
             snark_state,
             initial_state,
-            messages,
             vinput,
             LedgerRefs::new_empty(),
             UpdateOutputs::new_empty(),
         )?;
-
-        // EE always uses empty coinputs — provide them all now.
-        inner.provide_empty_coinputs()?;
-
-        // Snapshot state after message processing (deposits are now pending).
-        let pending_inputs = inner.current_state().pending_inputs().to_vec();
-        let cur_tip_blkid = inner.current_state().last_exec_blkid();
 
         Ok(Self {
             inner,
@@ -86,6 +79,36 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             inputs_consumed: 0,
             fincls_processed: 0,
         })
+    }
+
+    /// Adds a message and immediately processes it with an empty coinput.
+    ///
+    /// Any new pending inputs created by the message (e.g. deposits) are
+    /// appended to the internal tracking list.
+    pub fn add_message(&mut self, msg: MessageEntry) -> BuilderResult<()> {
+        self.inner.add_message_with_coinput(msg, Vec::new())?;
+
+        // Extend pending inputs with any new entries from this message.
+        let state_pending = self.inner.current_state().pending_inputs();
+        if state_pending.len() > self.pending_inputs.len() {
+            self.pending_inputs
+                .extend_from_slice(&state_pending[self.pending_inputs.len()..]);
+        }
+
+        Ok(())
+    }
+
+    /// Adds multiple messages, processing each with an empty coinput.
+    ///
+    /// Convenience batch method equivalent to calling [`add_message`] for each.
+    pub fn add_messages(
+        &mut self,
+        msgs: impl IntoIterator<Item = MessageEntry>,
+    ) -> BuilderResult<()> {
+        for msg in msgs {
+            self.add_message(msg)?;
+        }
+        Ok(())
     }
 
     /// Returns the current chain tip block ID.
@@ -201,7 +224,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     }
 
     /// Sets the number of forced inclusions processed.
-    pub fn with_processed_fincls(mut self, count: usize) -> Self {
+    pub fn with_processed_fincls(&mut self, count: usize) -> &mut Self {
         self.fincls_processed = count;
         self
     }
@@ -213,7 +236,8 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     ///
     /// Uses the unverified finalization path since the builder has already
     /// validated chunk transitions locally via [`accept_chunk_transition`].
-    pub fn build(self) -> BuilderResult<(UpdateOperationData, Vec<Vec<u8>>)> {
+    /// Clones internal state so the builder can be reused.
+    pub fn build(&mut self) -> BuilderResult<(UpdateOperationData, Vec<Vec<u8>>)> {
         let extra_data = UpdateExtraData::new(
             self.cur_tip_blkid,
             self.inputs_consumed as u32,
@@ -224,6 +248,22 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             .inner
             .build_operation_data_unverified(self.seq_no, extra_data)?;
         Ok((op, coinputs))
+    }
+
+    /// Builds a [`PrivateInput`] for proof generation.
+    ///
+    /// Constructs [`UpdateExtraData`] from the current tip, consumed input
+    /// count, and forced inclusion count, then delegates to the inner builder's
+    /// verified finalization path. Clones internal state so the builder can be
+    /// reused.
+    pub fn build_private_input(&mut self) -> BuilderResult<PrivateInput> {
+        let extra_data = UpdateExtraData::new(
+            self.cur_tip_blkid,
+            self.inputs_consumed as u32,
+            self.fincls_processed as u32,
+        );
+
+        Ok(self.inner.build_private_input(extra_data)?)
     }
 
     /// Returns the current account state.

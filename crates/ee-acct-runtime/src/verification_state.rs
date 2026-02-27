@@ -90,6 +90,21 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     raw_partial_pre_state: &'a [u8],
 }
 
+// Manual `Clone` impl to avoid requiring `E: Clone` (we only hold `&'a E`).
+impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
+    fn clone(&self) -> Self {
+        Self {
+            ee: self.ee,
+            cur_verified_exec_blkid: self.cur_verified_exec_blkid,
+            total_val_sent: self.total_val_sent,
+            expected_outputs: self.expected_outputs.clone(),
+            accumulated_outputs: self.accumulated_outputs.clone(),
+            input_chunks: self.input_chunks,
+            raw_partial_pre_state: self.raw_partial_pre_state,
+        }
+    }
+}
+
 impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Constructs a verification state using the account's initial state as a
     /// reference, along with the verification input data.

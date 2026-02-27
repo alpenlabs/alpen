@@ -63,7 +63,18 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
         // Update final execution head block.
         state.set_last_exec_blkid(*extra_data.new_tip_blkid());
 
-        // Update queues.
+        Ok(())
+    }
+
+    fn finalize_state(
+        &self,
+        state: &mut Self::State,
+        extra_data: Self::ExtraData,
+    ) -> ProgramResult<(), Self::Error> {
+        // Remove consumed pending inputs and forced inclusions.
+        //
+        // This runs after `finalize_verification` so that chunk verification
+        // can still match deposits against the pending input queue.
         state.remove_pending_inputs(*extra_data.processed_inputs() as usize);
         state.remove_pending_fincls(*extra_data.processed_fincls() as usize);
 

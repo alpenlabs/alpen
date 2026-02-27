@@ -9,8 +9,9 @@
 mod common;
 
 use common::{
-    apply_unconditionally, assert_both_paths_succeed, build_update_operation,
-    create_deposit_message, create_initial_state, simple_chunk,
+    apply_unconditionally, assert_both_paths_succeed, assert_verified_chunks_succeed,
+    assert_verified_path_succeeds, build_update_operation, create_deposit_message,
+    create_initial_state, simple_chunk,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
 use strata_ee_acct_runtime::{EeVerificationInput, UpdateBuilder};
@@ -22,7 +23,7 @@ fn test_empty_update_no_chunks() {
     let (initial_state, snark_state) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
-    let (operation, coinputs) = build_update_operation(
+    let (operation, coinputs, snark_priv) = build_update_operation(
         1,
         vec![],
         &[],
@@ -32,6 +33,7 @@ fn test_empty_update_no_chunks() {
     );
 
     assert_both_paths_succeed(&initial_state, &operation, &coinputs, &ee);
+    assert_verified_path_succeeds(&snark_priv, &[], &ee);
 }
 
 #[test]
@@ -44,7 +46,7 @@ fn test_single_deposit_no_chunks() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let (operation, _coinputs) = build_update_operation(
+    let (operation, _coinputs, snark_priv) = build_update_operation(
         1,
         vec![message],
         &[],
@@ -54,6 +56,7 @@ fn test_single_deposit_no_chunks() {
     );
 
     apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
+    assert_verified_path_succeeds(&snark_priv, &[], &ee);
 }
 
 #[test]
@@ -70,7 +73,7 @@ fn test_multiple_deposits_no_chunks() {
     let message1 = create_deposit_message(dest1, value1, source, 1);
     let message2 = create_deposit_message(dest2, value2, source, 1);
 
-    let (operation, _coinputs) = build_update_operation(
+    let (operation, _coinputs, snark_priv) = build_update_operation(
         1,
         vec![message1, message2],
         &[],
@@ -80,6 +83,7 @@ fn test_multiple_deposits_no_chunks() {
     );
 
     apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
+    assert_verified_path_succeeds(&snark_priv, &[], &ee);
 }
 
 #[test]
@@ -87,7 +91,7 @@ fn test_empty_update_verified_path() {
     let (initial_state, snark_state) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
-    let (operation, coinputs) = build_update_operation(
+    let (operation, coinputs, snark_priv) = build_update_operation(
         1,
         vec![],
         &[],
@@ -97,6 +101,7 @@ fn test_empty_update_verified_path() {
     );
 
     assert_both_paths_succeed(&initial_state, &operation, &coinputs, &ee);
+    assert_verified_path_succeeds(&snark_priv, &[], &ee);
 }
 
 #[test]
@@ -116,10 +121,11 @@ fn test_single_deposit_with_chunk() {
         1,
         snark_state,
         initial_state.clone(),
-        vec![message],
         vinput,
     )
     .expect("create builder");
+
+    builder.add_messages(vec![message]).expect("add messages");
 
     // The deposit message should have created a pending input
     assert_eq!(builder.remaining_input_count(), 1);
@@ -140,11 +146,14 @@ fn test_single_deposit_with_chunk() {
     assert_eq!(builder.cur_tip_blkid(), tip);
     assert_eq!(builder.remaining_input_count(), 0);
 
-    let (operation, _coinputs) = builder.build().expect("build should succeed");
+    let (operation, coinputs) = builder.build().expect("build should succeed");
 
     // Unconditional path should succeed
     apply_unconditionally(&initial_state, &operation)
         .expect("unconditional path should succeed");
+
+    // Verified path with chunk proof verification should succeed
+    assert_verified_chunks_succeed(&initial_state, &operation, &coinputs, &[chunk], &ee);
 }
 
 #[test]
@@ -166,10 +175,11 @@ fn test_multiple_deposits_multiple_chunks() {
         1,
         snark_state,
         initial_state.clone(),
-        vec![msg1, msg2],
         vinput,
     )
     .expect("create builder");
+
+    builder.add_messages(vec![msg1, msg2]).expect("add messages");
 
     assert_eq!(builder.remaining_input_count(), 2);
 
@@ -209,8 +219,17 @@ fn test_multiple_deposits_multiple_chunks() {
     assert_eq!(builder.cur_tip_blkid(), tip2);
     assert_eq!(builder.remaining_input_count(), 0);
 
-    let (operation, _coinputs) = builder.build().expect("build");
+    let (operation, coinputs) = builder.build().expect("build");
 
     apply_unconditionally(&initial_state, &operation)
         .expect("unconditional path should succeed");
+
+    // Verified path with chunk proof verification should succeed
+    assert_verified_chunks_succeed(
+        &initial_state,
+        &operation,
+        &coinputs,
+        &[chunk1, chunk2],
+        &ee,
+    );
 }
