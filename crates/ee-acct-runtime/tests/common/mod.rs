@@ -7,22 +7,33 @@ use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{
-    ChainSegmentBuilder, EeSnarkAccountProgram, EeVerificationInput, SharedPrivateInput,
-    UpdateBuilder,
+    EeSnarkAccountProgram, EeVerificationInput, EeVerificationState, UpdateBuilder,
 };
-use strata_ee_acct_types::{CommitChainSegment, EeAccountState, ExecHeader, PendingInputEntry};
-use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
+use strata_ee_acct_types::{EeAccountState, EnvError};
+use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
-use strata_simple_ee::{
-    SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader, SimpleHeaderIntrinsics,
-    SimplePartialState,
-};
-use strata_snark_acct_runtime::{Coinput, ProgramResult, PrivateInput as SnarkPrivateInput};
+use strata_simple_ee::SimpleExecutionEnvironment;
+use strata_snark_acct_runtime::{Coinput, IInnerState, ProgramResult, PrivateInput as SnarkPrivateInput};
 use strata_snark_acct_types::{
-    MessageEntry, ProofState, UpdateManifest, UpdateOperationData, UpdateProofPubParams,
+    MessageEntry, ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData,
+    UpdateOutputs, UpdateProofPubParams,
 };
 
-use strata_ee_acct_types::EnvError;
+/// Creates a [`SnarkAccountState`] that matches the given [`EeAccountState`].
+///
+/// Uses default hash for inner_state (matches `EeAccountState::compute_state_root()`
+/// which currently returns `Hash::default()`).
+pub fn make_snark_state(ee_state: &EeAccountState) -> SnarkAccountState {
+    SnarkAccountState {
+        update_vk: Vec::new().into(),
+        proof_state: ProofState::new(ee_state.compute_state_root(), 0),
+        seq_no: 0,
+        inbox_mmr: strata_acct_types::Mmr64 {
+            entries: 0,
+            roots: Default::default(),
+        },
+    }
+}
 
 /// Applies an update unconditionally (DA reconstruction path).
 pub fn apply_unconditionally(
@@ -48,7 +59,6 @@ pub fn apply_unconditionally(
 pub fn verify_update(
     initial_state: &EeAccountState,
     operation: &UpdateOperationData,
-    shared_private: &SharedPrivateInput,
     coinputs: &[Vec<u8>],
     ee: &SimpleExecutionEnvironment,
 ) -> ProgramResult<(), EnvError> {
@@ -66,31 +76,27 @@ pub fn verify_update(
     let snark_priv =
         SnarkPrivateInput::new(pub_params, initial_state.as_ssz_bytes(), coinputs_typed);
 
-    let vinput = EeVerificationInput::new(ee, &[], shared_private.raw_partial_pre_state());
+    let vinput = EeVerificationInput::new(ee, &[], &[]);
 
     let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
     strata_snark_acct_runtime::verify_and_process_update(&program, &snark_priv, vinput)
 }
 
 /// Asserts that both verified and unconditional paths succeed.
-///
-/// Only works for tests where the verified path can succeed (e.g., no-segment
-/// tests where `new_tip_blkid == initial last_exec_blkid`).
 pub fn assert_both_paths_succeed(
     initial_state: &EeAccountState,
     operation: &UpdateOperationData,
-    shared_private: &SharedPrivateInput,
     coinputs: &[Vec<u8>],
     ee: &SimpleExecutionEnvironment,
 ) {
-    verify_update(initial_state, operation, shared_private, coinputs, ee)
+    verify_update(initial_state, operation, coinputs, ee)
         .expect("verified path should succeed");
 
     apply_unconditionally(initial_state, operation).expect("unconditional path should succeed");
 }
 
 /// Creates a simple initial state for testing.
-pub(crate) fn create_initial_state() -> (EeAccountState, SimplePartialState, SimpleHeader) {
+pub(crate) fn create_initial_state() -> (EeAccountState, SnarkAccountState) {
     let ee_state = EeAccountState::new(
         Vec::new(),
         Hash::new([0u8; 32]),
@@ -99,10 +105,9 @@ pub(crate) fn create_initial_state() -> (EeAccountState, SimplePartialState, Sim
         Vec::new(),
     );
 
-    let exec_state = SimplePartialState::new_empty();
-    let header = SimpleHeader::genesis();
+    let snark_state = make_snark_state(&ee_state);
 
-    (ee_state, exec_state, header)
+    (ee_state, snark_state)
 }
 
 /// Helper to create a deposit message entry.
@@ -115,11 +120,9 @@ pub(crate) fn create_deposit_message(
     use strata_ee_acct_types::{DEPOSIT_MSG_TYPE, DepositMsgData};
     use strata_msg_fmt::OwnedMsg;
 
-    // Encode the deposit message data
     let deposit_data = DepositMsgData::new(dest);
     let body = encode_to_vec(&deposit_data).expect("encode deposit data");
 
-    // Create properly formatted message
     let msg = OwnedMsg::new(DEPOSIT_MSG_TYPE, body).expect("create message");
     let payload_data = msg.to_vec();
 
@@ -127,72 +130,67 @@ pub(crate) fn create_deposit_message(
     MessageEntry::new(source, incl_epoch, payload)
 }
 
-/// Helper to build a simple chain segment with deposits.
-pub(crate) fn build_chain_segment_with_deposits(
-    ee: SimpleExecutionEnvironment,
-    initial_state: SimplePartialState,
-    initial_header: SimpleHeader,
-    deposits: Vec<SubjectDepositData>,
-) -> CommitChainSegment {
-    let pending_inputs: Vec<PendingInputEntry> = deposits
-        .iter()
-        .map(|d| PendingInputEntry::Deposit(d.clone()))
-        .collect();
-
-    let mut builder =
-        ChainSegmentBuilder::new(ee, initial_state, initial_header.clone(), pending_inputs);
-
-    // Create a single block that consumes all deposits
-    let body = SimpleBlockBody::new(vec![]);
-    let mut inputs = ExecInputs::new_empty();
-    for deposit in deposits {
-        inputs.add_subject_deposit(deposit);
-    }
-
-    let intrinsics = SimpleHeaderIntrinsics {
-        parent_blkid: initial_header.compute_block_id(),
-        index: initial_header.index() + 1,
-    };
-
-    builder
-        .append_block_body(&intrinsics, body, inputs)
-        .expect("append block should succeed");
-
-    builder.build()
-}
-
-/// Helper to build an update operation using UpdateBuilder.
+/// Helper to build an update operation using the chunk-aware UpdateBuilder.
 ///
-/// This properly constructs the UpdateOperationData along with SharedPrivateInput
-/// and coinputs, which are all needed for testing.
+/// Accepts messages and chunk transitions. The builder validates chunks
+/// against its internal pending input tracking.
 pub(crate) fn build_update_operation(
     seq_no: u64,
     messages: Vec<MessageEntry>,
-    segments: Vec<CommitChainSegment>,
+    chunks: &[ChunkTransition],
     initial_state: &EeAccountState,
-    prev_header: &SimpleHeader,
-    prev_partial_state: &SimplePartialState,
-) -> (
-    UpdateOperationData,
-    strata_ee_acct_runtime::SharedPrivateInput,
-    Vec<Vec<u8>>,
-) {
-    let mut builder = UpdateBuilder::new(seq_no, initial_state.clone());
+    snark_state: &SnarkAccountState,
+    ee: &SimpleExecutionEnvironment,
+) -> (UpdateOperationData, Vec<Vec<u8>>) {
+    let vinput = EeVerificationInput::new(ee, &[], &[]);
 
-    // Add messages
-    for message in messages {
-        builder = builder
-            .accept_message(message, Vec::new())
-            .expect("accept message should succeed");
+    let mut builder = UpdateBuilder::new(
+        seq_no,
+        snark_state.clone(),
+        initial_state.clone(),
+        messages,
+        vinput,
+    )
+    .expect("create builder");
+
+    for chunk in chunks {
+        builder
+            .accept_chunk_transition(chunk)
+            .expect("accept chunk should succeed");
     }
 
-    // Add segments
-    for segment in segments {
-        builder = builder.add_segment(segment);
-    }
+    builder.build().expect("build should succeed")
+}
 
-    // Build the operation
-    builder
-        .build::<SimpleExecutionEnvironment>(initial_state, prev_header, prev_partial_state)
-        .expect("build should succeed")
+/// Creates a simple [`ChunkTransition`] from deposits and outputs.
+pub(crate) fn simple_chunk(
+    parent: Hash,
+    tip: Hash,
+    deposits: Vec<SubjectDepositData>,
+    outputs: ExecOutputs,
+) -> ChunkTransition {
+    let mut inputs = ExecInputs::new_empty();
+    for d in deposits {
+        inputs.add_subject_deposit(d);
+    }
+    ChunkTransition::new(parent, tip, inputs, outputs)
+}
+
+/// Creates a [`ChunkTransition`] for testing (thin wrapper).
+pub(crate) fn create_chunk_transition(
+    parent: Hash,
+    tip: Hash,
+    inputs: ExecInputs,
+    outputs: ExecOutputs,
+) -> ChunkTransition {
+    ChunkTransition::new(parent, tip, inputs, outputs)
+}
+
+/// Creates an [`EeVerificationState`] for testing.
+pub(crate) fn create_vstate<'a>(
+    ee: &'a SimpleExecutionEnvironment,
+    initial_state: &EeAccountState,
+    expected_outputs: UpdateOutputs,
+) -> EeVerificationState<'a, SimpleExecutionEnvironment> {
+    EeVerificationState::new_from_state(ee, initial_state, expected_outputs, &[], &[])
 }

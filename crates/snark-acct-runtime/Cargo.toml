@@ -3,6 +3,10 @@ name = "strata-snark-acct-runtime"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+builders = []
+
 [dependencies]
 strata-acct-types.workspace = true
 strata-codec.workspace = true
