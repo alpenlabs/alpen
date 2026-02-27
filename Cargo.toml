@@ -33,7 +33,6 @@ members = [
   "crates/asm/subprotocols/checkpoint",
   "crates/asm/txs/test-utils",
   "crates/asm/txs/bridge-v1",
-  "crates/asm-types",
   "crates/asm/worker",
   "crates/btc-types",
   "crates/btc-verification",
@@ -205,7 +204,6 @@ strata-asm-txs-bridge-v1 = { path = "crates/asm/txs/bridge-v1" }
 strata-asm-txs-checkpoint = { path = "crates/asm/txs/checkpoint" }
 strata-asm-txs-checkpoint-v0 = { path = "crates/asm/txs/checkpoint-v0" }
 strata-asm-txs-test-utils = { path = "crates/asm/txs/test-utils" }
-strata-asm-types = { path = "crates/asm-types" }
 strata-asm-worker = { path = "crates/asm/worker" }
 strata-bridge-types = { path = "crates/bridge-types" }
 strata-btc-types = { path = "crates/btc-types" }
