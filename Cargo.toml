@@ -463,7 +463,7 @@ musig2 = { version = "0.1.0", features = ["serde"] }
 num_enum = "0.7"
 opentelemetry = "0.26"
 opentelemetry-otlp = { version = "0.26", features = ["grpc-tonic"] }
-opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 parking_lot = "0.12.3"
 paste = "1.0"
 proptest = "1.9.0"
