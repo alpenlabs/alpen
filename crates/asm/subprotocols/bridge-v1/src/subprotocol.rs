@@ -3,7 +3,6 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
-use bitcoin::absolute;
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
     AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
@@ -12,10 +11,7 @@ use strata_asm_common::{
 };
 use strata_asm_params::BridgeV1Config;
 use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::parse_tx};
-use strata_primitives::{
-    buf::Buf32,
-    l1::{L1BlockCommitment, L1BlockId},
-};
+use strata_primitives::l1::L1BlockCommitment;
 
 use crate::{
     errors::BridgeSubprotocolError,
@@ -178,16 +174,17 @@ impl Subprotocol for BridgeV1Subproto {
     ///
     /// Both conditions represent unrecoverable protocol violations where continued operation
     /// poses significant risk of fund loss.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
+    fn process_msgs(
+        state: &mut Self::State,
+        msgs: &[Self::Msg],
+        l1_block_commitment: &L1BlockCommitment,
+    ) {
         for msg in msgs {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
-                    // TODO: Pass actual L1BlockId instead of placeholder
-                    let l1blk = L1BlockCommitment::new(
-                        absolute::Height::ZERO,
-                        L1BlockId::from(Buf32::zero()),
-                    );
-                    if let Err(e) = state.create_withdrawal_assignment(withdrawal_cmd, &l1blk) {
+                    if let Err(e) =
+                        state.create_withdrawal_assignment(withdrawal_cmd, l1_block_commitment)
+                    {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.
                         panic!("Failed to create withdrawal assignment: {e}",);

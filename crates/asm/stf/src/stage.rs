@@ -102,16 +102,24 @@ impl Stage for ProcessStage<'_> {
 /// Stage to handle messages exchanged between subprotocols in execution.
 pub(crate) struct FinishStage<'m> {
     manager: &'m mut SubprotoManager,
+    l1_block_commitment: &'m L1BlockCommitment,
 }
 
 impl<'m> FinishStage<'m> {
-    pub(crate) fn new(manager: &'m mut SubprotoManager) -> Self {
-        Self { manager }
+    pub(crate) fn new(
+        manager: &'m mut SubprotoManager,
+        l1_block_commitment: &'m L1BlockCommitment,
+    ) -> Self {
+        Self {
+            manager,
+            l1_block_commitment,
+        }
     }
 }
 
 impl Stage for FinishStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
-        self.manager.invoke_process_msgs::<S>();
+        self.manager
+            .invoke_process_msgs::<S>(self.l1_block_commitment);
     }
 }

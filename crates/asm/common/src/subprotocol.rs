@@ -64,7 +64,7 @@ use crate::{
 ///         // Process transactions
 ///     }
 ///
-///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], params: &Self::Params) {
+///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1_block_commitment: &L1BlockCommitment) {
 ///         // Process messages
 ///     }
 /// }
@@ -154,13 +154,17 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `msgs` - Slice of messages received from other subprotocols
-    /// * `params` - Subprotocol's current params
+    /// * `l1_block_commitment` - Commitment (height + block hash) of the L1 block being processed
     ///
     /// TODO:
     /// Also generate the event logs that is later needed for other components
     /// to read ASM activity. Return the commitment of the events. The actual
     /// event is defined by the subprotocol and is not visible to the ASM.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], params: &Self::Params);
+    fn process_msgs(
+        state: &mut Self::State,
+        msgs: &[Self::Msg],
+        l1_block_commitment: &L1BlockCommitment,
+    );
 }
 
 /// Generic message relayer interface which subprotocols can use to interact
@@ -218,7 +222,7 @@ pub trait SubprotoHandler {
     fn accept_msg(&mut self, msg: &dyn InterprotoMsg);
 
     /// Processes the buffered messages stored in the handler.
-    fn process_buffered_msgs(&mut self);
+    fn process_buffered_msgs(&mut self, l1_block_commitment: &L1BlockCommitment);
 
     /// Repacks the state into a [`SectionState`] instance.
     fn to_section(&self) -> SectionState;

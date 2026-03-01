@@ -12,12 +12,12 @@ use strata_asm_common::{
     AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging,
 };
-use strata_identifiers::L1BlockCommitment;
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
+use strata_identifiers::L1BlockCommitment;
 use strata_predicate::PredicateKey;
 use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
 
@@ -121,7 +121,11 @@ impl Subprotocol for CheckpointV0Subproto {
     ///
     /// Handles configuration updates emitted by the administration subprotocol such as
     /// sequencer key rotations and rollup verifying key refreshes.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
+    fn process_msgs(
+        state: &mut Self::State,
+        msgs: &[Self::Msg],
+        _l1_block_commitment: &L1BlockCommitment,
+    ) {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
@@ -264,7 +268,8 @@ mod tests {
         let new_key = Buf32::from([42u8; 32]);
         let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];
 
-        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &params);
+        let l1_block_commitment = L1BlockCommitment::default();
+        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1_block_commitment);
 
         match &state.cred_rule {
             CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),

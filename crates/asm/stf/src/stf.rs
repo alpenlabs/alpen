@@ -74,7 +74,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // TODO probably will have change this to repeat the interproto message
     // processing phase until we have no more messages to deliver, or some
     // bounded number of times
-    let mut finish_stage = FinishStage::new(&mut manager);
+    let mut finish_stage = FinishStage::new(&mut manager, &pow_state.last_verified_block);
     spec.call_subprotocols(&mut finish_stage);
 
     // 5. Construct the manifest with the logs.

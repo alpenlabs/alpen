@@ -5,11 +5,11 @@ use strata_asm_common::{
     AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     VerifiedAuxData, logging,
 };
-use strata_identifiers::L1BlockCommitment;
 use strata_asm_params::CheckpointConfig;
 use strata_asm_txs_checkpoint::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_signed_checkpoint_from_envelope,
 };
+use strata_identifiers::L1BlockCommitment;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{handler::handle_checkpoint_tx, state::CheckpointState};
@@ -81,7 +81,11 @@ impl Subprotocol for CheckpointSubprotocol {
         }
     }
 
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
+    fn process_msgs(
+        state: &mut Self::State,
+        msgs: &[Self::Msg],
+        _l1_block_commitment: &L1BlockCommitment,
+    ) {
         // ASM design assumes subprotocols are not adversarial against each other,
         // so no additional validation is performed on incoming messages.
         for msg in msgs {

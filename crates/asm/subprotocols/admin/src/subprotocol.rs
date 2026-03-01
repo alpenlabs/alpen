@@ -85,7 +85,7 @@ impl Subprotocol for AdministrationSubprotocol {
     fn process_msgs(
         _state: &mut AdministrationSubprotoState,
         _msgs: &[Self::Msg],
-        _params: &Self::Params,
+        _l1_block_commitment: &L1BlockCommitment,
     ) {
     }
 }

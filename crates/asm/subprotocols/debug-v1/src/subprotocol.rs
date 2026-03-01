@@ -61,7 +61,11 @@ impl Subprotocol for DebugSubproto {
         }
     }
 
-    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg], _params: &Self::Params) {
+    fn process_msgs(
+        _state: &mut Self::State,
+        _msgs: &[Self::Msg],
+        _l1_block_commitment: &L1BlockCommitment,
+    ) {
         // No messages to process for the debug subprotocol
     }
 }
