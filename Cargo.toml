@@ -316,7 +316,7 @@ make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
 # IMPORTANT: ensure alloy-* and revm packages are of the same version as inside reth dependency
 # reth dependencies:
-alloy = { version = "1.0.41", features = [
+alloy = { version = "1.6.3", features = [
   "std",
   "rpc-client-ws",
   "network",
@@ -417,7 +417,7 @@ sp1-helper = "5.2.1"
 sp1-sdk = "5.2.1"
 sp1-verifier = "5.2.1"
 
-anyhow = "1.0.86"
+anyhow = "1.0.101"
 arbitrary = { version = "1.3.2", features = ["derive"] }
 argh = "0.1"
 async-trait = "0.1.80"
@@ -438,7 +438,7 @@ borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.11.1"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
-clap = { version = "4.5.39", default-features = false, features = ["derive"] }
+clap = { version = "4.5.58", default-features = false, features = ["derive"] }
 corepc-node = { version = "0.10.0", features = ["29_0"] }
 criterion = { version = "0.7.0", features = ["html_reports"] }
 deadpool = "0.12.1"
@@ -466,7 +466,7 @@ opentelemetry-otlp = { version = "0.26", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
 parking_lot = "0.12.3"
 paste = "1.0"
-proptest = "1.9.0"
+proptest = "1.10.0"
 rand = "0.8.5"
 rand_chacha = { version = "0.3.1", default-features = false }
 rand_core = { version = "0.6", default-features = false }
@@ -487,7 +487,7 @@ sha2 = "0.10.8"
 shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
 sled = "0.34.7"
-tempfile = "3.10.1"
+tempfile = "3.25.0"
 terrors = "0.3.0"
 thiserror = "2.0.11"
 threadpool = "1.8"
@@ -499,7 +499,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { version = "1.21", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
 ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
