@@ -52,6 +52,11 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
         .check_and_update(input.header)
         .map_err(AsmError::InvalidL1Header)?;
 
+    // After `check_and_update`, `last_verified_block` points to the block we
+    // just validated — i.e. the L1 block whose transactions we are about to
+    // feed into subprotocols.
+    let current_l1ref = &pow_state.last_verified_block;
+
     let mut manager = SubprotoManager::new();
 
     // 2. LOAD: Initialize each subprotocol in the subproto manager with aux input data.
@@ -62,7 +67,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // This stage performs the actual state transitions for each subprotocol.
     let mut process_stage = ProcessStage::new(
         &mut manager,
-        &pow_state.last_verified_block,
+        current_l1ref,
         &pre_state.chain_view.history_accumulator,
         input.protocol_txs,
         &input.aux_data,
@@ -80,8 +85,8 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // 5. Construct the manifest with the logs.
     let (sections, logs) = manager.export_sections_and_logs();
     let manifest = AsmManifest::new(
-        pow_state.last_verified_block.height_u64(),
-        *pow_state.last_verified_block.blkid(),
+        current_l1ref.height_u64(),
+        *current_l1ref.blkid(),
         input.wtxids_root.into(),
         logs,
     );
