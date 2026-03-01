@@ -37,7 +37,7 @@ impl Subprotocol for DebugSubproto {
     fn process_txs(
         _state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        _l1_block_commitment: &L1BlockCommitment,
+        _l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
@@ -64,7 +64,7 @@ impl Subprotocol for DebugSubproto {
     fn process_msgs(
         _state: &mut Self::State,
         _msgs: &[Self::Msg],
-        _l1_block_commitment: &L1BlockCommitment,
+        _l1ref: &L1BlockCommitment,
     ) {
         // No messages to process for the debug subprotocol
     }

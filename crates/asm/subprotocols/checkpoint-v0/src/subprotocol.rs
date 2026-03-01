@@ -74,12 +74,12 @@ impl Subprotocol for CheckpointV0Subproto {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        let current_l1_height = l1_block_commitment.height();
+        let current_l1_height = l1ref.height();
         let current_l1_height_u64 = current_l1_height.to_consensus_u32() as u64;
 
         for tx in txs {
@@ -124,7 +124,7 @@ impl Subprotocol for CheckpointV0Subproto {
     fn process_msgs(
         state: &mut Self::State,
         msgs: &[Self::Msg],
-        _l1_block_commitment: &L1BlockCommitment,
+        _l1ref: &L1BlockCommitment,
     ) {
         for msg in msgs {
             match msg {
@@ -268,8 +268,8 @@ mod tests {
         let new_key = Buf32::from([42u8; 32]);
         let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];
 
-        let l1_block_commitment = L1BlockCommitment::default();
-        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1_block_commitment);
+        let l1ref = L1BlockCommitment::default();
+        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1ref);
 
         match &state.cred_rule {
             CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),

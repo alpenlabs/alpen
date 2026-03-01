@@ -67,12 +67,12 @@ impl Subprotocol for CheckpointSubprotocol {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        let current_l1_height = l1_block_commitment.height_u32();
+        let current_l1_height = l1ref.height_u32();
 
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
@@ -84,7 +84,7 @@ impl Subprotocol for CheckpointSubprotocol {
     fn process_msgs(
         state: &mut Self::State,
         msgs: &[Self::Msg],
-        _l1_block_commitment: &L1BlockCommitment,
+        _l1ref: &L1BlockCommitment,
     ) {
         // ASM design assumes subprotocols are not adversarial against each other,
         // so no additional validation is performed on incoming messages.

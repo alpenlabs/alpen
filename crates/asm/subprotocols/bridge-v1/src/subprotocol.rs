@@ -86,7 +86,7 @@ impl Subprotocol for BridgeV1Subproto {
     ///
     /// - `state` - Mutable reference to the bridge state
     /// - `txs` - Array of transaction input references to process
-    /// - `l1_block_commitment` - Commitment of the L1 block whose transactions are being processed
+    /// - `l1ref` - L1 block being processed
     /// - `_verified_aux_data` - Verified auxiliary data (unused in Bridge V1)
     /// - `relayer` - Message relayer for emitting logs and events
     ///
@@ -113,7 +113,7 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
@@ -136,7 +136,7 @@ impl Subprotocol for BridgeV1Subproto {
         }
 
         // After processing all transactions, reassign expired assignments
-        match state.reassign_expired_assignments(l1_block_commitment) {
+        match state.reassign_expired_assignments(l1ref) {
             Ok(reassigned_deposits) => {
                 info!(
                     count = reassigned_deposits.len(),
@@ -177,13 +177,13 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_msgs(
         state: &mut Self::State,
         msgs: &[Self::Msg],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
     ) {
         for msg in msgs {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
                     if let Err(e) =
-                        state.create_withdrawal_assignment(withdrawal_cmd, l1_block_commitment)
+                        state.create_withdrawal_assignment(withdrawal_cmd, l1ref)
                     {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.

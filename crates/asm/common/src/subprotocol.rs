@@ -56,7 +56,7 @@ use crate::{
 ///     fn process_txs(
 ///         state: &mut Self::State,
 ///         txs: &[TxInputRef],
-///         l1_block_commitment: &L1BlockCommitment,
+///         l1ref: &L1BlockCommitment,
 ///         verified_aux_data: &VerifiedAuxData,
 ///         relayer: &mut impl MsgRelayer,
 ///         params: &Self::Params,
@@ -64,7 +64,7 @@ use crate::{
 ///         // Process transactions
 ///     }
 ///
-///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1_block_commitment: &L1BlockCommitment) {
+///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment) {
 ///         // Process messages
 ///     }
 /// }
@@ -132,15 +132,14 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
-    /// * `l1_block_commitment` - Commitment (height + block hash) of the L1 block whose
-    ///   transactions are being processed
+    /// * `l1ref` - L1 block being processed
     /// * `verified_aux_data` - Verified auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
@@ -154,7 +153,7 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `msgs` - Slice of messages received from other subprotocols
-    /// * `l1_block_commitment` - Commitment (height + block hash) of the L1 block being processed
+    /// * `l1ref` - L1 block being processed
     ///
     /// TODO:
     /// Also generate the event logs that is later needed for other components
@@ -163,7 +162,7 @@ pub trait Subprotocol: 'static {
     fn process_msgs(
         state: &mut Self::State,
         msgs: &[Self::Msg],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
     );
 }
 
@@ -206,7 +205,7 @@ pub trait SubprotoHandler {
         &mut self,
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     );
 
@@ -222,7 +221,7 @@ pub trait SubprotoHandler {
     fn accept_msg(&mut self, msg: &dyn InterprotoMsg);
 
     /// Processes the buffered messages stored in the handler.
-    fn process_buffered_msgs(&mut self, l1_block_commitment: &L1BlockCommitment);
+    fn process_buffered_msgs(&mut self, l1ref: &L1BlockCommitment);
 
     /// Repacks the state into a [`SectionState`] instance.
     fn to_section(&self) -> SectionState;

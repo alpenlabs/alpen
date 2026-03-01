@@ -52,12 +52,12 @@ impl Subprotocol for AdministrationSubprotocol {
     fn process_txs(
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {
-        let current_height = l1_block_commitment.height_u64();
+        let current_height = l1ref.height_u64();
 
         // Phase 1: Execute any pending updates that have reached their activation height
         handle_pending_updates(state, relayer, current_height);
@@ -85,7 +85,7 @@ impl Subprotocol for AdministrationSubprotocol {
     fn process_msgs(
         _state: &mut AdministrationSubprotoState,
         _msgs: &[Self::Msg],
-        _l1_block_commitment: &L1BlockCommitment,
+        _l1ref: &L1BlockCommitment,
     ) {
     }
 }

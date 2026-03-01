@@ -58,7 +58,7 @@ impl Stage for PreProcessStage<'_> {
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
-    l1_block_commitment: &'c L1BlockCommitment,
+    l1ref: &'c L1BlockCommitment,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
     verified_aux_data: VerifiedAuxData,
 }
@@ -66,7 +66,7 @@ pub(crate) struct ProcessStage<'c> {
 impl<'c> ProcessStage<'c> {
     pub(crate) fn new(
         manager: &'c mut SubprotoManager,
-        l1_block_commitment: &'c L1BlockCommitment,
+        l1ref: &'c L1BlockCommitment,
         history_accumulator: &'c AsmHistoryAccumulatorState,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
         aux_data: &'c AuxData,
@@ -76,7 +76,7 @@ impl<'c> ProcessStage<'c> {
 
         Self {
             manager,
-            l1_block_commitment,
+            l1ref,
             tx_bufs,
             verified_aux_data,
         }
@@ -93,7 +93,7 @@ impl Stage for ProcessStage<'_> {
 
         self.manager.invoke_process_txs::<S>(
             txs,
-            self.l1_block_commitment,
+            self.l1ref,
             &self.verified_aux_data,
         );
     }
@@ -102,17 +102,17 @@ impl Stage for ProcessStage<'_> {
 /// Stage to handle messages exchanged between subprotocols in execution.
 pub(crate) struct FinishStage<'m> {
     manager: &'m mut SubprotoManager,
-    l1_block_commitment: &'m L1BlockCommitment,
+    l1ref: &'m L1BlockCommitment,
 }
 
 impl<'m> FinishStage<'m> {
     pub(crate) fn new(
         manager: &'m mut SubprotoManager,
-        l1_block_commitment: &'m L1BlockCommitment,
+        l1ref: &'m L1BlockCommitment,
     ) -> Self {
         Self {
             manager,
-            l1_block_commitment,
+            l1ref,
         }
     }
 }
@@ -120,6 +120,6 @@ impl<'m> FinishStage<'m> {
 impl Stage for FinishStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
         self.manager
-            .invoke_process_msgs::<S>(self.l1_block_commitment);
+            .invoke_process_msgs::<S>(self.l1ref);
     }
 }

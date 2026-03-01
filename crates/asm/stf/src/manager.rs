@@ -56,7 +56,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         &mut self,
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     ) {
         let relayer = relayer
@@ -67,19 +67,19 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         S::process_txs(
             &mut self.state,
             txs,
-            l1_block_commitment,
+            l1ref,
             verified_aux_data,
             relayer,
             &self.params,
         );
     }
 
-    fn process_buffered_msgs(&mut self, l1_block_commitment: &L1BlockCommitment) {
+    fn process_buffered_msgs(&mut self, l1ref: &L1BlockCommitment) {
         // TODO probably will make this more sophisticated
         S::process_msgs(
             &mut self.state,
             &self.interproto_msg_buf,
-            l1_block_commitment,
+            l1ref,
         )
     }
 
@@ -137,7 +137,7 @@ impl SubprotoManager {
     pub(crate) fn invoke_process_txs<S: Subprotocol>(
         &mut self,
         txs: &[TxInputRef<'_>],
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     ) {
         // We temporarily take the handler out of the map so we can call
@@ -146,19 +146,19 @@ impl SubprotoManager {
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self, l1_block_commitment, verified_aux_data);
+        h.process_txs(txs, self, l1ref, verified_aux_data);
         self.insert_handler(h);
     }
 
     /// Dispatches buffered inter-protocol message processing to the handler.
     pub(crate) fn invoke_process_msgs<S: Subprotocol>(
         &mut self,
-        l1_block_commitment: &L1BlockCommitment,
+        l1ref: &L1BlockCommitment,
     ) {
         let h = self
             .get_handler_mut(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_buffered_msgs(l1_block_commitment)
+        h.process_buffered_msgs(l1ref)
     }
 
     fn insert_handler(&mut self, handler: Box<dyn SubprotoHandler>) {
