@@ -2621,11 +2621,11 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bdk_bitcoind_rpc"
-version = "0.17.1"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac1a1da33a22949c3e2b3a715431eaed50c2c9278c8cdac06f0254b7659291f"
+checksum = "99a9a7a93a0c377d1858263122afe0565e6b38800fe39b2025f217e01f146294"
 dependencies = [
- "bdk_core",
+ "bdk_core 0.6.2",
  "bitcoin",
  "bitcoincore-rpc",
 ]
@@ -2636,7 +2636,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4955734f97b2baed3f36d16ae7c203fdde31ae85391ac44ee3cbcaf0886db5ce"
 dependencies = [
- "bdk_core",
+ "bdk_core 0.4.1",
  "bitcoin",
  "miniscript",
  "rusqlite",
@@ -2655,13 +2655,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bdk_core"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dbbe4aad0c898bfeb5253c222be3ea3dccfb380a07e72c87e3e4ed6664a6753"
+dependencies = [
+ "bitcoin",
+]
+
+[[package]]
 name = "bdk_esplora"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7fdf5efbebabc0c0bb46c0348ef0d4db505856c7d6c5d50cebba1e5eda5fe4"
 dependencies = [
  "async-trait",
- "bdk_core",
+ "bdk_core 0.4.1",
  "esplora-client",
  "futures",
 ]
@@ -4198,7 +4207,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.114",
 ]
 
 [[package]]
