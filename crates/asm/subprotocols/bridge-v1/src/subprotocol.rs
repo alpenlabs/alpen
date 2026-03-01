@@ -70,38 +70,11 @@ impl Subprotocol for BridgeV1Subproto {
         }
     }
 
-    /// Processes transactions for the Bridge V1 subprotocol and handles expired assignment
-    /// reassignment.
+    /// Processes transactions and reassigns expired assignments.
     ///
-    /// This function is the main transaction processing entry point that:
-    /// 1. Processes each transaction based on its type:
-    ///    - **Deposit transactions** (`DEPOSIT_TX_TYPE`): Validates and records Bitcoin deposits in
-    ///      the bridge state, making them available for withdrawal assignment
-    ///    - **Withdrawal transactions** (`WITHDRAWAL_TX_TYPE`): Validates and processes withdrawal
-    ///      fulfillments, removing completed assignments from the state
-    /// 2. After processing all transactions, reassigns any expired assignments to new operators
-    ///    that haven't previously failed on the same withdrawal
-    ///
-    /// # Parameters
-    ///
-    /// - `state` - Mutable reference to the bridge state
-    /// - `txs` - Array of transaction input references to process
-    /// - `l1ref` - L1 block being processed
-    /// - `_verified_aux_data` - Verified auxiliary data (unused in Bridge V1)
-    /// - `relayer` - Message relayer for emitting logs and events
-    ///
-    /// # Transaction Types Processed
-    ///
-    /// - **Deposit transactions**: Bitcoin transactions that lock funds in the bridge's multisig,
-    ///   creating new deposit entries that can be assigned for withdrawal
-    /// - **Withdrawal transactions**: Bitcoin transactions that fulfill assigned withdrawals,
-    ///   completing the bridge process and removing assignments
-    ///
-    /// # Post-Processing
-    ///
-    /// After all transactions are processed, the function identifies and reassigns expired
-    /// assignments using the current Bitcoin block height from the anchor state. This ensures
-    /// that failed operators don't block withdrawals indefinitely.
+    /// The function follows a two-phase approach:
+    /// 1. **Transaction processing**: Handles incoming bridge transactions
+    /// 2. **Post-processing**: Reassigns any expired assignments to new operators
     ///
     /// # Panics
     ///
@@ -174,17 +147,11 @@ impl Subprotocol for BridgeV1Subproto {
     ///
     /// Both conditions represent unrecoverable protocol violations where continued operation
     /// poses significant risk of fund loss.
-    fn process_msgs(
-        state: &mut Self::State,
-        msgs: &[Self::Msg],
-        l1ref: &L1BlockCommitment,
-    ) {
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment) {
         for msg in msgs {
             match msg {
                 BridgeIncomingMsg::DispatchWithdrawal(withdrawal_cmd) => {
-                    if let Err(e) =
-                        state.create_withdrawal_assignment(withdrawal_cmd, l1ref)
-                    {
+                    if let Err(e) = state.create_withdrawal_assignment(withdrawal_cmd, l1ref) {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.
                         panic!("Failed to create withdrawal assignment: {e}",);

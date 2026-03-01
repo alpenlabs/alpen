@@ -40,15 +40,7 @@ impl Subprotocol for AdministrationSubprotocol {
     ///
     /// The function follows a two-phase approach:
     /// 1. **Pre-processing**: Executes all queued updates that are ready for activation
-    /// 2. **Transaction processing**: Handles incoming multisig actions (updates/cancellations)
-    ///
-    /// # Transaction Types Processed
-    ///
-    /// - **Multisig update actions**: Governance transactions that propose protocol changes,
-    ///   operator set updates, or parameter modifications. These are validated and are queued or
-    ///   executed depending upon the action.
-    /// - **Multisig cancel actions**: Governance transactions that remove previously queued updates
-    ///   from the execution queue.
+    /// 2. **Transaction processing**: Handles incoming multisig actions
     fn process_txs(
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
