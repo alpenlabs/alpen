@@ -508,7 +508,7 @@ ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
-tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.13.0" }
 
 # This is needed for custom build of SP1
 [profile.release.build-override]
