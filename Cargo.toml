@@ -423,7 +423,7 @@ argh = "0.1"
 async-trait = "0.1.80"
 base64 = "0.22.1"
 bdk_bitcoind_rpc = "0.17.1"
-bdk_esplora = { version = "0.20.1", features = [
+bdk_esplora = { version = "0.22.1", features = [
   "async-https",
   "async-https-rustls",
   "tokio",
