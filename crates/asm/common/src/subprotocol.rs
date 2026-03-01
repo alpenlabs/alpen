@@ -164,11 +164,7 @@ pub trait Subprotocol: 'static {
     /// Also generate the event logs that is later needed for other components
     /// to read ASM activity. Return the commitment of the events. The actual
     /// event is defined by the subprotocol and is not visible to the ASM.
-    fn process_msgs(
-        state: &mut Self::State,
-        msgs: &[Self::Msg],
-        l1ref: &L1BlockCommitment,
-    );
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment);
 }
 
 /// Generic message relayer interface which subprotocols can use to interact

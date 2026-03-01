@@ -76,11 +76,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
 
     fn process_buffered_msgs(&mut self, l1ref: &L1BlockCommitment) {
         // TODO probably will make this more sophisticated
-        S::process_msgs(
-            &mut self.state,
-            &self.interproto_msg_buf,
-            l1ref,
-        )
+        S::process_msgs(&mut self.state, &self.interproto_msg_buf, l1ref)
     }
 
     fn to_section(&self) -> SectionState {
@@ -151,10 +147,7 @@ impl SubprotoManager {
     }
 
     /// Dispatches buffered inter-protocol message processing to the handler.
-    pub(crate) fn invoke_process_msgs<S: Subprotocol>(
-        &mut self,
-        l1ref: &L1BlockCommitment,
-    ) {
+    pub(crate) fn invoke_process_msgs<S: Subprotocol>(&mut self, l1ref: &L1BlockCommitment) {
         let h = self
             .get_handler_mut(S::ID)
             .expect("asm: unloaded subprotocol");

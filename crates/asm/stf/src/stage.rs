@@ -91,11 +91,8 @@ impl Stage for ProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        self.manager.invoke_process_txs::<S>(
-            txs,
-            self.l1ref,
-            &self.verified_aux_data,
-        );
+        self.manager
+            .invoke_process_txs::<S>(txs, self.l1ref, &self.verified_aux_data);
     }
 }
 
@@ -106,20 +103,13 @@ pub(crate) struct FinishStage<'m> {
 }
 
 impl<'m> FinishStage<'m> {
-    pub(crate) fn new(
-        manager: &'m mut SubprotoManager,
-        l1ref: &'m L1BlockCommitment,
-    ) -> Self {
-        Self {
-            manager,
-            l1ref,
-        }
+    pub(crate) fn new(manager: &'m mut SubprotoManager, l1ref: &'m L1BlockCommitment) -> Self {
+        Self { manager, l1ref }
     }
 }
 
 impl Stage for FinishStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
-        self.manager
-            .invoke_process_msgs::<S>(self.l1ref);
+        self.manager.invoke_process_msgs::<S>(self.l1ref);
     }
 }

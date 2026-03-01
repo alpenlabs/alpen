@@ -81,11 +81,7 @@ impl Subprotocol for CheckpointSubprotocol {
         }
     }
 
-    fn process_msgs(
-        state: &mut Self::State,
-        msgs: &[Self::Msg],
-        _l1ref: &L1BlockCommitment,
-    ) {
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _l1ref: &L1BlockCommitment) {
         // ASM design assumes subprotocols are not adversarial against each other,
         // so no additional validation is performed on incoming messages.
         for msg in msgs {

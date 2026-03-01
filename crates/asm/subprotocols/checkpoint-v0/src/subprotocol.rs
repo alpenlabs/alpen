@@ -121,11 +121,7 @@ impl Subprotocol for CheckpointV0Subproto {
     ///
     /// Handles configuration updates emitted by the administration subprotocol such as
     /// sequencer key rotations and rollup verifying key refreshes.
-    fn process_msgs(
-        state: &mut Self::State,
-        msgs: &[Self::Msg],
-        _l1ref: &L1BlockCommitment,
-    ) {
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _l1ref: &L1BlockCommitment) {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
