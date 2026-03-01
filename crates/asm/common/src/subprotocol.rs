@@ -22,11 +22,16 @@ use crate::{
 /// Each subprotocol defines its own transaction processing logic, message handling,
 /// and state management.
 ///
+/// The ASM filters SPS-50 transactions by subprotocol ID and passes only the relevant
+/// transactions to each subprotocol. Each subprotocol then:
 ///
-/// 1. processes each new L1 block to update its own state and emit outgoing inter-protocol
-///    messages, and then
-/// 2. receives incoming messages to finalize and serialize its state for inclusion in the global
-///    AnchorState.
+/// 1. processes the SPS-50 transactions matching its ID to update its own state, create
+///    inter-protocol messages to be consumed by other subprotocols, and emit logs, and then
+/// 2. receives incoming inter-protocol messages from other subprotocols to finalize and serialize
+///    its state for inclusion in the global AnchorState.
+///
+/// The ASM design assumes subprotocols are not adversarial against each other, so no additional
+/// validation is performed on incoming messages.
 ///
 /// # Example
 ///
