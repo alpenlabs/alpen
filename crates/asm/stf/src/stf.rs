@@ -19,29 +19,6 @@ use crate::{
 /// This function performs the main ASM state transition by validating the block header continuity,
 /// loading subprotocols with auxiliary input data, processing protocol-specific transactions,
 /// handling inter-protocol communication, and constructing the final state with logs.
-///
-/// # Arguments
-///
-/// * `pre_state` - The current anchor state containing chain view and subprotocol states
-/// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
-///   data
-///
-/// # Returns
-///
-/// Returns an `AsmResult` containing:
-/// - `AsmStfOutput` with the new anchor state and execution logs on success
-/// - `AsmError` if validation fails or state transition encounters an error
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The block header fails PoW continuity validation
-/// - Subprotocol loading, processing, or finishing fails
-///
-/// # Type Parameters
-///
-/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
-///   configs
 pub fn compute_asm_transition<'i, S: AsmSpec>(
     spec: &S,
     pre_state: &AnchorState,
