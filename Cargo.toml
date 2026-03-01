@@ -504,7 +504,7 @@ zeroize = { version = "1.8.1", features = ["derive"] }
 
 ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 ssz_codegen = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
-ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
+ssz_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.13.0" }
 ssz_primitives = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
 tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.12.4" }
