@@ -6,6 +6,8 @@ use strata_l1_txfmt::SubprotocolId;
 use strata_merkle::error::MerkleError;
 use thiserror::Error;
 
+use crate::aux::AuxError;
+
 /// Convenience result wrapper.
 pub type AsmResult<T> = Result<T, AsmError>;
 
@@ -47,4 +49,8 @@ pub enum AsmError {
     /// Wrapped error from manifest-types crate
     #[error(transparent)]
     ManifestError(#[from] AsmManifestError),
+
+    /// Failed to verify auxiliary data.
+    #[error("invalid auxiliary data")]
+    InvalidAuxData(#[from] AuxError),
 }

@@ -3,7 +3,9 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState, VerifiedAuxData,
+};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -52,6 +54,9 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
         .check_and_update(input.header)
         .map_err(AsmError::InvalidL1Header)?;
 
+    let verified_aux_data =
+        VerifiedAuxData::try_new(&input.aux_data, &pre_state.chain_view.history_accumulator)?;
+
     // After `check_and_update`, `last_verified_block` points to the block we
     // just validated — i.e. the L1 block whose transactions we are about to
     // feed into subprotocols.
@@ -68,9 +73,8 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     let mut process_stage = ProcessStage::new(
         &mut manager,
         current_l1ref,
-        &pre_state.chain_view.history_accumulator,
         input.protocol_txs,
-        &input.aux_data,
+        verified_aux_data,
     );
     spec.call_subprotocols(&mut process_stage);
 

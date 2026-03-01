@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AsmHistoryAccumulatorState, AuxData, AuxRequestCollector, AuxRequests, Stage,
-    Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    AnchorState, AuxRequestCollector, AuxRequests, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
 };
 use strata_identifiers::L1BlockCommitment;
 
@@ -67,13 +67,9 @@ impl<'c> ProcessStage<'c> {
     pub(crate) fn new(
         manager: &'c mut SubprotoManager,
         l1ref: &'c L1BlockCommitment,
-        history_accumulator: &'c AsmHistoryAccumulatorState,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_data: &'c AuxData,
+        verified_aux_data: VerifiedAuxData,
     ) -> Self {
-        let verified_aux_data = VerifiedAuxData::try_new(aux_data, history_accumulator)
-            .expect("asm: failed to create verified aux data");
-
         Self {
             manager,
             l1ref,
