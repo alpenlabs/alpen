@@ -12,10 +12,10 @@ use crate::{InputMessage, UpdateLedgerInfo, errors::ProgramResult};
 /// receives, and the kinds of checks that get performed secretly as part of the
 /// process of proving an update.
 ///
-/// These functions are structured in such a way that an implementor can only
-/// ever make modifications to the committed account state using data that is
-/// ensured to be durably stored, but we can have some rich state that we can
-/// use to perform checks across the state.
+/// These functions are structured in such a way that an impl can only ever made
+/// modifications to the committed account state using data that is ensured to
+/// be durably stored, but we can have some rich state that we can use to
+/// perform checks across the state.
 pub trait SnarkAccountProgram {
     /// Account inner state.
     type State: IInnerState;

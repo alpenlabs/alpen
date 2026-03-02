@@ -9,7 +9,7 @@ use crate::ee_program::apply_decoded_message;
 /// Applies state changes from list of messages.
 ///
 /// Returns the successfully parsed messages along with their metadata.
-/// Unknown/unparseable messages are skipped.
+/// Unknown/unparsable messages are skipped.
 pub fn apply_input_messages(
     astate: &mut EeAccountState,
     msgs: &[MessageEntry],

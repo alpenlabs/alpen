@@ -25,7 +25,7 @@ pub enum ProgramError<I: Error> {
     #[error("malformed coinput")]
     MalformedCoinput,
 
-    /// When a coinput is checked to "match" the message and it doens't match.
+    /// When a coinput is checked to "match" the message and it doesn't match.
     ///
     /// An example of this is when the message is just the hash of the coinput
     /// expected to be used with it.
