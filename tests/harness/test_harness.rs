@@ -61,7 +61,6 @@ use strata_asm_params::{
 };
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_btc_types::BlockHashExt;
-use strata_db_types::mmr_helpers::leaf_index_to_pos;
 use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
@@ -305,7 +304,7 @@ impl AsmTestHarness {
 
     /// Get the number of MMR leaves (manifest hashes) stored.
     pub fn get_mmr_leaf_count(&self) -> usize {
-        self.context.mmr_metadata.lock().unwrap().num_leaves as usize
+        self.context.mmr_leaves.lock().unwrap().len()
     }
 
     /// Get a manifest hash by leaf index.
@@ -320,14 +319,7 @@ impl AsmTestHarness {
 
     /// Get all MMR leaf hashes in leaf-index order.
     pub fn get_mmr_leaves(&self) -> Vec<[u8; 32]> {
-        let nodes = self.context.mmr_nodes.lock().unwrap();
-        let metadata = self.context.mmr_metadata.lock().unwrap();
-        (0..metadata.num_leaves)
-            .map(|leaf_idx| {
-                let pos = leaf_index_to_pos(leaf_idx);
-                nodes[&pos]
-            })
-            .collect()
+        self.context.mmr_leaves.lock().unwrap().clone()
     }
 
     // ========================================================================

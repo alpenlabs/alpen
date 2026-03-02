@@ -8,7 +8,7 @@ use strata_db_types::DbError;
 use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
-use strata_storage::{AsmStateManager, L1BlockManager, MmrHandle};
+use strata_storage::{AsmStateManager, L1BlockManager, MmrIndexHandle};
 use tokio::runtime::Handle;
 use tracing::{self, error};
 
@@ -22,7 +22,7 @@ pub struct AsmWorkerCtx {
     l1man: Arc<L1BlockManager>,
     asmman: Arc<AsmStateManager>,
     /// MMR handle for ASM manifest MMR
-    mmr_handle: MmrHandle,
+    mmr_handle: MmrIndexHandle,
 }
 
 impl AsmWorkerCtx {
@@ -31,7 +31,7 @@ impl AsmWorkerCtx {
         bitcoin_client: Arc<Client>,
         l1man: Arc<L1BlockManager>,
         asmman: Arc<AsmStateManager>,
-        mmr_handle: MmrHandle,
+        mmr_handle: MmrIndexHandle,
     ) -> Self {
         Self {
             handle,
@@ -130,11 +130,17 @@ impl WorkerContext for AsmWorkerCtx {
             })
     }
 
-    fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
-        self.mmr_handle.generate_proof(index).map_err(|e| {
-            error!(?e, index, "Failed to generate MMR proof");
-            WorkerError::MmrProofFailed { index }
-        })
+    fn generate_mmr_proof_at(
+        &self,
+        index: u64,
+        at_leaf_count: u64,
+    ) -> WorkerResult<strata_merkle::MerkleProofB32> {
+        self.mmr_handle
+            .generate_proof_at(index, at_leaf_count)
+            .map_err(|e| {
+                error!(?e, index, "Failed to generate MMR proof");
+                WorkerError::MmrProofFailed { index }
+            })
     }
 
     fn get_manifest_hash(&self, index: u64) -> WorkerResult<Option<Hash>> {

@@ -8,7 +8,6 @@ pub mod checkpoint;
 pub mod chunked_envelope;
 pub mod client_state;
 mod config;
-pub mod global_mmr;
 mod init;
 mod instrumentation;
 pub mod l1;
@@ -36,7 +35,6 @@ use checkpoint::db::CheckpointDBSled;
 use chunked_envelope::db::L1ChunkedEnvelopeDBSled;
 use client_state::db::ClientStateDBSled;
 pub use config::SledDbConfig;
-pub use global_mmr::GlobalMmrDb;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
@@ -94,7 +92,7 @@ pub struct SledBackend {
     prover_db: Arc<ProofDBSled>,
     broadcast_db: Arc<L1BroadcastDBSled>,
     chunked_envelope_db: Arc<L1ChunkedEnvelopeDBSled>,
-    global_mmr_db: Arc<GlobalMmrDb>,
+    mmr_index_db: Arc<MmrIndexDb>,
     mempool_db: Arc<MempoolDBSled>,
 }
 
@@ -119,7 +117,7 @@ impl SledBackend {
         let checkpoint_db = Arc::new(CheckpointDBSled::new(db_ref.clone(), config_ref.clone())?);
         let writer_db = Arc::new(L1WriterDBSled::new(db_ref.clone(), config_ref.clone())?);
         let prover_db = Arc::new(ProofDBSled::new(db_ref.clone(), config_ref.clone())?);
-        let global_mmr_db = Arc::new(GlobalMmrDb::new(db_ref.clone(), config_ref.clone())?);
+        let mmr_index_db = Arc::new(MmrIndexDb::new(db_ref.clone(), config_ref.clone())?);
         let broadcast_db = Arc::new(L1BroadcastDBSled::new(db_ref.clone(), config_ref.clone())?);
         let chunked_envelope_db = Arc::new(L1ChunkedEnvelopeDBSled::new(
             db_ref.clone(),
@@ -141,7 +139,7 @@ impl SledBackend {
             prover_db,
             broadcast_db,
             chunked_envelope_db,
-            global_mmr_db,
+            mmr_index_db,
             mempool_db,
         })
     }
@@ -212,8 +210,8 @@ impl DatabaseBackend for SledBackend {
 }
 
 impl SledBackend {
-    /// Get the global MMR database
-    pub fn global_mmr_db(&self) -> Arc<GlobalMmrDb> {
-        self.global_mmr_db.clone()
+    /// Get the MMR index database
+    pub fn mmr_index_db(&self) -> Arc<MmrIndexDb> {
+        self.mmr_index_db.clone()
     }
 }

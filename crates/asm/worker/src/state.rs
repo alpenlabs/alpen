@@ -108,7 +108,13 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
             let span = tracing::debug_span!("asm.stf.aux_resolve");
             let _guard = span.enter();
 
-            let resolver = AuxDataResolver::new(&self.context, self.asm_params.l1_view.blk);
+            let at_leaf_count = cur_state
+                .state()
+                .chain_view
+                .history_accumulator
+                .num_entries();
+            let resolver =
+                AuxDataResolver::new(&self.context, self.asm_params.l1_view.blk, at_leaf_count);
             resolver.resolve(&pre_process.aux_requests)?
         };
 
@@ -310,7 +316,11 @@ mod tests {
             Ok(0)
         }
 
-        fn generate_mmr_proof(&self, _index: u64) -> WorkerResult<strata_merkle::MerkleProofB32> {
+        fn generate_mmr_proof_at(
+            &self,
+            _index: u64,
+            _at_leaf_count: u64,
+        ) -> WorkerResult<strata_merkle::MerkleProofB32> {
             Err(WorkerError::Unimplemented)
         }
 

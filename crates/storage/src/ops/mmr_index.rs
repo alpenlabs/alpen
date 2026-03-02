@@ -1,8 +1,7 @@
 //! MMR index data operation interface.
 
 use strata_db_types::{
-    mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
-    traits::MmrIndexDatabase,
+    traits::MmrIndexDatabase, LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos,
 };
 use strata_identifiers::{Hash, RawMmrId};
 
