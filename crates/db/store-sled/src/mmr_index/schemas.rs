@@ -2,7 +2,7 @@ use strata_db_types::{LeafPos, NodePos};
 use strata_identifiers::RawMmrId;
 use strata_primitives::buf::Buf32;
 
-use crate::{define_table_with_seek_key_codec, define_table_without_codec, impl_borsh_value_codec};
+use crate::define_table_with_seek_key_codec;
 
 define_table_with_seek_key_codec!(
     /// MMR index node storage: (mmr_id, node_pos) -> hash
