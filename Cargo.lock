@@ -13798,7 +13798,6 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-txs-checkpoint",
  "strata-asm-txs-checkpoint-v0",
- "strata-btc-types",
  "strata-predicate",
  "strata-primitives",
 ]

@@ -15,21 +15,33 @@ use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 
 use crate::{
     errors::{CheckpointValidationResult, InvalidCheckpointPayload},
-    state::CheckpointState,
+    state::{CheckpointState, VerifiedWithdrawals},
 };
+
+/// Successful result of checkpoint validation.
+///
+/// Contains the extracted withdrawal intents and a [`VerifiedWithdrawals`] token that must be
+/// passed to the checkpoint state's deduction method to apply the fund update.
+#[derive(Debug)]
+pub struct ValidatedCheckpointWithdrawals {
+    /// Withdrawal intents extracted from the checkpoint's OL logs.
+    pub withdrawal_intents: Vec<(WithdrawOutput, OperatorSelection)>,
+    /// Token proving that the withdrawals have been verified against available funds.
+    pub verified_withdrawals: VerifiedWithdrawals,
+}
 
 /// Validates a checkpoint payload and extracts withdrawal intents.
 ///
 /// This is the single validation function for checkpoint payloads. Once validation succeeds,
-/// the payload can be safely acted upon. Returns extracted withdrawal intents on success.
-// TODO: To decide on how to properly pack `(WithdrawOutput, OperatorSelection)` during review
-// if a named struct is preferred over the tuple.
+/// the caller must use the returned [`ValidatedCheckpointWithdrawals`] to apply state updates.
+///
+/// This function is pure — it does not mutate state.
 pub fn validate_checkpoint_and_extract_withdrawal_intents(
     state: &CheckpointState,
     current_l1_height: u32,
     payload: &SignedCheckpointPayload,
     verified_aux_data: &VerifiedAuxData,
-) -> CheckpointValidationResult<Vec<(WithdrawOutput, OperatorSelection)>> {
+) -> CheckpointValidationResult<ValidatedCheckpointWithdrawals> {
     // 1. Verify sequencer signature over payload
     // BIP-340 Schnorr verification hashes the message internally using tagged hashing,
     // so we pass raw SSZ-encoded bytes (not pre-hashed)
@@ -114,7 +126,14 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     let withdrawal_intents =
         extract_and_validate_withdrawal_intents(payload.inner().sidecar().ol_logs())?;
 
-    Ok(withdrawal_intents)
+    // 8. Verify available funds can cover all withdrawal intents (exact denomination matching)
+    let withdraw_outputs: Vec<_> = withdrawal_intents.iter().map(|(w, _)| w.clone()).collect();
+    let verified_withdrawals = state.verify_can_honor_withdrawals(&withdraw_outputs)?;
+
+    Ok(ValidatedCheckpointWithdrawals {
+        withdrawal_intents,
+        verified_withdrawals,
+    })
 }
 
 /// Constructs a complete checkpoint claim for verification by combining the verified tip state

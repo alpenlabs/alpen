@@ -8,9 +8,8 @@ use strata_asm_common::{
     AsmHistoryAccumulatorState, AuxData, VerifiableManifestHash, VerifiedAuxData,
 };
 use strata_checkpoint_types_ssz::{
-    compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload,
-    CheckpointSidecar, CheckpointTip, L2BlockRange, OLLog, SignedCheckpointPayload,
-    TerminalHeaderComplement,
+    compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
+    CheckpointTip, L2BlockRange, OLLog, SignedCheckpointPayload, TerminalHeaderComplement,
 };
 use strata_crypto::hash;
 use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId};
@@ -256,9 +255,12 @@ impl CheckpointTestHarness {
             arb.generate(),
         );
         let terminal_header_complement_hash = terminal_header_complement.compute_hash();
-        let sidecar =
-            CheckpointSidecar::new(state_diff.clone(), ol_logs.clone(), terminal_header_complement)
-                .unwrap();
+        let sidecar = CheckpointSidecar::new(
+            state_diff.clone(),
+            ol_logs.clone(),
+            terminal_header_complement,
+        )
+        .unwrap();
 
         let state_diff_hash = hash::raw(&state_diff).into();
         let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();

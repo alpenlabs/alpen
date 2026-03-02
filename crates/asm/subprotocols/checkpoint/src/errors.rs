@@ -78,15 +78,16 @@ pub enum InvalidCheckpointPayload {
     #[error("L1 height overflow: verified tip L1 height is at maximum value")]
     L1HeightOverflow,
 
-    /// Withdrawal intents exceed available deposit backing.
+    /// Withdrawal intents cannot be matched to available deposit UTXOs.
     ///
-    /// The checkpoint contains withdrawal intents totaling more satoshis than the
-    /// deposits currently tracked by the checkpoint subprotocol. The checkpoint is
-    /// rejected to prevent the bridge from panicking on unassignable withdrawals.
+    /// Each withdrawal requires an exact-denomination UTXO match. This error is returned when
+    /// a withdrawal intent's amount does not match any available deposit denomination, or when
+    /// there are not enough UTXOs of the required denomination. The checkpoint is rejected to
+    /// prevent the bridge from dispatching unassignable withdrawals.
     #[error(
-        "insufficient deposits: available {available_sat} sat, required {required_sat} sat"
+        "withdrawal intents cannot be honored: no exact denomination match available (available {available_sat} sat across all denominations, withdrawals require {required_sat} sat)"
     )]
-    InsufficientDeposits {
+    InsufficientFunds {
         available_sat: u64,
         required_sat: u64,
     },

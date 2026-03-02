@@ -87,12 +87,12 @@ impl WorkerContext for TestAsmWorkerContext {
         }
 
         // Fetch from regtest. We must handle two calling contexts:
-        // 1. From within a tokio runtime (test thread) — use `block_in_place`
-        //    to avoid "cannot start a runtime from within a runtime" panic.
-        // 2. From the worker's dedicated OS thread (spawned by `spawn_critical`,
-        //    no tokio context) — use the stored handle to drive the future on
-        //    the original runtime where the HTTP client's connection pool lives.
-        let block_hash: BlockHash = (*blockid).into();
+        // 1. From within a tokio runtime (test thread) — use `block_in_place` to avoid "cannot
+        //    start a runtime from within a runtime" panic.
+        // 2. From the worker's dedicated OS thread (spawned by `spawn_critical`, no tokio context)
+        //    — use the stored handle to drive the future on the original runtime where the HTTP
+        //    client's connection pool lives.
+        let block_hash = blockid.to_block_hash();
         let client = self.client.clone();
         let fetch = || async { client.get_block(&block_hash).await };
         let block = if Handle::try_current().is_ok() {
@@ -146,8 +146,7 @@ impl WorkerContext for TestAsmWorkerContext {
 
         // See `get_l1_block` for the two-context branching rationale.
         let client = self.client.clone();
-        let fetch =
-            || async move { client.get_raw_transaction_verbosity_zero(&txid_inner).await };
+        let fetch = || async move { client.get_raw_transaction_verbosity_zero(&txid_inner).await };
         let raw_tx_result = if Handle::try_current().is_ok() {
             block_in_place(|| self.tokio_handle.block_on(fetch()))
         } else {

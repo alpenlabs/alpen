@@ -10,15 +10,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_checkpoint::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_asm_txs_checkpoint_v0::CHECKPOINT_V0_SUBPROTOCOL_ID;
-use strata_btc_types::BitcoinAmount;
 use strata_predicate::PredicateKey;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 
 /// Incoming messages for checkpoint subprotocols.
 ///
-/// Messages are routed to either checkpoint V0 (ID=10) or the new checkpoint (ID=1)
-/// based on their variant. Admin configuration updates target V0, while deposit
-/// notifications target the new checkpoint subprotocol.
+/// Messages are routed to both the checkpoint-v0 and the new checkpoint.
+/// Admin configuration updates target both, while deposit notifications
+/// target the new checkpoint subprotocol.
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
 pub enum CheckpointIncomingMsg {
     /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
@@ -29,9 +28,6 @@ pub enum CheckpointIncomingMsg {
     UpdateCheckpointPredicate(PredicateKey),
 
     /// Notification that a deposit has been processed by the bridge subprotocol.
-    ///
-    /// Routed to the new checkpoint subprotocol (ID=1) so it can track available deposit
-    /// value and reject checkpoints whose withdrawal intents exceed available backing.
     DepositProcessed(BitcoinAmount),
 }
 

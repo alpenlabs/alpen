@@ -34,24 +34,22 @@ use bitcoin_bosd::Descriptor;
 use rand::RngCore;
 use ssz::Encode;
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_params::{BridgeV1Config, CheckpointConfig};
-use strata_asm_proto_bridge_v1::{BridgeV1Subproto, BridgeV1State};
-use strata_asm_proto_checkpoint::{
-    state::CheckpointState, subprotocol::CheckpointSubprotocol,
-};
+use strata_asm_params::{BridgeV1InitConfig, CheckpointInitConfig};
+use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
+use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
 use strata_asm_txs_bridge_v1::{
     deposit::DepositTxHeaderAux,
     deposit_request::{
-        DrtHeaderAux, build_deposit_request_spend_info, create_deposit_request_locking_script,
+        build_deposit_request_spend_info, create_deposit_request_locking_script, DrtHeaderAux,
     },
     test_utils::create_test_operators,
 };
 use strata_btc_types::BitcoinAmount;
 use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_codec::VarVec;
-use strata_crypto::{EvenPublicKey, EvenSecretKey, test_utils::schnorr::Musig2Tweak};
+use strata_crypto::{test_utils::schnorr::Musig2Tweak, EvenPublicKey, EvenSecretKey};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_l1_txfmt::ParseConfig;
+use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_ol_chain_types_new::{OLLog, SimpleWithdrawalIntentLogData};
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 use strata_test_utils::ArbitraryGenerator;
@@ -185,18 +183,18 @@ impl BridgeExt for AsmTestHarness {
         let ol_logs = build_withdrawal_ol_logs(withdrawal_amounts);
 
         // 4. Build checkpoint payload with custom OL logs and live manifest hashes
-        let payload = checkpoint_harness.build_payload_with_tip_and_logs(
-            new_tip,
-            ol_logs,
-            &mmr_leaves,
-        );
+        let payload =
+            checkpoint_harness.build_payload_with_tip_and_logs(new_tip, ol_logs, &mmr_leaves);
 
         // 5. Sign with sequencer predicate
         let signed_payload = checkpoint_harness.sign_payload(payload);
 
         // 6. Serialize to SSZ and submit as envelope tx (subprotocol=1, tx_type=1)
         let payload_bytes = signed_payload.as_ssz_bytes();
-        let tx = self.build_envelope_tx(1, 1, payload_bytes).await?;
+        let checkpoint_tag = TagData::new(1, 1, vec![]).expect("valid checkpoint tag");
+        let tx = self
+            .build_envelope_tx(checkpoint_tag, payload_bytes)
+            .await?;
         let block_hash = self.submit_and_mine_tx(&tx).await?;
 
         // 7. Update harness verified tip
@@ -220,9 +218,7 @@ pub fn extract_bridge_state(anchor_state: &AnchorState) -> anyhow::Result<Bridge
 }
 
 /// Extract checkpoint (ID=1) subprotocol state from AnchorState.
-pub fn extract_checkpoint_new_state(
-    anchor_state: &AnchorState,
-) -> anyhow::Result<CheckpointState> {
+pub fn extract_checkpoint_new_state(anchor_state: &AnchorState) -> anyhow::Result<CheckpointState> {
     let section = anchor_state
         .find_section(CheckpointSubprotocol::ID)
         .ok_or_else(|| anyhow::anyhow!("Checkpoint (ID=1) section not found"))?;
@@ -266,9 +262,9 @@ impl AsmTestHarness {
         // mining fee while keeping its deposit output exactly at denomination.
         let deposit_amount: Amount = ctx.denomination.into();
         let drt_output_amount = deposit_amount + fee;
-        let (funding_txid, funding_vout, funding_script, funding_spend_info) =
-            self.create_trivial_funding_utxo(drt_output_amount + fee + Amount::from_sat(1000))
-                .await?;
+        let (funding_txid, funding_vout, funding_script, funding_spend_info) = self
+            .create_trivial_funding_utxo(drt_output_amount + fee + Amount::from_sat(1000))
+            .await?;
 
         // Mine a block to confirm the funding UTXO so Bitcoin Core can
         // resolve its value when computing fees for the DRT.
@@ -364,15 +360,10 @@ impl AsmTestHarness {
         // Sign the DRT input with MuSig2 key-path spend.
         // The DRT P2TR has a merkle root from the recovery tapscript, so we need the
         // TaprootScript tweak.
-        let spend_info = build_deposit_request_spend_info(
-            &ctx.recovery_pk,
-            internal_key,
-            ctx.recovery_delay,
-        );
+        let spend_info =
+            build_deposit_request_spend_info(&ctx.recovery_pk, internal_key, ctx.recovery_delay);
         let tweak = match spend_info.merkle_root() {
-            Some(root) => {
-                Musig2Tweak::TaprootScript(root.to_raw_hash().to_byte_array())
-            }
+            Some(root) => Musig2Tweak::TaprootScript(root.to_raw_hash().to_byte_array()),
             None => Musig2Tweak::TaprootKeySpend,
         };
 
@@ -442,7 +433,7 @@ fn build_withdrawal_ol_logs(withdrawal_amounts: &[u64]) -> Vec<OLLog> {
             let descriptor = Descriptor::new_p2wpkh(&hash160);
             let dest = descriptor.to_bytes();
 
-            let withdrawal_data = SimpleWithdrawalIntentLogData::new(amt, dest)
+            let withdrawal_data = SimpleWithdrawalIntentLogData::new(amt, dest, 0)
                 .expect("withdrawal intent creation should not fail");
             let encoded_payload = strata_codec::encode_to_vec(&withdrawal_data)
                 .expect("withdrawal intent encoding should not fail");
@@ -454,15 +445,15 @@ fn build_withdrawal_ol_logs(withdrawal_amounts: &[u64]) -> Vec<OLLog> {
 
 /// Creates matching checkpoint config and test harness for integration tests.
 ///
-/// Generates signing keys and returns a [`CheckpointConfig`] (for the harness builder)
+/// Generates signing keys and returns a [`CheckpointInitConfig`] (for the harness builder)
 /// and a [`CheckpointTestHarness`] (for building checkpoint payloads).
 pub fn create_test_checkpoint_setup(
     genesis_l1_height: u32,
-) -> (CheckpointConfig, CheckpointTestHarness) {
+) -> (CheckpointInitConfig, CheckpointTestHarness) {
     let genesis_ol_blkid: OLBlockId = ArbitraryGenerator::new().generate();
     let harness = CheckpointTestHarness::new_with_genesis(genesis_l1_height, genesis_ol_blkid);
 
-    let config = CheckpointConfig {
+    let config = CheckpointInitConfig {
         sequencer_predicate: harness.sequencer_predicate(),
         checkpoint_predicate: harness.checkpoint_predicate(),
         genesis_l1_height,
@@ -474,16 +465,16 @@ pub fn create_test_checkpoint_setup(
 
 /// Creates matching bridge config and context for integration tests.
 ///
-/// Generates operator keys and returns a [`BridgeV1Config`] (for the harness builder)
+/// Generates operator keys and returns a [`BridgeV1InitConfig`] (for the harness builder)
 /// and a [`BridgeContext`] (for submitting deposits).
-pub fn create_test_bridge_setup(num_operators: usize) -> (BridgeV1Config, BridgeContext) {
+pub fn create_test_bridge_setup(num_operators: usize) -> (BridgeV1InitConfig, BridgeContext) {
     let (privkeys, pubkeys) = create_test_operators(num_operators);
 
     let denomination = BitcoinAmount::from_sat(1_000_000);
     let recovery_delay = 1008;
     let operator_fee = BitcoinAmount::from_sat(100_000);
 
-    let config = BridgeV1Config {
+    let config = BridgeV1InitConfig {
         operators: pubkeys.clone(),
         denomination,
         assignment_duration: 144,

@@ -35,7 +35,7 @@ async fn test_deposit_updates_checkpoint_available_sum() {
     let denomination = ctx.denomination();
 
     let harness = AsmTestHarnessBuilder::default()
-        .with_bridge_params(bridge_params)
+        .with_bridge_config(bridge_params)
         .with_txindex()
         .build()
         .await
@@ -94,7 +94,7 @@ async fn test_multiple_deposits_accumulate_in_checkpoint() {
     let denomination = ctx.denomination();
 
     let harness = AsmTestHarnessBuilder::default()
-        .with_bridge_params(bridge_params)
+        .with_bridge_config(bridge_params)
         .with_txindex()
         .build()
         .await
@@ -145,8 +145,8 @@ async fn test_withdrawal_deducts_from_deposit_sum() {
     let denomination = ctx.denomination();
 
     let harness = AsmTestHarnessBuilder::default()
-        .with_bridge_params(bridge_params)
-        .with_checkpoint_params(checkpoint_params)
+        .with_bridge_config(bridge_params)
+        .with_checkpoint_config(checkpoint_params)
         .with_txindex()
         .build()
         .await
@@ -212,8 +212,8 @@ async fn test_checkpoint_rejected_when_withdrawals_exceed_deposits() {
     let denomination = ctx.denomination();
 
     let harness = AsmTestHarnessBuilder::default()
-        .with_bridge_params(bridge_params)
-        .with_checkpoint_params(checkpoint_params)
+        .with_bridge_config(bridge_params)
+        .with_checkpoint_config(checkpoint_params)
         .with_txindex()
         .build()
         .await

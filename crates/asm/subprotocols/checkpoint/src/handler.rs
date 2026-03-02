@@ -1,15 +1,15 @@
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
-use strata_asm_common::{
-    AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData,
-    logging,
-};
+use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
 
 use crate::{
-    errors::CheckpointValidationError, state::CheckpointState,
-    verification::validate_checkpoint_and_extract_withdrawal_intents,
+    errors::CheckpointValidationError,
+    state::CheckpointState,
+    verification::{
+        ValidatedCheckpointWithdrawals, validate_checkpoint_and_extract_withdrawal_intents,
+    },
 };
 
 /// Processes a checkpoint transaction from L1.
@@ -44,25 +44,13 @@ pub(crate) fn handle_checkpoint_tx(
         &payload,
         verified_aux_data,
     ) {
-        Ok(withdrawal_intents) => {
+        Ok(ValidatedCheckpointWithdrawals {
+            withdrawal_intents,
+            verified_withdrawals,
+        }) => {
             logging::info!(epoch, "checkpoint validated successfully");
 
-            // Gate withdrawal dispatch on deposit availability.
-            // If the checkpoint's withdrawal intents exceed the deposits tracked so far,
-            // reject this checkpoint to prevent the bridge from panicking.
-            if !state.can_honor_withdrawals(&withdrawal_intents) {
-                let required: u64 =
-                    withdrawal_intents.iter().map(|w| w.amt().to_sat()).sum();
-                logging::warn!(
-                    epoch,
-                    available_sat = state.available_deposit_sum(),
-                    required_sat = required,
-                    "checkpoint rejected: withdrawal intents exceed available deposit backing"
-                );
-                return;
-            }
-
-            state.deduct_withdrawals(&withdrawal_intents);
+            state.deduct_withdrawals(verified_withdrawals);
 
             let new_tip = payload.inner().new_tip;
             state.update_verified_tip(new_tip);
