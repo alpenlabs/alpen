@@ -1013,6 +1013,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "aes-gcm-siv",
  "alloy",
+ "alpen-reth-primitives",
  "argh",
  "argon2",
  "async-trait",
@@ -1036,6 +1037,7 @@ dependencies = [
  "shrex",
  "sled",
  "strata-asm-txs-bridge-v1",
+ "strata-bridge-types",
  "strata-cli-common",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -1113,6 +1115,7 @@ dependencies = [
  "bitcoin-bosd",
  "eyre",
  "strata-acct-types",
+ "strata-bridge-types",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
@@ -1358,6 +1361,7 @@ dependencies = [
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
+ "strata-bridge-types",
  "strata-crypto",
  "strata-identifiers",
  "strata-primitives",
@@ -1443,6 +1447,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-sol-types",
  "serde",
+ "strata-bridge-types",
  "strata-primitives",
 ]
 
@@ -13779,6 +13784,7 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",
+ "strata-bridge-types",
  "strata-primitives",
 ]
 
@@ -13790,7 +13796,6 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-txs-checkpoint",
  "strata-asm-txs-checkpoint-v0",
- "strata-btc-types",
  "strata-predicate",
  "strata-primitives",
 ]
@@ -13912,6 +13917,7 @@ dependencies = [
  "bitcoin",
  "bitvec",
  "borsh",
+ "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
@@ -13944,6 +13950,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-params",
  "strata-asm-txs-checkpoint",
+ "strata-bridge-types",
  "strata-btc-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
@@ -13982,6 +13989,7 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-bridge-types",
  "strata-codec",
  "strata-l1-txfmt",
  "strata-primitives",
@@ -14136,6 +14144,7 @@ dependencies = [
 name = "strata-bridge-types"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "arbitrary",
  "borsh",
  "serde",
  "strata-identifiers",
