@@ -40,6 +40,7 @@ pub use global_mmr::GlobalMmrDb;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
+pub use mmr_index::MmrIndexDb;
 use ol::db::OLBlockDBSled;
 use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
