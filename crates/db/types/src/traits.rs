@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
-use strata_acct_types::CompactMmr64;
 use strata_asm_common::{AsmManifest, AuxData};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
@@ -30,13 +29,12 @@ use zkaleido::ProofReceiptWithMetadata;
 use crate::types::CheckpointEntry;
 use crate::{
     chainstate::ChainstateDatabase,
-    mmr_helpers::MmrAlgorithm,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1TxEntry,
         MempoolTxData, OLCheckpointEntry,
     },
-    DbError, DbResult,
+    DbResult,
 };
 
 /// Common database backend interface that we can parameterize worker tasks over if
@@ -464,61 +462,6 @@ pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
     ///
     /// Returns indices of deleted entries.
     fn del_chunked_envelope_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
-}
-
-// =============================================================================
-// MMR Database Traits
-// =============================================================================
-
-/// Global MMR database trait using MmrId for identification
-///
-/// This trait provides a simpler, more direct API where the MMR instance
-/// is identified by an `MmrId` enum rather than a generic scope parameter.
-/// This is the preferred interface for new code.
-pub trait GlobalMmrDatabase: Send + Sync + 'static {
-    type MmrAlgorithm: MmrAlgorithm;
-
-    /// Append a new leaf to the specified MMR
-    fn append_leaf(&self, mmr_id: RawMmrId, hash: Hash) -> DbResult<u64>;
-
-    /// Get a node hash by MMR position
-    fn get_node(&self, mmr_id: RawMmrId, pos: u64) -> DbResult<Option<Hash>>;
-
-    /// Get the total MMR size
-    fn get_mmr_size(&self, mmr_id: RawMmrId) -> DbResult<u64>;
-
-    /// Get the total number of leaves
-    fn get_num_leaves(&self, mmr_id: RawMmrId) -> DbResult<u64>;
-
-    /// Get the peaks
-    fn get_peaks(&self, mmr_id: RawMmrId) -> DbResult<Vec<Hash>>;
-
-    /// Get a compact representation of the MMR
-    fn get_compact(&self, mmr_id: RawMmrId) -> DbResult<CompactMmr64>;
-
-    /// Remove the last leaf from the MMR
-    fn pop_leaf(&self, mmr_id: RawMmrId) -> DbResult<Option<Hash>>;
-
-    /// Append a leaf with its pre-image data (optional operation)
-    ///
-    /// Atomically stores both the MMR hash and the original data.
-    /// Default implementation returns Unimplemented error.
-    fn append_leaf_with_preimage(
-        &self,
-        _mmr_id: RawMmrId,
-        _hash: Hash,
-        _preimage: Vec<u8>,
-    ) -> DbResult<u64> {
-        Err(DbError::Unimplemented)
-    }
-
-    /// Get pre-image data by leaf index (optional operation)
-    ///
-    /// Returns None if no pre-image exists at the given index.
-    /// Default implementation returns Unimplemented error.
-    fn get_preimage(&self, _mmr_id: RawMmrId, _index: u64) -> DbResult<Option<Vec<u8>>> {
-        Err(DbError::Unimplemented)
-    }
 }
 
 /// Storage-only MMR indexing database interface.

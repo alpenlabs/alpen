@@ -152,7 +152,7 @@ impl<M, S> BlockAssemblyContext<M, S> {
             .ok_or_else(|| BlockAssemblyError::Other("invalid manifests MMR start height".into()))?
             as u64;
 
-        let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
+        let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
         let mut resolved_refs = Vec::with_capacity(l1_header_refs.len());
         for claim in l1_header_refs {
             let mmr_idx = self.height_to_mmr_index(claim.idx(), mmr_start_height)?;
@@ -185,7 +185,7 @@ impl<M, S> BlockAssemblyContext<M, S> {
     ) -> BlockAssemblyResult<()> {
         let mmr_handle = self
             .storage
-            .global_mmr()
+            .mmr_index()
             .as_ref()
             .get_handle(MmrId::SnarkMsgInbox(target));
         for (offset, message) in messages.iter().enumerate() {
@@ -308,6 +308,15 @@ fn map_l1_header_mmr_error(e: DbError) -> BlockAssemblyError {
         DbError::MmrInvalidRange { start, end } => {
             BlockAssemblyError::InvalidMmrRange { start, end }
         }
+        DbError::MmrIndexOutOfRange { requested, cur } => {
+            BlockAssemblyError::L1HeaderMmrIndexOutOfRange {
+                requested,
+                current: cur,
+            }
+        }
+        DbError::MmrPayloadNotFound(pos) => {
+            BlockAssemblyError::L1HeaderMmrPayloadNotFound(pos.index())
+        }
         other => BlockAssemblyError::Database(other),
     }
 }
@@ -319,9 +328,25 @@ fn map_inbox_mmr_error(e: DbError, account_id: AccountId) -> BlockAssemblyError 
         DbError::MmrLeafNotFoundForAccount(idx, account_id) => {
             BlockAssemblyError::InboxLeafNotFound { idx, account_id }
         }
-        DbError::MmrInvalidRange { start, end } => {
-            BlockAssemblyError::InvalidMmrRange { start, end }
+        DbError::MmrNodeNotFound(pos) => {
+            BlockAssemblyError::InboxMmrNodeNotFound { pos, account_id }
         }
+        DbError::MmrInvalidRange { start, end } => BlockAssemblyError::InboxMmrInvalidRange {
+            start,
+            end,
+            account_id,
+        },
+        DbError::MmrIndexOutOfRange { requested, cur } => {
+            BlockAssemblyError::InboxMmrIndexOutOfRange {
+                requested,
+                current: cur,
+                account_id,
+            }
+        }
+        DbError::MmrPayloadNotFound(pos) => BlockAssemblyError::InboxMmrPayloadNotFound {
+            idx: pos.index(),
+            account_id,
+        },
         other => BlockAssemblyError::Database(other),
     }
 }
@@ -344,7 +369,7 @@ where
         // Get MMR handle for this account's inbox
         let mmr_handle = self
             .storage
-            .global_mmr()
+            .mmr_index()
             .as_ref()
             .get_handle(MmrId::SnarkMsgInbox(target));
 
@@ -352,8 +377,11 @@ where
 
         // Generate proofs for the range of messages (end index is inclusive).
         let end_idx = start_idx + messages.len() as u64 - 1;
+        let inbox_leaf_count = mmr_handle
+            .get_num_leaves_blocking()
+            .map_err(|e| map_inbox_mmr_error(e, target))?;
         let merkle_proofs = mmr_handle
-            .generate_proofs(start_idx, end_idx)
+            .generate_proofs_at(start_idx, end_idx, inbox_leaf_count)
             .map_err(|e| map_inbox_mmr_error(e, target))?;
 
         // Verify we got the expected number of proofs
@@ -382,7 +410,8 @@ where
         l1_header_refs: &[AccumulatorClaim],
         state: &T,
     ) -> BlockAssemblyResult<LedgerRefProofs> {
-        let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
+        let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
+        let mmr_num_leaves = state.asm_manifests_mmr().num_entries();
 
         let resolved_refs = self.validate_l1_header_claims(l1_header_refs, state)?;
 
@@ -390,7 +419,7 @@ where
         let mut l1_header_proofs = Vec::new();
         for (mmr_idx, entry_hash) in resolved_refs {
             let merkle_proof = mmr_handle
-                .generate_proof(mmr_idx)
+                .generate_proof_at(mmr_idx, mmr_num_leaves)
                 .map_err(map_l1_header_mmr_error)?;
 
             let mmr_proof = MmrEntryProof::new(entry_hash, merkle_proof);

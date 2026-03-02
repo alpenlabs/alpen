@@ -4,12 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use strata_db_types::{
-    DbError,
-    DbResult,
-    mmr_helpers::MmrError, // TODO(47a033a30): remove mmr_helpers::MmrError from this path.
-    mmr_index::{LeafPos, NodePos, NodeTable},
-};
+use strata_db_types::{errors::MmrError, DbError, DbResult, LeafPos, NodePos, NodeTable};
 use strata_identifiers::Hash;
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 

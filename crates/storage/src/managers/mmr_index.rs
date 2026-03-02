@@ -3,10 +3,8 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use strata_db_types::{
-    DbError, DbResult,
-    mmr_helpers::num_leaves_to_mmr_size,
-    mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos, NodeTable},
-    traits::MmrIndexDatabase,
+    num_leaves_to_mmr_size, traits::MmrIndexDatabase, DbError, DbResult, LeafPos, MmrBatchWrite,
+    MmrNodePos, MmrNodeTable, NodePos, NodeTable,
 };
 use strata_identifiers::{Hash, MmrId, RawMmrId};
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
@@ -271,11 +269,10 @@ impl MmrIndexHandle {
         let leaf_count = self.get_leaf_count_blocking()?;
         let mmr_id = self.mmr_id_bytes();
 
-        let prefetched = self
-            .fetch_node_paths_blocking(
-                mmr_algorithm::compute_append_fetch_positions(leaf_count),
-                false,
-            )?;
+        let prefetched = self.fetch_node_paths_blocking(
+            mmr_algorithm::compute_append_fetch_positions(leaf_count),
+            false,
+        )?;
         let node_table = Self::get_scoped_node_table(&prefetched, &mmr_id);
         let result = mmr_algorithm::compute_append_plan(hash.0, leaf_count, &node_table)?;
 
@@ -306,7 +303,9 @@ impl MmrIndexHandle {
     }
 
     pub fn append_leaf_blocking(&self, hash: Hash) -> DbResult<u64> {
-        run_with_precondition_retries(self.max_retries, || self.append_leaf_once_blocking(hash, None))
+        run_with_precondition_retries(self.max_retries, || {
+            self.append_leaf_once_blocking(hash, None)
+        })
     }
 
     /// Appends a preimage and stores it as bytes in the preimage table.
@@ -359,11 +358,10 @@ impl MmrIndexHandle {
         }
 
         let mmr_id = self.mmr_id_bytes();
-        let prefetched =
-            self.fetch_node_paths_blocking(
-                mmr_algorithm::compute_pop_fetch_positions(leaf_count),
-                true,
-            )?;
+        let prefetched = self.fetch_node_paths_blocking(
+            mmr_algorithm::compute_pop_fetch_positions(leaf_count),
+            true,
+        )?;
         let node_table = Self::get_scoped_node_table(&prefetched, &mmr_id);
 
         let Some(result) = mmr_algorithm::compute_pop_plan(leaf_count, &node_table)? else {

@@ -41,10 +41,14 @@ pub trait WorkerContext {
     /// This should be called after each STF execution with the manifest hash.
     fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64>;
 
-    /// Generates an MMR proof for the given leaf index.
+    /// Generates an MMR proof for the given leaf index at a specific leaf count.
     ///
     /// Returns a Merkle proof that can be used to verify the inclusion of the leaf.
-    fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32>;
+    fn generate_mmr_proof_at(
+        &self,
+        index: u64,
+        at_leaf_count: u64,
+    ) -> WorkerResult<strata_merkle::MerkleProofB32>;
 
     /// Retrieves a manifest hash by its MMR leaf index.
     ///

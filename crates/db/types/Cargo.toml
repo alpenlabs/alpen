@@ -7,14 +7,12 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-checkpoint-types.workspace = true
 strata-checkpoint-types-ssz.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
-strata-merkle = { workspace = true, features = ["ssz"] }
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-chainstate-types.workspace = true
@@ -41,3 +39,4 @@ stubs = ["dep:parking_lot"]
 [dev-dependencies]
 proptest.workspace = true
 serde_json.workspace = true
+strata-merkle = { workspace = true, features = ["ssz"] }

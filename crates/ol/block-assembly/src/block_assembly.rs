@@ -82,8 +82,14 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::L1HeaderHashMismatch { .. }
         | BlockAssemblyError::L1HeaderLeafNotFound(_)
         | BlockAssemblyError::InboxLeafNotFound { .. }
+        | BlockAssemblyError::InboxMmrNodeNotFound { .. }
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
         | BlockAssemblyError::InvalidMmrRange { .. }
+        | BlockAssemblyError::L1HeaderMmrIndexOutOfRange { .. }
+        | BlockAssemblyError::InboxMmrInvalidRange { .. }
+        | BlockAssemblyError::InboxMmrIndexOutOfRange { .. }
+        | BlockAssemblyError::L1HeaderMmrPayloadNotFound(_)
+        | BlockAssemblyError::InboxMmrPayloadNotFound { .. }
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
 
