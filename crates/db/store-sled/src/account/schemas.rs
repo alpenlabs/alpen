@@ -4,7 +4,7 @@ use strata_db_types::types::AccountExtraDataEntry;
 use strata_identifiers::{AccountId, Epoch};
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
-use crate::{define_table_with_default_codec, define_table_without_codec, impl_borsh_value_codec};
+use crate::define_table_with_default_codec;
 
 define_table_with_default_codec!(
     /// Maps [`AccountId`] to its creation epoch (`u32`).

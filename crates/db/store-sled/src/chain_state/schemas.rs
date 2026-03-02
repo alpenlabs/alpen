@@ -2,10 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_db_types::chainstate::*;
 use strata_ol_chainstate_types::{Chainstate, WriteBatch};
 
-use crate::{
-    define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
-    impl_borsh_value_codec,
-};
+use crate::{define_table_with_default_codec, define_table_with_integer_key};
 
 define_table_with_default_codec!(
     /// Table to store write batches.
