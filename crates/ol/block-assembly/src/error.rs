@@ -1,7 +1,7 @@
 //! Error types for block assembly operations.
 
 use strata_acct_types::AcctError;
-use strata_db_types::{NodePos, errors::DbError};
+use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Hash, OLBlockId};
 use strata_ol_chain_types_new::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
@@ -12,7 +12,7 @@ use strata_ol_stf::ExecError;
 pub enum BlockAssemblyError {
     /// Database operation failed.
     #[error("db: {0}")]
-    Database(#[from] DbError),
+    Db(#[from] DbError),
 
     /// Various account errors.
     #[error("acct: {0}")]
@@ -42,18 +42,6 @@ pub enum BlockAssemblyError {
         actual: Hash,
     },
 
-    /// L1 header claim references non-existent MMR leaf.
-    #[error("L1 header leaf not found at index {0}")]
-    L1HeaderLeafNotFound(u64),
-
-    /// Inbox message leaf not found in MMR.
-    #[error("inbox leaf not found at index {idx} for account {account_id}")]
-    InboxLeafNotFound { idx: u64, account_id: AccountId },
-
-    /// Inbox MMR node not found at flat position (leaf or internal node).
-    #[error("inbox MMR node not found at position {pos:?} for account {account_id}")]
-    InboxMmrNodeNotFound { pos: NodePos, account_id: AccountId },
-
     /// Inbox message hash does not match MMR entry.
     #[error(
         "inbox hash mismatch at index {idx} for account {account_id}: expected {expected}, got {actual}"
@@ -64,40 +52,6 @@ pub enum BlockAssemblyError {
         expected: Hash,
         actual: Hash,
     },
-
-    /// Invalid MMR range requested.
-    #[error("invalid MMR range {start}..{end}")]
-    InvalidMmrRange { start: u64, end: u64 },
-
-    /// L1 header MMR index is outside the current leaf count.
-    #[error("L1 header MMR index out of range: requested {requested}, current {current}")]
-    L1HeaderMmrIndexOutOfRange { requested: u64, current: u64 },
-
-    /// Invalid MMR range requested for inbox MMR.
-    #[error("invalid inbox MMR range {start}..{end} for account {account_id}")]
-    InboxMmrInvalidRange {
-        start: u64,
-        end: u64,
-        account_id: AccountId,
-    },
-
-    /// Inbox MMR index is outside the current leaf count.
-    #[error(
-        "inbox MMR index out of range: requested {requested}, current {current} for account {account_id}"
-    )]
-    InboxMmrIndexOutOfRange {
-        requested: u64,
-        current: u64,
-        account_id: AccountId,
-    },
-
-    /// L1 header MMR payload not found at index.
-    #[error("L1 header MMR payload not found at index {0}")]
-    L1HeaderMmrPayloadNotFound(u64),
-
-    /// Inbox MMR payload not found at index.
-    #[error("inbox MMR payload not found at index {idx} for account {account_id}")]
-    InboxMmrPayloadNotFound { idx: u64, account_id: AccountId },
 
     /// Account not found when validating transaction.
     #[error("account not found: {0}")]
