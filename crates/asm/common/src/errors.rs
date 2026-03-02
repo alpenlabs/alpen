@@ -1,7 +1,7 @@
 use borsh::io;
 // Re-export error types from manifest-types crate
 pub use strata_asm_manifest_types::{AsmManifestError, AsmManifestResult, Mismatched};
-use strata_asm_types::L1VerificationError;
+use strata_btc_verification::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
 use strata_merkle::error::MerkleError;
 use thiserror::Error;

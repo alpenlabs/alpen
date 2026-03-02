@@ -4421,8 +4421,8 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-manifest-types",
- "strata-asm-types",
  "strata-btc-types",
+ "strata-btc-verification",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-msg-fmt",
@@ -4458,14 +4458,6 @@ dependencies = [
  "strata-asm-common",
  "strata-identifiers",
  "strata-l1-txfmt",
-]
-
-[[package]]
-name = "strata-asm-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "strata-btc-types",
- "strata-btc-verification",
 ]
 
 [[package]]

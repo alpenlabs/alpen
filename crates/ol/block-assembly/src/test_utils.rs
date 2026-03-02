@@ -12,7 +12,7 @@ use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunn
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, tree_hash::TreeHash};
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
 use strata_asm_manifest_types::AsmManifest;
-use strata_asm_types::HeaderVerificationState;
+use strata_btc_verification::HeaderVerificationState;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::errors::DbError;

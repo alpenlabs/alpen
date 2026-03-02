@@ -1282,8 +1282,8 @@ dependencies = [
  "borsh",
  "serde",
  "strata-asm-manifest-types",
- "strata-asm-types",
  "strata-btc-types",
+ "strata-btc-verification",
  "strata-l1-txfmt",
  "strata-merkle",
  "strata-msg-fmt",
@@ -1322,14 +1322,6 @@ dependencies = [
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-asm-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "strata-btc-types",
- "strata-btc-verification",
 ]
 
 [[package]]
@@ -1378,7 +1370,7 @@ dependencies = [
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
- "strata-crypto",
+ "strata-asm-manifest-types",
  "strata-identifiers",
  "strata-ol-chain-types-new",
  "thiserror 2.0.18",
@@ -1557,6 +1549,7 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-ledger-types",
+ "strata-ol-state-types",
  "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
@@ -1655,6 +1648,7 @@ dependencies = [
  "strata-crypto",
  "strata-ledger-types",
  "strata-ol-chain-types-new",
+ "strata-ol-da",
  "strata-ol-state-types",
  "strata-ol-stf",
  "zkaleido",
@@ -1667,6 +1661,7 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
+ "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
  "strata-snark-acct-types",

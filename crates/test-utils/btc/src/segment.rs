@@ -17,7 +17,7 @@ use bitcoind_async_client::{
     ClientResult,
 };
 use strata_asm_common::AsmManifest;
-use strata_asm_types::HeaderVerificationState;
+use strata_btc_verification::HeaderVerificationState;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
 use strata_primitives::{buf::Buf32, l1::GenesisL1View};

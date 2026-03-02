@@ -1,5 +1,5 @@
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
-use strata_asm_types::HeaderVerificationState;
+use strata_btc_verification::HeaderVerificationState;
 use strata_db_types::traits::AsmDatabase;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_state::asm_state::AsmState;

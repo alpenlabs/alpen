@@ -7,7 +7,7 @@
 
 #[cfg(feature = "sp1-builder")]
 use sp1_verifier as _;
-use strata_asm_types as _;
+use strata_btc_verification as _;
 #[cfg(feature = "sp1-builder")]
 use zkaleido_sp1_groth16_verifier as _;
 
