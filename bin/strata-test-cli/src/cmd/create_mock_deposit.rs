@@ -4,11 +4,7 @@ use argh::FromArgs;
 use bdk_bitcoind_rpc::bitcoincore_rpc::RpcApi;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::{
-    bridge::types::BitcoinDConfig,
-    mock_ee::deposit,
-    taproot::new_bitcoind_client,
-};
+use crate::{bridge::types::BitcoinDConfig, mock_ee::deposit, taproot::new_bitcoind_client};
 
 /// Create a mock deposit transaction via the debug subprotocol.
 ///
@@ -45,12 +41,9 @@ pub(crate) fn create_mock_deposit(args: CreateMockDepositArgs) -> Result<(), Dis
         bitcoind_password: args.btc_password.clone(),
     };
 
-    let tx_bytes = deposit::create_mock_deposit_tx(
-        args.account_serial,
-        args.amount,
-        bitcoind_config,
-    )
-    .internal_error("failed to create mock deposit transaction")?;
+    let tx_bytes =
+        deposit::create_mock_deposit_tx(args.account_serial, args.amount, bitcoind_config)
+            .internal_error("failed to create mock deposit transaction")?;
 
     // Broadcast the transaction via bitcoind RPC
     let client = new_bitcoind_client(

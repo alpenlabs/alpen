@@ -61,7 +61,10 @@ pub(crate) fn build_snark_withdrawal(args: BuildSnarkWithdrawalArgs) -> Result<(
     )
     .internal_error("failed to build withdrawal transaction")?;
 
-    println!("{}", serde_json::to_string(&json).expect("json serialization"));
+    println!(
+        "{}",
+        serde_json::to_string(&json).expect("json serialization")
+    );
     Ok(())
 }
 

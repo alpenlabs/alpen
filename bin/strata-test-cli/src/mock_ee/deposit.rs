@@ -4,8 +4,8 @@
 //! via the debug subprotocol's MockAsmLog mechanism (subprotocol ID 255, tx_type 1).
 
 use bdk_wallet::{
+    bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
-    bitcoin::{ScriptBuf, consensus::serialize, Amount, FeeRate, Transaction},
 };
 use strata_asm_manifest_types::DepositIntentLogData;
 use strata_identifiers::{AccountSerial, SubjectId};
@@ -135,8 +135,8 @@ mod tests {
 
     #[test]
     fn test_deposit_op_return_script_is_valid() {
-        let script = build_mock_deposit_op_return(0x42, 100_000_000)
-            .expect("should build op_return script");
+        let script =
+            build_mock_deposit_op_return(0x42, 100_000_000).expect("should build op_return script");
 
         // Should start with OP_RETURN
         assert!(script.is_op_return(), "script should be OP_RETURN");
