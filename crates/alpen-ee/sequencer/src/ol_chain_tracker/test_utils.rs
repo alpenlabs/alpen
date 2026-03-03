@@ -3,7 +3,7 @@
 use alpen_ee_common::{ExecBlockRecord, OLBlockData, OLChainStatus};
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_ee_acct_types::EeAccountState;
-use strata_ee_chain_types::{ExecInputs, ExecOutputs, ExecBlockCommitment, ExecBlockPackage};
+use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
 use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::MessageEntry;
 
