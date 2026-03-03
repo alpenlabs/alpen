@@ -6,7 +6,7 @@
 use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_msg_types::{WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
+use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
 use strata_snark_acct_types::{
     LedgerRefs, OutputMessage, ProofState, UpdateOperationData, UpdateOutputs,
@@ -36,10 +36,7 @@ pub(crate) fn build_snark_withdrawal_json(
     let owned_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body)
         .map_err(|e| Error::TxBuilder(format!("failed to create OwnedMsg: {e}")))?;
 
-    let msg_payload = MsgPayload::new(
-        BitcoinAmount::from_sat(amount),
-        owned_msg.to_vec(),
-    );
+    let msg_payload = MsgPayload::new(BitcoinAmount::from_sat(amount), owned_msg.to_vec());
 
     let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
     let outputs = UpdateOutputs::new(vec![], vec![output_message]);
@@ -52,7 +49,7 @@ pub(crate) fn build_snark_withdrawal_json(
         vec![],                  // no processed messages
         LedgerRefs::new_empty(), // no ledger references
         outputs,
-        vec![],                  // no extra data
+        vec![], // no extra data
     );
 
     // SSZ-encode the operation data
@@ -110,7 +107,10 @@ mod tests {
         // target is 32 bytes = 64 hex chars, no 0x prefix
         assert_eq!(payload["target"].as_str().unwrap().len(), 64);
         // update_operation_encoded is non-empty hex
-        assert!(!payload["update_operation_encoded"].as_str().unwrap().is_empty());
+        assert!(!payload["update_operation_encoded"]
+            .as_str()
+            .unwrap()
+            .is_empty());
         // update_proof is empty (AlwaysAccept predicate)
         assert_eq!(payload["update_proof"], "");
 
@@ -142,8 +142,7 @@ mod tests {
             .as_str()
             .unwrap();
         let ssz_bytes = hex::decode(ssz_hex).expect("valid hex");
-        let decoded =
-            UpdateOperationData::from_ssz_bytes(&ssz_bytes).expect("valid SSZ");
+        let decoded = UpdateOperationData::from_ssz_bytes(&ssz_bytes).expect("valid SSZ");
 
         // Verify decoded fields
         assert_eq!(decoded.seq_no(), 5);
@@ -222,15 +221,8 @@ mod tests {
 
         // Descriptor longer than MAX_WITHDRAWAL_DESC_LEN (255)
         let long_dest = vec![0xAA; 256];
-        let result = build_snark_withdrawal_json(
-            target,
-            0,
-            inner_state,
-            0,
-            long_dest,
-            100_000_000,
-            0,
-        );
+        let result =
+            build_snark_withdrawal_json(target, 0, inner_state, 0, long_dest, 100_000_000, 0);
 
         assert!(result.is_err());
     }
