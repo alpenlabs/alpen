@@ -262,7 +262,7 @@ mod tests {
             state: &mut Self::State,
             msg: InputMessage<Self::Msg>,
         ) -> ProgramResult<(), Self::Error> {
-            if let InputMessage::Valid(_, m) = msg {
+            if let Some(m) = msg.message() {
                 state.value += m.delta;
             }
             Ok(())
@@ -305,7 +305,7 @@ mod tests {
             }
 
             // Track delta in vstate for verification
-            if let InputMessage::Valid(_, m) = msg {
+            if let Some(m) = msg.message() {
                 *vstate += m.delta;
             }
 

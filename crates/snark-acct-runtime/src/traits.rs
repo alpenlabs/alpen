@@ -20,8 +20,9 @@ pub trait SnarkAccountProgram {
     /// Account inner state.
     type State: IInnerState;
 
-    /// Recognized messages.  If parsing returns an error then we pass
-    /// [`InputMessage::Unknown`] to `verify_coinput and `process_message`.
+    /// Recognized messages.  If parsing returns an error then we pass an
+    /// [`InputMessage`] with `None` decoded payload to `verify_coinput` and
+    /// `process_message`.
     type Msg: IAcctMsg;
 
     /// Update extra data.
