@@ -1,7 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::{hashes::Hash, Txid};
-use bitcoind_async_client::traits::{Broadcaster, Wallet};
+use bitcoind_async_client::{
+    error::ClientError,
+    traits::{Broadcaster, Wallet},
+};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
@@ -198,16 +201,56 @@ async fn publish_tx(
     txentry: &L1TxEntry,
 ) -> BroadcasterResult<L1TxStatus> {
     let tx = txentry.try_to_tx().expect("could not deserialize tx");
+    let txid = tx.compute_txid();
+    let input_count = tx.input.len();
+    let output_count = tx.output.len();
+
+    if tx.input.is_empty() {
+        debug!(
+            %txid,
+            %input_count,
+            %output_count,
+            current_status = ?txentry.status,
+            "marking tx as invalid before broadcast due to empty input set"
+        );
+        warn!("tx has no inputs, excluding from broadcast");
+        return Ok(L1TxStatus::InvalidInputs);
+    }
     debug!("Publishing tx");
     match rpc_client.send_raw_transaction(&tx).await {
         Ok(_) => {
             info!("Successfully published tx");
             Ok(L1TxStatus::Published)
         }
-        Err(err) if err.is_missing_or_invalid_input() => {
+        Err(err)
+            if err.is_missing_or_invalid_input() || matches!(err, ClientError::Server(-22, _)) =>
+        {
+            debug!(
+                %txid,
+                %input_count,
+                %output_count,
+                current_status = ?txentry.status,
+                ?err,
+                "marking tx as invalid after broadcast rejection"
+            );
             warn!(?err, "tx excluded due to invalid inputs");
 
             Ok(L1TxStatus::InvalidInputs)
+        }
+        // `bitcoind-async-client` v0.10.1 surfaces JSON-RPC failures as `ClientError::Server`.
+        // Keep this as a defensive fallback for transport/proxy 500s, since acceptance can still
+        // be ambiguous and we should retry instead of classifying as invalid inputs.
+        Err(err @ ClientError::Status(500, _)) => {
+            debug!(
+                %txid,
+                %input_count,
+                %output_count,
+                current_status = ?txentry.status,
+                ?err,
+                "broadcast returned HTTP 500, leaving tx unpublished for retry"
+            );
+            warn!(?err, "broadcast returned HTTP 500; retrying on next poll");
+            Ok(L1TxStatus::Unpublished)
         }
         Err(err) => {
             warn!(?err, "errored while broadcasting");
@@ -225,7 +268,9 @@ mod test {
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
-    use crate::test_utils::{gen_l1_tx_entry_with_status, TestBitcoinClient};
+    use crate::test_utils::{
+        gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient,
+    };
 
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
@@ -265,6 +310,44 @@ mod test {
             res,
             Some(L1TxStatus::Published),
             "Status should be if tx is published"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_status_500_keeps_unpublished() {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::HttpInternalServerError);
+        let cl = Arc::new(client);
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
+            .await
+            .unwrap();
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Unpublished),
+            "HTTP 500 send_raw_transaction errors should keep tx unpublished for retry"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_server_minus22_marks_invalid_inputs() {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::InvalidParameter);
+        let cl = Arc::new(client);
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
+            .await
+            .unwrap();
+        assert_eq!(
+            res,
+            Some(L1TxStatus::InvalidInputs),
+            "Server(-22, ..) send_raw_transaction errors should mark tx invalid"
         );
     }
 

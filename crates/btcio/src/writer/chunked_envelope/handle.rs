@@ -13,6 +13,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address, Transaction};
 use bitcoind_async_client::{
+    error::ClientError,
     traits::{Broadcaster, Reader, Signer, Wallet},
     Client,
 };
@@ -289,7 +290,9 @@ async fn check_commit_and_broadcast_reveals(
             Ok(_) => {
                 debug!(%txid, "reveal tx broadcast successfully");
             }
-            Err(e) if e.is_missing_or_invalid_input() => {
+            Err(e)
+                if e.is_missing_or_invalid_input() || matches!(e, ClientError::Server(-22, _)) =>
+            {
                 warn!(%txid, ?e, "reveal tx has invalid inputs, will re-sign");
                 return Ok(ChunkedEnvelopeStatus::NeedsResign);
             }
@@ -729,6 +732,35 @@ mod tests {
             result,
             ChunkedEnvelopeStatus::NeedsResign,
             "missing/invalid input during reveal broadcast should trigger re-sign"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_commit_broadcast_server_minus22_returns_needs_resign() {
+        let bcast = get_broadcast_handle();
+        let client = TestBitcoinClient::new(1)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::InvalidParameter);
+        let entry = make_entry_with_reveals(2);
+
+        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
+        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
+        commit_entry.status = L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::from([0xBB; 32]),
+            block_height: 100,
+        };
+        bcast
+            .put_tx_entry(entry.commit_txid, commit_entry)
+            .await
+            .unwrap();
+
+        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            ChunkedEnvelopeStatus::NeedsResign,
+            "Server(-22, ..) during reveal broadcast should trigger re-sign"
         );
     }
 
