@@ -1,0 +1,63 @@
+{
+  "magic": "alpn",
+  "l1_view": {
+    "blk": {
+      "height": 100,
+      "blkid": "0000018138949bb5f8c513447896be9d3fb133a5230acffa2f3d8af2da9592f6"
+    },
+    "next_target": 503543726,
+    "epoch_start_timestamp": 1598918400,
+    "last_11_timestamps": [
+      1771999005,
+      1771999008,
+      1771999009,
+      1771999012,
+      1771999013,
+      1771999015,
+      1771999016,
+      1771999018,
+      1771999020,
+      1771999022,
+      1771999024
+    ]
+  },
+  "subprotocols": [
+    {
+      "Admin": {
+        "strata_administrator": {
+          "keys": [
+            "03f64dd4906e1e5091132f897785efdff55717ddaa187efafee57aeba73e6526be"
+          ],
+          "threshold": 1
+        },
+        "strata_sequencer_manager": {
+          "keys": [
+            "03f64dd4906e1e5091132f897785efdff55717ddaa187efafee57aeba73e6526be"
+          ],
+          "threshold": 1
+        },
+        "confirmation_depth": 144,
+        "max_seqno_gap": 10
+      }
+    },
+    {
+      "Checkpoint": {
+        "sequencer_predicate": "AlwaysAccept",
+        "checkpoint_predicate": "Sp1Groth16:2d4d9aa7e302d9df41749d5507949d05dbea33fbb16c643b22f599a2be6df2e214bedd503c37ceb061d8ec60209fe345ce89830a19230301f076caff004d19260967032fcbf776d1afc985f88877f182d38480a653f2decaa9794cbc3bf3060c0e187847ad4c798374d0d6732bf501847dd68bc0e071241e0213bc7fc13db7ab304cfbd1e08a704a99f5e847d93f8c3caafddec46b7a0d379da69a4d112346a71739c1b1a457a8c7313123d24d2f9192f896b7c63eea05a9d57f06547ad0cec8198e9393920d483a7260bfb731fb5d25f1aa493335a9e71297e485b7aef312c21800deef121f1e76426a00665e5c4479674322d4f75edadd46debd5cd992f6ed090689d0585ff075ec9e99ad690c3395bc4b313370b38ef355acdadcd122975b12c85ea5db8c6deb4aab71808dcb408fe3d1e7690c43d37b4ce6cc0166fa7daa1cc7cb8de715675f21f01ecc9b46d236e0865e0cc020024521998269845f74e603ff41f4ba0c37fe2caf27354d28e4b8f83d3b76777a63b327d736bffb0122ed2ed3b19b5eb39db0d19a3d72dcd590ac85a971def614f4fd11b56b3c5e53c44c17387b4b9cf03927909b4f1c3d80fcd6865afc4a264a04499f7e2f6df690dd85000000022600e9bfb4b6579e885e1e5b1df35237d34e8660ffab34600bd0b830a3c33fc22bc1a5b9b3bd1662edba7a7ba5dc58730963ace01f798c2539f71b8d7fc680f304eab241388a79817fe0e0e2ead0b2ec4ffdec51a16028dee020634fd129e71c07236256d21c60d02f0bdbf95cff83e03ea9e16fca56b18d5544b0889a65c1f5",
+        "genesis_l1_height": 100,
+        "genesis_ol_blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "Bridge": {
+        "operators": [
+          "02f64dd4906e1e5091132f897785efdff55717ddaa187efafee57aeba73e6526be"
+        ],
+        "denomination": 1000000000,
+        "assignment_duration": 64,
+        "operator_fee": 50000000,
+        "recovery_delay": 1008
+      }
+    }
+  ]
+}

@@ -1303,6 +1303,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-acct-types"
+version = "0.1.0"
+dependencies = [
+ "digest",
+ "sha2",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-btc-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-merkle",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
@@ -1326,6 +1346,7 @@ dependencies = [
  "borsh",
  "strata-asm-common",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
  "strata-msg-fmt",
@@ -1464,6 +1485,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-checkpoint-types-ssz"
+version = "0.1.0"
+dependencies = [
+ "borsh",
+ "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-ol-chain-types-new",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
+]
+
+[[package]]
 name = "strata-codec"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc7#ed6c8b2c2fc7b7d1304b7864cc4d1749590231b2"
@@ -1565,8 +1605,15 @@ dependencies = [
  "digest",
  "serde",
  "sha2",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1591,6 +1638,27 @@ dependencies = [
  "strata-state",
  "thiserror 2.0.18",
  "tracing",
+]
+
+[[package]]
+name = "strata-ol-chain-types-new"
+version = "0.1.0"
+dependencies = [
+ "int-enum",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
+ "strata-asm-common",
+ "strata-codec",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-snark-acct-types",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
@@ -1676,6 +1744,22 @@ dependencies = [
  "strata-primitives",
  "zkaleido",
  "zkaleido-native-adapter",
+]
+
+[[package]]
+name = "strata-snark-acct-types"
+version = "0.1.0"
+dependencies = [
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
+ "strata-acct-types",
+ "strata-identifiers",
+ "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]

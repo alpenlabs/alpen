@@ -145,3 +145,155 @@ This setup builds both `strata` (OL) and `alpen-client` (EL) from the repo Docke
   ```bash
   docker compose -f docker/docker-compose-ol-el.yml down
   ```
+
+
+-------
+
+# 🏗 Strata ASM Parameters Generation Guide
+
+This document explains how to generate `asm-params.json` using `strata-datatool`.
+
+---
+
+## 📦 Prerequisites
+
+### 1️⃣ Build `strata-datatool`
+
+```bash
+cargo build --bin strata-datatool -F "sp1-builder,btc-client" --release
+```
+
+---
+
+### 2️⃣ Set Required Environment Variables
+
+```bash
+export BITCOIN_NETWORK=signet   # mainnet | testnet | signet
+export BITCOIN_RPC_URL=http://127.0.0.1:18443
+export BITCOIN_RPC_USER=bitcoin
+export BITCOIN_RPC_PASSWORD=bitcoin
+```
+
+---
+
+# 🔑 Step 1: Generate Bridge Operator Key(s)
+
+Generate a master xpriv:
+
+```bash
+target/release/strata-datatool -b "$BITCOIN_NETWORK" \
+  genxpriv -f opkey0.bin
+```
+
+Verify:
+
+```bash
+cat opkey0.bin
+```
+
+> ⚠️ **IMPORTANT:**  
+> This file contains your bridge operator **master xpriv**.  
+> Store it securely. Do NOT commit it to git.
+
+---
+
+# ⚙️ Step 2: Generate ASM Params (Single Operator)
+
+```bash
+target/release/strata-datatool -b "$BITCOIN_NETWORK" \
+  --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
+  --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
+  --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
+  gen-asm-params \
+  --opkey "$(cat opkey0.bin)" \
+  -o asm-params.json
+```
+
+✅ Output:
+
+```
+asm-params.json
+```
+
+---
+
+# 👥 Step 3: Multiple Operators (Recommended)
+
+Generate multiple operator keys:
+
+```bash
+target/release/strata-datatool -b "$BITCOIN_NETWORK" genxpriv -f opkey0.bin
+target/release/strata-datatool -b "$BITCOIN_NETWORK" genxpriv -f opkey1.bin
+target/release/strata-datatool -b "$BITCOIN_NETWORK" genxpriv -f opkey2.bin
+```
+
+---
+
+## Option A — Pass Multiple `--opkey` Flags
+
+```bash
+target/release/strata-datatool -b "$BITCOIN_NETWORK" \
+  --bitcoin-rpc-url "$BITCOIN_RPC_URL" \
+  --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
+  --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
+  gen-asm-params \
+  --opkey "$(cat opkey0.bin)" \
+  --opkey "$(cat opkey1.bin)" \
+  --opkey "$(cat opkey2.bin)" \
+  -o asm-params.json
+```
+
+---
+
+# 📊 Visual Flow (Mermaid Diagram)
+
+```mermaid
+flowchart TD
+    A[Start] --> B[Build strata-datatool]
+    B --> C[Set Environment Variables]
+    C --> D[Generate Operator Key(s)]
+    D --> E{Single or Multiple?}
+
+    E -->|Single| F[gen-asm-params --opkey]
+    E -->|Multiple| G[Generate Multiple Keys]
+    G --> H[gen-asm-params with multiple --opkey]
+
+    F --> I[asm-params.json Created]
+    H --> I
+
+    I --> J[Use in Strata Deployment]
+    J --> K[End]
+```
+
+---
+
+# ❗ Common Error
+
+### `invalid threshold: 1 exceeds total keys 0`
+
+**Cause:** No operator keys were provided.
+
+**Fix:** Add at least one `--opkey` or use `--opkeys` file input.
+
+---
+
+# 🔐 Security Notes
+
+- Never commit `opkey*.bin` files.
+- Store keys in encrypted storage (Vault, KMS, HSM).
+- Back up securely.
+- Restrict access to bridge operators.
+
+---
+
+# ✅ Final Output
+
+You should now have:
+
+```
+asm-params.json
+```
+
+This file is required for Strata network configuration and deployment.
+
+---
