@@ -307,7 +307,7 @@ mod tests {
     use async_trait::async_trait;
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
-    use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
+    use strata_ee_chain_types::{ExecInputs, ExecOutputs, ExecBlockCommitment, ExecBlockPackage};
 
     use super::*;
 
@@ -465,10 +465,10 @@ mod tests {
 
         let package = ExecBlockPackage::new(
             ExecBlockCommitment::new(block_hash, block_hash),
-            BlockInputs::new_empty(),
-            BlockOutputs::new_empty(),
+            ExecInputs::new_empty(),
+            ExecOutputs::new_empty(),
         );
-        let account_state = EeAccountState::new(block_hash, BitcoinAmount::ZERO, vec![], vec![]);
+        let account_state = EeAccountState::new(vec![], block_hash, BitcoinAmount::ZERO, vec![], vec![]);
 
         // Create OL block commitment
         let mut ol_block_bytes = [0u8; 32];

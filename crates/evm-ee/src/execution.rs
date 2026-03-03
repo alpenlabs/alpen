@@ -20,8 +20,8 @@ use strata_ee_acct_types::{
     BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload,
     ExecutionEnvironment,
 };
-use strata_ee_chain_types::{BlockInputs, BlockOutputs};
-use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WithdrawalMsgData};
+use strata_ee_chain_types::{ExecInputs, ExecOutputs};
+use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
@@ -49,7 +49,7 @@ pub struct EvmExecutionEnvironment {
 /// - The destination descriptor (encoded in message data)
 fn convert_withdrawal_intents_to_messages(
     withdrawal_intents: Vec<alpen_reth_primitives::WithdrawalIntent>,
-    outputs: &mut BlockOutputs,
+    outputs: &mut ExecOutputs,
 ) {
     for intent in withdrawal_intents {
         let withdrawal_msg = WithdrawalMsgData::new(
@@ -86,7 +86,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         &self,
         pre_state: &Self::PartialState,
         exec_payload: &ExecPayload<'_, Self::Block>,
-        inputs: &BlockInputs,
+        inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
         // Step 1: Build block from exec_payload and recover senders
         let block = build_and_recover_block(exec_payload)?;
@@ -103,9 +103,9 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         validate_body_against_header(block.body(), block.header())
             .map_err(|_| EnvError::InvalidBlock)?;
 
-        // Step 2c: Validate deposits from BlockInputs against block withdrawals
+        // Step 2c: Validate deposits from ExecInputs against block withdrawals
         // The withdrawals header field is hijacked to represent deposits from the OL.
-        // We need to ensure the authenticated deposits from BlockInputs match what's in the block.
+        // We need to ensure the authenticated deposits from ExecInputs match what's in the block.
         validate_deposits_against_block(&block, inputs)?;
 
         // Step 3: Prepare witness database from partial state
@@ -154,8 +154,8 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             logs_bloom,
         );
 
-        // Step 12: Create BlockOutputs with withdrawal intent messages
-        let mut outputs = BlockOutputs::new_empty();
+        // Step 12: Create ExecOutputs with withdrawal intent messages
+        let mut outputs = ExecOutputs::new_empty();
         convert_withdrawal_intents_to_messages(withdrawal_intents, &mut outputs);
 
         Ok(ExecBlockOutput::new(write_batch, outputs))
@@ -292,7 +292,7 @@ mod tests {
 
         // Create exec payload and inputs
         let exec_payload = ExecPayload::new(&header, block.get_body());
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
 
         // Execute the block
         // Note: This will execute real block data through our implementation
