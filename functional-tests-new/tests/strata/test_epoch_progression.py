@@ -19,7 +19,7 @@ class TestSequencerEpochProgression(StrataNodeTest):
     # test with alpen-client because alpen-client also needs epoch progression to work properly
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("basic")
+        ctx.set_env("checkpoint")
 
     def main(self, ctx):
         # Get sequencer service
@@ -31,7 +31,7 @@ class TestSequencerEpochProgression(StrataNodeTest):
 
         # Get initial sync status
         initial_status = strata.get_sync_status(rpc)
-        prev_epoch = initial_status["confirmed"]
+        prev_epoch = initial_status["parent"]
         logger.info(f"initial prev epoch {prev_epoch}")
         assert prev_epoch["last_blkid"] != "00" * 32
 
@@ -39,7 +39,7 @@ class TestSequencerEpochProgression(StrataNodeTest):
 
         for _ in range(1, epochs_to_check + 1):
             epoch = wait_until_with_value(
-                lambda: strata.get_sync_status(rpc)["confirmed"],
+                lambda: strata.get_sync_status(rpc)["parent"],
                 lambda v, cur_epoch=prev_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
                 timeout=10,
                 error_with="Epoch not progressing",
