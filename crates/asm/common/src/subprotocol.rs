@@ -23,10 +23,10 @@ use crate::{
 /// and state management.
 ///
 /// The ASM filters SPS-50 transactions by subprotocol ID and passes only the relevant
-/// transactions to each subprotocol. Each subprotocol then:
+/// transactions to each subprotocol. Each subprotocol does the following, in order:
 ///
-/// 1. processes the SPS-50 transactions matching its ID to update its own state, create
-///    inter-protocol messages to be consumed by other subprotocols, and emit logs, and then
+/// 1. processes its transactions to update its own state, create inter-protocol messages to be
+///    consumed by other subprotocols, and emit logs,
 /// 2. receives incoming inter-protocol messages from other subprotocols to finalize and serialize
 ///    its state for inclusion in the global AnchorState.
 ///
