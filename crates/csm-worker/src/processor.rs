@@ -3,8 +3,13 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
-use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
+use strata_asm_logs::{
+    CheckpointTipUpdate, CheckpointUpdate,
+    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
+};
+use strata_checkpoint_types::{
+    BatchInfo, BatchTransition, ChainstateRootTransition, Checkpoint, CheckpointSidecar,
+};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
@@ -26,6 +31,13 @@ pub(crate) fn process_log(
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
 
             return process_checkpoint_log(state, &ckpt_upd, asm_block);
+        }
+        Some(CHECKPOINT_TIP_UPDATE_LOG_TYPE) => {
+            let tip_upd = log
+                .try_into_log()
+                .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointTipUpdate: {}", e))?;
+
+            return process_checkpoint_tip_log(state, &tip_upd, asm_block);
         }
         Some(log_type) => {
             debug!(log_type, "log type not processed by CSM");
@@ -87,6 +99,44 @@ fn process_checkpoint_log(
     Ok(())
 }
 
+/// Process a checkpoint tip update log from the v1 checkpoint subprotocol.
+fn process_checkpoint_tip_log(
+    state: &mut CsmWorkerState,
+    checkpoint_tip_update: &CheckpointTipUpdate,
+    asm_block: &L1BlockCommitment,
+) -> anyhow::Result<()> {
+    let tip = checkpoint_tip_update.tip();
+    let epoch = tip.epoch;
+
+    info!(
+        %epoch,
+        %asm_block,
+        l1_height = tip.l1_height(),
+        l2_slot = tip.l2_commitment().slot(),
+        "CSM is processing checkpoint tip update from ASM log"
+    );
+
+    let l1_height = u64::from(tip.l1_height());
+    if l1_height != asm_block.height_u64() {
+        debug!(
+            tip_l1_height = l1_height,
+            asm_block_height = asm_block.height_u64(),
+            "Checkpoint tip L1 height differs from current ASM block height; using ASM block commitment"
+        );
+    }
+
+    // v1 tip logs do not contain txid/wtxid or full batch transition details.
+    // CSM only needs epoch progression for finalized-epoch signaling, so we
+    // synthesize a minimal checkpoint view from the tip.
+    // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
+    // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
+    let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
+    update_client_state_with_checkpoint(state, synthetic_checkpoint, epoch)?;
+
+    state.last_processed_epoch = Some(epoch);
+    Ok(())
+}
+
 /// Update client state with a new checkpoint.
 fn update_client_state_with_checkpoint(
     state: &mut CsmWorkerState,
@@ -98,13 +148,14 @@ fn update_client_state_with_checkpoint(
 
     // Determine if this checkpoint should be the last finalized or just recent.
 
-    // TODO: This comes from the legacy design currently and will be simplified in the future.
+    // TODO(STR-2438): This comes from the legacy design currently and will be
+    // simplified in the future.
     // Currently, `last_finalized` is the buried checkpoint and recent and the last be observed (the
     // checkpoint that makes the the finalized one to be buried).
 
-    // TODO: it's better to store `L1Checkpoint` separately, move the logic of "recent/finalized"
-    // to the DbManager (that can actually fetches actual persisted data and doesn't rely on the
-    // current state).
+    // TODO(STR-2438): it's better to store `L1Checkpoint` separately, move the
+    // logic of "recent/finalized" to the DbManager (that can actually fetches
+    // actual persisted data and doesn't rely on the current state).
     let (last_finalized, recent) = match cur_state.get_last_checkpoint() {
         Some(existing) => {
             // If the new checkpoint is for a later epoch, it becomes recent
@@ -158,14 +209,47 @@ fn update_client_state_with_checkpoint(
     Ok(())
 }
 
+/// Build a compatibility synthetic [`L1Checkpoint`] from a v1 checkpoint tip update.
+// TODO(STR-2438): Remove this adapter once CSM consumes checkpoint-v1-native
+// structures without legacy `L1Checkpoint` synthesis.
+fn checkpoint_from_tip_update(
+    checkpoint_tip_update: &CheckpointTipUpdate,
+    asm_block: &L1BlockCommitment,
+) -> L1Checkpoint {
+    let tip = checkpoint_tip_update.tip();
+    let l1_reference = CheckpointL1Ref::new(*asm_block, Buf32::zero(), Buf32::zero());
+
+    // TODO(STR-2438): This v0-shaped `BatchInfo` synthesis is
+    // semantically incorrect for checkpoint-v1 tip updates (start/end L1 and
+    // L2 commitments are duplicated placeholders). Replace with v1-native data
+    // flow and remove legacy `BatchInfo` construction.
+    let batch_info = BatchInfo::new(
+        tip.epoch,
+        (*asm_block, *asm_block),
+        (*tip.l2_commitment(), *tip.l2_commitment()),
+    );
+
+    // TODO(STR-2438): Compatibility-only placeholder.
+    // `CheckpointTipUpdate` does not carry real transition roots; remove this
+    // synthetic `BatchTransition` once `L1Checkpoint` no longer requires
+    // legacy v0 checkpoint public-parameter fields.
+    let batch_transition = BatchTransition {
+        epoch: tip.epoch,
+        chainstate_transition: ChainstateRootTransition {
+            pre_state_root: Buf32::zero(),
+            post_state_root: Buf32::zero(),
+        },
+    };
+
+    L1Checkpoint::new(batch_info, batch_transition, l1_reference)
+}
+
 /// Create a [`Checkpoint`] from a [`CheckpointUpdate`] log.
 ///
 /// Note: The log doesn't contain the full signed checkpoint, so we reconstruct
 /// what we can. The signature verification was already done by ASM.
-///
-/// TODO: This function is created for compatibility reason to avoid making larger changes.
-/// This will be largely changed as we move to the new OL STF as the checkpoint structure
-/// will be different than the existing ones.
+// TODO(STR-2438): This function exists for compatibility to avoid larger changes.
+// It should be reworked for the new OL STF where checkpoint structures differ.
 fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
     let epoch = update.batch_info().epoch();
 
@@ -188,8 +272,11 @@ mod tests {
     use std::sync::Arc;
 
     use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
+    use strata_asm_logs::{
+        CheckpointTipUpdate, CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE,
+    };
     use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
+    use strata_checkpoint_types_ssz::CheckpointTip;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_params::{Params, RollupParams, SyncParams};
@@ -360,6 +447,47 @@ mod tests {
                 .contains("Failed to deserialize CheckpointUpdate"),
             "Error should mention deserialization failure"
         );
+    }
+
+    #[test]
+    fn test_process_sequential_checkpoint_tip_logs_happy_path() {
+        let (mut state, _) = create_test_state();
+        let mut arbgen = ArbitraryGenerator::new();
+
+        for epoch in 1u32..=2u32 {
+            let asm_block = L1BlockCommitment::new(200 + epoch, arbgen.generate());
+            state.last_asm_block = Some(asm_block);
+
+            let l2_tip = L2BlockCommitment::new(
+                (epoch * 10) as u64,
+                L2BlockId::from(Buf32::from([epoch as u8; 32])),
+            );
+            let tip = CheckpointTip::new(epoch, asm_block.height_u64() as u32, l2_tip);
+            let tip_update = CheckpointTipUpdate::new(tip);
+            let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
+
+            let result = process_log(&mut state, &log, &asm_block);
+            assert!(
+                result.is_ok(),
+                "process_log should succeed for tip epoch {}: {:?}",
+                epoch,
+                result
+            );
+
+            assert_eq!(
+                state.last_processed_epoch,
+                Some(epoch),
+                "Last processed epoch should be updated to {}",
+                epoch
+            );
+        }
+
+        let declared_final_epoch = state
+            .cur_state
+            .as_ref()
+            .get_declared_final_epoch()
+            .expect("expected finalized epoch after two tip updates");
+        assert_eq!(declared_final_epoch.epoch(), 1);
     }
 
     #[test]

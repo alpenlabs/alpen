@@ -14534,6 +14534,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-worker",
  "strata-checkpoint-types",
+ "strata-checkpoint-types-ssz",
  "strata-common",
  "strata-csm-types",
  "strata-db-store-sled",
