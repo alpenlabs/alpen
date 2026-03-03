@@ -120,14 +120,14 @@ mod tests {
         dest_bytes: [u8; 32],
         sats: u64,
     ) -> InputMessage<DecodedEeMessageData> {
-        InputMessage::Valid(
+        InputMessage::from_msg(
             MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
             DecodedEeMessageData::Deposit(DepositMsgData::new(SubjectId::new(dest_bytes))),
         )
     }
 
     fn make_subj_transfer_msg(sats: u64) -> InputMessage<DecodedEeMessageData> {
-        InputMessage::Valid(
+        InputMessage::from_msg(
             MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
             DecodedEeMessageData::SubjTransfer(SubjTransferMsgData::new(
                 SubjectId::new([0xaa; 32]),
@@ -138,7 +138,7 @@ mod tests {
     }
 
     fn make_commit_msg() -> InputMessage<DecodedEeMessageData> {
-        InputMessage::Valid(
+        InputMessage::from_msg(
             MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(0)),
             DecodedEeMessageData::Commit(CommitMsgData::new([0xcc; 32])),
         )

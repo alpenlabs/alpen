@@ -37,20 +37,29 @@ impl MsgMeta {
 }
 
 /// Represents a parsed message.
-// TODO does this make sense to just be a struct with the `M` as an Option?
 #[derive(Clone, Debug)]
-pub enum InputMessage<M: IAcctMsg> {
-    Valid(MsgMeta, M),
-    Unknown(MsgMeta),
+pub struct InputMessage<M: IAcctMsg> {
+    meta: MsgMeta,
+    decoded: Option<M>,
 }
 
 impl<M: IAcctMsg> InputMessage<M> {
+    /// Creates a new [`InputMessage`] from its parts.
+    pub fn new(meta: MsgMeta, decoded: Option<M>) -> Self {
+        Self { meta, decoded }
+    }
+
+    /// Creates a valid [`InputMessage`] from a meta and decoded message.
+    pub fn from_msg(meta: MsgMeta, msg: M) -> Self {
+        Self::new(meta, Some(msg))
+    }
+
     /// Parses from a buf with a [`MsgMeta`], hiding any error and falling back
-    /// to `Unknown`.
+    /// to an unknown message.
     fn from_buf_coerce(meta: MsgMeta, buf: &[u8]) -> Self {
-        match M::try_parse(buf) {
-            Ok(m) => Self::Valid(meta, m),
-            Err(_) => Self::Unknown(meta),
+        Self {
+            meta,
+            decoded: M::try_parse(buf).ok(),
         }
     }
 
@@ -64,24 +73,18 @@ impl<M: IAcctMsg> InputMessage<M> {
         Self::from_buf_coerce(meta, entry.payload_buf())
     }
 
-    /// Checks if the message is value.
+    /// Checks if the message was successfully decoded.
     pub fn is_valid(&self) -> bool {
-        matches!(self, Self::Valid(_, _))
+        self.decoded.is_some()
     }
 
-    /// Gets the message, if we parsed it correctly.
+    /// Gets the decoded message, if parsing succeeded.
     pub fn message(&self) -> Option<&M> {
-        match self {
-            Self::Valid(_, m) => Some(m),
-            _ => None,
-        }
+        self.decoded.as_ref()
     }
 
     /// Gets the message meta.
     pub fn meta(&self) -> &MsgMeta {
-        match self {
-            Self::Valid(m, _) => m,
-            Self::Unknown(m) => m,
-        }
+        &self.meta
     }
 }

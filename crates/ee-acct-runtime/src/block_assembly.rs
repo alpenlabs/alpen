@@ -34,7 +34,7 @@ pub fn apply_input_messages(
         apply_decoded_message(astate, &decoded, meta.value())
             .map_err(|_| EnvError::InvalidBlock)?;
 
-        parsed_messages.push(InputMessage::Valid(meta, decoded));
+        parsed_messages.push(InputMessage::from_msg(meta, decoded));
     }
 
     Ok(parsed_messages)

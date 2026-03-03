@@ -48,8 +48,8 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
         }
 
         // If we recognize it, then we have to do something with it.
-        if let InputMessage::Valid(meta, decoded_msg) = msg {
-            apply_decoded_message(state, &decoded_msg, meta.value())?;
+        if let Some(decoded_msg) = msg.message() {
+            apply_decoded_message(state, decoded_msg, msg.meta().value())?;
         }
 
         Ok(())
