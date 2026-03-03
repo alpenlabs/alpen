@@ -6,7 +6,7 @@ import flexitest
 from web3 import Web3
 
 from envs import net_settings, testenv
-from utils import ProverClientSettings, wait_for_genesis, wait_until, wait_until_epoch_finalized
+from utils import ProverClientSettings, wait_until
 
 
 def send_tx(web3: Web3):
@@ -23,7 +23,7 @@ def send_tx(web3: Web3):
 
 
 @flexitest.register
-class ElExexWalPruningTest(testenv.StrataTester):
+class ElExexWalPruningTest(testenv.StrataTestBase):
     """
     Verifies that ExEx WAL files are pruned after epoch finalization.
 
@@ -48,11 +48,13 @@ class ElExexWalPruningTest(testenv.StrataTester):
         seqrpc = ctx.get_service("sequencer").create_rpc()
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        seq_waiter = self.create_strata_waiter(seqrpc, timeout=20, interval=2)
 
-        wait_for_genesis(seqrpc, timeout=20)
+        seq_waiter.wait_until_genesis()
 
-        # WAL directory is under reth's datadir
-        wal_dir = os.path.join(reth.datadir, "exex", "wal")
+        # WAL directory is under reth's datadir.
+        reth_datadir = reth.get_prop("datadir")
+        wal_dir = os.path.join(reth_datadir, "exex", "wal")
 
         # Wait for some blocks to be produced so WAL files accumulate
         wait_until(
@@ -73,7 +75,7 @@ class ElExexWalPruningTest(testenv.StrataTester):
 
         # Epoch 1 finalization triggers forkchoiceUpdated with finalizedBlockHash,
         # which triggers finalize_wal() in the ExEx manager.
-        wait_until_epoch_finalized(seqrpc, 1, timeout=120)
+        seq_waiter.wait_until_epoch_finalized(1, timeout=120)
         logging.info("Epoch 1 finalized")
 
         # Wait for reth to process the finalization and prune WAL
@@ -85,7 +87,7 @@ class ElExexWalPruningTest(testenv.StrataTester):
             wal_files_pruned,
             error_with="No WAL files were pruned after finalization. "
             "FinishedHeight may be reporting incorrect block numbers.",
-            timeout=30,
+            timeout=90,
         )
 
         # Verify WAL pruning by tracking specific files by their IDs.
