@@ -21,13 +21,13 @@ import flexitest
 from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
 
 # Import environments
-from common.config import ServiceType
+from common.config import EpochSealingConfig, ServiceType
+from common.config.params import GenesisAccountData
 from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
 from common.runtime import TestRuntimeWithLogging
 from common.test_logging import TestNameFilter
 from envconfigs.alpen_client import AlpenClientEnv
 from envconfigs.el_ol import EeOLEnv
-from envconfigs.ol_isolated import OLIsolatedEnvConfig
 from envconfigs.strata import StrataEnvConfig
 
 # Import factories
@@ -263,10 +263,21 @@ def main(argv: list[str]) -> int:
         "basic": StrataEnvConfig(pre_generate_blocks=110),
         "checkpoint": StrataEnvConfig(
             pre_generate_blocks=110,
-            epoch_slots=4,
+            epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
         ),
-        # OL isolated environment (no EE)
-        "ol_isolated": OLIsolatedEnvConfig(),
+        # OL isolated: strata + bitcoin, no EE, with a genesis snark account
+        "ol_isolated": StrataEnvConfig(
+            pre_generate_blocks=110,
+            genesis_accounts={
+                "00" * 31 + "42": GenesisAccountData(
+                    predicate="AlwaysAccept",
+                    inner_state="00" * 32,
+                    balance=0,
+                )
+            },
+            epoch_sealing=EpochSealingConfig(slots_per_epoch=5),
+            fund_test_cli_wallet=True,
+        ),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
         "alpen_ee_discovery": AlpenClientEnv(
