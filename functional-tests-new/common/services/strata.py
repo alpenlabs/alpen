@@ -21,6 +21,7 @@ class StrataProps(TypedDict):
     rpc_url: str
     datadir: str
     mode: str
+    slots_per_epoch: int
 
 
 class StrataService(RpcService):

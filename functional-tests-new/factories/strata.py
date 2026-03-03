@@ -134,12 +134,17 @@ class StrataFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_host}:{rpc_port}"
 
+        resolved_slots_per_epoch = (
+            epoch_sealing.slots_per_epoch if epoch_sealing is not None else 4
+        )
+
         props: StrataProps = {
             "rpc_port": rpc_port,
             "rpc_host": rpc_host,
             "rpc_url": rpc_url,
             "datadir": str(datadir),
             "mode": mode,
+            "slots_per_epoch": resolved_slots_per_epoch,
         }
 
         svc = StrataService(
