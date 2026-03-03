@@ -1,3 +1,5 @@
+use serde::de;
+
 /// Generates impls for shims wrapping a type as another.
 ///
 /// This must be a newtype a la `struct Foo(Bar);`.
@@ -113,10 +115,46 @@ macro_rules! impl_buf_wrapper {
     };
 }
 
+/// Decodes a hex string (with optional `0x`/`0X` prefix) into a fixed-size byte array.
+///
+/// If `reverse` is `true`, the decoded bytes are reversed in place (matching
+/// Bitcoin's display convention where hashes are shown in reversed byte order).
+pub(crate) fn decode_hex_to_array<const N: usize, E: de::Error>(
+    v: &str,
+    reverse: bool,
+) -> Result<[u8; N], E> {
+    let hex_str = v
+        .strip_prefix("0x")
+        .or_else(|| v.strip_prefix("0X"))
+        .unwrap_or(v);
+
+    let bytes = hex::decode(hex_str).map_err(E::custom)?;
+
+    if bytes.len() != N {
+        return Err(E::custom(format!(
+            "expected {} bytes, got {}",
+            N,
+            bytes.len()
+        )));
+    }
+
+    let mut array = [0u8; N];
+    array.copy_from_slice(&bytes);
+    if reverse {
+        array.reverse();
+    }
+    Ok(array)
+}
+
 pub(crate) mod internal {
     // Crate-internal impls.
 
-    macro_rules! impl_buf_common {
+    /// Generates the foundational API for a fixed-size byte buffer type.
+    ///
+    /// Provides constructors (`new`, `zero`), accessors (`as_slice`, `as_mut_slice`,
+    /// `as_bytes`, `is_zero`), the `LEN` constant, standard conversion traits (`AsRef`,
+    /// `AsMut`, `From`, `TryFrom`), and `Default`.
+    macro_rules! impl_buf_core {
         ($name:ident, $len:expr) => {
             impl $name {
                 pub const LEN: usize = $len;
@@ -202,7 +240,12 @@ pub(crate) mod internal {
                     Self([0; $len])
                 }
             }
+        };
+    }
 
+    /// Generates `Debug` (full hex) and `Display` (truncated hex) formatting.
+    macro_rules! impl_buf_fmt {
+        ($name:ident, $len:expr) => {
             impl ::std::fmt::Debug for $name {
                 fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                     // twice as large, required by the hex::encode_to_slice.
@@ -224,7 +267,12 @@ pub(crate) mod internal {
                     Ok(())
                 }
             }
+        };
+    }
 
+    /// Generates `BorshSerialize` and `BorshDeserialize` impls.
+    macro_rules! impl_buf_borsh {
+        ($name:ident, $len:expr) => {
             impl ::borsh::BorshSerialize for $name {
                 fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
                     let bytes = self.0.as_ref();
@@ -242,7 +290,12 @@ pub(crate) mod internal {
                     Ok(array.into())
                 }
             }
+        };
+    }
 
+    /// Generates `Arbitrary` impl for property-based testing.
+    macro_rules! impl_buf_arbitrary {
+        ($name:ident, $len:expr) => {
             impl<'a> ::arbitrary::Arbitrary<'a> for $name {
                 fn arbitrary(u: &mut ::arbitrary::Unstructured<'a>) -> ::arbitrary::Result<Self> {
                     let mut array = [0u8; $len];
@@ -250,21 +303,23 @@ pub(crate) mod internal {
                     Ok(array.into())
                 }
             }
+        };
+    }
 
-            // Codec implementation for Buf types
+    /// Generates `strata_codec::Codec` impl.
+    macro_rules! impl_buf_codec {
+        ($name:ident, $len:expr) => {
             impl $crate::strata_codec::Codec for $name {
                 fn encode(
                     &self,
                     enc: &mut impl $crate::strata_codec::Encoder,
                 ) -> Result<(), $crate::strata_codec::CodecError> {
-                    // Encode the underlying byte array
                     self.0.encode(enc)
                 }
 
                 fn decode(
                     dec: &mut impl $crate::strata_codec::Decoder,
                 ) -> Result<Self, $crate::strata_codec::CodecError> {
-                    // Decode the byte array and wrap it
                     let bytes = <[u8; $len]>::decode(dec)?;
                     Ok(Self(bytes))
                 }
@@ -272,16 +327,32 @@ pub(crate) mod internal {
         };
     }
 
-    macro_rules! impl_buf_serde {
-        ($name:ident, $len:expr) => {
+    /// Generates `Serialize` and `Deserialize` impls for a fixed-size byte buffer.
+    ///
+    /// Human-readable formats (e.g. JSON) serialize as hex strings. When
+    /// `reverse_human_readable` is `true`, the byte order is reversed before/after
+    /// hex encoding, matching Bitcoin's display convention.
+    ///
+    /// Non-human-readable formats (e.g. bincode) serialize as raw bytes, never
+    /// reversed.
+    macro_rules! impl_buf_serde_inner {
+        ($name:ident, $len:expr, reverse_human_readable: $reverse:expr) => {
             impl ::serde::Serialize for $name {
                 fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                 where
                     S: ::serde::Serializer,
                 {
-                    // Convert the inner array to a hex string (without 0x prefix)
-                    let hex_str = ::hex::encode(&self.0);
-                    serializer.serialize_str(&hex_str)
+                    if serializer.is_human_readable() {
+                        if $reverse {
+                            let mut bytes = self.0;
+                            bytes.reverse();
+                            serializer.serialize_str(&::hex::encode(&bytes))
+                        } else {
+                            serializer.serialize_str(&::hex::encode(&self.0))
+                        }
+                    } else {
+                        serializer.serialize_bytes(&self.0)
+                    }
                 }
             }
 
@@ -290,10 +361,7 @@ pub(crate) mod internal {
                 where
                     D: ::serde::Deserializer<'de>,
                 {
-                    // Define a Visitor for deserialization.
-                    // P.S. Make it in the scope of the function to avoid name conflicts
-                    // for different macro_rules invocations.
-                    struct BufVisitor;
+                    struct BufVisitor(bool);
 
                     impl<'de> ::serde::de::Visitor<'de> for BufVisitor {
                         type Value = $name;
@@ -302,55 +370,22 @@ pub(crate) mod internal {
                             &self,
                             formatter: &mut ::std::fmt::Formatter<'_>,
                         ) -> ::std::fmt::Result {
-                            write!(
-                                formatter,
-                                "a hex string with an optional 0x prefix representing {} bytes",
-                                $len
-                            )
+                            write!(formatter, "a hex string or byte array of {} bytes", $len)
                         }
 
                         fn visit_str<E>(self, v: &str) -> Result<$name, E>
                         where
                             E: ::serde::de::Error,
                         {
-                            // Remove the optional "0x" or "0X" prefix if present.
-                            let hex_str = if v.starts_with("0x") || v.starts_with("0X") {
-                                &v[2..]
-                            } else {
-                                v
-                            };
-
-                            // Decode the hex string into a vector of bytes.
-                            let bytes = ::hex::decode(hex_str).map_err(E::custom)?;
-
-                            // Ensure the decoded bytes have the expected length.
-                            if bytes.len() != $len {
-                                return Err(E::custom(format!(
-                                    "expected {} bytes, got {}",
-                                    $len,
-                                    bytes.len()
-                                )));
-                            }
-
-                            // Convert the Vec<u8> into a fixed-size array.
-                            let mut array = [0u8; $len];
-                            array.copy_from_slice(&bytes);
-                            Ok($name(array))
+                            $crate::macros::decode_hex_to_array::<$len, E>(v, self.0).map($name)
                         }
 
                         fn visit_bytes<E>(self, v: &[u8]) -> Result<$name, E>
                         where
                             E: ::serde::de::Error,
                         {
-                            if v.len() == $len {
-                                let mut array = [0u8; $len];
-                                array.copy_from_slice(v);
-                                Ok($name(array))
-                            } else {
-                                // Try to interpret the bytes as a UTF-8 encoded hex string.
-                                let s = ::std::str::from_utf8(v).map_err(E::custom)?;
-                                self.visit_str(s)
-                            }
+                            let v: &[u8; $len] = v.try_into().map_err(E::custom)?;
+                            Ok($name(*v))
                         }
 
                         fn visit_seq<A>(self, mut seq: A) -> Result<$name, A::Error>
@@ -363,32 +398,81 @@ pub(crate) mod internal {
                                     .next_element::<u8>()?
                                     .ok_or_else(|| ::serde::de::Error::invalid_length(i, &self))?;
                             }
-                            // Ensure there are no extra elements.
-                            if let Some(_) = seq.next_element::<u8>()? {
-                                return Err(::serde::de::Error::custom(format!(
-                                    "expected a sequence of exactly {} bytes, but found extra elements",
-                                    $len
-                                )));
-                            }
                             Ok($name(array))
                         }
                     }
 
                     if deserializer.is_human_readable() {
-                        // For human-readable formats, support multiple input types.
-                        // Use with the _any, so serde can decide whether to visit seq, bytes or str.
-                        deserializer.deserialize_any(BufVisitor)
+                        // `deserialize_any` so we accept both hex strings and
+                        // JSON arrays.
+                        deserializer.deserialize_any(BufVisitor($reverse))
                     } else {
-                        // Bincode does not support DeserializeAny, so deserializing with the _str.
-                        deserializer.deserialize_str(BufVisitor)
+                        deserializer.deserialize_bytes(BufVisitor(false))
                     }
                 }
             }
         };
     }
 
-    pub(crate) use impl_buf_common;
+    macro_rules! impl_buf_serde {
+        ($name:ident, $len:expr) => {
+            $crate::macros::internal::impl_buf_serde_inner!($name, $len, reverse_human_readable: false);
+        };
+    }
+
+    /// Generates `Debug` (full reversed hex) and `Display` (truncated reversed hex) formatting.
+    ///
+    /// Same as [`impl_buf_fmt`] but reverses the byte order before hex encoding,
+    /// matching Bitcoin's display convention for block/transaction hashes.
+    macro_rules! impl_rbuf_fmt {
+        ($name:ident, $len:expr) => {
+            impl ::std::fmt::Debug for $name {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    let mut bytes = self.0;
+                    bytes.reverse();
+                    let mut buf = [0; $len * 2];
+                    ::hex::encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
+                    f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })
+                }
+            }
+
+            impl ::std::fmt::Display for $name {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                    let mut bytes = self.0;
+                    bytes.reverse();
+                    // fmt only first and last bits of the reversed data.
+                    let mut buf = [0; 6];
+                    ::hex::encode_to_slice(&bytes[..3], &mut buf).expect("buf: enc hex");
+                    f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
+                    f.write_str("..")?;
+                    ::hex::encode_to_slice(&bytes[$len - 3..], &mut buf).expect("buf: enc hex");
+                    f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
+                    Ok(())
+                }
+            }
+        };
+    }
+
+    /// Generates reversed-byte `Serialize` and `Deserialize` impls.
+    ///
+    /// Same as [`impl_buf_serde`] but reverses the byte order for human-readable formats,
+    /// matching Bitcoin's display convention for block/transaction hashes. Binary formats
+    /// (e.g. bincode) are unaffected and use raw byte order.
+    macro_rules! impl_rbuf_serde {
+        ($name:ident, $len:expr) => {
+            $crate::macros::internal::impl_buf_serde_inner!($name, $len, reverse_human_readable: true);
+        };
+    }
+
+    pub(crate) use impl_buf_arbitrary;
+    pub(crate) use impl_buf_borsh;
+    pub(crate) use impl_buf_codec;
+    pub(crate) use impl_buf_core;
+    pub(crate) use impl_buf_fmt;
     pub(crate) use impl_buf_serde;
+    pub(crate) use impl_buf_serde_inner;
+    pub(crate) use impl_rbuf_fmt;
+    pub(crate) use impl_rbuf_serde;
 }
 
 /// Implements Borsh serialization as a shim over SSZ bytes with length-prefixing.
@@ -720,7 +804,11 @@ mod tests {
     #[derive(PartialEq)]
     pub struct TestBuf20([u8; 20]);
 
-    crate::macros::internal::impl_buf_common!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_core!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_fmt!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_borsh!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_arbitrary!(TestBuf20, 20);
+    crate::macros::internal::impl_buf_codec!(TestBuf20, 20);
     crate::macros::internal::impl_buf_serde!(TestBuf20, 20);
 
     #[test]
