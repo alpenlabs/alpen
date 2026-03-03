@@ -106,13 +106,16 @@ class TestMockWithdrawal(StrataNodeTest):
         addr = btc_rpc.proxy.getnewaddress()
         btc_rpc.proxy.generatetoaddress(8, addr)
 
-        # Step 3: Wait for OL to reach a terminal block (epoch boundary).
-        # L1 manifests are only processed during terminal blocks. With
-        # slots_per_epoch=5 the first post-genesis terminal block is at slot 5.
-        # Wait for enough blocks to guarantee we cross at least one terminal
-        # boundary after the ASM has processed the new Bitcoin blocks.
-        logger.info("Waiting for OL to reach terminal block and process deposit...")
-        strata.wait_for_additional_blocks(10, rpc, timeout_per_block=15)
+        # Wait for OL to reach a terminal block (epoch boundary).
+        # L1 manifests are only processed during terminal blocks, so we need
+        # to cross at least two epoch boundaries to be sure the deposit is picked up.
+        slots_per_epoch = strata.props["slots_per_epoch"]
+        blocks_to_wait = 2 * slots_per_epoch
+        logger.info(
+            "Waiting %d blocks (2 * slots_per_epoch=%d) for terminal block...",
+            blocks_to_wait, slots_per_epoch,
+        )
+        strata.wait_for_additional_blocks(blocks_to_wait, rpc, timeout_per_block=15)
 
         # Step 4: Query account balance and verify deposit
         balance = get_account_balance(rpc, account_id_hex)
