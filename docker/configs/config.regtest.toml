@@ -1,0 +1,56 @@
+# config.regtest.toml
+#
+# Strata OL client configuration for local regtest Docker environment.
+# Used by docker-compose-alpen-client.yml.
+#
+# Based on config.seq.toml, adjusted for:
+#   - Docker service hostnames (bitcoind, alpen-client-seq)
+#   - Regtest network
+#   - Sequencer mode enabled
+
+[client]
+rpc_host = "0.0.0.0"
+rpc_port = 8432
+l2_blocks_fetch_limit = 1_000
+datadir = "/app/data"
+db_retry_count = 5
+is_sequencer = true
+
+[bitcoind]
+rpc_url = "http://bitcoind:18443/wallet/default"
+rpc_user = "rpcuser"
+rpc_password = "rpcpassword"
+network = "regtest"
+
+[btcio.reader]
+client_poll_dur_ms = 200
+
+[btcio.writer]
+write_poll_dur_ms = 200
+fee_policy = "smart"
+reveal_amount = 100
+bundle_interval_ms = 1000
+
+[btcio.broadcaster]
+poll_interval_ms = 1000
+
+[sync]
+l1_follow_distance = 6
+max_reorg_depth = 4
+client_poll_dur_ms = 2000
+client_checkpoint_interval = 10
+
+[exec.reth]
+rpc_url = "alpen-client:8551"
+secret = "/app/configs/alpen-client/jwt.hex"
+
+[sequencer]
+
+[epoch_sealing]
+policy = "FixedSlot"
+slots_per_epoch = 64
+
+[relayer]
+refresh_interval = 10
+stale_duration = 120
+relay_misc = true

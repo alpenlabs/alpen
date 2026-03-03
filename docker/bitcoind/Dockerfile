@@ -1,56 +1,34 @@
-# Stage 1: Build Bitcoin from source
-FROM ubuntu:24.04 AS build
+FROM debian:bookworm-slim
 
-WORKDIR /build
-
-# Install build dependencies
-RUN apt-get update && \
-    apt-get install -y software-properties-common build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 \
-    libevent-dev libboost-dev libsqlite3-dev libssl-dev libboost-all-dev git
-
-# Clone Bitcoin repository and checkout the commit for v28.0 tag
-RUN git clone -b 'v28.0' --single-branch --depth 1 https://github.com/bitcoin/bitcoin.git
-
-# Apply a diff file to the Bitcoin source code to enable configurable block
-# time for signet. The diff file is generated from the following PR:
-# https://github.com/bitcoin/bitcoin/pull/27446/commits
-COPY configurable_blocktime_patch.diff configurable_blocktime_patch.diff
-
-# Apply the patch to Bitcoin source code
-RUN cd bitcoin && git apply /build/configurable_blocktime_patch.diff
-
-# Build Bitcoin from source
-# Run the build in parallel using one less than the number of available CPUs
-RUN cd bitcoin && \
-    ./autogen.sh && \
-    ./configure && \
-    make -j$(($(nproc) - 1)) && \
-    make install
-
-# Stage 2: Create a minimal runtime image
-FROM ubuntu:24.04 AS runtime
+ARG BITCOIN_VERSION=30.2
+ARG TARGETARCH
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Fetch pre-built bitcoind + bitcoin-cli from bitcoincore.org
 RUN apt-get update && \
-    apt-get install -y libevent-dev libboost-dev libsqlite3-dev libssl-dev && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Copy the Bitcoin binaries from the build stage
-COPY --from=build /usr/local/bin/bitcoind /usr/local/bin/bitcoind
-COPY --from=build /usr/local/bin/bitcoin-cli /usr/local/bin/bitcoin-cli
+    apt-get install -y --no-install-recommends ca-certificates wget && \
+    case "${TARGETARCH}" in \
+        amd64) ARCH="x86_64-linux-gnu" ;; \
+        arm64) ARCH="aarch64-linux-gnu" ;; \
+        *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    wget -q "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-${ARCH}.tar.gz" && \
+    tar -xzf "bitcoin-${BITCOIN_VERSION}-${ARCH}.tar.gz" && \
+    install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoind" /usr/local/bin/ && \
+    install -m 0755 "bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli" /usr/local/bin/ && \
+    rm -rf "bitcoin-${BITCOIN_VERSION}"* && \
+    apt-get purge -y wget && apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create a directory for Bitcoin data
 RUN mkdir -p /root/.bitcoin
 
 COPY bcli.sh bcli.sh
-
 RUN chmod +x /app/bcli.sh
 
-# Expose necessary ports
-EXPOSE 18443 18444
+# regtest RPC/P2P + signet RPC/P2P
+EXPOSE 18443 18444 38332 38333
 
-# Set the entrypoint script
-# this should be mounted so that we can set args more easily.
+# this should be mounted so that we can set args more easily
 ENTRYPOINT ["/app/entrypoint.sh"]

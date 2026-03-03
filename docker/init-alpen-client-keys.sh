@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Generate keys and params for alpen-client docker deployment (sequencer + fullnode).
+# Supports regtest and signet networks.
+#
+# Usage:
+#   ./init-alpen-client-keys.sh              # defaults to regtest
+#   BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT_DIR="${SCRIPT_DIR}/configs/alpen-client"
+BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
+
+case "${BITCOIN_NETWORK}" in
+    regtest)
+        GENESIS_BLKID="0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+        DEFAULT_RPC_PORT=18443
+        L1_NEXT_TARGET=545259519
+        L1_EPOCH_START_TIMESTAMP=1296688602
+        ;;
+    signet)
+        GENESIS_BLKID="00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
+        DEFAULT_RPC_PORT=38332
+        L1_NEXT_TARGET=503543726
+        L1_EPOCH_START_TIMESTAMP=1598918400
+        ;;
+    *)
+        echo "error: unsupported BITCOIN_NETWORK=${BITCOIN_NETWORK} (use regtest or signet)" >&2
+        exit 1
+        ;;
+esac
+
+PYTHON=""
+for candidate in python3 python3.12 python3.11 python3.10 python; do
+    if command -v "${candidate}" &>/dev/null && "${candidate}" -c "import coincurve" 2>/dev/null; then
+        PYTHON="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${PYTHON}" ]; then
+    echo "error: no python with 'coincurve' found. install: pip install coincurve" >&2
+    exit 1
+fi
+
+mkdir -p "${OUTPUT_DIR}"
+
+generate_secret_key() {
+    od -An -tx1 -N32 /dev/urandom | tr -d ' \n'
+}
+
+derive_schnorr_pubkey() {
+    local privkey_hex="$1"
+    echo -n "${privkey_hex}" | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=True)[1:].hex())
+"
+}
+
+derive_enode_pubkey() {
+    local privkey_hex="$1"
+    echo -n "${privkey_hex}" | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=False)[1:].hex())
+"
+}
+
+generate_key_file() {
+    local filepath="$1"
+    if [ -f "${filepath}" ]; then
+        return
+    fi
+    generate_secret_key > "${filepath}"
+}
+
+# --- Keys ---
+
+SCHNORR_KEY="${OUTPUT_DIR}/sequencer-schnorr.hex"
+generate_key_file "${SCHNORR_KEY}"
+SCHNORR_PRIVKEY=$(cat "${SCHNORR_KEY}")
+SCHNORR_PUBKEY=$(derive_schnorr_pubkey "${SCHNORR_PRIVKEY}")
+
+SEQ_P2P_KEY="${OUTPUT_DIR}/seq-p2p.hex"
+FN_P2P_KEY="${OUTPUT_DIR}/fn-p2p.hex"
+generate_key_file "${SEQ_P2P_KEY}"
+generate_key_file "${FN_P2P_KEY}"
+
+SEQ_P2P_PRIVKEY=$(cat "${SEQ_P2P_KEY}")
+FN_P2P_PRIVKEY=$(cat "${FN_P2P_KEY}")
+SEQ_P2P_PUBKEY=$(derive_enode_pubkey "${SEQ_P2P_PRIVKEY}")
+FN_P2P_PUBKEY=$(derive_enode_pubkey "${FN_P2P_PRIVKEY}")
+
+JWT_FILE="${OUTPUT_DIR}/jwt.hex"
+generate_key_file "${JWT_FILE}"
+
+SEQ_ROOT_KEY="${OUTPUT_DIR}/sequencer.key"
+if [ ! -f "${SEQ_ROOT_KEY}" ]; then
+    echo -n "tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7" > "${SEQ_ROOT_KEY}"
+fi
+
+# --- Operator key ---
+
+OPERATOR_KEY="${OUTPUT_DIR}/operator.hex"
+if [ ! -f "${OPERATOR_KEY}" ]; then
+    generate_secret_key > "${OPERATOR_KEY}"
+fi
+OPERATOR_SECRET=$(cat "${OPERATOR_KEY}")
+
+OPERATOR_XONLY_PUBKEY=$(echo -n "${OPERATOR_SECRET}" | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=True)[1:].hex())
+")
+
+OPERATOR_COMPRESSED_PUBKEY=$(echo -n "${OPERATOR_SECRET}" | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=True).hex())
+")
+
+# --- rollup-params.json ---
+
+ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
+if [ ! -f "${ROLLUP_PARAMS}" ]; then
+    cat > "${ROLLUP_PARAMS}" <<REOF
+{
+  "magic_bytes": "ALPN",
+  "block_time": 5000,
+  "cred_rule": "unchecked",
+  "genesis_l1_view": {
+    "blk": {
+      "height": 0,
+      "blkid": "${GENESIS_BLKID}"
+    },
+    "next_target": 1000,
+    "epoch_start_timestamp": 1000,
+    "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "operators": ["${OPERATOR_XONLY_PUBKEY}"],
+  "evm_genesis_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "evm_genesis_block_state_root": "0000000000000000000000000000000000000000000000000000000000000000",
+  "l1_reorg_safe_depth": 4,
+  "target_l2_batch_size": 64,
+  "deposit_amount": 100000,
+  "recovery_delay": 1008,
+  "checkpoint_predicate": "AlwaysAccept",
+  "dispatch_assignment_dur": 144,
+  "proof_publish_mode": {"timeout": 30},
+  "max_deposits_in_block": 10,
+  "network": "${BITCOIN_NETWORK}"
+}
+REOF
+    echo "generated ${ROLLUP_PARAMS}"
+fi
+
+# --- ol-params.json ---
+
+OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
+if [ ! -f "${OL_PARAMS}" ]; then
+    cat > "${OL_PARAMS}" <<OEOF
+{
+  "accounts": {
+    "0101010101010101010101010101010101010101010101010101010101010101": {
+      "predicate": "AlwaysAccept",
+      "inner_state": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "last_l1_block": {
+    "height": 0,
+    "blkid": "${GENESIS_BLKID}"
+  }
+}
+OEOF
+    echo "generated ${OL_PARAMS}"
+fi
+
+# --- asm-params.json ---
+# NOTE: genesis_ol_blkid is a placeholder. With "AlwaysAccept" checkpoint
+# predicate this value is not validated. For production deployments, compute
+# the correct value using: strata-datatool gen-asm-params --ol-params <ol-params>
+
+ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
+if [ ! -f "${ASM_PARAMS}" ]; then
+    cat > "${ASM_PARAMS}" <<AEOF
+{
+  "magic": "ALPT",
+  "l1_view": {
+    "blk": {
+      "height": 0,
+      "blkid": "${GENESIS_BLKID}"
+    },
+    "next_target": ${L1_NEXT_TARGET},
+    "epoch_start_timestamp": ${L1_EPOCH_START_TIMESTAMP},
+    "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "subprotocols": [
+    {
+      "Admin": {
+        "strata_administrator": {
+          "keys": ["${OPERATOR_COMPRESSED_PUBKEY}"],
+          "threshold": 1
+        },
+        "strata_sequencer_manager": {
+          "keys": ["${OPERATOR_COMPRESSED_PUBKEY}"],
+          "threshold": 1
+        },
+        "confirmation_depth": 144,
+        "max_seqno_gap": 10
+      }
+    },
+    {
+      "Checkpoint": {
+        "sequencer_predicate": "AlwaysAccept",
+        "checkpoint_predicate": "AlwaysAccept",
+        "genesis_l1_height": 0,
+        "genesis_ol_blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "Bridge": {
+        "operators": ["${OPERATOR_COMPRESSED_PUBKEY}"],
+        "denomination": 1000000000,
+        "assignment_duration": 64,
+        "operator_fee": 50000000,
+        "recovery_delay": 1008
+      }
+    }
+  ]
+}
+AEOF
+    echo "generated ${ASM_PARAMS}"
+fi
+
+# --- .env.alpen-client ---
+
+ENV_FILE="${SCRIPT_DIR}/.env.alpen-client"
+
+cat > "${ENV_FILE}" <<EOF
+# Generated by init-alpen-client-keys.sh — do not edit manually.
+# Re-run the script to regenerate (existing keys are preserved).
+
+BITCOIN_NETWORK=${BITCOIN_NETWORK}
+
+SEQUENCER_PRIVATE_KEY=${SCHNORR_PRIVKEY}
+SEQUENCER_PUBKEY=${SCHNORR_PUBKEY}
+
+SEQ_P2P_PUBKEY=${SEQ_P2P_PUBKEY}
+FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
+
+CHAIN_SPEC=${CHAIN_SPEC:-dev}
+
+EE_DA_MAGIC_BYTES=${EE_DA_MAGIC_BYTES:-ALPT}
+L1_REORG_SAFE_DEPTH=${L1_REORG_SAFE_DEPTH:-4}
+GENESIS_L1_HEIGHT=${GENESIS_L1_HEIGHT:-0}
+BATCH_SEALING_BLOCK_COUNT=${BATCH_SEALING_BLOCK_COUNT:-5}
+
+BITCOIND_RPC_USER=${BITCOIND_RPC_USER:-rpcuser}
+BITCOIND_RPC_PASSWORD=${BITCOIND_RPC_PASSWORD:-rpcpassword}
+BITCOIND_RPC_PORT=${BITCOIND_RPC_PORT:-${DEFAULT_RPC_PORT}}
+
+STRATA_RPC_PORT=${STRATA_RPC_PORT:-8432}
+
+SEQ_HTTP_PORT=${SEQ_HTTP_PORT:-8545}
+SEQ_WS_PORT=${SEQ_WS_PORT:-8546}
+SEQ_P2P_PORT=${SEQ_P2P_PORT:-30303}
+
+FN_HTTP_PORT=${FN_HTTP_PORT:-9545}
+FN_WS_PORT=${FN_WS_PORT:-9546}
+FN_P2P_PORT=${FN_P2P_PORT:-31303}
+
+RUST_LOG=${RUST_LOG:-info}
+EOF
+
+echo "wrote ${ENV_FILE}"
+echo "network: ${BITCOIN_NETWORK}"
+echo "sequencer pubkey: ${SCHNORR_PUBKEY}"

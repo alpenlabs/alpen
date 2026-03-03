@@ -1,0 +1,226 @@
+# 1 alpen-client sequencer + 1 fullnode + strata (OL) + bitcoind.
+# Supports regtest and signet via BITCOIN_NETWORK env var.
+#
+# Prerequisites:
+#   1. Run ./init-alpen-client-keys.sh  (or BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh)
+#   2. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
+#   3. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
+
+services:
+
+  bitcoind:
+    build:
+      context: ./bitcoind/
+    image: alpen_bitcoind:latest
+    container_name: alpen_bitcoind
+    environment:
+      BITCOIN_NETWORK: ${BITCOIN_NETWORK:-regtest}
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      BITCOIND_WALLET: default
+      GENERATE_BLOCKS: ${GENERATE_BLOCKS:-}
+    volumes:
+      - ./data/bitcoind:/root/.bitcoin
+      - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
+    ports:
+      - "${BITCOIND_RPC_PORT:-18443}:${BITCOIND_RPC_PORT:-18443}"
+    healthcheck:
+      test: >-
+        bitcoin-cli
+        -${BITCOIN_NETWORK:-regtest}
+        -rpcuser=${BITCOIND_RPC_USER:-rpcuser}
+        -rpcpassword=${BITCOIND_RPC_PASSWORD:-rpcpassword}
+        getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+  strata:
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile
+    image: strata:latest
+    container_name: alpen_strata
+    user: "0:0"
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - "--sequencer"
+      - "--sequencer-key"
+      - /app/configs/alpen-client/sequencer.key
+      - "--rpc-host"
+      - "0.0.0.0"
+    environment:
+      CONFIG_PATH: /app/configs/config.regtest.toml
+      PARAM_PATH: /app/configs/alpen-client/rollup-params.json
+      OL_PARAMS_PATH: /app/configs/alpen-client/ol-params.json
+      ASM_PARAMS_PATH: /app/configs/alpen-client/asm-params.json
+      BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      BITCOIN_NETWORK: ${BITCOIN_NETWORK:-regtest}
+      RUST_LOG: ${RUST_LOG:-info}
+      RUST_BACKTRACE: 1
+      NO_COLOR: 1
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./data/strata:/app/data
+    ports:
+      - "${STRATA_RPC_PORT:-8432}:8432"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+  alpen-client:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    container_name: alpen_client_seq
+    depends_on:
+      - strata
+      - bitcoind
+    command:
+      - --sequencer
+      - --sequencer-pubkey
+      - ${SEQUENCER_PUBKEY}
+      - --ol-client-url
+      - ws://strata:8432
+      - --custom-chain
+      - ${CHAIN_SPEC:-dev}
+      - --datadir
+      - /app/data
+      - --p2p-secret-key
+      - /app/keys/seq-p2p.hex
+      - --addr
+      - "0.0.0.0"
+      - --port
+      - "30303"
+      - --nat
+      - none
+      - --http
+      - --http.addr
+      - "0.0.0.0"
+      - --http.port
+      - "8545"
+      - --http.api
+      - eth,net,web3,txpool,admin,debug
+      - --ws
+      - --ws.addr
+      - "0.0.0.0"
+      - --ws.port
+      - "8546"
+      - --ws.api
+      - eth,net,web3,txpool
+      - --authrpc.addr
+      - "0.0.0.0"
+      - --authrpc.port
+      - "8551"
+      - --authrpc.jwtsecret
+      - /app/keys/jwt.hex
+      - --ee-da-magic-bytes
+      - ${EE_DA_MAGIC_BYTES:-ALPT}
+      - --btc-rpc-url
+      - http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
+      - --btc-rpc-user
+      - ${BITCOIND_RPC_USER:-rpcuser}
+      - --btc-rpc-password
+      - ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      - --l1-reorg-safe-depth
+      - "${L1_REORG_SAFE_DEPTH:-4}"
+      - --genesis-l1-height
+      - "${GENESIS_L1_HEIGHT:-0}"
+      - --batch-sealing-block-count
+      - "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      - --color
+      - never
+    environment:
+      SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${SEQ_HTTP_PORT:-8545}:8545"
+      - "${SEQ_WS_PORT:-8546}:8546"
+      - "${SEQ_P2P_PORT:-30303}:30303"
+    volumes:
+      - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
+      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+      - ./data/alpen-client-seq:/app/data
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+  alpen-client-fullnode:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    container_name: alpen_client_fn
+    depends_on:
+      - strata
+      - alpen-client
+    command:
+      - --sequencer-pubkey
+      - ${SEQUENCER_PUBKEY}
+      - --ol-client-url
+      - ws://strata:8432
+      - --custom-chain
+      - ${CHAIN_SPEC:-dev}
+      - --datadir
+      - /app/data
+      - --sequencer-http
+      - http://alpen-client:8545
+      - --p2p-secret-key
+      - /app/keys/fn-p2p.hex
+      - --addr
+      - "0.0.0.0"
+      - --port
+      - "30303"
+      - --nat
+      - none
+      - --bootnodes
+      - enode://${SEQ_P2P_PUBKEY}@alpen-client:30303
+      - --http
+      - --http.addr
+      - "0.0.0.0"
+      - --http.port
+      - "8545"
+      - --http.api
+      - eth,net,web3,txpool,admin,debug
+      - --ws
+      - --ws.addr
+      - "0.0.0.0"
+      - --ws.port
+      - "8546"
+      - --ws.api
+      - eth,net,web3,txpool
+      - --authrpc.addr
+      - "0.0.0.0"
+      - --authrpc.port
+      - "8551"
+      - --color
+      - never
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "${FN_HTTP_PORT:-9545}:8545"
+      - "${FN_WS_PORT:-9546}:8546"
+      - "${FN_P2P_PORT:-31303}:30303"
+    volumes:
+      - ./configs/alpen-client/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
+      - ./data/alpen-client-fn:/app/data
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - alpen_network
+    restart: unless-stopped
+
+networks:
+  alpen_network:
+    driver: bridge
+    name: alpen_network
