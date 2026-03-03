@@ -7,11 +7,10 @@ use strata_ee_acct_types::DecodedEeMessageData;
 use strata_ee_chain_types::{
     ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs, SubjectDepositData,
 };
-use strata_snark_acct_runtime::InputMessage;
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
+use strata_snark_acct_runtime::InputMessage;
 use tracing::warn;
-
 
 /// Builds [`ExecInputs`] from parsed input messages.
 ///
@@ -116,10 +115,7 @@ mod tests {
 
     use super::*;
 
-    fn make_deposit_msg(
-        dest_bytes: [u8; 32],
-        sats: u64,
-    ) -> InputMessage<DecodedEeMessageData> {
+    fn make_deposit_msg(dest_bytes: [u8; 32], sats: u64) -> InputMessage<DecodedEeMessageData> {
         InputMessage::from_msg(
             MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
             DecodedEeMessageData::Deposit(DepositMsgData::new(SubjectId::new(dest_bytes))),

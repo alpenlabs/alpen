@@ -288,7 +288,7 @@ mod tests {
     use std::vec;
 
     use strata_acct_types::BitcoinAmount;
-    use strata_ee_chain_types::{ExecInputs, ExecOutputs, ExecBlockCommitment};
+    use strata_ee_chain_types::{ExecBlockCommitment, ExecInputs, ExecOutputs};
     use strata_identifiers::Buf32;
 
     use super::*;
