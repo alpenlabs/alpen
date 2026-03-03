@@ -5,6 +5,7 @@ ARG TARGETARCH
 
 WORKDIR /app
 
+# Fetch pre-built bitcoind + bitcoin-cli from bitcoincore.org
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates wget && \
     case "${TARGETARCH}" in \
@@ -20,11 +21,14 @@ RUN apt-get update && \
     apt-get purge -y wget && apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
+# Create a directory for Bitcoin data
 RUN mkdir -p /root/.bitcoin
 
 COPY bcli.sh bcli.sh
 RUN chmod +x /app/bcli.sh
 
+# regtest RPC/P2P + signet RPC/P2P
 EXPOSE 18443 18444 38332 38333
 
+# this should be mounted so that we can set args more easily
 ENTRYPOINT ["/app/entrypoint.sh"]

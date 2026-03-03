@@ -59,6 +59,7 @@ services:
       CONFIG_PATH: /app/configs/config.regtest.toml
       PARAM_PATH: /app/configs/alpen-client/rollup-params.json
       OL_PARAMS_PATH: /app/configs/alpen-client/ol-params.json
+      ASM_PARAMS_PATH: /app/configs/alpen-client/asm-params.json
       BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
       BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
       BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}

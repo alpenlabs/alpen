@@ -6,11 +6,9 @@ BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 case "${BITCOIN_NETWORK}" in
     regtest)
         CHAIN_FLAG="-regtest"
-        RPC_PORT=18443
         ;;
     signet)
         CHAIN_FLAG="-signet"
-        RPC_PORT=38332
         ;;
     *)
         echo "error: unsupported BITCOIN_NETWORK=${BITCOIN_NETWORK}" >&2
@@ -18,6 +16,7 @@ case "${BITCOIN_NETWORK}" in
         ;;
 esac
 
+# generate bitcoin.conf
 cat > /root/.bitcoin/bitcoin.conf <<EOF
 ${BITCOIN_NETWORK}=1
 
@@ -31,6 +30,7 @@ txindex=1
 fallbackfee=0.00001
 EOF
 
+# regtest-only: allow burning and non-standard txs
 if [ "${BITCOIN_NETWORK}" = "regtest" ]; then
     cat >> /root/.bitcoin/bitcoin.conf <<EOF
 maxburnamount=1
@@ -39,13 +39,14 @@ EOF
 fi
 
 bcli() {
-    bitcoin-cli ${CHAIN_FLAG} \
+    bitcoin-cli "${CHAIN_FLAG}" \
         -rpcuser="${BITCOIND_RPC_USER}" \
         -rpcpassword="${BITCOIND_RPC_PASSWORD}" \
         "$@"
 }
 
-bitcoind -conf=/root/.bitcoin/bitcoin.conf ${CHAIN_FLAG} "$@" &
+# start bitcoind in the background
+bitcoind -conf=/root/.bitcoin/bitcoin.conf "${CHAIN_FLAG}" "$@" &
 
 echo "Waiting for bitcoind (${BITCOIN_NETWORK}) to be ready..."
 for _ in $(seq 1 30); do
@@ -61,7 +62,7 @@ if ! bcli getblockchaininfo >/dev/null 2>&1; then
     exit 1
 fi
 
-# Create wallets (idempotent)
+# create wallets, mainly for docker cache
 for WALLET in ${BITCOIND_WALLET:-default}; do
     if bcli listwalletdir | grep -q "\"name\": \"${WALLET}\""; then
         bcli loadwallet "${WALLET}" 2>/dev/null || true
@@ -70,16 +71,16 @@ for WALLET in ${BITCOIND_WALLET:-default}; do
     fi
 done
 
-# Regtest: generate initial blocks if chain is empty
 if [ "${BITCOIN_NETWORK}" = "regtest" ]; then
     BLOCK_COUNT=$(bcli getblockcount)
     if [ "${BLOCK_COUNT}" -eq 0 ]; then
         ADDRESS=$(bcli -rpcwallet="${BITCOIND_WALLET:-default}" getnewaddress)
+        # 101 to mature coinbase + a few more for rollup genesis
         echo "Generating 120 initial blocks to ${ADDRESS}..."
         bcli generatetoaddress 120 "${ADDRESS}"
     fi
 
-    # Continuous block generation if requested
+    # generate single blocks
     if [ -n "${GENERATE_BLOCKS:-}" ]; then
         ADDRESS=$(bcli -rpcwallet="${BITCOIND_WALLET:-default}" getnewaddress)
         while true; do

@@ -16,10 +16,14 @@ case "${BITCOIN_NETWORK}" in
     regtest)
         GENESIS_BLKID="0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
         DEFAULT_RPC_PORT=18443
+        L1_NEXT_TARGET=545259519
+        L1_EPOCH_START_TIMESTAMP=1296688602
         ;;
     signet)
         GENESIS_BLKID="00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
         DEFAULT_RPC_PORT=38332
+        L1_NEXT_TARGET=503543726
+        L1_EPOCH_START_TIMESTAMP=1598918400
         ;;
     *)
         echo "error: unsupported BITCOIN_NETWORK=${BITCOIN_NETWORK} (use regtest or signet)" >&2
@@ -97,16 +101,30 @@ if [ ! -f "${SEQ_ROOT_KEY}" ]; then
     echo -n "tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7" > "${SEQ_ROOT_KEY}"
 fi
 
-# --- rollup-params.json ---
+# --- Operator key ---
 
-ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
-if [ ! -f "${ROLLUP_PARAMS}" ]; then
-    OPERATOR_PUBKEY=$(generate_secret_key | "${PYTHON}" -c "
+OPERATOR_KEY="${OUTPUT_DIR}/operator.hex"
+if [ ! -f "${OPERATOR_KEY}" ]; then
+    generate_secret_key > "${OPERATOR_KEY}"
+fi
+OPERATOR_SECRET=$(cat "${OPERATOR_KEY}")
+
+OPERATOR_XONLY_PUBKEY=$(echo -n "${OPERATOR_SECRET}" | "${PYTHON}" -c "
 import coincurve, sys
 pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
 sys.stdout.write(pk.format(compressed=True)[1:].hex())
 ")
 
+OPERATOR_COMPRESSED_PUBKEY=$(echo -n "${OPERATOR_SECRET}" | "${PYTHON}" -c "
+import coincurve, sys
+pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
+sys.stdout.write(pk.format(compressed=True).hex())
+")
+
+# --- rollup-params.json ---
+
+ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
+if [ ! -f "${ROLLUP_PARAMS}" ]; then
     cat > "${ROLLUP_PARAMS}" <<REOF
 {
   "magic_bytes": "ALPN",
@@ -121,7 +139,7 @@ sys.stdout.write(pk.format(compressed=True)[1:].hex())
     "epoch_start_timestamp": 1000,
     "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   },
-  "operators": ["${OPERATOR_PUBKEY}"],
+  "operators": ["${OPERATOR_XONLY_PUBKEY}"],
   "evm_genesis_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
   "evm_genesis_block_state_root": "0000000000000000000000000000000000000000000000000000000000000000",
   "l1_reorg_safe_depth": 4,
@@ -157,6 +175,63 @@ if [ ! -f "${OL_PARAMS}" ]; then
 }
 OEOF
     echo "generated ${OL_PARAMS}"
+fi
+
+# --- asm-params.json ---
+# NOTE: genesis_ol_blkid is a placeholder. With "AlwaysAccept" checkpoint
+# predicate this value is not validated. For production deployments, compute
+# the correct value using: strata-datatool gen-asm-params --ol-params <ol-params>
+
+ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
+if [ ! -f "${ASM_PARAMS}" ]; then
+    cat > "${ASM_PARAMS}" <<AEOF
+{
+  "magic": "ALPT",
+  "l1_view": {
+    "blk": {
+      "height": 0,
+      "blkid": "${GENESIS_BLKID}"
+    },
+    "next_target": ${L1_NEXT_TARGET},
+    "epoch_start_timestamp": ${L1_EPOCH_START_TIMESTAMP},
+    "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  "subprotocols": [
+    {
+      "Admin": {
+        "strata_administrator": {
+          "keys": ["${OPERATOR_COMPRESSED_PUBKEY}"],
+          "threshold": 1
+        },
+        "strata_sequencer_manager": {
+          "keys": ["${OPERATOR_COMPRESSED_PUBKEY}"],
+          "threshold": 1
+        },
+        "confirmation_depth": 144,
+        "max_seqno_gap": 10
+      }
+    },
+    {
+      "Checkpoint": {
+        "sequencer_predicate": "AlwaysAccept",
+        "checkpoint_predicate": "AlwaysAccept",
+        "genesis_l1_height": 0,
+        "genesis_ol_blkid": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "Bridge": {
+        "operators": ["${OPERATOR_COMPRESSED_PUBKEY}"],
+        "denomination": 1000000000,
+        "assignment_duration": 64,
+        "operator_fee": 50000000,
+        "recovery_delay": 1008
+      }
+    }
+  ]
+}
+AEOF
+    echo "generated ${ASM_PARAMS}"
 fi
 
 # --- .env.alpen-client ---
