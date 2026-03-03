@@ -383,6 +383,33 @@ mod tests {
             .unwrap();
     }
 
+    mod rbuf32_serde {
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn bincode_same_bytes_as_buf32(bytes in any::<[u8; 32]>()) {
+                let buf = Buf32::from(bytes);
+                let rbuf = RBuf32::from(bytes);
+                let buf_encoded = bincode::serialize(&buf).unwrap();
+                let rbuf_encoded = bincode::serialize(&rbuf).unwrap();
+                prop_assert_eq!(buf_encoded, rbuf_encoded, "binary encoding should be identical");
+            }
+
+            #[test]
+            fn json_reverses_byte_order(bytes in any::<[u8; 32]>()) {
+                let buf = Buf32::from(bytes);
+                let rbuf = RBuf32::from(bytes);
+                let buf_json: String = serde_json::from_str(&serde_json::to_string(&buf).unwrap()).unwrap();
+                let rbuf_json: String = serde_json::from_str(&serde_json::to_string(&rbuf).unwrap()).unwrap();
+                let mut reversed_bytes = bytes;
+                reversed_bytes.reverse();
+                prop_assert_eq!(&rbuf_json, &hex::encode(reversed_bytes));
+                prop_assert_eq!(&buf_json, &hex::encode(bytes));
+            }
+        }
+    }
+
     #[test]
     fn test_buf32_from_str() {
         Buf32::from_str("a9f913c3d7fe56c462228ad22bb7631742a121a6a138d57c1fc4a351314948fa")
