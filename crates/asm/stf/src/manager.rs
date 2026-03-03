@@ -6,6 +6,7 @@ use strata_asm_common::{
     AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, InterprotoMsg, Loader, MsgRelayer,
     SectionState, SubprotoHandler, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
 };
+use strata_identifiers::L1BlockCommitment;
 
 /// Wrapper around the common subprotocol interface that handles the common
 /// buffering logic for interproto messages.
@@ -55,7 +56,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         &mut self,
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
-        anchor_pre: &AnchorState,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     ) {
         let relayer = relayer
@@ -66,16 +67,16 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
         S::process_txs(
             &mut self.state,
             txs,
-            anchor_pre,
+            l1ref,
             verified_aux_data,
             relayer,
             &self.params,
         );
     }
 
-    fn process_buffered_msgs(&mut self) {
+    fn process_buffered_msgs(&mut self, l1ref: &L1BlockCommitment) {
         // TODO probably will make this more sophisticated
-        S::process_msgs(&mut self.state, &self.interproto_msg_buf, &self.params)
+        S::process_msgs(&mut self.state, &self.interproto_msg_buf, l1ref)
     }
 
     fn to_section(&self) -> SectionState {
@@ -132,7 +133,7 @@ impl SubprotoManager {
     pub(crate) fn invoke_process_txs<S: Subprotocol>(
         &mut self,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     ) {
         // We temporarily take the handler out of the map so we can call
@@ -141,16 +142,16 @@ impl SubprotoManager {
         let mut h = self
             .remove_handler(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_txs(txs, self, anchor_pre, verified_aux_data);
+        h.process_txs(txs, self, l1ref, verified_aux_data);
         self.insert_handler(h);
     }
 
     /// Dispatches buffered inter-protocol message processing to the handler.
-    pub(crate) fn invoke_process_msgs<S: Subprotocol>(&mut self) {
+    pub(crate) fn invoke_process_msgs<S: Subprotocol>(&mut self, l1ref: &L1BlockCommitment) {
         let h = self
             .get_handler_mut(S::ID)
             .expect("asm: unloaded subprotocol");
-        h.process_buffered_msgs()
+        h.process_buffered_msgs(l1ref)
     }
 
     fn insert_handler(&mut self, handler: Box<dyn SubprotoHandler>) {

@@ -7,6 +7,7 @@
 use std::any::Any;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_identifiers::L1BlockCommitment;
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
@@ -21,11 +22,16 @@ use crate::{
 /// Each subprotocol defines its own transaction processing logic, message handling,
 /// and state management.
 ///
+/// The ASM filters SPS-50 transactions by subprotocol ID and passes only the relevant
+/// transactions to each subprotocol. Each subprotocol does the following, in order:
 ///
-/// 1. processes each new L1 block to update its own state and emit outgoing inter-protocol
-///    messages, and then
-/// 2. receives incoming messages to finalize and serialize its state for inclusion in the global
-///    AnchorState.
+/// 1. processes its transactions to update its own state, create inter-protocol messages to be
+///    consumed by other subprotocols, and emit logs,
+/// 2. receives incoming inter-protocol messages from other subprotocols to finalize and serialize
+///    its state for inclusion in the global AnchorState.
+///
+/// The ASM design assumes subprotocols are not adversarial against each other, so no additional
+/// validation is performed on incoming messages.
 ///
 /// # Example
 ///
@@ -55,7 +61,7 @@ use crate::{
 ///     fn process_txs(
 ///         state: &mut Self::State,
 ///         txs: &[TxInputRef],
-///         anchor_pre: &AnchorState,
+///         l1ref: &L1BlockCommitment,
 ///         verified_aux_data: &VerifiedAuxData,
 ///         relayer: &mut impl MsgRelayer,
 ///         params: &Self::Params,
@@ -63,7 +69,7 @@ use crate::{
 ///         // Process transactions
 ///     }
 ///
-///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], params: &Self::Params) {
+///     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment) {
 ///         // Process messages
 ///     }
 /// }
@@ -131,14 +137,14 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
-    /// * `anchor_pre` - The previous anchor state for validation context
+    /// * `l1ref` - L1 block being processed
     /// * `verified_aux_data` - Verified auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
@@ -152,13 +158,13 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `msgs` - Slice of messages received from other subprotocols
-    /// * `params` - Subprotocol's current params
+    /// * `l1ref` - L1 block being processed
     ///
     /// TODO:
     /// Also generate the event logs that is later needed for other components
     /// to read ASM activity. Return the commitment of the events. The actual
     /// event is defined by the subprotocol and is not visible to the ASM.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], params: &Self::Params);
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment);
 }
 
 /// Generic message relayer interface which subprotocols can use to interact
@@ -200,7 +206,7 @@ pub trait SubprotoHandler {
         &mut self,
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
-        anchor_state: &AnchorState,
+        l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     );
 
@@ -216,7 +222,7 @@ pub trait SubprotoHandler {
     fn accept_msg(&mut self, msg: &dyn InterprotoMsg);
 
     /// Processes the buffered messages stored in the handler.
-    fn process_buffered_msgs(&mut self);
+    fn process_buffered_msgs(&mut self, l1ref: &L1BlockCommitment);
 
     /// Repacks the state into a [`SectionState`] instance.
     fn to_section(&self) -> SectionState;

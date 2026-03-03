@@ -9,14 +9,15 @@
 use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
-    VerifiedAuxData, logging,
+    AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    logging,
 };
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
+use strata_identifiers::L1BlockCommitment;
 use strata_predicate::PredicateKey;
 use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
 
@@ -73,13 +74,12 @@ impl Subprotocol for CheckpointV0Subproto {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        // Get current L1 height from anchor state
-        let current_l1_height = anchor_pre.chain_view.pow_state.last_verified_block.height();
+        let current_l1_height = l1ref.height();
         let current_l1_height_u64 = current_l1_height.to_consensus_u32() as u64;
 
         for tx in txs {
@@ -121,7 +121,7 @@ impl Subprotocol for CheckpointV0Subproto {
     ///
     /// Handles configuration updates emitted by the administration subprotocol such as
     /// sequencer key rotations and rollup verifying key refreshes.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _params: &Self::Params) {
+    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _l1ref: &L1BlockCommitment) {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
@@ -264,7 +264,8 @@ mod tests {
         let new_key = Buf32::from([42u8; 32]);
         let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];
 
-        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &params);
+        let l1ref = L1BlockCommitment::default();
+        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1ref);
 
         match &state.cred_rule {
             CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),

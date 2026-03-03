@@ -5,9 +5,10 @@
 
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
-    AnchorState, AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId,
-    TxInputRef, VerifiedAuxData, logging,
+    AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData, logging,
 };
+use strata_primitives::L1BlockCommitment;
 
 use crate::{
     constants::DEBUG_SUBPROTOCOL_ID,
@@ -36,7 +37,7 @@ impl Subprotocol for DebugSubproto {
     fn process_txs(
         _state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        _anchor_pre: &AnchorState,
+        _l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
@@ -60,7 +61,7 @@ impl Subprotocol for DebugSubproto {
         }
     }
 
-    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg], _params: &Self::Params) {
+    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg], _l1ref: &L1BlockCommitment) {
         // No messages to process for the debug subprotocol
     }
 }

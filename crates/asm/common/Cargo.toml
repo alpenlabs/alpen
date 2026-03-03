@@ -10,6 +10,7 @@ workspace = true
 strata-asm-manifest-types.workspace = true
 strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
+strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-merkle.workspace = true
 strata-msg-fmt.workspace = true

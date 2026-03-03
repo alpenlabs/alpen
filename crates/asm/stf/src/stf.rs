@@ -3,7 +3,9 @@
 //! view into a single deterministic state transition.
 // TODO rename this module to `transition`
 
-use strata_asm_common::{AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmError, AsmManifest, AsmResult, AsmSpec, ChainViewState, VerifiedAuxData,
+};
 
 use crate::{
     manager::{AnchorStateLoader, SubprotoManager},
@@ -17,29 +19,6 @@ use crate::{
 /// This function performs the main ASM state transition by validating the block header continuity,
 /// loading subprotocols with auxiliary input data, processing protocol-specific transactions,
 /// handling inter-protocol communication, and constructing the final state with logs.
-///
-/// # Arguments
-///
-/// * `pre_state` - The current anchor state containing chain view and subprotocol states
-/// * `input` - The ASM STF input containing the block header, protocol transactions, and auxiliary
-///   data
-///
-/// # Returns
-///
-/// Returns an `AsmResult` containing:
-/// - `AsmStfOutput` with the new anchor state and execution logs on success
-/// - `AsmError` if validation fails or state transition encounters an error
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The block header fails PoW continuity validation
-/// - Subprotocol loading, processing, or finishing fails
-///
-/// # Type Parameters
-///
-/// * `S` - The ASM specification type that defines magic bytes, subprotocol behavior, and genesis
-///   configs
 pub fn compute_asm_transition<'i, S: AsmSpec>(
     spec: &S,
     pre_state: &AnchorState,
@@ -52,6 +31,14 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
         .check_and_update(input.header)
         .map_err(AsmError::InvalidL1Header)?;
 
+    let verified_aux_data =
+        VerifiedAuxData::try_new(&input.aux_data, &pre_state.chain_view.history_accumulator)?;
+
+    // After `check_and_update`, `last_verified_block` points to the block we
+    // just validated — i.e. the L1 block whose transactions we are about to
+    // feed into subprotocols.
+    let current_l1ref = &pow_state.last_verified_block;
+
     let mut manager = SubprotoManager::new();
 
     // 2. LOAD: Initialize each subprotocol in the subproto manager with aux input data.
@@ -60,8 +47,12 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
 
     // 3. PROCESS: Feed each subprotocol its filtered transactions for execution.
     // This stage performs the actual state transitions for each subprotocol.
-    let mut process_stage =
-        ProcessStage::new(&mut manager, pre_state, input.protocol_txs, &input.aux_data);
+    let mut process_stage = ProcessStage::new(
+        &mut manager,
+        current_l1ref,
+        input.protocol_txs,
+        verified_aux_data,
+    );
     spec.call_subprotocols(&mut process_stage);
 
     // 4. FINISH: Allow each subprotocol to process buffered inter-protocol messages.
@@ -69,14 +60,14 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // TODO probably will have change this to repeat the interproto message
     // processing phase until we have no more messages to deliver, or some
     // bounded number of times
-    let mut finish_stage = FinishStage::new(&mut manager);
+    let mut finish_stage = FinishStage::new(&mut manager, &pow_state.last_verified_block);
     spec.call_subprotocols(&mut finish_stage);
 
     // 5. Construct the manifest with the logs.
     let (sections, logs) = manager.export_sections_and_logs();
     let manifest = AsmManifest::new(
-        pow_state.last_verified_block.height_u64(),
-        *pow_state.last_verified_block.blkid(),
+        current_l1ref.height_u64(),
+        *current_l1ref.blkid(),
         input.wtxids_root.into(),
         logs,
     );

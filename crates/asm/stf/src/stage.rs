@@ -4,9 +4,10 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxData, AuxRequestCollector, AuxRequests, Stage, Subprotocol, SubprotocolId,
-    TxInputRef, VerifiedAuxData,
+    AnchorState, AuxRequestCollector, AuxRequests, Stage, Subprotocol, SubprotocolId, TxInputRef,
+    VerifiedAuxData,
 };
+use strata_identifiers::L1BlockCommitment;
 
 use crate::manager::SubprotoManager;
 
@@ -57,7 +58,7 @@ impl Stage for PreProcessStage<'_> {
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
-    anchor_state: &'c AnchorState,
+    l1ref: &'c L1BlockCommitment,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
     verified_aux_data: VerifiedAuxData,
 }
@@ -65,18 +66,13 @@ pub(crate) struct ProcessStage<'c> {
 impl<'c> ProcessStage<'c> {
     pub(crate) fn new(
         manager: &'c mut SubprotoManager,
-        anchor_state: &'c AnchorState,
+        l1ref: &'c L1BlockCommitment,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
-        aux_data: &'c AuxData,
+        verified_aux_data: VerifiedAuxData,
     ) -> Self {
-        // Create a single verified aux data for all subprotocols
-        let verified_aux_data =
-            VerifiedAuxData::try_new(aux_data, &anchor_state.chain_view.history_accumulator)
-                .expect("asm: failed to create verified aux data");
-
         Self {
             manager,
-            anchor_state,
+            l1ref,
             tx_bufs,
             verified_aux_data,
         }
@@ -92,23 +88,24 @@ impl Stage for ProcessStage<'_> {
             .unwrap_or(&[]);
 
         self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, &self.verified_aux_data);
+            .invoke_process_txs::<S>(txs, self.l1ref, &self.verified_aux_data);
     }
 }
 
 /// Stage to handle messages exchanged between subprotocols in execution.
 pub(crate) struct FinishStage<'m> {
     manager: &'m mut SubprotoManager,
+    l1ref: &'m L1BlockCommitment,
 }
 
 impl<'m> FinishStage<'m> {
-    pub(crate) fn new(manager: &'m mut SubprotoManager) -> Self {
-        Self { manager }
+    pub(crate) fn new(manager: &'m mut SubprotoManager, l1ref: &'m L1BlockCommitment) -> Self {
+        Self { manager, l1ref }
     }
 }
 
 impl Stage for FinishStage<'_> {
     fn invoke_subprotocol<S: Subprotocol>(&mut self) {
-        self.manager.invoke_process_msgs::<S>();
+        self.manager.invoke_process_msgs::<S>(self.l1ref);
     }
 }
