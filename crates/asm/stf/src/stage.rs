@@ -4,9 +4,10 @@
 use std::collections::BTreeMap;
 
 use strata_asm_common::{
-    AnchorState, AuxData, AuxRequestCollector, AuxRequests, Stage, Subprotocol, SubprotocolId,
-    TxInputRef, VerifiedAuxData,
+    AnchorState, AsmHistoryAccumulatorState, AuxData, AuxRequestCollector, AuxRequests, Stage,
+    Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
 };
+use strata_identifiers::L1BlockCommitment;
 
 use crate::manager::SubprotoManager;
 
@@ -57,7 +58,7 @@ impl Stage for PreProcessStage<'_> {
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct ProcessStage<'c> {
     manager: &'c mut SubprotoManager,
-    anchor_state: &'c AnchorState,
+    l1_block_commitment: &'c L1BlockCommitment,
     tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
     verified_aux_data: VerifiedAuxData,
 }
@@ -65,18 +66,17 @@ pub(crate) struct ProcessStage<'c> {
 impl<'c> ProcessStage<'c> {
     pub(crate) fn new(
         manager: &'c mut SubprotoManager,
-        anchor_state: &'c AnchorState,
+        l1_block_commitment: &'c L1BlockCommitment,
+        history_accumulator: &'c AsmHistoryAccumulatorState,
         tx_bufs: BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
         aux_data: &'c AuxData,
     ) -> Self {
-        // Create a single verified aux data for all subprotocols
-        let verified_aux_data =
-            VerifiedAuxData::try_new(aux_data, &anchor_state.chain_view.history_accumulator)
-                .expect("asm: failed to create verified aux data");
+        let verified_aux_data = VerifiedAuxData::try_new(aux_data, history_accumulator)
+            .expect("asm: failed to create verified aux data");
 
         Self {
             manager,
-            anchor_state,
+            l1_block_commitment,
             tx_bufs,
             verified_aux_data,
         }
@@ -91,8 +91,11 @@ impl Stage for ProcessStage<'_> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        self.manager
-            .invoke_process_txs::<S>(txs, self.anchor_state, &self.verified_aux_data);
+        self.manager.invoke_process_txs::<S>(
+            txs,
+            self.l1_block_commitment,
+            &self.verified_aux_data,
+        );
     }
 }
 

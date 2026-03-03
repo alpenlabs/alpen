@@ -7,6 +7,7 @@
 use std::any::Any;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_identifiers::L1BlockCommitment;
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
@@ -55,7 +56,7 @@ use crate::{
 ///     fn process_txs(
 ///         state: &mut Self::State,
 ///         txs: &[TxInputRef],
-///         anchor_pre: &AnchorState,
+///         l1_block_commitment: &L1BlockCommitment,
 ///         verified_aux_data: &VerifiedAuxData,
 ///         relayer: &mut impl MsgRelayer,
 ///         params: &Self::Params,
@@ -131,14 +132,15 @@ pub trait Subprotocol: 'static {
     /// # Arguments
     /// * `state` - Mutable reference to the subprotocol's state
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
-    /// * `anchor_pre` - The previous anchor state for validation context
+    /// * `l1_block_commitment` - Commitment (height + block hash) of the L1 block whose
+    ///   transactions are being processed
     /// * `verified_aux_data` - Verified auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
     /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1_block_commitment: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
@@ -200,7 +202,7 @@ pub trait SubprotoHandler {
         &mut self,
         txs: &[TxInputRef<'_>],
         relayer: &mut dyn MsgRelayer,
-        anchor_state: &AnchorState,
+        l1_block_commitment: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
     );
 

@@ -5,6 +5,7 @@ use strata_asm_common::{
     AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     VerifiedAuxData, logging,
 };
+use strata_identifiers::L1BlockCommitment;
 use strata_asm_params::CheckpointConfig;
 use strata_asm_txs_checkpoint::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_signed_checkpoint_from_envelope,
@@ -66,21 +67,12 @@ impl Subprotocol for CheckpointSubprotocol {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1_block_commitment: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        // Calculate the current L1 height that this transaction is part of.
-        // We add 1 because `anchor_pre` represents the prestate before applying
-        // the new block. The `last_verified_block` is the previous block, so
-        // the current block being processed is at height `last_verified_block + 1`.
-        let current_l1_height = anchor_pre
-            .chain_view
-            .pow_state
-            .last_verified_block
-            .height_u32()
-            + 1;
+        let current_l1_height = l1_block_commitment.height_u32();
 
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {

@@ -4,11 +4,11 @@
 //! with the Strata Anchor State Machine (ASM) for managing protocol governance and updates.
 
 use strata_asm_common::{
-    AnchorState, AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
-    VerifiedAuxData,
+    AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
 };
 use strata_asm_params::AdministrationSubprotoParams;
 use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
+use strata_primitives::L1BlockCommitment;
 
 use crate::{
     handler::{handle_action, handle_pending_updates},
@@ -52,19 +52,12 @@ impl Subprotocol for AdministrationSubprotocol {
     fn process_txs(
         state: &mut AdministrationSubprotoState,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1_block_commitment: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {
-        // Calculate current height as the next block height
-        let current_height = anchor_pre
-            .chain_view
-            .pow_state
-            .last_verified_block
-            .height()
-            .to_consensus_u32() as u64
-            + 1;
+        let current_height = l1_block_commitment.height_u64();
 
         // Phase 1: Execute any pending updates that have reached their activation height
         handle_pending_updates(state, relayer, current_height);

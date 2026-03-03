@@ -90,7 +90,7 @@ impl Subprotocol for BridgeV1Subproto {
     ///
     /// - `state` - Mutable reference to the bridge state
     /// - `txs` - Array of transaction input references to process
-    /// - `anchor_pre` - Current anchor state containing chain view and block information
+    /// - `l1_block_commitment` - Commitment of the L1 block whose transactions are being processed
     /// - `_verified_aux_data` - Verified auxiliary data (unused in Bridge V1)
     /// - `relayer` - Message relayer for emitting logs and events
     ///
@@ -117,7 +117,7 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
+        l1_block_commitment: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
@@ -140,8 +140,7 @@ impl Subprotocol for BridgeV1Subproto {
         }
 
         // After processing all transactions, reassign expired assignments
-        let current_block = &anchor_pre.chain_view.pow_state.last_verified_block;
-        match state.reassign_expired_assignments(current_block) {
+        match state.reassign_expired_assignments(l1_block_commitment) {
             Ok(reassigned_deposits) => {
                 info!(
                     count = reassigned_deposits.len(),
