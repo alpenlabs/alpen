@@ -27,12 +27,14 @@ impl EeAccountState {
     pub fn into_parts(
         self,
     ) -> (
+        Vec<u8>,
         Hash,
         BitcoinAmount,
         Vec<PendingInputEntry>,
         Vec<PendingFinclEntry>,
     ) {
         (
+            self.chunk_predicate_key.into(),
             self.last_exec_blkid
                 .as_ref()
                 .try_into()

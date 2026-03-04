@@ -1,4 +1,4 @@
-//! IO related types from proof interface.
+//! Ledger-related types for snark account update proofs.
 
 use strata_snark_acct_types::{LedgerRefs, UpdateOutputs, UpdateProofPubParams};
 

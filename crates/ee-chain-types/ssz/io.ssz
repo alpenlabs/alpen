@@ -1,5 +1,7 @@
 import strata_acct_types
 
+### Max entries per execution span.  These are generous upper bounds; see
+### SPS-ol-da-structure for the canonical limits.
 MAX_SUBJECT_DEPOSITS = 1 << 16
 MAX_OUTPUT_TRANSFERS = 1 << 16
 MAX_OUTPUT_MESSAGES = 1 << 16
