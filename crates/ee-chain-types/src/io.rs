@@ -250,7 +250,7 @@ mod tests {
                         prop::collection::vec(any::<u8>(), 0..50)
                     )
                         .prop_map(|(dest, sats, data)| {
-                            SentMessage::new(
+                            OutputMessage::new(
                                 AccountId::new(dest),
                                 strata_acct_types::MsgPayload::new(
                                     BitcoinAmount::from_sat(sats),
