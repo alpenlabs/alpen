@@ -31,7 +31,6 @@ impl Subprotocol for DebugSubproto {
 
     fn init(_config: &Self::Params) -> Self::State {
         logging::info!("Initializing debug subprotocol state");
-        ()
     }
 
     fn process_txs(

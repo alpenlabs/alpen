@@ -47,7 +47,7 @@ impl Subprotocol for AdministrationSubprotocol {
         l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
+        _params: &Self::Params,
     ) {
         let current_height = l1ref.height_u64();
 
@@ -57,13 +57,7 @@ impl Subprotocol for AdministrationSubprotocol {
         // Phase 2: Process incoming administration transactions
         for tx in txs {
             if let Ok(signed_payload) = parse_tx(tx) {
-                let _ = handle_action(
-                    state,
-                    signed_payload,
-                    current_height,
-                    relayer,
-                    params.max_seqno_gap,
-                );
+                let _ = handle_action(state, signed_payload, current_height, relayer);
             }
             // Transaction parsing failures are silently ignored to maintain system resilience
         }

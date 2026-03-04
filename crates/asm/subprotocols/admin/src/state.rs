@@ -1,4 +1,4 @@
-use std::mem::take;
+use std::{mem::take, num::NonZero};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::{AdministrationSubprotoParams, Role};
@@ -30,6 +30,11 @@ pub struct AdministrationSubprotoState {
     /// receives this many confirmations, the update is enacted automatically. During this
     /// confirmation period, the update can still be cancelled by submitting a cancel transaction.
     confirmation_depth: u16,
+
+    /// Maximum allowed gap between consecutive sequence numbers for a given authority.
+    ///
+    /// A payload with `seqno > last_seqno + max_seqno_gap` is rejected.
+    max_seqno_gap: NonZero<u8>,
 }
 
 impl AdministrationSubprotoState {
@@ -46,11 +51,16 @@ impl AdministrationSubprotoState {
             queued: Vec::new(),
             next_update_id: 0,
             confirmation_depth: config.confirmation_depth,
+            max_seqno_gap: config.max_seqno_gap,
         }
     }
 
     pub fn confirmation_depth(&self) -> u16 {
         self.confirmation_depth
+    }
+
+    pub fn max_seqno_gap(&self) -> NonZero<u8> {
+        self.max_seqno_gap
     }
 
     /// Get a reference to the authority for the given role.
