@@ -4,6 +4,7 @@ use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition, Checkpoint};
 use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_codec::Codec;
 use strata_codec_utils::{CodecBorsh, CodecSsz};
+use strata_identifiers::Buf32;
 use strata_msg_fmt::TypeId;
 use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
@@ -82,26 +83,36 @@ impl AsmLog for CheckpointUpdate {
 
 /// Records a verified [`CheckpointTip`] update from the v1 checkpoint subprotocol.
 ///
-/// Unlike the v0 [`CheckpointUpdate`], this log only carries the tip
-/// (epoch, L1 height, L2 commitment). The inner [`CheckpointTip`] is
-/// encoded via [`CodecSsz`] per its SSZ schema.
+/// Carries the tip (epoch, L1 height, L2 commitment) along with the hash of
+/// the L1 transaction that delivered the checkpoint proof. The inner
+/// [`CheckpointTip`] is encoded via [`CodecSsz`] per its SSZ schema.
 #[derive(Debug, Clone, Codec)]
 pub struct CheckpointTipUpdate {
     /// The new verified checkpoint tip.
     tip: CodecSsz<CheckpointTip>,
+
+    /// Hash of the L1 transaction that carried the checkpoint proof.
+    checkpoint_txid: Buf32,
 }
 
 impl CheckpointTipUpdate {
-    /// Creates a new [`CheckpointTipUpdate`] from a [`CheckpointTip`].
-    pub fn new(tip: CheckpointTip) -> Self {
+    /// Creates a new [`CheckpointTipUpdate`] from a [`CheckpointTip`] and the
+    /// raw txid bytes of the L1 transaction that carried the proof.
+    pub fn new(tip: CheckpointTip, checkpoint_txid: Buf32) -> Self {
         Self {
             tip: CodecSsz::new(tip),
+            checkpoint_txid,
         }
     }
 
     /// Returns a reference to the checkpoint tip.
     pub fn tip(&self) -> &CheckpointTip {
         self.tip.inner()
+    }
+
+    /// Returns the checkpoint L1 transaction ID as raw bytes.
+    pub fn checkpoint_txid(&self) -> &Buf32 {
+        &self.checkpoint_txid
     }
 }
 
@@ -121,7 +132,8 @@ mod tests {
     fn checkpoint_tip_update_roundtrip() {
         let l2_commitment = OLBlockCommitment::new(42, OLBlockId::from(Buf32::from([0xAB; 32])));
         let tip = CheckpointTip::new(7, 100, l2_commitment);
-        let update = CheckpointTipUpdate::new(tip);
+        let txid = Buf32::from([0xCD; 32]);
+        let update = CheckpointTipUpdate::new(tip, txid);
 
         let encoded = encode_to_vec(&update).expect("encoding should not fail");
         let decoded: CheckpointTipUpdate =
@@ -130,6 +142,7 @@ mod tests {
         assert_eq!(decoded.tip().epoch, 7);
         assert_eq!(decoded.tip().l1_height, 100);
         assert_eq!(decoded.tip().l2_commitment(), update.tip().l2_commitment());
+        assert_eq!(decoded.checkpoint_txid(), update.checkpoint_txid());
     }
 
     #[test]

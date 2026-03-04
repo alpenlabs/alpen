@@ -13931,6 +13931,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-params",
  "strata-asm-txs-checkpoint",
+ "strata-btc-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-crypto",

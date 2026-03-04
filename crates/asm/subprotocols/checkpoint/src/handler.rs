@@ -2,6 +2,7 @@ use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
+use strata_btc_types::BitcoinTxid;
 use strata_identifiers::L1Height;
 
 use crate::{
@@ -47,7 +48,8 @@ pub(crate) fn handle_checkpoint_tx(
             let new_tip = payload.inner().new_tip;
             state.update_verified_tip(new_tip);
 
-            let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
+            let checkpoint_txid = BitcoinTxid::new(&tx.tx().compute_txid()).inner_raw();
+            let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip, checkpoint_txid);
             let log_entry = AsmLogEntry::from_log(&checkpoint_tip_update)
                 .expect("CheckpointTipUpdate encoding is infallible for fixed-size SSZ");
             relayer.emit_log(log_entry);
