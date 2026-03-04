@@ -1,4 +1,4 @@
-//! Toplevel proof logic using no-copy input types..
+//! Toplevel proof logic using no-copy input types.
 
 use strata_ee_acct_types::{EnvError, EnvResult, ExecutionEnvironment};
 

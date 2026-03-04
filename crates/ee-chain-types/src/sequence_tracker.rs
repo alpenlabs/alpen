@@ -15,7 +15,7 @@ pub type SeqResult<T> = Result<T, SeqError>;
 
 /// Tracks a list of entries that we want to compare a sequence of them against.
 ///
-/// We use this for processing pending inputs while processing notpackages.
+/// We use this for processing pending inputs while processing packages.
 #[derive(Debug)]
 pub struct SequenceTracker<'a, T> {
     expected_inputs: &'a [T],

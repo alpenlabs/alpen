@@ -35,8 +35,8 @@ pub(crate) struct DBEeAccountState {
 
 impl From<EeAccountState> for DBEeAccountState {
     fn from(value: EeAccountState) -> Self {
-        let chunk_predicate_key = value.chunk_predicate_key().to_vec();
-        let (last_exec_blkid, tracked_balance, pending_inputs, pending_fincls) = value.into_parts();
+        let (chunk_predicate_key, last_exec_blkid, tracked_balance, pending_inputs, pending_fincls) =
+            value.into_parts();
         Self {
             chunk_predicate_key,
             last_exec_blkid,
