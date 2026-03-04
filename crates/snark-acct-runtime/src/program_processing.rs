@@ -83,7 +83,7 @@ fn verify_update_inner<'i, 'u, P: SnarkAccountProgramVerification>(
     ulinfo: UpdateLedgerInfo<'u>,
 ) -> ProgramResult<(), P::Error> {
     // 1. Create verification context and start verification.
-    let mut vstate = program.start_verification(&state, vinput, ulinfo)?;
+    let mut vstate = program.start_verification(state, vinput, ulinfo)?;
     program.start_update(state)?;
 
     // 2. Process each message and coinput.
@@ -102,7 +102,7 @@ fn verify_update_inner<'i, 'u, P: SnarkAccountProgramVerification>(
     program.pre_finalize_state(state, &extra_data)?;
 
     // 4. Final verification step.
-    program.finalize_verification(&state, vstate, &extra_data)?;
+    program.finalize_verification(state, vstate, &extra_data)?;
 
     // 5. Final state changes.
     program.finalize_state(state, extra_data)?;
