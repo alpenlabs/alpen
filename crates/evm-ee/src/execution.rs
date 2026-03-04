@@ -14,13 +14,13 @@ use reth_evm_ethereum::EthEvmConfig;
 use reth_primitives::EthPrimitives;
 use revm::database::WrapDatabaseRef;
 use rsp_client_executor::BlockValidator;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SentMessage};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
     BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload,
     ExecutionEnvironment,
 };
-use strata_ee_chain_types::{ExecInputs, ExecOutputs};
+use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage};
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE};
 
 use crate::{
@@ -28,10 +28,10 @@ use crate::{
     utils::{build_and_recover_block, compute_hashed_post_state, validate_deposits_against_block},
 };
 
+/// Address where withdrawal intent msgs are forwarded.
 //FIXME: should be set with real bridge gateway account
-
-/// Address where withdrawal intent msgs are forwarded
 const BRIDGE_GATEWAY_ACCOUNT: [u8; 32] = [1u8; 32];
+
 /// EVM Execution Environment for Alpen.
 ///
 /// This struct implements the ExecutionEnvironment trait and handles execution
@@ -64,7 +64,7 @@ fn convert_withdrawal_intents_to_messages(
 
         // Create message to bridge gateway with withdrawal amount and encoded data
         let payload = MsgPayload::new(BitcoinAmount::from_sat(intent.amt), msg_data);
-        let message = SentMessage::new(bridge_gateway_account, payload);
+        let message = OutputMessage::new(bridge_gateway_account, payload);
         outputs.add_message(message);
     }
 }
@@ -88,6 +88,11 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         exec_payload: &ExecPayload<'_, Self::Block>,
         inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
+        // TODO Split this function up into multiple stages, there's a lot going
+        // on here.  There's also check happpening here that should be done in
+        // `check_outputs_against_header`.  We don't have to clone the state,
+        // those checks are managed by the chunk runtime.
+
         // Step 1: Build block from exec_payload and recover senders
         let block = build_and_recover_block(exec_payload)?;
 
@@ -145,6 +150,11 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         // Step 10: Get state root from header intrinsics (verification happens during merge)
         // This avoids an expensive state clone that would be needed to compute the root here.
+        //
+        // FIXME This is not correct behavior, the state root is a "result" of
+        // processing the block, so it *can't* be an intrinsic, see the doc
+        // comment for `Intrinsics`.  I think we may be doing unnecessary checks
+        // here.
         let intrinsics_state_root = header_intrinsics.state_root;
 
         // Step 11: Create WriteBatch with intrinsics state root (to be verified during merge)
@@ -170,6 +180,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         // an expensive state clone. The actual verification happens when the state
         // is mutated and we can compute the root directly without cloning.
         //
+        // FIXME this should be checked here
         // Note: The following are verified during execution in execute_block_body():
         // - transactions_root, ommers_hash, withdrawals_root: by validate_body_against_header()
         // - receipts_root, logs_bloom, gas_used: by validate_block_post_execution()
