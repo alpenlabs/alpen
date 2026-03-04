@@ -11,9 +11,6 @@ use crate::{
     ssz_generated::ssz::commitments::L1BlockCommitment,
 };
 
-/// The bitcoin block height
-pub type BitcoinBlockHeight = u64;
-
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;
 
@@ -93,18 +90,13 @@ crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
 
 impl Codec for L1BlockCommitment {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        // Encode height as u64 for consistency
-        let height_u64 = self.height as u64;
-
-        height_u64.encode(enc)?;
+        self.height.encode(enc)?;
         self.blkid.encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let height_u64 = u64::decode(dec)?;
-        let height = height_u64 as u32;
-
+        let height = u32::decode(dec)?;
         let blkid = L1BlockId::decode(dec)?;
         Ok(Self { height, blkid })
     }
