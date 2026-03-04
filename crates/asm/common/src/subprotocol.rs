@@ -11,8 +11,7 @@ use strata_identifiers::L1BlockCommitment;
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AsmError, AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef, VerifiedAuxData,
-    msg::InterprotoMsg,
+    AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef, VerifiedAuxData, msg::InterprotoMsg,
 };
 
 /// Trait for defining subprotocol behavior within the ASM framework.
@@ -96,9 +95,8 @@ pub trait Subprotocol: 'static {
     ///
     /// # Returns
     ///
-    /// The initialized state or an error if initialization fails.
-    // FIXME why would this ever error?  this would be panic-worthy
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError>;
+    /// The initialized state
+    fn init(params: &Self::Params) -> Self::State;
 
     /// Pre-processes a batch of L1 transactions by registering any required auxiliary data.
     ///

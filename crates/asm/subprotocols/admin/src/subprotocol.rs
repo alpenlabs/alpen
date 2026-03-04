@@ -4,7 +4,7 @@
 //! with the Strata Anchor State Machine (ASM) for managing protocol governance and updates.
 
 use strata_asm_common::{
-    AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
 };
 use strata_asm_params::AdministrationSubprotoParams;
 use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
@@ -32,8 +32,8 @@ impl Subprotocol for AdministrationSubprotocol {
 
     type Msg = NullMsg<ADMINISTRATION_SUBPROTOCOL_ID>;
 
-    fn init(params: &Self::Params) -> Result<AdministrationSubprotoState, AsmError> {
-        Ok(AdministrationSubprotoState::new(params))
+    fn init(params: &Self::Params) -> AdministrationSubprotoState {
+        AdministrationSubprotoState::new(params)
     }
 
     /// Processes transactions for the Administration subprotocol and executes pending updates.

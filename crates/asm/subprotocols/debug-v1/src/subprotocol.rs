@@ -29,9 +29,9 @@ impl Subprotocol for DebugSubproto {
     type Params = ();
     type State = ();
 
-    fn init(_config: &Self::Params) -> Result<Self::State, AsmError> {
+    fn init(_config: &Self::Params) -> Self::State {
         logging::info!("Initializing debug subprotocol state");
-        Ok(())
+        ()
     }
 
     fn process_txs(

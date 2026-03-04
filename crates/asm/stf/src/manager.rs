@@ -266,7 +266,7 @@ impl<'c> Loader for AnchorStateLoader<'c> {
             // in the AsmSpec
             None => {
                 // Just instantiate the subprotocol state from the params.
-                S::init(&params).expect("asm: failed to construct new subproto state")
+                S::init(&params)
             }
         };
 

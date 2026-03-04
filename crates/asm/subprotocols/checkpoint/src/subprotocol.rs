@@ -2,8 +2,8 @@
 
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
-    VerifiedAuxData, logging,
+    AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    logging,
 };
 use strata_asm_params::CheckpointConfig;
 use strata_asm_txs_checkpoint::{
@@ -33,8 +33,8 @@ impl Subprotocol for CheckpointSubprotocol {
     type State = CheckpointState;
     type Msg = CheckpointIncomingMsg;
 
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        Ok(CheckpointState::init(params.clone()))
+    fn init(params: &Self::Params) -> Self::State {
+        CheckpointState::init(params.clone())
     }
 
     fn pre_process_txs(

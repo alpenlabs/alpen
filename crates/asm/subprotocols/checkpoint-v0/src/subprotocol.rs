@@ -9,8 +9,7 @@
 use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
-    logging,
+    AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData, logging,
 };
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_txs_checkpoint_v0::{
@@ -55,8 +54,8 @@ impl Subprotocol for CheckpointV0Subproto {
     type Params = CheckpointV0Params;
     type Msg = CheckpointIncomingMsg;
 
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        Ok(CheckpointV0VerifierState::new(&params.verification_params))
+    fn init(params: &Self::Params) -> Self::State {
+        CheckpointV0VerifierState::new(&params.verification_params)
     }
 
     /// Process checkpoint transactions according to checkpoint v0 specification
@@ -259,7 +258,7 @@ mod tests {
     #[test]
     fn process_msgs_updates_sequencer_key() {
         let params = test_params();
-        let mut state = CheckpointV0Subproto::init(&params).expect("init state");
+        let mut state = CheckpointV0Subproto::init(&params);
 
         let new_key = Buf32::from([42u8; 32]);
         let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];

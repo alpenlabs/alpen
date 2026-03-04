@@ -5,8 +5,7 @@
 
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
-    AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
-    VerifiedAuxData,
+    AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging::{error, info},
 };
 use strata_asm_params::BridgeV1Config;
@@ -36,8 +35,8 @@ impl Subprotocol for BridgeV1Subproto {
 
     type Msg = BridgeIncomingMsg;
 
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        Ok(BridgeV1State::new(params))
+    fn init(params: &Self::Params) -> Self::State {
+        BridgeV1State::new(params)
     }
 
     /// Pre-processes transactions to collect auxiliary data requests.
