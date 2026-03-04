@@ -29,7 +29,7 @@ impl Subprotocol for DebugSubproto {
     type Params = ();
     type State = ();
 
-    fn init(_config: &Self::Params) -> Self::State {
+    fn init(_params: &Self::Params) -> Self::State {
         logging::info!("Initializing debug subprotocol state");
     }
 
@@ -39,7 +39,6 @@ impl Subprotocol for DebugSubproto {
         _l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         for tx_ref in txs {
             logging::debug!(

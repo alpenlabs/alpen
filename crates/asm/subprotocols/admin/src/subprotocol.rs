@@ -47,7 +47,6 @@ impl Subprotocol for AdministrationSubprotocol {
         l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         let current_height = l1ref.height_u64();
 

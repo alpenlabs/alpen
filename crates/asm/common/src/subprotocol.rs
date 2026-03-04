@@ -43,7 +43,7 @@ use crate::{
 ///     type Params = MyParams;
 ///     type Msg = MyMessage;
 ///
-///     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
+///     fn init(params: &Self::Params) -> Self::State {
 ///        // init logic
 ///     }
 ///
@@ -51,8 +51,6 @@ use crate::{
 ///         state: &Self::State,
 ///         txs: &[TxInputRef],
 ///         collector: &mut AuxRequestCollector,
-///         anchor_pre: &AnchorState,
-///         params: &Self::Params,
 ///     ) {
 ///         // Pre-process transactions and request auxiliary data
 ///     }
@@ -63,7 +61,6 @@ use crate::{
 ///         l1ref: &L1BlockCommitment,
 ///         verified_aux_data: &VerifiedAuxData,
 ///         relayer: &mut impl MsgRelayer,
-///         params: &Self::Params,
 ///     ) {
 ///         // Process transactions
 ///     }
@@ -135,14 +132,12 @@ pub trait Subprotocol: 'static {
     /// * `l1ref` - L1 block being processed
     /// * `verified_aux_data` - Verified auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
-    /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
     );
 
     /// Processes messages received from other subprotocols.

@@ -76,7 +76,6 @@ impl Subprotocol for CheckpointV0Subproto {
         l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         let current_l1_height = l1ref.height();
         let current_l1_height_u64 = current_l1_height.to_consensus_u32() as u64;

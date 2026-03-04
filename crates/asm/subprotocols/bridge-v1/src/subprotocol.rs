@@ -86,7 +86,6 @@ impl Subprotocol for BridgeV1Subproto {
         l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         // Process each transaction
         for tx in txs {
