@@ -7,9 +7,15 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
 
-use crate::actions::updates::{
-    multisig::MultisigUpdate, operator::OperatorSetUpdate, predicate::PredicateUpdate,
-    seq::SequencerUpdate,
+use crate::{
+    actions::{
+        Sighash,
+        updates::{
+            multisig::MultisigUpdate, operator::OperatorSetUpdate, predicate::PredicateUpdate,
+            seq::SequencerUpdate,
+        },
+    },
+    constants::AdminTxType,
 };
 
 /// An action that updates some part of the ASM.
@@ -29,6 +35,26 @@ impl UpdateAction {
             UpdateAction::OperatorSet(_) => Role::StrataAdministrator,
             UpdateAction::VerifyingKey(_) => Role::StrataAdministrator,
             UpdateAction::Sequencer(_) => Role::StrataSequencerManager,
+        }
+    }
+}
+
+impl Sighash for UpdateAction {
+    fn tx_type(&self) -> AdminTxType {
+        match self {
+            UpdateAction::Multisig(m) => m.tx_type(),
+            UpdateAction::OperatorSet(o) => o.tx_type(),
+            UpdateAction::Sequencer(s) => s.tx_type(),
+            UpdateAction::VerifyingKey(v) => v.tx_type(),
+        }
+    }
+
+    fn sighash_payload(&self) -> Vec<u8> {
+        match self {
+            UpdateAction::Multisig(m) => m.sighash_payload(),
+            UpdateAction::OperatorSet(o) => o.sighash_payload(),
+            UpdateAction::Sequencer(s) => s.sighash_payload(),
+            UpdateAction::VerifyingKey(v) => v.sighash_payload(),
         }
     }
 }

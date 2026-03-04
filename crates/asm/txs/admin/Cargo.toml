@@ -19,6 +19,7 @@ strata-primitives.workspace = true
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
 borsh.workspace = true
+hex-literal.workspace = true
 thiserror.workspace = true
 
 [features]
@@ -29,6 +30,7 @@ test-utils = [
 ]
 
 [dev-dependencies]
+proptest.workspace = true
 rand.workspace = true
 
 strata-test-utils.workspace = true

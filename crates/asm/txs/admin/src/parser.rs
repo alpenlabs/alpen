@@ -44,6 +44,7 @@ impl SignedPayload {
 /// - The transaction lacks a taproot leaf script in its witness
 /// - The envelope payload cannot be parsed
 /// - The signed payload cannot be deserialized
+// TODO: https://alpenlabs.atlassian.net/browse/STR-2366
 pub fn parse_tx(tx: &TxInputRef<'_>) -> Result<SignedPayload, AdministrationTxParseError> {
     let tx_type = tx.tag().tx_type();
 

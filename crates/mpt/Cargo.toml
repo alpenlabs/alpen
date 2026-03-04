@@ -19,4 +19,4 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-hex-literal = "0.4"
+hex-literal.workspace = true
