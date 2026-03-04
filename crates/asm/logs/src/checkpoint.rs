@@ -83,21 +83,21 @@ impl AsmLog for CheckpointUpdate {
 
 /// Records a verified [`CheckpointTip`] update from the v1 checkpoint subprotocol.
 ///
-/// Carries the tip (epoch, L1 height, L2 commitment) along with the hash of
-/// the L1 transaction that delivered the checkpoint proof. The inner
+/// Carries the tip (epoch, L1 height, L2 commitment) along with the txid of
+/// the L1 transaction that delivered the checkpoint tx. The inner
 /// [`CheckpointTip`] is encoded via [`CodecSsz`] per its SSZ schema.
 #[derive(Debug, Clone, Codec)]
 pub struct CheckpointTipUpdate {
     /// The new verified checkpoint tip.
     tip: CodecSsz<CheckpointTip>,
 
-    /// Hash of the L1 transaction that carried the checkpoint proof.
+    /// Txid of the L1 transaction that carried the checkpoint tx.
     checkpoint_txid: Buf32,
 }
 
 impl CheckpointTipUpdate {
     /// Creates a new [`CheckpointTipUpdate`] from a [`CheckpointTip`] and the
-    /// raw txid bytes of the L1 transaction that carried the proof.
+    /// raw txid bytes of the L1 transaction that carried the checkpoint.
     pub fn new(tip: CheckpointTip, checkpoint_txid: Buf32) -> Self {
         Self {
             tip: CodecSsz::new(tip),
