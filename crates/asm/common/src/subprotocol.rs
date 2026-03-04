@@ -11,8 +11,8 @@ use strata_identifiers::L1BlockCommitment;
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef,
-    VerifiedAuxData, msg::InterprotoMsg,
+    AsmError, AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef, VerifiedAuxData,
+    msg::InterprotoMsg,
 };
 
 /// Trait for defining subprotocol behavior within the ASM framework.
@@ -116,13 +116,10 @@ pub trait Subprotocol: 'static {
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
     /// * `collector` - Interface for registering auxiliary input requirements
     /// * `anchor_pre` - The previous anchor state for context
-    /// * `params` - Subprotocol's current params
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
         _collector: &mut AuxRequestCollector,
-        _anchor_pre: &AnchorState,
-        _params: &Self::Params,
     ) {
         // default nothing
     }
@@ -191,12 +188,7 @@ pub trait SubprotoHandler {
     ///
     /// Any required auxiliary data should be registered via the provided `AuxRequestCollector` for
     /// the subsequent processing phase.
-    fn pre_process_txs(
-        &mut self,
-        txs: &[TxInputRef<'_>],
-        collector: &mut AuxRequestCollector,
-        anchor_state: &AnchorState,
-    );
+    fn pre_process_txs(&mut self, txs: &[TxInputRef<'_>], collector: &mut AuxRequestCollector);
 
     /// Processes a batch of L1 transactions by delegating to the underlying subprotocol's
     /// `process_txs` implementation.

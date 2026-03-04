@@ -5,7 +5,7 @@
 
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     VerifiedAuxData,
     logging::{error, info},
 };
@@ -48,8 +48,6 @@ impl Subprotocol for BridgeV1Subproto {
         state: &Self::State,
         txs: &[TxInputRef<'_>],
         collector: &mut AuxRequestCollector,
-        _anchor_pre: &AnchorState,
-        _params: &Self::Params,
     ) {
         // Pre-Process each transaction
         for tx in txs {

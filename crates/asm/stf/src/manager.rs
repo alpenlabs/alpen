@@ -43,13 +43,8 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
     }
 
     // TODO make this just return the aux request
-    fn pre_process_txs(
-        &mut self,
-        txs: &[TxInputRef<'_>],
-        collector: &mut AuxRequestCollector,
-        anchor_pre: &AnchorState,
-    ) {
-        S::pre_process_txs(&self.state, txs, collector, anchor_pre, &self.params);
+    fn pre_process_txs(&mut self, txs: &[TxInputRef<'_>], collector: &mut AuxRequestCollector) {
+        S::pre_process_txs(&self.state, txs, collector);
     }
 
     fn process_txs(
@@ -111,7 +106,6 @@ impl SubprotoManager {
         &mut self,
         aux_collector: &mut AuxRequestCollector,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
@@ -121,7 +115,7 @@ impl SubprotoManager {
             .expect("asm: unloaded subprotocol");
 
         // Invoke the preprocess function.
-        h.pre_process_txs(txs, aux_collector, anchor_pre);
+        h.pre_process_txs(txs, aux_collector);
         self.insert_handler(h);
     }
 

@@ -2,7 +2,7 @@
 
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
+    AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
     VerifiedAuxData, logging,
 };
 use strata_asm_params::CheckpointConfig;
@@ -41,8 +41,6 @@ impl Subprotocol for CheckpointSubprotocol {
         state: &Self::State,
         txs: &[TxInputRef<'_>],
         collector: &mut AuxRequestCollector,
-        _anchor_pre: &AnchorState,
-        _params: &Self::Params,
     ) {
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
