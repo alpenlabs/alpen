@@ -27,6 +27,15 @@ class OutputTransfer(Container):
     ### Native asset value transferred (satoshis)
     value: strata_acct_types.BitcoinAmount
 
+### Describes a transfer output from an EE subject to an OL account.
+class OutputMessage(Container):
+    ### Destination orchestration layer account ID
+    dest: strata_acct_types.AccountId
+
+    ### Message payload carried, both value and data.
+    #~# external_kind: container
+    payload: strata_acct_types.MsgPayload
+
 ### Outputs from an EE to the OL produced in an execution span.
 class ExecOutputs(Container):
     ### Native asset transfers to OL accounts
@@ -34,4 +43,4 @@ class ExecOutputs(Container):
 
     ### Messages sent to OL accounts (with data payload)
     #~# external_kind: container
-    output_messages: List[strata_acct_types.SentMessage, MAX_OUTPUT_MESSAGES]
+    output_messages: List[OutputMessage, MAX_OUTPUT_MESSAGES]

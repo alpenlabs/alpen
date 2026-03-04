@@ -1,6 +1,6 @@
-use strata_acct_types::{AccountId, BitcoinAmount, SentMessage, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload, SubjectId};
 
-use crate::{ExecInputs, ExecOutputs, OutputTransfer, SubjectDepositData};
+use crate::{ExecInputs, ExecOutputs, OutputMessage, OutputTransfer, SubjectDepositData};
 
 impl ExecInputs {
     fn new(subject_deposits: Vec<SubjectDepositData>) -> Self {
@@ -45,7 +45,7 @@ impl SubjectDepositData {
 }
 
 impl ExecOutputs {
-    fn new(output_transfers: Vec<OutputTransfer>, output_messages: Vec<SentMessage>) -> Self {
+    fn new(output_transfers: Vec<OutputTransfer>, output_messages: Vec<OutputMessage>) -> Self {
         Self {
             // TODO propagate up the bounds checks here
             output_transfers: output_transfers.into(),
@@ -64,20 +64,36 @@ impl ExecOutputs {
 
     /// Adds a transfer output.
     pub fn add_transfer(&mut self, t: OutputTransfer) {
+        // FIXME remove expect
         self.output_transfers
             .push(t)
-            .expect("output_transfers list at capacity");
+            .expect("chain/io: output_transfers list at capacity");
     }
 
-    pub fn output_messages(&self) -> &[SentMessage] {
+    pub fn output_messages(&self) -> &[OutputMessage] {
         self.output_messages.as_ref()
     }
 
     /// Adds a message output.
-    pub fn add_message(&mut self, m: SentMessage) {
+    pub fn add_message(&mut self, m: OutputMessage) {
+        // FIXME remove expect
         self.output_messages
             .push(m)
-            .expect("output_messages list at capacity");
+            .expect("chain/io: output_messages list at capacity");
+    }
+}
+
+impl OutputMessage {
+    pub fn new(dest: AccountId, payload: MsgPayload) -> Self {
+        Self { dest, payload }
+    }
+
+    pub fn dest(&self) -> AccountId {
+        self.dest
+    }
+
+    pub fn payload(&self) -> &MsgPayload {
+        &self.payload
     }
 }
 

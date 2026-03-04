@@ -1,5 +1,7 @@
 //! Utility type for tracking consistency of inputs/outputs.
 
+use std::slice;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -78,21 +80,22 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
     /// Checks if an input matches the next value we expect to consume.  If it
     /// matches, increments the pointer.  Errors on mismatch.
     pub fn consume_input(&mut self, input: &T) -> SeqResult<()> {
-        let Some(exp_next) = self.expected_next() else {
-            return Err(SeqError::Overrun);
-        };
-
-        if input != exp_next {
-            return Err(SeqError::Mismatch(self.consumed));
-        }
-
-        self.consumed += 1;
-        Ok(())
+        self.consume_inputs(slice::from_ref(input))
     }
 
     /// Like [`consume_input`], but checks multiple inputs and only updates the
     /// consumed pointer state on success.
     pub fn consume_inputs(&mut self, inputs: &[T]) -> SeqResult<()> {
+        self.check_inputs(inputs)?;
+        self.advance_unchecked(inputs.len());
+        Ok(())
+    }
+
+    /// Checks inputs without actually consuming them.
+    ///
+    /// This is provided so that multiple sequence trackers can be checked
+    /// before advancing any of them.
+    pub fn check_inputs(&mut self, inputs: &[T]) -> SeqResult<()> {
         // Bounds check early so we can skip it on each iteration.
         if inputs.len() > self.remaining().len() {
             return Err(SeqError::Overrun);
@@ -108,8 +111,6 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
             }
         }
 
-        // Commit only after all checks succeed
-        self.consumed += inputs.len();
         Ok(())
     }
 
@@ -119,7 +120,7 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
     }
 
     /// Checks if all entries have been consumed.
-    pub fn is_empty(&self) -> bool {
+    pub fn is_fully_consumed(&self) -> bool {
         self.consumed >= self.expected_inputs.len()
     }
 

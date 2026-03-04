@@ -4,12 +4,12 @@ use std::collections::BTreeMap;
 
 use digest::Digest;
 use sha2::Sha256;
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SentMessage, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_codec::{Codec, CodecError};
 use strata_ee_acct_types::{
     EnvError, EnvResult, ExecBlock, ExecBlockBody, ExecHeader, ExecPartialState,
 };
-use strata_ee_chain_types::ExecOutputs;
+use strata_ee_chain_types::{ExecOutputs, OutputMessage};
 
 /// Write batch containing the updated account state.
 #[derive(Clone, Debug)]
@@ -149,6 +149,10 @@ impl ExecHeader for SimpleHeader {
             parent_blkid: self.parent_blkid,
             index: self.index,
         }
+    }
+
+    fn get_parent_id(&self) -> Hash {
+        self.parent_blkid
     }
 
     fn get_state_root(&self) -> Hash {
@@ -348,7 +352,7 @@ impl SimpleTransaction {
 
                 // Emit message output
                 let payload = MsgPayload::new(BitcoinAmount::from(*value), msg_data);
-                let message = SentMessage::new(*dest_account, payload);
+                let message = OutputMessage::new(*dest_account, payload);
                 outputs.add_message(message);
             }
         }

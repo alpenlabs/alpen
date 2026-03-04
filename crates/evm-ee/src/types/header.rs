@@ -40,6 +40,10 @@ impl ExecHeader for EvmHeader {
         self.header.clone()
     }
 
+    fn get_parent_id(&self) -> Hash {
+        self.header.parent_hash.0.into()
+    }
+
     fn get_state_root(&self) -> Hash {
         self.header.state_root.0.into()
     }

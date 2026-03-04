@@ -1,11 +1,12 @@
 use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SentMessage};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_bridge_types::OperatorSelection;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::DecodedEeMessageData;
 use strata_ee_chain_types::{
-    ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs, SubjectDepositData,
+    ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs, OutputMessage,
+    SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
@@ -62,7 +63,7 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
             );
             continue;
         };
-        outputs.add_message(SentMessage::new(bridge_gateway_account_id, msg_payload));
+        outputs.add_message(OutputMessage::new(bridge_gateway_account_id, msg_payload));
     }
     outputs
 }
