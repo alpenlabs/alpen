@@ -4,6 +4,8 @@
 //! the [`SnarkAccountProgram`] and [`SnarkAccountProgramVerification`] traits
 //! for the EE account type.
 
+use std::marker::PhantomData;
+
 use strata_ee_acct_types::{
     DecodedEeMessageData, EeAccountState, EnvError, ExecutionEnvironment, PendingInputEntry,
     UpdateExtraData,
@@ -19,14 +21,20 @@ use crate::verification_state::{EeVerificationInput, EeVerificationState};
 /// execution during verification.
 #[derive(Debug)]
 pub struct EeSnarkAccountProgram<E: ExecutionEnvironment> {
-    _marker: std::marker::PhantomData<E>,
+    _pd: PhantomData<E>,
 }
 
 impl<E: ExecutionEnvironment> EeSnarkAccountProgram<E> {
     /// Creates a new instance.
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<E: ExecutionEnvironment> Default for EeSnarkAccountProgram<E> {
+    fn default() -> Self {
         Self {
-            _marker: std::marker::PhantomData,
+            _pd: Default::default(),
         }
     }
 }

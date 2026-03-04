@@ -73,7 +73,7 @@ impl<I: Error> ProgramError<I> {
     pub fn new_at_msg(idx: usize, inner: Self) -> Self {
         Self::AtMessage {
             idx,
-            inner: Box::new(inner).into(),
+            inner: Box::new(inner),
         }
     }
 }
