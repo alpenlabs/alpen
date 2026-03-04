@@ -132,9 +132,10 @@ fn process_checkpoint_tip_log(
         );
     }
 
-    // v1 tip logs do not contain txid/wtxid or full batch transition details.
+    // v1 tip logs do not contain full batch transition details.
     // CSM only needs epoch progression for finalized-epoch signaling, so we
-    // synthesize a minimal checkpoint view from the tip.
+    // synthesize a minimal checkpoint view from the tip while preserving
+    // txid/wtxid from the tip update log.
     // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
     // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
@@ -264,7 +265,11 @@ fn checkpoint_from_tip_update(
     asm_block: &L1BlockCommitment,
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
-    let l1_reference = CheckpointL1Ref::new(*asm_block, Buf32::zero(), Buf32::zero());
+    // TODO(STR-2952): populate real checkpoint wtxid here.
+    // For now we mirror txid to preserve the required `CheckpointL1Ref` shape.
+    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
+    let checkpoint_wtxid = checkpoint_txid;
+    let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 
     // TODO(STR-2438): This v0-shaped `BatchInfo` synthesis is
     // semantically incorrect for checkpoint-v1 tip updates (start/end L1 and
@@ -503,7 +508,7 @@ mod tests {
                 OLBlockId::from(Buf32::from([epoch as u8; 32])),
             );
             let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-            let tip_update = CheckpointTipUpdate::new(tip);
+            let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
             let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
             let result = process_log(&mut state, &log, &asm_block);
@@ -540,7 +545,7 @@ mod tests {
 
         let ol_tip = OLBlockCommitment::new(90, OLBlockId::from(Buf32::from([epoch as u8; 32])));
         let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-        let tip_update = CheckpointTipUpdate::new(tip);
+        let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
         let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
         process_log(&mut state, &log, &asm_block).expect("tip log should process");
