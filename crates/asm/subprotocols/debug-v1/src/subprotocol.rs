@@ -26,10 +26,10 @@ impl Subprotocol for DebugSubproto {
     const ID: SubprotocolId = DEBUG_SUBPROTOCOL_ID;
 
     type Msg = NullMsg<DEBUG_SUBPROTOCOL_ID>;
-    type Params = ();
+    type InitConfig = ();
     type State = ();
 
-    fn init(_params: &Self::Params) -> Self::State {
+    fn init(_config: &Self::InitConfig) -> Self::State {
         logging::info!("Initializing debug subprotocol state");
     }
 

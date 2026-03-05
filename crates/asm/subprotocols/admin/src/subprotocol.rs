@@ -6,7 +6,7 @@
 use strata_asm_common::{
     MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
 };
-use strata_asm_params::AdministrationSubprotoParams;
+use strata_asm_params::AdministrationInitConfig;
 use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::L1BlockCommitment;
 
@@ -26,14 +26,14 @@ pub struct AdministrationSubprotocol;
 impl Subprotocol for AdministrationSubprotocol {
     const ID: SubprotocolId = ADMINISTRATION_SUBPROTOCOL_ID;
 
-    type Params = AdministrationSubprotoParams;
+    type InitConfig = AdministrationInitConfig;
 
     type State = AdministrationSubprotoState;
 
     type Msg = NullMsg<ADMINISTRATION_SUBPROTOCOL_ID>;
 
-    fn init(params: &Self::Params) -> AdministrationSubprotoState {
-        AdministrationSubprotoState::new(params)
+    fn init(config: &Self::InitConfig) -> AdministrationSubprotoState {
+        AdministrationSubprotoState::new(config)
     }
 
     /// Processes transactions for the Administration subprotocol and executes pending updates.

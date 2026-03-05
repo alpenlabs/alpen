@@ -5,7 +5,7 @@ use strata_asm_common::{
     AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging,
 };
-use strata_asm_params::CheckpointConfig;
+use strata_asm_params::CheckpointInitConfig;
 use strata_asm_txs_checkpoint::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_signed_checkpoint_from_envelope,
 };
@@ -29,12 +29,12 @@ pub struct CheckpointSubprotocol;
 impl Subprotocol for CheckpointSubprotocol {
     const ID: SubprotocolId = CHECKPOINT_SUBPROTOCOL_ID;
 
-    type Params = CheckpointConfig;
+    type InitConfig = CheckpointInitConfig;
     type State = CheckpointState;
     type Msg = CheckpointIncomingMsg;
 
-    fn init(params: &Self::Params) -> Self::State {
-        CheckpointState::init(params.clone())
+    fn init(config: &Self::InitConfig) -> Self::State {
+        CheckpointState::init(config.clone())
     }
 
     fn pre_process_txs(

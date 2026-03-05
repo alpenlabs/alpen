@@ -8,7 +8,7 @@ use strata_asm_common::{
     AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging::{error, info},
 };
-use strata_asm_params::BridgeV1Config;
+use strata_asm_params::BridgeV1InitConfig;
 use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::l1::L1BlockCommitment;
 
@@ -31,12 +31,12 @@ impl Subprotocol for BridgeV1Subproto {
 
     type State = BridgeV1State;
 
-    type Params = BridgeV1Config;
+    type InitConfig = BridgeV1InitConfig;
 
     type Msg = BridgeIncomingMsg;
 
-    fn init(params: &Self::Params) -> Self::State {
-        BridgeV1State::new(params)
+    fn init(config: &Self::InitConfig) -> Self::State {
+        BridgeV1State::new(config)
     }
 
     /// Pre-processes transactions to collect auxiliary data requests.

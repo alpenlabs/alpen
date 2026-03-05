@@ -29,7 +29,9 @@ impl<'a> Arbitrary<'a> for AsmParams {
         use strata_btc_types::TIMESTAMPS_FOR_MEDIAN;
         use strata_identifiers::L1BlockCommitment;
 
-        use crate::subprotocols::{AdministrationSubprotoParams, BridgeV1Config, CheckpointConfig};
+        use crate::subprotocols::{
+            AdministrationInitConfig, BridgeV1InitConfig, CheckpointInitConfig,
+        };
 
         let blk = L1BlockCommitment::arbitrary(u)?;
         let l1_view = GenesisL1View {
@@ -43,9 +45,9 @@ impl<'a> Arbitrary<'a> for AsmParams {
             magic: MagicBytes::new(*b"ALPN"),
             l1_view,
             subprotocols: vec![
-                SubprotocolInstance::Admin(AdministrationSubprotoParams::arbitrary(u)?),
-                SubprotocolInstance::Checkpoint(CheckpointConfig::arbitrary(u)?),
-                SubprotocolInstance::Bridge(BridgeV1Config::arbitrary(u)?),
+                SubprotocolInstance::Admin(AdministrationInitConfig::arbitrary(u)?),
+                SubprotocolInstance::Checkpoint(CheckpointInitConfig::arbitrary(u)?),
+                SubprotocolInstance::Bridge(BridgeV1InitConfig::arbitrary(u)?),
             ],
         })
     }

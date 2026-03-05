@@ -26,12 +26,12 @@ use crate::{
     verification::process_checkpoint_v0,
 };
 
-/// Checkpoint v0 subprotocol parameters
+/// Checkpoint v0 subprotocol initialization configuration.
 ///
-/// NOTE: This maintains compatibility with current checkpoint parameters while
+/// NOTE: This maintains compatibility with current checkpoint configuration while
 /// incorporating SPS-62 structure concepts for future transition
 #[derive(Clone, Debug)]
-pub struct CheckpointV0Params {
+pub struct CheckpointV0InitConfig {
     /// Verification parameters for checkpoint validation
     pub verification_params: CheckpointV0VerificationParams,
 }
@@ -51,11 +51,11 @@ impl Subprotocol for CheckpointV0Subproto {
     const ID: SubprotocolId = CHECKPOINT_V0_SUBPROTOCOL_ID;
 
     type State = CheckpointV0VerifierState;
-    type Params = CheckpointV0Params;
+    type InitConfig = CheckpointV0InitConfig;
     type Msg = CheckpointIncomingMsg;
 
-    fn init(params: &Self::Params) -> Self::State {
-        CheckpointV0VerifierState::new(&params.verification_params)
+    fn init(config: &Self::InitConfig) -> Self::State {
+        CheckpointV0VerifierState::new(&config.verification_params)
     }
 
     /// Process checkpoint transactions according to checkpoint v0 specification
@@ -239,7 +239,7 @@ mod tests {
 
     use super::*;
 
-    fn test_params() -> CheckpointV0Params {
+    fn test_params() -> CheckpointV0InitConfig {
         let genesis_commitment =
             L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::default()))
                 .expect("genesis height should be valid");
@@ -249,7 +249,7 @@ mod tests {
             predicate: PredicateKey::always_accept(),
         };
 
-        CheckpointV0Params {
+        CheckpointV0InitConfig {
             verification_params,
         }
     }

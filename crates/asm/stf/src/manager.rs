@@ -243,7 +243,7 @@ impl<'c> AnchorStateLoader<'c> {
 }
 
 impl<'c> Loader for AnchorStateLoader<'c> {
-    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params) {
+    fn load_subprotocol<S: Subprotocol>(&mut self, config: S::InitConfig) {
         // Load or create the subprotocol state.
         // OPTIMIZE: Linear scan is done every time to find the section
         let state = match self.anchor.find_section(S::ID) {
@@ -253,8 +253,8 @@ impl<'c> Loader for AnchorStateLoader<'c> {
             // State not found in the anchor state, which occurs in two scenarios:
             // 1. During genesis block processing, before any state initialization
             // 2. When introducing a new subprotocol to an existing chain
-            // In either case, we must initialize a fresh state from the provided params
-            None => S::init(&params),
+            // In either case, we must initialize a fresh state from the provided config
+            None => S::init(&config),
         };
 
         self.man.insert_subproto::<S>(state);

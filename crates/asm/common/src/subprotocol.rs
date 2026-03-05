@@ -40,10 +40,10 @@ use crate::{
 /// impl Subprotocol for MySubprotocol {
 ///     const ID: SubprotocolId = 42;
 ///     type State = MyState;
-///     type Params = MyParams;
+///     type InitConfig = MyInitConfig;
 ///     type Msg = MyMessage;
 ///
-///     fn init(params: &Self::Params) -> Self::State {
+///     fn init(config: &Self::InitConfig) -> Self::State {
 ///        // init logic
 ///     }
 ///
@@ -74,9 +74,8 @@ pub trait Subprotocol: 'static {
     /// The subprotocol ID used when searching for relevant transactions.
     const ID: SubprotocolId;
 
-    /// Type that defines the params the subprotocol should operate under, which
-    /// might change dependent on block height.
-    type Params;
+    /// Configuration used to initialize the subprotocol's state.
+    type InitConfig;
 
     /// State type serialized into the ASM state structure.
     type State: Any + BorshDeserialize + BorshSerialize;
@@ -84,16 +83,16 @@ pub trait Subprotocol: 'static {
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + InterprotoMsg + Any;
 
-    /// Constructs a new state using the provided genesis configuration.
+    /// Constructs a new state using the provided initialization configuration.
     ///
     /// # Arguments
-    /// * `params` - The subprotocol's params, from which we should be able to derive an initial
+    /// * `config` - The subprotocol's initialization configuration, from which we derive an initial
     ///   state to use when the pre-state does not contain an instance.
     ///
     /// # Returns
     ///
     /// The initialized state
-    fn init(params: &Self::Params) -> Self::State;
+    fn init(config: &Self::InitConfig) -> Self::State;
 
     /// Pre-processes a batch of L1 transactions by registering any required auxiliary data.
     ///

@@ -1,7 +1,7 @@
 use std::{mem::take, num::NonZero};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_params::{AdministrationSubprotoParams, Role};
+use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 
@@ -38,7 +38,7 @@ pub struct AdministrationSubprotoState {
 }
 
 impl AdministrationSubprotoState {
-    pub fn new(config: &AdministrationSubprotoParams) -> Self {
+    pub fn new(config: &AdministrationInitConfig) -> Self {
         let authorities = config
             .clone()
             .get_all_authorities()
@@ -136,7 +136,7 @@ mod tests {
 
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::rngs::OsRng;
-    use strata_asm_params::{AdministrationSubprotoParams, Role};
+    use strata_asm_params::{AdministrationInitConfig, Role};
     use strata_asm_txs_admin::actions::UpdateAction;
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
@@ -146,7 +146,7 @@ mod tests {
 
     use crate::{queued_update::QueuedUpdate, state::AdministrationSubprotoState};
 
-    fn create_test_config() -> AdministrationSubprotoParams {
+    fn create_test_config() -> AdministrationInitConfig {
         let secp = Secp256k1::new();
 
         // Create admin keys
@@ -167,7 +167,7 @@ mod tests {
         let strata_sequencer_manager =
             ThresholdConfig::try_new(seq_pks, NonZero::new(2).unwrap()).unwrap();
 
-        AdministrationSubprotoParams {
+        AdministrationInitConfig {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,

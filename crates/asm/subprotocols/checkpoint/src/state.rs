@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_params::CheckpointConfig;
+use strata_asm_params::CheckpointInitConfig;
 use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_identifiers::L2BlockCommitment;
 use strata_predicate::PredicateKey;
@@ -22,7 +22,7 @@ pub struct CheckpointState {
 
 impl CheckpointState {
     /// Initializes checkpoint state from configuration.
-    pub fn init(config: CheckpointConfig) -> Self {
+    pub fn init(config: CheckpointInitConfig) -> Self {
         let genesis_epoch = 0;
         let genesis_l2_slot = 0;
         let genesis_l2_commitment =

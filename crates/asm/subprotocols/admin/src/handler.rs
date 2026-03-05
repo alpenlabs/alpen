@@ -180,7 +180,7 @@ mod tests {
     use rand::{rngs::OsRng, seq::SliceRandom, thread_rng};
     use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
-    use strata_asm_params::{AdministrationSubprotoParams, Role};
+    use strata_asm_params::{AdministrationInitConfig, Role};
     use strata_asm_txs_admin::{
         actions::{
             CancelAction, MultisigAction, Sighash, UpdateAction,
@@ -241,7 +241,7 @@ mod tests {
         }
     }
 
-    fn create_test_params() -> (AdministrationSubprotoParams, Vec<SecretKey>, Vec<SecretKey>) {
+    fn create_test_params() -> (AdministrationInitConfig, Vec<SecretKey>, Vec<SecretKey>) {
         let secp = Secp256k1::new();
 
         let strata_admin_sks: Vec<SecretKey> = (0..3).map(|_| SecretKey::new(&mut OsRng)).collect();
@@ -261,7 +261,7 @@ mod tests {
         let strata_sequencer_manager =
             ThresholdConfig::try_new(strata_seq_manager_pks, NonZero::new(2).unwrap()).unwrap();
 
-        let config = AdministrationSubprotoParams {
+        let config = AdministrationInitConfig {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,

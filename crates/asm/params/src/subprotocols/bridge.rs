@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use strata_btc_types::BitcoinAmount;
 use strata_crypto::EvenPublicKey;
 
-/// Configuration for the BridgeV1 subprotocol.
+/// Initialization configuration for the BridgeV1 subprotocol.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BridgeV1Config {
+pub struct BridgeV1InitConfig {
     /// Initial operator MuSig2 public keys for the bridge
     pub operators: Vec<EvenPublicKey>,
     /// The amount of bitcoin expected to be locked in the N/N multisig.
@@ -20,7 +20,7 @@ pub struct BridgeV1Config {
 }
 
 #[cfg(feature = "arbitrary")]
-impl<'a> arbitrary::Arbitrary<'a> for BridgeV1Config {
+impl<'a> arbitrary::Arbitrary<'a> for BridgeV1InitConfig {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate at least one operator.
         let len = u.int_in_range(1..=5)?;

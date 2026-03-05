@@ -4,7 +4,7 @@ use rand::Rng;
 use strata_asm_common::{
     AsmHistoryAccumulatorState, AsmLogEntry, AuxData, InterprotoMsg, MsgRelayer, VerifiedAuxData,
 };
-use strata_asm_params::BridgeV1Config;
+use strata_asm_params::BridgeV1InitConfig;
 use strata_asm_txs_bridge_v1::{
     deposit::{DepositInfo, parse_deposit_tx},
     deposit_request::DrtHeaderAux,
@@ -54,7 +54,7 @@ pub(crate) fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
     let num_operators = rng.gen_range(2..=5);
     let (privkeys, operators) = create_test_operators(num_operators);
     let denomination = BitcoinAmount::from_sat(1_000_000);
-    let config = BridgeV1Config {
+    let config = BridgeV1InitConfig {
         denomination,
         operators,
         assignment_duration: 144, // ~24 hours
