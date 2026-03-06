@@ -21,7 +21,7 @@ use strata_ee_acct_types::{
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage};
-use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE};
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WithdrawalMsgData};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
@@ -89,7 +89,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
         // TODO Split this function up into multiple stages, there's a lot going
-        // on here.  There's also check happpening here that should be done in
+        // on here.  There's also check happening here that should be done in
         // `check_outputs_against_header`.  We don't have to clone the state,
         // those checks are managed by the chunk runtime.
 
