@@ -18,7 +18,7 @@ from factory.config import (
 from load.cfg import LoadConfig
 from load.service import LoadGeneratorService
 from utils.constants import BD_PASSWORD, BD_USERNAME
-from utils.utils import ProverClientSettings
+from utils.utils import ProverClientSettings, wait_until
 
 
 class BitcoinFactory(flexitest.Factory):
@@ -31,6 +31,8 @@ class BitcoinFactory(flexitest.Factory):
         p2p_port = self.next_port()
         rpc_port = self.next_port()
         logfile = os.path.join(datadir, "service.log")
+
+        walletname = "testwallet"
 
         cmd = [
             "bitcoind",
@@ -45,6 +47,7 @@ class BitcoinFactory(flexitest.Factory):
             f"-rpcport={rpc_port}",
             f"-rpcuser={BD_USERNAME}",
             f"-rpcpassword={BD_PASSWORD}",
+            f"-wallet={walletname}",
         ]
 
         props = {
@@ -52,7 +55,7 @@ class BitcoinFactory(flexitest.Factory):
             "rpc_port": rpc_port,
             "rpc_user": BD_USERNAME,
             "rpc_password": BD_PASSWORD,
-            "walletname": "testwallet",
+            "walletname": walletname,
         }
 
         svc = flexitest.service.ProcService(props, cmd, stdout=logfile)
@@ -66,6 +69,14 @@ class BitcoinFactory(flexitest.Factory):
             return BitcoindClient(base_url=url, network="regtest")
 
         svc.create_rpc = _create_rpc
+
+        # Create wallet on first start; on restarts -wallet flag auto-loads it
+        def _create_wallet():
+            rpc = _create_rpc()
+            rpc.proxy.createwallet(walletname)
+            return True
+
+        wait_until(_create_wallet, error_with="bitcoind wallet not ready", timeout=30)
 
         return svc
 
