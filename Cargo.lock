@@ -15414,7 +15414,6 @@ name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
- "strata-proofimpl-cl-stf",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
