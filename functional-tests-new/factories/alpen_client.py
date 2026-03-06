@@ -11,6 +11,7 @@ from pathlib import Path
 import flexitest
 
 from common.config import EeDaConfig
+from common.config.constants import DEFAULT_EE_BLOCK_TIME_MS
 from common.services import AlpenClientProps, AlpenClientService
 
 
@@ -162,6 +163,7 @@ class AlpenClientFactory(flexitest.Factory):
         # Set environment variable for sequencer private key
         env = os.environ.copy()
         env["SEQUENCER_PRIVATE_KEY"] = sequencer_privkey
+        env["ALPEN_EE_BLOCK_TIME_MS"] = str(DEFAULT_EE_BLOCK_TIME_MS)
 
         svc = AlpenClientService(
             props,

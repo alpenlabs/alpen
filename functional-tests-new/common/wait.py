@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 
 from common.config.constants import (
     DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
-    DEFAULT_EE_BLOCK_TIME_SECONDS,
+    DEFAULT_EE_BLOCK_TIME_MS,
 )
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def timeout_for_expected_blocks(
     expected_blocks: int,
-    seconds_per_block: float = DEFAULT_EE_BLOCK_TIME_SECONDS,
+    seconds_per_block: float = DEFAULT_EE_BLOCK_TIME_MS / 1000,
     slack_seconds: int = DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
 ) -> int:
     """Compute a timeout budget for a block-driven wait."""
