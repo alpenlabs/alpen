@@ -9,7 +9,7 @@
 
 use strata_asm_common::logging;
 use strata_checkpoint_types::{
-    BatchTransition, Checkpoint, SignedCheckpoint, verify_signed_checkpoint_sig,
+    BatchInfo, Checkpoint, SignedCheckpoint, verify_signed_checkpoint_sig,
 };
 
 use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
@@ -38,31 +38,14 @@ pub fn process_checkpoint_v0(
         });
     }
 
-    ensure_batch_epochs_consistent(checkpoint)?;
     if !verify_signed_checkpoint_sig(signed_checkpoint, &state.cred_rule) {
         return Err(CheckpointV0Error::InvalidSignature);
     }
     verify_checkpoint_proof(checkpoint, state)?;
 
-    if let Some(previous) = &state.last_checkpoint {
-        verify_epoch_continuity(previous, checkpoint)?;
-    }
-
     state.update_with_checkpoint(checkpoint.clone(), current_l1_height);
     logging::info!(epoch, "Successfully verified checkpoint");
 
-    Ok(())
-}
-
-fn ensure_batch_epochs_consistent(checkpoint: &Checkpoint) -> Result<(), CheckpointV0Error> {
-    let info_epoch = checkpoint.batch_info().epoch();
-    let transition_epoch = checkpoint.batch_transition().epoch;
-    if info_epoch != transition_epoch {
-        return Err(CheckpointV0Error::BatchEpochMismatch {
-            info_epoch,
-            transition_epoch,
-        });
-    }
     Ok(())
 }
 
@@ -71,12 +54,11 @@ fn verify_checkpoint_proof(
     state: &CheckpointV0VerifierState,
 ) -> Result<(), CheckpointV0Error> {
     let proof_receipt = checkpoint.construct_receipt();
-    let expected_output = *checkpoint.batch_transition();
-    let actual_output: BatchTransition =
-        borsh::from_slice(proof_receipt.public_values().as_bytes())
-            .map_err(|_| CheckpointV0Error::SerializationError)?;
+    let expected_output = checkpoint.batch_info();
+    let actual_output: BatchInfo = borsh::from_slice(proof_receipt.public_values().as_bytes())
+        .map_err(|_| CheckpointV0Error::SerializationError)?;
 
-    if expected_output != actual_output {
+    if expected_output != &actual_output {
         logging::warn!(
             epoch = checkpoint.batch_info().epoch(),
             "Checkpoint proof public values mismatch"
@@ -90,26 +72,6 @@ fn verify_checkpoint_proof(
     ) {
         logging::warn!("Groth16 verification failed: {err:?}");
         return Err(CheckpointV0Error::InvalidCheckpointProof);
-    }
-
-    Ok(())
-}
-
-/// Ensure that the previous checkpoint's post state matches the current checkpoint's pre state.
-fn verify_epoch_continuity(
-    prev_checkpoint: &Checkpoint,
-    curr_checkpoint: &Checkpoint,
-) -> Result<(), CheckpointV0Error> {
-    if prev_checkpoint
-        .batch_transition()
-        .chainstate_transition
-        .post_state_root
-        != curr_checkpoint
-            .batch_transition()
-            .chainstate_transition
-            .pre_state_root
-    {
-        return Err(CheckpointV0Error::StateRootMismatch);
     }
 
     Ok(())

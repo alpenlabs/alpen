@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
-use strata_checkpoint_types::{BatchInfo, BatchTransition, ChainstateRootTransition, EpochSummary};
+use strata_checkpoint_types::{BatchInfo, EpochSummary};
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{types::CheckpointEntry, DbError};
 use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
@@ -191,7 +191,7 @@ fn handle_ready_epoch(
     // else save a pending proof checkpoint entry
     debug!(%epoch, "saving unproven checkpoint");
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let entry = CheckpointEntry::new_pending_proof(cpd.info, cpd.tsn, &cpd.chainstate);
+    let entry = CheckpointEntry::new_pending_proof(cpd.info, &cpd.chainstate);
     if let Err(e) = ckhandle.put_checkpoint_and_notify_blocking(epoch as u64, entry) {
         warn!(%epoch, err = %e, "failed to save checkpoint");
     }
@@ -202,17 +202,12 @@ fn handle_ready_epoch(
 /// Container structure for convenience.
 struct CheckpointPrepData {
     info: BatchInfo,
-    tsn: BatchTransition,
     chainstate: Chainstate,
 }
 
 impl CheckpointPrepData {
-    fn new(info: BatchInfo, tsn: BatchTransition, chainstate: Chainstate) -> Self {
-        Self {
-            info,
-            tsn,
-            chainstate,
-        }
+    fn new(info: BatchInfo, chainstate: Chainstate) -> Self {
+        Self { info, chainstate }
     }
 }
 
@@ -275,7 +270,7 @@ fn create_checkpoint_prep_data_from_summary(
         .get_slot_write_batch_blocking(initial_state_blkid)?
         .ok_or(Error::MissingIdxChainstate(initial_state_height))?
         .into_toplevel();
-    let l2_initial_state = initial_state.compute_state_root();
+    let _l2_initial_state = initial_state.compute_state_root();
 
     let final_state_height = last_block.slot();
     let final_state_blkid = last_block.get_blockid();
@@ -283,25 +278,11 @@ fn create_checkpoint_prep_data_from_summary(
         .get_slot_write_batch_blocking(final_state_blkid)?
         .ok_or(Error::MissingIdxChainstate(final_state_height))?
         .into_toplevel();
-    let l2_final_state = final_state.compute_state_root();
-
-    let chainstate_transition = ChainstateRootTransition {
-        pre_state_root: l2_initial_state,
-        post_state_root: l2_final_state,
-    };
-
-    let new_transition = BatchTransition {
-        epoch: summary.epoch(),
-        chainstate_transition,
-    };
+    let _l2_final_state = final_state.compute_state_root();
 
     let new_batch_info = BatchInfo::new(summary.epoch(), l1_range, l2_range);
 
-    Ok(CheckpointPrepData::new(
-        new_batch_info,
-        new_transition,
-        final_state,
-    ))
+    Ok(CheckpointPrepData::new(new_batch_info, final_state))
 }
 
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
