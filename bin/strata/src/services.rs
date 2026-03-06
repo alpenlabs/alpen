@@ -46,13 +46,14 @@ mod sequencer_services {
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
         mempool_handle: Arc<MempoolHandle>,
+        sequencer_sk: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
         }
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx));
-        let envelope_handle = start_writer(nodectx, broadcast_handle.clone())?;
+        let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), sequencer_sk)?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
         Ok(Some(SequencerServiceHandles::new(
@@ -92,6 +93,7 @@ mod sequencer_services {
     fn start_writer(
         nodectx: &NodeContext,
         broadcast_handle: Arc<L1BroadcastHandle>,
+        sequencer_sk: Option<[u8; 32]>,
     ) -> Result<Arc<EnvelopeHandle>> {
         let sequencer_address = nodectx
             .task_manager()
@@ -100,10 +102,6 @@ mod sequencer_services {
 
         let writer_db = nodectx.storage().db().writer_db();
 
-        // TODO: Wire the sequencer secret key here to enable SPS-51 envelope
-        // authentication. The sequencer key is loaded in the duty executor via
-        // `load_seqkey`, and the same sk bytes should be passed here so that
-        // the envelope builder uses the sequencer's pubkey as the taproot key.
         start_envelope_task(
             nodectx.executor(),
             nodectx.bitcoin_client().clone(),
@@ -114,7 +112,7 @@ mod sequencer_services {
             nodectx.status_channel().as_ref().clone(),
             nodectx.storage().pool().clone(),
             broadcast_handle,
-            None,
+            sequencer_sk,
         )
     }
 
@@ -165,7 +163,11 @@ mod sequencer_services {
 
     use crate::run_context::ServiceHandlesBuilder;
 
-    pub(super) fn start_if_enabled(_: &NodeContext, _: Arc<MempoolHandle>) -> Result<()> {
+    pub(super) fn start_if_enabled(
+        _: &NodeContext,
+        _: Arc<MempoolHandle>,
+        _: Option<[u8; 32]>,
+    ) -> Result<()> {
         Ok(())
     }
 
@@ -178,7 +180,10 @@ mod sequencer_services {
 }
 
 /// Just simply starts services. This can later be extended to service registry pattern.
-pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> {
+pub(crate) fn start_strata_services(
+    nodectx: NodeContext,
+    sequencer_sk: Option<[u8; 32]>,
+) -> Result<RunContext> {
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
 
@@ -210,7 +215,8 @@ pub(crate) fn start_strata_services(nodectx: NodeContext) -> Result<RunContext> 
             .launch(nodectx.executor())?,
     );
 
-    let sequencer_handles = sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone())?;
+    let sequencer_handles =
+        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), sequencer_sk)?;
 
     let fcm_ctx =
         FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());

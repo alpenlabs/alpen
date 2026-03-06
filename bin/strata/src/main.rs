@@ -61,16 +61,34 @@ fn main() -> Result<()> {
     // Check for db consistency, external rpc clients reachable, etc.
     do_startup_checks(&nodectx)?;
 
+    // Load sequencer key early so it can be shared with both the envelope writer
+    // (for SPS-51 taproot authentication) and the duty executor (for block signing).
+    #[cfg(feature = "sequencer")]
+    let sequencer_key = if nodectx.config().client.is_sequencer {
+        let path = args.sequencer_key.as_ref().ok_or_else(|| {
+            anyhow!("--sequencer-key is required when --sequencer is set")
+        })?;
+        Some(sequencer::load_seqkey(path)?)
+    } else {
+        None
+    };
+
+    #[cfg(feature = "sequencer")]
+    let sequencer_sk = sequencer_key.as_ref().map(|k| k.sk.0);
+
+    #[cfg(not(feature = "sequencer"))]
+    let sequencer_sk: Option<[u8; 32]> = None;
+
     // Start services, and do genesis if necessary
-    let runctx = start_strata_services(nodectx)?;
+    let runctx = start_strata_services(nodectx, sequencer_sk)?;
 
     // Start RPC.
     start_rpc(&runctx)?;
 
     // Start sequencer signer if sequencer feature is enabled
     #[cfg(feature = "sequencer")]
-    if runctx.config().client.is_sequencer {
-        sequencer::start_sequencer_signer(&runctx, &args)?;
+    if let Some(sequencer_key) = sequencer_key {
+        sequencer::start_sequencer_signer(&runctx, &args, sequencer_key)?;
     }
 
     // Monitor tasks.
