@@ -100,6 +100,10 @@ mod sequencer_services {
 
         let writer_db = nodectx.storage().db().writer_db();
 
+        // TODO: Wire the sequencer secret key here to enable SPS-51 envelope
+        // authentication. The sequencer key is loaded in the duty executor via
+        // `load_seqkey`, and the same sk bytes should be passed here so that
+        // the envelope builder uses the sequencer's pubkey as the taproot key.
         start_envelope_task(
             nodectx.executor(),
             nodectx.bitcoin_client().clone(),
@@ -110,6 +114,7 @@ mod sequencer_services {
             nodectx.status_channel().as_ref().clone(),
             nodectx.storage().pool().clone(),
             broadcast_handle,
+            None,
         )
     }
 

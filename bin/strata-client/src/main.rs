@@ -438,6 +438,7 @@ fn start_sequencer_tasks(
         status_channel.clone(),
         pool.clone(),
         broadcast_handle.clone(),
+        None,
     )?;
 
     let template_manager_handle = start_template_manager_task(&ctx, executor);
