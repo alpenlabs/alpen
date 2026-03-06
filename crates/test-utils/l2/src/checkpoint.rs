@@ -198,8 +198,7 @@ impl CheckpointTestHarness {
     /// - Properly constructed checkpoint claim with manifest hashes
     /// - Valid checkpoint proof signature
     pub fn build_payload_with_tip(&self, new_tip: CheckpointTip) -> CheckpointPayload {
-        use k256::ecdsa::signature::SignatureEncoding;
-        use k256::schnorr::signature::Signer;
+        use k256::{ecdsa::signature::SignatureEncoding, schnorr::signature::Signer};
 
         let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let ol_logs = Vec::new();

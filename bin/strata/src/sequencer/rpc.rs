@@ -92,11 +92,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         Ok(template_id)
     }
 
-    async fn complete_checkpoint_signature(
-        &self,
-        epoch: Epoch,
-        _sig: HexBytes64,
-    ) -> RpcResult<()> {
+    async fn complete_checkpoint_signature(&self, epoch: Epoch, _sig: HexBytes64) -> RpcResult<()> {
         // NOTE: The signature parameter is ignored. With the SPS-51 envelope trick,
         // authentication is handled by the envelope's taproot pubkey matching the
         // sequencer predicate. The checkpoint payload is submitted without an

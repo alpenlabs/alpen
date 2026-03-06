@@ -140,8 +140,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .map_err(InvalidCheckpointPayload::CheckpointPredicateVerification)?;
 
     // 7. Extract and validate withdrawal intent logs
-    let withdrawal_intents =
-        extract_and_validate_withdrawal_intents(payload.sidecar().ol_logs())?;
+    let withdrawal_intents = extract_and_validate_withdrawal_intents(payload.sidecar().ol_logs())?;
 
     // 8. Verify available funds can cover all withdrawal intents (exact denomination matching)
     let withdraw_outputs: Vec<_> = withdrawal_intents.iter().map(|(w, _)| w.clone()).collect();
