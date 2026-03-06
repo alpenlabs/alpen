@@ -13,7 +13,8 @@ use async_trait::async_trait;
 use serde::Serialize;
 use ssz::Encode;
 use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
-use strata_checkpoint_types_ssz::SignedCheckpointPayload;
+use strata_codec::encode_to_vec;
+use strata_codec_utils::CodecSsz;
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::{
@@ -30,8 +31,8 @@ use tracing::{debug, error, info, warn};
 
 use super::input::SequencerEvent;
 use crate::{
-    signing::{sign_checkpoint, sign_header},
-    BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty, Error as SequencerError,
+    signing::sign_header, BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty,
+    Error as SequencerError,
 };
 
 /// Status exposed by the sequencer service monitor.
@@ -81,6 +82,8 @@ pub enum SequencerDutyError {
     MissingCheckpoint { epoch: Epoch },
     #[error("failed to resolve checkpoint intent index for epoch {epoch}")]
     ResolveCheckpointIntentIndex { epoch: Epoch },
+    #[error("failed to encode checkpoint payload: {0}")]
+    CheckpointEncode(String),
 }
 
 /// Behavioral runtime abstraction for sequencer dependencies.
@@ -300,8 +303,7 @@ async fn handle_duty<C: SequencerContext>(
             handle_sign_block_duty(ctx.context.as_ref(), duty, duty_id, &ctx.sequencer_key).await
         }
         Duty::SignCheckpoint(duty) => {
-            handle_sign_checkpoint_duty(ctx.context.as_ref(), duty, duty_id, &ctx.sequencer_key)
-                .await
+            handle_checkpoint_duty(ctx.context.as_ref(), duty, duty_id).await
         }
     }
 }
@@ -338,11 +340,15 @@ async fn handle_sign_block_duty<C: SequencerContext>(
     Ok(())
 }
 
-async fn handle_sign_checkpoint_duty<C: SequencerContext>(
+/// Handles a checkpoint duty for the sequencer.
+///
+/// Encodes the checkpoint payload with [`CodecSsz`] and submits it as an L1 payload
+/// intent. The envelope builder will use the sequencer's keypair as the taproot key,
+/// so the script-spend signature transitively authenticates the payload (SPS-51).
+async fn handle_checkpoint_duty<C: SequencerContext>(
     context: &C,
     duty: CheckpointSigningDuty,
     duty_id: Buf32,
-    sequencer_key: &Buf32,
 ) -> Result<(), SequencerDutyError> {
     let epoch = duty.epoch();
     let Some(mut entry) = context.load_checkpoint(epoch).await? else {
@@ -354,14 +360,13 @@ async fn handle_sign_checkpoint_duty<C: SequencerContext>(
         return Ok(());
     }
 
-    let sig = sign_checkpoint(duty.checkpoint(), sequencer_key);
-    let signed_checkpoint = SignedCheckpointPayload::new(duty.checkpoint().clone(), sig);
+    let checkpoint = duty.checkpoint();
+    let codec_payload = CodecSsz::new(checkpoint.clone());
+    let encoded = encode_to_vec(&codec_payload)
+        .map_err(|e| SequencerDutyError::CheckpointEncode(e.to_string()))?;
 
-    let payload = L1Payload::new(
-        vec![signed_checkpoint.as_ssz_bytes()],
-        OL_STF_CHECKPOINT_TX_TAG.clone(),
-    );
-    let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
+    let payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+    let sighash = hash::raw(&checkpoint.as_ssz_bytes());
     let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
 
     let intent_idx = context
@@ -376,7 +381,7 @@ async fn handle_sign_checkpoint_duty<C: SequencerContext>(
         ?duty_id,
         %epoch,
         %intent_idx,
-        "checkpoint signing complete"
+        "checkpoint duty complete"
     );
 
     Ok(())
@@ -580,13 +585,8 @@ mod tests {
                 };
                 let epoch = checkpoint_duty.epoch();
 
-                let result = handle_sign_checkpoint_duty(
-                    context.as_ref(),
-                    checkpoint_duty,
-                    duty_id,
-                    &key,
-                )
-                .await;
+                let result =
+                    handle_checkpoint_duty(context.as_ref(), checkpoint_duty, duty_id).await;
 
                 match result {
                     Err(SequencerDutyError::MissingCheckpoint { epoch: e }) => {
