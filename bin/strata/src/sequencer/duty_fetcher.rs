@@ -23,14 +23,14 @@ pub(crate) async fn duty_fetcher_worker(
         interval.tick().await;
         let tip_blkid = match status_channel.get_ol_sync_status().map(|s| *s.tip_blkid()) {
             Some(tip) => tip,
-            None => match storage.ol_block().get_canonical_block_at_async(0).await {
+            None => match storage.ol_block().get_canonical_tip_async().await {
                 Ok(Some(commitment)) => *commitment.blkid(),
                 Ok(None) => {
-                    warn!("genesis block not found yet");
+                    warn!("canonical tip not found yet");
                     continue;
                 }
                 Err(err) => {
-                    error!(%err, "failed to load genesis block");
+                    error!(%err, "failed to load canonical tip");
                     continue;
                 }
             },
