@@ -7,9 +7,11 @@ from eth_hash.auto import keccak
 
 from .accounts import ManagedAccount
 from .rpc import RpcError
-from .wait import wait_until
+from .wait import timeout_for_expected_blocks, wait_until
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_RECEIPT_WAIT_BLOCKS = 10
 
 
 def get_balance(rpc, address: str, block_tag: str = "latest") -> int:
@@ -18,9 +20,17 @@ def get_balance(rpc, address: str, block_tag: str = "latest") -> int:
     return int(result, 16)
 
 
-def wait_for_receipt(rpc, tx_hash: str, timeout: int = 10) -> dict:
+def wait_for_receipt(
+    rpc,
+    tx_hash: str,
+    timeout: int | None = None,
+    expected_blocks: int = DEFAULT_RECEIPT_WAIT_BLOCKS,
+) -> dict:
     """Wait for a transaction receipt."""
     receipt: dict | None = None
+
+    if timeout is None:
+        timeout = timeout_for_expected_blocks(expected_blocks)
 
     def check_receipt() -> bool:
         nonlocal receipt

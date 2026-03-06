@@ -1,6 +1,7 @@
 """Verify DA handles large payloads requiring multiple chunks."""
 
 import logging
+import math
 import time
 
 import flexitest
@@ -9,6 +10,7 @@ from common.base_test import BaseTest
 from common.config.constants import ServiceType
 from common.evm import DEV_ACCOUNT_ADDRESS, deploy_storage_filler
 from common.services import AlpenClientService, BitcoinService
+from common.wait import timeout_for_expected_blocks
 from envconfigs.alpen_client import AlpenClientEnv
 from tests.alpen_client.ee_da.codec import (
     DA_CHUNK_HEADER_SIZE,
@@ -59,6 +61,11 @@ class TestDaMultiChunkTest(BaseTest):
         num_contracts = 80
         slots_per_contract = 500
         min_expected_chunks = 3
+        expected_contracts_per_block = 2
+        confirmation_timeout = timeout_for_expected_blocks(
+            math.ceil(num_contracts / expected_contracts_per_block),
+            slack_seconds=60,
+        )
 
         total_slots = num_contracts * slots_per_contract
         estimated_size_mb = (total_slots * 80) / (1024 * 1024)
@@ -86,7 +93,7 @@ class TestDaMultiChunkTest(BaseTest):
         start_time = time.time()
         last_logged_count = 0
 
-        while len(tx_blocks) < len(tx_hashes) and (time.time() - start_time) < 180:
+        while len(tx_blocks) < len(tx_hashes) and (time.time() - start_time) < confirmation_timeout:
             for tx_hash in tx_hashes:
                 if tx_hash in tx_blocks:
                     continue
@@ -106,7 +113,9 @@ class TestDaMultiChunkTest(BaseTest):
 
         if len(tx_blocks) < len(tx_hashes):
             missing = len(tx_hashes) - len(tx_blocks)
-            raise AssertionError(f"{missing} contract deployments not confirmed within timeout")
+            raise AssertionError(
+                f"{missing} contract deployments not confirmed within {confirmation_timeout}s"
+            )
 
         # Analyze block distribution
         blocks_used = sorted(set(tx_blocks.values()))
@@ -146,11 +155,18 @@ class TestDaMultiChunkTest(BaseTest):
             current_l2_block = sequencer.get_block_number()
             blocks_needed = expected_batch_last_block + batch_sealing_block_count
             if current_l2_block < blocks_needed:
+                # Large DA payloads slow post-batch block production on CI, so the
+                # generic 1s-per-block wait budget is too tight for this step.
+                block_wait_timeout = timeout_for_expected_blocks(
+                    blocks_needed - current_l2_block,
+                    seconds_per_block=2.0,
+                    slack_seconds=30,
+                )
                 logger.debug(
                     f"Attempt {attempt + 1}: Waiting for L2 block"
                     f" {blocks_needed} (current: {current_l2_block})"
                 )
-                sequencer.wait_for_block(blocks_needed, timeout=300)
+                sequencer.wait_for_block(blocks_needed, timeout=block_wait_timeout)
 
             logger.debug(f"Attempt {attempt + 1}: Waiting for DA transactions to reach mempool...")
             time.sleep(10)

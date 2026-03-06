@@ -94,10 +94,10 @@ def trigger_batch_sealing(sequencer, btc_rpc, num_blocks: int = 35):
     the previous batch). Default of 35 blocks ensures at least one batch
     is sealed.
     """
-    initial_block = sequencer.get_block_number()
-    target_block = initial_block + num_blocks
-
-    sequencer.wait_for_block(target_block, timeout=180)
+    sequencer.wait_for_additional_blocks(
+        num_blocks,
+        timeout_slack=15,
+    )
 
     mine_address = btc_rpc.proxy.getnewaddress()
     btc_rpc.proxy.generatetoaddress(10, mine_address)
