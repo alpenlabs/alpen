@@ -82,6 +82,10 @@ use crate::{
     rpc_client::RpcOLClient,
 };
 
+/// Environment variable for overriding the default EE block time.
+#[cfg(feature = "sequencer")]
+const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
+
 fn main() {
     sigsegv_handler::install();
 
@@ -139,7 +143,7 @@ fn main() {
             ));
 
             #[cfg(feature = "sequencer")]
-            let block_builder_config = BlockBuilderConfig::default();
+            let block_builder_config = block_builder_config_from_env(ext.sequencer)?;
 
             // Parse sequencer private key from environment variable (only in sequencer mode)
             let gossip_config = {
@@ -680,6 +684,47 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
     s.parse::<MagicBytes>()
         .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
+}
+
+/// Parse the EE block time from the environment variable.
+#[cfg(feature = "sequencer")]
+fn block_builder_config_from_env(sequencer_enabled: bool) -> eyre::Result<BlockBuilderConfig> {
+    let default_config = BlockBuilderConfig::default();
+    if !sequencer_enabled {
+        return Ok(default_config);
+    }
+
+    let blocktime_ms = match env::var(ALPEN_EE_BLOCK_TIME_MS_ENV_VAR) {
+        Ok(raw_value) => {
+            let blocktime_ms = raw_value.parse::<u64>().wrap_err_with(|| {
+                format!(
+                    "Failed to parse {ALPEN_EE_BLOCK_TIME_MS_ENV_VAR} as a positive integer milliseconds value: {raw_value}"
+                )
+            })?;
+            if blocktime_ms == 0 {
+                eyre::bail!("{ALPEN_EE_BLOCK_TIME_MS_ENV_VAR} must be greater than zero");
+            }
+            info!(
+                blocktime_ms,
+                env_var = ALPEN_EE_BLOCK_TIME_MS_ENV_VAR,
+                "Using EE block time override from environment"
+            );
+            blocktime_ms
+        }
+        Err(env::VarError::NotPresent) => {
+            let default_blocktime_ms = default_config.blocktime_ms();
+            info!(
+                blocktime_ms = default_blocktime_ms,
+                "Using default EE block time"
+            );
+            return Ok(default_config);
+        }
+        Err(env::VarError::NotUnicode(_)) => {
+            eyre::bail!("{ALPEN_EE_BLOCK_TIME_MS_ENV_VAR} must contain valid unicode");
+        }
+    };
+
+    Ok(default_config.with_blocktime_ms(blocktime_ms))
 }
 
 /// Handle genesis related tasks.
