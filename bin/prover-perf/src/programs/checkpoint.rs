@@ -1,40 +1,25 @@
-use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
-use zkaleido::{
-    PerformanceReport, ProofReceiptWithMetadata, VerifyingKey, ZkVmHostPerf, ZkVmProgramPerf,
-};
+use strata_checkpoint_types::BatchInfo;
+use strata_identifiers::L2BlockCommitment;
+use strata_proofimpl_checkpoint::program::CheckpointProgram;
+use zkaleido::{PerformanceReport, ZkVmHostPerf, ZkVmProgramPerf};
 
-pub(super) fn prepare_input(
-    cl_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
-) -> CheckpointProverInput {
-    let (cl_stf_proof, cl_stf_vk) = cl_stf_proof_with_vk;
-    let cl_stf_proofs = vec![cl_stf_proof];
-    CheckpointProverInput {
-        cl_stf_proofs,
-        cl_stf_vk,
-    }
+fn prepare_input() -> BatchInfo {
+    let l2 = L2BlockCommitment::null();
+    BatchInfo::new(0, Default::default(), (l2, l2))
 }
 
-pub(crate) fn gen_perf_report(
-    host: &impl ZkVmHostPerf,
-    cl_stf_proof_with_vk: (ProofReceiptWithMetadata, VerifyingKey),
-) -> PerformanceReport {
-    let input = prepare_input(cl_stf_proof_with_vk);
+pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
+    let input = prepare_input();
     CheckpointProgram::perf_report(&input, host).unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use strata_proofimpl_cl_stf::program::ClStfProgram;
-    use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
-
     use super::*;
-    use crate::programs::cl_stf;
 
     #[test]
     fn test_checkpoint_native_execution() {
-        let (cl_stf_proof, cl_stf_vk) =
-            cl_stf::proof_with_vk(&ClStfProgram::native_host(), &EvmEeProgram::native_host());
-        let input = prepare_input((cl_stf_proof, cl_stf_vk));
+        let input = prepare_input();
         let output = CheckpointProgram::execute(&input).unwrap();
         dbg!(output);
     }

@@ -20,13 +20,6 @@ pub trait StrataProverClientApi {
         el_block_range: (EvmEeBlockCommitment, EvmEeBlockCommitment),
     ) -> RpcResult<Vec<ProofKey>>;
 
-    /// Start proving the given cl block
-    #[method(name = "proveClBlocks")]
-    async fn prove_cl_blocks(
-        &self,
-        cl_block_range: (L2BlockCommitment, L2BlockCommitment),
-    ) -> RpcResult<Vec<ProofKey>>;
-
     /// Start proving the given checkpoint info
     #[method(name = "proveCheckpointRaw")]
     async fn prove_checkpoint_raw(

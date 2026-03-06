@@ -204,9 +204,11 @@ pub(crate) struct ResolvedConfig {
     pub(crate) enable_checkpoint_runner: bool,
 
     /// Max retries for Bitcoin RPC calls.
+    #[expect(dead_code, reason = "Kept for backward config compatibility")]
     pub(crate) bitcoin_retry_count: u8,
 
     /// Timeout duration for btc request retries in ms.
+    #[expect(dead_code, reason = "Kept for backward config compatibility")]
     pub(crate) bitcoin_retry_interval: u64,
 
     /// Maximum number of retries for transient failures.
@@ -227,12 +229,15 @@ pub(crate) struct ResolvedConfig {
     pub(crate) reth_rpc: String,
 
     /// Host address of the bitcoind RPC endpoint.
+    #[expect(dead_code, reason = "Kept for backward config compatibility")]
     pub(crate) bitcoind_url: String,
 
     /// Username for the bitcoind RPC authentication.
+    #[expect(dead_code, reason = "Kept for backward config compatibility")]
     pub(crate) bitcoind_user: String,
 
     /// Password for the bitcoind RPC authentication.
+    #[expect(dead_code, reason = "Kept for backward config compatibility")]
     pub(crate) bitcoind_password: String,
 
     /// Path to the custom rollup configuration file.
