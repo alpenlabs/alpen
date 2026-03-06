@@ -1,7 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use bitcoin::{hashes::Hash, Txid};
-use bitcoind_async_client::traits::{Broadcaster, Wallet};
+use bitcoind_async_client::{
+    error::ClientError,
+    traits::{Broadcaster, Wallet},
+};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::{ops::l1tx_broadcast, BroadcastDbOps};
@@ -112,7 +115,11 @@ async fn process_unfinalized_entries(
 
 /// Takes in `[L1TxEntry]`, checks status and then either publishes or checks for confirmations and
 /// returns its new status. Returns [`None`] if status is not changed.
-#[instrument(skip_all, fields(%txid), name = "process_txentry")]
+#[instrument(
+    skip_all,
+    fields(component = "btcio_broadcaster", %txid),
+    name = "process_txentry"
+)]
 async fn process_entry(
     rpc_client: &(impl Broadcaster + Wallet),
     txentry: &L1TxEntry,
@@ -142,55 +149,65 @@ async fn check_tx_confirmations(
     txid: &Txid,
     params: &BtcioParams,
 ) -> BroadcasterResult<L1TxStatus> {
-    let txinfo_res = rpc_client.get_transaction(txid).await;
-    debug!(?txentry.status, ?txinfo_res, "check get transaction");
+    async {
+        let txinfo_res = rpc_client.get_transaction(txid).await;
+        debug!(?txinfo_res, "checked transaction status");
 
-    let reorg_safe_depth = params.l1_reorg_safe_depth();
+        let reorg_safe_depth = params.l1_reorg_safe_depth();
+        let reorg_safe_depth: i64 = reorg_safe_depth.into();
 
-    let reorg_safe_depth: i64 = reorg_safe_depth.into();
-    match txinfo_res {
-        Ok(info) => match (info.confirmations, &txentry.status) {
-            // If it was published and still 0 confirmations, set it to published
-            (0, L1TxStatus::Published) => Ok(L1TxStatus::Published),
+        match txinfo_res {
+            Ok(info) => match (info.confirmations, &txentry.status) {
+                // If it was published and still 0 confirmations, set it to published
+                (0, L1TxStatus::Published) => Ok(L1TxStatus::Published),
 
-            // If it was confirmed before and now it is 0, L1 reorged.
-            // So set it to Unpublished.
-            (0, _) => Ok(L1TxStatus::Unpublished),
+                // If it was confirmed before and now it is 0, L1 reorged.
+                // So set it to Unpublished.
+                (0, _) => Ok(L1TxStatus::Unpublished),
 
-            (confirmations, _) => {
-                let block_hash: Buf32 = info
-                    .block_hash
-                    .expect("confirmed tx must have block_hash")
-                    .into();
-                let block_height =
-                    info.block_height
-                        .expect("confirmed tx must have block_height") as u64;
+                (confirmations, _) => {
+                    let block_hash: Buf32 = info
+                        .block_hash
+                        .expect("confirmed tx must have block_hash")
+                        .into();
+                    let block_height = info
+                        .block_height
+                        .expect("confirmed tx must have block_height")
+                        as u64;
 
-                if confirmations >= reorg_safe_depth {
-                    Ok(L1TxStatus::Finalized {
-                        confirmations: confirmations as u64,
-                        block_hash,
-                        block_height,
-                    })
-                } else {
-                    Ok(L1TxStatus::Confirmed {
-                        confirmations: confirmations as u64,
-                        block_hash,
-                        block_height,
-                    })
+                    if confirmations >= reorg_safe_depth {
+                        Ok(L1TxStatus::Finalized {
+                            confirmations: confirmations as u64,
+                            block_hash,
+                            block_height,
+                        })
+                    } else {
+                        Ok(L1TxStatus::Confirmed {
+                            confirmations: confirmations as u64,
+                            block_hash,
+                            block_height,
+                        })
+                    }
                 }
-            }
-        },
-        Err(e) => {
-            // If for some reasons tx is not found even if it was already
-            // published/confirmed, set it to unpublished.
-            if e.is_tx_not_found() {
-                Ok(L1TxStatus::Unpublished)
-            } else {
-                Err(BroadcasterError::Other(e.to_string()))
+            },
+            Err(e) => {
+                // If for some reasons tx is not found even if it was already
+                // published/confirmed, set it to unpublished.
+                if e.is_tx_not_found() {
+                    Ok(L1TxStatus::Unpublished)
+                } else {
+                    Err(BroadcasterError::Other(e.to_string()))
+                }
             }
         }
     }
+    .instrument(debug_span!(
+        "check_tx_confirmations",
+        component = "btcio_broadcaster",
+        %txid,
+        current_status = ?txentry.status
+    ))
+    .await
 }
 
 async fn publish_tx(
@@ -198,22 +215,51 @@ async fn publish_tx(
     txentry: &L1TxEntry,
 ) -> BroadcasterResult<L1TxStatus> {
     let tx = txentry.try_to_tx().expect("could not deserialize tx");
-    debug!("Publishing tx");
-    match rpc_client.send_raw_transaction(&tx).await {
-        Ok(_) => {
-            info!("Successfully published tx");
-            Ok(L1TxStatus::Published)
-        }
-        Err(err) if err.is_missing_or_invalid_input() => {
-            warn!(?err, "tx excluded due to invalid inputs");
+    let txid = tx.compute_txid();
+    let input_count = tx.input.len();
+    let output_count = tx.output.len();
 
-            Ok(L1TxStatus::InvalidInputs)
+    async {
+        if tx.input.is_empty() {
+            warn!("tx has no inputs, excluding from broadcast");
+            return Ok(L1TxStatus::InvalidInputs);
         }
-        Err(err) => {
-            warn!(?err, "errored while broadcasting");
-            Err(BroadcasterError::Other(err.to_string()))
+
+        debug!("publishing tx");
+        match rpc_client.send_raw_transaction(&tx).await {
+            Ok(_) => {
+                info!("successfully published tx");
+                Ok(L1TxStatus::Published)
+            }
+            Err(err)
+                if err.is_missing_or_invalid_input()
+                    || matches!(err, ClientError::Server(-22, _)) =>
+            {
+                warn!(?err, "tx excluded due to invalid inputs");
+                Ok(L1TxStatus::InvalidInputs)
+            }
+            // `bitcoind-async-client` v0.10.1 surfaces JSON-RPC failures as `ClientError::Server`.
+            // Keep this as a defensive fallback for transport/proxy 500s, since acceptance can
+            // still be ambiguous and we should retry instead of classifying as invalid inputs.
+            Err(err @ ClientError::Status(500, _)) => {
+                warn!(?err, "broadcast returned HTTP 500; retrying on next poll");
+                Ok(L1TxStatus::Unpublished)
+            }
+            Err(err) => {
+                warn!(?err, "errored while broadcasting");
+                Err(BroadcasterError::Other(err.to_string()))
+            }
         }
     }
+    .instrument(debug_span!(
+        "publish_tx",
+        component = "btcio_broadcaster",
+        %txid,
+        input_count,
+        output_count,
+        current_status = ?txentry.status
+    ))
+    .await
 }
 
 #[cfg(test)]
@@ -225,7 +271,9 @@ mod test {
     use strata_storage::ops::l1tx_broadcast::Context;
 
     use super::*;
-    use crate::test_utils::{gen_l1_tx_entry_with_status, TestBitcoinClient};
+    use crate::test_utils::{
+        gen_l1_tx_entry_with_status, SendRawTransactionMode, TestBitcoinClient,
+    };
 
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
@@ -265,6 +313,44 @@ mod test {
             res,
             Some(L1TxStatus::Published),
             "Status should be if tx is published"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_status_500_keeps_unpublished() {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::HttpInternalServerError);
+        let cl = Arc::new(client);
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
+            .await
+            .unwrap();
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Unpublished),
+            "HTTP 500 send_raw_transaction errors should keep tx unpublished for retry"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_server_minus22_marks_invalid_inputs() {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::InvalidParameter);
+        let cl = Arc::new(client);
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
+            .await
+            .unwrap();
+        assert_eq!(
+            res,
+            Some(L1TxStatus::InvalidInputs),
+            "Server(-22, ..) send_raw_transaction errors should mark tx invalid"
         );
     }
 
