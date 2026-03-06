@@ -4,14 +4,14 @@ use proptest::prelude::*;
 use strata_identifiers::{
     AccountSerial, Buf32, OLBlockCommitment,
     test_utils::{
-        buf32_strategy, buf64_strategy, epoch_strategy, fixed_bytes_32_strategy,
-        ol_block_commitment_strategy, ol_block_id_strategy,
+        buf32_strategy, epoch_strategy, fixed_bytes_32_strategy, ol_block_commitment_strategy,
+        ol_block_id_strategy,
     },
 };
 
 use crate::{
     CheckpointClaim, CheckpointPayload, CheckpointSidecar, CheckpointTip, L2BlockRange,
-    MAX_LOG_PAYLOAD_BYTES, SignedCheckpointPayload, TerminalHeaderComplement,
+    MAX_LOG_PAYLOAD_BYTES, TerminalHeaderComplement,
 };
 
 /// Creates a minimal [`CheckpointPayload`] for the given epoch using validated constructors.
@@ -97,12 +97,6 @@ pub fn checkpoint_payload_strategy() -> impl Strategy<Value = CheckpointPayload>
         .prop_map(|(tip, sidecar, proof)| {
             CheckpointPayload::new(tip, sidecar, proof).expect("valid payload")
         })
-}
-
-/// Strategy for generating random [`SignedCheckpointPayload`] values.
-pub fn signed_checkpoint_payload_strategy() -> impl Strategy<Value = SignedCheckpointPayload> {
-    (checkpoint_payload_strategy(), buf64_strategy())
-        .prop_map(|(payload, signature)| SignedCheckpointPayload::new(payload, signature))
 }
 
 /// Strategy for generating random [`L2BlockRange`] values.

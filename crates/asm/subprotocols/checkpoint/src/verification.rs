@@ -3,15 +3,17 @@ use ssz::Encode;
 use ssz_primitives::FixedBytes;
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_common::{VerifiedAuxData, logging};
+use strata_asm_txs_checkpoint::EnvelopeCheckpoint;
 use strata_bridge_types::OperatorSelection;
 use strata_checkpoint_types_ssz::{
     CheckpointClaim, CheckpointSidecar, CheckpointTip, L2BlockRange, OLLog,
-    SignedCheckpointPayload, compute_asm_manifests_hash_from_leaves,
+    compute_asm_manifests_hash_from_leaves,
 };
 use strata_codec::decode_buf_exact;
 use strata_crypto::hash;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
+use strata_predicate::PredicateTypeId;
 
 use crate::{
     errors::{CheckpointValidationResult, InvalidCheckpointPayload},
@@ -20,24 +22,34 @@ use crate::{
 
 /// Validates a checkpoint payload and extracts withdrawal intents.
 ///
-/// This is the single validation function for checkpoint payloads. Once validation succeeds,
-/// the payload can be safely acted upon. Returns extracted withdrawal intents on success.
-// TODO: To decide on how to properly pack `(WithdrawOutput, OperatorSelection)` during review
-// if a named struct is preferred over the tuple.
+/// The checkpoint is authenticated via the SPS-51 envelope trick: the envelope's
+/// taproot pubkey is checked against the sequencer predicate. Bitcoin consensus
+/// already verified the script-spend signature, so we only need to confirm the
+/// pubkey matches.
 pub fn validate_checkpoint_and_extract_withdrawal_intents(
     state: &CheckpointState,
     current_l1_height: u32,
-    payload: &SignedCheckpointPayload,
+    envelope: &EnvelopeCheckpoint,
     verified_aux_data: &VerifiedAuxData,
 ) -> CheckpointValidationResult<Vec<(WithdrawOutput, OperatorSelection)>> {
-    // 1. Verify sequencer signature over payload
-    // BIP-340 Schnorr verification hashes the message internally using tagged hashing,
-    // so we pass raw SSZ-encoded bytes (not pre-hashed)
-    let payload_bytes = payload.inner.as_ssz_bytes();
-    state
-        .sequencer_predicate()
-        .verify_claim_witness(&payload_bytes, payload.signature.as_ref())
-        .map_err(InvalidCheckpointPayload::SequencerPredicateVerification)?;
+    let payload = &envelope.payload;
+
+    // 1. Verify that the envelope pubkey matches the sequencer predicate.
+    //
+    // Per SPS-51, when the ASM recognizes the envelope's taproot pubkey as the
+    // sequencer's key, the taproot script-spend signature (already verified by
+    // Bitcoin consensus) transitively authenticates the envelope contents.
+    let predicate = state.sequencer_predicate();
+    if predicate.id() != PredicateTypeId::Bip340Schnorr.as_u8() {
+        return Err(InvalidCheckpointPayload::UnsupportedSequencerPredicateType.into());
+    }
+    if envelope.envelope_pubkey != predicate.condition() {
+        return Err(InvalidCheckpointPayload::SequencerPubkeyMismatch {
+            expected: predicate.condition().to_vec(),
+            actual: envelope.envelope_pubkey.clone(),
+        }
+        .into());
+    }
 
     // 2. Validate epoch progression
     let expected_epoch = state
@@ -45,17 +57,17 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         .epoch
         .checked_add(1)
         .ok_or(InvalidCheckpointPayload::EpochOverflow)?;
-    if payload.inner().new_tip().epoch != expected_epoch {
+    if payload.new_tip().epoch != expected_epoch {
         return Err(InvalidCheckpointPayload::InvalidEpoch {
             expected: expected_epoch,
-            actual: payload.inner().new_tip().epoch,
+            actual: payload.new_tip().epoch,
         }
         .into());
     }
 
     // 3. Validate L1 progression
     let l1_height_covered_in_last_checkpoint = state.verified_tip.l1_height();
-    let l1_height_covered_in_new_checkpoint = payload.inner().new_tip.l1_height();
+    let l1_height_covered_in_new_checkpoint = payload.new_tip().l1_height();
 
     // 3a. Invalid: checkpoint exceeds the current L1 tip
     if l1_height_covered_in_new_checkpoint >= current_l1_height {
@@ -79,7 +91,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
 
     // 4. Validate L2 progression
     let prev_slot = state.verified_tip().l2_commitment().slot();
-    let new_slot = payload.inner().new_tip().l2_commitment().slot();
+    let new_slot = payload.new_tip().l2_commitment().slot();
     if new_slot <= prev_slot {
         return Err(InvalidCheckpointPayload::L2SlotDoesNotAdvance {
             prev_slot,
@@ -99,20 +111,20 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     )?;
     let claim = construct_full_claim(
         &state.verified_tip,
-        payload.inner().new_tip(),
-        payload.inner().sidecar(),
+        payload.new_tip(),
+        payload.sidecar(),
         asm_manifests_hash,
     )?;
 
     // 6. Verify the proof
     state
         .checkpoint_predicate()
-        .verify_claim_witness(&claim.as_ssz_bytes(), payload.inner.proof())
+        .verify_claim_witness(&claim.as_ssz_bytes(), payload.proof())
         .map_err(InvalidCheckpointPayload::CheckpointPredicateVerification)?;
 
     // 7. Extract and validate withdrawal intent logs
     let withdrawal_intents =
-        extract_and_validate_withdrawal_intents(payload.inner().sidecar().ol_logs())?;
+        extract_and_validate_withdrawal_intents(payload.sidecar().ol_logs())?;
 
     Ok(withdrawal_intents)
 }
@@ -202,8 +214,9 @@ fn extract_and_validate_withdrawal_intents(
 #[cfg(test)]
 mod tests {
     use strata_asm_common::{AsmHistoryAccumulatorState, AuxData, VerifiedAuxData};
+    use strata_asm_txs_checkpoint::EnvelopeCheckpoint;
     use strata_checkpoint_types_ssz::TerminalHeaderComplement;
-    use strata_identifiers::{AccountSerial, Buf64};
+    use strata_identifiers::AccountSerial;
     use strata_ol_chain_types_new::OLLog;
     use strata_test_utils_l2::CheckpointTestHarness;
 
@@ -232,7 +245,7 @@ mod tests {
         let payload = harness.build_payload();
         let new_tip = *payload.new_tip();
 
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
         let verified_aux_data = &harness.gen_verified_aux(&new_tip);
 
         let current_l1_height = new_tip.l1_height + 1;
@@ -240,33 +253,35 @@ mod tests {
         let res = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             verified_aux_data,
         );
         assert!(res.is_ok());
     }
 
     #[test]
-    fn test_invalid_signature() {
+    fn test_wrong_envelope_pubkey() {
         let (state, harness) = test_setup();
         let payload = harness.build_payload();
-        let current_l1_height = payload.new_tip().l1_height;
+        let current_l1_height = payload.new_tip().l1_height + 1;
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
-        let mut signed_payload = harness.sign_payload(payload);
 
-        signed_payload.signature = Buf64::zero();
+        let envelope = EnvelopeCheckpoint {
+            payload,
+            envelope_pubkey: vec![0u8; 32], // wrong pubkey
+        };
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
         assert!(matches!(
             err,
             CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::SequencerPredicateVerification(_)
+                InvalidCheckpointPayload::SequencerPubkeyMismatch { .. }
             )
         ));
     }
@@ -277,14 +292,14 @@ mod tests {
         let mut payload = harness.build_payload();
         payload.new_tip.epoch = state.verified_tip().epoch + 2;
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
-        let current_l1_height = signed_payload.inner().new_tip().l1_height + 1;
+        let current_l1_height = envelope.payload.new_tip().l1_height + 1;
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -302,14 +317,14 @@ mod tests {
         let (state, harness) = test_setup();
         let payload = harness.build_payload();
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
-        let current_l1_height = signed_payload.inner().new_tip().l1_height - 1;
+        let current_l1_height = envelope.payload.new_tip().l1_height - 1;
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -331,14 +346,14 @@ mod tests {
 
         let payload = harness.build_payload_with_tip(new_tip);
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let current_l1_height = state.verified_tip().l1_height + 1;
 
         let res = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         );
         assert!(res.is_ok());
@@ -350,14 +365,14 @@ mod tests {
         let mut payload = harness.build_payload();
         payload.new_tip.l1_height = state.verified_tip().l1_height - 1;
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let current_l1_height = state.verified_tip().l1_height + 1;
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -379,12 +394,12 @@ mod tests {
         payload.new_tip.l2_commitment = *state.verified_tip().l2_commitment();
 
         let current_l1_height = payload.new_tip().l1_height + 1;
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -425,12 +440,12 @@ mod tests {
 
         // Modify the payload to include invalid state diff after proof generation.
         payload.sidecar.ol_state_diff = vec![99u8; 88].into();
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -453,12 +468,12 @@ mod tests {
         let dummy_log = OLLog::new(AccountSerial::zero(), Vec::new());
         payload.sidecar.ol_logs = vec![dummy_log].into();
 
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -485,12 +500,12 @@ mod tests {
             *terminal_header_complement.logs_root(),
         );
 
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
@@ -514,12 +529,12 @@ mod tests {
 
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
 
-        let signed_payload = harness.sign_payload(payload);
+        let envelope = harness.wrap_in_envelope(payload);
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
             current_l1_height,
-            &signed_payload,
+            &envelope,
             &verified_aux_data,
         )
         .unwrap_err();
