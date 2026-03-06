@@ -10,8 +10,6 @@ use strata_db_types::traits::ProofDatabase;
 use strata_paas::{ProverHandle, TaskId};
 use strata_primitives::{
     evm_exec::EvmEeBlockCommitment,
-    l1::L1BlockCommitment,
-    l2::L2BlockCommitment,
     proof::{ProofContext, ProofKey},
 };
 use strata_prover_client_rpc_api::StrataProverClientApiServer;
@@ -185,24 +183,6 @@ impl StrataProverClientApiServer for ProverClientRpc {
             .await
             .map_err(to_jsonrpsee_error(
                 "failed to create task for next unproven checkpoint",
-            ))?;
-
-        Ok(vec![proof_key])
-    }
-
-    async fn prove_checkpoint_raw(
-        &self,
-        checkpoint_idx: u64,
-        _l1_range: (L1BlockCommitment, L1BlockCommitment),
-        _l2_range: (L2BlockCommitment, L2BlockCommitment),
-    ) -> RpcResult<Vec<RpcProofKey>> {
-        let proof_ctx = ProofContext::Checkpoint(checkpoint_idx);
-
-        let proof_key = self
-            .submit_task(proof_ctx)
-            .await
-            .map_err(to_jsonrpsee_error(
-                "failed to create task for raw checkpoint",
             ))?;
 
         Ok(vec![proof_key])
