@@ -9,9 +9,7 @@ use strata_ee_acct_types::{
 };
 use strata_ee_chain_types::{ChunkTransition, ExecOutputs, SequenceTracker};
 use strata_predicate::PredicateKeyBuf;
-use strata_snark_acct_types::{
-    OutputMessage, OutputTransfer, UpdateOutputs,
-};
+use strata_snark_acct_types::{OutputMessage, OutputTransfer, UpdateOutputs};
 
 use crate::private_input::ArchivedChunkInput;
 
