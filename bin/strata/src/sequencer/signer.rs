@@ -1,68 +1,68 @@
-//! Internal sequencer signer service launcher.
+//! Internal sequencer signer worker.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use strata_ol_sequencer::{SequencerBuilder, SequencerServiceStatus};
-use strata_service::ServiceMonitor;
+use tokio::sync::mpsc;
 use tracing::info;
 use zeroize::Zeroize;
 
-use super::{helpers::load_seqkey, node_context::NodeSequencerContext};
-use crate::{args::Args, run_context::RunContext};
+use super::{duty_executor::duty_executor_worker, duty_fetcher::duty_fetcher_worker};
+use crate::{args::Args, run_context::RunContext, sequencer::SequencerKey};
 
 /// Default duty poll interval in milliseconds.
 const DEFAULT_DUTY_POLL_INTERVAL_MS: u64 = 1_000;
 
-/// Starts the sequencer signer service.
+/// Starts the sequencer signer worker with a pre-loaded sequencer key.
 pub(crate) fn start_sequencer_signer(
     runctx: &RunContext,
     args: &Args,
-) -> Result<ServiceMonitor<SequencerServiceStatus>> {
+    mut sequencer_key: SequencerKey,
+) -> Result<()> {
     // Get the sequencer handles (must be present when running as sequencer).
     let handles = runctx
         .sequencer_handles()
         .ok_or_else(|| anyhow!("sequencer handles not available (is_sequencer=true required)"))?;
-
-    // Get the sequencer key path.
-    let Some(sequencer_key_path) = args.sequencer_key.as_ref() else {
-        return Err(anyhow!(
-            "--sequencer-key is required when --sequencer is set"
-        ));
-    };
-
-    // Load the sequencer key.
-    let mut sequencer_key = load_seqkey(sequencer_key_path)?;
 
     // Get the duty poll interval.
     let poll_interval_ms = args
         .duty_poll_interval
         .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL_MS);
 
-    let context = Arc::new(NodeSequencerContext::new(
-        handles.blockasm_handle().clone(),
-        handles.envelope_handle().clone(),
-        runctx.storage().clone(),
-        runctx.fcm_handle().clone(),
-        runctx.status_channel().clone(),
-    ));
+    // Create a channel for duties.
+    let (duty_tx, duty_rx) = mpsc::channel(64);
 
-    let launch_result = runctx.task_manager().handle().block_on(async {
-        SequencerBuilder::new(
-            context,
-            sequencer_key.sk,
+    // Spawn the duty fetcher worker.
+    runctx.executor().spawn_critical_async(
+        "sequencer-duty-fetcher",
+        duty_fetcher_worker(
+            handles.blockasm_handle().clone(),
+            runctx.storage().clone(),
+            runctx.status_channel().clone(),
+            duty_tx,
             Duration::from_millis(poll_interval_ms),
-        )
-        .launch(runctx.executor())
-        .await
-    });
+        ),
+    );
+
+    // Spawn the duty executor worker.
+    runctx.executor().spawn_critical_async(
+        "sequencer-duty-executor",
+        duty_executor_worker(
+            handles.blockasm_handle().clone(),
+            handles.envelope_handle().clone(),
+            runctx.storage().clone(),
+            runctx.fcm_handle().clone(),
+            duty_rx,
+            runctx.task_manager().handle().clone(),
+            sequencer_key.sk,
+        ),
+    );
 
     // Zeroize the sequencer key.
     sequencer_key.zeroize();
 
-    let service_monitor = launch_result?;
+    // Log the sequencer signer started with poll interval.
+    info!(%poll_interval_ms, "Sequencer signer started");
 
-    info!(%poll_interval_ms, "Sequencer signer service started");
-
-    Ok(service_monitor)
+    Ok(())
 }
