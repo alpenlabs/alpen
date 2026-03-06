@@ -53,4 +53,3 @@ pub(crate) fn sign_header(header: &OLBlockHeader, sk: &Buf32) -> Buf64 {
     let msg = hash::raw(&encoded);
     sign_schnorr_sig(&msg, sk)
 }
-

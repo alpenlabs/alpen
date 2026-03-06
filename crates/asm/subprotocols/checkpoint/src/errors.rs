@@ -20,7 +20,9 @@ pub enum CheckpointValidationError {
 #[derive(Debug, Error)]
 pub enum InvalidCheckpointPayload {
     /// Envelope pubkey does not match the sequencer predicate pubkey.
-    #[error("envelope pubkey does not match sequencer predicate: expected {expected:?}, got {actual:?}")]
+    #[error(
+        "envelope pubkey does not match sequencer predicate: expected {expected:?}, got {actual:?}"
+    )]
     SequencerPubkeyMismatch { expected: Vec<u8>, actual: Vec<u8> },
 
     /// Sequencer predicate is not a supported type for envelope authentication.

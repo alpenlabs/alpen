@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use bitcoin::{Address, secp256k1::SECP256K1};
-use bitcoin::key::UntweakedKeypair;
+use bitcoin::{key::UntweakedKeypair, secp256k1::SECP256K1, Address};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
 use strata_status::StatusChannel;

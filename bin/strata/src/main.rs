@@ -65,9 +65,10 @@ fn main() -> Result<()> {
     // (for SPS-51 taproot authentication) and the duty executor (for block signing).
     #[cfg(feature = "sequencer")]
     let sequencer_key = if nodectx.config().client.is_sequencer {
-        let path = args.sequencer_key.as_ref().ok_or_else(|| {
-            anyhow!("--sequencer-key is required when --sequencer is set")
-        })?;
+        let path = args
+            .sequencer_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("--sequencer-key is required when --sequencer is set"))?;
         Some(sequencer::load_seqkey(path)?)
     } else {
         None

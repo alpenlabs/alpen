@@ -63,8 +63,7 @@ pub use ssz_generated::ssz::claim::{
 // Re-export types from payload.ssz
 pub use ssz_generated::ssz::payload::{
     CheckpointPayload, CheckpointPayloadRef, CheckpointSidecar, CheckpointSidecarRef,
-    CheckpointTip, CheckpointTipRef,
-    TerminalHeaderComplement, TerminalHeaderComplementRef,
+    CheckpointTip, CheckpointTipRef, TerminalHeaderComplement, TerminalHeaderComplementRef,
 };
 // Re-export constants from payload.ssz
 pub use ssz_generated::ssz::payload::{

@@ -6,8 +6,8 @@ use strata_asm_common::{
 };
 use strata_asm_txs_checkpoint::EnvelopeCheckpoint;
 use strata_checkpoint_types_ssz::{
-    CheckpointClaim, CheckpointPayload, CheckpointSidecar, CheckpointTip, L2BlockRange,
-    TerminalHeaderComplement, compute_asm_manifests_hash_from_leaves,
+    compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
+    CheckpointTip, L2BlockRange, TerminalHeaderComplement,
 };
 use strata_crypto::hash;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
@@ -176,8 +176,7 @@ impl CheckpointTestHarness {
     /// - Properly constructed checkpoint claim with manifest hashes
     /// - Valid checkpoint proof signature
     pub fn build_payload_with_tip(&self, new_tip: CheckpointTip) -> CheckpointPayload {
-        use k256::ecdsa::signature::SignatureEncoding;
-        use k256::schnorr::signature::Signer;
+        use k256::{ecdsa::signature::SignatureEncoding, schnorr::signature::Signer};
 
         let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let ol_logs = Vec::new();
