@@ -14002,6 +14002,7 @@ name = "strata-asm-spec-debug"
 version = "0.1.0"
 dependencies = [
  "strata-asm-common",
+ "strata-asm-params",
  "strata-asm-proto-debug-v1",
  "strata-asm-spec",
  "strata-l1-txfmt",
@@ -14112,6 +14113,7 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-asm-params",
  "strata-asm-spec",
+ "strata-asm-spec-debug",
  "strata-asm-stf",
  "strata-btc-types",
  "strata-btc-verification",
@@ -15863,11 +15865,21 @@ dependencies = [
  "serde_json",
  "shrex",
  "shrex_macros",
+ "ssz",
+ "strata-acct-types",
+ "strata-asm-manifest-types",
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",
+ "strata-codec",
  "strata-crypto",
+ "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-msg-fmt",
+ "strata-ol-msg-types",
+ "strata-ol-rpc-types",
+ "strata-ol-stf",
  "strata-primitives",
+ "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
 
