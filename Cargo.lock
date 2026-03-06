@@ -16253,6 +16253,7 @@ dependencies = [
  "rand 0.8.5",
  "ssz",
  "strata-asm-common",
+ "strata-asm-txs-checkpoint",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-consensus-logic",

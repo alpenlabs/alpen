@@ -1,7 +1,7 @@
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_logs::CheckpointTipUpdate;
-use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
+use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
 
 use crate::{
@@ -30,18 +30,18 @@ pub(crate) fn handle_checkpoint_tx(
     verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) {
-    let Ok(payload) = extract_signed_checkpoint_from_envelope(tx) else {
+    let Ok(envelope) = extract_checkpoint_from_envelope(tx) else {
         logging::warn!("failed to extract checkpoint payload from envelope, ignoring");
         return;
     };
-    let epoch = payload.inner().new_tip().epoch;
+    let epoch = envelope.payload.new_tip().epoch;
 
     logging::debug!(epoch, "processing checkpoint transaction");
 
     match validate_checkpoint_and_extract_withdrawal_intents(
         state,
         current_l1_height,
-        &payload,
+        &envelope,
         verified_aux_data,
     ) {
         Ok(ValidatedCheckpointWithdrawals {
@@ -52,7 +52,7 @@ pub(crate) fn handle_checkpoint_tx(
 
             state.deduct_withdrawals(verified_withdrawals);
 
-            let new_tip = payload.inner().new_tip;
+            let new_tip = envelope.payload.new_tip;
             state.update_verified_tip(new_tip);
 
             let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
