@@ -127,10 +127,8 @@ impl L1BlockCommitment {
     ///
     /// Returns `None` if the height is invalid (greater than u32::MAX).
     pub fn from_height_u64(height: u64, blkid: L1BlockId) -> Option<Self> {
-        Some(Self {
-            height: height as u32,
-            blkid,
-        })
+        let height = u32::try_from(height).ok()?;
+        Some(Self { height, blkid })
     }
 
     pub fn height_u32(&self) -> u32 {
