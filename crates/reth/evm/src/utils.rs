@@ -5,6 +5,7 @@ use alloy_sol_types::SolEvent;
 use alpen_reth_primitives::{WithdrawalIntent, WithdrawalIntentEvent};
 use reth_primitives::{Receipt, TransactionSigned};
 use revm_primitives::{alloy_primitives::Bloom, Address, U256};
+use strata_bridge_types::OperatorSelection;
 use strata_identifiers::{SubjectId, SubjectIdBytes, SUBJ_ID_LEN};
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
@@ -63,6 +64,7 @@ pub fn extract_withdrawal_intents<'a>(
                     amt: event.amount,
                     destination,
                     withdrawal_txid: txid,
+                    selected_operator: OperatorSelection::from_raw(event.selectedOperator),
                 })
             })
         })

@@ -13,7 +13,7 @@ use rand_chacha::{
     rand_core::{RngCore, SeedableRng},
 };
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::OperatorIdx;
+use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::{
     L1BlockCommitment,
     buf::Buf32,
@@ -136,6 +136,8 @@ impl Ord for AssignmentEntry {
 }
 
 impl AssignmentEntry {
+    // TODO: rename this function — it's no longer purely random, it honors user-selected
+    // operators when eligible and falls back to random.
     /// Creates a new assignment entry by randomly selecting an eligible operator.
     ///
     /// Performs deterministic random selection of an operator from the deposit's notary set,
@@ -161,11 +163,8 @@ impl AssignmentEntry {
         fulfillment_deadline: BitcoinBlockHeight,
         current_active_operators: &OperatorBitmap,
         seed: L1BlockId,
+        selected_operator: OperatorSelection,
     ) -> Result<Self, WithdrawalAssignmentError> {
-        // Use ChaChaRng with L1 block ID as seed for deterministic random selection
-        let seed_bytes: [u8; 32] = Buf32::from(seed).into();
-        let mut rng = ChaChaRng::from_seed(seed_bytes);
-
         // No previous assignees at creation
         let previous_assignees =
             OperatorBitmap::new_with_size(deposit_entry.notary_operators().len(), false);
@@ -183,12 +182,22 @@ impl AssignmentEntry {
             });
         }
 
-        // Select a random operator from eligible ones
-        let random_index = (rng.next_u32() as usize) % active_count;
-        let current_assignee = eligible_operators
-            .active_indices()
-            .nth(random_index)
-            .expect("random_index is within bounds of active_count");
+        // Honor selected operator if eligible, otherwise fall back to random selection
+        let current_assignee = if let Some(idx) = selected_operator
+            .as_specific()
+            .filter(|&idx| eligible_operators.is_active(idx))
+        {
+            idx
+        } else {
+            // Use ChaChaRng with L1 block ID as seed for deterministic random selection.
+            let seed_bytes: [u8; 32] = Buf32::from(seed).into();
+            let mut rng = ChaChaRng::from_seed(seed_bytes);
+            let random_index = (rng.next_u32() as usize) % active_count;
+            eligible_operators
+                .active_indices()
+                .nth(random_index)
+                .expect("random_index is within bounds of active_count")
+        };
 
         Ok(Self {
             deposit_entry: deposit_entry.clone(),
@@ -463,6 +472,7 @@ impl AssignmentTable {
         withdrawal_cmd: WithdrawalCommand,
         current_active_operators: &OperatorBitmap,
         l1_block: &L1BlockCommitment,
+        selected_operator: OperatorSelection,
     ) -> Result<(), WithdrawalCommandError> {
         // Create assignment with deadline calculated from current block height + assignment
         // duration
@@ -474,6 +484,7 @@ impl AssignmentTable {
             fulfillment_deadline,
             current_active_operators,
             *l1_block.blkid(),
+            selected_operator,
         )?;
 
         self.assignments.insert(entry);
@@ -506,6 +517,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
+            OperatorSelection::any(),
         );
 
         assert!(result.is_ok());
@@ -517,6 +529,76 @@ mod tests {
         assert_eq!(assignment.fulfillment_deadline(), fulfillment_deadline);
         assert!(current_active_operators.is_active(assignment.current_assignee()));
         assert_eq!(assignment.previous_assignees.active_count(), 0);
+    }
+
+    #[test]
+    fn test_create_with_selected_operator() {
+        let mut arb = ArbitraryGenerator::new();
+
+        // Generate deposit with at least 3 active operators so we can pick a specific one
+        let deposit_entry: DepositEntry = loop {
+            let candidate: DepositEntry = arb.generate();
+            if candidate.notary_operators().active_count() >= 3 {
+                break candidate;
+            }
+        };
+
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
+        let seed: L1BlockId = arb.generate();
+        let current_active_operators = deposit_entry.notary_operators().clone();
+
+        // Pick the second active operator
+        let selected_idx = current_active_operators
+            .active_indices()
+            .nth(1)
+            .expect("at least 3 active operators");
+
+        let assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry,
+            withdrawal_cmd,
+            fulfillment_deadline,
+            &current_active_operators,
+            seed,
+            OperatorSelection::specific(selected_idx),
+        )
+        .unwrap();
+
+        assert_eq!(assignment.current_assignee(), selected_idx);
+    }
+
+    #[test]
+    fn test_create_with_ineligible_selected_operator_falls_back_to_random() {
+        let mut arb = ArbitraryGenerator::new();
+        let deposit_entry: DepositEntry = loop {
+            let candidate: DepositEntry = arb.generate();
+            if candidate.notary_operators().active_count() >= 2 {
+                break candidate;
+            }
+        };
+
+        let withdrawal_cmd: WithdrawalCommand = arb.generate();
+        let fulfillment_deadline: BitcoinBlockHeight = 100;
+        let seed: L1BlockId = arb.generate();
+        let current_active_operators = deposit_entry.notary_operators().clone();
+
+        // Use an out-of-range index that won't be eligible
+        let bogus_idx = current_active_operators.len() as u32 + 100;
+
+        let assignment = AssignmentEntry::create_with_random_assignment(
+            deposit_entry,
+            withdrawal_cmd,
+            fulfillment_deadline,
+            &current_active_operators,
+            seed,
+            OperatorSelection::specific(bogus_idx),
+        )
+        .unwrap();
+
+        // Should still get assigned to a valid active operator via random fallback
+        assert!(current_active_operators.is_active(assignment.current_assignee()));
+        assert_ne!(assignment.current_assignee(), bogus_idx);
+        assert!(assignment.current_assignee() < current_active_operators.len() as u32);
     }
 
     #[test]
@@ -536,6 +618,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
+            OperatorSelection::any(),
         )
         .unwrap_err();
 
@@ -571,6 +654,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed1,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -611,6 +695,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed1,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -650,6 +735,7 @@ mod tests {
             initial_deadline,
             &current_active_operators,
             seed1,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -687,6 +773,7 @@ mod tests {
             fulfillment_deadline,
             &current_active_operators,
             seed,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -741,6 +828,7 @@ mod tests {
             expired_deadline,
             &current_active_operators,
             seed,
+            OperatorSelection::any(),
         )
         .unwrap();
 
@@ -766,6 +854,7 @@ mod tests {
             future_deadline,
             &current_active_operators,
             seed,
+            OperatorSelection::any(),
         )
         .unwrap();
 

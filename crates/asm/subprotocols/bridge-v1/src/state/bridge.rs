@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_params::BridgeV1Config;
 use strata_asm_txs_bridge_v1::{deposit::DepositInfo, errors::Mismatch};
-use strata_bridge_types::OperatorIdx;
+use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
@@ -148,6 +148,7 @@ impl BridgeV1State {
     pub fn create_withdrawal_assignment(
         &mut self,
         withdrawal_output: &WithdrawOutput,
+        selected_operator: OperatorSelection,
         l1_block: &L1BlockCommitment,
     ) -> Result<(), WithdrawalCommandError> {
         // Get the oldest deposit
@@ -172,6 +173,7 @@ impl BridgeV1State {
             withdrawal_cmd,
             self.operators.current_multisig(),
             l1_block,
+            selected_operator,
         )
     }
 
@@ -254,7 +256,8 @@ mod tests {
             let l1blk: L1BlockCommitment = arb.generate();
             let mut output: WithdrawOutput = arb.generate();
             output.amt = state.denomination;
-            let res = state.create_withdrawal_assignment(&output, &l1blk);
+            let selected_operator: OperatorSelection = arb.generate();
+            let res = state.create_withdrawal_assignment(&output, selected_operator, &l1blk);
             assert!(res.is_ok());
 
             let unassigned_deposit_count = state.deposits.len();
@@ -265,7 +268,8 @@ mod tests {
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
-        let res = state.create_withdrawal_assignment(&output, &l1blk);
+        let selected_operator: OperatorSelection = arb.generate();
+        let res = state.create_withdrawal_assignment(&output, selected_operator, &l1blk);
         assert!(res.is_err());
     }
 
@@ -283,8 +287,9 @@ mod tests {
 
         let l1blk: L1BlockCommitment = arb.generate();
         let output: WithdrawOutput = arb.generate();
+        let selected_operator: OperatorSelection = arb.generate();
         let err = state
-            .create_withdrawal_assignment(&output, &l1blk)
+            .create_withdrawal_assignment(&output, selected_operator, &l1blk)
             .unwrap_err();
         assert!(matches!(
             err,

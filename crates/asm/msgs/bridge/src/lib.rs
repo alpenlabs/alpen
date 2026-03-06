@@ -11,6 +11,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
+use strata_bridge_types::OperatorSelection;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 
 /// Bitcoin output specification for a withdrawal operation.
@@ -59,7 +60,12 @@ impl WithdrawOutput {
 pub enum BridgeIncomingMsg {
     /// Emitted after a checkpoint proof has been validated. Contains the withdrawal command
     /// specifying the destination descriptor and amount to be withdrawn.
-    DispatchWithdrawal(WithdrawOutput),
+    DispatchWithdrawal {
+        /// The withdrawal output (destination + amount).
+        output: WithdrawOutput,
+        /// User's operator selection for withdrawal assignment.
+        selected_operator: OperatorSelection,
+    },
 }
 
 impl InterprotoMsg for BridgeIncomingMsg {

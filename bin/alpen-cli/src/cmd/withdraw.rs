@@ -4,9 +4,11 @@ use alloy::{
     network::TransactionBuilder, primitives::U256, providers::Provider,
     rpc::types::TransactionInput,
 };
+use alpen_reth_primitives::WithdrawalCalldata;
 use argh::FromArgs;
 use bdk_wallet::{bitcoin::Address, KeychainKind};
 use indicatif::ProgressBar;
+use strata_bridge_types::OperatorSelection;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_primitives::bitcoin_bosd::Descriptor;
 
@@ -26,6 +28,10 @@ pub struct WithdrawArgs {
     /// the signet address to send funds to. defaults to a new internal wallet address
     #[argh(positional)]
     address: Option<String>,
+
+    /// selected operator index for withdrawal assignment
+    #[argh(option)]
+    operator: Option<u32>,
 }
 
 pub async fn withdraw(
@@ -78,12 +84,21 @@ pub async fn withdraw(
         .try_into()
         .user_error("Failed to convert address to BOSD descriptor")?;
 
+    let selected_operator = match args.operator {
+        Some(idx) => OperatorSelection::specific(idx),
+        None => OperatorSelection::any(),
+    };
+    let calldata = WithdrawalCalldata {
+        selected_operator,
+        bosd: bosd.to_bytes(),
+    }
+    .encode();
+
     let tx = l2w
         .transaction_request()
         .with_to(settings.bridge_alpen_address)
         .with_value(U256::from(bridge_out_amount.to_sat() as u128 * SATS_TO_WEI))
-        // calldata for the Alpen EVM-BOSD descriptor
-        .input(TransactionInput::new(bosd.to_bytes().into()));
+        .input(TransactionInput::new(calldata.into()));
 
     let pb = ProgressBar::new_spinner().with_message("Broadcasting transaction");
     pb.enable_steady_tick(Duration::from_millis(100));

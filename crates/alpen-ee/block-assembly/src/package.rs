@@ -1,6 +1,7 @@
 use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SentMessage};
+use strata_bridge_types::OperatorSelection;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::MsgData;
 use strata_ee_acct_types::DecodedEeMessageData;
@@ -8,7 +9,7 @@ use strata_ee_chain_types::{
     BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
-use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
+use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
 use tracing::warn;
 
 /// Builds [`BlockInputs`] from parsed input messages.
@@ -42,10 +43,17 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
 ) -> BlockOutputs {
     let mut outputs = BlockOutputs::new_empty();
     for withdrawal_intent in payload.withdrawal_intents() {
-        let msg_payload = create_withdrawal_init_message_payload(
+        let Some(msg_payload) = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
             BitcoinAmount::from_sat(withdrawal_intent.amt),
-        );
+            withdrawal_intent.selected_operator,
+        ) else {
+            warn!(
+                withdrawal_txid = %withdrawal_intent.withdrawal_txid,
+                "skipping withdrawal: failed to create withdrawal message"
+            );
+            continue;
+        };
         outputs.add_message(SentMessage::new(bridge_gateway_account_id, msg_payload));
     }
     outputs
@@ -75,17 +83,19 @@ pub(crate) fn build_block_package<TPayload: EnginePayload>(
 fn create_withdrawal_init_message_payload(
     dest_desc: Descriptor,
     value: BitcoinAmount,
-) -> MsgPayload {
-    // Encode the deposit message data
-    let withdrawal_data =
-        WithdrawalMsgData::new(0, dest_desc.to_bytes()).expect("valid descriptor");
+    selected_operator: OperatorSelection,
+) -> Option<MsgPayload> {
+    let withdrawal_data = WithdrawalMsgData::new(
+        DEFAULT_OPERATOR_FEE,
+        dest_desc.to_bytes(),
+        selected_operator.raw(),
+    )?;
     let body = encode_to_vec(&withdrawal_data).expect("encode withdrawal data");
 
-    // Create properly formatted message
     let msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, body).expect("create message");
     let payload_data = msg.to_vec();
 
-    MsgPayload::new(value, payload_data)
+    Some(MsgPayload::new(value, payload_data))
 }
 
 #[cfg(test)]

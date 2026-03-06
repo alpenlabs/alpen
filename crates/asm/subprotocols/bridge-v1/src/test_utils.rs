@@ -16,7 +16,7 @@ use strata_asm_txs_bridge_v1::{
     unstake::{UnstakeInfo, UnstakeTxHeaderAux, parse_unstake_tx},
     withdrawal_fulfillment::{WithdrawalFulfillmentInfo, WithdrawalFulfillmentTxHeaderAux},
 };
-use strata_bridge_types::OperatorIdx;
+use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_btc_types::RawBitcoinTx;
 use strata_crypto::EvenSecretKey;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -106,7 +106,10 @@ pub(crate) fn add_deposits_and_assignments(state: &mut BridgeV1State, count: usi
         let l1blk: L1BlockCommitment = arb.generate();
         let mut output: WithdrawOutput = arb.generate();
         output.amt = *state.denomination();
-        state.create_withdrawal_assignment(&output, &l1blk).unwrap();
+        let selected_operator: OperatorSelection = arb.generate();
+        state
+            .create_withdrawal_assignment(&output, selected_operator, &l1blk)
+            .unwrap();
     }
 }
 
