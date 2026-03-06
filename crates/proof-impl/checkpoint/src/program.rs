@@ -1,16 +1,8 @@
 use strata_checkpoint_types::BatchInfo;
-use zkaleido::{
-    ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmInputResult, ZkVmProgram, ZkVmResult,
-};
+use zkaleido::{PublicValues, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::NativeHost;
 
 use crate::process_checkpoint_proof;
-
-#[derive(Debug)]
-pub struct CheckpointProverInput {
-    pub cl_stf_proofs: Vec<ProofReceiptWithMetadata>,
-    pub cl_stf_vk: VerifyingKey,
-}
 
 #[derive(Debug)]
 pub struct CheckpointProgram;
@@ -31,7 +23,7 @@ impl ZkVmProgram for CheckpointProgram {
     where
         B: zkaleido::ZkVmInputBuilder<'a>,
     {
-        B::new().write_serde(&input)?.build()
+        B::new().write_borsh(&input)?.build()
     }
 
     fn process_output<H>(public_values: &PublicValues) -> ZkVmResult<Self::Output>

@@ -4,14 +4,12 @@ use std::{collections::HashMap, sync::Arc, time};
 
 use anyhow::Context;
 use args::Args;
-use bitcoind_async_client::{Auth, Client};
 use checkpoint_runner::runner::checkpoint_proof_runner;
 use jsonrpsee::http_client::HttpClientBuilder;
 use operators::init_operators;
 use rpc_server::ProverClientRpc;
 use service::{
-    new_checkpoint_handler, new_cl_stf_handler, new_evm_ee_stf_handler, ProofContextVariant,
-    ProofTask, SledTaskStore,
+    new_checkpoint_handler, new_evm_ee_stf_handler, ProofContextVariant, ProofTask, SledTaskStore,
 };
 use strata_common::logging;
 use strata_db_store_sled::{prover::ProofDBSled, SledDbConfig};
@@ -74,7 +72,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 
     debug!("Running prover client with config {:?}", config);
 
-    let rollup_params = args
+    let _rollup_params = args
         .resolve_and_validate_rollup_params()
         .context("Failed to resolve and validate rollup parameters")?;
 
@@ -85,7 +83,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         // the checkpoint proving task utilizes the same.
         let checkpoint_vk =
             get_checkpoint_groth16_vk().context("Failed to get checkpoint verification key")?;
-        let params_vk = rollup_params
+        let params_vk = _rollup_params
             .checkpoint_predicate
             .as_buf_ref()
             .condition()
@@ -102,23 +100,8 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .build(config.get_sequencer_rpc_url())
         .context("Failed to connect to the CL Sequencer client")?;
 
-    let auth = Auth::UserPass(
-        config.bitcoind_user.clone(),
-        config.bitcoind_password.clone(),
-    );
-
-    let btc_client = Client::new(
-        config.bitcoind_url.clone(),
-        auth,
-        Some(config.bitcoin_retry_count),
-        Some(config.bitcoin_retry_interval),
-        None,
-    )
-    .context("Failed to connect to the Bitcoin client")?;
-
     // Initialize operators
-    let (checkpoint_operator, cl_stf_operator, evm_ee_operator) =
-        init_operators(btc_client, el_client, cl_client, rollup_params);
+    let (checkpoint_operator, evm_ee_operator) = init_operators(el_client, cl_client);
 
     let sled_db =
         strata_db_store_sled::open_sled_database(&config.datadir, strata_db_store_sled::SLED_NAME)
@@ -166,12 +149,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         executor.clone(),
     ));
 
-    let cl_stf_handler = Arc::new(new_cl_stf_handler(
-        cl_stf_operator.clone(),
-        db.clone(),
-        executor.clone(),
-    ));
-
     let evm_ee_handler = Arc::new(new_evm_ee_stf_handler(
         evm_ee_operator.clone(),
         db.clone(),
@@ -183,7 +160,6 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         .with_task_store(task_store)
         .with_retry_config(strata_paas::RetryConfig::default())
         .with_handler(ProofContextVariant::Checkpoint, checkpoint_handler)
-        .with_handler(ProofContextVariant::ClStf, cl_stf_handler)
         .with_handler(ProofContextVariant::EvmEeStf, evm_ee_handler);
 
     // Launch the service
@@ -212,12 +188,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
         debug!("Spawned checkpoint proof runner");
     }
 
-    let rpc_server = ProverClientRpc::new(
-        service_handle.clone(),
-        checkpoint_operator,
-        cl_stf_operator,
-        db,
-    );
+    let rpc_server = ProverClientRpc::new(service_handle.clone(), checkpoint_operator, db);
     let rpc_url = config.get_dev_rpc_url();
     let enable_dev_rpcs = config.enable_dev_rpcs;
     executor.spawn_critical_async("rpc-server", async move {
