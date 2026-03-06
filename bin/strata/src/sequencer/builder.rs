@@ -30,10 +30,6 @@ pub(crate) struct SequencerBuilder {
 }
 
 impl SequencerBuilder {
-    #[expect(
-        dead_code,
-        reason = "used only after commit 2 switches startup to SequencerBuilder"
-    )]
     pub(crate) fn new(
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
@@ -54,10 +50,6 @@ impl SequencerBuilder {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "used only after commit 2 switches startup to SequencerBuilder"
-    )]
     pub(crate) async fn launch(
         self,
         executor: &TaskExecutor,

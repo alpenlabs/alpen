@@ -69,9 +69,11 @@ fn main() -> Result<()> {
 
     // Start sequencer signer if sequencer feature is enabled
     #[cfg(feature = "sequencer")]
-    if runctx.config().client.is_sequencer {
-        sequencer::start_sequencer_signer(&runctx, &args)?;
-    }
+    let _sequencer_monitor = if runctx.config().client.is_sequencer {
+        Some(sequencer::start_sequencer_signer(&runctx, &args)?)
+    } else {
+        None
+    };
 
     // Monitor tasks.
     runctx.task_manager.start_signal_listeners();
