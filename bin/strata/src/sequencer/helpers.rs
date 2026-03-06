@@ -6,7 +6,6 @@ use std::{fs, path::Path, str::FromStr};
 
 use bitcoin::bip32::Xpriv;
 use ssz::Encode;
-use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_crypto::{hash, keys::zeroizable::ZeroizableXpriv, sign_schnorr_sig};
 use strata_key_derivation::sequencer::SequencerKeys;
 use strata_ol_chain_types_new::OLBlockHeader;
@@ -55,9 +54,3 @@ pub(crate) fn sign_header(header: &OLBlockHeader, sk: &Buf32) -> Buf64 {
     sign_schnorr_sig(&msg, sk)
 }
 
-/// Signs a [`CheckpointPayload`] and returns the signature.
-pub(crate) fn sign_checkpoint(checkpoint: &CheckpointPayload, sk: &Buf32) -> Buf64 {
-    let encoded = checkpoint.as_ssz_bytes();
-    let msg = hash::raw(&encoded);
-    sign_schnorr_sig(&msg, sk)
-}

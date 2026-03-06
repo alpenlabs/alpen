@@ -6,7 +6,8 @@ use anyhow::{Result, anyhow};
 use ssz::Encode;
 use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
-use strata_checkpoint_types_ssz::SignedCheckpointPayload;
+use strata_codec::encode_to_vec;
+use strata_codec_utils::CodecSsz;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
@@ -18,7 +19,7 @@ use strata_storage::NodeStorage;
 use tokio::{runtime::Handle, select, sync::mpsc, time};
 use tracing::{debug, error, info, warn};
 
-use super::helpers::{sign_checkpoint, sign_header};
+use super::helpers::sign_header;
 
 /// Worker for executing duties for the sequencer.
 pub(crate) async fn duty_executor_worker(
@@ -91,8 +92,7 @@ async fn handle_duty(
             .await
         }
         Duty::SignCheckpoint(duty) => {
-            handle_sign_checkpoint_duty(envelope_handle, storage, duty, duty_id, &sequencer_key)
-                .await
+            handle_checkpoint_duty(envelope_handle, storage, duty, duty_id).await
         }
     };
 
@@ -148,13 +148,16 @@ async fn handle_sign_block_duty(
     Ok(())
 }
 
-/// Handles a checkpoint signing duty for the sequencer.
-async fn handle_sign_checkpoint_duty(
+/// Handles a checkpoint duty for the sequencer.
+///
+/// Encodes the checkpoint payload with `CodecSsz` and submits it as an L1 payload
+/// intent. The envelope builder will use the sequencer's keypair as the taproot key,
+/// so the script-spend signature transitively authenticates the payload (SPS-51).
+async fn handle_checkpoint_duty(
     envelope_handle: Arc<EnvelopeHandle>,
     storage: Arc<NodeStorage>,
     duty: CheckpointSigningDuty,
     duty_id: Buf32,
-    sequencer_key: &Buf32,
 ) -> Result<()> {
     let epoch = duty.epoch();
     let checkpoint_db = storage.ol_checkpoint();
@@ -171,14 +174,13 @@ async fn handle_sign_checkpoint_duty(
         return Ok(());
     }
 
-    let sig = sign_checkpoint(duty.checkpoint(), sequencer_key);
-    let signed_checkpoint = SignedCheckpointPayload::new(duty.checkpoint().clone(), sig);
+    let checkpoint = duty.checkpoint();
+    let codec_payload = CodecSsz::new(checkpoint.clone());
+    let encoded = encode_to_vec(&codec_payload)
+        .map_err(|e| anyhow!("failed to encode checkpoint payload: {e}"))?;
 
-    let payload = L1Payload::new(
-        vec![signed_checkpoint.as_ssz_bytes()],
-        OL_STF_CHECKPOINT_TX_TAG.clone(),
-    );
-    let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
+    let payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+    let sighash = hash::raw(&checkpoint.as_ssz_bytes());
     let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
 
     let intent_idx = envelope_handle
@@ -197,7 +199,7 @@ async fn handle_sign_checkpoint_duty(
         ?duty_id,
         %epoch,
         %intent_idx,
-        "checkpoint signing complete"
+        "checkpoint submission complete"
     );
 
     Ok(())
