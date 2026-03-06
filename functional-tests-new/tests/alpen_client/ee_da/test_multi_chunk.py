@@ -155,11 +155,18 @@ class TestDaMultiChunkTest(BaseTest):
             current_l2_block = sequencer.get_block_number()
             blocks_needed = expected_batch_last_block + batch_sealing_block_count
             if current_l2_block < blocks_needed:
+                # Large DA payloads slow post-batch block production on CI, so the
+                # generic 1s-per-block wait budget is too tight for this step.
+                block_wait_timeout = timeout_for_expected_blocks(
+                    blocks_needed - current_l2_block,
+                    seconds_per_block=2.0,
+                    slack_seconds=30,
+                )
                 logger.debug(
                     f"Attempt {attempt + 1}: Waiting for L2 block"
                     f" {blocks_needed} (current: {current_l2_block})"
                 )
-                sequencer.wait_for_block(blocks_needed)
+                sequencer.wait_for_block(blocks_needed, timeout=block_wait_timeout)
 
             logger.debug(f"Attempt {attempt + 1}: Waiting for DA transactions to reach mempool...")
             time.sleep(10)
