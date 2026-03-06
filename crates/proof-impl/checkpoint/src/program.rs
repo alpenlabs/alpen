@@ -1,7 +1,6 @@
-use strata_checkpoint_types::BatchTransition;
+use strata_checkpoint_types::BatchInfo;
 use zkaleido::{
-    AggregationInput, ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmInputResult,
-    ZkVmProgram, ZkVmResult,
+    ProofReceiptWithMetadata, PublicValues, VerifyingKey, ZkVmInputResult, ZkVmProgram, ZkVmResult,
 };
 use zkaleido_native_adapter::NativeHost;
 
@@ -17,8 +16,8 @@ pub struct CheckpointProverInput {
 pub struct CheckpointProgram;
 
 impl ZkVmProgram for CheckpointProgram {
-    type Input = CheckpointProverInput;
-    type Output = BatchTransition;
+    type Input = BatchInfo;
+    type Output = BatchInfo;
 
     fn name() -> String {
         "Checkpoint".to_string()
@@ -32,17 +31,7 @@ impl ZkVmProgram for CheckpointProgram {
     where
         B: zkaleido::ZkVmInputBuilder<'a>,
     {
-        let mut input_builder = B::new();
-
-        input_builder.write_serde(&input.cl_stf_proofs.len())?;
-
-        for cl_stf_proof in &input.cl_stf_proofs {
-            let cl_stf_proof_with_vk =
-                AggregationInput::new(cl_stf_proof.clone(), input.cl_stf_vk.clone());
-            input_builder.write_proof(&cl_stf_proof_with_vk)?;
-        }
-
-        input_builder.build()
+        B::new().write_serde(&input)?.build()
     }
 
     fn process_output<H>(public_values: &PublicValues) -> ZkVmResult<Self::Output>
@@ -55,9 +44,8 @@ impl ZkVmProgram for CheckpointProgram {
 
 impl CheckpointProgram {
     pub fn native_host() -> NativeHost {
-        const MOCK_CL_STF_VK: [u32; 8] = [0u32; 8];
         NativeHost::new(move |zkvm| {
-            process_checkpoint_proof(zkvm, &MOCK_CL_STF_VK);
+            process_checkpoint_proof(zkvm);
         })
     }
 
