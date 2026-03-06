@@ -15440,21 +15440,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-cl-stf"
-version = "0.3.0-alpha.1"
-dependencies = [
- "borsh",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
 name = "strata-proofimpl-evm-ee-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
