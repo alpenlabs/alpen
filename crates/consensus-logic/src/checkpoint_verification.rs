@@ -1,7 +1,7 @@
 //! General handling around checkpoint verification.
 
 use strata_chaintsn::transition::verify_checkpoint_proof;
-use strata_checkpoint_types::{BatchTransition, Checkpoint};
+use strata_checkpoint_types::{BatchInfo, Checkpoint};
 use strata_csm_types::L1Checkpoint;
 use strata_params::RollupParams;
 use tracing::*;
@@ -48,17 +48,10 @@ fn verify_checkpoint_extends(
 ) -> Result<(), CheckpointError> {
     let epoch = checkpoint.batch_info().epoch();
     let prev_epoch = prev.batch_info.epoch();
-    let last_tsn = prev.batch_transition;
-    let tsn = checkpoint.batch_transition();
 
     // Check that the epoch numbers line up.
     if epoch != prev_epoch + 1 {
         return Err(CheckpointError::Sequencing(epoch, prev_epoch));
-    }
-
-    if last_tsn.chainstate_transition.post_state_root != tsn.chainstate_transition.pre_state_root {
-        warn!("checkpoint mismatch on L2 state!");
-        return Err(CheckpointError::MismatchL2State);
     }
 
     Ok(())
@@ -86,12 +79,12 @@ pub fn verify_proof(
     trace!(%checkpoint_idx, "verifying proof");
 
     // Do the public parameters check
-    let expected_public_output = *checkpoint.batch_transition();
-    let actual_public_output: BatchTransition =
+    let expected_public_output = checkpoint.batch_info();
+    let actual_public_output: BatchInfo =
         borsh::from_slice(proof_receipt.public_values().as_bytes())
             .map_err(|_| CheckpointError::MalformedTransition)?;
 
-    if expected_public_output != actual_public_output {
+    if expected_public_output != &actual_public_output {
         dbg!(actual_public_output, expected_public_output);
         return Err(CheckpointError::TransitionMismatch);
     }
@@ -139,7 +132,7 @@ mod tests {
         // Ensure the mode is Strict for this test
         rollup_params.checkpoint_predicate = PredicateKey::always_accept();
 
-        let public_values = checkpoint.batch_transition();
+        let public_values = checkpoint.batch_info();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
 
         // Create a proof receipt with an empty proof and non-empty public values
@@ -166,7 +159,7 @@ mod tests {
             PredicateKey::always_accept()
         );
 
-        let public_values = checkpoint.batch_transition();
+        let public_values = checkpoint.batch_info();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
 
         // Create a proof receipt with an empty proof and non-empty public values
@@ -195,7 +188,7 @@ mod tests {
             PredicateKey::never_accept()
         );
 
-        let public_values = checkpoint.batch_transition();
+        let public_values = checkpoint.batch_info();
         let encoded_public_values = borsh::to_vec(public_values).unwrap();
 
         // Create a proof receipt with an empty proof and non-empty public values

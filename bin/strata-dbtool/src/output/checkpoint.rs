@@ -1,6 +1,6 @@
 //! Checkpoint formatting implementations
 
-use strata_checkpoint_types::{BatchInfo, BatchTransition, Checkpoint, EpochSummary};
+use strata_checkpoint_types::{BatchInfo, Checkpoint, EpochSummary};
 use strata_csm_types::CheckpointL1Ref;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::types::{CheckpointConfStatus, CheckpointProvingStatus};
@@ -90,31 +90,6 @@ pub(crate) fn format_batch_info(batch_info: &BatchInfo, prefix: &str) -> Vec<Str
     output
 }
 
-/// Format batch transition for porcelain output
-pub(crate) fn format_batch_transition(
-    batch_transition: &BatchTransition,
-    prefix: &str,
-) -> Vec<String> {
-    let mut output = Vec::new();
-
-    output.push(porcelain_field(
-        &format!("{prefix}.batch_transition.chainstate.pre_root"),
-        format!(
-            "{:?}",
-            batch_transition.chainstate_transition.pre_state_root
-        ),
-    ));
-    output.push(porcelain_field(
-        &format!("{prefix}.batch_transition.chainstate.post_root"),
-        format!(
-            "{:?}",
-            batch_transition.chainstate_transition.post_state_root
-        ),
-    ));
-
-    output
-}
-
 impl<'a> Formattable for EpochInfo<'a> {
     fn format_porcelain(&self) -> String {
         let mut output = Vec::new();
@@ -175,9 +150,6 @@ impl<'a> Formattable for CheckpointInfo<'a> {
 
         let batch_info = self.checkpoint.batch_info();
         output.extend(format_batch_info(batch_info, "checkpoint"));
-
-        let batch_transition = self.checkpoint.batch_transition();
-        output.extend(format_batch_transition(batch_transition, "checkpoint"));
 
         // Format confirmation status
         match self.confirmation_status {

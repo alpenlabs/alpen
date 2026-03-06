@@ -7,7 +7,7 @@ use core::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_checkpoint_types::{BatchInfo, BatchTransition};
+use strata_checkpoint_types::BatchInfo;
 use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
@@ -133,9 +133,6 @@ pub struct L1Checkpoint {
     /// The inner checkpoint batch info.
     pub batch_info: BatchInfo,
 
-    /// The inner checkpoint batch transition.
-    pub batch_transition: BatchTransition,
-
     /// L1 reference for this checkpoint.
     pub l1_reference: CheckpointL1Ref,
 }
@@ -147,14 +144,9 @@ impl fmt::Display for L1Checkpoint {
 }
 
 impl L1Checkpoint {
-    pub fn new(
-        batch_info: BatchInfo,
-        batch_transition: BatchTransition,
-        l1_reference: CheckpointL1Ref,
-    ) -> Self {
+    pub fn new(batch_info: BatchInfo, l1_reference: CheckpointL1Ref) -> Self {
         Self {
             batch_info,
-            batch_transition,
             l1_reference,
         }
     }

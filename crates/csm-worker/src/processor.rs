@@ -7,9 +7,7 @@ use strata_asm_logs::{
     CheckpointTipUpdate, CheckpointUpdate,
     constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
 };
-use strata_checkpoint_types::{
-    BatchInfo, BatchTransition, ChainstateRootTransition, Checkpoint, CheckpointSidecar,
-};
+use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
@@ -72,14 +70,8 @@ fn process_checkpoint_log(
     );
 
     // Create L1Checkpoint for client state
-    let l1_checkpoint = L1Checkpoint::new(
-        checkpoint_update.batch_info().clone(),
-        BatchTransition {
-            epoch,
-            chainstate_transition: *checkpoint_update.chainstate_transition(),
-        },
-        l1_reference.clone(),
-    );
+    let l1_checkpoint =
+        L1Checkpoint::new(checkpoint_update.batch_info().clone(), l1_reference.clone());
 
     // Update the client state with this checkpoint
     update_client_state_with_checkpoint(state, l1_checkpoint, epoch)?;
@@ -229,19 +221,7 @@ fn checkpoint_from_tip_update(
         (*tip.l2_commitment(), *tip.l2_commitment()),
     );
 
-    // TODO(STR-2438): Compatibility-only placeholder.
-    // `CheckpointTipUpdate` does not carry real transition roots; remove this
-    // synthetic `BatchTransition` once `L1Checkpoint` no longer requires
-    // legacy v0 checkpoint public-parameter fields.
-    let batch_transition = BatchTransition {
-        epoch: tip.epoch,
-        chainstate_transition: ChainstateRootTransition {
-            pre_state_root: Buf32::zero(),
-            post_state_root: Buf32::zero(),
-        },
-    };
-
-    L1Checkpoint::new(batch_info, batch_transition, l1_reference)
+    L1Checkpoint::new(batch_info, l1_reference)
 }
 
 /// Create a [`Checkpoint`] from a [`CheckpointUpdate`] log.
@@ -251,17 +231,11 @@ fn checkpoint_from_tip_update(
 // TODO(STR-2438): This function exists for compatibility to avoid larger changes.
 // It should be reworked for the new OL STF where checkpoint structures differ.
 fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
-    let epoch = update.batch_info().epoch();
-
     // Create empty sidecar - checkpoint was already verified by ASM
     let sidecar = CheckpointSidecar::new(vec![]);
 
     Checkpoint::new(
         update.batch_info().clone(),
-        BatchTransition {
-            epoch,
-            chainstate_transition: *update.chainstate_transition(),
-        },
         Default::default(), // Empty proof - actual proof was already verified by ASM
         sidecar,
     )
@@ -275,7 +249,7 @@ mod tests {
     use strata_asm_logs::{
         CheckpointTipUpdate, CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE,
     };
-    use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
+    use strata_checkpoint_types::BatchInfo;
     use strata_checkpoint_types_ssz::CheckpointTip;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -522,22 +496,12 @@ mod tests {
             // Create epoch commitment
             let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
 
-            // Create chainstate transition
-            let chainstate_transition = ChainstateRootTransition {
-                pre_state_root: Buf32::from([0u8; 32]),
-                post_state_root: Buf32::from([epoch as u8; 32]),
-            };
-
             // Create checkpoint txid
             let checkpoint_txid: BitcoinTxid = arbgen.generate();
 
             // Create CheckpointUpdate
-            let checkpoint_update = CheckpointUpdate::new(
-                epoch_commitment,
-                batch_info,
-                chainstate_transition,
-                checkpoint_txid,
-            );
+            let checkpoint_update =
+                CheckpointUpdate::new(epoch_commitment, batch_info, checkpoint_txid);
 
             // Create log entry
             let log = AsmLogEntry::from_log(&checkpoint_update).expect("make log");
