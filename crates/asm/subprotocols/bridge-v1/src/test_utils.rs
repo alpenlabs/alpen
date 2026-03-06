@@ -75,7 +75,6 @@ pub(crate) fn create_test_state() -> (BridgeV1State, Vec<EvenSecretKey>) {
 ///
 /// - `state` - Mutable reference to the bridge state to add deposits to
 /// - `count` - Number of deposits to create and add
-/// - `privkeys` - Private keys used to sign the deposit transactions
 pub(crate) fn add_deposits(state: &mut BridgeV1State, count: usize) -> Vec<DepositInfo> {
     let mut arb = ArbitraryGenerator::new();
     let mut infos = Vec::new();
@@ -98,7 +97,6 @@ pub(crate) fn add_deposits(state: &mut BridgeV1State, count: usize) -> Vec<Depos
 ///
 /// - `state` - Mutable reference to the bridge state
 /// - `count` - Number of deposit-assignment pairs to create
-/// - `privkeys` - Private keys used to sign the deposit transactions
 pub(crate) fn add_deposits_and_assignments(state: &mut BridgeV1State, count: usize) {
     add_deposits(state, count);
     let mut arb = ArbitraryGenerator::new();

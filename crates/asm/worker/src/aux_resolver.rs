@@ -52,7 +52,7 @@ impl<'a> AuxDataResolver<'a> {
     /// # Arguments
     ///
     /// * `context` - Worker context for ASM state access and MMR database
-    /// * `params` - Rollup parameters (needed for genesis height)
+    /// * `l1_genesis` - L1 genesis block commitment
     pub fn new(context: &'a dyn WorkerContext, l1_genesis: L1BlockCommitment) -> Self {
         Self {
             context,

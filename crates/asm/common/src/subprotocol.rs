@@ -109,7 +109,6 @@ pub trait Subprotocol: 'static {
     /// * `state` - Current state of the subprotocol
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
     /// * `collector` - Interface for registering auxiliary input requirements
-    /// * `anchor_pre` - The previous anchor state for context
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
