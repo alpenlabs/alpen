@@ -24,14 +24,14 @@ class TestTxForwarding(AlpenClientTest):
         seq_rpc = ee_sequencer.create_rpc()
         fn_rpc = ee_fullnode.create_rpc()
 
-        ee_sequencer.wait_for_block(2, timeout=10)
+        ee_sequencer.wait_for_block(2)
 
         dev_account = get_dev_account(seq_rpc)
         account = create_funded_account(seq_rpc, dev_account, 10**18)
         logger.info(f"Created test account: {account.address}")
 
         seq_block = int(seq_rpc.eth_blockNumber(), 16)
-        ee_fullnode.wait_for_block(seq_block, timeout=10)
+        ee_fullnode.wait_for_block(seq_block)
         logger.info(f"Fullnode synced to block {seq_block}")
 
         fn_balance = int(fn_rpc.eth_getBalance(account.address, "latest"), 16)
