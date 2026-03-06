@@ -156,19 +156,24 @@ pub fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
     status_channel: StatusChannel,
     pool: threadpool::ThreadPool,
     broadcast_handle: Arc<L1BroadcastHandle>,
+    sequencer_sk: Option<[u8; 32]>,
 ) -> anyhow::Result<Arc<EnvelopeHandle>> {
     let writer_ops = Arc::new(Context::new(db).into_ops(pool));
     let next_watch_payload_idx = get_next_payloadidx_to_watch(writer_ops.as_ref())?;
     let (intent_tx, intent_rx) = mpsc::channel::<IntentEntry>(64);
 
     let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
-    let ctx = Arc::new(WriterContext::new(
+    let mut ctx = WriterContext::new(
         btcio_params,
         config.clone(),
         sequencer_address,
         bitcoin_client,
         status_channel,
-    ));
+    );
+    if let Some(sk) = &sequencer_sk {
+        ctx = ctx.with_sequencer_sk(sk);
+    }
+    let ctx = Arc::new(ctx);
 
     let wops = writer_ops.clone();
     executor.spawn_critical_async("btcio::watcher_task", async move {
