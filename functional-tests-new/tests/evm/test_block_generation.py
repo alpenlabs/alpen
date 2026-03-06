@@ -22,7 +22,7 @@ class TestBlockGeneration(AlpenClientTest):
         logger.info(f"Initial block number: {initial_block}")
 
         target_block = initial_block + 5
-        ee_sequencer.wait_for_block(target_block, timeout=10)
+        ee_sequencer.wait_for_additional_blocks(5)
 
         final_block = ee_sequencer.get_block_number()
         logger.info(f"Final block number: {final_block}")

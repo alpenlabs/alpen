@@ -72,11 +72,11 @@ class TestMeshDiscovery(AlpenClientTest):
         seq_block = ee_sequencer.get_block_number()
         target_block = seq_block + 3
 
-        ee_sequencer.wait_for_block(target_block, timeout=15)
+        ee_sequencer.wait_for_additional_blocks(3)
         seq_hash = ee_sequencer.get_block_by_number(target_block)["hash"]
 
         for i, fn in enumerate(ee_fullnodes):
-            fn.wait_for_block(target_block, timeout=15)
+            fn.wait_for_block(target_block)
             fn_hash = fn.get_block_by_number(target_block)["hash"]
             assert seq_hash == fn_hash, f"Fullnode {i} hash mismatch"
 
