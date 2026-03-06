@@ -10,7 +10,7 @@ use strata_ee_acct_types::{
 use strata_ee_chain_types::{ChunkTransition, ExecOutputs, SequenceTracker};
 use strata_predicate::PredicateKeyBuf;
 use strata_snark_acct_types::{
-    MAX_MESSAGES, MAX_TRANSFERS, OutputMessage, OutputTransfer, UpdateOutputs,
+    OutputMessage, OutputTransfer, UpdateOutputs,
 };
 
 use crate::private_input::ArchivedChunkInput;
@@ -147,15 +147,11 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Appends a package block's outputs into the pending outputs being
     /// built internally. This way we can compare it against the update op data
     /// later.
-    pub(crate) fn merge_new_outputs(&mut self, outputs: &ExecOutputs) {
+    pub(crate) fn merge_new_outputs(&mut self, outputs: &ExecOutputs) -> EnvResult<()> {
         // Just merge the entries into the buffer. This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
         // confusion because they do refer to different concepts.
-        //
-        // This panic should never happen: capacity limit is [`MAX_TRANSFERS`].
-        // If hit, it indicates either a malicious block or a bug. We panic to
-        // fail fast rather than continue with inconsistent state.
         self.accumulated_outputs
             .try_extend_transfers(
                 outputs
@@ -163,18 +159,8 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
                     .iter()
                     .map(|e| OutputTransfer::new(e.dest(), e.value())),
             )
-            .unwrap_or_else(|e| {
-                panic!(
-                    "output transfers capacity exceeded: {e} (current {}, adding {}, max {})",
-                    self.accumulated_outputs.transfers().len(),
-                    outputs.output_transfers().len(),
-                    MAX_TRANSFERS
-                )
-            });
+            .map_err(|_| EnvError::OutputOverflow)?;
 
-        // This panic should never happen: capacity limit is [`MAX_MESSAGES`].
-        // If hit, it indicates either a malicious block or a bug. We panic to
-        // fail fast rather than continue with inconsistent state.
         self.accumulated_outputs
             .try_extend_messages(
                 outputs
@@ -182,14 +168,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
                     .iter()
                     .map(|e| OutputMessage::new(e.dest(), e.payload().clone())),
             )
-            .unwrap_or_else(|e| {
-                panic!(
-                    "output messages capacity exceeded: {e} (current {}, adding {}, max {})",
-                    self.accumulated_outputs.messages().len(),
-                    outputs.output_messages().len(),
-                    MAX_MESSAGES
-                )
-            });
+            .map_err(|_| EnvError::OutputOverflow)?;
 
         // Annoying thing to do checked summation.
         let sent_amts_iter = [self.total_val_sent]
@@ -203,6 +182,8 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             );
 
         self.total_val_sent = BitcoinAmount::sum(sent_amts_iter);
+
+        Ok(())
     }
 
     /// Processes a single decoded chunk transition: validates chain linkage,
@@ -235,7 +216,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         }
 
         // Merge outputs into accumulated state.
-        self.merge_new_outputs(transition.outputs());
+        self.merge_new_outputs(transition.outputs())?;
 
         // Advance the verified tip.
         self.cur_verified_exec_blkid = transition.tip_exec_blkid();

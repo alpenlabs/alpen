@@ -109,9 +109,10 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
     let mut io_tracker = IoTracker::from_io(expected_inputs, expected_outputs);
     let mut cur_verified_tip_blkid = verified_tip;
     for cb in chunk.blocks() {
+        let header = cb.exec_block().get_header();
+
         // Verify it builds on the previous block.
-        let cb_parent = cb.exec_block().get_header().get_parent_id();
-        if cb_parent != cur_verified_tip_blkid {
+        if header.get_parent_id() != cur_verified_tip_blkid {
             return Err(EnvError::MismatchedChainSegment);
         }
 
@@ -121,7 +122,7 @@ fn process_chunk_blocks<E: ExecutionEnvironment>(
         // Check the block's IO.
         io_tracker.check_update(cb.inputs(), cb.outputs())?;
 
-        cur_verified_tip_blkid = cb_parent;
+        cur_verified_tip_blkid = header.compute_block_id();
     }
 
     // 3. Make sure all the trackers are consumed.
@@ -182,4 +183,142 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_ee_acct_types::{
+        BlockAssembler, ExecBlock, ExecBlockOutput, ExecHeader, ExecPayload,
+    };
+    use strata_ee_chain_types::{ExecInputs, ExecOutputs};
+    use strata_simple_ee::{
+        SimpleBlock, SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader,
+        SimpleHeaderIntrinsics, SimplePartialState, SimpleTransaction,
+    };
+
+    use super::*;
+    use crate::chunk::{Chunk, ChunkBlock};
+
+    fn alice() -> strata_acct_types::SubjectId {
+        strata_acct_types::SubjectId::from([1u8; 32])
+    }
+
+    fn bob() -> strata_acct_types::SubjectId {
+        strata_acct_types::SubjectId::from([2u8; 32])
+    }
+
+    /// Builds a valid SimpleBlock by executing the body against the given state,
+    /// returning the block, its inputs, outputs, and the post-state.
+    fn build_block(
+        ee: &SimpleExecutionEnvironment,
+        state: &SimplePartialState,
+        parent_blkid: Hash,
+        index: u64,
+        body: SimpleBlockBody,
+        inputs: ExecInputs,
+    ) -> (SimpleBlock, ExecInputs, ExecOutputs, SimplePartialState) {
+        let intrinsics = SimpleHeaderIntrinsics {
+            parent_blkid,
+            index,
+        };
+        let payload = ExecPayload::new(&intrinsics, &body);
+        let output: ExecBlockOutput<SimpleExecutionEnvironment> =
+            ee.execute_block_body(state, &payload, &inputs).unwrap();
+
+        let header = ee.complete_header(&payload, &output).unwrap();
+        let block = SimpleBlock::new(header, body);
+
+        let mut post_state = state.clone();
+        ee.merge_write_into_state(&mut post_state, output.write_batch())
+            .unwrap();
+
+        let outputs = output.outputs().clone();
+        (block, inputs, outputs, post_state)
+    }
+
+    #[test]
+    fn test_process_chunk_blocks_multi_block() {
+        let ee = SimpleExecutionEnvironment;
+
+        // Initial state: alice has 1000.
+        let mut accounts = std::collections::BTreeMap::new();
+        accounts.insert(alice(), 1000);
+        let initial_state = SimplePartialState::new(accounts);
+
+        let genesis_header = SimpleHeader::genesis();
+        let genesis_blkid = genesis_header.compute_block_id();
+
+        // Block 1: alice -> bob 200
+        let (block1, inp1, out1, state1) = build_block(
+            &ee,
+            &initial_state,
+            genesis_blkid,
+            1,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 200,
+            }]),
+            ExecInputs::new_empty(),
+        );
+        let blkid1 = block1.get_header().compute_block_id();
+
+        // Block 2: alice -> bob 300
+        let (block2, inp2, out2, state2) = build_block(
+            &ee,
+            &state1,
+            blkid1,
+            2,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 300,
+            }]),
+            ExecInputs::new_empty(),
+        );
+        let blkid2 = block2.get_header().compute_block_id();
+
+        // Block 3: alice -> bob 100
+        let (block3, inp3, out3, _state3) = build_block(
+            &ee,
+            &state2,
+            blkid2,
+            3,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 100,
+            }]),
+            ExecInputs::new_empty(),
+        );
+
+        // Aggregate inputs and outputs across the chunk.
+        let chunk_inputs = ExecInputs::new_empty();
+
+        let chunk_outputs = ExecOutputs::new_empty();
+
+        // Build the chunk.
+        let chunk_blocks = vec![
+            ChunkBlock::new(&inp1, &out1, block1),
+            ChunkBlock::new(&inp2, &out2, block2),
+            ChunkBlock::new(&inp3, &out3, block3),
+        ];
+        let chunk = Chunk::new(chunk_blocks);
+
+        // Process starting from the initial state.
+        let mut state = initial_state;
+        process_chunk_blocks(
+            &ee,
+            &mut state,
+            &chunk,
+            genesis_blkid,
+            &chunk_inputs,
+            &chunk_outputs,
+        )
+        .expect("multi-block chunk should process successfully");
+
+        // Verify final balances: alice=1000-200-300-100=400, bob=200+300+100=600
+        assert_eq!(state.accounts().get(&alice()), Some(&400));
+        assert_eq!(state.accounts().get(&bob()), Some(&600));
+    }
 }

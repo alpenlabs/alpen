@@ -63,6 +63,10 @@ pub enum EnvError {
     #[error("blocks in a chunk did not match the chunk's attested io")]
     InconsistentChunkIo,
 
+    /// Accumulated output transfers or messages exceeded protocol capacity.
+    #[error("output overflow")]
+    OutputOverflow,
+
     /// Chunk transition proof failed verification against the predicate key.
     #[error("invalid chunk proof")]
     InvalidChunkProof,
