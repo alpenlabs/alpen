@@ -11,7 +11,7 @@ use strata_ee_acct_types::{
 use strata_ee_chain_types::ChunkTransition;
 use strata_snark_acct_runtime::{PrivateInput, UpdateBuilder as GenericUpdateBuilder};
 use strata_snark_acct_types::{
-    LedgerRefs, MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, OutputMessage, OutputTransfer,
+    LedgerRefs, MessageEntry, OutputMessage, OutputTransfer,
     SnarkAccountState, UpdateOperationData, UpdateOutputs,
 };
 
@@ -188,15 +188,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
                     .iter()
                     .map(|t| OutputTransfer::new(t.dest(), t.value())),
             )
-            .unwrap_or_else(|e| {
-                panic!(
-                    "transfers capacity exceeded in EE builder: {e}. \
-                     Current: {}, Adding: {}, Max: {}",
-                    self.inner.outputs().transfers().len(),
-                    outputs.output_transfers().len(),
-                    MAX_TRANSFERS
-                )
-            });
+            .map_err(|_| BuilderError::OutputOverflow)?;
 
         self.inner
             .outputs_mut()
@@ -206,15 +198,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
                     .iter()
                     .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
             )
-            .unwrap_or_else(|e| {
-                panic!(
-                    "messages capacity exceeded in EE builder: {e}. \
-                     Current: {}, Adding: {}, Max: {}",
-                    self.inner.outputs().messages().len(),
-                    outputs.output_messages().len(),
-                    MAX_MESSAGES
-                )
-            });
+            .map_err(|_| BuilderError::OutputOverflow)?;
 
         // 4. Advance tip and consumed count.
         self.cur_tip_blkid = transition.tip_exec_blkid();

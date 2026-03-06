@@ -31,6 +31,10 @@ pub enum BuilderError {
     /// Pending input mismatch when accepting a chunk transition.
     #[error("chunk input at position {position} does not match pending input")]
     InputMismatch { position: usize },
+
+    /// Accumulated output transfers or messages exceeded protocol capacity.
+    #[error("output overflow")]
+    OutputOverflow,
 }
 
 /// Manual impl for this trait due to macro inflexibility, I guess?
