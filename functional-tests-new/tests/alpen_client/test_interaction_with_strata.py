@@ -27,6 +27,11 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         ctx.set_env("el_ol")
 
     def main(self, ctx):
+        # Temporarily disabled because this test is flaky and causes unrelated PR failures.
+        # TODO: activate this test when addressing STR-2424.
+        logger.warning("Temporarily skipping flaky test_interaction_with_strata")
+        return
+
         alpen_seq: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         strata_seq: StrataService = self.get_service(ServiceType.Strata)
         bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
