@@ -251,6 +251,7 @@ mod tests {
 
     struct TestProgram;
 
+    #[expect(clippy::absolute_paths, reason = "conflicting imports")]
     impl SnarkAccountProgram for TestProgram {
         type State = TestState;
         type Msg = TestMsg;
