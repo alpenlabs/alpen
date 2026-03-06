@@ -13699,6 +13699,7 @@ dependencies = [
  "bitcoind-async-client",
  "format_serde_error",
  "jsonrpsee",
+ "serde",
  "serde_json",
  "ssz",
  "strata-asm-params",
