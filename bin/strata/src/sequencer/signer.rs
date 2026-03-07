@@ -3,20 +3,21 @@
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
-use tokio::sync::mpsc;
+use strata_service::ServiceMonitor;
 use tracing::info;
 use zeroize::Zeroize;
 
-use super::{
-    duty_executor::duty_executor_worker, duty_fetcher::duty_fetcher_worker, helpers::load_seqkey,
-};
+use super::{SequencerBuilder, SequencerServiceStatus, helpers::load_seqkey};
 use crate::{args::Args, run_context::RunContext};
 
 /// Default duty poll interval in milliseconds.
 const DEFAULT_DUTY_POLL_INTERVAL_MS: u64 = 1_000;
 
 /// Starts the sequencer signer worker.
-pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result<()> {
+pub(crate) fn start_sequencer_signer(
+    runctx: &RunContext,
+    args: &Args,
+) -> Result<ServiceMonitor<SequencerServiceStatus>> {
     // Get the sequencer handles (must be present when running as sequencer).
     let handles = runctx
         .sequencer_handles()
@@ -37,39 +38,23 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
         .duty_poll_interval
         .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL_MS);
 
-    // Create a channel for duties.
-    let (duty_tx, duty_rx) = mpsc::channel(64);
-
-    // Spawn the duty fetcher worker.
-    runctx.executor().spawn_critical_async(
-        "sequencer-duty-fetcher",
-        duty_fetcher_worker(
-            handles.blockasm_handle().clone(),
-            runctx.storage().clone(),
-            runctx.status_channel().clone(),
-            duty_tx,
-            Duration::from_millis(poll_interval_ms),
-        ),
-    );
-
-    // Spawn the duty executor worker.
-    runctx.executor().spawn_critical_async(
-        "sequencer-duty-executor",
-        duty_executor_worker(
+    let monitor = runctx.task_manager().handle().block_on(
+        SequencerBuilder::new(
             handles.blockasm_handle().clone(),
             handles.envelope_handle().clone(),
             runctx.storage().clone(),
             runctx.fcm_handle().clone(),
-            duty_rx,
-            runctx.task_manager().handle().clone(),
+            runctx.status_channel().clone(),
             sequencer_key.sk,
-        ),
-    );
+            Duration::from_millis(poll_interval_ms),
+        )
+        .launch(runctx.executor()),
+    )?;
 
     // Zeroize the sequencer key.
     sequencer_key.zeroize();
 
     info!(%poll_interval_ms, "Sequencer signer started");
 
-    Ok(())
+    Ok(monitor)
 }
