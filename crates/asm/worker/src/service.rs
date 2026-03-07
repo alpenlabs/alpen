@@ -126,7 +126,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                 .into();
 
             let genesis_manifest = strata_asm_common::AsmManifest::new(
-                pivot_block.height_u64(),
+                pivot_block.height(),
                 *pivot_block.blkid(),
                 wtxids_root.into(),
                 vec![], // TODO: this is not supposed to be empty right?
