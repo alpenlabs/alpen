@@ -351,7 +351,11 @@ class RethFactory(flexitest.Factory):
         if sequencer_reth_rpc is not None:
             cmd.extend(["--sequencer-http", sequencer_reth_rpc])
 
-        props = {"rpc_port": authrpc_port, "eth_rpc_http_port": ethrpc_http_port}
+        props = {
+            "rpc_port": authrpc_port,
+            "eth_rpc_http_port": ethrpc_http_port,
+            "datadir": datadir,
+        }
 
         ethrpc_url = f"ws://localhost:{ethrpc_ws_port}"
 
@@ -389,6 +393,7 @@ class RethFactory(flexitest.Factory):
         svc.create_web3 = _create_web3
         svc.snapshot_datadir = _snapshot_datadir
         svc.restore_snapshot = _restore_snapshot
+        svc.datadir = datadir
 
         return svc
 

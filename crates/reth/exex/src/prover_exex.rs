@@ -57,9 +57,10 @@ impl<
                 .get(&block_number)
                 .map(|block| block.hash())
                 .zip(chain.execution_outcome_at_block(block_number))
+                .map(|(hash, outcome)| (block_number, hash, outcome))
         });
 
-        for (block_hash, outcome) in bundles {
+        for (block_number, block_hash, outcome) in bundles {
             #[cfg(debug_assertions)]
             assert!(outcome.len() == 1, "should only contain single block");
 
@@ -71,7 +72,7 @@ impl<
                 break;
             }
 
-            finished_height = Some(BlockNumHash::new(outcome.first_block(), block_hash))
+            finished_height = Some(BlockNumHash::new(block_number, block_hash))
         }
 
         Ok(finished_height)
