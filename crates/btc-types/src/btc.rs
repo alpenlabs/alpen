@@ -442,7 +442,7 @@ impl BitcoinXOnlyPublicKey {
         &self.0
     }
 
-    /// Convert a [`BitcoinAddress`] into a [`BitcoinXOnlyPublicKey`].
+    /// Convert a [`Address`] into a [`BitcoinXOnlyPublicKey`].
     pub fn from_address(checked_addr: &Address) -> Result<Self, ParseError> {
         if let Some(AddressType::P2tr) = checked_addr.address_type() {
             let script_pubkey = checked_addr.script_pubkey();
