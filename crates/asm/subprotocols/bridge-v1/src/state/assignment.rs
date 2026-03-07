@@ -543,7 +543,7 @@ mod tests {
         };
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
-        let fulfillment_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: L1Height = 100;
         let seed: L1BlockId = arb.generate();
         let current_active_operators = deposit_entry.notary_operators().clone();
 
@@ -577,7 +577,7 @@ mod tests {
         };
 
         let withdrawal_cmd: WithdrawalCommand = arb.generate();
-        let fulfillment_deadline: BitcoinBlockHeight = 100;
+        let fulfillment_deadline: L1Height = 100;
         let seed: L1BlockId = arb.generate();
         let current_active_operators = deposit_entry.notary_operators().clone();
 
