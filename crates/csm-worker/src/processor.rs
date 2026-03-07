@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
-use strata_checkpoint_types::{BatchTransition, Checkpoint, CheckpointSidecar};
+use strata_checkpoint_types::{Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
@@ -60,14 +60,8 @@ fn process_checkpoint_log(
     );
 
     // Create L1Checkpoint for client state
-    let l1_checkpoint = L1Checkpoint::new(
-        checkpoint_update.batch_info().clone(),
-        BatchTransition {
-            epoch,
-            chainstate_transition: *checkpoint_update.chainstate_transition(),
-        },
-        l1_reference.clone(),
-    );
+    let l1_checkpoint =
+        L1Checkpoint::new(checkpoint_update.batch_info().clone(), l1_reference.clone());
 
     // Update the client state with this checkpoint
     update_client_state_with_checkpoint(state, l1_checkpoint, epoch)?;
@@ -167,17 +161,11 @@ fn update_client_state_with_checkpoint(
 /// This will be largely changed as we move to the new OL STF as the checkpoint structure
 /// will be different than the existing ones.
 fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
-    let epoch = update.batch_info().epoch();
-
     // Create empty sidecar - checkpoint was already verified by ASM
     let sidecar = CheckpointSidecar::new(vec![]);
 
     Checkpoint::new(
         update.batch_info().clone(),
-        BatchTransition {
-            epoch,
-            chainstate_transition: *update.chainstate_transition(),
-        },
         Default::default(), // Empty proof - actual proof was already verified by ASM
         sidecar,
     )
@@ -189,7 +177,7 @@ mod tests {
 
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE};
-    use strata_checkpoint_types::{BatchInfo, ChainstateRootTransition};
+    use strata_checkpoint_types::BatchInfo;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_params::{Params, RollupParams, SyncParams};
@@ -394,22 +382,12 @@ mod tests {
             // Create epoch commitment
             let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
 
-            // Create chainstate transition
-            let chainstate_transition = ChainstateRootTransition {
-                pre_state_root: Buf32::from([0u8; 32]),
-                post_state_root: Buf32::from([epoch as u8; 32]),
-            };
-
             // Create checkpoint txid
             let checkpoint_txid: BitcoinTxid = arbgen.generate();
 
             // Create CheckpointUpdate
-            let checkpoint_update = CheckpointUpdate::new(
-                epoch_commitment,
-                batch_info,
-                chainstate_transition,
-                checkpoint_txid,
-            );
+            let checkpoint_update =
+                CheckpointUpdate::new(epoch_commitment, batch_info, checkpoint_txid);
 
             // Create log entry
             let log = AsmLogEntry::from_log(&checkpoint_update).expect("make log");

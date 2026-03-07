@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use strata_db_store_sled::prover::ProofDBSled;
 use strata_db_types::traits::ProofDatabase;
@@ -102,28 +102,7 @@ async fn submit_checkpoint_task(
         return Ok(());
     }
 
-    // Create checkpoint dependencies (ClStf)
-    let cl_stf_deps = operator
-        .create_checkpoint_deps(checkpoint_idx, db)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create checkpoint dependencies: {}", e))?;
-
-    // For each ClStf dependency, create EvmEeStf dependencies and submit recursively
-    for dep_ctx in &cl_stf_deps {
-        if let ProofContext::ClStf(start, end) = dep_ctx {
-            // Create EvmEeStf dependencies for this ClStf
-            operator
-                .cl_stf_operator()
-                .create_cl_stf_deps(*start, *end, db)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to create cl stf dependencies: {}", e))?;
-
-            // Submit ClStf and its EvmEeStf dependencies recursively
-            submit_proof_context_recursive(*dep_ctx, prover_handle, db).await?;
-        }
-    }
-
-    // Execute checkpoint task and await completion (NO POLLING!)
+    // Execute checkpoint task and await completion
     info!(%checkpoint_idx, "Executing checkpoint proof task");
 
     let result = prover_handle
@@ -155,59 +134,6 @@ async fn submit_checkpoint_task(
 
     info!(%checkpoint_idx, "Checkpoint proof submitted to CL");
     Ok(())
-}
-
-/// Recursively submit a proof context and all its dependencies
-fn submit_proof_context_recursive<'a>(
-    proof_ctx: ProofContext,
-    prover_handle: &'a ProverHandle<ProofTask>,
-    db: &'a Arc<ProofDBSled>,
-) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + 'a + Send>> {
-    Box::pin(async move {
-        let proof_key = proof_key_for(proof_ctx);
-
-        // Check if proof already exists
-        if db
-            .get_proof(&proof_key)
-            .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
-            .is_some()
-        {
-            return Ok(());
-        }
-
-        // Get dependencies from database
-        let proof_deps = db
-            .get_proof_deps(proof_ctx)
-            .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
-            .unwrap_or_default();
-
-        // Submit dependency tasks recursively
-        for dep_ctx in &proof_deps {
-            submit_proof_context_recursive(*dep_ctx, prover_handle, db).await?;
-        }
-
-        // Execute main task and await completion
-        info!(?proof_ctx, "Executing dependency proof task");
-
-        let result = prover_handle
-            .execute_task(ProofTask(proof_ctx), zkvm_backend())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to execute task: {}", e))?;
-
-        // Check result
-        match result {
-            TaskResult::Completed { uuid } => {
-                info!(?proof_ctx, %uuid, "Dependency proof completed successfully");
-                Ok(())
-            }
-            TaskResult::Failed { uuid, error } => Err(anyhow::anyhow!(
-                "Dependency proof failed (UUID: {}, ctx: {:?}): {}",
-                uuid,
-                proof_ctx,
-                error
-            )),
-        }
-    })
 }
 
 fn should_update_checkpoint(current: Option<u64>, new: u64) -> bool {

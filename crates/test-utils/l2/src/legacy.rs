@@ -157,7 +157,6 @@ pub fn get_test_signed_checkpoint() -> SignedCheckpoint {
         Checkpoint::new(
             ArbitraryGenerator::new().generate(),
             ArbitraryGenerator::new().generate(),
-            ArbitraryGenerator::new().generate(),
             CheckpointSidecar::new(to_vec(&chstate).unwrap()),
         ),
         ArbitraryGenerator::new().generate(),

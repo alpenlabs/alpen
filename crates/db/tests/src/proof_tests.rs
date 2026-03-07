@@ -2,7 +2,6 @@ use strata_db_types::traits::ProofDatabase;
 use strata_primitives::{
     buf::Buf32,
     evm_exec::EvmEeBlockCommitment,
-    l2::L2BlockCommitment,
     proof::{ProofContext, ProofKey, ProofZkVm},
 };
 use zkaleido::{Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues, ZkVm};
@@ -87,7 +86,8 @@ pub fn test_get_nonexistent_proof_deps(db: &impl ProofDatabase) {
 
 // Helper functions
 fn generate_proof() -> (ProofKey, ProofReceiptWithMetadata) {
-    let proof_context = ProofContext::ClStf(L2BlockCommitment::null(), L2BlockCommitment::null());
+    let proof_context =
+        ProofContext::EvmEeStf(EvmEeBlockCommitment::null(), EvmEeBlockCommitment::null());
     let host = ProofZkVm::Native;
     let proof_key = ProofKey::new(proof_context, host);
     let proof = Proof::default();
@@ -112,7 +112,7 @@ fn generate_proof_context_with_deps() -> (ProofContext, Vec<ProofContext>) {
     let evm_commitment_2 = EvmEeBlockCommitment::new(2, evm_block_2);
 
     // Create main proof context
-    let main_context = ProofContext::ClStf(L2BlockCommitment::null(), L2BlockCommitment::null());
+    let main_context = ProofContext::Checkpoint(1);
 
     // Create dependency proof contexts
     let deps = vec![ProofContext::EvmEeStf(evm_commitment_1, evm_commitment_2)];

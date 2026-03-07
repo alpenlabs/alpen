@@ -8,8 +8,6 @@ zkaleido_sp1_guest_env::entrypoint!(main);
 use strata_proofimpl_checkpoint::process_checkpoint_proof;
 use zkaleido_sp1_guest_env::Sp1ZkVmEnv;
 
-mod vks;
-
 fn main() {
-    process_checkpoint_proof(&Sp1ZkVmEnv, vks::GUEST_CL_STF_ELF_ID)
+    process_checkpoint_proof(&Sp1ZkVmEnv)
 }
