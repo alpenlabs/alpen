@@ -2,7 +2,7 @@
 
 use hex::FromHex;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_primitives::{buf::Buf32, l1::L1BlockId, l2::L2BlockId};
+use strata_primitives::{buf::Buf32, l1::L1BlockId};
 
 /// Length of a hex-encoded block ID (32 bytes = 64 hex characters)
 const HEX_BLOCK_ID_LENGTH: usize = 64;
@@ -25,25 +25,6 @@ pub(crate) fn parse_block_id_hex(hex_input: &str) -> Result<[u8; 32], DisplayedE
     }
 
     <[u8; 32]>::from_hex(hex_str).user_error(format!("Invalid 32-byte hex {hex_str}"))
-}
-
-/// Parses a hex string into an L2BlockId
-///
-/// # Arguments
-/// * `hex_input` - Hex string with or without "0x" prefix
-///
-/// # Returns
-/// * `Ok(L2BlockId)` - Successfully parsed block ID
-/// * `Err(DisplayedError)` - Invalid hex format or length
-///
-/// # Examples
-/// ```
-/// let block_id = parse_l2_block_id("0x1234567890abcdef...")?;
-/// let block_id = parse_l2_block_id("1234567890abcdef...")?;
-/// ```
-pub(crate) fn parse_l2_block_id(hex_input: &str) -> Result<L2BlockId, DisplayedError> {
-    let bytes = parse_block_id_hex(hex_input)?;
-    Ok(L2BlockId::from(Buf32::from(bytes)))
 }
 
 /// Parses a hex string into an L1BlockId
@@ -101,13 +82,6 @@ mod tests {
         let invalid_hex = &invalid_hex.replace('f', "g");
         let result = parse_block_id_hex(invalid_hex);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_l2_block_id() {
-        let valid_hex = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
-        let result = parse_l2_block_id(valid_hex);
-        assert!(result.is_ok());
     }
 
     #[test]

@@ -1,9 +1,12 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{DatabaseBackend, L1WriterDatabase};
+use strata_db_types::{
+    traits::{DatabaseBackend, L1WriterDatabase},
+    types::OLCheckpointStatus,
+};
 use strata_primitives::buf::Buf32;
 
-use super::checkpoint::{get_checkpoint_at_index, get_checkpoint_index_range};
+use super::checkpoint::{get_checkpoint_at_epoch, get_checkpoint_epoch_range};
 use crate::{
     cli::OutputFormat,
     output::{
@@ -51,25 +54,29 @@ pub(crate) fn get_writer_summary(
 
     // Check checkpoint to L1 writer mapping
     let (total_checkpoints, checkpoints_with_l1_entries, checkpoints_without_l1_entries) =
-        if let Some((start_epoch, end_epoch)) = get_checkpoint_index_range(db)? {
-            let total = end_epoch + 1;
+        if let Some((start_epoch, end_epoch)) = get_checkpoint_epoch_range(db)? {
+            let total = u64::from(end_epoch) + 1;
             let mut with_entries = 0;
             let mut without_entries = 0;
 
             // Iterate through all checkpoint epochs
             for epoch in start_epoch..=end_epoch {
-                if let Some(checkpoint_entry) = get_checkpoint_at_index(db, epoch)? {
-                    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-                    let checkpoint_hash = checkpoint_entry.checkpoint.hash();
-
-                    if writer_db
-                        .get_intent_by_id(checkpoint_hash)
-                        .internal_error("Failed to get intent entry")?
-                        .is_some()
-                    {
-                        with_entries += 1;
-                    } else {
-                        without_entries += 1;
+                if let Some(checkpoint_entry) = get_checkpoint_at_epoch(db, epoch)? {
+                    match checkpoint_entry.status {
+                        OLCheckpointStatus::Unsigned => {
+                            without_entries += 1;
+                        }
+                        OLCheckpointStatus::Signed(intent_idx) => {
+                            if writer_db
+                                .get_intent_by_idx(intent_idx)
+                                .internal_error("Failed to get intent entry by index")?
+                                .is_some()
+                            {
+                                with_entries += 1;
+                            } else {
+                                without_entries += 1;
+                            }
+                        }
                     }
                 }
             }

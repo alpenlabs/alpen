@@ -16,11 +16,10 @@ use crate::{
     cli::{Cli, Command},
     cmd::{
         broadcaster::{get_broadcaster_summary, get_broadcaster_tx},
-        chainstate::{get_chainstate, revert_chainstate},
         checkpoint::{get_checkpoint, get_checkpoints_summary, get_epoch_summary},
-        client_state::get_client_state_update,
         l1::{get_l1_manifest, get_l1_summary},
-        l2::{get_l2_block, get_l2_summary},
+        ol::{get_ol_block, get_ol_summary},
+        olstate::{get_ol_state, revert_ol_state},
         syncinfo::get_syncinfo,
         writer::{get_writer_payload, get_writer_summary},
     },
@@ -39,10 +38,10 @@ fn main() {
     let db = db.as_ref();
 
     let result = match cli.cmd {
-        Command::GetChainstate(args) => get_chainstate(db, args),
-        Command::RevertChainstate(args) => revert_chainstate(db, args),
-        Command::GetL2Block(args) => get_l2_block(db, args),
-        Command::GetL2Summary(args) => get_l2_summary(db, args),
+        Command::GetOLState(args) => get_ol_state(db, args),
+        Command::RevertOLState(args) => revert_ol_state(db, args),
+        Command::GetOlBlock(args) => get_ol_block(db, args),
+        Command::GetOlSummary(args) => get_ol_summary(db, args),
         Command::GetL1Manifest(args) => get_l1_manifest(db, args),
         Command::GetL1Summary(args) => get_l1_summary(db, args),
         Command::GetWriterSummary(args) => get_writer_summary(db, args),
@@ -53,7 +52,6 @@ fn main() {
         Command::GetBroadcasterTx(args) => get_broadcaster_tx(db.broadcast_db(), args),
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),
         Command::GetSyncinfo(args) => get_syncinfo(db, args),
-        Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
     };
 
     if let Err(e) = result {

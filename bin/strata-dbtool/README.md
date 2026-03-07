@@ -32,13 +32,11 @@ strata-dbtool [OPTIONS] <COMMAND>
 ### Global Options
 
 - `-d, --datadir <path>` - Node data directory (default: `data`)
-- `-t, --db-type <type>` - Backend DB implementation: `sled` (default: `sled`)
-- `-o, --output-format <format>` - Output format: `porcelain` (default) or `json`
 
 ## Commands
 
 ### `get-syncinfo`
-Shows the latest synchronization information including L1/L2 tips, epochs, and block status.
+Shows the latest synchronization information including L1/OL tips, epochs, and block status.
 
 ```bash
 strata-dbtool get-syncinfo [OPTIONS]
@@ -52,28 +50,11 @@ strata-dbtool get-syncinfo [OPTIONS]
 strata-dbtool get-syncinfo
 ```
 
-### `get-client-state-update`
-Shows client state update information for a given L1 block.
-
-```bash
-strata-dbtool get-client-state-update <block_id> [OPTIONS]
-```
-**Arguments:**
-- `block_id` - L1 block ID (hex string)
-
-**Options:**
-- `-o, --output-format <format>` - Output format (default: porcelain)
-
-**Example:**
-```bash
-strata-dbtool get-client-state-update 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
-```
-
 ### `get-l1-summary`
 Shows a summary of all L1 manifests in the database.
 
 ```bash
-strata-dbtool get-l1-summary [<height_from>] [OPTIONS]
+strata-dbtool get-l1-summary <height_from> [OPTIONS]
 ```
 
 **Arguments:**
@@ -166,43 +147,43 @@ strata-dbtool get-broadcaster-tx <index> [OPTIONS]
 strata-dbtool get-broadcaster-tx 3
 ```
 
-### `get-l2-summary`
-Shows a summary of L2 blocks in the database.
+### `get-ol-summary`
+Shows a summary of OL blocks in the database.
 
 ```bash
-strata-dbtool get-l2-summary [OPTIONS]
+strata-dbtool get-ol-summary [OPTIONS]
 ```
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
-### `get-l2-block`
-Shows detailed information about a specific L2 block.
+### `get-ol-block`
+Shows detailed information about a specific OL block.
 
 ```bash
-strata-dbtool get-l2-block <block_id> [OPTIONS]
+strata-dbtool get-ol-block <block_id> [OPTIONS]
 ```
 
 **Arguments:**
-- `block_id` - L2 block ID (hex string)
+- `block_id` - OL block ID (hex string)
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
 **Example:**
 ```bash
-strata-dbtool get-l2-block 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool get-ol-block 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
 ```
 
 ### `get-checkpoints-summary`
-Shows a summary of all checkpoints in the database.
+Shows a summary of all OL checkpoints in the database.
 
 ```bash
-strata-dbtool get-checkpoints-summary <height_from>  [OPTIONS]
+strata-dbtool get-checkpoints-summary <height_from> [OPTIONS]
 ```
 
 **Arguments:**
-- `height_from` - Start l1 height to query checkpoints from
+- `height_from` - Start L1 height to query checkpoints from
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -213,14 +194,14 @@ strata-dbtool get-checkpoints-summary 10
 ```
 
 ### `get-checkpoint`
-Shows detailed information about a specific checkpoint.
+Shows detailed information about a specific OL checkpoint epoch.
 
 ```bash
-strata-dbtool get-checkpoint <checkpoint_index> [OPTIONS]
+strata-dbtool get-checkpoint <checkpoint_epoch> [OPTIONS]
 ```
 
 **Arguments:**
-- `checkpoint_index` - The checkpoint index (number)
+- `checkpoint_epoch` - Checkpoint epoch (number)
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -230,15 +211,19 @@ strata-dbtool get-checkpoint <checkpoint_index> [OPTIONS]
 strata-dbtool get-checkpoint 5
 ```
 
+**Notes:**
+- Checkpoint status is reported from OL checkpoint DB as `Unsigned` or `Signed`.
+- For `Signed`, output includes `checkpoint.status.intent_index`.
+
 ### `get-epoch-summary`
-Shows detailed information about a specific epoch.
+Shows detailed information about a specific OL epoch summary.
 
 ```bash
-strata-dbtool get-epoch-summary <epoch_index> [OPTIONS]
+strata-dbtool get-epoch-summary <epoch> [OPTIONS]
 ```
 
 **Arguments:**
-- `epoch_index` - The epoch index (number)
+- `epoch` - epoch
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
@@ -248,26 +233,26 @@ strata-dbtool get-epoch-summary <epoch_index> [OPTIONS]
 strata-dbtool get-epoch-summary 5
 ```
 
-### `get-chainstate`
-Shows the current chain state information.
+### `get-ol-state`
+Shows the current OL state information.
 
 ```bash
-strata-dbtool get-chainstate <block_id> [OPTIONS]
+strata-dbtool get-ol-state <block_id> [OPTIONS]
 ```
 
 **Arguments:**
-- `block_id` - L2 block ID (hex string)
+- `block_id` - OL block ID (hex string)
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
 **Example:**
 ```bash
-strata-dbtool get-chainstate 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool get-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
 ```
 
-### `revert-chainstate`
-Reverts the chain state to a specific block ID.
+### `revert-ol-state`
+Reverts the OL state to a specific block ID.
 
 > [!WARNING]
 > 
@@ -290,11 +275,11 @@ Reverts the chain state to a specific block ID.
 > - The checkpoint for the previous epoch may already be confirmed on L1 or have a proof ready (L1 transactions may already be broadcasted or broadcasted soon). If you delete checkpoints and epoch summaries for the previous epoch and earlier, the sequencer may not be able to restart.
 
 ```bash
-strata-dbtool revert-chainstate <block_id> [OPTIONS]
+strata-dbtool revert-ol-state <block_id> [OPTIONS]
 ```
 
 **Arguments:**
-- `block_id` - Target L2 block ID to revert to (hex string)
+- `block_id` - Target OL block ID to revert to (hex string)
 
 **Options:**
 - `-f, --force` - Force execution (without this flag, only a dry run is performed)
@@ -305,30 +290,31 @@ strata-dbtool revert-chainstate <block_id> [OPTIONS]
 
 Dry run (default behavior - shows what would be affected):
 ```bash
-strata-dbtool revert-chainstate 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool revert-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
 ```
 
 Actually execute the revert:
 ```bash
-strata-dbtool revert-chainstate --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool revert-ol-state --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
 ```
 
 Execute revert with block deletion:
 ```bash
-strata-dbtool revert-chainstate -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
 ```
 
 ## Output Formats
 
 ### Porcelain Format (Default)
-Machine-readable, parseable format similar to `git --porcelain`. Each field is displayed as `key=value` pairs, one per line.
+Machine-readable, parseable format similar to `git --porcelain`. Each field is displayed as `key: value` pairs, one per line.
 
 **Example:**
 ```
-l1_tip_height=800000
-l1_tip_block_id=42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
-l2_tip_height=1000
-l2_tip_block_id=858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+l1_tip.height: 800000
+l1_tip.block_id: 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
+ol_tip.height: 1000
+ol_tip.block_id: 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+ol_tip.block_status: Valid
 ```
 
 ### JSON Format
@@ -339,7 +325,7 @@ Structured JSON output for programmatic consumption.
 {
   "l1_tip_height": 800000,
   "l1_tip_block_id": "42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f",
-  "l2_tip_height": 1000,
-  "l2_tip_block_id": "858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b"
+  "ol_tip_height": 1000,
+  "ol_tip_block_id": "858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b"
 }
 ```
