@@ -1,7 +1,5 @@
 use std::str::FromStr;
 
-#[cfg(feature = "bitcoin")]
-use bitcoin::secp256k1::{Error, SecretKey, XOnlyPublicKey, schnorr::Signature};
 use const_hex as hex;
 use ssz_derive::{Decode, Encode};
 use ssz_primitives::FixedBytes;
@@ -108,86 +106,6 @@ internal::impl_rbuf_serde!(RBuf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
 
-#[cfg(feature = "bitcoin")]
-impl From<bitcoin::BlockHash> for Buf32 {
-    fn from(value: bitcoin::BlockHash) -> Self {
-        use bitcoin::hashes::Hash;
-        (*value.as_raw_hash().as_byte_array()).into()
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<bitcoin::Txid> for Buf32 {
-    fn from(value: bitcoin::Txid) -> Self {
-        use bitcoin::hashes::Hash;
-        let bytes: [u8; 32] = *value.as_raw_hash().as_byte_array();
-        bytes.into()
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<&bitcoin::Txid> for Buf32 {
-    fn from(value: &bitcoin::Txid) -> Self {
-        Self::from(*value)
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<Buf32> for bitcoin::Txid {
-    fn from(value: Buf32) -> Self {
-        use bitcoin::hashes::Hash;
-        bitcoin::Txid::from_slice(&value.0).expect("valid txid")
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<bitcoin::Wtxid> for Buf32 {
-    fn from(value: bitcoin::Wtxid) -> Self {
-        use bitcoin::hashes::Hash;
-        let bytes: [u8; 32] = *value.as_raw_hash().as_byte_array();
-        bytes.into()
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<Buf32> for bitcoin::Wtxid {
-    fn from(value: Buf32) -> Self {
-        use bitcoin::hashes::Hash;
-        bitcoin::Wtxid::from_slice(&value.0).expect("valid wtxid")
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<SecretKey> for Buf32 {
-    fn from(value: SecretKey) -> Self {
-        let bytes: [u8; 32] = value.secret_bytes();
-        bytes.into()
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<Buf32> for SecretKey {
-    fn from(value: Buf32) -> Self {
-        SecretKey::from_slice(value.0.as_slice()).expect("could not convert Buf32 into SecretKey")
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl TryFrom<Buf32> for XOnlyPublicKey {
-    type Error = Error;
-
-    fn try_from(value: Buf32) -> Result<Self, Self::Error> {
-        XOnlyPublicKey::from_slice(&value.0)
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<XOnlyPublicKey> for Buf32 {
-    fn from(value: XOnlyPublicKey) -> Self {
-        Self::from(value.serialize())
-    }
-}
-
 impl From<FixedBytes<32>> for Buf32 {
     fn from(value: FixedBytes<32>) -> Self {
         Buf32(value.0)
@@ -211,13 +129,6 @@ impl From<&Buf32> for &FixedBytes<32> {
     fn from(value: &Buf32) -> Self {
         // SAFETY: Buf32 and FixedBytes<32> have the same layout
         unsafe { &*(value as *const Buf32 as *const FixedBytes<32>) }
-    }
-}
-
-#[cfg(feature = "bitcoin")]
-impl From<Signature> for Buf64 {
-    fn from(value: Signature) -> Self {
-        value.serialize().into()
     }
 }
 

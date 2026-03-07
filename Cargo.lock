@@ -1180,6 +1180,7 @@ dependencies = [
  "async-trait",
  "bitcoin",
  "eyre",
+ "strata-btc-types",
  "strata-btcio",
  "strata-db-types",
  "strata-identifiers",
@@ -1297,6 +1298,7 @@ dependencies = [
  "futures",
  "mockall",
  "strata-acct-types",
+ "strata-btc-types",
  "strata-codec",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
@@ -14190,6 +14192,7 @@ dependencies = [
  "musig2",
  "rand 0.8.5",
  "reqwest 0.12.28",
+ "strata-btc-types",
  "strata-btc-verification",
  "strata-config",
  "strata-csm-types",
@@ -14527,7 +14530,6 @@ name = "strata-csm-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitcoin",
  "serde",
  "serde_json",
  "strata-asm-common",
@@ -14847,7 +14849,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bincode",
- "bitcoin",
  "borsh",
  "const-hex",
  "hex",
@@ -14976,7 +14977,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bitcoin",
  "proptest",
  "schemars 1.2.0",
  "serde",
@@ -15598,6 +15598,7 @@ dependencies = [
  "serde_json",
  "strata-asm-proto-bridge-v1",
  "strata-bridge-types",
+ "strata-btc-types",
  "strata-checkpoint-types",
  "strata-csm-types",
  "strata-db-types",
@@ -15888,6 +15889,7 @@ dependencies = [
  "bitcoind-async-client",
  "hex",
  "strata-asm-common",
+ "strata-btc-types",
  "strata-btc-verification",
  "strata-btcio",
  "strata-identifiers",

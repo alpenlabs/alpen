@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-codec.workspace = true
-strata-identifiers = { workspace = true, features = ["bitcoin"] }
+strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 
 arbitrary.workspace = true
