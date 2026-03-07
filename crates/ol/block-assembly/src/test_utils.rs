@@ -199,7 +199,7 @@ impl<'a> StorageInboxMmr<'a> {
     pub(crate) fn add_message(&mut self, message: MessageEntry) -> u64 {
         let mmr_handle = self
             .storage
-            .global_mmr()
+            .mmr_index()
             .as_ref()
             .get_handle(MmrId::SnarkMsgInbox(self.account_id));
 
@@ -250,7 +250,7 @@ impl<'a> StorageAsmMmr<'a> {
 
     /// Adds a header hash to the storage MMR and tracks it.
     pub(crate) fn add_header(&mut self, hash: Hash) -> u64 {
-        let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
+        let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
         let idx = mmr_handle.append_leaf_blocking(hash).unwrap();
         self.entries.push(hash);
         self.indices.push(idx);
@@ -844,7 +844,7 @@ fn setup_manifests_in_state_and_storage(
     state: &mut OLState,
     manifests: Vec<AsmManifest>,
 ) -> (Vec<Hash>, Vec<u64>) {
-    let mmr_handle = storage.global_mmr().as_ref().get_handle(MmrId::Asm);
+    let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
 
     let mut hashes = Vec::with_capacity(manifests.len());
     let mut indices = Vec::with_capacity(manifests.len());

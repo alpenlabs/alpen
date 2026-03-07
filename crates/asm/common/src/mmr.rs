@@ -67,6 +67,11 @@ impl AsmHistoryAccumulatorState {
         self.offset
     }
 
+    /// Returns the current number of leaves in the manifest MMR.
+    pub fn num_entries(&self) -> u64 {
+        self.manifest_mmr.num_entries()
+    }
+
     /// Returns the L1 block height of the last manifest inserted into the MMR.
     ///
     /// Returns the genesis height if the MMR is empty.

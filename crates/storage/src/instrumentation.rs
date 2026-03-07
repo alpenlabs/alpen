@@ -29,8 +29,8 @@ pub(crate) mod components {
     /// MempoolDatabase operations. Fields: tx_id, priority
     pub(crate) const STORAGE_MEMPOOL: &str = "storage:mempool";
 
-    /// GlobalMmrDatabase operations. Fields: mmr_size, peak_count
-    pub(crate) const STORAGE_GLOBAL_MMR: &str = "storage:global_mmr";
+    /// MmrIndexDatabase operations. Fields: mmr_id, node_pos
+    pub(crate) const STORAGE_MMR_INDEX: &str = "storage:mmr_index";
 
     /// L1BroadcastDatabase operations. Fields: tx_id, broadcast_index
     pub(crate) const STORAGE_L1_BROADCAST: &str = "storage:l1_broadcast";

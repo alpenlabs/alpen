@@ -12,7 +12,7 @@ use strata_ol_stf::ExecError;
 pub enum BlockAssemblyError {
     /// Database operation failed.
     #[error("db: {0}")]
-    Database(#[from] DbError),
+    Db(#[from] DbError),
 
     /// Various account errors.
     #[error("acct: {0}")]
@@ -42,14 +42,6 @@ pub enum BlockAssemblyError {
         actual: Hash,
     },
 
-    /// L1 header claim references non-existent MMR leaf.
-    #[error("L1 header leaf not found at index {0}")]
-    L1HeaderLeafNotFound(u64),
-
-    /// Inbox message leaf not found in MMR.
-    #[error("inbox leaf not found at index {idx} for account {account_id}")]
-    InboxLeafNotFound { idx: u64, account_id: AccountId },
-
     /// Inbox message hash does not match MMR entry.
     #[error(
         "inbox hash mismatch at index {idx} for account {account_id}: expected {expected}, got {actual}"
@@ -60,10 +52,6 @@ pub enum BlockAssemblyError {
         expected: Hash,
         actual: Hash,
     },
-
-    /// Invalid MMR range requested.
-    #[error("invalid MMR range {start}..{end}")]
-    InvalidMmrRange { start: u64, end: u64 },
 
     /// Account not found when validating transaction.
     #[error("account not found: {0}")]

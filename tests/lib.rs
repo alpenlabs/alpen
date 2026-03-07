@@ -21,6 +21,7 @@ use strata_asm_worker as _;
 use strata_bridge_types as _;
 use strata_btc_types as _;
 use strata_crypto as _;
+use strata_db_types as _;
 use strata_l1_txfmt as _;
 use strata_merkle as _;
 use strata_params as _;

@@ -8,7 +8,7 @@ use std::{
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTransaction,
     OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
@@ -80,16 +80,24 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         BlockAssemblyError::InvalidAccumulatorClaim(_)
         | BlockAssemblyError::Acct(_)
         | BlockAssemblyError::L1HeaderHashMismatch { .. }
-        | BlockAssemblyError::L1HeaderLeafNotFound(_)
-        | BlockAssemblyError::InboxLeafNotFound { .. }
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
-        | BlockAssemblyError::InvalidMmrRange { .. }
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
 
-        // Block assembly internal errors (not consensus-related)
+        BlockAssemblyError::Db(db_err) => match db_err {
+            DbError::MmrLeafNotFound(_)
+            | DbError::MmrLeafNotFoundForAccount(_, _)
+            | DbError::MmrNodeNotFound(_)
+            | DbError::MmrInvalidRange { .. }
+            | DbError::MmrIndexOutOfRange { .. }
+            | DbError::MmrPayloadNotFound(_)
+            | DbError::MmrPositionOutOfBounds { .. } => MempoolTxInvalidReason::Invalid,
+            DbError::MmrPreconditionFailed { .. } => MempoolTxInvalidReason::Failed,
+            _ => MempoolTxInvalidReason::Failed,
+        },
+
+        // Block assembly internal errors (not consensus-related).
         BlockAssemblyError::BlockConstruction(_)
-        | BlockAssemblyError::Database(_)
         | BlockAssemblyError::ChainTypes(_)
         | BlockAssemblyError::InvalidRange { .. }
         | BlockAssemblyError::InvalidSignature(_)
@@ -149,7 +157,7 @@ where
         .fetch_state_for_tip(parent_commitment)
         .await?
         .ok_or_else(|| {
-            BlockAssemblyError::Database(DbError::Other(format!(
+            BlockAssemblyError::Db(DbError::Other(format!(
                 "Parent state not found for commitment: {parent_commitment}"
             )))
         })?;
@@ -240,7 +248,7 @@ where
     // Fetch parent block using BlockAssemblyAnchorContext trait
     let parent_blkid = *parent_commitment.blkid();
     let parent_block = ctx.fetch_ol_block(parent_blkid).await?.ok_or_else(|| {
-        BlockAssemblyError::Database(DbError::Other(format!(
+        BlockAssemblyError::Db(DbError::Other(format!(
             "Parent block not found for blkid: {parent_blkid}"
         )))
     })?;
@@ -565,7 +573,16 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
         .new_proof_state()
         .next_inbox_msg_idx()
         .saturating_sub(messages.len() as u64);
-    let inbox_proofs = proof_gen.generate_inbox_proofs(target, messages, start_idx)?;
+    let inbox_leaf_count = state
+        .get_account_state(target)
+        .map_err(BlockAssemblyError::Acct)?
+        .ok_or(BlockAssemblyError::AccountNotFound(target))?
+        .as_snark_account()
+        .map_err(BlockAssemblyError::Acct)?
+        .inbox_mmr()
+        .num_entries();
+    let inbox_proofs =
+        proof_gen.generate_inbox_proofs_at(target, messages, start_idx, inbox_leaf_count)?;
 
     // Generate L1 header proofs using AccumulatorProofGenerator
     let l1_header_refs = operation.ledger_refs().l1_header_refs();
@@ -687,6 +704,7 @@ mod tests {
         let messages = generate_message_entries(2, source_account);
         let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
         inbox_mmr.add_messages(messages.clone());
+        insert_inbox_messages_into_state(&mut state, account_id, &messages);
 
         // Create tx using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
@@ -810,8 +828,12 @@ mod tests {
         assert!(result.is_err(), "Should fail with nonexistent index");
         let err = result.unwrap_err();
         assert!(
-            matches!(&err, BlockAssemblyError::L1HeaderLeafNotFound(_)),
-            "Expected L1HeaderLeafNotFound, got: {:?}",
+            matches!(
+                &err,
+                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
+                    | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
+            ),
+            "Expected Db(MmrIndexOutOfRange|MmrLeafNotFound), got: {:?}",
             err
         );
     }
@@ -835,7 +857,7 @@ mod tests {
             .build();
 
         let ctx = create_test_context(storage.clone());
-        // Conversion should fail with L1HeaderLeafNotFound
+        // Conversion should fail with an index/range DB error.
         let mempool_payload = match mempool_tx.payload() {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
@@ -845,8 +867,12 @@ mod tests {
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, BlockAssemblyError::L1HeaderLeafNotFound(_)),
-            "Expected L1HeaderLeafNotFound, got: {:?}",
+            matches!(
+                err,
+                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
+                    | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
+            ),
+            "Expected Db(MmrIndexOutOfRange|MmrLeafNotFound), got: {:?}",
             err
         );
     }
@@ -876,12 +902,12 @@ mod tests {
             reason
         );
 
-        // Verify Database errors map to Failed (infrastructure error)
-        let db_err = BlockAssemblyError::Database(DbError::Other("test error".to_string()));
+        // Verify non-MMR Db errors map to Failed (infrastructure error)
+        let db_err = BlockAssemblyError::Db(DbError::Other("test error".to_string()));
         let reason = block_assembly_error_to_mempool_reason(&db_err);
         assert!(
             matches!(reason, MempoolTxInvalidReason::Failed),
-            "Database errors should map to Failed, got: {:?}",
+            "Db errors should map to Failed, got: {:?}",
             reason
         );
 
@@ -950,7 +976,7 @@ mod tests {
             "Should fail when claiming inbox messages that don't exist"
         );
         let err = result.unwrap_err();
-        // Could be InboxLeafNotFound/InboxEntryHashMismatch from MMR or Acct error
+        // Could be Db(MmrLeafNotFound*)/InboxEntryHashMismatch from MMR or Acct error.
         let reason = block_assembly_error_to_mempool_reason(&err);
         assert!(
             matches!(reason, MempoolTxInvalidReason::Invalid),
@@ -1001,9 +1027,11 @@ mod tests {
                 err,
                 BlockAssemblyError::Acct(AcctError::InvalidMsgIndex { .. })
                     | BlockAssemblyError::InboxEntryHashMismatch { .. }
-                    | BlockAssemblyError::InboxLeafNotFound { .. }
+                    | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
+                    | BlockAssemblyError::Db(DbError::MmrLeafNotFoundForAccount(_, _))
+                    | BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
             ),
-            "Expected Acct(InvalidMsgIndex) or inbox MMR error, got: {:?}",
+            "Expected Acct(InvalidMsgIndex) or MMR db error, got: {:?}",
             err
         );
     }
