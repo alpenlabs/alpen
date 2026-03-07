@@ -112,7 +112,7 @@ pub fn build_empty_chain(
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
-                (state.last_l1_height() + 1) as u64, // Next L1 height after state's last seen
+                (state.last_l1_height() + 1), // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
@@ -212,7 +212,7 @@ pub fn build_chain_with_transactions(
 
         let components = if is_terminal {
             let dummy_manifest = AsmManifest::new(
-                (state.last_l1_height() + 1) as u64, // Next L1 height after state's last seen
+                (state.last_l1_height() + 1), // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
