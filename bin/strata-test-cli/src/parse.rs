@@ -3,7 +3,7 @@ use bdk_wallet::bitcoin::{
     XOnlyPublicKey,
 };
 use strata_crypto::{aggregate_schnorr_keys, EvenSecretKey};
-use strata_primitives::{buf::Buf32, l1::BitcoinAddress};
+use strata_primitives::buf::Buf32;
 
 use crate::error::Error;
 
@@ -37,11 +37,11 @@ pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<Even
 /// * `network` - Bitcoin network (mainnet, testnet, regtest, etc.)
 ///
 /// # Returns
-/// * `Result<(BitcoinAddress, XOnlyPublicKey), Error>` - Taproot address and internal pubkey
+/// * `Result<(Address, XOnlyPublicKey), Error>` - Taproot address and internal pubkey
 pub(crate) fn generate_taproot_address(
     operator_wallet_pks: &[Buf32],
     network: Network,
-) -> Result<(BitcoinAddress, XOnlyPublicKey), Error> {
+) -> Result<(Address, XOnlyPublicKey), Error> {
     // Aggregate the operator public keys into a single x-only pubkey
     let x_only_pub_key = aggregate_schnorr_keys(operator_wallet_pks.iter())
         .map_err(|e| Error::TxBuilder(format!("Failed to aggregate keys: {}", e)))?;
@@ -55,9 +55,6 @@ pub(crate) fn generate_taproot_address(
 
     // Create the P2TR address
     let addr = Address::p2tr(SECP256K1, x_only_pub_key, merkle_root, network);
-    let addr = BitcoinAddress::parse(&addr.to_string(), network)
-        .map_err(|e| Error::TxBuilder(format!("Failed to parse address: {}", e)))?;
-
     Ok((addr, x_only_pub_key))
 }
 
