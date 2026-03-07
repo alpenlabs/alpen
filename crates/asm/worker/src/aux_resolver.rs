@@ -170,7 +170,7 @@ impl<'a> AuxDataResolver<'a> {
 
         debug!(count = ranges.len(), "Resolving manifest hash ranges");
 
-        let genesis_height = self.l1_genesis.height_u64();
+        let genesis_height = self.l1_genesis.height() as u64;
 
         let mut resolved = Vec::new();
 

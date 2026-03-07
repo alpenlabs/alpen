@@ -62,7 +62,7 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
                 // Create genesis anchor state.
                 let genesis_l1_view = &self.asm_params.l1_view;
                 let empty_accumulator =
-                    AsmHistoryAccumulatorState::new(genesis_l1_view.height_u64());
+                    AsmHistoryAccumulatorState::new(genesis_l1_view.height() as u64);
                 let state = AnchorState {
                     chain_view: ChainViewState {
                         pow_state: HeaderVerificationState::new(

@@ -292,7 +292,7 @@ pub struct RpcCheckpointL1Ref {
 impl From<CheckpointL1Ref> for RpcCheckpointL1Ref {
     fn from(l1ref: CheckpointL1Ref) -> Self {
         Self {
-            block_height: l1ref.l1_commitment.height_u64(),
+            block_height: l1ref.l1_commitment.height() as u64,
             block_id: l1ref.l1_commitment.blkid().to_block_hash(),
             txid: l1ref.txid.to_txid(),
             wtxid: l1ref.wtxid.to_wtxid(),

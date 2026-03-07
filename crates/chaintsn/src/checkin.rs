@@ -96,8 +96,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
         process_asm_logs(state, &mf)?;
 
         // Advance the verified L1 tip to the latest manifest we've processed.
-        let verified_blk = L1BlockCommitment::from_height_u64(mf.height(), *mf.blkid())
-            .expect("height should be valid");
+        let verified_blk = L1BlockCommitment::new(mf.height(), *mf.blkid());
         state.update_verified_blk(verified_blk);
     }
 

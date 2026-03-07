@@ -199,6 +199,6 @@ impl BatchInfo {
     /// if the height is <= the checkpoint's final L1 height.
     pub fn l1_height_at_or_before_end(&self, height: u64) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
-        height <= last_l1_commitment.height_u64()
+        height <= last_l1_commitment.height() as u64
     }
 }

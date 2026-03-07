@@ -18,7 +18,7 @@ impl L1ViewState {
     /// Creates a new instance with the genesis trigger L1 block already ingested.
     pub fn new_at_genesis(genesis_blk: L1BlockCommitment) -> Self {
         Self {
-            genesis_height: genesis_blk.height_u64(),
+            genesis_height: genesis_blk.height() as u64,
             verified_blk: genesis_blk,
         }
     }
@@ -28,7 +28,7 @@ impl L1ViewState {
     }
 
     pub fn safe_height(&self) -> u64 {
-        self.verified_blk.height_u64()
+        self.verified_blk.height() as u64
     }
 
     /// Gets the safe block as a [`L1BlockCommitment`].
