@@ -1,6 +1,6 @@
 use strata_identifiers::AccountId;
 use strata_ol_chain_types::L2BlockId;
-use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
+use strata_primitives::{L1Height, epoch::EpochCommitment, l1::L1BlockId};
 use strata_storage_common::exec::OpsError;
 use thiserror::Error;
 use typed_sled::error::Error;
@@ -18,7 +18,7 @@ pub enum DbError {
     EntryAlreadyExists,
 
     #[error("tried to insert into {0} out-of-order index {1}")]
-    OooInsert(&'static str, u64),
+    OooInsert(&'static str, L1Height),
 
     /// (type, missing, start, end)
     #[error("missing {0} block {1} in range {2}..{3}")]
@@ -28,7 +28,7 @@ pub enum DbError {
     MissingL1BlockManifest(L1BlockId),
 
     #[error("missing L1 block (height {0})")]
-    MissingL1Block(u64),
+    MissingL1Block(L1Height),
 
     #[error("L1 canonical chain is empty")]
     L1CanonicalChainEmpty,
@@ -37,10 +37,10 @@ pub enum DbError {
     OLCanonicalChainEmpty,
 
     #[error("Revert height {0} above chain tip height {0}")]
-    L1InvalidRevertHeight(u64, u64),
+    L1InvalidRevertHeight(L1Height, L1Height),
 
     #[error("Block does not extend canonical chain tip")]
-    L1InvalidNextBlock(u64, L1BlockId),
+    L1InvalidNextBlock(L1Height, L1BlockId),
 
     #[error("missing L2 block (id {0})")]
     MissingL2Block(L2BlockId),

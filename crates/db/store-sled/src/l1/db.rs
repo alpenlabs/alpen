@@ -1,6 +1,6 @@
 use strata_asm_common::AsmManifest;
 use strata_db_types::{DbResult, traits::*};
-use strata_primitives::l1::L1BlockId;
+use strata_primitives::{L1Height, l1::L1BlockId};
 use typed_sled::batch::SledBatch;
 
 use super::schemas::{L1BlockSchema, L1BlocksByHeightSchema, L1CanonicalBlockSchema};
@@ -18,7 +18,7 @@ define_sled_database!(
 );
 
 impl L1DBSled {
-    pub fn get_latest_block(&self) -> DbResult<Option<(u64, L1BlockId)>> {
+    pub fn get_latest_block(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
         Ok(self.l1_canonical_tree.last()?)
     }
 }
@@ -44,11 +44,11 @@ impl L1Database for L1DBSled {
             .map_err(to_db_error)
     }
 
-    fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()> {
+    fn set_canonical_chain_entry(&self, height: L1Height, blockid: L1BlockId) -> DbResult<()> {
         Ok(self.l1_canonical_tree.insert(&height, &blockid)?)
     }
 
-    fn remove_canonical_chain_entries(&self, start_height: u64, end_height: u64) -> DbResult<()> {
+    fn remove_canonical_chain_entries(&self, start_height: L1Height, end_height: L1Height) -> DbResult<()> {
         let mut batch = SledBatch::<L1CanonicalBlockSchema>::new();
         for height in (start_height..=end_height).rev() {
             batch.remove(height)?;
@@ -58,7 +58,7 @@ impl L1Database for L1DBSled {
         Ok(())
     }
 
-    fn prune_to_height(&self, end_height: u64) -> DbResult<()> {
+    fn prune_to_height(&self, end_height: L1Height) -> DbResult<()> {
         let earliest = self.l1_blks_height_tree.first()?.map(first);
         let Some(start_height) = earliest else {
             // empty db
@@ -90,14 +90,14 @@ impl L1Database for L1DBSled {
         Ok(())
     }
 
-    fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>> {
+    fn get_canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
         self.get_latest_block()
     }
 
     fn get_canonical_blockid_range(
         &self,
-        start_idx: u64,
-        end_idx: u64,
+        start_idx: L1Height,
+        end_idx: L1Height,
     ) -> DbResult<Vec<L1BlockId>> {
         let mut result = Vec::new();
         for height in start_idx..end_idx {
@@ -108,7 +108,7 @@ impl L1Database for L1DBSled {
         Ok(result)
     }
 
-    fn get_canonical_blockid_at_height(&self, height: u64) -> DbResult<Option<L1BlockId>> {
+    fn get_canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>> {
         Ok(self.l1_canonical_tree.get(&height)?)
     }
 
