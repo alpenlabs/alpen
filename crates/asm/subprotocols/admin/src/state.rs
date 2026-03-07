@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::{AdministrationSubprotoParams, Role};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
+use strata_primitives::L1Height;
 
 use crate::{
     authority::MultisigAuthority, error::AdministrationError, queued_update::QueuedUpdate,
@@ -111,7 +112,7 @@ impl AdministrationSubprotoState {
 
     /// Process all queued updates and remove any whose `activation_height` equals `current_height`
     /// from `queued`.
-    pub fn process_queued(&mut self, current_height: u64) -> Vec<QueuedUpdate> {
+    pub fn process_queued(&mut self, current_height: L1Height) -> Vec<QueuedUpdate> {
         let (ready, rest): (Vec<_>, Vec<_>) = take(&mut self.queued)
             .into_iter()
             .partition(|u| u.activation_height() <= current_height);
@@ -194,7 +195,7 @@ mod tests {
     }
 
     /// Helper to seed queued updates with specific activation heights
-    fn seed_queued(ids: &[u32], activation_heights: &[u64]) -> AdministrationSubprotoState {
+    fn seed_queued(ids: &[u32], activation_heights: &[u32]) -> AdministrationSubprotoState {
         let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
         let mut state = AdministrationSubprotoState::new(&config);
@@ -210,7 +211,7 @@ mod tests {
     #[test]
     fn test_process_queued_table() {
         struct Case {
-            current: u64,
+            current: u32,
             want_queued: Vec<u32>,
             want_ready: Vec<u32>,
         }

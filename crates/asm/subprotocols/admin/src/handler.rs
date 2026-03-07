@@ -10,7 +10,7 @@ use strata_asm_txs_admin::{
     parser::SignedPayload,
 };
 use strata_predicate::PredicateKey;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{L1Height, buf::Buf32};
 
 use crate::{
     error::AdministrationError, queued_update::QueuedUpdate, state::AdministrationSubprotoState,
@@ -27,7 +27,7 @@ use crate::{
 pub(crate) fn handle_pending_updates(
     state: &mut AdministrationSubprotoState,
     relayer: &mut impl MsgRelayer,
-    current_height: u64,
+    current_height: L1Height,
 ) {
     // Get all the update actions that are ready to be enacted
     let queued_updates = state.process_queued(current_height);
@@ -102,7 +102,7 @@ pub(crate) fn handle_pending_updates(
 pub(crate) fn handle_action(
     state: &mut AdministrationSubprotoState,
     payload: SignedPayload,
-    current_height: u64,
+    current_height: L1Height,
     relayer: &mut impl MsgRelayer,
     max_seqno_gap: NonZero<u8>,
 ) -> Result<(), AdministrationError> {
@@ -142,7 +142,7 @@ pub(crate) fn handle_action(
                 }
                 action => {
                     // For all other update types, add to the queue with a future activation height
-                    let activation_height = current_height + state.confirmation_depth() as u64;
+                    let activation_height = current_height + state.confirmation_depth() as u32;
                     let queued_update = QueuedUpdate::new(id, action, activation_height);
                     state.enqueue(queued_update);
                 }
@@ -350,7 +350,7 @@ mod tests {
 
             assert_eq!(
                 queued_update.activation_height(),
-                current_height + params.confirmation_depth as u64
+                current_height + params.confirmation_depth as u32
             );
         }
     }
