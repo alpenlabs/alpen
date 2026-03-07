@@ -48,7 +48,7 @@ impl Subprotocol for AdministrationSubprotocol {
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
     ) {
-        let current_height = l1ref.height_u64();
+        let current_height = l1ref.height();
 
         // Phase 1: Execute any pending updates that have reached their activation height
         handle_pending_updates(state, relayer, current_height);

@@ -62,7 +62,7 @@ impl WorkerContext for AsmWorkerCtx {
                 if bid == *blockid {
                     return self
                         .handle
-                        .block_on(self.bitcoin_client.get_block_at(height))
+                        .block_on(self.bitcoin_client.get_block_at(height.into()))
                         .map_err(|_| WorkerError::MissingL1Block(*blockid));
                 }
             }

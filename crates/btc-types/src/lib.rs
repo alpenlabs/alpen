@@ -12,6 +12,3 @@ pub use convert::*;
 pub use errors::*;
 pub use genesis::*;
 pub use params::*;
-
-/// L1 block height type.
-pub type L1Height = u32;

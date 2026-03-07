@@ -18,7 +18,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
         L1Event::RevertTo(block) => {
             // L1 reorgs will be handled in L2 STF, we just have to reflect
             // what the client is telling us in the database.
-            let height = block.height_u64();
+            let height = block.height();
             ctx.storage
                 .l1()
                 .revert_canonical_chain_async(height)
@@ -70,7 +70,5 @@ async fn handle_blockdata<R: Reader>(
     info!(%height, %l1blockid, "stored L1 chain tracking data");
 
     // Create a sync event - the ASM worker will listen to this and create manifests
-    Ok(Option::Some(
-        L1BlockCommitment::from_height_u64(height, l1blockid).expect("valid height"),
-    ))
+    Ok(Option::Some(L1BlockCommitment::new(height, l1blockid)))
 }

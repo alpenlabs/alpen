@@ -21,16 +21,16 @@ use strata_btc_types::BlockHashExt;
 use strata_btc_verification::HeaderVerificationState;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
-use strata_primitives::{buf::Buf32, l1::GenesisL1View};
+use strata_primitives::{buf::Buf32, l1::GenesisL1View, L1Height};
 use tokio::runtime;
 
 #[derive(Debug)]
 pub struct BtcChainSegment {
     pub headers: Vec<Header>,
-    pub start: u64,
-    pub end: u64,
-    pub custom_blocks: HashMap<u64, Block>,
-    pub custom_headers: HashMap<u64, Header>,
+    pub start: L1Height,
+    pub end: L1Height,
+    pub custom_blocks: HashMap<L1Height, Block>,
+    pub custom_headers: HashMap<L1Height, Header>,
     pub idx_by_blockhash: HashMap<BlockHash, usize>,
 }
 
@@ -56,7 +56,7 @@ impl BtcChainSegment {
             headers.push(header);
         }
 
-        let custom_headers: HashMap<u64, Header> = vec![(38304, "01000000858a5c6d458833aa83f7b7e56d71c604cb71165ebb8104b82f64de8d00000000e408c11029b5fdbb92ea0eeb8dfa138ffa3acce0f69d7deebeb1400c85042e01723f6b4bc38c001d09bd8bd5")].into_iter().map(|(h, raw_block)| {
+        let custom_headers: HashMap<L1Height, Header> = vec![(38304, "01000000858a5c6d458833aa83f7b7e56d71c604cb71165ebb8104b82f64de8d00000000e408c11029b5fdbb92ea0eeb8dfa138ffa3acce0f69d7deebeb1400c85042e01723f6b4bc38c001d09bd8bd5")].into_iter().map(|(h, raw_block)| {
             let header_bytes = hex::decode(raw_block).unwrap();
             let header: Header = consensus::deserialize(&header_bytes).unwrap();
             (h, header)
@@ -70,7 +70,7 @@ impl BtcChainSegment {
             .collect::<HashMap<BlockHash, usize>>();
 
         // This custom blocks are chose because this is where the first difficulty happened
-        let custom_blocks: HashMap<u64, Block> = vec![
+        let custom_blocks: HashMap<L1Height, Block> = vec![
         (40320, "010000001a231097b6ab6279c80f24674a2c8ee5b9a848e1d45715ad89b6358100000000a822bafe6ed8600e3ffce6d61d10df1927eafe9bbf677cb44c4d209f143c6ba8db8c784b5746651cce2221180101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff08045746651c02db02ffffffff0100f2052a010000004341046477f88505bef7e3c1181a7e3975c4cd2ac77ffe23ea9b28162afbb63bd71d3f7c3a07b58cf637f1ec68ed532d5b6112d57a9744010aae100e4a48cd831123b8ac00000000"),
         (40321, "0100000045720d24eae33ade0d10397a2e02989edef834701b965a9b161e864500000000993239a44a83d5c427fd3d7902789ea1a4d66a37d5848c7477a7cf47c2b071cd7690784b5746651c3af7ca030101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff08045746651c02db00ffffffff0100f2052a01000000434104c9f513361104db6a84fb6d5b364ba57a27cd19bd051239bf750d8999c6b437220df8fea6b932a248df3cad1fdebb501791e02b7b893a44718d696542ba92a0acac00000000"),
         (40322, "01000000fd1133cd53d00919b0bd77dd6ca512c4d552a0777cc716c00d64c60d0000000014cf92c7edbe8a75d1e328b4fec0d6143764ecbd0f5600aba9d22116bf165058e590784b5746651c1623dbe00101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff08045746651c020509ffffffff0100f2052a010000004341043eb751f57bd4839a8f2922d5bf1ed15ade9b161774658fb39801f0b9da9c881f226fbe4ee0c240915f17ce5255dd499075ab49b199a7b1f898fb20cc735bc45bac00000000"),
@@ -98,7 +98,7 @@ impl BtcChainSegment {
 
 impl BtcChainSegment {
     /// Retrieve a block at a given height.
-    pub fn get_block_at(&self, height: u64) -> ClientResult<Block> {
+    pub fn get_block_at(&self, height: L1Height) -> ClientResult<Block> {
         if let Some(block) = self.custom_blocks.get(&height) {
             Ok(block.clone())
         } else {
@@ -109,7 +109,7 @@ impl BtcChainSegment {
     }
 
     /// Retrieve a block at a given height.
-    pub fn get_block_header_at(&self, height: u64) -> ClientResult<Header> {
+    pub fn get_block_header_at(&self, height: L1Height) -> ClientResult<Header> {
         if let Some(header) = self.custom_headers.get(&height) {
             return Ok(*header);
         }
@@ -134,7 +134,7 @@ impl BtcChainSegment {
         Ok(self.headers[*idx])
     }
 
-    pub fn get_block_manifest(&self, height: u64) -> AsmManifest {
+    pub fn get_block_manifest(&self, height: L1Height) -> AsmManifest {
         let header = self.get_block_header_at(height).unwrap();
         let blkid = header.block_hash().to_l1_block_id();
         let wtxs_root = WtxidsRoot::from(Buf32::from(
@@ -173,7 +173,7 @@ impl Reader for BtcChainSegment {
     async fn get_block_height(&self, hash: &BlockHash) -> ClientResult<u64> {
         for (height, block) in &self.custom_blocks {
             if &block.block_hash() == hash {
-                return Ok(*height);
+                return Ok(*height as u64);
             }
         }
         Err(ClientError::Body(format!(
@@ -183,23 +183,23 @@ impl Reader for BtcChainSegment {
 
     /// Retrieve a block at a given height.
     async fn get_block_at(&self, height: u64) -> ClientResult<Block> {
-        self.get_block_at(height)
+        self.get_block_at(height as L1Height)
     }
 
     /// Retrieve a block at a given height.
     async fn get_block_header_at(&self, height: u64) -> ClientResult<Header> {
-        self.get_block_header_at(height)
+        self.get_block_header_at(height as L1Height)
     }
 
     /// Return the height of the best (most-work) block.
     async fn get_block_count(&self) -> ClientResult<u64> {
         // In this segment, we assume the tip is at `end - 1`.
-        Ok(self.end - 1)
+        Ok((self.end - 1) as u64)
     }
 
     /// Retrieve the block hash for the block at the given height.
     async fn get_block_hash(&self, height: u64) -> ClientResult<BlockHash> {
-        let header = self.get_block_header_at(height)?;
+        let header = self.get_block_header_at(height as L1Height)?;
         Ok(header.block_hash())
     }
 
@@ -271,7 +271,7 @@ impl BtcChainSegment {
                 *blockhash
             )))?;
         };
-        let height = self.start + *idx as u64;
+        let height = self.start + *idx as L1Height;
 
         let manifest = self.get_block_manifest(height);
         Ok(manifest)
@@ -279,32 +279,35 @@ impl BtcChainSegment {
 
     pub fn get_block_manifests(
         &self,
-        from_height: u64,
+        from_height: L1Height,
         len: usize,
     ) -> Result<Vec<AsmManifest>, Error> {
         let mut manifests = Vec::with_capacity(len);
         for i in 0..len {
-            let height = from_height + i as u64;
+            let height = from_height + i as L1Height;
             let manifest = self.get_block_manifest(height);
             manifests.push(manifest);
         }
         Ok(manifests)
     }
 
-    pub fn get_blocks(&self, from_height: u64, len: usize) -> Result<Vec<Block>, Error> {
+    pub fn get_blocks(&self, from_height: L1Height, len: usize) -> Result<Vec<Block>, Error> {
         let mut blocks = Vec::with_capacity(len);
         for i in 0..len {
-            let block = self.get_block_at(from_height + i as u64)?;
+            let block = self.get_block_at(from_height + i as L1Height)?;
             blocks.push(block);
         }
         Ok(blocks)
     }
 
-    pub fn fetch_genesis_l1_view(&self, height: u64) -> Result<GenesisL1View, Error> {
+    pub fn fetch_genesis_l1_view(&self, height: L1Height) -> Result<GenesisL1View, Error> {
         block_on(fetch_genesis_l1_view(self, height))
     }
 
-    pub fn get_verification_state(&self, height: u64) -> Result<HeaderVerificationState, Error> {
+    pub fn get_verification_state(
+        &self,
+        height: L1Height,
+    ) -> Result<HeaderVerificationState, Error> {
         block_on(fetch_verification_state(self, height))
     }
 }

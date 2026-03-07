@@ -5,7 +5,7 @@ use alpen_ee_common::{
     SequencerOLClient,
 };
 use async_trait::async_trait;
-use strata_identifiers::{Epoch, EpochCommitment, Hash};
+use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height};
 use strata_snark_acct_types::SnarkAccountUpdate;
 
 use crate::{dummy_ol_client::DummyOLClient, rpc_client::RpcOLClient};
@@ -73,7 +73,7 @@ impl SequencerOLClient for OLClientKind {
         }
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: u64) -> Result<Hash, OLClientError> {
+    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError> {
         match self {
             Self::Rpc(client) => client.get_l1_header_commitment(l1_height).await,
             Self::Dummy(client) => client.get_l1_header_commitment(l1_height).await,

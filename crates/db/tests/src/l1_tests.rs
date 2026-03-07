@@ -1,5 +1,6 @@
 use strata_asm_common::AsmManifest;
 use strata_db_types::traits::L1Database;
+use strata_primitives::L1Height;
 use strata_test_utils::ArbitraryGenerator;
 
 pub fn test_insert_into_empty_db(db: &impl L1Database) {
@@ -130,7 +131,7 @@ pub fn test_get_blockid_range(db: &impl L1Database) {
 }
 
 // Helper function to insert block data
-fn insert_block_data(height: u64, db: &impl L1Database) -> AsmManifest {
+fn insert_block_data(height: L1Height, db: &impl L1Database) -> AsmManifest {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
 
     let mf = AsmManifest::new(height, arb.generate(), arb.generate(), vec![]);

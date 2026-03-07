@@ -66,7 +66,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     // 5. Construct the manifest with the logs.
     let (sections, logs) = manager.export_sections_and_logs();
     let manifest = AsmManifest::new(
-        current_l1ref.height_u64(),
+        current_l1ref.height(),
         *current_l1ref.blkid(),
         input.wtxids_root.into(),
         logs,

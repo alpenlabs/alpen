@@ -23,6 +23,7 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{BitcoinAmount, L1BlockCommitment},
     l2::L2BlockCommitment,
+    L1Height,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,7 +37,7 @@ pub struct RpcL1Status {
     pub last_rpc_error: Option<String>,
 
     /// Current block height.
-    pub cur_height: u64,
+    pub cur_height: L1Height,
 
     /// Current tip block ID as string.
     pub cur_tip_blkid: String,
@@ -292,7 +293,7 @@ pub struct RpcCheckpointL1Ref {
 impl From<CheckpointL1Ref> for RpcCheckpointL1Ref {
     fn from(l1ref: CheckpointL1Ref) -> Self {
         Self {
-            block_height: l1ref.l1_commitment.height_u64(),
+            block_height: l1ref.l1_commitment.height() as u64,
             block_id: l1ref.l1_commitment.blkid().to_block_hash(),
             txid: l1ref.txid.to_txid(),
             wtxid: l1ref.wtxid.to_wtxid(),

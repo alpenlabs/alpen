@@ -9,7 +9,10 @@ use strata_db_types::{
     },
 };
 use strata_ol_chainstate_types::WriteBatch;
-use strata_primitives::{l1::L1BlockCommitment, l2::L2BlockId};
+use strata_primitives::{
+    l1::{L1BlockCommitment, L1Height},
+    l2::L2BlockId,
+};
 
 use super::{
     checkpoint::get_latest_checkpoint_entry,
@@ -88,13 +91,13 @@ pub(crate) fn get_latest_l2_write_batch(
 fn delete_client_states_from(
     db: &impl DatabaseBackend,
     from_l1_block: L1BlockCommitment,
-    l1_tip_height: u64,
+    l1_tip_height: L1Height,
     dry_run: bool,
 ) -> Result<Vec<L1BlockCommitment>, DisplayedError> {
     let client_state_db = db.client_state_db();
 
     // Calculate max possible entries from from_block to L1 tip
-    let from_height = from_l1_block.height_u64();
+    let from_height = from_l1_block.height();
     let max_count = if l1_tip_height >= from_height {
         (l1_tip_height - from_height + 1) as usize
     } else {
@@ -233,7 +236,7 @@ pub(crate) fn revert_chainstate(
     println!("Target slot is epoch finishing: {target_slot_is_terminal}");
     println!(
         "Target L1 safe block {}@{}",
-        target_l1_safe_block.height_u64(),
+        target_l1_safe_block.height(),
         target_l1_safe_block.blkid()
     );
     println!();
@@ -366,14 +369,8 @@ pub(crate) fn revert_chainstate(
 
     if needs_checkpoint_cleanup {
         // Process ClientState entries AFTER the target L1 safe block
-        let next_l1_height = target_l1_safe_block.height_u64() + 1;
-        let next_l1_block = L1BlockCommitment::from_height_u64(next_l1_height, Default::default())
-            .ok_or_else(|| {
-                DisplayedError::InternalError(
-                    "Failed to create next L1 block commitment".to_string(),
-                    Box::new(next_l1_height),
-                )
-            })?;
+        let next_l1_height = target_l1_safe_block.height() + 1;
+        let next_l1_block = L1BlockCommitment::new(next_l1_height, Default::default());
 
         // Get L1 tip for informational purposes
         let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
@@ -523,12 +520,8 @@ pub(crate) fn revert_chainstate(
 
             // ClientState entries (only if checkpoint cleanup is needed)
             if needs_checkpoint_cleanup && !client_state_entries_to_delete.is_empty() {
-                let first_height = client_state_entries_to_delete
-                    .first()
-                    .map(|b| b.height_u64());
-                let last_height = client_state_entries_to_delete
-                    .last()
-                    .map(|b| b.height_u64());
+                let first_height = client_state_entries_to_delete.first().map(|b| b.height());
+                let last_height = client_state_entries_to_delete.last().map(|b| b.height());
 
                 if let (Some(first), Some(last)) = (first_height, last_height) {
                     println!(
@@ -548,7 +541,7 @@ pub(crate) fn revert_chainstate(
                     println!(
                         "  - L1 block {} at height {}",
                         l1_block.blkid(),
-                        l1_block.height_u64()
+                        l1_block.height()
                     );
                 }
                 println!();

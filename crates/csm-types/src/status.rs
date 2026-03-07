@@ -3,6 +3,7 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use serde::{Deserialize, Serialize};
 use strata_btc_types::BitcoinTxid;
+use strata_primitives::L1Height;
 
 /// Data that reflects what's happening around L1
 #[derive(Clone, Serialize, Deserialize, Default, Arbitrary, Debug)]
@@ -16,7 +17,7 @@ pub struct L1Status {
     pub last_rpc_error: Option<String>,
 
     /// Current block height.
-    pub cur_height: u64,
+    pub cur_height: L1Height,
 
     /// Current tip block ID as string.
     pub cur_tip_blkid: String,

@@ -28,7 +28,7 @@ use strata_primitives::{
     buf::Buf32,
     crypto::EvenPublicKey,
     epoch::EpochCommitment,
-    l1::{L1BlockCommitment, L1BlockId},
+    l1::{L1BlockCommitment, L1BlockId, L1Height},
 };
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
@@ -180,7 +180,7 @@ impl StrataApiServer for StrataRpcImpl {
         Ok(self.get_l1_status().await?.bitcoin_rpc_connected)
     }
 
-    async fn get_l1_block_hash(&self, height: u64) -> RpcResult<Option<String>> {
+    async fn get_l1_block_hash(&self, height: L1Height) -> RpcResult<Option<String>> {
         Ok(self
             .storage
             .l1()
@@ -210,8 +210,8 @@ impl StrataApiServer for StrataRpcImpl {
 
         // Maybe set buried L1 block.
         let depth = self.sync_manager.params().rollup().l1_reorg_safe_depth;
-        let current_height = l1_block.height() as u64;
-        let buried_height_checked = current_height.checked_sub(depth as u64);
+        let current_height = l1_block.height();
+        let buried_height_checked = current_height.checked_sub(depth);
         // Checked fetch the canonical chain.
         if let Some(buried_height) = buried_height_checked {
             let manifest = self
@@ -221,7 +221,7 @@ impl StrataApiServer for StrataRpcImpl {
                 .await;
 
             if let Ok(Some(block)) = manifest {
-                buried_l1_block = L1BlockCommitment::from_height_u64(buried_height, *block.blkid());
+                buried_l1_block = Some(L1BlockCommitment::new(buried_height, *block.blkid()));
             }
         }
 
@@ -624,7 +624,7 @@ impl StrataApiServer for StrataRpcImpl {
                 .l2_slot_at_or_before_end(block_slot)
             {
                 return Ok(L2BlockStatus::Finalized(
-                    last_checkpoint.l1_reference.block_height(),
+                    last_checkpoint.l1_reference.block_height().into(),
                 ));
             }
         }
@@ -632,7 +632,7 @@ impl StrataApiServer for StrataRpcImpl {
         // Verified check
         let verified_l1_height = cstate.get_last_checkpoint().and_then(|ckpt| {
             if ckpt.batch_info.l2_slot_at_or_before_end(block_slot) {
-                Some(ckpt.l1_reference.block_height())
+                Some(ckpt.l1_reference.block_height().into())
             } else {
                 None
             }
@@ -663,8 +663,7 @@ impl StrataApiServer for StrataRpcImpl {
             // TODO: better error?
             .ok_or(Error::MissingL1BlockManifest(0))?;
 
-        let commitment = L1BlockCommitment::from_height_u64(manifest.height(), *manifest.blkid())
-            .ok_or(Error::MissingL1BlockManifest(0))?;
+        let commitment = L1BlockCommitment::new(manifest.height(), *manifest.blkid());
 
         Ok(self
             .storage
@@ -984,8 +983,7 @@ impl StrataDebugApiServer for StrataDebugRpcImpl {
             // TODO: better error?
             .ok_or(Error::MissingL1BlockManifest(0))?;
 
-        let commitment = L1BlockCommitment::from_height_u64(manifest.height(), *manifest.blkid())
-            .ok_or(Error::MissingL1BlockManifest(0))?;
+        let commitment = L1BlockCommitment::new(manifest.height(), *manifest.blkid());
 
         Ok(self
             .storage

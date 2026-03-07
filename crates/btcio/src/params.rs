@@ -3,6 +3,7 @@
 //! This module provides [`BtcioParams`] which contains the subset of rollup parameters
 //! needed by btcio components.
 
+use strata_identifiers::L1Height;
 use strata_l1_txfmt::MagicBytes;
 
 /// Parameters required by btcio components for L1 interaction.
@@ -18,12 +19,16 @@ pub struct BtcioParams {
     pub magic_bytes: MagicBytes,
 
     /// Genesis L1 block height (the first L1 block the rollup cares about).
-    pub genesis_l1_height: u64,
+    pub genesis_l1_height: L1Height,
 }
 
 impl BtcioParams {
     /// Creates a new [`BtcioParams`] with the given values.
-    pub fn new(l1_reorg_safe_depth: u32, magic_bytes: MagicBytes, genesis_l1_height: u64) -> Self {
+    pub fn new(
+        l1_reorg_safe_depth: u32,
+        magic_bytes: MagicBytes,
+        genesis_l1_height: L1Height,
+    ) -> Self {
         Self {
             l1_reorg_safe_depth,
             magic_bytes,
@@ -42,7 +47,7 @@ impl BtcioParams {
     }
 
     /// Returns the genesis L1 block height.
-    pub fn genesis_l1_height(&self) -> u64 {
+    pub fn genesis_l1_height(&self) -> L1Height {
         self.genesis_l1_height
     }
 }

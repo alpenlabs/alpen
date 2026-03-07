@@ -2,7 +2,7 @@ use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{DatabaseBackend, L1Database};
 use strata_ol_chain_types::AsmManifest;
-use strata_primitives::l1::L1BlockId;
+use strata_primitives::l1::{L1BlockId, L1Height};
 
 use crate::{
     cli::OutputFormat,
@@ -32,7 +32,7 @@ pub(crate) struct GetL1ManifestArgs {
 pub(crate) struct GetL1SummaryArgs {
     /// l1 height to look up the summary about
     #[argh(positional)]
-    pub(crate) height_from: u64,
+    pub(crate) height_from: L1Height,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -42,7 +42,7 @@ pub(crate) struct GetL1SummaryArgs {
 /// Get the L1 chain tip (height, block_id) of the canonical chain tip.
 pub(crate) fn get_l1_chain_tip(
     db: &impl DatabaseBackend,
-) -> Result<(u64, L1BlockId), DisplayedError> {
+) -> Result<(L1Height, L1BlockId), DisplayedError> {
     db.l1_db()
         .get_canonical_chain_tip()
         .internal_error("Failed to get L1 tip")?
@@ -54,7 +54,7 @@ pub(crate) fn get_l1_chain_tip(
 /// Get L1 block ID at a specific height.
 pub(crate) fn get_l1_block_id_at_height(
     db: &impl DatabaseBackend,
-    height: u64,
+    height: L1Height,
 ) -> Result<L1BlockId, DisplayedError> {
     db.l1_db()
         .get_canonical_blockid_at_height(height)

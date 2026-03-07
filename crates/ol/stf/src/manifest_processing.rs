@@ -36,7 +36,7 @@ pub fn process_block_manifests<S: IStateAccessor>(
         // New manifests in a segment are strictly after the state's current
         // last seen height.
         let real_height = orig_l1_height + i as u32 + 1;
-        if mf.height() != real_height as u64 {
+        if mf.height() != real_height {
             return Err(ExecError::ChainIntegrity);
         }
         last = Some((real_height, mf));

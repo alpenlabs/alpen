@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use strata_identifiers::{Epoch, EpochCommitment, Hash, OLBlockCommitment};
+use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment};
 use strata_snark_acct_types::{MessageEntry, ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
@@ -86,7 +86,7 @@ pub trait SequencerOLClient {
     /// Retrieves the canonical L1 header commitment for an L1 block height.
     ///
     /// The returned hash is the exact MMR leaf value used by OL ledger-ref verification.
-    async fn get_l1_header_commitment(&self, l1_height: u64) -> Result<Hash, OLClientError>;
+    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError>;
 
     /// Submits an account update with proof to the OL chain sequencer.
     async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError>;
