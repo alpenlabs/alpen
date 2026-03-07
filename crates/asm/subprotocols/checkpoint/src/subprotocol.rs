@@ -7,7 +7,7 @@ use strata_asm_common::{
 };
 use strata_asm_params::CheckpointConfig;
 use strata_asm_txs_checkpoint::{
-    CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_signed_checkpoint_from_envelope,
+    CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_checkpoint_from_envelope,
 };
 use strata_identifiers::L1BlockCommitment;
 use strata_predicate::{PredicateKey, PredicateTypeId};
@@ -19,7 +19,7 @@ use crate::{handler::handle_checkpoint_tx, state::CheckpointState};
 /// Implements the [`Subprotocol`] trait to integrate checkpoint verification
 /// with the ASM. Responsibilities include:
 ///
-/// - Processing checkpoint transactions (signature verification, proof verification)
+/// - Processing checkpoint transactions (envelope pubkey verification, proof verification)
 /// - Validating state transitions (epoch, L1/L2 range progression)
 /// - Forwarding withdrawal intents to the bridge subprotocol
 /// - Processing configuration updates from the admin subprotocol
@@ -46,10 +46,10 @@ impl Subprotocol for CheckpointSubprotocol {
     ) {
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
-                match extract_signed_checkpoint_from_envelope(tx) {
-                    Ok(signed_checkpoint) => {
+                match extract_checkpoint_from_envelope(tx) {
+                    Ok(envelope) => {
                         let start_height = state.verified_tip().l1_height + 1;
-                        let end_height = signed_checkpoint.inner().new_tip().l1_height;
+                        let end_height = envelope.payload.new_tip().l1_height;
                         collector.request_manifest_hashes(start_height as u64, end_height as u64);
                     }
                     Err(e) => {

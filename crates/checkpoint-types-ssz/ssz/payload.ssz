@@ -103,10 +103,3 @@ class CheckpointSidecar(Container):
     ### needed as parent for the next epoch's first block.
     terminal_header_complement: TerminalHeaderComplement
 
-### Signed checkpoint payload for L1 posting.
-### The signature is over the hash of the inner payload.
-class SignedCheckpointPayload(Container):
-    ### The checkpoint payload.
-    inner: CheckpointPayload
-    ### Schnorr signature over the payload hash.
-    signature: strata_identifiers.Buf64

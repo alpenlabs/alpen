@@ -5,7 +5,7 @@
 
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
-use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
+use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_btc_types::RawBitcoinTx;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
@@ -21,9 +21,8 @@ pub fn decode_ol_da_payload(
 ) -> DaExtractorResult<OLDaPayloadV1> {
     let tx: Transaction = raw_tx.try_into()?;
     let tag = ParseConfig::new(magic_bytes).try_parse_tx(&tx)?;
-    let signed_checkpoint = extract_signed_checkpoint_from_envelope(&TxInputRef::new(&tx, tag))?;
-    let da_payload =
-        decode_ol_da_payload_bytes(signed_checkpoint.inner().sidecar().ol_state_diff())?;
+    let envelope = extract_checkpoint_from_envelope(&TxInputRef::new(&tx, tag))?;
+    let da_payload = decode_ol_da_payload_bytes(envelope.payload.sidecar().ol_state_diff())?;
     Ok(da_payload)
 }
 
