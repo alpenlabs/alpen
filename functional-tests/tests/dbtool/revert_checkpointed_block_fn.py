@@ -1,9 +1,8 @@
-import time
-
 import flexitest
 
 from envs import net_settings, testenv
 from mixins.dbtool_mixin import FullnodeDbtoolMixin
+from utils.constants import BLOCK_GENERATION_INTERVAL_SECS
 from utils.dbtool import (
     get_latest_checkpoint,
     restart_fullnode_after_revert,
@@ -12,7 +11,7 @@ from utils.dbtool import (
     verify_checkpoint_deleted,
     verify_revert_success,
 )
-from utils.utils import wait_until
+from utils.utils import generate_blocks, wait_until
 
 
 @flexitest.register
@@ -31,16 +30,21 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         # Setup: generate blocks, finalize epoch 1, and wait for checkpoint 2
         setup_revert_chainstate_test(self, web3_attr="web3")
 
+        # Stop bitcoin immediately to prevent further checkpoint finalization,
+        # which would finalize more epochs and cause the revert target to
+        # fall inside a finalized epoch.
+        self.btc.stop()
+
         cur_block = int(self.rethrpc.eth_blockNumber(), base=16)
 
-        # ensure there are some blocks more than our tip height
+        # Ensure L2 is still producing blocks (sequencer works independently of L1)
         wait_until(
             lambda: int(self.rethrpc.eth_blockNumber(), base=16) > cur_block + 3,
             error_with="not building blocks",
             timeout=10,
         )
 
-        # Stop signer early to ensure no more blocks
+        # Stop signer to freeze L2 state before capturing block numbers
         self.seq_signer.stop()
 
         # Capture state before revert
@@ -69,9 +73,6 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
                 f"Fullnode OL and EL are not in sync: OL={old_fn_ol_block_number}, "
                 f"EL={old_fn_el_block_number}"
             )
-
-        # extra buffer time to let latest checkpoint get final
-        time.sleep(3)
 
         # Stop services to use dbtool
         self.seq.stop()
@@ -110,6 +111,22 @@ class RevertCheckpointedBlockFnTest(FullnodeDbtoolMixin):
         # When reverting to the BEGINNING of a checkpointed epoch, checkpoint should be deleted
         if not verify_checkpoint_deleted(self, checkpt["idx"]):
             return False
+
+        # Restart bitcoin so L1 blocks can confirm new checkpoints.
+        # The -wallet flag auto-loads the wallet from the persisted datadir.
+        self.btc.start()
+
+        # Wait for bitcoind to be ready, then restart L1 block generation
+        # (the old generation thread exited when bitcoin was stopped).
+        def _start_block_generation():
+            self.btcrpc = self.btc.create_rpc()
+            gen_addr = self.btcrpc.proxy.getnewaddress()
+            generate_blocks(self.btcrpc, BLOCK_GENERATION_INTERVAL_SECS, gen_addr)
+            return True
+
+        wait_until(
+            _start_block_generation, error_with="bitcoind not ready after restart", timeout=30
+        )
 
         # Restart services and verify
         restart_fullnode_after_revert(self, target_slot, old_seq_ol_block_number, checkpt["idx"])

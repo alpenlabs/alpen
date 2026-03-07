@@ -236,10 +236,6 @@ class BasicEnvConfig(flexitest.EnvConfig):
         time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
 
         brpc = _retry_bitcoind_rpc(logger, "create_rpc", bitcoind.create_rpc, timeout_s=180.0)
-        walletname = bitcoind.get_prop("walletname")
-        _retry_bitcoind_rpc(
-            logger, f"createwallet({walletname})", lambda: brpc.proxy.createwallet(walletname)
-        )
         seqaddr = _retry_bitcoind_rpc(logger, "getnewaddress", brpc.proxy.getnewaddress)
 
         # Generate enough blocks to ensure we can fetch the genesis trigger block
@@ -395,12 +391,6 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         time.sleep(BLOCK_GENERATION_INTERVAL_SECS)
 
         brpc = _retry_bitcoind_rpc(logger, "create_rpc", bitcoind.create_rpc, timeout_s=180.0)
-
-        walletname = bitcoind.get_prop("walletname")
-        _retry_bitcoind_rpc(
-            logger, f"createwallet({walletname})", lambda: brpc.proxy.createwallet(walletname)
-        )
-
         seqaddr = _retry_bitcoind_rpc(logger, "getnewaddress", brpc.proxy.getnewaddress)
 
         if self.pre_generate_blocks > 0:
