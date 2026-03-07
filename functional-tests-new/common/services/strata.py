@@ -21,6 +21,7 @@ class StrataProps(TypedDict):
     rpc_url: str
     datadir: str
     mode: str
+    epoch_sealing: dict | None
 
 
 class StrataService(RpcService):
@@ -202,3 +203,53 @@ class StrataService(RpcService):
             logger.info(f"Waiting for block {target_height}...")
             self.wait_for_block_height(target_height, rpc)
         return self.get_cur_block_height(rpc)
+
+    def wait_for_finalized_epoch(
+        self,
+        target_epoch: int | None = None,
+        rpc: JsonRpcClient | None = None,
+        timeout: int = 60,
+        poll_interval: float = 1.0,
+    ) -> int:
+        """
+        Wait until finalized epoch reaches a target value.
+
+        Args:
+            target_epoch: Minimum finalized epoch to wait for. If None, waits for
+                `current_epoch + 1` to be finalized.
+            rpc: Optional RPC client. If None, creates a new one.
+            timeout: Maximum time to wait in seconds
+            poll_interval: How often to poll
+
+        Returns:
+            Finalized epoch value
+        """
+        if rpc is None:
+            rpc = self.create_rpc()
+
+        if target_epoch is None:
+            current_status = self.get_sync_status(rpc)
+            parent = current_status.get("parent")
+            if not isinstance(parent, dict) or not isinstance(parent.get("epoch"), int):
+                raise AssertionError(
+                    f"Unable to determine current epoch from status: {current_status}"
+                )
+            current_epoch = parent["epoch"] + 1
+            target_epoch = current_epoch + 1
+
+        def _onchain_epoch_reached(status: dict) -> bool:
+            finalized = status.get("finalized")
+            return (
+                isinstance(finalized, dict)
+                and isinstance(finalized.get("epoch"), int)
+                and finalized["epoch"] >= target_epoch
+            )
+
+        status = wait_until_with_value(
+            rpc.strata_getChainStatus,
+            _onchain_epoch_reached,
+            error_with=f"Timed out waiting for finalized epoch >= {target_epoch}",
+            timeout=timeout,
+            step=poll_interval,
+        )
+        return status["finalized"]["epoch"]

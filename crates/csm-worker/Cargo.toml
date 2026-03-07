@@ -28,5 +28,6 @@ tracing.workspace = true
 [dev-dependencies]
 strata-test-utils.workspace = true
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
+strata-checkpoint-types-ssz.workspace = true
 threadpool.workspace = true
 serde_json.workspace = true

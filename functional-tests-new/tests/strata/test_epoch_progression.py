@@ -13,38 +13,32 @@ logger = logging.getLogger(__name__)
 
 @flexitest.register
 class TestSequencerEpochProgression(StrataNodeTest):
-    """Test that sequencer is correctly progressing epoch."""
-
-    # NOTE: This test should be covered when we actually do more integrated
-    # test with alpen-client because alpen-client also needs epoch progression to work properly
+    """Test that sequencer is correctly progressing epochs."""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("basic")
+        ctx.set_env("checkpoint")
 
     def main(self, ctx):
-        # Get sequencer service
         strata = self.get_service(ServiceType.Strata)
 
-        # Wait for RPC to be ready
         logger.info("Waiting for Strata RPC to be ready...")
         rpc = strata.wait_for_rpc_ready(timeout=10)
 
-        # Get initial sync status
         initial_status = strata.get_sync_status(rpc)
-        prev_epoch = initial_status["confirmed"]
-        logger.info(f"initial prev epoch {prev_epoch}")
+        prev_epoch = initial_status["parent"]
+        logger.info("initial parent epoch %s", prev_epoch["epoch"])
         assert prev_epoch["last_blkid"] != "00" * 32
 
         epochs_to_check = 3
 
-        for _ in range(1, epochs_to_check + 1):
+        for _ in range(epochs_to_check):
             epoch = wait_until_with_value(
-                lambda: strata.get_sync_status(rpc)["confirmed"],
+                lambda: strata.get_sync_status(rpc)["parent"],
                 lambda v, cur_epoch=prev_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
                 timeout=10,
-                error_with="Epoch not progressing",
+                error_with="Parent epoch not progressing",
             )
-            logger.info(f"cur prev epoch {epoch}")
+            logger.info("parent epoch advanced to %s", epoch["epoch"])
             assert epoch["last_blkid"] != "00" * 32
             prev_epoch = epoch
 

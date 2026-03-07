@@ -260,6 +260,10 @@ def main(argv: list[str]) -> int:
     # Define global environments
     global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": StrataEnvConfig(pre_generate_blocks=110),
+        "checkpoint": StrataEnvConfig(
+            pre_generate_blocks=110,
+            epoch_slots=4,
+        ),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
         "alpen_ee_discovery": AlpenClientEnv(

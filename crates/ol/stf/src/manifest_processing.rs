@@ -2,7 +2,9 @@
 
 use strata_acct_types::{AccountId, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_asm_manifest_types::{CheckpointAckLogData, DepositIntentLogData};
+use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
+// TODO(STR-2439): Depends on ASM log type refactor.
+use strata_asm_manifest_types::{DEPOSIT_INTENT_ASM_LOG_TYPE_ID, DepositIntentLogData};
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::IStateAccessor;
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
@@ -83,7 +85,8 @@ fn process_asm_log<S: IStateAccessor>(
 
     // Match on the type ID to determine how to process the log.
     match msg.ty() {
-        strata_asm_manifest_types::DEPOSIT_INTENT_ASM_LOG_TYPE_ID => {
+        // TODO(STR-2439): Depends on ASM log type refactor.
+        DEPOSIT_INTENT_ASM_LOG_TYPE_ID => {
             // Parse the deposit intent data, skip if it fails to parse.
             let Ok(data) = log.try_into_log::<DepositIntentLogData>() else {
                 return Ok(());
@@ -91,12 +94,12 @@ fn process_asm_log<S: IStateAccessor>(
             process_deposit_intent_log(state, &data, context)?;
         }
 
-        strata_asm_manifest_types::CHECKPOINT_ACK_ASM_LOG_TYPE_ID => {
-            // Parse the checkpoint acknowledgment data, skip if it fails to parse.
-            let Ok(data) = log.try_into_log::<CheckpointAckLogData>() else {
+        CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
+            // Parse the checkpoint tip update from the v1 checkpoint subprotocol.
+            let Ok(data) = log.try_into_log::<CheckpointTipUpdate>() else {
                 return Ok(());
             };
-            process_checkpoint_ack_log(state, &data, context)?;
+            process_checkpoint_tip_update(state, &data, context)?;
         }
 
         _ => {
@@ -142,15 +145,14 @@ fn process_deposit_intent_log<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_checkpoint_ack_log<S: IStateAccessor>(
+fn process_checkpoint_tip_update<S: IStateAccessor>(
     state: &mut S,
-    data: &CheckpointAckLogData,
+    data: &CheckpointTipUpdate,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // Update the epochal state with the acknowledged epoch.
-    //
-    // This records that a checkpoint has been observed on L1.
-    state.set_asm_recorded_epoch(data.epoch());
+    let tip = data.tip();
+    let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
+    state.set_asm_recorded_epoch(epoch_commitment);
 
     Ok(())
 }

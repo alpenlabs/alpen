@@ -56,11 +56,11 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
             # Wait until next_epoch is present
             status = wait_until_with_value(
                 lambda: get_sync_status_and_mine_blocks(strata_seq, btc_rpc),
-                lambda s, next_epoch=next_epoch: s["confirmed"]["epoch"] >= next_epoch,
+                lambda s, next_epoch=next_epoch: s["parent"]["epoch"] >= next_epoch,
                 error_with=f"Expected epoch {next_epoch} not found",
                 timeout=10,
             )
-            new_epochs_since_last = range(next_epoch, status["confirmed"]["epoch"] + 1)
+            new_epochs_since_last = range(next_epoch, status["parent"]["epoch"] + 1)
 
             # Check for new updates in one of the new epochs
             for ep in new_epochs_since_last:

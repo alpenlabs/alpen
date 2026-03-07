@@ -60,8 +60,8 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
             return Ok(());
         };
 
-        // Determine starting epoch index (last processed + 1, or 0 if none)
-        let start_epoch_index = self.last_processed_epoch_index.map(|e| e + 1).unwrap_or(0);
+        // Determine starting epoch index (last processed + 1, or 1 if none, skip genesis epoch)
+        let start_epoch_index = self.last_processed_epoch_index.map(|e| e + 1).unwrap_or(1);
 
         // Process all epochs from start to target (inclusive)
         for epoch_index in start_epoch_index..=target_epoch_index {
@@ -309,6 +309,7 @@ mod tests {
             body_root in buf32_strategy(),
             logs_root in buf32_strategy(),
             prev_terminal in ol_block_commitment_strategy(),
+            genesis_l1 in l1_block_commitment_strategy(),
             new_l1 in l1_block_commitment_strategy(),
             final_state in buf32_strategy(),
         ) {
@@ -319,7 +320,7 @@ mod tests {
             let checkpoint_mgr = storage.ol_checkpoint();
             let ol_block_mgr = storage.ol_block();
 
-            let epoch: Epoch = 0;
+            let epoch: Epoch = 1;
             let terminal_header = OLBlockHeader::new(
                 1_700_000_000,
                 BlockFlags::zero(),
@@ -342,6 +343,11 @@ mod tests {
                 .expect("insert terminal block");
 
             let terminal = terminal_header.compute_block_commitment();
+            let genesis_summary =
+                EpochSummary::new(0, prev_terminal, OLBlockCommitment::null(), genesis_l1, final_state);
+            checkpoint_mgr
+                .insert_epoch_summary_blocking(genesis_summary)
+                .expect("insert genesis summary");
             let summary = EpochSummary::new(epoch, terminal, prev_terminal, new_l1, final_state);
             let commitment = summary.get_epoch_commitment();
             checkpoint_mgr

@@ -4,6 +4,7 @@ Creates Strata sequencer and fullnode instances.
 """
 
 import contextlib
+from dataclasses import asdict
 from pathlib import Path
 
 import flexitest
@@ -11,11 +12,11 @@ import flexitest
 from common.config import (
     BitcoindConfig,
     ClientConfig,
+    EpochSealingConfig,
     SequencerConfig,
     ServiceType,
     StrataConfig,
 )
-from common.config.params import GenesisL1View
 from common.datatool import (
     generate_asm_params,
     generate_ol_params,
@@ -42,9 +43,10 @@ class StrataFactory(flexitest.Factory):
     def create_node(
         self,
         bconfig: BitcoindConfig,
-        genesis_l1: GenesisL1View,
+        genesis_l1_height: int,
         is_sequencer: bool = True,
-        config_overrides: dict | None = None,
+        config_overrides: dict[str, object] | None = None,
+        epoch_sealing_config: EpochSealingConfig | None = None,
         **kwargs,
     ) -> StrataService:
         """
@@ -52,8 +54,10 @@ class StrataFactory(flexitest.Factory):
 
         Args:
             bconfig: Bitcoin daemon configuration
+            genesis_l1_height: Genesis L1 height used for param generation.
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
+            epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -70,14 +74,17 @@ class StrataFactory(flexitest.Factory):
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
         sequencer_config = SequencerConfig() if is_sequencer else None
-        config = StrataConfig(bitcoind=bconfig, client=client_config, sequencer=sequencer_config)
+        config = StrataConfig(
+            bitcoind=bconfig,
+            client=client_config,
+            sequencer=sequencer_config,
+            epoch_sealing=epoch_sealing_config,
+        )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
 
-        genesis_l1_height = genesis_l1.blk.height
-
-        # Generate rollup params via datatool.
+        # Generate rollup params via datatool (also produces keys used below).
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
         # Generate OL params via datatool (uses Bitcoin RPC to fetch genesis L1 block).
@@ -127,6 +134,9 @@ class StrataFactory(flexitest.Factory):
             "rpc_url": rpc_url,
             "datadir": str(datadir),
             "mode": mode,
+            "epoch_sealing": asdict(epoch_sealing_config)
+            if epoch_sealing_config is not None
+            else None,
         }
 
         svc = StrataService(
