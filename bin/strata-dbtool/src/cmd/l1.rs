@@ -110,7 +110,7 @@ pub(crate) fn get_l1_summary(
     // Use helper function to get L1 tip
     let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
 
-    let start_height: L1Height = args.height_from;
+    let start_height = args.height_from;
     let start_block_id = get_l1_block_id_at_height(db, start_height)?;
 
     // Check if all L1 blocks from L1 horizon to tip are present

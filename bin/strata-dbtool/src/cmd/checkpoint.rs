@@ -35,7 +35,7 @@ pub(crate) struct GetCheckpointArgs {
 pub(crate) struct GetCheckpointsSummaryArgs {
     /// start l1 height to query checkpoints from
     #[argh(positional)]
-    pub(crate) height_from: u32,
+    pub(crate) height_from: L1Height,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]

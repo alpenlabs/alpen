@@ -6,7 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::{BtcParams, GenesisL1View};
 use strata_crypto::hash::compute_borsh_hash;
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height};
 use thiserror::Error;
 
 use crate::{BtcWork, timestamp_store::TimestampStore, utils_btc::compute_block_hash};
@@ -263,9 +263,13 @@ impl HeaderVerificationState {
 ///   the second, and so on.
 /// * `start` - The starting height from which to calculate.
 /// * `params` - [`Params`] of the bitcoin network in use
-pub fn get_relative_difficulty_adjustment_height(idx: u64, start: u64, params: &Params) -> u64 {
+pub fn get_relative_difficulty_adjustment_height(
+    idx: usize,
+    start: L1Height,
+    params: &Params,
+) -> u64 {
     let difficulty_adjustment_interval = params.difficulty_adjustment_interval();
-    ((start / difficulty_adjustment_interval) + idx) * difficulty_adjustment_interval
+    ((start as u64 / difficulty_adjustment_interval) + idx as u64) * difficulty_adjustment_interval
 }
 
 #[cfg(test)]

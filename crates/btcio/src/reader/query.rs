@@ -54,8 +54,10 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height() as u64)?;
+    let target_next_block = calculate_target_next_block(
+        storage.l1().as_ref(),
+        btcio_params.genesis_l1_height() as u64,
+    )?;
 
     let ctx = ReaderContext {
         client,
@@ -221,7 +223,7 @@ async fn poll_for_new_blocks<R: Reader>(
 
     // Now process each block we missed.
     let scan_start_height = state.next_height();
-    for fetch_height in scan_start_height..=(client_height as u64) {
+    for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
                 // Note: Checkpoint detection is now handled by the ASM STF via logs,
@@ -244,14 +246,14 @@ async fn poll_for_new_blocks<R: Reader>(
 async fn find_pivot_block(
     client: &impl Reader,
     state: &ReaderState,
-) -> anyhow::Result<Option<(u64, BlockHash)>> {
+) -> anyhow::Result<Option<(L1Height, BlockHash)>> {
     for (height, l1blkid) in state.iter_blocks_back() {
         // If at genesis, we can't reorg any farther.
         if height == 0 {
             return Ok(Some((height, *l1blkid)));
         }
 
-        let queried_l1blkid = client.get_block_hash(height).await?;
+        let queried_l1blkid = client.get_block_hash(height as u64).await?;
         trace!(%height, %l1blkid, %queried_l1blkid, "comparing blocks to find pivot");
         if queried_l1blkid == *l1blkid {
             return Ok(Some((height, *l1blkid)));
@@ -264,11 +266,11 @@ async fn find_pivot_block(
 /// Fetches a block at given height, extracts relevant transactions and emits an [`L1Event`].
 async fn fetch_and_process_block<R: Reader>(
     ctx: &ReaderContext<R>,
-    height: u64,
+    height: L1Height,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
 ) -> anyhow::Result<(BlockHash, L1Event)> {
-    let block = ctx.client.get_block_at(height).await?;
+    let block = ctx.client.get_block_at(height as u64).await?;
     let (evs, l1blkid) = process_block(ctx, state, status_updates, height, block).await?;
 
     // Insert to new block, incrementing cur_height.
@@ -282,7 +284,7 @@ async fn process_block<R: Reader>(
     _ctx: &ReaderContext<R>,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
-    height: u64,
+    height: L1Height,
     block: Block,
 ) -> anyhow::Result<(L1Event, BlockHash)> {
     let txs = block.txdata.len();
@@ -304,7 +306,6 @@ async fn process_block<R: Reader>(
 }
 
 /// Retrieves the timestamps for a specified number of blocks starting from the given block height,
-/// moving backwards. For each block from `height` down to `height - count + 1`, it fetches the
 /// block’s timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
 /// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
 /// ascending order (oldest first).
@@ -332,7 +333,7 @@ async fn fetch_block_timestamps_ascending(
 
 pub async fn fetch_genesis_l1_view(
     client: &impl Reader,
-    block_height: u64,
+    block_height: L1Height,
 ) -> anyhow::Result<GenesisL1View> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
@@ -347,11 +348,12 @@ pub async fn fetch_genesis_l1_view(
         .await?;
 
     // Fetch the block header at the height
-    let block_header = client.get_block_header_at(block_height).await?;
+    let block_header = client.get_block_header_at(block_height as u64).await?;
 
     // Fetch timestamps
     let timestamps =
-        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
+        fetch_block_timestamps_ascending(client, block_height as u64, TIMESTAMPS_FOR_MEDIAN)
+            .await?;
     let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
         "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
     );
@@ -362,7 +364,7 @@ pub async fn fetch_genesis_l1_view(
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target
     let next_block_target =
-        if (block_height + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
+        if (block_height as u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
             CompactTarget::from_next_work_required(
                 block_header.bits,
                 (block_header.time - current_epoch_start_header.time) as u64,
@@ -371,7 +373,7 @@ pub async fn fetch_genesis_l1_view(
             .to_consensus()
         } else {
             client
-                .get_block_header_at(block_height)
+                .get_block_header_at(block_height as u64)
                 .await?
                 .target()
                 .to_compact_lossy()
@@ -401,7 +403,7 @@ pub async fn fetch_genesis_l1_view(
 /// block's target.
 pub async fn fetch_verification_state(
     client: &impl Reader,
-    block_height: u64,
+    block_height: L1Height,
 ) -> anyhow::Result<HeaderVerificationState> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;

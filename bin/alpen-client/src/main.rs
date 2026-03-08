@@ -62,7 +62,7 @@ use strata_btcio::{
 use strata_config::btcio::WriterConfig;
 use strata_identifiers::{CredRule, EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
-use strata_primitives::buf::Buf32;
+use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
 #[cfg(feature = "sequencer")]
@@ -622,7 +622,7 @@ pub struct AdditionalConfig {
 
     /// Genesis L1 block height (the first L1 block the rollup cares about).
     #[arg(long, default_value = "0")]
-    pub genesis_l1_height: u32,
+    pub genesis_l1_height: L1Height,
 
     /// Number of blocks per batch before sealing.
     /// Lower values seal batches more frequently (useful for testing).

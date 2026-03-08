@@ -14,7 +14,7 @@ use strata_key_derivation::error::KeyError;
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{ProofPublishMode, RollupParams};
 use strata_predicate::PredicateKey;
-use strata_primitives::{block_credential, buf::Buf32, l1::GenesisL1View};
+use strata_primitives::{block_credential, buf::Buf32, l1::GenesisL1View, L1Height};
 
 use crate::{
     args::{CmdContext, SubcParams},
@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// The default L1 genesis height to use.
-const DEFAULT_L1_GENESIS_HEIGHT: u32 = 100;
+const DEFAULT_L1_GENESIS_HEIGHT: L1Height = 100;
 
 /// The default evm chainspec to use in params.
 const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;

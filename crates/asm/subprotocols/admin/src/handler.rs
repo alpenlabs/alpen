@@ -142,7 +142,7 @@ pub(crate) fn handle_action(
                 }
                 action => {
                     // For all other update types, add to the queue with a future activation height
-                    let activation_height = current_height + L1Height::from(state.confirmation_depth());
+                    let activation_height = current_height + state.confirmation_depth() as u32;
                     let queued_update = QueuedUpdate::new(id, action, activation_height);
                     state.enqueue(queued_update);
                 }
@@ -200,7 +200,6 @@ mod tests {
         threshold_signature::{SignatureSet, ThresholdConfig},
     };
     use strata_predicate::PredicateKey;
-    use strata_primitives::L1Height;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::{handle_action, handle_pending_updates};
@@ -351,7 +350,7 @@ mod tests {
 
             assert_eq!(
                 queued_update.activation_height(),
-                current_height + L1Height::from(params.confirmation_depth)
+                current_height + params.confirmation_depth as u32
             );
         }
     }

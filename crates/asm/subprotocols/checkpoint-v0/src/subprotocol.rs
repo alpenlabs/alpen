@@ -232,16 +232,12 @@ fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_predicate: 
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{
-        block_credential::CredRule,
-        buf::Buf32,
-        l1::{L1BlockCommitment, L1BlockId},
-    };
+    use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
 
     use super::*;
 
     fn test_params() -> CheckpointV0Params {
-        let genesis_commitment = L1BlockCommitment::new(0, L1BlockId::from(Buf32::default()));
+        let genesis_commitment = L1BlockCommitment::default();
         let verification_params = CheckpointV0VerificationParams {
             genesis_l1_block: genesis_commitment,
             cred_rule: CredRule::Unchecked,

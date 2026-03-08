@@ -30,8 +30,6 @@ async fn fetch_genesis_l1_view(
     client: &impl Reader,
     block_height: L1Height,
 ) -> anyhow::Result<GenesisL1View> {
-    let block_height_u64 = u64::from(block_height);
-
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
     let btc_params = BtcParams::from(Params::from(network));
@@ -39,17 +37,17 @@ async fn fetch_genesis_l1_view(
     // Get the difficulty adjustment block just before the given block height,
     // representing the start of the current epoch.
     let current_epoch_start_height =
-        get_relative_difficulty_adjustment_height(0, block_height_u64, btc_params.inner());
+        get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
     let current_epoch_start_header = client
         .get_block_header_at(current_epoch_start_height)
         .await?;
 
     // Fetch the block header at the height
-    let block_header = client.get_block_header_at(block_height_u64).await?;
+    let block_header = client.get_block_header_at(block_height as u64).await?;
 
     // Fetch timestamps
     let timestamps =
-        fetch_block_timestamps_ascending(client, block_height_u64, TIMESTAMPS_FOR_MEDIAN).await?;
+        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
     let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
         "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
     );
@@ -60,7 +58,7 @@ async fn fetch_genesis_l1_view(
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target
     let next_block_target =
-        if (block_height_u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
+        if (block_height as u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
             CompactTarget::from_next_work_required(
                 block_header.bits,
                 (block_header.time - current_epoch_start_header.time) as u64,
@@ -69,7 +67,7 @@ async fn fetch_genesis_l1_view(
             .to_consensus()
         } else {
             client
-                .get_block_header_at(block_height_u64)
+                .get_block_header_at(block_height as u64)
                 .await?
                 .target()
                 .to_compact_lossy()
@@ -94,18 +92,18 @@ async fn fetch_genesis_l1_view(
 /// ascending order (oldest first).
 async fn fetch_block_timestamps_ascending(
     client: &impl Reader,
-    height: u64,
+    height: L1Height,
     count: usize,
 ) -> anyhow::Result<Vec<u32>> {
     let mut timestamps = Vec::with_capacity(count);
 
     for i in 0..count {
-        let current_height = height.saturating_sub(i as u64);
+        let current_height = height.saturating_sub(i as u32);
         // If we've gone past block 1, push 0 as a placeholder.
         if current_height < 1 {
             timestamps.push(0);
         } else {
-            let header = client.get_block_header_at(current_height).await?;
+            let header = client.get_block_header_at(current_height as u64).await?;
             timestamps.push(header.time);
         }
     }

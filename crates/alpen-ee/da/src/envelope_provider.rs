@@ -144,9 +144,6 @@ impl ChunkedEnvelopeDaProvider {
                 );
             };
 
-            // Cast u64 -> L1Height at the boundary where L1TxStatus provides u64.
-            let block_height = block_height as L1Height;
-
             block_map
                 .entry((block_hash, block_height))
                 .or_default()

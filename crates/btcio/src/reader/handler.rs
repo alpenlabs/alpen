@@ -53,7 +53,7 @@ async fn handle_blockdata<R: Reader>(
     let height = blockdata.block_num();
 
     // Bail out fast if we don't have to care.
-    let genesis = btcio_params.genesis_l1_height() as u64;
+    let genesis = btcio_params.genesis_l1_height();
     if height < genesis {
         warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(Option::None);
@@ -65,12 +65,13 @@ async fn handle_blockdata<R: Reader>(
     // Store chain tracking data only - ASM worker will handle manifest creation
     storage
         .l1()
-        .extend_canonical_chain_async(&l1blockid, height as L1Height)
+        .extend_canonical_chain_async(&l1blockid, height)
         .await?;
     info!(%height, %l1blockid, "stored L1 chain tracking data");
 
     // Create a sync event - the ASM worker will listen to this and create manifests
-    Ok(Option::Some(
-        L1BlockCommitment::new(height as L1Height, l1blockid),
-    ))
+    Ok(Option::Some(L1BlockCommitment::new(
+        height as L1Height,
+        l1blockid,
+    )))
 }

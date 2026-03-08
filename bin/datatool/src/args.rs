@@ -5,6 +5,7 @@ use std::{num::NonZero, path::PathBuf};
 use argh::FromArgs;
 use bitcoin::Network;
 use rand_core::OsRng;
+use strata_primitives::L1Height;
 
 use crate::util::resolve_network;
 
@@ -159,7 +160,7 @@ pub(crate) struct SubcParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: Option<u32>,
+    pub(crate) genesis_l1_height: Option<L1Height>,
 
     #[argh(option, description = "block time in seconds (default 5)", short = 't')]
     pub(crate) block_time: Option<u64>,
@@ -286,7 +287,7 @@ pub(crate) struct SubcOlParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: Option<u32>,
+    pub(crate) genesis_l1_height: Option<L1Height>,
 
     #[argh(
         option,
@@ -303,7 +304,7 @@ pub(crate) struct SubcOlParams {
 )]
 pub(crate) struct SubcGenL1View {
     #[argh(option, description = "genesis L1 block height", short = 'g')]
-    pub(crate) genesis_l1_height: u32,
+    pub(crate) genesis_l1_height: L1Height,
 
     #[argh(
         option,
