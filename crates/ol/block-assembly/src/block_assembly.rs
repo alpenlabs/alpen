@@ -28,8 +28,8 @@ use strata_snark_acct_types::{SnarkAccountUpdateContainer, UpdateAccumulatorProo
 use tracing::{debug, error};
 
 use crate::{
-    AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
-    MempoolProvider,
+    AccumulatedDaData, AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess,
+    EpochSealingPolicy, MempoolProvider,
     context::BlockAssemblyAnchorContext,
     error::BlockAssemblyError,
     types::{BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate},
@@ -253,6 +253,14 @@ where
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
 
+    // Fetch accumulated DA data from parent block (if any)
+    let parent_da = ctx.fetch_accumulated_da(parent_commitment).await?;
+
+    // Check if we're starting a new epoch
+    let is_new_epoch = parent_da.as_ref()
+        .map(|da| da.epoch != block_epoch)
+        .unwrap_or(true);
+
     // Phase 1: Execute block initialization (epoch initial + block start).
     let accumulated_batch = execute_block_initialization(parent_state.as_ref(), &block_context);
 
@@ -286,10 +294,28 @@ where
         &block_context,
         &parent_state,
         accumulated_batch,
-        output_buffer,
+        output_buffer.clone(),
         successful_txs,
         manifest_container,
     )?;
+
+    // Phase 5: Accumulate DA data for this block.
+    // Start fresh if new epoch, otherwise build on parent's accumulated data.
+    let mut accumulated_da = if is_new_epoch {
+        AccumulatedDaData::empty(block_epoch)
+    } else {
+        parent_da.unwrap_or_else(|| AccumulatedDaData::empty(block_epoch))
+    };
+
+    // Append this block's logs to the accumulated logs
+    accumulated_da.append_logs(output_buffer.into_logs());
+
+    // TODO: Also accumulate state diffs once we figure out how to maintain
+    // DaAccumulatingState across blocks
+
+    // Store the accumulated DA data for this block
+    let new_block_commitment = OLBlockCommitment::new(block_slot, template.get_blockid());
+    ctx.store_accumulated_da(new_block_commitment, accumulated_da).await?;
 
     Ok(ConstructBlockOutput {
         template,
