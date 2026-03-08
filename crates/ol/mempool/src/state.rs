@@ -20,8 +20,8 @@ use tracing::warn;
 use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
     types::{
-        MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-        OLMempoolTransaction,
+        FifoPriority, MempoolEntry, MempoolPriorityPolicy, OLMempoolConfig, OLMempoolRejectReason,
+        OLMempoolStats, OLMempoolTransaction,
     },
     validation::validate_transaction,
 };
@@ -106,36 +106,39 @@ impl<P: StateProvider> Debug for MempoolContext<P> {
 ///
 /// # Type Parameters
 ///
-/// - `P`: The state provider type that implements [`StateProvider`]. This enables production use
+/// - `SP`: The state provider type that implements [`StateProvider`]. This enables production use
 ///   with database-backed state and fast in-memory testing.
+/// - `Prio`: The priority policy that determines transaction ordering. Defaults to
+///   [`FifoPriority`].
 #[derive(Debug)]
-pub(crate) struct MempoolServiceState<P: StateProvider> {
-    ctx: Arc<MempoolContext<P>>,
+pub(crate) struct MempoolServiceState<SP: StateProvider, Prio: MempoolPriorityPolicy = FifoPriority>
+{
+    ctx: Arc<MempoolContext<SP>>,
 
     /// In-memory entries indexed by transaction ID.
-    entries: HashMap<OLTxId, MempoolEntry>,
+    entries: HashMap<OLTxId, MempoolEntry<Prio>>,
 
-    /// Ordering index: MempoolOrderingKey → transaction ID.
-    ordering_index: BTreeMap<MempoolOrderingKey, OLTxId>,
+    /// Ordering index: Policy key → transaction ID.
+    ordering_index: BTreeMap<Prio::Key, OLTxId>,
 
     /// Per-account mempool state.
     /// Tracks all txids and sequence numbers for each account.
     account_state: HashMap<AccountId, AccountMempoolState>,
 
     /// State accessor for validation. Updated when chain tip changes.
-    state_accessor: Arc<P::State>,
+    state_accessor: Arc<SP::State>,
 
     /// Mempool statistics.
     stats: OLMempoolStats,
 }
 
-impl<P: StateProvider> MempoolServiceState<P> {
+impl<SP: StateProvider, Prio: MempoolPriorityPolicy> MempoolServiceState<SP, Prio> {
     /// Create new mempool service state.
     #[expect(dead_code, reason = "another constructor is used")]
     pub(crate) async fn new(
         config: OLMempoolConfig,
         storage: Arc<NodeStorage>,
-        provider: Arc<P>,
+        provider: Arc<SP>,
         tip: OLBlockCommitment,
     ) -> OLMempoolResult<Self> {
         let ctx = Arc::new(MempoolContext::new_with_provider(config, storage, provider));
@@ -147,7 +150,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     ///
     /// Fetches the state for the given tip from the provider.
     pub(crate) async fn new_with_context(
-        ctx: Arc<MempoolContext<P>>,
+        ctx: Arc<MempoolContext<SP>>,
         tip: OLBlockCommitment,
     ) -> OLMempoolResult<Self> {
         let state_accessor = ctx
@@ -181,7 +184,9 @@ impl<P: StateProvider> MempoolServiceState<P> {
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
         let mut all_txs = self.ctx.storage.mempool().get_all_txs()?;
 
-        // Sort by `timestamp_micros` to validate transactions in order
+        // Sort by `timestamp_micros` to replay transactions in insertion order for validation.
+        // This ordering is for rebuilding per-account sequence-number state during load and is
+        // intentionally independent from policy-based transaction priority.
         all_txs.sort_by_key(|tx_data| tx_data.timestamp_micros);
 
         let mut loaded_count = 0;
@@ -206,10 +211,9 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
             let txid = tx_data.txid;
 
-            // Validate transaction
-            // Note: this plays nice with sequence number validation because we don't allow gaps
-            // (sequence numbers and timestamps are guaranteed to be compatible). When we move to a
-            // different priority ordering, this should be revised.
+            // Validate transaction against the progressively rebuilt account_state.
+            // Because load replay is insertion-ordered, sequence-number checks are consistent with
+            // how transactions originally entered the mempool.
             if let Err(e) =
                 validate_transaction(txid, &tx, &self.state_accessor, &self.account_state)
             {
@@ -230,8 +234,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
                 continue;
             }
 
-            // Create entry using stored timestamp from database
-            let ordering_key = MempoolOrderingKey::for_transaction(&tx, tx_data.timestamp_micros);
+            // Create a policy key using persisted insertion metadata.
+            let ordering_key = Prio::compute_key(&tx, tx_data.timestamp_micros, txid);
             let tx_size = tx_data.tx_bytes.len();
             let entry = MempoolEntry::new(tx, ordering_key, tx_size);
 
@@ -415,7 +419,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             .expect("system time before UNIX epoch")
             .as_micros() as u64;
 
-        let ordering_key = MempoolOrderingKey::for_transaction(&tx, timestamp_micros);
+        let ordering_key = Prio::compute_key(&tx, timestamp_micros, txid);
         let entry = MempoolEntry::new(tx.clone(), ordering_key, tx_size);
 
         // Persist to database first
@@ -436,7 +440,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// - account_state: Per-account tracking for validation
     ///
     /// Also updates statistics. Does NOT write to database or perform validation.
-    fn add_tx_to_in_memory_state(&mut self, txid: OLTxId, entry: MempoolEntry) {
+    fn add_tx_to_in_memory_state(&mut self, txid: OLTxId, entry: MempoolEntry<Prio>) {
         let ordering_key = entry.ordering_key;
         let target_account = entry.tx.target();
         let tx_size = entry.size_bytes;
@@ -462,7 +466,11 @@ impl<P: StateProvider> MempoolServiceState<P> {
     }
 
     /// Helper to remove a single transaction from all internal data structures.
-    fn remove_single_tx(&mut self, txid: OLTxId, entry: &MempoolEntry) -> OLMempoolResult<()> {
+    fn remove_single_tx(
+        &mut self,
+        txid: OLTxId,
+        entry: &MempoolEntry<Prio>,
+    ) -> OLMempoolResult<()> {
         // Remove from database first
         self.ctx.storage.mempool().del_tx(txid)?;
 
@@ -806,7 +814,9 @@ impl<P: StateProvider> MempoolServiceState<P> {
     }
 }
 
-impl<P: StateProvider> ServiceState for MempoolServiceState<P> {
+impl<SP: StateProvider, Prio: MempoolPriorityPolicy> ServiceState
+    for MempoolServiceState<SP, Prio>
+{
     fn name(&self) -> &str {
         "mempool"
     }
@@ -847,7 +857,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -876,7 +886,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -904,7 +914,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -943,7 +953,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1000,7 +1010,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1040,7 +1050,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1087,7 +1097,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1114,7 +1124,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1153,7 +1163,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1188,7 +1198,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1210,9 +1220,10 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state =
+            MempoolServiceState::<_, FifoPriority>::new_with_context(context.clone(), tip)
+                .await
+                .unwrap();
 
         // Add transactions - mix of different accounts and sequential txs for same account
         let account1 = create_test_account_id_with(1);
@@ -1229,9 +1240,10 @@ mod tests {
         let txid4 = state.add_transaction(tx4).await.unwrap();
 
         // Create new state and load from DB
-        let mut state2 = MempoolServiceState::new_with_context(context.clone(), tip)
-            .await
-            .unwrap();
+        let mut state2 =
+            MempoolServiceState::<_, FifoPriority>::new_with_context(context.clone(), tip)
+                .await
+                .unwrap();
         state2.load_from_db().await.unwrap();
 
         // Should have 4 transactions
@@ -1270,7 +1282,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1319,7 +1331,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1368,7 +1380,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1419,9 +1431,10 @@ mod tests {
         };
         let provider2 = Arc::new(create_test_state_provider(tip2));
         let context_tiny = Arc::new(create_test_context(config_tiny, provider2.clone()));
-        let mut state2 = MempoolServiceState::new_with_context(context_tiny, tip2)
-            .await
-            .unwrap();
+        let mut state2 =
+            MempoolServiceState::<_, FifoPriority>::new_with_context(context_tiny, tip2)
+                .await
+                .unwrap();
 
         let large_tx = create_test_tx_with_id(99);
         let result = state2.add_transaction(large_tx).await;
@@ -1450,7 +1463,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1526,7 +1539,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1592,7 +1605,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1647,7 +1660,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1721,7 +1734,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1777,7 +1790,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1812,7 +1825,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1843,7 +1856,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1876,7 +1889,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1926,7 +1939,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -1974,7 +1987,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -2016,7 +2029,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -2051,7 +2064,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -2086,7 +2099,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 
@@ -2121,7 +2134,7 @@ mod tests {
         };
         let provider = Arc::new(create_test_state_provider(tip));
         let context = Arc::new(create_test_context(config, provider.clone()));
-        let mut state = MempoolServiceState::new_with_context(context, tip)
+        let mut state = MempoolServiceState::<_, FifoPriority>::new_with_context(context, tip)
             .await
             .unwrap();
 

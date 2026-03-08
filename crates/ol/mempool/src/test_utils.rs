@@ -13,8 +13,9 @@ use proptest::{
     test_runner::TestRunner,
 };
 use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_crypto::hash;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
@@ -46,6 +47,11 @@ pub(crate) fn create_test_account_id_with(id: u8) -> AccountId {
     let mut bytes = [0u8; 32];
     bytes[0] = id;
     AccountId::new(bytes)
+}
+
+/// Create a deterministic test transaction ID from a byte.
+pub(crate) fn create_test_txid_with(id: u8) -> OLTxId {
+    OLTxId::from(hash::raw(&[id]))
 }
 
 /// Create a test transaction attachment using proptest strategy.
