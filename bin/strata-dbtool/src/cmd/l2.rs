@@ -3,7 +3,10 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
-use strata_primitives::{l1::{L1BlockId, L1Height}, l2::L2BlockId};
+use strata_primitives::{
+    l1::{L1BlockId, L1Height},
+    l2::L2BlockId,
+};
 
 use super::checkpoint::get_last_epoch;
 use crate::{

@@ -61,10 +61,7 @@ async fn fetch_l1_header_commitments_by_height(
     da_refs: &[L1DaBlockRef],
     ol_client: &impl SequencerOLClient,
 ) -> Result<HashMap<L1Height, Hash>> {
-    let mut heights: Vec<L1Height> = da_refs
-        .iter()
-        .map(|da_ref| da_ref.block.height())
-        .collect();
+    let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
     heights.sort_unstable();
     heights.dedup();
 

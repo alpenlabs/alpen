@@ -520,12 +520,8 @@ pub(crate) fn revert_chainstate(
 
             // ClientState entries (only if checkpoint cleanup is needed)
             if needs_checkpoint_cleanup && !client_state_entries_to_delete.is_empty() {
-                let first_height = client_state_entries_to_delete
-                    .first()
-                    .map(|b| b.height());
-                let last_height = client_state_entries_to_delete
-                    .last()
-                    .map(|b| b.height());
+                let first_height = client_state_entries_to_delete.first().map(|b| b.height());
+                let last_height = client_state_entries_to_delete.last().map(|b| b.height());
 
                 if let (Some(first), Some(last)) = (first_height, last_height) {
                     println!(

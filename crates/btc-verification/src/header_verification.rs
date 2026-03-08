@@ -304,7 +304,10 @@ mod tests {
         let start: L1Height = 0;
         let idx = OsRng.gen_range(1..1000usize);
         let h = get_relative_difficulty_adjustment_height(idx, start, &MAINNET);
-        assert_eq!(h, MAINNET.difficulty_adjustment_interval() as u32 * idx as u32);
+        assert_eq!(
+            h,
+            MAINNET.difficulty_adjustment_interval() as u32 * idx as u32
+        );
     }
 
     #[test]
@@ -476,10 +479,7 @@ mod tests {
         }
 
         // Verify we successfully crossed the boundary
-        assert_eq!(
-            verification_state.last_verified_block.height(),
-            end_height as u32
-        );
+        assert_eq!(verification_state.last_verified_block.height(), end_height);
     }
 
     /// Test that epoch_start_timestamp is correctly tracked across multiple adjustments.

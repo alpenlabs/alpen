@@ -21,7 +21,7 @@ use strata_btc_types::BlockHashExt;
 use strata_btc_verification::HeaderVerificationState;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
-use strata_primitives::{L1Height, buf::Buf32, l1::GenesisL1View};
+use strata_primitives::{buf::Buf32, l1::GenesisL1View, L1Height};
 use tokio::runtime;
 
 #[derive(Debug)]

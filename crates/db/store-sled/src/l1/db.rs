@@ -48,7 +48,11 @@ impl L1Database for L1DBSled {
         Ok(self.l1_canonical_tree.insert(&height, &blockid)?)
     }
 
-    fn remove_canonical_chain_entries(&self, start_height: L1Height, end_height: L1Height) -> DbResult<()> {
+    fn remove_canonical_chain_entries(
+        &self,
+        start_height: L1Height,
+        end_height: L1Height,
+    ) -> DbResult<()> {
         let mut batch = SledBatch::<L1CanonicalBlockSchema>::new();
         for height in (start_height..=end_height).rev() {
             batch.remove(height)?;

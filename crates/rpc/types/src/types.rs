@@ -19,11 +19,11 @@ use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
 pub use strata_primitives::serde_helpers::serde_hex_bytes::{HexBytes, HexBytes32, HexBytes64};
 use strata_primitives::{
-    L1Height,
     bitcoin_bosd::Descriptor,
     epoch::EpochCommitment,
     l1::{BitcoinAmount, L1BlockCommitment},
     l2::L2BlockCommitment,
+    L1Height,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -21,7 +21,7 @@ use strata_ol_chain_types::{
 };
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};
-use strata_primitives::{L1Height, buf::Buf32};
+use strata_primitives::{buf::Buf32, L1Height};
 use strata_state::exec_update::construct_ops_from_deposit_intents;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};

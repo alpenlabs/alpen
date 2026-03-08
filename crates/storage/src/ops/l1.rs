@@ -2,7 +2,7 @@
 
 use strata_asm_common::AsmManifest;
 use strata_db_types::traits::*;
-use strata_primitives::{L1Height, l1::L1BlockId};
+use strata_primitives::{l1::L1BlockId, L1Height};
 
 use crate::{exec::*, instrumentation::components};
 

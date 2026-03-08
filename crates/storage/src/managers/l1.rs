@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
 use strata_db_types::{traits::L1Database, DbError, DbResult};
-use strata_primitives::{L1Height, l1::L1BlockId};
+use strata_primitives::{l1::L1BlockId, L1Height};
 use threadpool::ThreadPool;
 use tracing::{error, instrument};
 

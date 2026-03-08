@@ -24,7 +24,11 @@ pub struct BtcioParams {
 
 impl BtcioParams {
     /// Creates a new [`BtcioParams`] with the given values.
-    pub fn new(l1_reorg_safe_depth: u32, magic_bytes: MagicBytes, genesis_l1_height: L1Height) -> Self {
+    pub fn new(
+        l1_reorg_safe_depth: u32,
+        magic_bytes: MagicBytes,
+        genesis_l1_height: L1Height,
+    ) -> Self {
         Self {
             l1_reorg_safe_depth,
             magic_bytes,
