@@ -39,7 +39,7 @@ async fn fetch_genesis_l1_view(
     let current_epoch_start_height =
         get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
     let current_epoch_start_header = client
-        .get_block_header_at(current_epoch_start_height)
+        .get_block_header_at(current_epoch_start_height as u64)
         .await?;
 
     // Fetch the block header at the height

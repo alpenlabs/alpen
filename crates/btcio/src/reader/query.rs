@@ -54,10 +54,8 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
-    let target_next_block = calculate_target_next_block(
-        storage.l1().as_ref(),
-        btcio_params.genesis_l1_height() as u64,
-    )?;
+    let target_next_block =
+        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
 
     let ctx = ReaderContext {
         client,
@@ -72,12 +70,12 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
 /// Calculates target next block to start polling l1 from.
 fn calculate_target_next_block(
     l1_manager: &L1BlockManager,
-    horz_height: u64,
-) -> anyhow::Result<u64> {
+    horz_height: L1Height,
+) -> anyhow::Result<L1Height> {
     // TODO switch to checking the L1 tip in the consensus/client state
     let target_next_block = l1_manager
         .get_canonical_chain_tip()?
-        .map(|(height, _)| height as u64 + 1)
+        .map(|(height, _)| height + 1)
         .unwrap_or(horz_height);
     assert!(target_next_block >= horz_height);
     Ok(target_next_block)
@@ -86,7 +84,7 @@ fn calculate_target_next_block(
 /// Inner function that actually does the reading task.
 async fn do_reader_task<R: Reader>(
     ctx: ReaderContext<R>,
-    target_next_block: u64,
+    target_next_block: L1Height,
     event_submitter: &impl BlockSubmitter,
 ) -> anyhow::Result<()> {
     info!(%target_next_block, "started L1 reader task!");
@@ -142,32 +140,32 @@ fn handle_poll_error(err: &anyhow::Error, status_updates: &mut Vec<L1StatusUpdat
 /// Inits the reader state by trying to backfill blocks up to a target height.
 async fn init_reader_state<R: Reader>(
     ctx: &ReaderContext<R>,
-    target_next_block: u64,
+    target_next_block: L1Height,
 ) -> anyhow::Result<ReaderState> {
     // Init the reader state using the blockid we were given, fill in a few blocks back.
     debug!(%target_next_block, "initializing reader state");
     let mut init_queue = VecDeque::new();
 
-    let lookback = ctx.btcio_params.l1_reorg_safe_depth() as usize * 2;
+    let lookback = ctx.btcio_params.l1_reorg_safe_depth() as L1Height * 2;
     let client = ctx.client.as_ref();
-    let genesis_height = ctx.btcio_params.genesis_l1_height() as u64;
+    let genesis_height = ctx.btcio_params.genesis_l1_height();
     let pre_genesis = genesis_height.saturating_sub(1);
-    let target = target_next_block as i64;
 
     // Do some math to figure out where our start and end are.
     let chain_info = client.get_blockchain_info().await?;
-    let start_height = (target - lookback as i64)
-        .max(pre_genesis as i64)
-        .min(chain_info.blocks as i64) as u64;
-    let end_height =
-        (chain_info.blocks as u64).min(pre_genesis.max(target_next_block.saturating_sub(1)));
+    let chain_tip = chain_info.blocks as L1Height;
+    let start_height = target_next_block
+        .saturating_sub(lookback)
+        .max(pre_genesis)
+        .min(chain_tip);
+    let end_height = chain_tip.min(pre_genesis.max(target_next_block.saturating_sub(1)));
     debug!(%start_height, %end_height, "queried L1 client, have init range");
 
     // Loop through the range we've determined to be okay and pull the blocks we want to look back
     // through in.
     let mut real_cur_height = start_height;
     for height in start_height..=end_height {
-        let blkid = client.get_block_hash(height).await?;
+        let blkid = client.get_block_hash(height as u64).await?;
         debug!(%height, %blkid, "loaded recent L1 block");
         init_queue.push_back(blkid);
         real_cur_height = height;
@@ -177,7 +175,7 @@ async fn init_reader_state<R: Reader>(
 
     // Note: Transaction filtering is no longer needed since the ASM STF handles
     // parsing L1 blocks and producing manifests with logs.
-    let state = ReaderState::new(real_cur_height + 1, lookback, init_queue, epoch);
+    let state = ReaderState::new(real_cur_height + 1, lookback as usize, init_queue, epoch);
     Ok(state)
 }
 
@@ -191,7 +189,7 @@ async fn poll_for_new_blocks<R: Reader>(
 ) -> anyhow::Result<Vec<L1Event>> {
     let chain_info = ctx.client.get_blockchain_info().await?;
     status_updates.push(L1StatusUpdate::RpcConnected(true));
-    let client_height = chain_info.blocks;
+    let client_height = chain_info.blocks as L1Height;
     let fresh_best_block = chain_info.best_block_hash;
 
     if fresh_best_block == *state.best_block() {
@@ -205,8 +203,7 @@ async fn poll_for_new_blocks<R: Reader>(
     if let Some((pivot_height, pivot_blkid)) = find_pivot_block(ctx.client.as_ref(), state).await? {
         if pivot_height < state.best_block_idx() {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
-            let block =
-                L1BlockCommitment::new(pivot_height as L1Height, pivot_blkid.to_l1_block_id());
+            let block = L1BlockCommitment::new(pivot_height, pivot_blkid.to_l1_block_id());
             state.rollback_to_height(pivot_height);
 
             // Return with the revert event immediately
@@ -344,7 +341,7 @@ pub async fn fetch_genesis_l1_view(
     let current_epoch_start_height =
         get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
     let current_epoch_start_header = client
-        .get_block_header_at(current_epoch_start_height)
+        .get_block_header_at(current_epoch_start_height as u64)
         .await?;
 
     // Fetch the block header at the height
@@ -382,7 +379,7 @@ pub async fn fetch_genesis_l1_view(
 
     // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::new(block_height as L1Height, block_id),
+        blk: L1BlockCommitment::new(block_height, block_id),
         next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
         last_11_timestamps: timestamps,

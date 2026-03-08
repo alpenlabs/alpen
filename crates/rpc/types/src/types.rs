@@ -19,6 +19,7 @@ use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
 use strata_ol_chain_types::L2BlockId;
 pub use strata_primitives::serde_helpers::serde_hex_bytes::{HexBytes, HexBytes32, HexBytes64};
 use strata_primitives::{
+    L1Height,
     bitcoin_bosd::Descriptor,
     epoch::EpochCommitment,
     l1::{BitcoinAmount, L1BlockCommitment},
@@ -36,7 +37,7 @@ pub struct RpcL1Status {
     pub last_rpc_error: Option<String>,
 
     /// Current block height.
-    pub cur_height: u64,
+    pub cur_height: L1Height,
 
     /// Current tip block ID as string.
     pub cur_tip_blkid: String,

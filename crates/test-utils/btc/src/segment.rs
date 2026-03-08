@@ -302,11 +302,11 @@ impl BtcChainSegment {
     }
 
     pub fn fetch_genesis_l1_view(&self, height: u64) -> Result<GenesisL1View, Error> {
-        block_on(fetch_genesis_l1_view(self, height))
+        block_on(fetch_genesis_l1_view(self, height as L1Height))
     }
 
     pub fn get_verification_state(&self, height: u64) -> Result<HeaderVerificationState, Error> {
-        block_on(fetch_verification_state(self, height))
+        block_on(fetch_verification_state(self, height as L1Height))
     }
 }
 

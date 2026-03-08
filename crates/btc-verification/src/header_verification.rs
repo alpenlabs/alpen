@@ -267,9 +267,11 @@ pub fn get_relative_difficulty_adjustment_height(
     idx: usize,
     start: L1Height,
     params: &Params,
-) -> u64 {
-    let difficulty_adjustment_interval = params.difficulty_adjustment_interval();
-    ((start as u64 / difficulty_adjustment_interval) + idx as u64) * difficulty_adjustment_interval
+) -> L1Height {
+    // `difficulty_adjustment_interval()` returns `u64` but the value is always less than u32, so
+    // the cast is safe. Upstream rust-bitcoin has since changed the return type to `u32` in https://github.com/rust-bitcoin/rust-bitcoin/commit/943a7863c8baeed9e06342fa98e67b390bedec43.
+    let difficulty_adjustment_interval = params.difficulty_adjustment_interval() as u32;
+    ((start / difficulty_adjustment_interval) + idx as u32) * difficulty_adjustment_interval
 }
 
 #[cfg(test)]
@@ -278,6 +280,7 @@ mod tests {
     use bitcoin::{BlockHash, CompactTarget, hashes::Hash, params::MAINNET};
     use borsh::{BorshDeserialize, BorshSerialize};
     use rand::{Rng, rngs::OsRng};
+    use strata_identifiers::L1Height;
     use strata_test_utils_btc::segment::BtcChainSegment;
 
     use crate::*;
@@ -285,7 +288,7 @@ mod tests {
     #[test]
     fn test_blocks() {
         let chain = BtcChainSegment::load();
-        let h2 = get_relative_difficulty_adjustment_height(2, chain.start, &MAINNET);
+        let h2 = get_relative_difficulty_adjustment_height(2, chain.start as L1Height, &MAINNET);
         let r1 = OsRng.gen_range(h2..chain.end);
         let mut verification_state = chain.get_verification_state(r1).unwrap();
 
@@ -298,10 +301,10 @@ mod tests {
 
     #[test]
     fn test_get_difficulty_adjustment_height() {
-        let start = 0;
-        let idx = OsRng.gen_range(1..1000);
+        let start: L1Height = 0;
+        let idx = OsRng.gen_range(1..1000usize);
         let h = get_relative_difficulty_adjustment_height(idx, start, &MAINNET);
-        assert_eq!(h, MAINNET.difficulty_adjustment_interval() * idx);
+        assert_eq!(h, MAINNET.difficulty_adjustment_interval() * idx as u64);
     }
 
     #[test]

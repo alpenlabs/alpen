@@ -1,6 +1,6 @@
 use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
-use strata_identifiers::{Epoch, L1BlockCommitment, L1Height};
+use strata_identifiers::{Epoch, L1BlockCommitment};
 use strata_state::BlockSubmitter;
 use tracing::*;
 
@@ -70,8 +70,5 @@ async fn handle_blockdata<R: Reader>(
     info!(%height, %l1blockid, "stored L1 chain tracking data");
 
     // Create a sync event - the ASM worker will listen to this and create manifests
-    Ok(Option::Some(L1BlockCommitment::new(
-        height as L1Height,
-        l1blockid,
-    )))
+    Ok(Option::Some(L1BlockCommitment::new(height, l1blockid)))
 }
