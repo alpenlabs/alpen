@@ -308,18 +308,18 @@ async fn process_block<R: Reader>(
 /// ascending order (oldest first).
 async fn fetch_block_timestamps_ascending(
     client: &impl Reader,
-    height: u64,
+    height: L1Height,
     count: usize,
 ) -> anyhow::Result<Vec<u32>> {
     let mut timestamps = Vec::with_capacity(count);
 
     for i in 0..count {
-        let current_height = height.saturating_sub(i as u64);
+        let current_height = height.saturating_sub(i as u32);
         // If we've gone past block 1, push 0 as a placeholder.
         if current_height < 1 {
             timestamps.push(0);
         } else {
-            let header = client.get_block_header_at(current_height).await?;
+            let header = client.get_block_header_at(current_height as u64).await?;
             timestamps.push(header.time);
         }
     }
@@ -349,8 +349,7 @@ pub async fn fetch_genesis_l1_view(
 
     // Fetch timestamps
     let timestamps =
-        fetch_block_timestamps_ascending(client, block_height as u64, TIMESTAMPS_FOR_MEDIAN)
-            .await?;
+        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
     let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
         "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
     );

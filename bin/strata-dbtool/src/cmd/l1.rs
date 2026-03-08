@@ -32,7 +32,7 @@ pub(crate) struct GetL1ManifestArgs {
 pub(crate) struct GetL1SummaryArgs {
     /// l1 height to look up the summary about
     #[argh(positional)]
-    pub(crate) height_from: u32,
+    pub(crate) height_from: L1Height,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]

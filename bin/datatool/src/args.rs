@@ -231,7 +231,7 @@ pub(crate) struct SubcAsmParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: Option<u32>,
+    pub(crate) genesis_l1_height: Option<L1Height>,
 
     #[argh(
         option,
