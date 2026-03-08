@@ -31,8 +31,8 @@ jobs:
 
       - name: Provision dashboard
         env:
-          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
-          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }} # zizmor: ignore[secrets-outside-env]
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }} # zizmor: ignore[secrets-outside-env]
         working-directory: .github/scripts/grafana
         run: |
           uv run --no-project python provision.py \
@@ -44,5 +44,5 @@ jobs:
           {
             echo "Dashboard provisioned successfully"
             echo ""
-            echo "View at: ${{ secrets.GRAFANA_URL }}/d/test-flakiness/test-flakiness-tracker"
+            echo "View at: ${{ secrets.GRAFANA_URL }}/d/test-flakiness/test-flakiness-tracker" # zizmor: ignore[secrets-outside-env]
           } >> "$GITHUB_STEP_SUMMARY"

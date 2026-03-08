@@ -48,9 +48,9 @@ jobs:
 
       - name: Collect and send metrics
         env:
-          GRAFANA_CLOUD_INFLUX_URL: ${{ secrets.GRAFANA_CLOUD_INFLUX_URL }}
-          GRAFANA_CLOUD_INFLUX_USER: ${{ secrets.GRAFANA_CLOUD_INFLUX_USER }}
-          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+          GRAFANA_CLOUD_INFLUX_URL: ${{ secrets.GRAFANA_CLOUD_INFLUX_URL }} # zizmor: ignore[secrets-outside-env]
+          GRAFANA_CLOUD_INFLUX_USER: ${{ secrets.GRAFANA_CLOUD_INFLUX_USER }} # zizmor: ignore[secrets-outside-env]
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }} # zizmor: ignore[secrets-outside-env]
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
@@ -64,7 +64,7 @@ jobs:
       - name: Summary
         if: success()
         env:
-          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }} # zizmor: ignore[secrets-outside-env]
         run: |
           {
             echo "Test metrics sent to Grafana Cloud"
@@ -94,7 +94,7 @@ jobs:
       - name: Publish Unit Test Coverage
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
           files: ./lcov.unit.info
           flags: unit
           name: unit-coverage
@@ -110,7 +110,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }} # zizmor: ignore[secrets-outside-env]
           files: ./lcov.functional.info
           flags: functional
           name: functional-coverage
