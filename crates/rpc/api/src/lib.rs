@@ -8,7 +8,7 @@ use strata_common::{Action, WorkerType};
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
 use strata_ol_chain_types::{L2Block, L2BlockId};
-use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId};
+use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, L1Height};
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_rpc_types::{
     types::{RpcBlockHeader, RpcClientStatus, RpcL1Status},
@@ -44,7 +44,7 @@ pub trait StrataApi {
     async fn get_l1_status(&self) -> RpcResult<RpcL1Status>;
 
     #[method(name = "getL1blockHash")]
-    async fn get_l1_block_hash(&self, height: u64) -> RpcResult<Option<String>>;
+    async fn get_l1_block_hash(&self, height: L1Height) -> RpcResult<Option<String>>;
 
     #[method(name = "clientStatus")]
     async fn get_client_status(&self) -> RpcResult<RpcClientStatus>;

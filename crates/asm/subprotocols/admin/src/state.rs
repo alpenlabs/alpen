@@ -133,6 +133,7 @@ mod tests {
         keys::compressed::CompressedPublicKey,
         threshold_signature::{ThresholdConfig, ThresholdConfigUpdate},
     };
+    use strata_primitives::L1Height;
     use strata_test_utils::ArbitraryGenerator;
 
     use crate::{queued_update::QueuedUpdate, state::AdministrationSubprotoState};
@@ -195,7 +196,7 @@ mod tests {
     }
 
     /// Helper to seed queued updates with specific activation heights
-    fn seed_queued(ids: &[u32], activation_heights: &[u32]) -> AdministrationSubprotoState {
+    fn seed_queued(ids: &[u32], activation_heights: &[L1Height]) -> AdministrationSubprotoState {
         let mut arb = ArbitraryGenerator::new();
         let config = create_test_config();
         let mut state = AdministrationSubprotoState::new(&config);

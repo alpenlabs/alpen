@@ -6,7 +6,7 @@ use strata_db_types::{
     traits::{AsmDatabase, CheckpointDatabase, DatabaseBackend, L1Database},
     types::CheckpointEntry,
 };
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::l1::{L1BlockCommitment, L1Height};
 
 use crate::{
     cli::OutputFormat,
@@ -35,7 +35,7 @@ pub(crate) struct GetCheckpointArgs {
 pub(crate) struct GetCheckpointsSummaryArgs {
     /// start l1 height to query checkpoints from
     #[argh(positional)]
-    pub(crate) height_from: u64,
+    pub(crate) height_from: u32,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -71,7 +71,7 @@ pub(crate) fn get_last_epoch(db: &impl DatabaseBackend) -> Result<Option<u64>, D
 /// checkpoint epoch commitments found in the logs.
 fn count_checkpoints_in_asm_logs(
     db: &impl DatabaseBackend,
-    height_from: u64,
+    height_from: L1Height,
 ) -> Result<u64, DisplayedError> {
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();
@@ -97,13 +97,7 @@ fn count_checkpoints_in_asm_logs(
             )
         })?;
 
-    let start_l1_commitment = L1BlockCommitment::from_height_u64(height_from, block_id)
-        .ok_or_else(|| {
-            DisplayedError::InternalError(
-                "Invalid height for L1BlockCommitment".to_string(),
-                Box::new(height_from),
-            )
-        })?;
+    let start_l1_commitment = L1BlockCommitment::new(height_from, block_id);
 
     let mut checkpoint_count = 0u64;
 
@@ -123,7 +117,7 @@ fn count_checkpoints_in_asm_logs(
         // Process each ASM state's logs
         for (commitment, asm_state) in &asm_states {
             // Only process blocks at or after height_from
-            if commitment.height_u64() < height_from {
+            if commitment.height() < height_from {
                 continue;
             }
 

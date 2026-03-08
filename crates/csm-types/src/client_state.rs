@@ -8,7 +8,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, BatchTransition};
-use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId};
+use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -117,8 +117,8 @@ impl CheckpointL1Ref {
         }
     }
 
-    pub fn block_height(&self) -> u64 {
-        self.l1_commitment.height() as u64
+    pub fn block_height(&self) -> L1Height {
+        self.l1_commitment.height()
     }
 
     pub fn block_id(&self) -> &L1BlockId {

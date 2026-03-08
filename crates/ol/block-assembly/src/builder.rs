@@ -74,7 +74,7 @@ where
         S::Error: Display,
         S::State: BlockAssemblyStateAccess,
     {
-        let genesis_l1_height = self.params.rollup().genesis_l1_view.height_u64();
+        let genesis_l1_height = self.params.rollup().genesis_l1_view.height();
         let context = Arc::new(BlockAssemblyContext::new(
             self.storage,
             self.mempool_provider,

@@ -9,7 +9,7 @@ use strata_btc_types::BlockHashExt;
 use strata_btc_verification::get_relative_difficulty_adjustment_height;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, GenesisL1View, L1BlockCommitment},
+    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1Height},
 };
 
 use crate::args::BitcoindConfig;
@@ -20,7 +20,7 @@ use crate::args::BitcoindConfig;
 /// at the specified block height.
 pub(crate) async fn fetch_genesis_l1_view_with_config(
     config: &BitcoindConfig,
-    block_height: u64,
+    block_height: L1Height,
 ) -> anyhow::Result<GenesisL1View> {
     let client = create_client(config)?;
     fetch_genesis_l1_view(&client, block_height).await
@@ -28,8 +28,10 @@ pub(crate) async fn fetch_genesis_l1_view_with_config(
 
 async fn fetch_genesis_l1_view(
     client: &impl Reader,
-    block_height: u64,
+    block_height: L1Height,
 ) -> anyhow::Result<GenesisL1View> {
+    let block_height_u64 = u64::from(block_height);
+
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
     let btc_params = BtcParams::from(Params::from(network));
@@ -37,17 +39,17 @@ async fn fetch_genesis_l1_view(
     // Get the difficulty adjustment block just before the given block height,
     // representing the start of the current epoch.
     let current_epoch_start_height =
-        get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
+        get_relative_difficulty_adjustment_height(0, block_height_u64, btc_params.inner());
     let current_epoch_start_header = client
         .get_block_header_at(current_epoch_start_height)
         .await?;
 
     // Fetch the block header at the height
-    let block_header = client.get_block_header_at(block_height).await?;
+    let block_header = client.get_block_header_at(block_height_u64).await?;
 
     // Fetch timestamps
     let timestamps =
-        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
+        fetch_block_timestamps_ascending(client, block_height_u64, TIMESTAMPS_FOR_MEDIAN).await?;
     let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
         "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
     );
@@ -58,7 +60,7 @@ async fn fetch_genesis_l1_view(
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target
     let next_block_target =
-        if (block_height + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
+        if (block_height_u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
             CompactTarget::from_next_work_required(
                 block_header.bits,
                 (block_header.time - current_epoch_start_header.time) as u64,
@@ -67,7 +69,7 @@ async fn fetch_genesis_l1_view(
             .to_consensus()
         } else {
             client
-                .get_block_header_at(block_height)
+                .get_block_header_at(block_height_u64)
                 .await?
                 .target()
                 .to_compact_lossy()
@@ -76,7 +78,7 @@ async fn fetch_genesis_l1_view(
 
     // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::from_height_u64(block_height, block_id).expect("valid height"),
+        blk: L1BlockCommitment::new(block_height, block_id),
         next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
         last_11_timestamps: timestamps,

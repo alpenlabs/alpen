@@ -321,10 +321,9 @@ impl ChainWorkerServiceState {
 
         // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
         let epochal = last_block_output.write_batch().epochal();
-        let new_tip_height = epochal.last_l1_height().into();
+        let new_tip_height = epochal.last_l1_height();
         let new_tip_blkid = epochal.last_l1_blkid();
-        let new_l1_block = L1BlockCommitment::from_height_u64(new_tip_height, *new_tip_blkid)
-            .expect("valid height");
+        let new_l1_block = L1BlockCommitment::new(new_tip_height, *new_tip_blkid);
 
         let epoch_final_state = *last_block_output.computed_state_root();
 

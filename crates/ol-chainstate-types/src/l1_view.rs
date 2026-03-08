@@ -1,14 +1,14 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_identifiers::L1BlockCommitment;
-use strata_primitives::l1::L1BlockId;
+use strata_primitives::l1::{L1BlockId, L1Height};
 
 /// Describes state relating to the CL's view of L1.  Updated by entries in the
 /// L1 segment of CL blocks.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Arbitrary)]
 pub struct L1ViewState {
     /// The actual first block we ever looked at.
-    pub(crate) genesis_height: u64,
+    pub(crate) genesis_height: L1Height,
 
     /// Verified L1Block
     pub(crate) verified_blk: L1BlockCommitment,
@@ -18,7 +18,7 @@ impl L1ViewState {
     /// Creates a new instance with the genesis trigger L1 block already ingested.
     pub fn new_at_genesis(genesis_blk: L1BlockCommitment) -> Self {
         Self {
-            genesis_height: genesis_blk.height() as u64,
+            genesis_height: genesis_blk.height(),
             verified_blk: genesis_blk,
         }
     }
@@ -27,8 +27,8 @@ impl L1ViewState {
         self.verified_blk.blkid()
     }
 
-    pub fn safe_height(&self) -> u64 {
-        self.verified_blk.height() as u64
+    pub fn safe_height(&self) -> L1Height {
+        self.verified_blk.height()
     }
 
     /// Gets the safe block as a [`L1BlockCommitment`].
@@ -37,7 +37,7 @@ impl L1ViewState {
     }
 
     /// The height of the next block we expect to be added.
-    pub fn next_expected_height(&self) -> u64 {
+    pub fn next_expected_height(&self) -> L1Height {
         self.safe_height() + 1
     }
 

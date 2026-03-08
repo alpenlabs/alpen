@@ -21,7 +21,7 @@ use strata_btc_types::BlockHashExt;
 use strata_btc_verification::HeaderVerificationState;
 use strata_btcio::reader::query::{fetch_genesis_l1_view, fetch_verification_state};
 use strata_identifiers::WtxidsRoot;
-use strata_primitives::{buf::Buf32, l1::GenesisL1View};
+use strata_primitives::{L1Height, buf::Buf32, l1::GenesisL1View};
 use tokio::runtime;
 
 #[derive(Debug)]
@@ -140,7 +140,8 @@ impl BtcChainSegment {
         let wtxs_root = WtxidsRoot::from(Buf32::from(
             header.merkle_root.as_raw_hash().to_byte_array(),
         ));
-        AsmManifest::new(height, blkid, wtxs_root, Vec::new())
+        // Cast u64 -> L1Height at the boundary where BtcChainSegment uses u64 heights.
+        AsmManifest::new(height as L1Height, blkid, wtxs_root, Vec::new())
     }
 }
 

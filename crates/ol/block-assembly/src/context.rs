@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use strata_acct_types::{AccountId, tree_hash::TreeHash};
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{Hash, MmrId, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_identifiers::{Hash, L1Height, MmrId, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     IAccountStateConstructible, IAccountStateMut, IStateAccessor, asm_manifests_mmr_start_height,
 };
@@ -72,7 +72,7 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
     /// Fetch ASM manifests from `start_height` to latest (ascending).
     async fn fetch_asm_manifests_from(
         &self,
-        start_height: u64,
+        start_height: L1Height,
     ) -> BlockAssemblyResult<Vec<AsmManifest>>;
 }
 
@@ -105,7 +105,7 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
-    _genesis_l1_height: u64,
+    _genesis_l1_height: L1Height,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
@@ -122,7 +122,7 @@ impl<M, S> BlockAssemblyContext<M, S> {
         storage: Arc<NodeStorage>,
         mempool_provider: M,
         state_provider: S,
-        genesis_l1_height: u64,
+        genesis_l1_height: L1Height,
     ) -> Self {
         Self {
             storage,
@@ -244,7 +244,7 @@ where
 
     async fn fetch_asm_manifests_from(
         &self,
-        start_height: u64,
+        start_height: L1Height,
     ) -> BlockAssemblyResult<Vec<AsmManifest>> {
         let end_height = match self
             .storage
@@ -252,7 +252,7 @@ where
             .fetch_most_recent_state()
             .map_err(BlockAssemblyError::Database)?
         {
-            Some((commitment, _)) => commitment.height_u64(),
+            Some((commitment, _)) => commitment.height(),
             None => return Ok(Vec::new()),
         };
 
@@ -418,7 +418,7 @@ mod tests {
     // L1 Header Proof Generation Tests
     // =========================================================================
 
-    fn create_test_manifest(height: u64, seed: u8) -> AsmManifest {
+    fn create_test_manifest(height: L1Height, seed: u8) -> AsmManifest {
         let mut blkid_bytes = [0u8; 32];
         blkid_bytes[0] = seed;
         AsmManifest::new(
@@ -443,7 +443,7 @@ mod tests {
         let claims = asm_mmr.claims(0);
         let expected_hash = asm_mmr.hashes()[0];
         let mut state = create_test_genesis_state();
-        state.append_manifest(manifest.height() as u32, manifest);
+        state.append_manifest(manifest.height(), manifest);
 
         let ctx = create_test_context(storage);
 
@@ -475,7 +475,7 @@ mod tests {
         let claims = asm_mmr.claims(0);
         let mut state = create_test_genesis_state();
         for manifest in manifests {
-            state.append_manifest(manifest.height() as u32, manifest);
+            state.append_manifest(manifest.height(), manifest);
         }
 
         let ctx = create_test_context(storage);
@@ -503,7 +503,7 @@ mod tests {
         let claim = AccumulatorClaim::new(claim_height, wrong_hash);
         let expected_hash = asm_mmr.hashes()[0];
         let mut state = create_test_genesis_state();
-        state.append_manifest(manifest.height() as u32, manifest);
+        state.append_manifest(manifest.height(), manifest);
 
         let ctx = create_test_context(storage);
 
@@ -542,7 +542,7 @@ mod tests {
         let nonexistent_height = 999u64;
         let claim = AccumulatorClaim::new(nonexistent_height, asm_mmr.hashes()[0]);
         let mut state = create_test_genesis_state();
-        state.append_manifest(manifest.height() as u32, manifest);
+        state.append_manifest(manifest.height(), manifest);
 
         let ctx = create_test_context(storage);
 

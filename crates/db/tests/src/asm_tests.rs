@@ -19,8 +19,7 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
     db.put_asm_state(L1BlockCommitment::default(), state.clone())
         .expect("test insert");
 
-    let another_block = L1BlockCommitment::from_height_u64(1, L1BlockId::default())
-        .expect("height should be valid");
+    let another_block = L1BlockCommitment::new(1, L1BlockId::default());
     db.put_asm_state(another_block, state.clone())
         .expect("test: insert");
 
@@ -29,8 +28,7 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
 }
 
 pub fn test_put_get_aux_data(db: &impl AsmDatabase) {
-    let block = L1BlockCommitment::from_height_u64(1, L1BlockId::default())
-        .expect("height should be valid");
+    let block = L1BlockCommitment::new(1, L1BlockId::default());
 
     // Initially no aux data.
     let result = db.get_aux_data(block).expect("test: get empty");

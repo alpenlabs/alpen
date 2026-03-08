@@ -12,7 +12,7 @@ use strata_btc_verification::{get_relative_difficulty_adjustment_height, HeaderV
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, GenesisL1View, L1BlockCommitment},
+    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1Height},
 };
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
@@ -55,7 +55,7 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
     let target_next_block =
-        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
+        calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height() as u64)?;
 
     let ctx = ReaderContext {
         client,
@@ -75,7 +75,7 @@ fn calculate_target_next_block(
     // TODO switch to checking the L1 tip in the consensus/client state
     let target_next_block = l1_manager
         .get_canonical_chain_tip()?
-        .map(|(height, _)| height + 1)
+        .map(|(height, _)| height as u64 + 1)
         .unwrap_or(horz_height);
     assert!(target_next_block >= horz_height);
     Ok(target_next_block)
@@ -148,7 +148,7 @@ async fn init_reader_state<R: Reader>(
 
     let lookback = ctx.btcio_params.l1_reorg_safe_depth() as usize * 2;
     let client = ctx.client.as_ref();
-    let genesis_height = ctx.btcio_params.genesis_l1_height();
+    let genesis_height = ctx.btcio_params.genesis_l1_height() as u64;
     let pre_genesis = genesis_height.saturating_sub(1);
     let target = target_next_block as i64;
 
@@ -204,8 +204,7 @@ async fn poll_for_new_blocks<R: Reader>(
         if pivot_height < state.best_block_idx() {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
             let block =
-                L1BlockCommitment::from_height_u64(pivot_height, pivot_blkid.to_l1_block_id())
-                    .expect("valid height");
+                L1BlockCommitment::new(pivot_height as L1Height, pivot_blkid.to_l1_block_id());
             state.rollback_to_height(pivot_height);
 
             // Return with the revert event immediately
@@ -381,7 +380,7 @@ pub async fn fetch_genesis_l1_view(
 
     // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::from_height_u64(block_height, block_id).expect("valid height"),
+        blk: L1BlockCommitment::new(block_height as L1Height, block_id),
         next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
         last_11_timestamps: timestamps,

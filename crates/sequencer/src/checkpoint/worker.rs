@@ -10,7 +10,10 @@ use strata_ol_chain_types::{L2BlockBundle, L2BlockHeader, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};
 use strata_primitives::{
-    self, epoch::EpochCommitment, l1::L1BlockCommitment, l2::L2BlockCommitment,
+    self,
+    epoch::EpochCommitment,
+    l1::{L1BlockCommitment, L1Height},
+    l2::L2BlockCommitment,
 };
 use strata_status::*;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -244,16 +247,15 @@ fn create_checkpoint_prep_data_from_summary(
     };
 
     // Determine the ranges for each of the fields we commit to.
-    let l1_start_height = if let Some(ps) = prev_summary {
-        ps.new_l1().height() as u64 + 1
+    let l1_start_height: L1Height = if let Some(ps) = prev_summary {
+        ps.new_l1().height() + 1
     } else {
-        params.genesis_l1_view.height() as u64 + 1
+        params.genesis_l1_view.height() + 1
     };
 
     // Reconstruct the L1 range.
     let l1_start_mf = fetch_l1_block_manifest(l1_start_height, l1man)?;
-    let l1_start_block = L1BlockCommitment::from_height_u64(l1_start_height, *l1_start_mf.blkid())
-        .expect("height should be valid");
+    let l1_start_block = L1BlockCommitment::new(l1_start_height, *l1_start_mf.blkid());
     let l1_range = (l1_start_block, *summary.new_l1());
 
     // Now just pull out the data about the blocks from the transition here.
@@ -358,7 +360,7 @@ fn fetch_l2_block(blkid: &L2BlockId, l2man: &L2BlockManager) -> anyhow::Result<L
         .ok_or(Error::MissingL2Block(*blkid))?)
 }
 
-fn fetch_l1_block_manifest(height: u64, l1man: &L1BlockManager) -> anyhow::Result<AsmManifest> {
+fn fetch_l1_block_manifest(height: L1Height, l1man: &L1BlockManager) -> anyhow::Result<AsmManifest> {
     Ok(l1man
         .get_block_manifest_at_height(height)?
         .ok_or(DbError::MissingL1Block(height))?)

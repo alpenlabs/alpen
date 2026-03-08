@@ -159,7 +159,7 @@ pub(crate) struct SubcParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: Option<u64>,
+    pub(crate) genesis_l1_height: Option<u32>,
 
     #[argh(option, description = "block time in seconds (default 5)", short = 't')]
     pub(crate) block_time: Option<u64>,
@@ -230,7 +230,7 @@ pub(crate) struct SubcAsmParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: Option<u64>,
+    pub(crate) genesis_l1_height: Option<u32>,
 
     #[argh(
         option,
@@ -286,7 +286,7 @@ pub(crate) struct SubcOlParams {
         description = "genesis L1 block height (default 100)",
         short = 'g'
     )]
-    pub(crate) genesis_l1_height: Option<u64>,
+    pub(crate) genesis_l1_height: Option<u32>,
 
     #[argh(
         option,
@@ -303,7 +303,7 @@ pub(crate) struct SubcOlParams {
 )]
 pub(crate) struct SubcGenL1View {
     #[argh(option, description = "genesis L1 block height", short = 'g')]
-    pub(crate) genesis_l1_height: u64,
+    pub(crate) genesis_l1_height: u32,
 
     #[argh(
         option,

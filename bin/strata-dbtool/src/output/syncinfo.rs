@@ -2,7 +2,7 @@
 
 use strata_db_types::traits::BlockStatus;
 use strata_primitives::{
-    l1::L1BlockId,
+    l1::{L1BlockId, L1Height},
     l2::L2BlockId,
     prelude::{EpochCommitment, L1BlockCommitment, L2BlockCommitment},
 };
@@ -12,7 +12,7 @@ use super::{helpers::porcelain_field, traits::Formattable};
 /// Sync information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct SyncInfo<'a> {
-    pub l1_tip_height: u64,
+    pub l1_tip_height: L1Height,
     pub l1_tip_block_id: &'a L1BlockId,
     pub l2_tip_height: u64,
     pub l2_tip_block_id: &'a L2BlockId,
@@ -143,9 +143,9 @@ mod tests {
         L2BlockCommitment::new(slot, block_id)
     }
 
-    fn create_test_l1_block_commitment(height: u64) -> L1BlockCommitment {
+    fn create_test_l1_block_commitment(height: L1Height) -> L1BlockCommitment {
         let block_id = create_test_l1_block_id();
-        L1BlockCommitment::from_height_u64(height, block_id).expect("height should be valid")
+        L1BlockCommitment::new(height, block_id)
     }
 
     #[test]

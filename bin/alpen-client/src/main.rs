@@ -622,7 +622,7 @@ pub struct AdditionalConfig {
 
     /// Genesis L1 block height (the first L1 block the rollup cares about).
     #[arg(long, default_value = "0")]
-    pub genesis_l1_height: u64,
+    pub genesis_l1_height: u32,
 
     /// Number of blocks per batch before sealing.
     /// Lower values seal batches more frequently (useful for testing).

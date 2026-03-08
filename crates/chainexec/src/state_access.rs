@@ -80,9 +80,7 @@ impl StateAccessor for MemStateAccessor {
     }
 
     fn last_l1_block(&self) -> L1BlockCommitment {
-        let l1_view = self.state_cache.state().l1_view();
-        L1BlockCommitment::from_height_u64(l1_view.safe_height(), *l1_view.safe_blkid())
-            .expect("height should be valid")
+        self.state_cache.state().l1_view().get_safe_block()
     }
 
     fn epoch_finishing_flag(&self) -> bool {

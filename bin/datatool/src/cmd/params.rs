@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// The default L1 genesis height to use.
-const DEFAULT_L1_GENESIS_HEIGHT: u64 = 100;
+const DEFAULT_L1_GENESIS_HEIGHT: u32 = 100;
 
 /// The default evm chainspec to use in params.
 const DEFAULT_CHAIN_SPEC: &str = alpen_chainspec::DEV_CHAIN_SPEC;
@@ -245,7 +245,7 @@ fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockIn
 /// 3. Otherwise, return an error
 pub(super) fn retrieve_genesis_l1_view(
     genesis_l1_view_file: Option<&str>,
-    genesis_l1_height: Option<u64>,
+    genesis_l1_height: Option<u32>,
     ctx: &CmdContext,
 ) -> anyhow::Result<GenesisL1View> {
     // Priority 1: Use file if provided

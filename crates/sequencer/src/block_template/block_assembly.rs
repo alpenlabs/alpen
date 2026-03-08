@@ -21,7 +21,7 @@ use strata_ol_chain_types::{
 };
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};
-use strata_primitives::buf::Buf32;
+use strata_primitives::{L1Height, buf::Buf32};
 use strata_state::exec_update::construct_ops_from_deposit_intents;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
@@ -177,7 +177,7 @@ fn prepare_l1_segment(
     let (cur_real_l1_height, _) = l1man
         .get_canonical_chain_tip()?
         .ok_or(Error::MissingTipBlock)?;
-    let target_height = cur_real_l1_height.saturating_sub(params.l1_reorg_safe_depth as u64); // -1 to give some buffer for very short reorgs
+    let target_height = cur_real_l1_height.saturating_sub(params.l1_reorg_safe_depth); // -1 to give some buffer for very short reorgs
 
     // Check to see if there's actually no blocks in the queue.  In that case we can just give
     // everything we know about.
@@ -255,7 +255,7 @@ fn prepare_l1_segment(
     }
 
     if is_epoch_final_block {
-        let new_height = cur_safe_height + payloads.len() as u64;
+        let new_height = cur_safe_height + payloads.len() as L1Height;
         Ok(L1Segment::new(new_height, payloads))
     } else {
         Ok(L1Segment::new(cur_safe_height, Vec::new()))
@@ -305,11 +305,11 @@ fn has_expected_checkpoint(
 }
 
 #[expect(unused, reason = "used for fetching manifest")]
-fn fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<AsmManifest, Error> {
-    try_fetch_manifest(h, l1man)?.ok_or(Error::MissingL1BlockHeight(h))
+fn fetch_manifest(h: L1Height, l1man: &L1BlockManager) -> Result<AsmManifest, Error> {
+    try_fetch_manifest(h, l1man)?.ok_or(Error::MissingL1BlockHeight(h as u64))
 }
 
-fn try_fetch_manifest(h: u64, l1man: &L1BlockManager) -> Result<Option<AsmManifest>, Error> {
+fn try_fetch_manifest(h: L1Height, l1man: &L1BlockManager) -> Result<Option<AsmManifest>, Error> {
     Ok(l1man.get_block_manifest_at_height(h)?)
 }
 

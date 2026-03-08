@@ -3,7 +3,7 @@
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
 #[cfg(test)]
 use serde_json as _;
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockId, OLTxId};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockId, OLTxId};
 use strata_ol_rpc_types::*;
 use strata_ol_sequencer::BlockCompletionData;
 use strata_primitives::{HexBytes, HexBytes32, HexBytes64};
@@ -62,7 +62,7 @@ pub trait OLClientRpc {
 
     /// Get canonical L1 header commitment for the given L1 block height.
     #[method(name = "getL1HeaderCommitment")]
-    async fn get_l1_header_commitment(&self, l1_height: u64) -> RpcResult<Option<HexBytes32>>;
+    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> RpcResult<Option<HexBytes32>>;
 
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]

@@ -1,6 +1,6 @@
 use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
-use strata_identifiers::{Epoch, L1BlockCommitment};
+use strata_identifiers::{Epoch, L1BlockCommitment, L1Height};
 use strata_state::BlockSubmitter;
 use tracing::*;
 
@@ -18,7 +18,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
         L1Event::RevertTo(block) => {
             // L1 reorgs will be handled in L2 STF, we just have to reflect
             // what the client is telling us in the database.
-            let height = block.height_u64();
+            let height = block.height();
             ctx.storage
                 .l1()
                 .revert_canonical_chain_async(height)
@@ -53,7 +53,7 @@ async fn handle_blockdata<R: Reader>(
     let height = blockdata.block_num();
 
     // Bail out fast if we don't have to care.
-    let genesis = btcio_params.genesis_l1_height();
+    let genesis = btcio_params.genesis_l1_height() as u64;
     if height < genesis {
         warn!(%height, %genesis, "ignoring BlockData for block before genesis");
         return Ok(Option::None);
@@ -65,12 +65,12 @@ async fn handle_blockdata<R: Reader>(
     // Store chain tracking data only - ASM worker will handle manifest creation
     storage
         .l1()
-        .extend_canonical_chain_async(&l1blockid, height)
+        .extend_canonical_chain_async(&l1blockid, height as L1Height)
         .await?;
     info!(%height, %l1blockid, "stored L1 chain tracking data");
 
     // Create a sync event - the ASM worker will listen to this and create manifests
     Ok(Option::Some(
-        L1BlockCommitment::from_height_u64(height, l1blockid).expect("valid height"),
+        L1BlockCommitment::new(height as L1Height, l1blockid),
     ))
 }

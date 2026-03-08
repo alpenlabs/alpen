@@ -53,6 +53,6 @@ pub(crate) fn rollup_to_btcio_params(rollup: &RollupParams) -> BtcioParams {
     BtcioParams::new(
         rollup.l1_reorg_safe_depth,
         rollup.magic_bytes,
-        rollup.genesis_l1_view.height_u64(),
+        rollup.genesis_l1_view.height(),
     )
 }

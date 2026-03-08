@@ -9,7 +9,7 @@ use strata_bridge_types::DepositIntent;
 use strata_identifiers::DepositDescriptor;
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
-use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
+use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment, L1Height};
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},
@@ -24,12 +24,12 @@ use crate::{
 /// pieces of the state transition logic.
 #[derive(Debug, Clone)]
 pub struct SegmentAuxData<'b> {
-    first_height: u64,
+    first_height: L1Height,
     segment: &'b L1Segment,
 }
 
 impl<'b> SegmentAuxData<'b> {
-    pub fn new(first_height: u64, segment: &'b L1Segment) -> Self {
+    pub fn new(first_height: L1Height, segment: &'b L1Segment) -> Self {
         Self {
             first_height,
             segment,
@@ -38,11 +38,11 @@ impl<'b> SegmentAuxData<'b> {
 }
 
 impl<'b> AuxProvider for SegmentAuxData<'b> {
-    fn get_l1_tip_height(&self) -> u64 {
+    fn get_l1_tip_height(&self) -> L1Height {
         self.segment.new_height()
     }
 
-    fn get_l1_block_manifest(&self, height: u64) -> ProviderResult<AsmManifest> {
+    fn get_l1_block_manifest(&self, height: L1Height) -> ProviderResult<AsmManifest> {
         if height < self.first_height {
             return Err(ProviderError::OutOfBounds);
         }

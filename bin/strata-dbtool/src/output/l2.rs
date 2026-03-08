@@ -15,7 +15,7 @@ pub(crate) struct L2BlockInfo<'a> {
     pub id: &'a L2BlockId,
     pub status: &'a BlockStatus,
     pub header: &'a SignedL2BlockHeader,
-    pub l1_segment: Vec<(u64, &'a L1BlockId)>,
+    pub l1_segment: Vec<(u32, &'a L1BlockId)>,
 }
 
 /// L2 Summary information displayed to the user

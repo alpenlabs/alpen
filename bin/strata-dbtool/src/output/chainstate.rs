@@ -1,6 +1,10 @@
 //! Chainstate formatting implementations
 
-use strata_primitives::{l1::L1BlockId, l2::L2BlockId, prelude::EpochCommitment};
+use strata_primitives::{
+    l1::{L1BlockId, L1Height},
+    l2::L2BlockId,
+    prelude::EpochCommitment,
+};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
@@ -13,8 +17,8 @@ pub(crate) struct ChainstateInfo<'a> {
     pub is_epoch_finishing: bool,
     pub previous_epoch: &'a EpochCommitment,
     pub finalized_epoch: &'a EpochCommitment,
-    pub l1_next_expected_height: u64,
-    pub l1_safe_block_height: u64,
+    pub l1_next_expected_height: L1Height,
+    pub l1_safe_block_height: L1Height,
     pub l1_safe_block_blkid: &'a L1BlockId,
 }
 
