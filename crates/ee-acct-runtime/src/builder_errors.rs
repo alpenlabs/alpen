@@ -1,7 +1,9 @@
-//! Error types for test utilities.
+//! Error types for builder utilities.
 
+use strata_acct_types::Hash;
 use strata_codec::CodecError;
 use strata_ee_acct_types::{EnvError, MessageDecodeError};
+use strata_snark_acct_runtime::ProgramError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,17 +20,28 @@ pub enum BuilderError {
     #[error("message decode error")]
     MessageDecode(#[from] MessageDecodeError),
 
-    /// State root mismatch when building a block.
-    #[error("state root mismatch")]
-    StateRootMismatch,
+    /// Program error during message processing.
+    #[error("snark program: {0}")]
+    Program(ProgramError<EnvError>),
 
-    /// Not enough pending inputs available.
-    #[error("not enough pending inputs: requested {requested}, available {available}")]
-    InsufficientInputs { requested: usize, available: usize },
+    /// Chain linkage mismatch when accepting a chunk transition.
+    #[error("chunk parent {parent} does not match current tip {expected}")]
+    ChainLinkage { expected: Hash, parent: Hash },
 
-    /// No blocks in chain segment.
-    #[error("chain segment has no blocks")]
-    EmptyChainSegment,
+    /// Pending input mismatch when accepting a chunk transition.
+    #[error("chunk input at position {position} does not match pending input")]
+    InputMismatch { position: usize },
+
+    /// Accumulated output transfers or messages exceeded protocol capacity.
+    #[error("output overflow")]
+    OutputOverflow,
+}
+
+/// Manual impl for this trait due to macro inflexibility, I guess?
+impl From<ProgramError<EnvError>> for BuilderError {
+    fn from(value: ProgramError<EnvError>) -> Self {
+        Self::Program(value)
+    }
 }
 
 pub type BuilderResult<T> = Result<T, BuilderError>;

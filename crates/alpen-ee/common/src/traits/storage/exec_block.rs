@@ -276,7 +276,7 @@ macro_rules! exec_block_storage_tests {
 pub mod exec_block_storage_test_fns {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
     use strata_ee_acct_types::EeAccountState;
-    use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
+    use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
     use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
     use strata_snark_acct_types::MessageEntry;
 
@@ -297,14 +297,20 @@ pub mod exec_block_storage_test_fns {
     fn create_package(exec_block_id: Hash, raw_block_encoded_hash: Hash) -> ExecBlockPackage {
         ExecBlockPackage::new(
             ExecBlockCommitment::new(exec_block_id, raw_block_encoded_hash),
-            BlockInputs::new_empty(),
-            BlockOutputs::new_empty(),
+            ExecInputs::new_empty(),
+            ExecOutputs::new_empty(),
         )
     }
 
     /// Helper to create an EeAccountState with a specific block hash
     fn create_account_state(blockhash: Hash) -> EeAccountState {
-        EeAccountState::new(blockhash, BitcoinAmount::ZERO, Vec::new(), Vec::new())
+        EeAccountState::new(
+            Vec::new(),
+            blockhash,
+            BitcoinAmount::ZERO,
+            Vec::new(),
+            Vec::new(),
+        )
     }
 
     /// Helper to create a test MessageEntry

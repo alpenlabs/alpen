@@ -3,7 +3,7 @@
 use alpen_ee_common::{ExecBlockRecord, OLBlockData, OLChainStatus};
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_ee_acct_types::EeAccountState;
-use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
+use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
 use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 use strata_snark_acct_types::MessageEntry;
 
@@ -96,11 +96,11 @@ pub(crate) fn create_mock_exec_record(ol_block: OLBlockCommitment) -> ExecBlockR
 
     let package = ExecBlockPackage::new(
         ExecBlockCommitment::new(hash, hash),
-        BlockInputs::new_empty(),
-        BlockOutputs::new_empty(),
+        ExecInputs::new_empty(),
+        ExecOutputs::new_empty(),
     );
 
-    let account_state = EeAccountState::new(hash, BitcoinAmount::ZERO, vec![], vec![]);
+    let account_state = EeAccountState::new(vec![], hash, BitcoinAmount::ZERO, vec![], vec![]);
 
     ExecBlockRecord::new(
         package,

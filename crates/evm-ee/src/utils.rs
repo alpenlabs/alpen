@@ -10,7 +10,7 @@ use reth_primitives::{Receipt as EthereumReceipt, RecoveredBlock, TransactionSig
 use reth_primitives_traits::Block;
 use reth_trie::{HashedPostState, KeccakKeyHasher};
 use strata_ee_acct_types::{EnvError, EnvResult, ExecPayload};
-use strata_ee_chain_types::BlockInputs;
+use strata_ee_chain_types::ExecInputs;
 
 use crate::types::EvmBlock;
 
@@ -51,10 +51,10 @@ fn sats_to_gwei(sats: u64) -> Option<u64> {
     sats.checked_mul(10)
 }
 
-/// Validates that deposits from BlockInputs match the withdrawals field in the block.
+/// Validates that deposits from ExecInputs match the withdrawals field in the block.
 ///
 /// In Alpen, the EIP-4895 withdrawals field is hijacked to represent deposits from the
-/// orchestration layer. This function ensures that the authenticated deposits in BlockInputs
+/// orchestration layer. This function ensures that the authenticated deposits in ExecInputs
 /// match what's committed in the block's withdrawals field.
 ///
 /// # Warning
@@ -72,7 +72,7 @@ fn sats_to_gwei(sats: u64) -> Option<u64> {
 /// - `Err(EnvError::InvalidBlock)` if there's a mismatch in count, address, or amount
 pub(crate) fn validate_deposits_against_block(
     block: &RecoveredBlock<AlloyBlock<TransactionSigned>>,
-    inputs: &BlockInputs,
+    inputs: &ExecInputs,
 ) -> EnvResult<()> {
     // Get withdrawals from the block body (this is where deposits are stored)
     // Access the sealed block's body withdrawals through the nested structure
@@ -120,7 +120,7 @@ mod tests {
     use reth_primitives::RecoveredBlock;
     use revm_primitives::Address;
     use strata_acct_types::{BitcoinAmount, SubjectId};
-    use strata_ee_chain_types::{BlockInputs, SubjectDepositData};
+    use strata_ee_chain_types::{ExecInputs, SubjectDepositData};
 
     use super::*;
 
@@ -152,7 +152,7 @@ mod tests {
             block.try_into_recovered().unwrap();
 
         // Create matching deposit input
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         let deposit = SubjectDepositData::new(subject_id, BitcoinAmount::from_sat(10));
         inputs.add_subject_deposit(deposit);
 
@@ -188,7 +188,7 @@ mod tests {
             block.try_into_recovered().unwrap();
 
         // Create deposit with different address
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         let deposit = SubjectDepositData::new(subject_id, BitcoinAmount::from_sat(10));
         inputs.add_subject_deposit(deposit);
 
@@ -222,7 +222,7 @@ mod tests {
             block.try_into_recovered().unwrap();
 
         // Create deposit with invalid subject ID
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         let deposit = SubjectDepositData::new(subject_id, BitcoinAmount::from_sat(10));
         inputs.add_subject_deposit(deposit);
 
@@ -258,7 +258,7 @@ mod tests {
             block.try_into_recovered().unwrap();
 
         // Create deposit with different amount
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         let deposit = SubjectDepositData::new(subject_id, BitcoinAmount::from_sat(10)); // 10 sats = 100 gwei
         inputs.add_subject_deposit(deposit);
 

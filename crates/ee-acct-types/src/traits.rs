@@ -1,5 +1,9 @@
+// TODO should some of these types be moved to a more generic "exec env types"
+// crate?  so that ee-chunk-runtime doesn't have to depend on this crate?  maybe
+// do this after repo restructure
+
 use strata_codec::Codec;
-use strata_ee_chain_types::BlockInputs;
+use strata_ee_chain_types::ExecInputs;
 use strata_identifiers::Hash;
 
 use crate::{errors::EnvResult, inputs::ExecPayload, outputs::ExecBlockOutput};
@@ -24,6 +28,9 @@ pub trait ExecHeader: Codec + Clone + Sized {
 
     /// Gets the header's intrinsics we can execute the block with.
     fn get_intrinsics(&self) -> Self::Intrinsics;
+
+    /// Gets the parent exec blkid field.
+    fn get_parent_id(&self) -> Hash;
 
     /// Gets the state root field.
     fn get_state_root(&self) -> Hash;
@@ -61,7 +68,7 @@ pub trait ExecBlock: Codec + Sized {
 }
 
 /// Execution environment.
-pub trait ExecutionEnvironment: Sized {
+pub trait ExecutionEnvironment: Sized + 'static {
     /// Partial execution chain state.
     type PartialState: ExecPartialState;
 
@@ -82,7 +89,7 @@ pub trait ExecutionEnvironment: Sized {
         &self,
         pre_state: &Self::PartialState,
         exec_payload: &ExecPayload<'_, Self::Block>,
-        inputs: &BlockInputs,
+        inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>>;
 
     /// Performs any additional checks needed from the block outputs against the
@@ -94,7 +101,6 @@ pub trait ExecutionEnvironment: Sized {
     ) -> EnvResult<()>;
 
     /// Applies a pending write batch into the partial state.
-    // NOTE: should this be moved to BlockAssembler?
     fn merge_write_into_state(
         &self,
         state: &mut Self::PartialState,

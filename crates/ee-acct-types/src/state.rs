@@ -2,17 +2,21 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_identifiers::Hash;
+use strata_snark_acct_runtime::IInnerState;
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry};
 
 impl EeAccountState {
     pub fn new(
+        chunk_predicate_key: Vec<u8>,
         last_exec_blkid: Hash,
         tracked_balance: BitcoinAmount,
         pending_inputs: Vec<PendingInputEntry>,
         pending_fincls: Vec<PendingFinclEntry>,
     ) -> Self {
         Self {
+            chunk_predicate_key: chunk_predicate_key.into(),
             last_exec_blkid: last_exec_blkid.0.into(),
             tracked_balance,
             pending_inputs: pending_inputs.into(),
@@ -23,12 +27,14 @@ impl EeAccountState {
     pub fn into_parts(
         self,
     ) -> (
+        Vec<u8>,
         Hash,
         BitcoinAmount,
         Vec<PendingInputEntry>,
         Vec<PendingFinclEntry>,
     ) {
         (
+            self.chunk_predicate_key.into(),
             self.last_exec_blkid
                 .as_ref()
                 .try_into()
@@ -37,6 +43,11 @@ impl EeAccountState {
             self.pending_inputs.into(),
             self.pending_fincls.into(),
         )
+    }
+
+    /// Gets the key used to verify chunk transition proofs.
+    pub fn chunk_predicate_key(&self) -> &[u8] {
+        &self.chunk_predicate_key
     }
 
     pub fn last_exec_blkid(&self) -> Hash {
@@ -100,6 +111,13 @@ impl EeAccountState {
             self.pending_fincls = vec.into();
             true
         }
+    }
+}
+
+impl IInnerState for EeAccountState {
+    fn compute_state_root(&self) -> Hash {
+        // Just call out to the SSZ tree hash fn and convert.
+        <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self).into()
     }
 }
 
@@ -192,6 +210,7 @@ mod tests {
         ssz_proptest!(
             EeAccountState,
             (
+                prop::collection::vec(any::<u8>(), 0..32),
                 any::<[u8; 32]>(),
                 any::<u64>(),
                 prop::collection::vec(pending_input_entry_strategy(), 0..5),
@@ -203,14 +222,17 @@ mod tests {
                     0..5,
                 ),
             )
-                .prop_map(|(last_exec_blkid, balance, inputs, fincls)| {
-                    EeAccountState {
-                        last_exec_blkid: last_exec_blkid.into(),
-                        tracked_balance: BitcoinAmount::from_sat(balance),
-                        pending_inputs: inputs.into(),
-                        pending_fincls: fincls.into(),
-                    }
-                })
+                .prop_map(
+                    |(chunk_predicate_key, last_exec_blkid, balance, inputs, fincls)| {
+                        EeAccountState {
+                            chunk_predicate_key: chunk_predicate_key.into(),
+                            last_exec_blkid: last_exec_blkid.into(),
+                            tracked_balance: BitcoinAmount::from_sat(balance),
+                            pending_inputs: inputs.into(),
+                            pending_fincls: fincls.into(),
+                        }
+                    },
+                )
         );
     }
 }

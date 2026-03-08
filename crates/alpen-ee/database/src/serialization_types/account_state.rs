@@ -26,6 +26,7 @@ impl DBAccountStateAtEpoch {
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBEeAccountState {
+    chunk_predicate_key: Vec<u8>,
     last_exec_blkid: Hash,
     tracked_balance: DBBitcoinAmount,
     pending_inputs: Vec<DBPendingInputEntry>,
@@ -34,8 +35,10 @@ pub(crate) struct DBEeAccountState {
 
 impl From<EeAccountState> for DBEeAccountState {
     fn from(value: EeAccountState) -> Self {
-        let (last_exec_blkid, tracked_balance, pending_inputs, pending_fincls) = value.into_parts();
+        let (chunk_predicate_key, last_exec_blkid, tracked_balance, pending_inputs, pending_fincls) =
+            value.into_parts();
         Self {
+            chunk_predicate_key,
             last_exec_blkid,
             tracked_balance: tracked_balance.into(),
             pending_inputs: pending_inputs.into_iter().map(Into::into).collect(),
@@ -47,6 +50,7 @@ impl From<EeAccountState> for DBEeAccountState {
 impl From<DBEeAccountState> for EeAccountState {
     fn from(value: DBEeAccountState) -> Self {
         Self::new(
+            value.chunk_predicate_key,
             value.last_exec_blkid,
             value.tracked_balance.into(),
             value.pending_inputs.into_iter().map(Into::into).collect(),
