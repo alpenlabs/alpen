@@ -104,9 +104,11 @@ jobs:
         uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
-        with:
-          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
+        env:
+          RUST_NIGHTLY: ${{ needs.extract-rust-version.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal
+          rustup default "$RUST_NIGHTLY"
 
       - name: Rust cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
@@ -221,9 +223,11 @@ jobs:
           cache-suffix: "functional-tests"
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
-        with:
-          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
+        env:
+          RUST_NIGHTLY: ${{ needs.extract-rust-version.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal
+          rustup default "$RUST_NIGHTLY"
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d # v2.62.14

@@ -38,7 +38,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@22a6a5b0f9f487c5f5587025ae9d4a1caf2a8a78 # clippy
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
 
       - name: Rust cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
@@ -77,7 +79,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@62dc1d13b1387fc95a27ab904e7f8850cf39ed53 # miri
+        run: |
+          rustup toolchain install nightly --profile minimal --component miri
+          rustup default nightly
 
       - name: Run Miri
         run: cargo miri test -p ${{ matrix.crate }} --all-features --locked
@@ -99,9 +103,11 @@ jobs:
         uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
-        with:
-          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
+        env:
+          RUST_NIGHTLY: ${{ needs.extract-rust-version.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal
+          rustup default "$RUST_NIGHTLY"
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d # v2.62.14
@@ -135,10 +141,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
-        with:
-          components: rustfmt
-          toolchain: ${{ needs.extract-rust-version.outputs.rust-version }}
+      - name: Set up Rust
+        env:
+          RUST_NIGHTLY: ${{ needs.extract-rust-version.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal --component rustfmt
+          rustup default "$RUST_NIGHTLY"
       - run: cargo fmt --all --check
 
   codespell:
