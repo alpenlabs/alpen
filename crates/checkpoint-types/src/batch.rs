@@ -4,7 +4,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L2BlockCommitment, L2BlockId, Slot,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment, L2BlockId, Slot,
 };
 
 /// Summary generated when we accept the last block of an epoch.
@@ -197,8 +197,8 @@ impl BatchInfo {
     ///
     /// Note: This only checks the upper bound, not the lower bound. It returns `true`
     /// if the height is <= the checkpoint's final L1 height.
-    pub fn l1_height_at_or_before_end(&self, height: u64) -> bool {
+    pub fn l1_height_at_or_before_end(&self, height: L1Height) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
-        height <= last_l1_commitment.height() as u64
+        height <= last_l1_commitment.height()
     }
 }

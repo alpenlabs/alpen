@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn test_blocks() {
         let chain = BtcChainSegment::load();
-        let h2 = get_relative_difficulty_adjustment_height(2, chain.start as L1Height, &MAINNET);
+        let h2 = get_relative_difficulty_adjustment_height(2, chain.start, &MAINNET);
         let r1 = OsRng.gen_range(h2..chain.end);
         let mut verification_state = chain.get_verification_state(r1).unwrap();
 
@@ -304,7 +304,7 @@ mod tests {
         let start: L1Height = 0;
         let idx = OsRng.gen_range(1..1000usize);
         let h = get_relative_difficulty_adjustment_height(idx, start, &MAINNET);
-        assert_eq!(h, MAINNET.difficulty_adjustment_interval() * idx as u64);
+        assert_eq!(h, MAINNET.difficulty_adjustment_interval() as u32 * idx as u32);
     }
 
     #[test]
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn test_difficulty_adjustment_height_calculation() {
         let params = &MAINNET;
-        let interval = params.difficulty_adjustment_interval();
+        let interval = params.difficulty_adjustment_interval() as L1Height;
 
         // Test various starting points and adjustment indices
         assert_eq!(

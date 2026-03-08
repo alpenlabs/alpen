@@ -108,7 +108,7 @@ impl L2Segment {
                 let len: u32 = 3;
                 let new_height = starting_height + len - 1; // because inclusive
                 let manifests = BtcChainSegment::load()
-                    .get_block_manifests(starting_height as u64, len as usize)
+                    .get_block_manifests(starting_height, len as usize)
                     .expect("fetch manifests");
                 L1Segment::new(new_height, manifests)
             } else {

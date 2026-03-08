@@ -247,7 +247,7 @@ fn create_checkpoint_prep_data_from_summary(
     };
 
     // Determine the ranges for each of the fields we commit to.
-    let l1_start_height: L1Height = if let Some(ps) = prev_summary {
+    let l1_start_height = if let Some(ps) = prev_summary {
         ps.new_l1().height() + 1
     } else {
         params.genesis_l1_view.height() + 1
@@ -360,7 +360,10 @@ fn fetch_l2_block(blkid: &L2BlockId, l2man: &L2BlockManager) -> anyhow::Result<L
         .ok_or(Error::MissingL2Block(*blkid))?)
 }
 
-fn fetch_l1_block_manifest(height: L1Height, l1man: &L1BlockManager) -> anyhow::Result<AsmManifest> {
+fn fetch_l1_block_manifest(
+    height: L1Height,
+    l1man: &L1BlockManager,
+) -> anyhow::Result<AsmManifest> {
     Ok(l1man
         .get_block_manifest_at_height(height)?
         .ok_or(DbError::MissingL1Block(height))?)
