@@ -17,6 +17,7 @@ strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
+strata-ol-da.workspace = true
 strata-ol-mempool.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
