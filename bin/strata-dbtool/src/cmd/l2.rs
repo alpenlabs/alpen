@@ -3,7 +3,10 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::traits::{BlockStatus, DatabaseBackend, L2BlockDatabase};
 use strata_ol_chain_types::{L2BlockBundle, L2Header};
-use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
+use strata_primitives::{
+    l1::{L1BlockId, L1Height},
+    l2::L2BlockId,
+};
 
 use super::checkpoint::get_last_epoch;
 use crate::{
@@ -135,7 +138,7 @@ pub(crate) fn get_l2_block(
     let l1_segment = l2_block.body().l1_segment();
 
     // Create L1 segment data
-    let l1_segment_data: Vec<(u64, &L1BlockId)> = l1_segment
+    let l1_segment_data: Vec<(L1Height, &L1BlockId)> = l1_segment
         .new_manifests()
         .iter()
         .map(|manifest| (manifest.height(), manifest.blkid()))

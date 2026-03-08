@@ -10,7 +10,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use strata_checkpoint_types::Checkpoint;
 use strata_identifiers::Epoch;
 use strata_predicate::PredicateKey;
-use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
+use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
 
 /// Checkpoint verifier state for checkpoint v0
 ///
@@ -22,7 +22,7 @@ pub struct CheckpointV0VerifierState {
     pub last_checkpoint: Option<Checkpoint>,
 
     /// Last L1 block where we got a valid checkpoint
-    pub last_checkpoint_l1_height: u64,
+    pub last_checkpoint_l1_height: L1Height,
 
     /// Current epoch we've verified up to
     pub current_verified_epoch: Epoch,
@@ -57,7 +57,7 @@ impl CheckpointV0VerifierState {
     pub fn new(params: &CheckpointV0VerificationParams) -> Self {
         Self {
             last_checkpoint: None,
-            last_checkpoint_l1_height: params.genesis_l1_block.height_u64(),
+            last_checkpoint_l1_height: params.genesis_l1_block.height(),
             current_verified_epoch: 0,
             cred_rule: params.cred_rule.clone(),
             predicate: params.predicate.clone(),
@@ -65,7 +65,7 @@ impl CheckpointV0VerifierState {
     }
 
     /// Update state with a newly verified checkpoint
-    pub fn update_with_checkpoint(&mut self, checkpoint: Checkpoint, l1_height: u64) {
+    pub fn update_with_checkpoint(&mut self, checkpoint: Checkpoint, l1_height: L1Height) {
         let epoch = checkpoint.batch_info().epoch();
         self.last_checkpoint = Some(checkpoint);
         self.last_checkpoint_l1_height = l1_height;

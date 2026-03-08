@@ -311,7 +311,7 @@ async fn fetch_asm_manifests_for_terminal_block<
     parent_state: &S,
 ) -> BlockAssemblyResult<Option<OLL1ManifestContainer>> {
     let last_l1_height = parent_state.last_l1_height();
-    let start_height = (last_l1_height + 1) as u64;
+    let start_height = last_l1_height + 1;
 
     // Fetch manifests using BlockAssemblyAnchorContext trait
     let manifests = ctx.fetch_asm_manifests_from(start_height).await?;
@@ -600,7 +600,7 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
 mod tests {
     use strata_acct_types::AcctError;
     use strata_asm_manifest_types::AsmManifest;
-    use strata_identifiers::{Buf32, Buf64, L1BlockId, OLBlockId, WtxidsRoot};
+    use strata_identifiers::{Buf32, Buf64, L1BlockId, L1Height, OLBlockId, WtxidsRoot};
     use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
     use strata_ol_state_types::OLState;
     use strata_snark_acct_types::AccumulatorClaim;
@@ -634,7 +634,7 @@ mod tests {
         let account_id = test_account_id(1);
         let mut state = create_test_genesis_state();
         add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-        state.append_manifest(manifest.height() as u32, manifest);
+        state.append_manifest(manifest.height(), manifest);
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
@@ -758,7 +758,7 @@ mod tests {
         let account_id = test_account_id(1);
         let mut state = create_test_genesis_state();
         add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-        state.append_manifest(manifest.height() as u32, manifest);
+        state.append_manifest(manifest.height(), manifest);
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
             .with_l1_claims(invalid_claims)
@@ -1032,7 +1032,7 @@ mod tests {
     // Helper to validate terminal block with L1 updates
     fn check_terminal_block_with_manifests(
         block_template: &FullBlockTemplate,
-        expected_heights: &[u64],
+        expected_heights: &[L1Height],
     ) {
         let body = block_template.body();
         let l1_update = body.l1_update();
@@ -1481,7 +1481,7 @@ mod tests {
 
         // Valid tx for account1: L1 header claims exist in both MMRs (using L1 block height)
         let valid_claims = vec![AccumulatorClaim::new(
-            env.manifests[0].height,
+            env.manifests[0].height as u64,
             env.manifests[0].hash,
         )];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
@@ -1492,7 +1492,7 @@ mod tests {
 
         // Invalid tx for account2: non-existent L1 height (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
-        let missing_height = env.manifests.last().unwrap().height + 100;
+        let missing_height = env.manifests.last().unwrap().height as u64 + 100;
         let invalid_claims = vec![AccumulatorClaim::new(missing_height, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)

@@ -2,12 +2,13 @@ use std::collections::VecDeque;
 
 use bitcoin::BlockHash;
 use strata_identifiers::Epoch;
+use strata_primitives::L1Height;
 
 /// State we use in various parts of the reader.
 #[derive(Debug)]
 pub(crate) struct ReaderState {
     /// The highest block in the chain, at `.back()` of queue + 1.
-    next_height: u64,
+    next_height: L1Height,
 
     /// The `.back()` of this should have the same height as cur_height.
     recent_blocks: VecDeque<BlockHash>,
@@ -23,7 +24,7 @@ impl ReaderState {
     /// Constructs a new reader state instance using some context about how we
     /// want to manage it.
     pub(crate) fn new(
-        next_height: u64,
+        next_height: L1Height,
         max_depth: usize,
         recent_blocks: VecDeque<BlockHash>,
         epoch: Epoch,
@@ -37,7 +38,7 @@ impl ReaderState {
         }
     }
 
-    pub(crate) fn next_height(&self) -> u64 {
+    pub(crate) fn next_height(&self) -> L1Height {
         self.next_height
     }
 
@@ -49,7 +50,7 @@ impl ReaderState {
         self.recent_blocks.back().unwrap()
     }
 
-    pub(crate) fn best_block_idx(&self) -> u64 {
+    pub(crate) fn best_block_idx(&self) -> L1Height {
         self.next_height - 1
     }
 
@@ -76,7 +77,7 @@ impl ReaderState {
         }
     }
 
-    pub(crate) fn rollback_to_height(&mut self, new_height: u64) -> Vec<BlockHash> {
+    pub(crate) fn rollback_to_height(&mut self, new_height: L1Height) -> Vec<BlockHash> {
         if new_height > self.next_height {
             panic!(
                 "reader: new height {new_height} greater than cur height {}",
@@ -85,7 +86,7 @@ impl ReaderState {
         }
 
         let rollback_cnt = self.best_block_idx() - new_height;
-        if rollback_cnt >= self.recent_blocks.len() as u64 {
+        if rollback_cnt >= self.recent_blocks.len() as u32 {
             panic!("reader: tried to rollback past deepest block");
         }
 
@@ -104,12 +105,12 @@ impl ReaderState {
 
     /// Iterates over the blocks back from the tip, giving both the height and
     /// the blockhash to compare against the chain.
-    pub(crate) fn iter_blocks_back(&self) -> impl Iterator<Item = (u64, &BlockHash)> {
+    pub(crate) fn iter_blocks_back(&self) -> impl Iterator<Item = (L1Height, &BlockHash)> {
         let best_blk_idx = self.best_block_idx();
         self.recent_blocks
             .iter()
             .rev()
             .enumerate()
-            .map(move |(i, b)| (best_blk_idx - i as u64, b))
+            .map(move |(i, b)| (best_blk_idx - i as u32, b))
     }
 }

@@ -123,23 +123,6 @@ impl L1BlockCommitment {
         self.height
     }
 
-    /// Create a new L1 block commitment from a u64 height.
-    ///
-    /// Returns `None` if the height is invalid (greater than u32::MAX).
-    pub fn from_height_u64(height: u64, blkid: L1BlockId) -> Option<Self> {
-        let height = u32::try_from(height).ok()?;
-        Some(Self { height, blkid })
-    }
-
-    pub fn height_u32(&self) -> u32 {
-        self.height
-    }
-
-    /// Get the block height as u64 for compatibility.
-    pub fn height_u64(&self) -> u64 {
-        self.height as u64
-    }
-
     /// Get the block ID.
     pub fn blkid(&self) -> &L1BlockId {
         &self.blkid
@@ -203,7 +186,7 @@ mod tests {
 
             let encoded = commitment.as_ssz_bytes();
             let decoded = L1BlockCommitment::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(commitment.height_u64(), decoded.height_u64());
+            assert_eq!(commitment.height(), decoded.height());
             assert_eq!(commitment.blkid(), decoded.blkid());
         }
     }

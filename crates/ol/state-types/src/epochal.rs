@@ -46,8 +46,7 @@ impl EpochalState {
 
     /// Last L1 block height.
     pub fn last_l1_height(&self) -> L1Height {
-        // FIXME this conversion is weird
-        self.last_l1_block.height_u64() as u32
+        self.last_l1_block.height()
     }
 
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
@@ -57,9 +56,7 @@ impl EpochalState {
 
         Mmr::<StrataHasher>::add_leaf(&mut self.manifests_mmr, manifest_hash.into_inner())
             .expect("MMR capacity exceeded");
-        // FIXME make this conversion less weird
-        self.last_l1_block = L1BlockCommitment::from_height_u64(height as u64, *mf.blkid())
-            .expect("state: weird conversion")
+        self.last_l1_block = L1BlockCommitment::new(height, *mf.blkid());
     }
 
     /// Gets the field for the epoch that the ASM considers to be valid.

@@ -11,7 +11,7 @@ use strata_common::{
     },
     ws_client::{ManagedWsClient, WsClientConfig},
 };
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, L1Height};
 use strata_ol_rpc_api::OLClientRpcClient;
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
@@ -219,7 +219,7 @@ impl SequencerOLClient for RpcOLClient {
         })
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: u64) -> Result<Hash, OLClientError> {
+    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError> {
         retry_with_backoff_async(
             "ol_client_get_l1_header_commitment",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,

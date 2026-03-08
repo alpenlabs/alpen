@@ -11,6 +11,7 @@ use strata_asm_common::logging;
 use strata_checkpoint_types::{
     BatchTransition, Checkpoint, SignedCheckpoint, verify_signed_checkpoint_sig,
 };
+use strata_primitives::L1Height;
 
 use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
 
@@ -24,7 +25,7 @@ use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
 pub fn process_checkpoint_v0(
     state: &mut CheckpointV0VerifierState,
     signed_checkpoint: &SignedCheckpoint,
-    current_l1_height: u64,
+    current_l1_height: L1Height,
 ) -> Result<(), CheckpointV0Error> {
     let checkpoint = signed_checkpoint.checkpoint();
     let epoch = checkpoint.batch_info().epoch();

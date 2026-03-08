@@ -1,5 +1,6 @@
 use bitcoin::Block;
 use strata_identifiers::{Epoch, L1BlockCommitment};
+use strata_primitives::L1Height;
 
 /// L1 events that we observe and want the persistence task to work on.
 #[derive(Clone, Debug)]
@@ -17,18 +18,18 @@ pub(crate) enum L1Event {
 #[derive(Clone, Debug)]
 pub(crate) struct BlockData {
     /// Block number.
-    block_num: u64,
+    block_num: L1Height,
 
     /// Raw block data.
     block: Block,
 }
 
 impl BlockData {
-    pub(crate) fn new(block_num: u64, block: Block) -> Self {
+    pub(crate) fn new(block_num: L1Height, block: Block) -> Self {
         Self { block_num, block }
     }
 
-    pub(crate) fn block_num(&self) -> u64 {
+    pub(crate) fn block_num(&self) -> L1Height {
         self.block_num
     }
 

@@ -163,9 +163,9 @@ async fn check_tx_confirmations(
                     .block_hash
                     .expect("confirmed tx must have block_hash")
                     .to_buf32();
-                let block_height =
-                    info.block_height
-                        .expect("confirmed tx must have block_height") as u64;
+                let block_height = info
+                    .block_height
+                    .expect("confirmed tx must have block_height");
 
                 if confirmations >= reorg_safe_depth {
                     Ok(L1TxStatus::Finalized {

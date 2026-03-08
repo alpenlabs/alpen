@@ -104,15 +104,15 @@ impl L2Segment {
             // If it is a terminal block, fill L1Segment
             let genesis_height = params.rollup().genesis_l1_view.height();
             let l1_segment = if idx == evm_segment.get_inputs().len() - 1 {
-                let starting_height = genesis_height as u64 + 1;
-                let len = 3;
+                let starting_height = genesis_height + 1;
+                let len: u32 = 3;
                 let new_height = starting_height + len - 1; // because inclusive
                 let manifests = BtcChainSegment::load()
                     .get_block_manifests(starting_height, len as usize)
                     .expect("fetch manifests");
                 L1Segment::new(new_height, manifests)
             } else {
-                L1Segment::new_empty(genesis_height as u64)
+                L1Segment::new_empty(genesis_height)
             };
             let body = L2BlockBody::new(l1_segment, el_proof_out.clone());
 

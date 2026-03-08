@@ -12,13 +12,13 @@ use eyre::{bail, ensure};
 use strata_btc_types::Buf32BitcoinExt;
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
 use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus};
-use strata_identifiers::{L1BlockCommitment, L1BlockId};
+use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
 /// Groups reveal txs by L1 block for [`L1DaBlockRef`] construction.
-type BlockMap = HashMap<(Buf32, u64), Vec<(Txid, Wtxid)>>;
+type BlockMap = HashMap<(Buf32, L1Height), Vec<(Txid, Wtxid)>>;
 
 /// [`BatchDaProvider`] that posts DA via chunked envelope inscription.
 pub struct ChunkedEnvelopeDaProvider {
@@ -154,12 +154,11 @@ impl ChunkedEnvelopeDaProvider {
         let mut refs: Vec<L1DaBlockRef> = block_map
             .into_iter()
             .map(|((hash, height), txns)| {
-                let commitment = L1BlockCommitment::from_height_u64(height, L1BlockId::from(hash))
-                    .expect("valid block height");
+                let commitment = L1BlockCommitment::new(height, L1BlockId::from(hash));
                 L1DaBlockRef::new(commitment, txns)
             })
             .collect();
-        refs.sort_by_key(|r| r.block.height_u64());
+        refs.sort_by_key(|r| r.block.height());
 
         Ok(refs)
     }

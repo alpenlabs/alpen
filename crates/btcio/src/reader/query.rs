@@ -12,7 +12,7 @@ use strata_btc_verification::{get_relative_difficulty_adjustment_height, HeaderV
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, GenesisL1View, L1BlockCommitment},
+    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1Height},
 };
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
@@ -70,8 +70,8 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
 /// Calculates target next block to start polling l1 from.
 fn calculate_target_next_block(
     l1_manager: &L1BlockManager,
-    horz_height: u64,
-) -> anyhow::Result<u64> {
+    horz_height: L1Height,
+) -> anyhow::Result<L1Height> {
     // TODO switch to checking the L1 tip in the consensus/client state
     let target_next_block = l1_manager
         .get_canonical_chain_tip()?
@@ -84,7 +84,7 @@ fn calculate_target_next_block(
 /// Inner function that actually does the reading task.
 async fn do_reader_task<R: Reader>(
     ctx: ReaderContext<R>,
-    target_next_block: u64,
+    target_next_block: L1Height,
     event_submitter: &impl BlockSubmitter,
 ) -> anyhow::Result<()> {
     info!(%target_next_block, "started L1 reader task!");
@@ -140,32 +140,32 @@ fn handle_poll_error(err: &anyhow::Error, status_updates: &mut Vec<L1StatusUpdat
 /// Inits the reader state by trying to backfill blocks up to a target height.
 async fn init_reader_state<R: Reader>(
     ctx: &ReaderContext<R>,
-    target_next_block: u64,
+    target_next_block: L1Height,
 ) -> anyhow::Result<ReaderState> {
     // Init the reader state using the blockid we were given, fill in a few blocks back.
     debug!(%target_next_block, "initializing reader state");
     let mut init_queue = VecDeque::new();
 
-    let lookback = ctx.btcio_params.l1_reorg_safe_depth() as usize * 2;
+    let lookback = ctx.btcio_params.l1_reorg_safe_depth() as L1Height * 2;
     let client = ctx.client.as_ref();
     let genesis_height = ctx.btcio_params.genesis_l1_height();
     let pre_genesis = genesis_height.saturating_sub(1);
-    let target = target_next_block as i64;
 
     // Do some math to figure out where our start and end are.
     let chain_info = client.get_blockchain_info().await?;
-    let start_height = (target - lookback as i64)
-        .max(pre_genesis as i64)
-        .min(chain_info.blocks as i64) as u64;
-    let end_height =
-        (chain_info.blocks as u64).min(pre_genesis.max(target_next_block.saturating_sub(1)));
+    let chain_tip = chain_info.blocks as L1Height;
+    let start_height = target_next_block
+        .saturating_sub(lookback)
+        .max(pre_genesis)
+        .min(chain_tip);
+    let end_height = chain_tip.min(pre_genesis.max(target_next_block.saturating_sub(1)));
     debug!(%start_height, %end_height, "queried L1 client, have init range");
 
     // Loop through the range we've determined to be okay and pull the blocks we want to look back
     // through in.
     let mut real_cur_height = start_height;
     for height in start_height..=end_height {
-        let blkid = client.get_block_hash(height).await?;
+        let blkid = client.get_block_hash(height as u64).await?;
         debug!(%height, %blkid, "loaded recent L1 block");
         init_queue.push_back(blkid);
         real_cur_height = height;
@@ -175,7 +175,7 @@ async fn init_reader_state<R: Reader>(
 
     // Note: Transaction filtering is no longer needed since the ASM STF handles
     // parsing L1 blocks and producing manifests with logs.
-    let state = ReaderState::new(real_cur_height + 1, lookback, init_queue, epoch);
+    let state = ReaderState::new(real_cur_height + 1, lookback as usize, init_queue, epoch);
     Ok(state)
 }
 
@@ -189,7 +189,7 @@ async fn poll_for_new_blocks<R: Reader>(
 ) -> anyhow::Result<Vec<L1Event>> {
     let chain_info = ctx.client.get_blockchain_info().await?;
     status_updates.push(L1StatusUpdate::RpcConnected(true));
-    let client_height = chain_info.blocks;
+    let client_height = chain_info.blocks as L1Height;
     let fresh_best_block = chain_info.best_block_hash;
 
     if fresh_best_block == *state.best_block() {
@@ -203,9 +203,7 @@ async fn poll_for_new_blocks<R: Reader>(
     if let Some((pivot_height, pivot_blkid)) = find_pivot_block(ctx.client.as_ref(), state).await? {
         if pivot_height < state.best_block_idx() {
             info!(%pivot_height, %pivot_blkid, "found apparent reorg");
-            let block =
-                L1BlockCommitment::from_height_u64(pivot_height, pivot_blkid.to_l1_block_id())
-                    .expect("valid height");
+            let block = L1BlockCommitment::new(pivot_height, pivot_blkid.to_l1_block_id());
             state.rollback_to_height(pivot_height);
 
             // Return with the revert event immediately
@@ -222,7 +220,7 @@ async fn poll_for_new_blocks<R: Reader>(
 
     // Now process each block we missed.
     let scan_start_height = state.next_height();
-    for fetch_height in scan_start_height..=(client_height as u64) {
+    for fetch_height in scan_start_height..=client_height {
         match fetch_and_process_block(ctx, fetch_height, state, status_updates).await {
             Ok((blkid, ev)) => {
                 // Note: Checkpoint detection is now handled by the ASM STF via logs,
@@ -245,14 +243,14 @@ async fn poll_for_new_blocks<R: Reader>(
 async fn find_pivot_block(
     client: &impl Reader,
     state: &ReaderState,
-) -> anyhow::Result<Option<(u64, BlockHash)>> {
+) -> anyhow::Result<Option<(L1Height, BlockHash)>> {
     for (height, l1blkid) in state.iter_blocks_back() {
         // If at genesis, we can't reorg any farther.
         if height == 0 {
             return Ok(Some((height, *l1blkid)));
         }
 
-        let queried_l1blkid = client.get_block_hash(height).await?;
+        let queried_l1blkid = client.get_block_hash(height as u64).await?;
         trace!(%height, %l1blkid, %queried_l1blkid, "comparing blocks to find pivot");
         if queried_l1blkid == *l1blkid {
             return Ok(Some((height, *l1blkid)));
@@ -265,11 +263,11 @@ async fn find_pivot_block(
 /// Fetches a block at given height, extracts relevant transactions and emits an [`L1Event`].
 async fn fetch_and_process_block<R: Reader>(
     ctx: &ReaderContext<R>,
-    height: u64,
+    height: L1Height,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
 ) -> anyhow::Result<(BlockHash, L1Event)> {
-    let block = ctx.client.get_block_at(height).await?;
+    let block = ctx.client.get_block_at(height as u64).await?;
     let (evs, l1blkid) = process_block(ctx, state, status_updates, height, block).await?;
 
     // Insert to new block, incrementing cur_height.
@@ -283,7 +281,7 @@ async fn process_block<R: Reader>(
     _ctx: &ReaderContext<R>,
     state: &mut ReaderState,
     status_updates: &mut Vec<L1StatusUpdate>,
-    height: u64,
+    height: L1Height,
     block: Block,
 ) -> anyhow::Result<(L1Event, BlockHash)> {
     let txs = block.txdata.len();
@@ -305,24 +303,23 @@ async fn process_block<R: Reader>(
 }
 
 /// Retrieves the timestamps for a specified number of blocks starting from the given block height,
-/// moving backwards. For each block from `height` down to `height - count + 1`, it fetches the
 /// block’s timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
 /// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
 /// ascending order (oldest first).
 async fn fetch_block_timestamps_ascending(
     client: &impl Reader,
-    height: u64,
+    height: L1Height,
     count: usize,
 ) -> anyhow::Result<Vec<u32>> {
     let mut timestamps = Vec::with_capacity(count);
 
     for i in 0..count {
-        let current_height = height.saturating_sub(i as u64);
+        let current_height = height.saturating_sub(i as u32);
         // If we've gone past block 1, push 0 as a placeholder.
         if current_height < 1 {
             timestamps.push(0);
         } else {
-            let header = client.get_block_header_at(current_height).await?;
+            let header = client.get_block_header_at(current_height as u64).await?;
             timestamps.push(header.time);
         }
     }
@@ -333,7 +330,7 @@ async fn fetch_block_timestamps_ascending(
 
 pub async fn fetch_genesis_l1_view(
     client: &impl Reader,
-    block_height: u64,
+    block_height: L1Height,
 ) -> anyhow::Result<GenesisL1View> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;
@@ -344,11 +341,11 @@ pub async fn fetch_genesis_l1_view(
     let current_epoch_start_height =
         get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
     let current_epoch_start_header = client
-        .get_block_header_at(current_epoch_start_height)
+        .get_block_header_at(current_epoch_start_height as u64)
         .await?;
 
     // Fetch the block header at the height
-    let block_header = client.get_block_header_at(block_height).await?;
+    let block_header = client.get_block_header_at(block_height as u64).await?;
 
     // Fetch timestamps
     let timestamps =
@@ -363,7 +360,7 @@ pub async fn fetch_genesis_l1_view(
     // If (block_height + 1) is the start of the new epoch, we need to calculate the
     // next_block_target, else next_block_target will be current block's target
     let next_block_target =
-        if (block_height + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
+        if (block_height as u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
             CompactTarget::from_next_work_required(
                 block_header.bits,
                 (block_header.time - current_epoch_start_header.time) as u64,
@@ -372,7 +369,7 @@ pub async fn fetch_genesis_l1_view(
             .to_consensus()
         } else {
             client
-                .get_block_header_at(block_height)
+                .get_block_header_at(block_height as u64)
                 .await?
                 .target()
                 .to_compact_lossy()
@@ -381,7 +378,7 @@ pub async fn fetch_genesis_l1_view(
 
     // Build the genesis L1 view structure.
     let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::from_height_u64(block_height, block_id).expect("valid height"),
+        blk: L1BlockCommitment::new(block_height, block_id),
         next_target: next_block_target,
         epoch_start_timestamp: current_epoch_start_header.time,
         last_11_timestamps: timestamps,
@@ -402,7 +399,7 @@ pub async fn fetch_genesis_l1_view(
 /// block's target.
 pub async fn fetch_verification_state(
     client: &impl Reader,
-    block_height: u64,
+    block_height: L1Height,
 ) -> anyhow::Result<HeaderVerificationState> {
     // Create BTC parameters based on the current network.
     let network = client.network().await?;

@@ -122,7 +122,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     // Build checkpoint config.
     let checkpoint_predicate = resolve_checkpoint_predicate();
-    let genesis_l1_height = genesis_l1_view.blk.height_u32();
+    let genesis_l1_height = genesis_l1_view.blk.height();
 
     let checkpoint = CheckpointConfig {
         sequencer_predicate: PredicateKey::always_accept(),

@@ -16,8 +16,8 @@ use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{
-    Buf32, Buf64, L1BlockCommitment, L1BlockId, MmrId, OLBlockCommitment, OLBlockId, OLTxId,
-    WtxidsRoot, test_utils::ol_block_commitment_strategy,
+    Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, MmrId, OLBlockCommitment, OLBlockId,
+    OLTxId, WtxidsRoot, test_utils::ol_block_commitment_strategy,
 };
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
@@ -586,8 +586,8 @@ pub(crate) fn generate_header_hashes(count: usize) -> Vec<Hash> {
 /// Returns the L1BlockCommitment for the highest block.
 pub(crate) async fn setup_asm_state_with_l1_manifests(
     storage: &NodeStorage,
-    start: u64,
-    end: u64,
+    start: L1Height,
+    end: L1Height,
 ) -> L1BlockCommitment {
     // Create and store ASM manifests
     let mut last_blkid = L1BlockId::from(Buf32::zero());
@@ -618,7 +618,7 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     }
 
     // Store ASM state at the highest L1 block
-    let l1_commitment = L1BlockCommitment::new(end as u32, last_blkid);
+    let l1_commitment = L1BlockCommitment::new(end, last_blkid);
 
     // Create minimal ASM state for testing
     let pow_state = HeaderVerificationState::default();
@@ -646,7 +646,7 @@ pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
 /// Manifest commitment metadata for tests (L1 height + committed manifest hash).
 pub(crate) struct ManifestCommitment {
-    pub height: u64,
+    pub height: L1Height,
     pub hash: Hash,
 }
 
@@ -663,7 +663,7 @@ pub(crate) struct TestEnv {
 #[derive(Default)]
 pub(crate) struct TestEnvBuilder {
     parent_slot: Option<u64>,
-    asm_manifest_heights: Vec<u64>,
+    asm_manifest_heights: Vec<L1Height>,
     claim_manifest_count: Option<usize>,
     accounts: Vec<(AccountId, u64)>,
 }
@@ -689,7 +689,7 @@ impl TestEnvBuilder {
 
     /// Stores L1 manifests in ASM storage for block's L1 update fetching.
     /// Used by tests that build terminal blocks with L1 manifests.
-    pub(crate) fn with_asm_manifests(mut self, heights: &[u64]) -> Self {
+    pub(crate) fn with_asm_manifests(mut self, heights: &[L1Height]) -> Self {
         self.asm_manifest_heights = heights.to_vec();
         self
     }
@@ -824,7 +824,7 @@ fn create_deterministic_manifests(count: usize) -> Vec<AsmManifest> {
             let mut blkid_bytes = [0u8; 32];
             blkid_bytes[0] = (i + 1) as u8; // Unique block ID for each manifest
             AsmManifest::new(
-                (i + 1) as u64, // height
+                (i + 1) as L1Height, // height
                 L1BlockId::from(Buf32::from(blkid_bytes)),
                 WtxidsRoot::from(Buf32::zero()),
                 vec![],
@@ -859,7 +859,7 @@ fn setup_manifests_in_state_and_storage(
         indices.push(leaf_idx);
 
         // Add to state's manifest MMR (for verification)
-        let height = manifest.height() as u32;
+        let height = manifest.height();
         state.append_manifest(height, manifest);
     }
 

@@ -51,11 +51,7 @@ impl<A> WriteBatch<A> {
         let epochal = EpochalState::new(
             state.total_ledger_balance(),
             state.cur_epoch(),
-            L1BlockCommitment::from_height_u64(
-                state.last_l1_height() as u64,
-                *state.last_l1_blkid(),
-            )
-            .expect("state: invalid L1 height"),
+            L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid()),
             *state.asm_recorded_epoch(),
             state.asm_manifests_mmr().clone(),
             manifests_mmr_start_height as u64,

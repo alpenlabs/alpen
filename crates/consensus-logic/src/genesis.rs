@@ -120,7 +120,7 @@ pub fn make_genesis_block(params: &Params) -> L2BlockBundle {
     );
 
     // This has to be empty since everyone should have an unambiguous view of the genesis block.
-    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height_u64());
+    let l1_seg = L1Segment::new_empty(params.rollup().genesis_l1_view.blk.height());
 
     // TODO this is a total stub, we have to fill it in with something
     let exec_seg = ExecSegment::new(genesis_update);

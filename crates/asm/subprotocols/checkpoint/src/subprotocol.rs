@@ -72,7 +72,7 @@ impl Subprotocol for CheckpointSubprotocol {
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        let current_l1_height = l1ref.height_u32();
+        let current_l1_height = l1ref.height();
 
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {

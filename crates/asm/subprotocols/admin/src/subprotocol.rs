@@ -49,7 +49,7 @@ impl Subprotocol for AdministrationSubprotocol {
         relayer: &mut impl MsgRelayer,
         params: &Self::Params,
     ) {
-        let current_height = l1ref.height_u64();
+        let current_height = l1ref.height();
 
         // Phase 1: Execute any pending updates that have reached their activation height
         handle_pending_updates(state, relayer, current_height);

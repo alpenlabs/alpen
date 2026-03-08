@@ -41,8 +41,7 @@ pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
             |(funds, epoch, l1_blkid, (cp_epoch, cp_slot, cp_blkid))| EpochalState {
                 total_ledger_funds: funds,
                 cur_epoch: epoch,
-                last_l1_block: L1BlockCommitment::from_height_u64(0, L1BlockId::from(l1_blkid))
-                    .unwrap(),
+                last_l1_block: L1BlockCommitment::new(0, L1BlockId::from(l1_blkid)),
                 checkpointed_epoch: EpochCommitment::new(
                     cp_epoch,
                     cp_slot,

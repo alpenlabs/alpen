@@ -2,7 +2,7 @@
 
 use strata_db_types::traits::BlockStatus;
 use strata_ol_chain_types::{L2Header, SignedL2BlockHeader};
-use strata_primitives::{l1::L1BlockId, l2::L2BlockId};
+use strata_primitives::{l1::L1BlockId, l2::L2BlockId, L1Height};
 
 use super::{
     helpers::{porcelain_field, porcelain_optional},
@@ -15,7 +15,7 @@ pub(crate) struct L2BlockInfo<'a> {
     pub id: &'a L2BlockId,
     pub status: &'a BlockStatus,
     pub header: &'a SignedL2BlockHeader,
-    pub l1_segment: Vec<(u64, &'a L1BlockId)>,
+    pub l1_segment: Vec<(L1Height, &'a L1BlockId)>,
 }
 
 /// L2 Summary information displayed to the user

@@ -2,7 +2,7 @@
 use arbitrary::Arbitrary;
 use ssz_types::FixedBytes;
 use strata_crypto::hash;
-use strata_identifiers::{L1BlockId, WtxidsRoot};
+use strata_identifiers::{L1BlockId, L1Height, WtxidsRoot};
 use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
 impl AsmManifest {
     /// Creates a new ASM manifest.
     pub fn new(
-        height: u64,
+        height: L1Height,
         blkid: L1BlockId,
         wtxids_root: WtxidsRoot,
         logs: Vec<AsmLogEntry>,
@@ -27,7 +27,7 @@ impl AsmManifest {
     }
 
     /// Returns the L1 block height.
-    pub fn height(&self) -> u64 {
+    pub fn height(&self) -> L1Height {
         self.height
     }
 
@@ -64,7 +64,7 @@ strata_identifiers::impl_borsh_via_ssz!(AsmManifest);
 #[cfg(feature = "arbitrary")]
 impl<'a> Arbitrary<'a> for AsmManifest {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        let height = u64::arbitrary(u)?;
+        let height = u32::arbitrary(u)?;
         let blkid = L1BlockId::arbitrary(u)?;
         let wtxids_root = WtxidsRoot::arbitrary(u)?;
 
@@ -127,7 +127,7 @@ mod tests {
 
     fn asm_manifest_strategy() -> impl Strategy<Value = AsmManifest> {
         (
-            any::<u64>(),
+            any::<u32>(),
             l1_block_id_strategy(),
             wtxids_root_strategy(),
             prop::collection::vec(asm_log_entry_strategy(), 0..10),

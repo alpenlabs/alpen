@@ -138,10 +138,10 @@ pub trait StateAccessor {
 /// Provider for queries to sideloaded state like ASM manifests.
 pub trait AuxProvider {
     /// Returns the height of the new tip.
-    fn get_l1_tip_height(&self) -> u64;
+    fn get_l1_tip_height(&self) -> L1Height;
 
     /// Fetches an ASM manifest by height.
-    fn get_l1_block_manifest(&self, height: u64) -> ProviderResult<AsmManifest>;
+    fn get_l1_block_manifest(&self, height: L1Height) -> ProviderResult<AsmManifest>;
 }
 
 pub type ProviderResult<T> = Result<T, ProviderError>;

@@ -16,10 +16,6 @@ impl GenesisL1View {
         self.blk.height()
     }
 
-    pub fn height_u64(&self) -> u64 {
-        self.blk.height_u64()
-    }
-
     pub fn blkid(&self) -> L1BlockId {
         *self.blk.blkid()
     }

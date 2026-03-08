@@ -10,7 +10,8 @@ use strata_asm_common::{AsmManifest, AuxData};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{
-    AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitment, OLBlockId, OLTxId, RawMmrId, Slot,
+    AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
+    RawMmrId, Slot,
 };
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
@@ -102,30 +103,37 @@ pub trait L1Database: Send + Sync + 'static {
     fn put_block_data(&self, manifest: AsmManifest) -> DbResult<()>;
 
     /// Set a specific height, blockid in canonical chain records.
-    fn set_canonical_chain_entry(&self, height: u64, blockid: L1BlockId) -> DbResult<()>;
+    fn set_canonical_chain_entry(&self, height: L1Height, blockid: L1BlockId) -> DbResult<()>;
 
     /// remove canonical chain records in given range (inclusive)
-    fn remove_canonical_chain_entries(&self, start_height: u64, end_height: u64) -> DbResult<()>;
+    fn remove_canonical_chain_entries(
+        &self,
+        start_height: L1Height,
+        end_height: L1Height,
+    ) -> DbResult<()>;
 
     /// Prune earliest blocks till height
-    fn prune_to_height(&self, height: u64) -> DbResult<()>;
+    fn prune_to_height(&self, height: L1Height) -> DbResult<()>;
 
     // TODO DA scraping storage
 
     // Gets current chain tip height, blockid
-    fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>>;
+    fn get_canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>>;
 
     /// Gets the ASM manifest for a blockid.
     fn get_block_manifest(&self, blockid: L1BlockId) -> DbResult<Option<AsmManifest>>;
 
     /// Gets the blockid at height for the current chain.
-    fn get_canonical_blockid_at_height(&self, height: u64) -> DbResult<Option<L1BlockId>>;
+    fn get_canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>>;
 
     // TODO: This should not exist in database level and should be handled by downstream manager.
     /// Returns a half-open interval of block hashes, if we have all of them
     /// present.  Otherwise, returns error.
-    fn get_canonical_blockid_range(&self, start_idx: u64, end_idx: u64)
-        -> DbResult<Vec<L1BlockId>>;
+    fn get_canonical_blockid_range(
+        &self,
+        start_idx: L1Height,
+        end_idx: L1Height,
+    ) -> DbResult<Vec<L1BlockId>>;
 
     // TODO DA queries
 }

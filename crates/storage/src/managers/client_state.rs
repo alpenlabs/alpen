@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_db_types::{traits::ClientStateDatabase, DbResult};
-use strata_primitives::l1::L1BlockCommitment;
+use strata_primitives::{l1::L1BlockCommitment, L1Height};
 use threadpool::ThreadPool;
 use tokio::sync::Mutex;
 
@@ -22,8 +22,8 @@ pub struct ClientStateManager {
     ops: ClientStateOps,
 
     // TODO actually use caches
-    update_cache: cache::CacheTable<u64, Option<ClientUpdateOutput>>,
-    state_cache: cache::CacheTable<u64, Arc<ClientState>>,
+    update_cache: cache::CacheTable<L1Height, Option<ClientUpdateOutput>>,
+    state_cache: cache::CacheTable<L1Height, Arc<ClientState>>,
 
     cur_state: Mutex<CurStateTracker>,
 }
@@ -39,7 +39,7 @@ impl ClientStateManager {
 
         let latest_cs = ops.get_latest_client_state_blocking()?;
         if let Some((blk, cs)) = latest_cs {
-            cur_state.set(blk.height_u64(), Arc::new(cs));
+            cur_state.set(blk.height(), Arc::new(cs));
         }
 
         Ok(Self {
@@ -81,7 +81,7 @@ impl ClientStateManager {
         // FIXME this is a lot of cloning, good thing the type isn't gigantic,
         // still feels bad though
         let state = Arc::new(update.state().clone());
-        let height = block.height_u64();
+        let height = block.height();
         self.ops
             .put_client_update_blocking(*block, update.clone())?;
         self.maybe_update_cur_state_blocking(height, &state);
@@ -90,7 +90,7 @@ impl ClientStateManager {
         Ok(state)
     }
 
-    fn maybe_update_cur_state_blocking(&self, height: u64, state: &Arc<ClientState>) -> bool {
+    fn maybe_update_cur_state_blocking(&self, height: L1Height, state: &Arc<ClientState>) -> bool {
         let mut cur = self.cur_state.blocking_lock();
         cur.maybe_update(height, state)
     }
@@ -117,7 +117,7 @@ impl ClientStateManager {
 /// Internally tracks the current state so we can fetch it as needed.
 #[derive(Debug)]
 struct CurStateTracker {
-    last_idx: Option<u64>,
+    last_idx: Option<L1Height>,
     state: Option<Arc<ClientState>>,
 }
 
@@ -129,16 +129,16 @@ impl CurStateTracker {
         }
     }
 
-    fn set(&mut self, idx: u64, state: Arc<ClientState>) {
+    fn set(&mut self, idx: L1Height, state: Arc<ClientState>) {
         self.last_idx = Some(idx);
         self.state = Some(state);
     }
 
-    fn is_idx_better(&self, idx: u64) -> bool {
+    fn is_idx_better(&self, idx: L1Height) -> bool {
         self.last_idx.is_none_or(|v| idx >= v)
     }
 
-    fn maybe_update(&mut self, idx: u64, state: &Arc<ClientState>) -> bool {
+    fn maybe_update(&mut self, idx: L1Height, state: &Arc<ClientState>) -> bool {
         let should = self.is_idx_better(idx);
         if should {
             self.set(idx, state.clone());

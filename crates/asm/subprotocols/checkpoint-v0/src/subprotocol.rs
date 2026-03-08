@@ -19,7 +19,7 @@ use strata_asm_txs_checkpoint_v0::{
 };
 use strata_identifiers::L1BlockCommitment;
 use strata_predicate::PredicateKey;
-use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
+use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -79,7 +79,7 @@ impl Subprotocol for CheckpointV0Subproto {
         relayer: &mut impl MsgRelayer,
         _params: &Self::Params,
     ) {
-        let current_l1_height_u64 = l1ref.height() as u64;
+        let current_l1_height_u64 = l1ref.height();
 
         for tx in txs {
             let tx_type = tx.tag().tx_type();
@@ -147,7 +147,7 @@ impl Subprotocol for CheckpointV0Subproto {
 fn process_checkpoint_transaction_v0(
     state: &mut CheckpointV0VerifierState,
     tx: &TxInputRef<'_>,
-    current_l1_height: u64,
+    current_l1_height: L1Height,
     relayer: &mut impl MsgRelayer,
 ) -> CheckpointV0Result<bool> {
     // 1. Extract signed checkpoint from SPS-50 envelope
@@ -232,18 +232,12 @@ fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_predicate: 
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{
-        block_credential::CredRule,
-        buf::Buf32,
-        l1::{L1BlockCommitment, L1BlockId},
-    };
+    use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
 
     use super::*;
 
     fn test_params() -> CheckpointV0Params {
-        let genesis_commitment =
-            L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::default()))
-                .expect("genesis height should be valid");
+        let genesis_commitment = L1BlockCommitment::default();
         let verification_params = CheckpointV0VerificationParams {
             genesis_l1_block: genesis_commitment,
             cred_rule: CredRule::Unchecked,

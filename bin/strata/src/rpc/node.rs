@@ -4,7 +4,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_identifiers::{
+    AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
+};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
@@ -347,7 +349,7 @@ impl OLClientRpcServer for OLRpcServer {
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: u64) -> RpcResult<Option<HexBytes32>> {
+    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> RpcResult<Option<HexBytes32>> {
         let manifest = self
             .storage
             .l1()
