@@ -9,8 +9,7 @@
 use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AsmError, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
-    logging,
+    AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData, logging,
 };
 use strata_asm_logs::CheckpointUpdate;
 use strata_asm_txs_checkpoint_v0::{
@@ -27,12 +26,12 @@ use crate::{
     verification::process_checkpoint_v0,
 };
 
-/// Checkpoint v0 subprotocol parameters
+/// Checkpoint v0 subprotocol initialization configuration.
 ///
-/// NOTE: This maintains compatibility with current checkpoint parameters while
+/// NOTE: This maintains compatibility with current checkpoint configuration while
 /// incorporating SPS-62 structure concepts for future transition
 #[derive(Clone, Debug)]
-pub struct CheckpointV0Params {
+pub struct CheckpointV0InitConfig {
     /// Verification parameters for checkpoint validation
     pub verification_params: CheckpointV0VerificationParams,
 }
@@ -52,11 +51,11 @@ impl Subprotocol for CheckpointV0Subproto {
     const ID: SubprotocolId = CHECKPOINT_V0_SUBPROTOCOL_ID;
 
     type State = CheckpointV0VerifierState;
-    type Params = CheckpointV0Params;
+    type InitConfig = CheckpointV0InitConfig;
     type Msg = CheckpointIncomingMsg;
 
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        Ok(CheckpointV0VerifierState::new(&params.verification_params))
+    fn init(config: &Self::InitConfig) -> Self::State {
+        CheckpointV0VerifierState::new(&config.verification_params)
     }
 
     /// Process checkpoint transactions according to checkpoint v0 specification
@@ -77,7 +76,6 @@ impl Subprotocol for CheckpointV0Subproto {
         l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         let current_l1_height_u64 = l1ref.height() as u64;
 
@@ -240,7 +238,7 @@ mod tests {
 
     use super::*;
 
-    fn test_params() -> CheckpointV0Params {
+    fn test_params() -> CheckpointV0InitConfig {
         let genesis_commitment =
             L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::default()))
                 .expect("genesis height should be valid");
@@ -250,7 +248,7 @@ mod tests {
             predicate: PredicateKey::always_accept(),
         };
 
-        CheckpointV0Params {
+        CheckpointV0InitConfig {
             verification_params,
         }
     }
@@ -258,7 +256,7 @@ mod tests {
     #[test]
     fn process_msgs_updates_sequencer_key() {
         let params = test_params();
-        let mut state = CheckpointV0Subproto::init(&params).expect("init state");
+        let mut state = CheckpointV0Subproto::init(&params);
 
         let new_key = Buf32::from([42u8; 32]);
         let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];

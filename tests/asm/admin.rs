@@ -8,9 +8,9 @@
 //!
 //! These tests use the harness's ergonomic admin API:
 //! ```ignore
-//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let (admin_config, mut ctx) = create_test_admin_setup(2);
 //! let harness = AsmTestHarnessBuilder::default()
-//!     .with_admin_params(admin_params)
+//!     .with_admin_config(admin_config)
 //!     .build()
 //!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
@@ -56,9 +56,9 @@ use strata_predicate::PredicateKey;
 /// Verifies sequencer updates are applied immediately (not queued).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sequencer_update_applies_immediately() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -89,9 +89,9 @@ async fn test_sequencer_update_applies_immediately() {
 /// Verifies operator set updates are queued (not applied immediately).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_operator_update_is_queued() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -124,9 +124,9 @@ async fn test_operator_update_is_queued() {
 /// Verifies multisig config updates are queued (not applied immediately).
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multisig_update_is_queued() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -180,9 +180,9 @@ async fn test_multisig_update_is_queued() {
 /// Verifies predicate (verifying key) updates are queued.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_predicate_update_is_queued() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -213,9 +213,9 @@ async fn test_predicate_update_is_queued() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_queued_update_activates() {
     // confirmation_depth=2, so updates activate 2 blocks after submission
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -289,9 +289,9 @@ async fn test_queued_update_activates() {
 /// Verifies cancel action removes a queued update.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_removes_queued_update() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -328,9 +328,9 @@ async fn test_cancel_removes_queued_update() {
 /// Verifies transactions signed with wrong key are rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_wrong_key_rejected() {
-    let (admin_params, _ctx) = create_test_admin_setup(2);
+    let (admin_config, _ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -380,9 +380,9 @@ async fn test_wrong_key_rejected() {
 /// Verifies transactions with corrupted signatures are rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_corrupted_signature_rejected() {
-    let (admin_params, ctx) = create_test_admin_setup(2);
+    let (admin_config, ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -435,9 +435,9 @@ async fn test_corrupted_signature_rejected() {
 /// Verifies replay attacks (reused sequence numbers) are rejected.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_replay_attack_rejected() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -471,9 +471,9 @@ async fn test_replay_attack_rejected() {
 /// Verifies multiple admin transactions can be processed in a single block.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multiple_updates_same_block() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();
@@ -555,9 +555,9 @@ async fn test_multiple_updates_same_block() {
 /// This gives us block H+1 to submit a cancel, making the test deterministic.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_prevents_queued_update_activation() {
-    let (admin_params, mut ctx) = create_test_admin_setup(2);
+    let (admin_config, mut ctx) = create_test_admin_setup(2);
     let harness = AsmTestHarnessBuilder::default()
-        .with_admin_params(admin_params)
+        .with_admin_config(admin_config)
         .build()
         .await
         .unwrap();

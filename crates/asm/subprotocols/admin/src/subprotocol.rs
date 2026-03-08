@@ -4,9 +4,9 @@
 //! with the Strata Anchor State Machine (ASM) for managing protocol governance and updates.
 
 use strata_asm_common::{
-    AsmError, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
 };
-use strata_asm_params::AdministrationSubprotoParams;
+use strata_asm_params::AdministrationInitConfig;
 use strata_asm_txs_admin::{constants::ADMINISTRATION_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::L1BlockCommitment;
 
@@ -26,14 +26,14 @@ pub struct AdministrationSubprotocol;
 impl Subprotocol for AdministrationSubprotocol {
     const ID: SubprotocolId = ADMINISTRATION_SUBPROTOCOL_ID;
 
-    type Params = AdministrationSubprotoParams;
+    type InitConfig = AdministrationInitConfig;
 
     type State = AdministrationSubprotoState;
 
     type Msg = NullMsg<ADMINISTRATION_SUBPROTOCOL_ID>;
 
-    fn init(params: &Self::Params) -> Result<AdministrationSubprotoState, AsmError> {
-        Ok(AdministrationSubprotoState::new(params))
+    fn init(config: &Self::InitConfig) -> AdministrationSubprotoState {
+        AdministrationSubprotoState::new(config)
     }
 
     /// Processes transactions for the Administration subprotocol and executes pending updates.
@@ -47,7 +47,6 @@ impl Subprotocol for AdministrationSubprotocol {
         l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
     ) {
         let current_height = l1ref.height_u64();
 
@@ -57,13 +56,7 @@ impl Subprotocol for AdministrationSubprotocol {
         // Phase 2: Process incoming administration transactions
         for tx in txs {
             if let Ok(signed_payload) = parse_tx(tx) {
-                let _ = handle_action(
-                    state,
-                    signed_payload,
-                    current_height,
-                    relayer,
-                    params.max_seqno_gap,
-                );
+                let _ = handle_action(state, signed_payload, current_height, relayer);
             }
             // Transaction parsing failures are silently ignored to maintain system resilience
         }

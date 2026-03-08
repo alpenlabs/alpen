@@ -11,7 +11,6 @@ use strata_identifiers::L1BlockCommitment;
 /// Wrapper around the common subprotocol interface that handles the common
 /// buffering logic for interproto messages.
 pub(crate) struct HandlerImpl<S: Subprotocol, R> {
-    params: S::Params,
     state: S::State,
     interproto_msg_buf: Vec<S::Msg>,
 
@@ -19,9 +18,8 @@ pub(crate) struct HandlerImpl<S: Subprotocol, R> {
 }
 
 impl<S: Subprotocol + 'static, R: MsgRelayer + 'static> HandlerImpl<S, R> {
-    pub(crate) fn new(params: S::Params, state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
+    pub(crate) fn new(state: S::State, interproto_msg_buf: Vec<S::Msg>) -> Self {
         Self {
-            params,
             state,
             interproto_msg_buf,
             _r: marker::PhantomData,
@@ -43,13 +41,8 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
     }
 
     // TODO make this just return the aux request
-    fn pre_process_txs(
-        &mut self,
-        txs: &[TxInputRef<'_>],
-        collector: &mut AuxRequestCollector,
-        anchor_pre: &AnchorState,
-    ) {
-        S::pre_process_txs(&self.state, txs, collector, anchor_pre, &self.params);
+    fn pre_process_txs(&mut self, txs: &[TxInputRef<'_>], collector: &mut AuxRequestCollector) {
+        S::pre_process_txs(&self.state, txs, collector);
     }
 
     fn process_txs(
@@ -64,14 +57,7 @@ impl<S: Subprotocol, R: MsgRelayer> SubprotoHandler for HandlerImpl<S, R> {
             .downcast_mut::<R>()
             .expect("asm: handler");
 
-        S::process_txs(
-            &mut self.state,
-            txs,
-            l1ref,
-            verified_aux_data,
-            relayer,
-            &self.params,
-        );
+        S::process_txs(&mut self.state, txs, l1ref, verified_aux_data, relayer);
     }
 
     fn process_buffered_msgs(&mut self, l1ref: &L1BlockCommitment) {
@@ -91,9 +77,9 @@ pub(crate) struct SubprotoManager {
 }
 
 impl SubprotoManager {
-    /// Inserts a subproto by creating a handler for it, wrapping a tstate.
-    pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, params: S::Params, state: S::State) {
-        let handler = HandlerImpl::<S, Self>::new(params, state, Vec::new());
+    /// Inserts a subproto by creating a handler for it, wrapping a state.
+    pub(crate) fn insert_subproto<S: Subprotocol>(&mut self, state: S::State) {
+        let handler = HandlerImpl::<S, Self>::new(state, Vec::new());
         assert_eq!(
             handler.id(),
             S::ID,
@@ -111,7 +97,6 @@ impl SubprotoManager {
         &mut self,
         aux_collector: &mut AuxRequestCollector,
         txs: &[TxInputRef<'_>],
-        anchor_pre: &AnchorState,
     ) {
         // We temporarily take the handler out of the map so we can call
         // `process_txs` with `self` as the relayer without violating the
@@ -121,7 +106,7 @@ impl SubprotoManager {
             .expect("asm: unloaded subprotocol");
 
         // Invoke the preprocess function.
-        h.pre_process_txs(txs, aux_collector, anchor_pre);
+        h.pre_process_txs(txs, aux_collector);
         self.insert_handler(h);
     }
 
@@ -258,7 +243,7 @@ impl<'c> AnchorStateLoader<'c> {
 }
 
 impl<'c> Loader for AnchorStateLoader<'c> {
-    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params) {
+    fn load_subprotocol<S: Subprotocol>(&mut self, config: S::InitConfig) {
         // Load or create the subprotocol state.
         // OPTIMIZE: Linear scan is done every time to find the section
         let state = match self.anchor.find_section(S::ID) {
@@ -268,14 +253,10 @@ impl<'c> Loader for AnchorStateLoader<'c> {
             // State not found in the anchor state, which occurs in two scenarios:
             // 1. During genesis block processing, before any state initialization
             // 2. When introducing a new subprotocol to an existing chain
-            // In either case, we must initialize a fresh state from the provided configuration
-            // in the AsmSpec
-            None => {
-                // Just instantiate the subprotocol state from the params.
-                S::init(&params).expect("asm: failed to construct new subproto state")
-            }
+            // In either case, we must initialize a fresh state from the provided config
+            None => S::init(&config),
         };
 
-        self.man.insert_subproto::<S>(params, state);
+        self.man.insert_subproto::<S>(state);
     }
 }

@@ -5,11 +5,10 @@
 
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
-    VerifiedAuxData,
+    AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
     logging::{error, info},
 };
-use strata_asm_params::BridgeV1Config;
+use strata_asm_params::BridgeV1InitConfig;
 use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::l1::L1BlockCommitment;
 
@@ -32,12 +31,12 @@ impl Subprotocol for BridgeV1Subproto {
 
     type State = BridgeV1State;
 
-    type Params = BridgeV1Config;
+    type InitConfig = BridgeV1InitConfig;
 
     type Msg = BridgeIncomingMsg;
 
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        Ok(BridgeV1State::new(params))
+    fn init(config: &Self::InitConfig) -> Self::State {
+        BridgeV1State::new(config)
     }
 
     /// Pre-processes transactions to collect auxiliary data requests.
@@ -48,8 +47,6 @@ impl Subprotocol for BridgeV1Subproto {
         state: &Self::State,
         txs: &[TxInputRef<'_>],
         collector: &mut AuxRequestCollector,
-        _anchor_pre: &AnchorState,
-        _params: &Self::Params,
     ) {
         // Pre-Process each transaction
         for tx in txs {
@@ -89,7 +86,6 @@ impl Subprotocol for BridgeV1Subproto {
         l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         // Process each transaction
         for tx in txs {

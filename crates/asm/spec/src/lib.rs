@@ -6,13 +6,14 @@
 
 use strata_asm_common::{AsmSpec, Loader, Stage};
 use strata_asm_params::{
-    AdministrationSubprotoParams, AsmParams, BridgeV1Config, CheckpointConfig, SubprotocolInstance,
+    AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
+    SubprotocolInstance,
 };
 use strata_asm_proto_administration::AdministrationSubprotocol;
 use strata_asm_proto_bridge_v1::BridgeV1Subproto;
 use strata_asm_proto_checkpoint::subprotocol::CheckpointSubprotocol;
 use strata_asm_proto_checkpoint_v0::{
-    CheckpointV0Params, CheckpointV0Subproto, CheckpointV0VerificationParams,
+    CheckpointV0InitConfig, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::CredRule;
@@ -25,12 +26,11 @@ use strata_primitives::CredRule;
 pub struct StrataAsmSpec {
     magic_bytes: MagicBytes,
 
-    // subproto params, which right now currently just contain the genesis data
-    // TODO rename these
-    checkpoint_v0_params: CheckpointV0Params,
-    checkpoint_params: CheckpointConfig,
-    bridge_v1_genesis: BridgeV1Config,
-    admin_params: AdministrationSubprotoParams,
+    // subproto init configs, which right now currently just contain the genesis data
+    checkpoint_v0_config: CheckpointV0InitConfig,
+    checkpoint_config: CheckpointInitConfig,
+    bridge_v1_config: BridgeV1InitConfig,
+    admin_config: AdministrationInitConfig,
 }
 
 impl AsmSpec for StrataAsmSpec {
@@ -40,10 +40,10 @@ impl AsmSpec for StrataAsmSpec {
 
     fn load_subprotocols(&self, loader: &mut impl Loader) {
         // TODO avoid clone?
-        loader.load_subprotocol::<AdministrationSubprotocol>(self.admin_params.clone());
-        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_params.clone());
-        loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_params.clone());
-        loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_genesis.clone());
+        loader.load_subprotocol::<AdministrationSubprotocol>(self.admin_config.clone());
+        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_config.clone());
+        loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_config.clone());
+        loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_config.clone());
     }
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
@@ -58,17 +58,17 @@ impl StrataAsmSpec {
     /// Creates a new ASM spec instance.
     pub fn new(
         magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpoint_v0_params: CheckpointV0Params,
-        checkpoint_params: CheckpointConfig,
-        bridge_v1_genesis: BridgeV1Config,
-        admin_params: AdministrationSubprotoParams,
+        checkpoint_v0_config: CheckpointV0InitConfig,
+        checkpoint_config: CheckpointInitConfig,
+        bridge_v1_config: BridgeV1InitConfig,
+        admin_config: AdministrationInitConfig,
     ) -> Self {
         Self {
             magic_bytes,
-            checkpoint_v0_params,
-            checkpoint_params,
-            bridge_v1_genesis,
-            admin_params,
+            checkpoint_v0_config,
+            checkpoint_config,
+            bridge_v1_config,
+            admin_config,
         }
     }
 
@@ -86,7 +86,7 @@ impl StrataAsmSpec {
         }
 
         let ckpt = checkpoint_config.expect("AsmParams missing Checkpoint subprotocol");
-        let checkpoint_v0_params = CheckpointV0Params {
+        let checkpoint_v0_config = CheckpointV0InitConfig {
             verification_params: CheckpointV0VerificationParams {
                 genesis_l1_block: params.l1_view.blk,
                 cred_rule: CredRule::Unchecked, // FIXME: @PG
@@ -94,19 +94,19 @@ impl StrataAsmSpec {
             },
         };
 
-        let bridge_v1_genesis = bridge_config
+        let bridge_v1_config = bridge_config
             .expect("AsmParams missing Bridge subprotocol")
             .clone();
-        let admin_params = admin_config
+        let admin_config = admin_config
             .expect("AsmParams missing Admin subprotocol")
             .clone();
 
         Self {
             magic_bytes: params.magic,
-            checkpoint_v0_params,
-            checkpoint_params: ckpt.clone(),
-            bridge_v1_genesis,
-            admin_params,
+            checkpoint_v0_config,
+            checkpoint_config: ckpt.clone(),
+            bridge_v1_config,
+            admin_config,
         }
     }
 }

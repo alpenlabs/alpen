@@ -11,8 +11,7 @@ use strata_identifiers::L1BlockCommitment;
 pub use strata_l1_txfmt::SubprotocolId;
 
 use crate::{
-    AnchorState, AsmError, AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef,
-    VerifiedAuxData, msg::InterprotoMsg,
+    AsmLogEntry, AuxRequestCollector, SectionState, TxInputRef, VerifiedAuxData, msg::InterprotoMsg,
 };
 
 /// Trait for defining subprotocol behavior within the ASM framework.
@@ -41,10 +40,10 @@ use crate::{
 /// impl Subprotocol for MySubprotocol {
 ///     const ID: SubprotocolId = 42;
 ///     type State = MyState;
-///     type Params = MyParams;
+///     type InitConfig = MyInitConfig;
 ///     type Msg = MyMessage;
 ///
-///     fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
+///     fn init(config: &Self::InitConfig) -> Self::State {
 ///        // init logic
 ///     }
 ///
@@ -52,8 +51,6 @@ use crate::{
 ///         state: &Self::State,
 ///         txs: &[TxInputRef],
 ///         collector: &mut AuxRequestCollector,
-///         anchor_pre: &AnchorState,
-///         params: &Self::Params,
 ///     ) {
 ///         // Pre-process transactions and request auxiliary data
 ///     }
@@ -64,7 +61,6 @@ use crate::{
 ///         l1ref: &L1BlockCommitment,
 ///         verified_aux_data: &VerifiedAuxData,
 ///         relayer: &mut impl MsgRelayer,
-///         params: &Self::Params,
 ///     ) {
 ///         // Process transactions
 ///     }
@@ -78,9 +74,8 @@ pub trait Subprotocol: 'static {
     /// The subprotocol ID used when searching for relevant transactions.
     const ID: SubprotocolId;
 
-    /// Type that defines the params the subprotocol should operate under, which
-    /// might change dependent on block height.
-    type Params;
+    /// Configuration used to initialize the subprotocol's state.
+    type InitConfig;
 
     /// State type serialized into the ASM state structure.
     type State: Any + BorshDeserialize + BorshSerialize;
@@ -88,17 +83,16 @@ pub trait Subprotocol: 'static {
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + InterprotoMsg + Any;
 
-    /// Constructs a new state using the provided genesis configuration.
+    /// Constructs a new state using the provided initialization configuration.
     ///
     /// # Arguments
-    /// * `params` - The subprotocol's params, from which we should be able to derive an initial
+    /// * `config` - The subprotocol's initialization configuration, from which we derive an initial
     ///   state to use when the pre-state does not contain an instance.
     ///
     /// # Returns
     ///
-    /// The initialized state or an error if initialization fails.
-    // FIXME why would this ever error?  this would be panic-worthy
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError>;
+    /// The initialized state
+    fn init(config: &Self::InitConfig) -> Self::State;
 
     /// Pre-processes a batch of L1 transactions by registering any required auxiliary data.
     ///
@@ -115,14 +109,10 @@ pub trait Subprotocol: 'static {
     /// * `state` - Current state of the subprotocol
     /// * `txs` - Slice of L1 transactions relevant to this subprotocol
     /// * `collector` - Interface for registering auxiliary input requirements
-    /// * `anchor_pre` - The previous anchor state for context
-    /// * `params` - Subprotocol's current params
     fn pre_process_txs(
         _state: &Self::State,
         _txs: &[TxInputRef<'_>],
         _collector: &mut AuxRequestCollector,
-        _anchor_pre: &AnchorState,
-        _params: &Self::Params,
     ) {
         // default nothing
     }
@@ -140,14 +130,12 @@ pub trait Subprotocol: 'static {
     /// * `l1ref` - L1 block being processed
     /// * `verified_aux_data` - Verified auxiliary data previously requested and validated
     /// * `relayer` - Interface for sending messages to other subprotocols and emitting logs
-    /// * `params` - Subprotocol's current params
     fn process_txs(
         state: &mut Self::State,
         txs: &[TxInputRef<'_>],
         l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        params: &Self::Params,
     );
 
     /// Processes messages received from other subprotocols.
@@ -191,12 +179,7 @@ pub trait SubprotoHandler {
     ///
     /// Any required auxiliary data should be registered via the provided `AuxRequestCollector` for
     /// the subsequent processing phase.
-    fn pre_process_txs(
-        &mut self,
-        txs: &[TxInputRef<'_>],
-        collector: &mut AuxRequestCollector,
-        anchor_state: &AnchorState,
-    );
+    fn pre_process_txs(&mut self, txs: &[TxInputRef<'_>], collector: &mut AuxRequestCollector);
 
     /// Processes a batch of L1 transactions by delegating to the underlying subprotocol's
     /// `process_txs` implementation.
