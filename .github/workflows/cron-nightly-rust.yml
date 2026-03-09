@@ -21,7 +21,10 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@a02741459ec5e501b9843ed30b535ca0a0376ae4 # nightly
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
       - name: Update rust-toolchain.toml to use latest nightly
         run: |
           set -xe
