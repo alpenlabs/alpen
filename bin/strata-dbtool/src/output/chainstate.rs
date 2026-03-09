@@ -11,15 +11,15 @@ use super::{helpers::porcelain_field, traits::Formattable};
 /// Chainstate information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct ChainstateInfo<'a> {
-    pub block_id: &'a L2BlockId,
-    pub current_slot: u64,
-    pub current_epoch: u64,
-    pub is_epoch_finishing: bool,
-    pub previous_epoch: &'a EpochCommitment,
-    pub finalized_epoch: &'a EpochCommitment,
-    pub l1_next_expected_height: L1Height,
-    pub l1_safe_block_height: L1Height,
-    pub l1_safe_block_blkid: &'a L1BlockId,
+    pub(crate) block_id: &'a L2BlockId,
+    pub(crate) current_slot: u64,
+    pub(crate) current_epoch: u64,
+    pub(crate) is_epoch_finishing: bool,
+    pub(crate) previous_epoch: &'a EpochCommitment,
+    pub(crate) finalized_epoch: &'a EpochCommitment,
+    pub(crate) l1_next_expected_height: L1Height,
+    pub(crate) l1_safe_block_height: L1Height,
+    pub(crate) l1_safe_block_blkid: &'a L1BlockId,
 }
 
 impl<'a> Formattable for ChainstateInfo<'a> {

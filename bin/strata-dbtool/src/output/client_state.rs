@@ -9,9 +9,9 @@ use crate::output::helpers::porcelain_optional;
 /// Client state update information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct ClientStateUpdateInfo<'a> {
-    pub block: L1BlockCommitment,
-    pub state: ClientState,
-    pub sync_actions: &'a Vec<SyncAction>,
+    pub(crate) block: L1BlockCommitment,
+    pub(crate) state: ClientState,
+    pub(crate) sync_actions: &'a Vec<SyncAction>,
 }
 
 impl<'a> Formattable for ClientStateUpdateInfo<'a> {

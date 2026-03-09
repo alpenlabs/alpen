@@ -10,36 +10,36 @@ use super::{helpers::porcelain_field, traits::Formattable};
 /// Epoch information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct EpochInfo<'a> {
-    pub epoch_index: u64,
-    pub epoch_summary: &'a EpochSummary,
+    pub(crate) epoch_index: u64,
+    pub(crate) epoch_summary: &'a EpochSummary,
 }
 
 /// Checkpoint information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct CheckpointInfo<'a> {
-    pub checkpoint_index: u64,
-    pub checkpoint: &'a Checkpoint,
+    pub(crate) checkpoint_index: u64,
+    pub(crate) checkpoint: &'a Checkpoint,
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    pub confirmation_status: &'a CheckpointConfStatus,
+    pub(crate) confirmation_status: &'a CheckpointConfStatus,
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    pub proving_status: &'a CheckpointProvingStatus,
+    pub(crate) proving_status: &'a CheckpointProvingStatus,
 }
 
 /// Checkpoints summary information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct CheckpointsSummaryInfo {
-    pub expected_checkpoints_count: u64,
-    pub checkpoints_found_in_db: u64,
-    pub checkpoints_in_l1_blocks: u64,
+    pub(crate) expected_checkpoints_count: u64,
+    pub(crate) checkpoints_found_in_db: u64,
+    pub(crate) checkpoints_in_l1_blocks: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub unexpected_checkpoints: Vec<UnexpectedCheckpointInfo>,
+    pub(crate) unexpected_checkpoints: Vec<UnexpectedCheckpointInfo>,
 }
 
 /// Information about unexpected checkpoints found in L1 blocks
 #[derive(serde::Serialize)]
 pub(crate) struct UnexpectedCheckpointInfo {
-    pub checkpoint_index: u64,
-    pub l1_height: u64,
+    pub(crate) checkpoint_index: u64,
+    pub(crate) l1_height: u64,
 }
 
 /// Format batch info for porcelain output

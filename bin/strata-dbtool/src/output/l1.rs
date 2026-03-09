@@ -1,16 +1,16 @@
 //! L1 block formatting implementations
 
 use strata_ol_chain_types::AsmManifest;
-use strata_primitives::l1::{L1BlockId, L1Height};
+use strata_primitives::l1::L1BlockId;
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
 /// L1 block information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct L1BlockInfo<'a> {
-    pub block_id: &'a L1BlockId,
-    pub height: L1Height,
-    pub logs_count: usize,
+    pub(crate) block_id: &'a L1BlockId,
+    pub(crate) height: u32,
+    pub(crate) logs_count: usize,
 }
 
 impl<'a> L1BlockInfo<'a> {
@@ -27,23 +27,23 @@ impl<'a> L1BlockInfo<'a> {
 /// L1 summary information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct L1SummaryInfo {
-    pub tip_height: L1Height,
-    pub tip_block_id: String,
-    pub from_height: L1Height,
-    pub from_block_id: String,
-    pub expected_block_count: u32,
-    pub all_manifests_present: bool,
+    pub(crate) tip_height: u32,
+    pub(crate) tip_block_id: String,
+    pub(crate) from_height: u64,
+    pub(crate) from_block_id: String,
+    pub(crate) expected_block_count: u64,
+    pub(crate) all_manifests_present: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub missing_blocks: Vec<MissingBlockInfo>,
+    pub(crate) missing_blocks: Vec<MissingBlockInfo>,
 }
 
 /// Information about missing blocks
 #[derive(serde::Serialize)]
 pub(crate) struct MissingBlockInfo {
-    pub height: L1Height,
-    pub reason: String,
+    pub(crate) height: u32,
+    pub(crate) reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub block_id: Option<String>,
+    pub(crate) block_id: Option<String>,
 }
 
 impl<'a> Formattable for L1BlockInfo<'a> {

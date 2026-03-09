@@ -12,18 +12,18 @@ use super::{helpers::porcelain_field, traits::Formattable};
 /// Sync information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct SyncInfo<'a> {
-    pub l1_tip_height: L1Height,
-    pub l1_tip_block_id: &'a L1BlockId,
-    pub l2_tip_height: u64,
-    pub l2_tip_block_id: &'a L2BlockId,
-    pub l2_tip_block_status: &'a BlockStatus,
-    pub l2_finalized_block_id: &'a L2BlockId,
-    pub current_epoch: u64,
-    pub current_slot: u64,
-    pub previous_block: &'a L2BlockCommitment,
-    pub previous_epoch: &'a EpochCommitment,
-    pub finalized_epoch: &'a EpochCommitment,
-    pub safe_block: &'a L1BlockCommitment,
+    pub(crate) l1_tip_height: L1Height,
+    pub(crate) l1_tip_block_id: &'a L1BlockId,
+    pub(crate) l2_tip_height: u64,
+    pub(crate) l2_tip_block_id: &'a L2BlockId,
+    pub(crate) l2_tip_block_status: &'a BlockStatus,
+    pub(crate) l2_finalized_block_id: &'a L2BlockId,
+    pub(crate) current_epoch: u64,
+    pub(crate) current_slot: u64,
+    pub(crate) previous_block: &'a L2BlockCommitment,
+    pub(crate) previous_epoch: &'a EpochCommitment,
+    pub(crate) finalized_epoch: &'a EpochCommitment,
+    pub(crate) safe_block: &'a L1BlockCommitment,
 }
 
 impl<'a> Formattable for SyncInfo<'a> {

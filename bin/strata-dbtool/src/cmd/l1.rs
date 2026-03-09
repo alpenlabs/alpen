@@ -136,9 +136,9 @@ pub(crate) fn get_l1_summary(
     let output_data = L1SummaryInfo {
         tip_height: l1_tip_height,
         tip_block_id: format!("{l1_tip_block_id:?}"),
-        from_height: start_height,
+        from_height: u64::from(start_height),
         from_block_id: format!("{start_block_id:?}"),
-        expected_block_count: l1_tip_height.saturating_sub(start_height) + 1,
+        expected_block_count: u64::from(l1_tip_height.saturating_sub(start_height) + 1),
         all_manifests_present: all_l1_manifests_present,
         missing_blocks: missing_heights
             .into_iter()
