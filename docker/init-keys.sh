@@ -59,9 +59,6 @@ $DATATOOL_PATH -b regtest genxpriv -f $OP3_SEED_FILE
 $DATATOOL_PATH -b regtest genxpriv -f $OP4_SEED_FILE
 $DATATOOL_PATH -b regtest genxpriv -f $OP5_SEED_FILE
 
-# sequencer.key must contain the master Xpriv (not a derived key).
-# load_seqkey() and genseqpubkey both derive m/20000'/10' internally,
-# so passing an already-derived key would cause double derivation.
 cp "${SEQ_SEED_FILE}" "$CONFIG_FILE/sequencer.key"
 
 op1xpriv=$(cat $OP1_SEED_FILE)
