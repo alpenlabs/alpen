@@ -61,7 +61,10 @@ pub(crate) fn parse_l2_block_id(hex_input: &str) -> Result<L2BlockId, DisplayedE
 /// let block_id = parse_l1_block_id("1234567890abcdef...")?;
 /// ```
 pub(crate) fn parse_l1_block_id(hex_input: &str) -> Result<L1BlockId, DisplayedError> {
-    let bytes = parse_block_id_hex(hex_input)?;
+    let mut bytes = parse_block_id_hex(hex_input)?;
+    // L1BlockId is displayed/serialized in Bitcoin-style reversed byte order.
+    // Reverse user input to recover internal storage order.
+    bytes.reverse();
     Ok(L1BlockId::from(Buf32::from(bytes)))
 }
 
@@ -115,6 +118,19 @@ mod tests {
         let valid_hex = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
         let result = parse_l1_block_id(valid_hex);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_l1_block_id_roundtrip_with_debug_format() {
+        let bytes = [
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba,
+            0xdc, 0xfe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
+            0xdd, 0xee, 0xff, 0x00,
+        ];
+        let original = L1BlockId::from(Buf32::from(bytes));
+        let human = format!("{original:?}");
+        let parsed = parse_l1_block_id(&human).unwrap();
+        assert_eq!(parsed, original);
     }
 
     #[test]

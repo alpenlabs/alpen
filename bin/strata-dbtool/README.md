@@ -73,7 +73,7 @@ strata-dbtool get-client-state-update 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a
 Shows a summary of all L1 manifests in the database.
 
 ```bash
-strata-dbtool get-l1-summary [<height_from>] [OPTIONS]
+strata-dbtool get-l1-summary <height_from> [OPTIONS]
 ```
 
 **Arguments:**
@@ -82,11 +82,11 @@ strata-dbtool get-l1-summary [<height_from>] [OPTIONS]
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
 
-### `get-l1-manifest`
-Shows detailed information about a specific L1 block manifest.
+### `get-l1-block`
+Shows detailed information about a specific ASM manifest entry stored in the L1 database.
 
 ```bash
-strata-dbtool get-l1-manifest <block_id> [OPTIONS]
+strata-dbtool get-l1-block <block_id> [OPTIONS]
 ```
 
 **Arguments:**
@@ -97,7 +97,7 @@ strata-dbtool get-l1-manifest <block_id> [OPTIONS]
 
 **Example:**
 ```bash
-strata-dbtool get-l1-manifest 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
+strata-dbtool get-l1-block 42b3fd7680ea6141eec61ae5ae86e41163ab559b6a1ab86c4de9c540a2c5f63f
 ```
 
 ### `get-writer-summary`

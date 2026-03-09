@@ -11,7 +11,7 @@ use crate::cmd::{
     chainstate::{GetChainstateArgs, RevertChainstateArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     client_state::GetClientStateUpdateArgs,
-    l1::{GetL1ManifestArgs, GetL1SummaryArgs},
+    l1::{GetL1BlockArgs, GetL1SummaryArgs},
     l2::{GetL2BlockArgs, GetL2SummaryArgs},
     syncinfo::GetSyncinfoArgs,
     writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
@@ -33,7 +33,7 @@ pub(crate) struct Cli {
 #[derive(FromArgs, Debug)]
 #[argh(subcommand)]
 pub(crate) enum Command {
-    GetL1Manifest(GetL1ManifestArgs),
+    GetL1Block(GetL1BlockArgs),
     GetL1Summary(GetL1SummaryArgs),
     GetWriterSummary(GetWriterSummaryArgs),
     GetWriterPayload(GetWriterPayloadArgs),
