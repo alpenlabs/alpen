@@ -187,6 +187,8 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use strata_ee_acct_types::{
         BlockAssembler, ExecBlock, ExecBlockOutput, ExecHeader, ExecPayload,
     };
@@ -241,7 +243,7 @@ mod tests {
         let ee = SimpleExecutionEnvironment;
 
         // Initial state: alice has 1000.
-        let mut accounts = std::collections::BTreeMap::new();
+        let mut accounts = BTreeMap::new();
         accounts.insert(alice(), 1000);
         let initial_state = SimplePartialState::new(accounts);
 
