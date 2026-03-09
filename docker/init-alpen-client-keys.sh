@@ -1,17 +1,86 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate keys and params for alpen-client docker deployment (sequencer + fullnode).
-# Supports regtest and signet networks.
-#
 # Usage:
-#   ./init-alpen-client-keys.sh              # defaults to regtest
-#   BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh
+#   ./init-alpen-client-keys.sh <datatool_path>
+#   ./init-alpen-client-keys.sh --sequencer <datatool_path>
+#   ./init-alpen-client-keys.sh --fullnode <datatool_path> --params-dir <path>
+#   BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh <datatool_path>
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR="${SCRIPT_DIR}/configs/alpen-client"
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 OL_BLOCK_TIME_MS=5000
+
+MODE="sequencer"
+PARAMS_DIR=""
+DATATOOL_PATH=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --sequencer)
+            MODE="sequencer"
+            shift
+            ;;
+        --fullnode)
+            MODE="fullnode"
+            shift
+            ;;
+        --params-dir)
+            PARAMS_DIR="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [--sequencer|--fullnode] <datatool_path> [--params-dir <dir>]"
+            echo ""
+            echo "Modes:"
+            echo "  --sequencer  Generate all keys and params (default)"
+            echo "  --fullnode   Generate P2P key only, read params from --params-dir"
+            echo ""
+            echo "Options:"
+            echo "  --params-dir <dir>  Directory with existing params (required for --fullnode)"
+            echo ""
+            echo "Environment:"
+            echo "  BITCOIN_NETWORK  regtest (default) or signet"
+            echo "  OUTPUT_DIR       output directory (default: ./configs/alpen-client)"
+            exit 0
+            ;;
+        -*)
+            echo "error: unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            if [ -z "${DATATOOL_PATH}" ]; then
+                DATATOOL_PATH="$1"
+            else
+                echo "error: unexpected argument: $1" >&2
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "${DATATOOL_PATH}" ]; then
+    echo "error: datatool path required. usage: $0 [--sequencer|--fullnode] <datatool_path>" >&2
+    exit 1
+fi
+
+if [ ! -x "${DATATOOL_PATH}" ]; then
+    echo "error: datatool not found or not executable: ${DATATOOL_PATH}" >&2
+    exit 1
+fi
+
+if [ "${MODE}" = "fullnode" ] && [ -z "${PARAMS_DIR}" ]; then
+    echo "error: --params-dir is required for fullnode mode" >&2
+    exit 1
+fi
+
+if [ -n "${PARAMS_DIR}" ] && [ ! -d "${PARAMS_DIR}" ]; then
+    echo "error: params directory not found: ${PARAMS_DIR}" >&2
+    exit 1
+fi
+
+OUTPUT_DIR="${OUTPUT_DIR:-${SCRIPT_DIR}/configs/alpen-client}"
 
 case "${BITCOIN_NETWORK}" in
     regtest)
@@ -77,184 +146,100 @@ generate_key_file() {
     generate_secret_key > "${filepath}"
 }
 
-# --- Keys ---
+if [ "${MODE}" = "sequencer" ]; then
+    echo "mode: sequencer"
 
-SCHNORR_KEY="${OUTPUT_DIR}/sequencer-schnorr.hex"
-generate_key_file "${SCHNORR_KEY}"
-SCHNORR_PRIVKEY=$(cat "${SCHNORR_KEY}")
-SCHNORR_PUBKEY=$(derive_schnorr_pubkey "${SCHNORR_PRIVKEY}")
+    SCHNORR_KEY="${OUTPUT_DIR}/sequencer-schnorr.hex"
+    generate_key_file "${SCHNORR_KEY}"
+    SCHNORR_PRIVKEY=$(cat "${SCHNORR_KEY}")
+    SCHNORR_PUBKEY=$(derive_schnorr_pubkey "${SCHNORR_PRIVKEY}")
 
-SEQ_P2P_KEY="${OUTPUT_DIR}/seq-p2p.hex"
-FN_P2P_KEY="${OUTPUT_DIR}/fn-p2p.hex"
-generate_key_file "${SEQ_P2P_KEY}"
-generate_key_file "${FN_P2P_KEY}"
+    SEQ_P2P_KEY="${OUTPUT_DIR}/seq-p2p.hex"
+    FN_P2P_KEY="${OUTPUT_DIR}/fn-p2p.hex"
+    generate_key_file "${SEQ_P2P_KEY}"
+    generate_key_file "${FN_P2P_KEY}"
 
-SEQ_P2P_PRIVKEY=$(cat "${SEQ_P2P_KEY}")
-FN_P2P_PRIVKEY=$(cat "${FN_P2P_KEY}")
-SEQ_P2P_PUBKEY=$(derive_enode_pubkey "${SEQ_P2P_PRIVKEY}")
-FN_P2P_PUBKEY=$(derive_enode_pubkey "${FN_P2P_PRIVKEY}")
+    SEQ_P2P_PRIVKEY=$(cat "${SEQ_P2P_KEY}")
+    FN_P2P_PRIVKEY=$(cat "${FN_P2P_KEY}")
+    SEQ_P2P_PUBKEY=$(derive_enode_pubkey "${SEQ_P2P_PRIVKEY}")
+    FN_P2P_PUBKEY=$(derive_enode_pubkey "${FN_P2P_PRIVKEY}")
 
-JWT_FILE="${OUTPUT_DIR}/jwt.hex"
-generate_key_file "${JWT_FILE}"
+    JWT_FILE="${OUTPUT_DIR}/jwt.hex"
+    generate_key_file "${JWT_FILE}"
 
-SEQ_ROOT_KEY="${OUTPUT_DIR}/sequencer.key"
-if [ ! -f "${SEQ_ROOT_KEY}" ]; then
-    echo -n "tprv8ZgxMBicQKsPd4arFr7sKjSnKFDVMR2JHw9Y8L9nXN4kiok4u28LpHijEudH3mMYoL4pM5UL9Bgdz2M4Cy8EzfErmU9m86ZTw6hCzvFeTg7" > "${SEQ_ROOT_KEY}"
-fi
+    SEQ_ROOT_KEY="${OUTPUT_DIR}/sequencer.key"
+    if [ ! -f "${SEQ_ROOT_KEY}" ]; then
+        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${SEQ_ROOT_KEY}"
+        echo "generated ${SEQ_ROOT_KEY}"
+    fi
 
-# --- Operator key ---
+    OPERATOR_KEY="${OUTPUT_DIR}/operator.key"
+    if [ ! -f "${OPERATOR_KEY}" ]; then
+        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genxpriv "${OPERATOR_KEY}"
+        echo "generated ${OPERATOR_KEY}"
+    fi
+    OPERATOR_XPRIV=$(cat "${OPERATOR_KEY}")
 
-OPERATOR_KEY="${OUTPUT_DIR}/operator.hex"
-if [ ! -f "${OPERATOR_KEY}" ]; then
-    generate_secret_key > "${OPERATOR_KEY}"
-fi
-OPERATOR_SECRET=$(cat "${OPERATOR_KEY}")
+    SEQ_XPUB=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
 
-OPERATOR_XONLY_PUBKEY=$(echo -n "${OPERATOR_SECRET}" | "${PYTHON}" -c "
-import coincurve, sys
-pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
-sys.stdout.write(pk.format(compressed=True)[1:].hex())
-")
-
-OPERATOR_COMPRESSED_PUBKEY=$(echo -n "${OPERATOR_SECRET}" | "${PYTHON}" -c "
-import coincurve, sys
-pk = coincurve.PublicKey.from_secret(bytes.fromhex(sys.stdin.read()))
-sys.stdout.write(pk.format(compressed=True).hex())
-")
-
-# --- rollup-params.json ---
-
-ROLLUP_PARAMS_PATH="${OUTPUT_DIR}/rollup-params.json"
-SEQUENCER_CONFIG_PATH="${OUTPUT_DIR}/sequencer.toml"
-if [ ! -f "${ROLLUP_PARAMS_PATH}" ]; then
-    cat > "${ROLLUP_PARAMS_PATH}" <<REOF
+    # Placeholder L1 view; entrypoint.sh patches this at runtime with actual tip.
+    GENESIS_L1_VIEW="${OUTPUT_DIR}/genesis-l1-view.json"
+    if [ ! -f "${GENESIS_L1_VIEW}" ]; then
+        cat > "${GENESIS_L1_VIEW}" <<GEOF
 {
-  "magic_bytes": "ALPN",
-  "block_time": ${OL_BLOCK_TIME_MS},
-  "cred_rule": "unchecked",
-  "genesis_l1_view": {
-    "blk": {
-      "height": 0,
-      "blkid": "${GENESIS_BLKID}"
-    },
-    "next_target": 1000,
-    "epoch_start_timestamp": 1000,
-    "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-  },
-  "operators": ["${OPERATOR_XONLY_PUBKEY}"],
-  "evm_genesis_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-  "evm_genesis_block_state_root": "0000000000000000000000000000000000000000000000000000000000000000",
-  "l1_reorg_safe_depth": 4,
-  "target_l2_batch_size": 64,
-  "deposit_amount": 100000,
-  "recovery_delay": 1008,
-  "checkpoint_predicate": "AlwaysAccept",
-  "dispatch_assignment_dur": 144,
-  "proof_publish_mode": {"timeout": 30},
-  "max_deposits_in_block": 10,
-  "network": "${BITCOIN_NETWORK}"
-}
-REOF
-    echo "generated ${ROLLUP_PARAMS_PATH}"
-fi
-
-if [ ! -f "${SEQUENCER_CONFIG_PATH}" ]; then
-    cat > "${SEQUENCER_CONFIG_PATH}" <<BEOF
-[sequencer]
-ol_block_time_ms = ${OL_BLOCK_TIME_MS}
-
-[epoch_sealing]
-policy = "FixedSlot"
-slots_per_epoch = 64
-BEOF
-    echo "generated ${SEQUENCER_CONFIG_PATH}"
-fi
-
-# --- ol-params.json ---
-
-OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
-if [ ! -f "${OL_PARAMS}" ]; then
-    cat > "${OL_PARAMS}" <<OEOF
-{
-  "accounts": {
-    "0101010101010101010101010101010101010101010101010101010101010101": {
-      "predicate": "AlwaysAccept",
-      "inner_state": "0000000000000000000000000000000000000000000000000000000000000000"
-    }
-  },
-  "last_l1_block": {
+  "blk": {
     "height": 0,
     "blkid": "${GENESIS_BLKID}"
-  }
-}
-OEOF
-    echo "generated ${OL_PARAMS}"
-fi
-
-# --- asm-params.json ---
-# NOTE: genesis_ol_blkid is a placeholder. With "AlwaysAccept" checkpoint
-# predicate this value is not validated. For production deployments, compute
-# the correct value using: strata-datatool gen-asm-params --ol-params <ol-params>
-
-ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
-if [ ! -f "${ASM_PARAMS}" ]; then
-    cat > "${ASM_PARAMS}" <<AEOF
-{
-  "magic": "ALPT",
-  "l1_view": {
-    "blk": {
-      "height": 0,
-      "blkid": "${GENESIS_BLKID}"
-    },
-    "next_target": ${L1_NEXT_TARGET},
-    "epoch_start_timestamp": ${L1_EPOCH_START_TIMESTAMP},
-    "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
   },
-  "subprotocols": [
-    {
-      "Admin": {
-        "strata_administrator": {
-          "keys": ["${OPERATOR_COMPRESSED_PUBKEY}"],
-          "threshold": 1
-        },
-        "strata_sequencer_manager": {
-          "keys": ["${OPERATOR_COMPRESSED_PUBKEY}"],
-          "threshold": 1
-        },
-        "confirmation_depth": 144,
-        "max_seqno_gap": 10
-      }
-    },
-    {
-      "Checkpoint": {
-        "sequencer_predicate": "AlwaysAccept",
-        "checkpoint_predicate": "AlwaysAccept",
-        "genesis_l1_height": 0,
-        "genesis_ol_blkid": "0000000000000000000000000000000000000000000000000000000000000000"
-      }
-    },
-    {
-      "Bridge": {
-        "operators": ["${OPERATOR_COMPRESSED_PUBKEY}"],
-        "denomination": 1000000000,
-        "assignment_duration": 64,
-        "operator_fee": 50000000,
-        "recovery_delay": 1008
-      }
-    }
-  ]
+  "next_target": ${L1_NEXT_TARGET},
+  "epoch_start_timestamp": ${L1_EPOCH_START_TIMESTAMP},
+  "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 }
-AEOF
-    echo "generated ${ASM_PARAMS}"
-fi
+GEOF
+        echo "generated ${GENESIS_L1_VIEW}"
+    fi
 
-# --- .env.alpen-client ---
+    ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
+    if [ ! -f "${ROLLUP_PARAMS}" ]; then
+        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+            genparams \
+            -o "${ROLLUP_PARAMS}" \
+            -n alpn \
+            -s "${SEQ_XPUB}" \
+            -b "${OPERATOR_XPRIV}" \
+            -g 0 \
+            --proof-timeout 30 \
+            --genesis-l1-view-file "${GENESIS_L1_VIEW}"
+        echo "generated ${ROLLUP_PARAMS}"
+    fi
 
-ENV_FILE="${SCRIPT_DIR}/.env.alpen-client"
+    OL_PARAMS="${OUTPUT_DIR}/ol-params.json"
+    if [ ! -f "${OL_PARAMS}" ]; then
+        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+            gen-ol-params \
+            -o "${OL_PARAMS}" \
+            -g 0 \
+            --genesis-l1-view-file "${GENESIS_L1_VIEW}"
+        echo "generated ${OL_PARAMS}"
+    fi
 
-cat > "${ENV_FILE}" <<EOF
-# Generated by init-alpen-client-keys.sh — do not edit manually.
-# Re-run the script to regenerate (existing keys are preserved).
+    ASM_PARAMS="${OUTPUT_DIR}/asm-params.json"
+    if [ ! -f "${ASM_PARAMS}" ]; then
+        "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+            gen-asm-params \
+            -o "${ASM_PARAMS}" \
+            -n alpn \
+            -b "${OPERATOR_XPRIV}" \
+            -g 0 \
+            --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
+            --ol-params "${OL_PARAMS}"
+        echo "generated ${ASM_PARAMS}"
+    fi
+
+    ENV_FILE="${SCRIPT_DIR}/.env.alpen-client"
+
+    cat > "${ENV_FILE}" <<EOF
+# Generated by init-alpen-client-keys.sh -- do not edit.
 
 BITCOIN_NETWORK=${BITCOIN_NETWORK}
 
@@ -288,6 +273,72 @@ FN_P2P_PORT=${FN_P2P_PORT:-31303}
 RUST_LOG=${RUST_LOG:-info}
 EOF
 
-echo "wrote ${ENV_FILE}"
-echo "network: ${BITCOIN_NETWORK}"
-echo "sequencer pubkey: ${SCHNORR_PUBKEY}"
+    echo "wrote ${ENV_FILE}"
+    echo "network: ${BITCOIN_NETWORK}"
+    echo "sequencer pubkey: ${SCHNORR_PUBKEY}"
+
+elif [ "${MODE}" = "fullnode" ]; then
+    echo "mode: fullnode"
+
+    for f in rollup-params.json ol-params.json asm-params.json; do
+        if [ ! -f "${PARAMS_DIR}/${f}" ]; then
+            echo "error: missing ${f} in ${PARAMS_DIR}" >&2
+            exit 1
+        fi
+    done
+
+    if [ "$(realpath "${PARAMS_DIR}")" != "$(realpath "${OUTPUT_DIR}")" ]; then
+        for f in rollup-params.json ol-params.json asm-params.json; do
+            cp "${PARAMS_DIR}/${f}" "${OUTPUT_DIR}/${f}"
+        done
+        echo "copied params from ${PARAMS_DIR}"
+    fi
+
+    SEQUENCER_PUBKEY=$("${PYTHON}" -c "
+import json, sys
+params = json.load(open('${OUTPUT_DIR}/rollup-params.json'))
+cr = params['cred_rule']
+if isinstance(cr, dict) and 'schnorr_key' in cr:
+    sys.stdout.write(cr['schnorr_key'])
+elif cr == 'unchecked':
+    sys.stderr.write('warning: cred_rule is unchecked, no sequencer pubkey in params\n')
+    sys.stdout.write('')
+else:
+    sys.stderr.write('error: unexpected cred_rule format\n')
+    sys.exit(1)
+")
+
+    if [ -z "${SEQUENCER_PUBKEY}" ]; then
+        echo "error: could not extract sequencer pubkey from rollup-params.json" >&2
+        exit 1
+    fi
+
+    FN_P2P_KEY="${OUTPUT_DIR}/fn-p2p.hex"
+    generate_key_file "${FN_P2P_KEY}"
+    FN_P2P_PRIVKEY=$(cat "${FN_P2P_KEY}")
+    FN_P2P_PUBKEY=$(derive_enode_pubkey "${FN_P2P_PRIVKEY}")
+
+    ENV_FILE="${SCRIPT_DIR}/.env.alpen-client-fullnode"
+
+    cat > "${ENV_FILE}" <<EOF
+# Generated by init-alpen-client-keys.sh -- do not edit.
+
+BITCOIN_NETWORK=${BITCOIN_NETWORK}
+
+SEQUENCER_PUBKEY=${SEQUENCER_PUBKEY}
+
+FN_P2P_PUBKEY=${FN_P2P_PUBKEY}
+
+CHAIN_SPEC=${CHAIN_SPEC:-dev}
+
+FN_HTTP_PORT=${FN_HTTP_PORT:-9545}
+FN_WS_PORT=${FN_WS_PORT:-9546}
+FN_P2P_PORT=${FN_P2P_PORT:-31303}
+
+RUST_LOG=${RUST_LOG:-info}
+EOF
+
+    echo "wrote ${ENV_FILE}"
+    echo "network: ${BITCOIN_NETWORK}"
+    echo "sequencer pubkey: ${SEQUENCER_PUBKEY}"
+fi
