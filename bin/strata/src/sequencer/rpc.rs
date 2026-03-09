@@ -36,6 +36,9 @@ pub(crate) struct OLSeqRpcServer {
 
     /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
+
+    /// Target OL block time in milliseconds for local sequencing.
+    ol_block_time_ms: u64,
 }
 
 impl OLSeqRpcServer {
@@ -45,12 +48,14 @@ impl OLSeqRpcServer {
         status_channel: Arc<StatusChannel>,
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
+        ol_block_time_ms: u64,
     ) -> Self {
         Self {
             storage,
             status_channel,
             blockasm_handle,
             envelope_handle,
+            ol_block_time_ms,
         }
     }
 }
@@ -71,6 +76,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             self.blockasm_handle.as_ref(),
             tip_blkid,
             self.storage.as_ref(),
+            self.ol_block_time_ms,
         )
         .await
         .map_err(db_error)?

@@ -98,7 +98,10 @@ impl BlockCompletionData {
 /// Configuration provided by sequencer for the new block to be assembled.
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct BlockGenerationConfig {
+    /// Parent block commitment.
     parent_block_commitment: OLBlockCommitment,
+
+    /// Block timestamp in milliseconds since the Unix epoch.
     #[serde(skip_serializing_if = "Option::is_none")]
     ts: Option<u64>,
 }
@@ -112,7 +115,7 @@ impl BlockGenerationConfig {
         }
     }
 
-    /// Update with provided block timestamp.
+    /// Update with provided block timestamp in milliseconds since the Unix epoch.
     pub fn with_ts(mut self, ts: u64) -> Self {
         self.ts = Some(ts);
         self
@@ -128,7 +131,7 @@ impl BlockGenerationConfig {
         *self.parent_block_commitment.blkid()
     }
 
-    /// Return block timestamp.
+    /// Return block timestamp in milliseconds since the Unix epoch.
     pub fn ts(&self) -> Option<u64> {
         self.ts
     }

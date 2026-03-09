@@ -43,6 +43,9 @@ pub(crate) enum InitError {
     #[error("missing sync endpoint (required for non-sequencer nodes)")]
     MissingSyncEndpoint,
 
+    #[error("invalid OL block time ms: {0}")]
+    InvalidOlBlockTimeMs(String),
+
     #[error("failed to parse TOML configuration: {0}")]
     TomlParse(#[source] de::Error),
 

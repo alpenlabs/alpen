@@ -493,12 +493,13 @@ where
     let mut flags = BlockFlags::zero();
     flags.set_is_terminal(body.is_body_terminal());
 
-    // Use timestamp from config if provided, otherwise compute from system time
+    // Use timestamp from config if provided, otherwise compute from system time.
+    // OL block timestamps are expressed in milliseconds since Unix epoch.
     let timestamp = config.ts().unwrap_or_else(|| {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time before unix epoch")
-            .as_secs()
+            .as_millis() as u64
     });
 
     // Build header
@@ -1191,6 +1192,42 @@ mod tests {
         let block_template = result.unwrap().into_template();
         check_block_slot_epoch(&block_template, 1, 1);
         check_non_terminal_block(&block_template);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_block_template_fallback_timestamp_uses_milliseconds() {
+        let env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .build()
+            .await;
+
+        let (ctx, _mempool) = create_test_block_assembly_context(env.storage);
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let before = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("block generation should succeed");
+
+        let after = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let timestamp = result.template().header().timestamp();
+
+        assert!(
+            (before..=after).contains(&timestamp),
+            "fallback timestamp should use current time in milliseconds, got {timestamp} outside {before}..={after}"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

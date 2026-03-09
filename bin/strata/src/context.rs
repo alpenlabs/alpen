@@ -86,7 +86,7 @@ pub(crate) fn init_node_context(
 fn get_config(args: Args) -> Result<Config, InitError> {
     let mut config_toml = load_config_from_path(args.config.as_ref())?;
 
-    let env_args = EnvArgs::from_env();
+    let env_args = EnvArgs::from_env()?;
     let mut override_strs = env_args.get_overrides();
 
     override_strs.extend_from_slice(&args.get_all_overrides()?);
@@ -117,6 +117,13 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 fn validate_config(config: Config) -> Result<Config, InitError> {
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
         return Err(InitError::MissingSyncEndpoint);
+    }
+    if let Some(sequencer_config) = config.sequencer.as_ref()
+        && sequencer_config.ol_block_time_ms == 0
+    {
+        return Err(InitError::InvalidOlBlockTimeMs(
+            "sequencer.ol_block_time_ms must be greater than 0".to_string(),
+        ));
     }
     Ok(config)
 }

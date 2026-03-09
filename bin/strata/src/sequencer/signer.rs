@@ -36,6 +36,12 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
     let poll_interval_ms = args
         .duty_poll_interval
         .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL_MS);
+    let ol_block_time_ms = runctx
+        .config()
+        .sequencer
+        .as_ref()
+        .ok_or_else(|| anyhow!("sequencer config unavailable (is_sequencer=true required)"))?
+        .ol_block_time_ms;
 
     // Create a channel for duties.
     let (duty_tx, duty_rx) = mpsc::channel(64);
@@ -47,6 +53,7 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
             handles.blockasm_handle().clone(),
             runctx.storage().clone(),
             runctx.status_channel().clone(),
+            ol_block_time_ms,
             duty_tx,
             Duration::from_millis(poll_interval_ms),
         ),
@@ -69,7 +76,8 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
     // Zeroize the sequencer key.
     sequencer_key.zeroize();
 
-    info!(%poll_interval_ms, "Sequencer signer started");
+    // Log the sequencer signer started with poll interval and OL block time.
+    info!(%poll_interval_ms, %ol_block_time_ms, "Sequencer signer started");
 
     Ok(())
 }

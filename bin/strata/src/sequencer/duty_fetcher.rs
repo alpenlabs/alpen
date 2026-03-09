@@ -15,6 +15,7 @@ pub(crate) async fn duty_fetcher_worker(
     blockasm_handle: Arc<BlockasmHandle>,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
+    ol_block_time_ms: u64,
     duty_tx: mpsc::Sender<Duty>,
     poll_interval: Duration,
 ) -> anyhow::Result<()> {
@@ -36,14 +37,20 @@ pub(crate) async fn duty_fetcher_worker(
             },
         };
 
-        let duties =
-            match extract_duties(blockasm_handle.as_ref(), tip_blkid, storage.as_ref()).await {
-                Ok(duties) => duties,
-                Err(err) => {
-                    error!(%err, "failed to extract duties");
-                    continue;
-                }
-            };
+        let duties = match extract_duties(
+            blockasm_handle.as_ref(),
+            tip_blkid,
+            storage.as_ref(),
+            ol_block_time_ms,
+        )
+        .await
+        {
+            Ok(duties) => duties,
+            Err(err) => {
+                error!(%err, "failed to extract duties");
+                continue;
+            }
+        };
 
         if duties.is_empty() {
             continue;

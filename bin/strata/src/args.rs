@@ -1,29 +1,63 @@
 //! CLI argument parsing and environment variable handling.
 
-use std::path::PathBuf;
+use std::{
+    env::{self, VarError},
+    path::PathBuf,
+};
 
 use argh::FromArgs;
 
 use crate::errors::*;
 
+/// Environment variable for overriding the OL block time in milliseconds.
+const OL_BLOCK_TIME_MS_ENVVAR: &str = "STRATA_OL_BLOCK_TIME_MS";
+
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
 pub(crate) struct EnvArgs {
-    // TODO: relevant items that will be populated from env vars
+    ol_block_time_ms: Option<u64>,
 }
 
 impl EnvArgs {
     /// Loads environment variables that should override the config.
-    pub(crate) fn from_env() -> Self {
-        // Here we load particular env vars that should probably override the config.
-        Self {}
+    pub(crate) fn from_env() -> Result<Self, InitError> {
+        Ok(Self {
+            ol_block_time_ms: read_ol_block_time_ms_envvar()?,
+        })
     }
 
     /// Get strings of overrides gathered from env.
     pub(crate) fn get_overrides(&self) -> Vec<String> {
-        // TODO: add stuffs as necessary
-        Vec::new()
+        self.ol_block_time_ms
+            .map(|ol_block_time_ms| vec![format!("sequencer.ol_block_time_ms={ol_block_time_ms}")])
+            .unwrap_or_default()
     }
+}
+
+fn read_ol_block_time_ms_envvar() -> Result<Option<u64>, InitError> {
+    match env::var(OL_BLOCK_TIME_MS_ENVVAR) {
+        Ok(value) => parse_ol_block_time_ms(&value).map(Some),
+        Err(VarError::NotPresent) => Ok(None),
+        Err(VarError::NotUnicode(_)) => Err(InitError::InvalidOlBlockTimeMs(format!(
+            "environment variable {OL_BLOCK_TIME_MS_ENVVAR} must be valid UTF-8"
+        ))),
+    }
+}
+
+fn parse_ol_block_time_ms(value: &str) -> Result<u64, InitError> {
+    let ol_block_time_ms = value.parse::<u64>().map_err(|_| {
+        InitError::InvalidOlBlockTimeMs(format!(
+            "environment variable {OL_BLOCK_TIME_MS_ENVVAR} must be a positive integer in milliseconds"
+        ))
+    })?;
+
+    if ol_block_time_ms == 0 {
+        return Err(InitError::InvalidOlBlockTimeMs(format!(
+            "environment variable {OL_BLOCK_TIME_MS_ENVVAR} must be greater than 0"
+        )));
+    }
+
+    Ok(ol_block_time_ms)
 }
 
 #[derive(Clone, Debug, FromArgs)]
@@ -110,5 +144,40 @@ impl Args {
         }
 
         Ok(overrides)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ol_block_time_ms_accepts_positive_integer() {
+        assert_eq!(parse_ol_block_time_ms("5000").unwrap(), 5000);
+    }
+
+    #[test]
+    fn test_parse_ol_block_time_ms_rejects_zero() {
+        let error = parse_ol_block_time_ms("0").unwrap_err().to_string();
+        assert!(error.contains("must be greater than 0"));
+    }
+
+    #[test]
+    fn test_parse_ol_block_time_ms_rejects_non_integer() {
+        let error = parse_ol_block_time_ms("five-seconds")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("positive integer"));
+    }
+
+    #[test]
+    fn test_env_args_generates_ol_block_time_override() {
+        let env_args = EnvArgs {
+            ol_block_time_ms: Some(5000),
+        };
+        assert_eq!(
+            env_args.get_overrides(),
+            vec!["sequencer.ol_block_time_ms=5000".to_string()]
+        );
     }
 }

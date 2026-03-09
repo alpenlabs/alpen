@@ -23,6 +23,9 @@ const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
 /// Default TTL for pending block templates in seconds.
 const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
 
+/// Default OL block time in milliseconds for Strata-local sequencing.
+const DEFAULT_OL_BLOCK_TIME_MS: u64 = 5_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -85,6 +88,10 @@ fn default_block_template_ttl_secs() -> u64 {
     DEFAULT_BLOCK_TEMPLATE_TTL_SECS
 }
 
+fn default_ol_block_time_ms() -> u64 {
+    DEFAULT_OL_BLOCK_TIME_MS
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub l1_follow_distance: u64,
@@ -102,6 +109,10 @@ pub struct SequencerConfig {
     /// Templates that are not completed within this duration are expired and cleaned up.
     #[serde(default = "default_block_template_ttl_secs")]
     pub block_template_ttl_secs: u64,
+
+    /// Target OL block time in milliseconds for the local sequencer.
+    #[serde(default = "default_ol_block_time_ms")]
+    pub ol_block_time_ms: u64,
 }
 
 impl Default for SequencerConfig {
@@ -109,6 +120,7 @@ impl Default for SequencerConfig {
         Self {
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
             block_template_ttl_secs: DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
+            ol_block_time_ms: DEFAULT_OL_BLOCK_TIME_MS,
         }
     }
 }
@@ -226,7 +238,7 @@ mod test {
             [client]
             rpc_host = "0.0.0.0"
             rpc_port = 8432
-            l2_blocks_fetch_limit = 1000
+            l2_blocks_fetch_limit = 1_000
             sync_endpoint = "9.9.9.9:8432"
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
@@ -250,14 +262,15 @@ mod test {
             write_poll_dur_ms = 200
             fee_policy = "smart"
             reveal_amount = 100
-            bundle_interval_ms = 1000
+            bundle_interval_ms = 1_000
 
             [btcio.broadcaster]
-            poll_interval_ms = 1000
+            poll_interval_ms = 1_000
 
             [sequencer]
-            max_txs_per_block = 1000
+            max_txs_per_block = 1_000
             block_template_ttl_secs = 30
+            ol_block_time_ms = 5_000
 
             [epoch_sealing]
             policy = "FixedSlot"
@@ -280,6 +293,10 @@ mod test {
         assert_eq!(
             seq.block_template_ttl_secs, 30,
             "parsed block_template_ttl_secs should match TOML value"
+        );
+        assert_eq!(
+            seq.ol_block_time_ms, 5_000,
+            "parsed ol_block_time_ms should match TOML value"
         );
 
         assert!(
@@ -306,7 +323,7 @@ mod test {
             [client]
             rpc_host = "0.0.0.0"
             rpc_port = 8432
-            l2_blocks_fetch_limit = 1000
+            l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
             sync_endpoint = "9.9.9.9:8432"
@@ -325,10 +342,10 @@ mod test {
             write_poll_dur_ms = 200
             fee_policy = "smart"
             reveal_amount = 100
-            bundle_interval_ms = 1000
+            bundle_interval_ms = 1_000
 
             [btcio.broadcaster]
-            poll_interval_ms = 1000
+            poll_interval_ms = 1_000
 
             [exec.reth]
             rpc_url = "http://localhost:8551"
@@ -367,14 +384,17 @@ mod test {
             config.block_template_ttl_secs,
             DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
         );
+        assert_eq!(config.ol_block_time_ms, DEFAULT_OL_BLOCK_TIME_MS);
 
         // Both fields explicit.
         let toml_str = r#"
             max_txs_per_block = 500
             block_template_ttl_secs = 120
+            ol_block_time_ms = 9_000
         "#;
         let config: SequencerConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.max_txs_per_block, 500);
         assert_eq!(config.block_template_ttl_secs, 120);
+        assert_eq!(config.ol_block_time_ms, 9_000);
     }
 }
