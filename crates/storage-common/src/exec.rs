@@ -241,7 +241,7 @@ macro_rules! inst_ops_generic {
 #[macro_export]
 macro_rules! inst_ops_ctx_shim_generic {
     ($iname:ident<$tparam: ident : $tpconstr:tt>($($aname:ident: $aty:ty),*) -> $ret:ty, $error:ty, component = $component:expr) => {
-        #[tracing::instrument(skip(context), fields(component = $component))]
+        #[tracing::instrument(level = "trace", skip(context), fields(component = $component))]
         fn $iname < $tparam : $tpconstr > (context: &Context<$tparam>, $($aname : $aty),* ) -> Result<$ret, $error> {
             context.db.as_ref(). $iname ( $($aname),* )
         }
