@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_csm_types::ClientUpdateOutput;
 use strata_db_types::traits::{ClientStateDatabase, DatabaseBackend};
+use strata_identifiers::EpochCommitment;
 use strata_primitives::l1::L1BlockCommitment;
 
 use crate::{
@@ -59,28 +59,13 @@ pub(crate) fn get_client_state_update(
     output(&client_state_info, args.output_format)
 }
 
-/// Get the latest client state update from the database.
-pub(crate) fn _get_latest_client_state_update(
+/// Get declared finalized epoch from latest client state.
+pub(crate) fn get_declared_final_epoch(
     db: &impl DatabaseBackend,
-) -> Result<(ClientUpdateOutput, L1BlockCommitment), DisplayedError> {
-    let client_state_db = db.client_state_db();
-
-    let (latest_block, _) = client_state_db
+) -> Result<Option<EpochCommitment>, DisplayedError> {
+    let latest_state = db
+        .client_state_db()
         .get_latest_client_state()
-        .internal_error("Failed to fetch client state")?
-        .ok_or_else(|| {
-            DisplayedError::InternalError("No client state found".to_string(), Box::new(()))
-        })?;
-
-    let client_state = client_state_db
-        .get_client_update(latest_block)
-        .internal_error("Failed to fetch client state")?
-        .ok_or_else(|| {
-            DisplayedError::UserError(
-                format!("No client state found at index {latest_block}"),
-                Box::new(()),
-            )
-        })?;
-
-    Ok((client_state, latest_block))
+        .internal_error("Failed to get latest client state")?;
+    Ok(latest_state.and_then(|(_, state)| state.get_declared_final_epoch()))
 }

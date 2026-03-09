@@ -1,10 +1,10 @@
 //! Sync information formatting implementations
 
 use strata_db_types::traits::BlockStatus;
+use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId, Slot};
 use strata_primitives::{
     l1::{L1BlockId, L1Height},
-    l2::L2BlockId,
-    prelude::{EpochCommitment, L1BlockCommitment, L2BlockCommitment},
+    prelude::{EpochCommitment, L1BlockCommitment},
 };
 
 use super::{helpers::porcelain_field, traits::Formattable};
@@ -14,13 +14,13 @@ use super::{helpers::porcelain_field, traits::Formattable};
 pub(crate) struct SyncInfo<'a> {
     pub(crate) l1_tip_height: L1Height,
     pub(crate) l1_tip_block_id: &'a L1BlockId,
-    pub(crate) l2_tip_height: u64,
-    pub(crate) l2_tip_block_id: &'a L2BlockId,
-    pub(crate) l2_tip_block_status: &'a BlockStatus,
-    pub(crate) l2_finalized_block_id: &'a L2BlockId,
-    pub(crate) current_epoch: u64,
-    pub(crate) current_slot: u64,
-    pub(crate) previous_block: &'a L2BlockCommitment,
+    pub(crate) ol_tip_height: Slot,
+    pub(crate) ol_tip_block_id: &'a OLBlockId,
+    pub(crate) ol_tip_block_status: &'a BlockStatus,
+    pub(crate) ol_finalized_block_id: &'a OLBlockId,
+    pub(crate) current_epoch: Epoch,
+    pub(crate) current_slot: Slot,
+    pub(crate) previous_block: &'a OLBlockCommitment,
     pub(crate) previous_epoch: &'a EpochCommitment,
     pub(crate) finalized_epoch: &'a EpochCommitment,
     pub(crate) safe_block: &'a L1BlockCommitment,
@@ -37,15 +37,15 @@ impl<'a> Formattable for SyncInfo<'a> {
             format!("{:?}", self.l1_tip_block_id),
         ));
 
-        // L2 tip information
-        output.push(porcelain_field("l2_tip.height", self.l2_tip_height));
+        // OL tip information
+        output.push(porcelain_field("ol_tip.height", self.ol_tip_height));
         output.push(porcelain_field(
-            "l2_tip.block_id",
-            format!("{:?}", self.l2_tip_block_id),
+            "ol_tip.block_id",
+            format!("{:?}", self.ol_tip_block_id),
         ));
         output.push(porcelain_field(
-            "l2_tip.block_status",
-            format!("{:?}", self.l2_tip_block_status),
+            "ol_tip.block_status",
+            format!("{:?}", self.ol_tip_block_status),
         ));
 
         // Top level state information
@@ -115,18 +115,17 @@ mod tests {
     use std::io::Cursor;
 
     use strata_db_types::traits::BlockStatus;
+    use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
     use strata_primitives::{
-        buf::Buf32,
         l1::L1BlockId,
-        l2::L2BlockId,
-        prelude::{EpochCommitment, L1BlockCommitment, L2BlockCommitment},
+        prelude::{EpochCommitment, L1BlockCommitment},
     };
 
     use super::*;
     use crate::{cli::OutputFormat, output::helpers::output_to};
 
-    fn create_test_block_id() -> L2BlockId {
-        L2BlockId::from(Buf32::from([0x12; 32]))
+    fn create_test_block_id() -> OLBlockId {
+        OLBlockId::from(Buf32::from([0x12; 32]))
     }
 
     fn create_test_l1_block_id() -> L1BlockId {
@@ -138,9 +137,9 @@ mod tests {
         EpochCommitment::new(epoch, last_slot, block_id)
     }
 
-    fn create_test_l2_block_commitment(slot: u64) -> L2BlockCommitment {
+    fn create_test_ol_block_commitment(slot: u64) -> OLBlockCommitment {
         let block_id = create_test_block_id();
-        L2BlockCommitment::new(slot, block_id)
+        OLBlockCommitment::new(slot, block_id)
     }
 
     fn create_test_l1_block_commitment(height: L1Height) -> L1BlockCommitment {
@@ -151,9 +150,9 @@ mod tests {
     #[test]
     fn test_syncinfo_json_format() {
         let l1_tip_block_id = create_test_l1_block_id();
-        let l2_tip_block_id = create_test_block_id();
-        let l2_finalized_block_id = create_test_block_id();
-        let previous_block = create_test_l2_block_commitment(150);
+        let ol_tip_block_id = create_test_block_id();
+        let ol_finalized_block_id = create_test_block_id();
+        let previous_block = create_test_ol_block_commitment(150);
         let previous_epoch = create_test_epoch_commitment(0, 100);
         let finalized_epoch = create_test_epoch_commitment(1, 200);
         let safe_block = create_test_l1_block_commitment(950);
@@ -161,10 +160,10 @@ mod tests {
         let sync_info = SyncInfo {
             l1_tip_height: 1000,
             l1_tip_block_id: &l1_tip_block_id,
-            l2_tip_height: 175,
-            l2_tip_block_id: &l2_tip_block_id,
-            l2_tip_block_status: &BlockStatus::Valid,
-            l2_finalized_block_id: &l2_finalized_block_id,
+            ol_tip_height: 175,
+            ol_tip_block_id: &ol_tip_block_id,
+            ol_tip_block_status: &BlockStatus::Valid,
+            ol_finalized_block_id: &ol_finalized_block_id,
             current_epoch: 2,
             current_slot: 175,
             previous_block: &previous_block,
@@ -181,17 +180,17 @@ mod tests {
 
         // Verify JSON structure and content
         assert!(output.contains("\"l1_tip_height\": 1000"));
-        assert!(output.contains("\"l2_tip_height\": 175"));
+        assert!(output.contains("\"ol_tip_height\": 175"));
         assert!(output.contains("\"current_epoch\": 2"));
         assert!(output.contains("\"current_slot\": 175"));
 
         // Verify block IDs are present
         assert!(output.contains("\"l1_tip_block_id\""));
-        assert!(output.contains("\"l2_tip_block_id\""));
-        assert!(output.contains("\"l2_finalized_block_id\""));
+        assert!(output.contains("\"ol_tip_block_id\""));
+        assert!(output.contains("\"ol_finalized_block_id\""));
 
         // Verify status is present
-        assert!(output.contains("\"l2_tip_block_status\": \"Valid\""));
+        assert!(output.contains("\"ol_tip_block_status\": \"Valid\""));
 
         // Verify epoch and block information is present
         assert!(output.contains("\"previous_block\""));
@@ -203,9 +202,9 @@ mod tests {
     #[test]
     fn test_syncinfo_porcelain_format() {
         let l1_tip_block_id = create_test_l1_block_id();
-        let l2_tip_block_id = create_test_block_id();
-        let l2_finalized_block_id = create_test_block_id();
-        let previous_block = create_test_l2_block_commitment(150);
+        let ol_tip_block_id = create_test_block_id();
+        let ol_finalized_block_id = create_test_block_id();
+        let previous_block = create_test_ol_block_commitment(150);
         let previous_epoch = create_test_epoch_commitment(0, 100);
         let finalized_epoch = create_test_epoch_commitment(1, 200);
         let safe_block = create_test_l1_block_commitment(950);
@@ -213,10 +212,10 @@ mod tests {
         let sync_info = SyncInfo {
             l1_tip_height: 1000,
             l1_tip_block_id: &l1_tip_block_id,
-            l2_tip_height: 175,
-            l2_tip_block_id: &l2_tip_block_id,
-            l2_tip_block_status: &BlockStatus::Valid,
-            l2_finalized_block_id: &l2_finalized_block_id,
+            ol_tip_height: 175,
+            ol_tip_block_id: &ol_tip_block_id,
+            ol_tip_block_status: &BlockStatus::Valid,
+            ol_finalized_block_id: &ol_finalized_block_id,
             current_epoch: 2,
             current_slot: 175,
             previous_block: &previous_block,
@@ -233,14 +232,14 @@ mod tests {
 
         // Verify porcelain format structure
         assert!(output.contains("l1_tip.height: 1000"));
-        assert!(output.contains("l2_tip.height: 175"));
+        assert!(output.contains("ol_tip.height: 175"));
         assert!(output.contains("top_level_state.current_epoch: 2"));
         assert!(output.contains("top_level_state.current_slot: 175"));
 
         // Verify block IDs are formatted correctly
         assert!(output.contains("l1_tip.block_id:"));
-        assert!(output.contains("l2_tip.block_id:"));
-        assert!(output.contains("l2_tip.block_status: Valid"));
+        assert!(output.contains("ol_tip.block_id:"));
+        assert!(output.contains("ol_tip.block_status: Valid"));
 
         // Verify previous block information
         assert!(output.contains("syncinfo.top_level_state.prev_block.height: 150"));
@@ -262,9 +261,9 @@ mod tests {
     #[test]
     fn test_syncinfo_different_block_statuses() {
         let l1_tip_block_id = create_test_l1_block_id();
-        let l2_tip_block_id = create_test_block_id();
-        let l2_finalized_block_id = create_test_block_id();
-        let previous_block = create_test_l2_block_commitment(150);
+        let ol_tip_block_id = create_test_block_id();
+        let ol_finalized_block_id = create_test_block_id();
+        let previous_block = create_test_ol_block_commitment(150);
         let previous_epoch = create_test_epoch_commitment(0, 100);
         let finalized_epoch = create_test_epoch_commitment(1, 200);
         let safe_block = create_test_l1_block_commitment(950);
@@ -273,10 +272,10 @@ mod tests {
         let sync_info = SyncInfo {
             l1_tip_height: 1000,
             l1_tip_block_id: &l1_tip_block_id,
-            l2_tip_height: 175,
-            l2_tip_block_id: &l2_tip_block_id,
-            l2_tip_block_status: &BlockStatus::Unchecked,
-            l2_finalized_block_id: &l2_finalized_block_id,
+            ol_tip_height: 175,
+            ol_tip_block_id: &ol_tip_block_id,
+            ol_tip_block_status: &BlockStatus::Unchecked,
+            ol_finalized_block_id: &ol_finalized_block_id,
             current_epoch: 2,
             current_slot: 175,
             previous_block: &previous_block,
@@ -290,6 +289,6 @@ mod tests {
         assert!(result.is_ok());
 
         let output = String::from_utf8(buffer.into_inner()).unwrap();
-        assert!(output.contains("l2_tip.block_status: Unchecked"));
+        assert!(output.contains("ol_tip.block_status: Unchecked"));
     }
 }

@@ -3,8 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use argh::FromArgs;
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-use strata_db_types::{traits::CheckpointDatabase, types::CheckpointEntry};
 use strata_db_types::{
     traits::{DatabaseBackend, L1Database, OLCheckpointDatabase},
     types::{OLCheckpointEntry, OLCheckpointStatus},
@@ -57,49 +55,6 @@ pub(crate) struct GetEpochSummaryArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
-}
-
-/// Get the last epoch index from the database.
-///
-/// This finds the highest epoch index in the database.
-pub(crate) fn get_last_epoch(db: &impl DatabaseBackend) -> Result<Option<u64>, DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    db.checkpoint_db()
-        .get_last_summarized_epoch()
-        .internal_error("Failed to get last summarized epoch")
-}
-
-/// Get latest checkpoint entry.
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-pub(crate) fn get_latest_checkpoint_entry(
-    db: &impl DatabaseBackend,
-) -> Result<CheckpointEntry, DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let chkpt_db = db.checkpoint_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let last_idx = chkpt_db
-        .get_last_checkpoint_idx()
-        .internal_error("Failed to get last checkpoint index")?
-        .expect("valid checkpoint index");
-
-    let checkpoint_entry = get_checkpoint_at_index(db, last_idx)?.ok_or_else(|| {
-        DisplayedError::InternalError("No checkpoint found".to_string(), Box::new(last_idx))
-    })?;
-    Ok(checkpoint_entry)
-}
-
-/// Get a checkpoint entry at a specific index (legacy).
-#[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-pub(crate) fn get_checkpoint_at_index(
-    db: &impl DatabaseBackend,
-    index: u64,
-) -> Result<Option<CheckpointEntry>, DisplayedError> {
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    let chkpt_db = db.checkpoint_db();
-    #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-    chkpt_db
-        .get_checkpoint(index)
-        .internal_error(format!("Failed to get checkpoint at index {}", index))
 }
 
 /// Count unique checkpoints found in ASM logs starting from a given L1 height.
