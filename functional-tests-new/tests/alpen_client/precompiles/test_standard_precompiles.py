@@ -9,6 +9,7 @@ import logging
 import flexitest
 
 from common.base_test import BaseTest
+from common.config.constants import ServiceType
 from common.precompile import (
     PRECOMPILE_ECADD,
     PRECOMPILE_ECMUL,
@@ -112,7 +113,7 @@ class TestStandardPrecompiles(BaseTest):
         ctx.set_env(AlpenClientEnv(fullnode_count=0, enable_l1_da=True))
 
     def main(self, ctx) -> bool:
-        sequencer: AlpenClientService = self.runctx.get_service("sequencer")
+        sequencer: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         rpc = sequencer.create_rpc()
 
         for name, address, input_hex, expected in STANDARD_PRECOMPILE_CASES:

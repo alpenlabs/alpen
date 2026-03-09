@@ -13,6 +13,7 @@ import logging
 import flexitest
 
 from common.base_test import BaseTest
+from common.config.constants import ServiceType
 from common.precompile import call_precompile, normalize_hex
 from common.services import AlpenClientService
 from envconfigs.alpen_client import AlpenClientEnv
@@ -67,7 +68,7 @@ class TestBlsPrecompiles(BaseTest):
         ctx.set_env(AlpenClientEnv(fullnode_count=0, enable_l1_da=True))
 
     def main(self, ctx) -> bool:
-        sequencer: AlpenClientService = self.runctx.get_service("sequencer")
+        sequencer: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         rpc = sequencer.create_rpc()
 
         for name, case in BLS_TEST_CASES.items():

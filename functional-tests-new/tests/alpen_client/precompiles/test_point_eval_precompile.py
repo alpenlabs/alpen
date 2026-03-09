@@ -9,6 +9,7 @@ import logging
 import flexitest
 
 from common.base_test import BaseTest
+from common.config.constants import ServiceType
 from common.precompile import PRECOMPILE_POINT_EVALUATION, call_precompile
 from common.services import AlpenClientService
 from envconfigs.alpen_client import AlpenClientEnv
@@ -35,7 +36,7 @@ class TestPointEvalPrecompile(BaseTest):
         ctx.set_env(AlpenClientEnv(fullnode_count=0, enable_l1_da=True))
 
     def main(self, ctx) -> bool:
-        sequencer: AlpenClientService = self.runctx.get_service("sequencer")
+        sequencer: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         rpc = sequencer.create_rpc()
 
         logger.info("Calling point evaluation precompile (0x0a) — expect empty result")

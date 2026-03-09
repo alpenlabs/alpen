@@ -11,6 +11,7 @@ import logging
 import flexitest
 
 from common.base_test import BaseTest
+from common.config.constants import ServiceType
 from common.precompile import (
     PRECOMPILE_SCHNORR_ADDRESS,
     SCHNORR_TEST_SECRET_KEY,
@@ -34,7 +35,7 @@ class TestSchnorrPrecompile(BaseTest):
         ctx.set_env(AlpenClientEnv(fullnode_count=0, enable_l1_da=True))
 
     def main(self, ctx) -> bool:
-        sequencer: AlpenClientService = self.runctx.get_service("sequencer")
+        sequencer: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         rpc = sequencer.create_rpc()
 
         secret_key = SCHNORR_TEST_SECRET_KEY
