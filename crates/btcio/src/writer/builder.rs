@@ -162,15 +162,15 @@ pub fn create_envelope_transactions(
     let reveal_fee = commit_value - env_config.reveal_amount;
 
     debug!(
-        commit_output_sats = commit_value,
-        reveal_amount_sats = env_config.reveal_amount,
-        reveal_fee_sats = reveal_fee,
+        commit_output_sats = %commit_value,
+        reveal_amount_sats = %env_config.reveal_amount,
+        reveal_fee_sats = %reveal_fee,
         reveal_fee_btc = format!(
             "{:.8}",
             reveal_fee as f64 / BitcoinAmount::SATS_FACTOR as f64
         ),
-        fee_rate_sats_per_byte = env_config.fee_rate,
-        reveal_script_size_bytes = reveal_script.len(),
+        fee_rate_sats_per_byte = %env_config.fee_rate,
+        reveal_script_size_bytes = %reveal_script.len(),
         "Calculated reveal transaction fees"
     );
 
