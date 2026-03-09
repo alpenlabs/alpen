@@ -11,7 +11,7 @@ use strata_ol_chain_types_new::OLBlockHeader;
 use strata_ol_da::{OLDaPayloadV1, StateDiff};
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::{context::CheckpointWorkerContext, errors::CheckpointNotReady};
 
@@ -112,7 +112,7 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         let entry = OLCheckpointEntry::new_unsigned(payload);
         self.ctx.put_checkpoint(epoch, entry)?;
 
-        debug!(epoch, "stored OL checkpoint entry");
+        info!(%epoch, "stored OL checkpoint entry");
         self.last_processed_epoch = Some(epoch);
         self.last_processed_epoch_index = Some(epoch_index);
 
