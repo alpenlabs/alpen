@@ -8,7 +8,7 @@ use std::{
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::{
     BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTransaction,
     OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
@@ -17,7 +17,10 @@ use strata_ol_mempool::{
     MempoolTxInvalidReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction,
     OLMempoolTxPayload,
 };
-use strata_ol_state_support_types::WriteTrackingState;
+use strata_ol_state_support_types::{
+    DaAccumulatingState, WriteTrackingState,
+    da_accumulating_layer::EpochDaAccumulator,
+};
 use strata_ol_state_types::WriteBatch;
 use strata_ol_stf::{
     BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, BlockPostStateCommitments,
@@ -43,6 +46,8 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
     failed_txs: Vec<FailedMempoolTx>,
     /// Accumulated write batch after processing all transactions.
     accumulated_batch: WriteBatch<S::AccountState>,
+    /// Accumulated DA state
+    accumulated_da: EpochDaAccumulator,
 }
 
 /// Maps an [`ExecError`] to a [`MempoolTxInvalidReason`].
@@ -135,6 +140,7 @@ where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
     C::State: BlockAssemblyStateAccess,
     E: EpochSealingPolicy,
+    <<C::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let max_txs_per_block = sequencer_config.max_txs_per_block;
 
@@ -228,6 +234,7 @@ async fn construct_block<C, E>(
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
     E: EpochSealingPolicy,
+    <<C::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     // Extract parent commitment from config.
     // Null parent means genesis - but genesis is built via `init_ol_genesis`, not block assembly.
@@ -253,22 +260,27 @@ where
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
 
-    // Fetch accumulated DA data from parent block (if any)
-    let parent_da = ctx.fetch_accumulated_da(parent_commitment).await?;
-
-    // Check if we're starting a new epoch
-    let is_new_epoch = parent_da.as_ref()
-        .map(|da| da.epoch != block_epoch)
-        .unwrap_or(true);
+    // Fetch accumulated DA data from parent block if non terminal else start fresh.
+    let accumulated_da = if parent_block.header().is_terminal() {
+        AccumulatedDaData::new(block_epoch, EpochDaAccumulator::default(), vec![])
+    } else {
+        ctx.fetch_accumulated_da(parent_commitment)
+            .await?
+            .ok_or(BlockAssemblyError::Other(
+                "Can't find expected da data".to_string(),
+            ))?
+    };
 
     // Phase 1: Execute block initialization (epoch initial + block start).
     let accumulated_batch = execute_block_initialization(parent_state.as_ref(), &block_context);
 
+    let (accumulator, mut accum_logs) = accumulated_da.into_parts();
     // Phase 2: Process each transaction against accumulated state using AccumulatorProofGenerator.
     let ProcessTransactionsOutput {
         successful_txs,
         failed_txs,
         accumulated_batch,
+        accumulated_da: final_accumulator,
     } = process_transactions(
         ctx,
         &block_context,
@@ -276,6 +288,7 @@ where
         parent_state.as_ref(),
         accumulated_batch,
         mempool_txs,
+        accumulator,
     );
 
     // Phase 3: Detect terminal blocks and fetch L1 manifests if needed.
@@ -299,23 +312,14 @@ where
         manifest_container,
     )?;
 
-    // Phase 5: Accumulate DA data for this block.
-    // Start fresh if new epoch, otherwise build on parent's accumulated data.
-    let mut accumulated_da = if is_new_epoch {
-        AccumulatedDaData::empty(block_epoch)
-    } else {
-        parent_da.unwrap_or_else(|| AccumulatedDaData::empty(block_epoch))
-    };
-
     // Append this block's logs to the accumulated logs
-    accumulated_da.append_logs(output_buffer.into_logs());
-
-    // TODO: Also accumulate state diffs once we figure out how to maintain
-    // DaAccumulatingState across blocks
+    accum_logs.extend_from_slice(&output_buffer.into_logs());
+    let accumulated_da = AccumulatedDaData::new(block_epoch, final_accumulator, accum_logs);
 
     // Store the accumulated DA data for this block
     let new_block_commitment = OLBlockCommitment::new(block_slot, template.get_blockid());
-    ctx.store_accumulated_da(new_block_commitment, accumulated_da).await?;
+    ctx.store_accumulated_da(new_block_commitment, accumulated_da)
+        .await?;
 
     Ok(ConstructBlockOutput {
         template,
@@ -392,10 +396,12 @@ fn process_transactions<P, S>(
     parent_state: &S,
     accumulated_batch: WriteBatch<S::AccountState>,
     mempool_txs: Vec<(OLTxId, OLMempoolTransaction)>,
+    accumulator: EpochDaAccumulator,
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
     S: BlockAssemblyStateAccess,
+    <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
@@ -403,7 +409,10 @@ where
     // Create staging state once, reuse across transactions.
     // We work directly on this state and only clone for backup before each tx.
     // On success: backup is discarded. On failure: restore from backup.
-    let mut staging_state = WriteTrackingState::new(parent_state, accumulated_batch);
+    let mut staging_state = DaAccumulatingState::new_with_accumulator(
+        WriteTrackingState::new(parent_state, accumulated_batch),
+        accumulator,
+    );
 
     for (txid, mempool_tx) in mempool_txs {
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
@@ -417,8 +426,9 @@ where
             }
         };
 
-        // Step 2: Clone batch as backup before execution.
-        let backup_batch = staging_state.batch().clone();
+        // Step 2: Clone batch and accumulator as backup before execution.
+        let backup_batch = staging_state.inner().batch().clone();
+        let backup_accumulator = staging_state.accumulator().clone();
 
         // Step 3: Create per-tx output buffer and execute transaction.
         // Logs are only merged into main buffer on success; on failure they're discarded.
@@ -430,23 +440,33 @@ where
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Success: merge logs and keep state changes
+                // NOTE: check for DA limits here, if needed and break if exceeds
                 output_buffer.emit_logs(tx_buffer.into_logs());
                 successful_txs.push(tx);
             }
             Err(e) => {
                 // Failure: discard tx_buffer (logs) and restore state from backup
                 debug!(?txid, %e, "transaction execution failed during staging");
-                staging_state = WriteTrackingState::new(parent_state, backup_batch);
+                staging_state = DaAccumulatingState::new_with_accumulator(
+                    WriteTrackingState::new(parent_state, backup_batch),
+                    backup_accumulator,
+                );
                 failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
             }
         }
         debug!(%txid, "successful tx execution in block assembly");
     }
 
+    let mut staging_state = staging_state;
+    let accumulated_da = staging_state.take_accumulator();
+    let inner_state = staging_state.into_inner();
+    let accumulated_batch = inner_state.into_batch();
+
     ProcessTransactionsOutput {
         successful_txs,
         failed_txs,
-        accumulated_batch: staging_state.into_batch(),
+        accumulated_batch,
+        accumulated_da,
     }
 }
 

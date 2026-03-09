@@ -144,6 +144,11 @@ where
     S::Base: Clone,
     S::Incr: Clone,
 {
+    /// Returns the original value that was set at creation.
+    pub fn original_value(&self) -> &S::Base {
+        &self.original
+    }
+
     /// Returns the new value currently being tracked.
     pub fn new_value(&self) -> &S::Base {
         &self.new

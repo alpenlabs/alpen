@@ -6,6 +6,7 @@ use std::{
 };
 
 use strata_config::SequencerConfig;
+use strata_ledger_types::{IAccountStateMut, IStateAccessor};
 use strata_ol_state_types::StateProvider;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
@@ -73,6 +74,7 @@ where
         S: Send + Sync + 'static,
         S::Error: Display,
         S::State: BlockAssemblyStateAccess,
+        <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
     {
         let genesis_l1_height = self.params.rollup().genesis_l1_view.height_u64();
         let context = Arc::new(BlockAssemblyContext::new(
