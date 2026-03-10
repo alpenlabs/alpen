@@ -120,6 +120,10 @@ mod sequencer_services {
         nodectx: &NodeContext,
         mempool_handle: Arc<MempoolHandle>,
     ) -> Result<BlockasmHandle> {
+        let blockasm_config = nodectx
+            .blockasm_config()
+            .cloned()
+            .ok_or_else(|| anyhow!("Block assembly config required for block assembly"))?;
         let sequencer_config = nodectx
             .config()
             .sequencer
@@ -138,6 +142,7 @@ mod sequencer_services {
         nodectx.task_manager().handle().block_on(async {
             BlockasmBuilder::new(
                 nodectx.params().clone(),
+                blockasm_config,
                 nodectx.storage().clone(),
                 mempool_provider,
                 epoch_sealing,

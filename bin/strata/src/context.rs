@@ -1,12 +1,17 @@
 //! Node context initialization and configuration loading.
 
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
-use strata_config::{BitcoindConfig, Config};
+use strata_config::{BitcoindConfig, BlockAssemblyConfig, Config};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
@@ -46,6 +51,11 @@ pub(crate) fn init_node_context(
         .as_ref()
         .ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(params_path, &config)?;
+    let blockasm_config = config
+        .client
+        .is_sequencer
+        .then(|| load_block_assembly_config(params_path))
+        .transpose()?;
 
     // Load ASM params
     let asm_params_path = args
@@ -71,6 +81,7 @@ pub(crate) fn init_node_context(
         handle,
         config,
         params,
+        blockasm_config,
         Arc::new(asm_params),
         ol_params.into(),
         storage,
@@ -118,13 +129,6 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
         return Err(InitError::MissingSyncEndpoint);
     }
-    if let Some(sequencer_config) = config.sequencer.as_ref()
-        && sequencer_config.ol_block_time_ms == 0
-    {
-        return Err(InitError::InvalidOlBlockTimeMs(
-            "sequencer.ol_block_time_ms must be greater than 0".to_string(),
-        ));
-    }
     Ok(config)
 }
 
@@ -157,6 +161,54 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     let rollup_params =
         serde_json::from_str::<RollupParams>(&json).map_err(|err| SerdeError::new(json, err))?;
     Ok(rollup_params)
+}
+
+fn resolve_block_assembly_config_path(params_path: &Path) -> PathBuf {
+    let stem = params_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("params");
+    let file_name = match params_path.extension().and_then(|ext| ext.to_str()) {
+        Some(ext) => format!("{stem}.blockasm.{ext}"),
+        None => format!("{stem}.blockasm"),
+    };
+    params_path.with_file_name(file_name)
+}
+
+fn resolve_block_assembly_config_fallback_path(params_path: &Path) -> PathBuf {
+    params_path.with_file_name("blockasm.json")
+}
+
+pub(crate) fn load_block_assembly_config(
+    params_path: &Path,
+) -> Result<Arc<BlockAssemblyConfig>, InitError> {
+    let path = resolve_block_assembly_config_path(params_path);
+    let fallback_path = resolve_block_assembly_config_fallback_path(params_path);
+    let json = match fs::read_to_string(&path) {
+        Ok(json) => json,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => fs::read_to_string(fallback_path)?,
+        Err(err) => return Err(err.into()),
+    };
+    let config = serde_json::from_str::<serde_json::Value>(&json)
+        .map_err(|err| InitError::UnparsableBlockAssemblyConfigFile(SerdeError::new(json, err)))?;
+    let ol_block_time_ms = config
+        .get("ol_block_time_ms")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            InitError::InvalidOlBlockTimeMs(
+                "block assembly config ol_block_time_ms must be a positive integer".to_string(),
+            )
+        })?;
+
+    if ol_block_time_ms == 0 {
+        return Err(InitError::InvalidOlBlockTimeMs(
+            "block assembly config ol_block_time_ms must be greater than 0".to_string(),
+        ));
+    }
+
+    Ok(Arc::new(BlockAssemblyConfig::new(Duration::from_millis(
+        ol_block_time_ms,
+    ))))
 }
 
 fn load_asm_params(path: &Path) -> Result<AsmParams, InitError> {
@@ -234,5 +286,94 @@ pub(crate) fn check_and_init_genesis(
             Ok((l1blk, init_state))
         }
         Some(recent_state) => Ok(recent_state),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env::temp_dir,
+        fs,
+        path::PathBuf,
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    use super::{
+        load_block_assembly_config, resolve_block_assembly_config_fallback_path,
+        resolve_block_assembly_config_path,
+    };
+    use crate::errors::InitError;
+
+    fn unique_temp_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time after unix epoch")
+            .as_nanos();
+        temp_dir().join(format!("strata-context-tests-{nanos}"))
+    }
+
+    #[test]
+    fn resolve_block_assembly_config_path_uses_sidecar_name() {
+        let params_path = PathBuf::from("/tmp/params.json");
+        let config_path = resolve_block_assembly_config_path(&params_path);
+
+        assert_eq!(config_path, PathBuf::from("/tmp/params.blockasm.json"));
+    }
+
+    #[test]
+    fn load_block_assembly_config_reads_positive_block_time() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let params_path = temp_dir.join("params.json");
+        fs::write(&params_path, "{}").unwrap();
+        fs::write(
+            resolve_block_assembly_config_path(&params_path),
+            r#"{"ol_block_time_ms": 5000}"#,
+        )
+        .unwrap();
+
+        let config = load_block_assembly_config(&params_path).unwrap();
+        assert_eq!(config.ol_block_time(), Duration::from_millis(5_000));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn load_block_assembly_config_rejects_zero_block_time() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let params_path = temp_dir.join("params.json");
+        fs::write(&params_path, "{}").unwrap();
+        fs::write(
+            resolve_block_assembly_config_path(&params_path),
+            r#"{"ol_block_time_ms": 0}"#,
+        )
+        .unwrap();
+
+        let error = load_block_assembly_config(&params_path).unwrap_err();
+        assert!(matches!(error, InitError::InvalidOlBlockTimeMs(_)));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn load_block_assembly_config_reads_fallback_path() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let params_path = temp_dir.join("rollup-params.json");
+        fs::write(&params_path, "{}").unwrap();
+        fs::write(
+            resolve_block_assembly_config_fallback_path(&params_path),
+            r#"{"ol_block_time_ms": 5000}"#,
+        )
+        .unwrap();
+
+        let config = load_block_assembly_config(&params_path).unwrap();
+        assert_eq!(config.ol_block_time(), Duration::from_millis(5_000));
+
+        fs::remove_dir_all(temp_dir).unwrap();
     }
 }

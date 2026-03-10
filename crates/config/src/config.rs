@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
@@ -22,9 +22,6 @@ const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
 
 /// Default TTL for pending block templates in seconds.
 const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
-
-/// Default OL block time in milliseconds for Strata-local sequencing.
-const DEFAULT_OL_BLOCK_TIME_MS: u64 = 5_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
@@ -88,14 +85,28 @@ fn default_block_template_ttl_secs() -> u64 {
     DEFAULT_BLOCK_TEMPLATE_TTL_SECS
 }
 
-fn default_ol_block_time_ms() -> u64 {
-    DEFAULT_OL_BLOCK_TIME_MS
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub l1_follow_distance: u64,
     pub client_checkpoint_interval: u32,
+}
+
+/// Configuration owned by OL block assembly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockAssemblyConfig {
+    ol_block_time: Duration,
+}
+
+impl BlockAssemblyConfig {
+    /// Create a new block assembly config.
+    pub fn new(ol_block_time: Duration) -> Self {
+        Self { ol_block_time }
+    }
+
+    /// Return the configured OL block interval.
+    pub fn ol_block_time(&self) -> Duration {
+        self.ol_block_time
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,10 +120,6 @@ pub struct SequencerConfig {
     /// Templates that are not completed within this duration are expired and cleaned up.
     #[serde(default = "default_block_template_ttl_secs")]
     pub block_template_ttl_secs: u64,
-
-    /// Target OL block time in milliseconds for the local sequencer.
-    #[serde(default = "default_ol_block_time_ms")]
-    pub ol_block_time_ms: u64,
 }
 
 impl Default for SequencerConfig {
@@ -120,7 +127,6 @@ impl Default for SequencerConfig {
         Self {
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
             block_template_ttl_secs: DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
-            ol_block_time_ms: DEFAULT_OL_BLOCK_TIME_MS,
         }
     }
 }
@@ -270,7 +276,6 @@ mod test {
             [sequencer]
             max_txs_per_block = 1_000
             block_template_ttl_secs = 30
-            ol_block_time_ms = 5_000
 
             [epoch_sealing]
             policy = "FixedSlot"
@@ -293,10 +298,6 @@ mod test {
         assert_eq!(
             seq.block_template_ttl_secs, 30,
             "parsed block_template_ttl_secs should match TOML value"
-        );
-        assert_eq!(
-            seq.ol_block_time_ms, 5_000,
-            "parsed ol_block_time_ms should match TOML value"
         );
 
         assert!(
@@ -384,17 +385,14 @@ mod test {
             config.block_template_ttl_secs,
             DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
         );
-        assert_eq!(config.ol_block_time_ms, DEFAULT_OL_BLOCK_TIME_MS);
 
         // Both fields explicit.
         let toml_str = r#"
             max_txs_per_block = 500
             block_template_ttl_secs = 120
-            ol_block_time_ms = 9_000
         "#;
         let config: SequencerConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.max_txs_per_block, 500);
         assert_eq!(config.block_template_ttl_secs, 120);
-        assert_eq!(config.ol_block_time_ms, 9_000);
     }
 }

@@ -16,6 +16,9 @@ pub(crate) enum InitError {
     #[error("unparsable params file: {0}")]
     UnparsableParamsFile(#[from] SerdeError),
 
+    #[error("unparsable block assembly config file: {0}")]
+    UnparsableBlockAssemblyConfigFile(SerdeError),
+
     #[error("config: {0}")]
     MalformedConfig(#[from] ConfigError),
 

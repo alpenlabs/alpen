@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use strata_config::SequencerConfig;
+use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::OLBlockId;
 use strata_params::{Params, RollupParams};
 use strata_service::ServiceState;
@@ -167,6 +167,7 @@ impl BlockAssemblyState {
 /// Combined state for the service (context + mutable state).
 pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy, S> {
     params: Arc<Params>,
+    blockasm_config: Arc<BlockAssemblyConfig>,
     sequencer_config: SequencerConfig,
     ctx: Arc<BlockAssemblyContext<M, S>>,
     epoch_sealing_policy: E,
@@ -178,6 +179,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceStat
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlockasmServiceState")
             .field("params", &"<Params>")
+            .field("blockasm_config", &self.blockasm_config)
             .field("sequencer_config", &self.sequencer_config)
             .field("ctx", &"<BlockAssemblyContext>")
             .field("state", &self.state)
@@ -189,6 +191,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
     /// Create new block assembly service state.
     pub(crate) fn new(
         params: Arc<Params>,
+        blockasm_config: Arc<BlockAssemblyConfig>,
         sequencer_config: SequencerConfig,
         ctx: Arc<BlockAssemblyContext<M, S>>,
         epoch_sealing_policy: E,
@@ -196,6 +199,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
         let ttl = Duration::from_secs(sequencer_config.block_template_ttl_secs);
         Self {
             params,
+            blockasm_config,
             sequencer_config,
             ctx,
             epoch_sealing_policy,
@@ -209,6 +213,10 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
 
     pub(crate) fn sequencer_config(&self) -> &SequencerConfig {
         &self.sequencer_config
+    }
+
+    pub(crate) fn blockasm_config(&self) -> &BlockAssemblyConfig {
+        self.blockasm_config.as_ref()
     }
 
     pub(crate) fn context(&self) -> &BlockAssemblyContext<M, S> {

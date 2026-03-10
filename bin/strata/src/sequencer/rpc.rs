@@ -1,6 +1,6 @@
 //! RPC server implementation for sequencer.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
@@ -36,9 +36,6 @@ pub(crate) struct OLSeqRpcServer {
 
     /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
-
-    /// Target OL block time for local sequencing.
-    ol_block_time: Duration,
 }
 
 impl OLSeqRpcServer {
@@ -48,14 +45,12 @@ impl OLSeqRpcServer {
         status_channel: Arc<StatusChannel>,
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
-        ol_block_time: Duration,
     ) -> Self {
         Self {
             storage,
             status_channel,
             blockasm_handle,
             envelope_handle,
-            ol_block_time,
         }
     }
 }
@@ -76,7 +71,6 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             self.blockasm_handle.as_ref(),
             tip_blkid,
             self.storage.as_ref(),
-            self.ol_block_time,
         )
         .await
         .map_err(db_error)?

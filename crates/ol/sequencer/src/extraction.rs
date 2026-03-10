@@ -1,31 +1,21 @@
-use std::time::Duration;
-
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_db_types::types::OLCheckpointStatus;
-use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle, FullBlockTemplate};
-use strata_primitives::{OLBlockCommitment, OLBlockId};
+use strata_ol_block_assembly::{BlockasmHandle, FullBlockTemplate};
+use strata_primitives::OLBlockId;
 use strata_storage::NodeStorage;
 
-use crate::{BlockGenerationConfig, BlockSigningDuty, CheckpointSigningDuty, Duty, Error};
-
-/// Calculates the target timestamp for a new block based on the parent block timestamp and the
-/// configured block interval.
-fn target_timestamp(parent_timestamp: u64, block_time: Duration) -> u64 {
-    let block_time_ms = block_time.as_millis().min(u128::from(u64::MAX)) as u64;
-    parent_timestamp.saturating_add(block_time_ms)
-}
+use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error};
 
 /// Extract sequencer duties
 pub async fn extract_duties(
     blockasm: &BlockasmHandle,
     tip_blkid: OLBlockId,
     node_storage: &NodeStorage,
-    block_time: Duration,
 ) -> Result<Vec<Duty>, Error> {
     let mut duties = vec![];
 
     // Block duties. Try to get a cached template, or generate a new one.
-    let template = generate_or_get_template(blockasm, node_storage, tip_blkid, block_time).await?;
+    let template = generate_or_get_template(blockasm, tip_blkid).await?;
     let blkduty = BlockSigningDuty::new(template);
     duties.push(Duty::SignBlock(blkduty));
 
@@ -43,33 +33,11 @@ pub async fn extract_duties(
 /// Generates a block template or retrieves it from the block-assembly cache.
 async fn generate_or_get_template(
     blockasm: &BlockasmHandle,
-    storage: &NodeStorage,
     parent_block_id: OLBlockId,
-    block_time: Duration,
 ) -> Result<FullBlockTemplate, Error> {
-    // Try to get from block-assembly cache first.
-    match blockasm.get_block_template(parent_block_id).await {
-        Ok(template) => return Ok(template),
-        Err(BlockAssemblyError::NoPendingTemplateForParent(_)) => {
-            // Not cached, fall through to generate.
-        }
-        Err(e) => return Err(e.into()),
-    }
-
-    // Fetch parent block to get its slot.
-    let parent_block = storage
-        .ol_block()
-        .get_block_data_async(parent_block_id)
-        .await
-        .map_err(Error::Database)?
-        .ok_or(Error::UnknownBlock(parent_block_id))?;
-
-    let parent_slot = parent_block.header().slot();
-    let target_ts = target_timestamp(parent_block.header().timestamp(), block_time);
-    let config = BlockGenerationConfig::new(OLBlockCommitment::new(parent_slot, parent_block_id))
-        .with_ts(target_ts);
-
-    Ok(blockasm.generate_block_template(config).await?)
+    Ok(blockasm
+        .get_or_generate_block_template(parent_block_id)
+        .await?)
 }
 
 /// Gets the earliest unsigned checkpoint
@@ -103,24 +71,4 @@ async fn get_earliest_unsigned_checkpoint(
         last_ckpt -= 1;
     }
     Ok(unsigned_ckpt)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::target_timestamp;
-
-    #[test]
-    fn test_target_timestamp_advances_parent_by_block_time() {
-        assert_eq!(target_timestamp(1_000, Duration::from_millis(5_000)), 6_000);
-    }
-
-    #[test]
-    fn test_target_timestamp_saturates_on_overflow() {
-        assert_eq!(
-            target_timestamp(u64::MAX - 1, Duration::from_millis(5)),
-            u64::MAX
-        );
-    }
 }

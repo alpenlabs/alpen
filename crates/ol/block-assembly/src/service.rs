@@ -4,7 +4,7 @@ use std::{fmt::Display, marker::PhantomData};
 
 use ssz::Encode;
 use strata_crypto::hash::raw;
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types::verify_sequencer_signature;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::StateProvider;
@@ -12,7 +12,8 @@ use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
 
 use crate::{
-    BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider,
+    BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate,
+    MempoolProvider,
     block_assembly::generate_block_template_inner,
     command::BlockasmCommand,
     error::BlockAssemblyError,
@@ -70,6 +71,14 @@ where
                 completion,
             } => {
                 let result = get_block_template(state, *parent_block_id);
+                _ = completion.send(result).await;
+            }
+
+            BlockasmCommand::GetOrGenerateBlockTemplate {
+                parent_block_id,
+                completion,
+            } => {
+                let result = get_or_generate_block_template(state, *parent_block_id).await;
                 _ = completion.send(result).await;
             }
 
@@ -143,6 +152,47 @@ fn get_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
         .get_pending_block_template_by_parent(parent_block_id)
 }
 
+/// Look up a pending block template by parent block ID or generate one from block assembly state.
+async fn get_or_generate_block_template<
+    M: MempoolProvider,
+    E: EpochSealingPolicy,
+    S: StateProvider + Send + Sync + 'static,
+>(
+    state: &mut BlockasmServiceState<M, E, S>,
+    parent_block_id: OLBlockId,
+) -> Result<FullBlockTemplate, BlockAssemblyError>
+where
+    S::Error: Display,
+    S::State: BlockAssemblyStateAccess,
+{
+    if let Ok(template) = get_block_template(state, parent_block_id) {
+        return Ok(template);
+    }
+
+    let parent_block = state
+        .context()
+        .fetch_ol_block(parent_block_id)
+        .await?
+        .ok_or_else(|| {
+            BlockAssemblyError::Other(format!("parent block {parent_block_id} not found"))
+        })?;
+
+    let parent_slot = parent_block.header().slot();
+    let block_time_ms = state
+        .blockasm_config()
+        .ol_block_time()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
+    let target_ts = parent_block
+        .header()
+        .timestamp()
+        .saturating_add(block_time_ms);
+    let config = BlockGenerationConfig::new(OLBlockCommitment::new(parent_slot, parent_block_id))
+        .with_ts(target_ts);
+
+    generate_block_template(state, config).await
+}
+
 /// Complete a block template with signature.
 ///
 /// The signature is provided by the caller (sequencer) via `BlockCompletionData`. The flow is:
@@ -197,9 +247,12 @@ pub(crate) struct BlockasmServiceStatus;
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Arc, time::Instant};
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
-    use strata_config::SequencerConfig;
+    use strata_config::{BlockAssemblyConfig, SequencerConfig};
     use strata_test_utils_l2::gen_params;
 
     use super::*;
@@ -220,11 +273,13 @@ mod tests {
         let storage = create_test_storage();
         let (ctx, _) = create_test_block_assembly_context(storage.clone());
         let params = gen_params();
+        let blockasm_config = Arc::new(BlockAssemblyConfig::new(Duration::from_millis(5_000)));
         let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
         let sequencer_config = SequencerConfig::default();
 
         let mut state = BlockasmServiceState::new(
             Arc::new(params),
+            blockasm_config,
             sequencer_config,
             Arc::new(ctx),
             epoch_sealing_policy,

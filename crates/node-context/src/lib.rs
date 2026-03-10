@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
-use strata_config::Config;
+use strata_config::{BlockAssemblyConfig, Config};
 use strata_ol_params::OLParams;
 use strata_params::Params;
 use strata_status::StatusChannel;
@@ -20,6 +20,7 @@ pub struct NodeContext {
     executor: Arc<TaskExecutor>,
     config: Config,
     params: Arc<Params>,
+    blockasm_config: Option<Arc<BlockAssemblyConfig>>,
     asm_params: Arc<AsmParams>,
     ol_params: Arc<OLParams>,
     task_manager: TaskManager,
@@ -37,6 +38,7 @@ impl NodeContext {
         handle: Handle,
         config: Config,
         params: Arc<Params>,
+        blockasm_config: Option<Arc<BlockAssemblyConfig>>,
         asm_params: Arc<AsmParams>,
         ol_params: Arc<OLParams>,
         storage: Arc<NodeStorage>,
@@ -49,6 +51,7 @@ impl NodeContext {
             executor: Arc::new(executor),
             config,
             params,
+            blockasm_config,
             asm_params,
             ol_params,
             task_manager,
@@ -68,6 +71,10 @@ impl NodeContext {
 
     pub fn params(&self) -> &Arc<Params> {
         &self.params
+    }
+
+    pub fn blockasm_config(&self) -> Option<&Arc<BlockAssemblyConfig>> {
+        self.blockasm_config.as_ref()
     }
 
     pub fn asm_params(&self) -> &Arc<AsmParams> {
@@ -100,6 +107,7 @@ impl NodeContext {
             CommonContext {
                 executor: self.executor,
                 params: self.params,
+                blockasm_config: self.blockasm_config,
                 asm_params: self.asm_params,
                 config: self.config,
                 storage: self.storage,
@@ -117,6 +125,7 @@ impl NodeContext {
 pub struct CommonContext {
     executor: Arc<TaskExecutor>,
     params: Arc<Params>,
+    blockasm_config: Option<Arc<BlockAssemblyConfig>>,
     asm_params: Arc<AsmParams>,
     config: Config,
     storage: Arc<NodeStorage>,
@@ -130,6 +139,10 @@ impl CommonContext {
 
     pub fn params(&self) -> &Arc<Params> {
         &self.params
+    }
+
+    pub fn blockasm_config(&self) -> Option<&Arc<BlockAssemblyConfig>> {
+        self.blockasm_config.as_ref()
     }
 
     pub fn asm_params(&self) -> &Arc<AsmParams> {

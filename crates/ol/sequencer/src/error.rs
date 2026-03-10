@@ -5,9 +5,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Unknown block: {0}")]
-    UnknownBlock(OLBlockId),
-
     #[error("Unknown template: {0}")]
     UnknownTemplate(OLBlockId),
 
