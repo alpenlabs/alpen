@@ -3,6 +3,7 @@
 use bitcoin::{Block, Network};
 use strata_asm_common::{AsmManifest, AuxData};
 use strata_btc_types::BitcoinTxid;
+use strata_merkle::MerkleProofB32;
 use strata_primitives::{hash::Hash, prelude::*};
 use strata_state::asm_state::AsmState;
 
@@ -41,10 +42,17 @@ pub trait WorkerContext {
     /// This should be called after each STF execution with the manifest hash.
     fn append_manifest_to_mmr(&self, manifest_hash: Hash) -> WorkerResult<u64>;
 
-    /// Generates an MMR proof for the given leaf index.
+    /// Generates an MMR inclusion proof for a leaf at a specific MMR size.
     ///
-    /// Returns a Merkle proof that can be used to verify the inclusion of the leaf.
-    fn generate_mmr_proof(&self, index: u64) -> WorkerResult<strata_merkle::MerkleProofB32>;
+    /// The `at_leaf_count` parameter specifies the number of leaves that existed
+    /// in the MMR when the proof should be constructed. This allows callers to
+    /// generate proofs against a historical snapshot of the MMR rather than the
+    /// current state.
+    ///
+    /// Returns a Merkle proof that can be used by a verifier to check the leaf's
+    /// inclusion against the corresponding MMR root for that snapshot.
+    fn generate_mmr_proof_at(&self, index: u64, at_leaf_count: u64)
+    -> WorkerResult<MerkleProofB32>;
 
     /// Retrieves a manifest hash by its MMR leaf index.
     ///

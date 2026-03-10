@@ -78,12 +78,13 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
 
 /// Generates MMR proofs needed during block assembly.
 pub trait AccumulatorProofGenerator: Send + Sync + 'static {
-    /// Validates inbox message indices and generates message entry proofs.
-    fn generate_inbox_proofs(
+    /// Generates inbox message entry proofs at `at_leaf_count`.
+    fn generate_inbox_proofs_at(
         &self,
         target: AccountId,
         messages: &[MessageEntry],
         start_idx: u64,
+        at_leaf_count: u64,
     ) -> BlockAssemblyResult<Vec<MessageEntryProof>>;
 
     /// Validates claims and generates L1 header reference proofs.
@@ -141,76 +142,6 @@ impl<M, S> BlockAssemblyContext<M, S> {
             ))
         })
     }
-
-    fn validate_l1_header_claims<T: IStateAccessor>(
-        &self,
-        l1_header_refs: &[AccumulatorClaim],
-        state: &T,
-    ) -> BlockAssemblyResult<Vec<(u64, Hash)>> {
-        let mmr_num_leaves = state.asm_manifests_mmr().num_entries();
-        let mmr_start_height = asm_manifests_mmr_start_height(state)
-            .ok_or_else(|| BlockAssemblyError::Other("invalid manifests MMR start height".into()))?
-            as u64;
-
-        let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
-        let mut resolved_refs = Vec::with_capacity(l1_header_refs.len());
-        for claim in l1_header_refs {
-            let mmr_idx = self.height_to_mmr_index(claim.idx(), mmr_start_height)?;
-            if mmr_idx >= mmr_num_leaves {
-                return Err(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx));
-            }
-            let actual_hash = mmr_handle
-                .get_leaf_blocking(mmr_idx)
-                .map_err(map_l1_header_mmr_error)?
-                .ok_or(BlockAssemblyError::L1HeaderLeafNotFound(mmr_idx))?;
-            let claimed_hash = claim.entry_hash();
-            if actual_hash != claimed_hash {
-                return Err(BlockAssemblyError::L1HeaderHashMismatch {
-                    idx: mmr_idx,
-                    expected: actual_hash,
-                    actual: claimed_hash,
-                });
-            }
-            resolved_refs.push((mmr_idx, actual_hash));
-        }
-
-        Ok(resolved_refs)
-    }
-
-    fn validate_inbox_entries(
-        &self,
-        target: AccountId,
-        messages: &[MessageEntry],
-        start_idx: u64,
-    ) -> BlockAssemblyResult<()> {
-        let mmr_handle = self
-            .storage
-            .global_mmr()
-            .as_ref()
-            .get_handle(MmrId::SnarkMsgInbox(target));
-        for (offset, message) in messages.iter().enumerate() {
-            let idx = start_idx + offset as u64;
-            let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(message).into();
-            let actual_hash = mmr_handle
-                .get_leaf_blocking(idx)
-                .map_err(|e| map_inbox_mmr_error(e, target))?
-                .ok_or(BlockAssemblyError::InboxLeafNotFound {
-                    idx,
-                    account_id: target,
-                })?;
-
-            if actual_hash.as_ref() != expected_hash.as_ref() {
-                return Err(BlockAssemblyError::InboxEntryHashMismatch {
-                    idx,
-                    account_id: target,
-                    expected: expected_hash,
-                    actual: actual_hash,
-                });
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -228,7 +159,7 @@ where
             .ol_block()
             .get_block_data_async(id)
             .await
-            .map_err(BlockAssemblyError::Database)
+            .map_err(BlockAssemblyError::Db)
     }
 
     async fn fetch_state_for_tip(
@@ -250,7 +181,7 @@ where
             .storage
             .asm()
             .fetch_most_recent_state()
-            .map_err(BlockAssemblyError::Database)?
+            .map_err(BlockAssemblyError::Db)?
         {
             Some((commitment, _)) => commitment.height(),
             None => return Ok(Vec::new()),
@@ -267,9 +198,9 @@ where
                 .l1()
                 .get_block_manifest_at_height_async(height)
                 .await
-                .map_err(BlockAssemblyError::Database)?
+                .map_err(BlockAssemblyError::Db)?
                 .ok_or_else(|| {
-                    BlockAssemblyError::Database(DbError::Other(format!(
+                    BlockAssemblyError::Db(DbError::Other(format!(
                         "L1 block manifest not found at height {height}"
                     )))
                 })?;
@@ -301,60 +232,44 @@ where
     }
 }
 
-/// Convert MMR-related database errors to appropriate block assembly errors for L1 header proofs.
-fn map_l1_header_mmr_error(e: DbError) -> BlockAssemblyError {
-    match e {
-        DbError::MmrLeafNotFound(idx) => BlockAssemblyError::L1HeaderLeafNotFound(idx),
-        DbError::MmrInvalidRange { start, end } => {
-            BlockAssemblyError::InvalidMmrRange { start, end }
-        }
-        other => BlockAssemblyError::Database(other),
-    }
-}
-
-/// Convert MMR-related database errors to appropriate block assembly errors for inbox proofs.
-fn map_inbox_mmr_error(e: DbError, account_id: AccountId) -> BlockAssemblyError {
-    match e {
-        DbError::MmrLeafNotFound(idx) => BlockAssemblyError::InboxLeafNotFound { idx, account_id },
-        DbError::MmrLeafNotFoundForAccount(idx, account_id) => {
-            BlockAssemblyError::InboxLeafNotFound { idx, account_id }
-        }
-        DbError::MmrInvalidRange { start, end } => {
-            BlockAssemblyError::InvalidMmrRange { start, end }
-        }
-        other => BlockAssemblyError::Database(other),
-    }
-}
-
 impl<M, S> AccumulatorProofGenerator for BlockAssemblyContext<M, S>
 where
     M: Send + Sync + 'static,
     S: Send + Sync + 'static,
 {
-    fn generate_inbox_proofs(
+    fn generate_inbox_proofs_at(
         &self,
         target: AccountId,
         messages: &[MessageEntry],
         start_idx: u64,
+        at_leaf_count: u64,
     ) -> BlockAssemblyResult<Vec<MessageEntryProof>> {
         if messages.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Get MMR handle for this account's inbox
         let mmr_handle = self
             .storage
-            .global_mmr()
+            .mmr_index()
             .as_ref()
             .get_handle(MmrId::SnarkMsgInbox(target));
-
-        self.validate_inbox_entries(target, messages, start_idx)?;
-
-        // Generate proofs for the range of messages (end index is inclusive).
-        let end_idx = start_idx + messages.len() as u64 - 1;
+        let expected_hashes: Vec<Hash> = messages
+            .iter()
+            .map(|message| <MessageEntry as TreeHash>::tree_hash_root(message).into())
+            .collect();
         let merkle_proofs = mmr_handle
-            .generate_proofs(start_idx, end_idx)
-            .map_err(|e| map_inbox_mmr_error(e, target))?;
+            .generate_proofs_for(start_idx, &expected_hashes, at_leaf_count)
+            .map_err(|err| match err {
+                DbError::MmrLeafHashMismatch { idx, expected, got } => {
+                    BlockAssemblyError::InboxEntryHashMismatch {
+                        idx,
+                        account_id: target,
+                        expected,
+                        actual: got,
+                    }
+                }
+                other => BlockAssemblyError::Db(other),
+            })?;
 
         // Verify we got the expected number of proofs
         if merkle_proofs.len() != messages.len() {
@@ -382,21 +297,41 @@ where
         l1_header_refs: &[AccumulatorClaim],
         state: &T,
     ) -> BlockAssemblyResult<LedgerRefProofs> {
-        let mmr_handle = self.storage.global_mmr().as_ref().get_handle(MmrId::Asm);
-
-        let resolved_refs = self.validate_l1_header_claims(l1_header_refs, state)?;
-
-        // Generate proofs using MMR leaf indices
-        let mut l1_header_proofs = Vec::new();
-        for (mmr_idx, entry_hash) in resolved_refs {
-            let merkle_proof = mmr_handle
-                .generate_proof(mmr_idx)
-                .map_err(map_l1_header_mmr_error)?;
-
-            let mmr_proof = MmrEntryProof::new(entry_hash, merkle_proof);
-            l1_header_proofs.push(mmr_proof);
+        if l1_header_refs.is_empty() {
+            return Ok(LedgerRefProofs::new(Vec::new()));
         }
 
+        let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
+        let at_leaf_count = state.asm_manifests_mmr().num_entries();
+        let mmr_start_height = asm_manifests_mmr_start_height(state)
+            .ok_or_else(|| BlockAssemblyError::Other("invalid manifests MMR start height".into()))?
+            as u64;
+        let indices_and_hashes = l1_header_refs
+            .iter()
+            .map(|claim| {
+                let mmr_idx = self.height_to_mmr_index(claim.idx(), mmr_start_height)?;
+                Ok((mmr_idx, claim.entry_hash()))
+            })
+            .collect::<BlockAssemblyResult<Vec<_>>>()?;
+
+        let merkle_proofs = mmr_handle
+            .generate_proofs_for_indices(&indices_and_hashes, at_leaf_count)
+            .map_err(|err| match err {
+                DbError::MmrLeafHashMismatch { idx, expected, got } => {
+                    BlockAssemblyError::L1HeaderHashMismatch {
+                        idx,
+                        expected,
+                        actual: got,
+                    }
+                }
+                other => BlockAssemblyError::Db(other),
+            })?;
+
+        let l1_header_proofs = indices_and_hashes
+            .into_iter()
+            .zip(merkle_proofs)
+            .map(|((_, entry_hash), merkle_proof)| MmrEntryProof::new(entry_hash, merkle_proof))
+            .collect();
         Ok(LedgerRefProofs::new(l1_header_proofs))
     }
 }
@@ -521,7 +456,7 @@ mod tests {
                     idx: 0,
                     expected,
                     actual
-                } if expected == expected_hash && actual == wrong_hash
+                } if expected == wrong_hash && actual == expected_hash
             ),
             "Expected L1HeaderHashMismatch, got: {:?}",
             err
@@ -552,8 +487,12 @@ mod tests {
         let err = result.unwrap_err();
         let expected_mmr_idx = nonexistent_height - 1; // offset = genesis_height(0) + 1
         assert!(
-            matches!(&err, BlockAssemblyError::L1HeaderLeafNotFound(idx) if *idx == expected_mmr_idx),
-            "Expected L1HeaderLeafNotFound error, got: {:?}",
+            matches!(
+                &err,
+                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { requested, cur })
+                    if *requested == expected_mmr_idx && *cur == 1
+            ),
+            "Expected Db(MmrIndexOutOfRange) error, got: {:?}",
             err
         );
     }
@@ -571,8 +510,14 @@ mod tests {
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, BlockAssemblyError::L1HeaderLeafNotFound(0)),
-            "Expected L1HeaderLeafNotFound, got: {:?}",
+            matches!(
+                err,
+                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange {
+                    requested: 0,
+                    cur: 0
+                })
+            ),
+            "Expected Db(MmrIndexOutOfRange {{ requested: 0, cur: 0 }}), got: {:?}",
             err
         );
     }
@@ -611,7 +556,7 @@ mod tests {
 
         let ctx = create_test_context(storage);
 
-        let result = ctx.generate_inbox_proofs(account_id, &entries, 0);
+        let result = ctx.generate_inbox_proofs_at(account_id, &entries, 0, entries.len() as u64);
 
         assert!(
             result.is_ok(),
@@ -631,7 +576,7 @@ mod tests {
 
         let ctx = create_test_context(storage);
 
-        let result = ctx.generate_inbox_proofs(account_id, &[], 0);
+        let result = ctx.generate_inbox_proofs_at(account_id, &[], 0, 0);
 
         assert!(result.is_ok(), "Should succeed with empty messages");
         let proofs = result.unwrap();
@@ -657,7 +602,8 @@ mod tests {
 
         // Request proofs starting at index 2 for last 2 messages
         let messages_to_prove = &entries[2..];
-        let result = ctx.generate_inbox_proofs(account_id, messages_to_prove, 2);
+        let result =
+            ctx.generate_inbox_proofs_at(account_id, messages_to_prove, 2, entries.len() as u64);
 
         assert!(
             result.is_ok(),
@@ -679,7 +625,7 @@ mod tests {
         let ctx = create_test_context(storage);
 
         let messages = vec![create_test_message(1, 1, 1000)];
-        let result = ctx.generate_inbox_proofs(account_id, &messages, 0);
+        let result = ctx.generate_inbox_proofs_at(account_id, &messages, 0, 0);
 
         assert!(result.is_err(), "Should fail when MMR has no messages");
     }
@@ -698,13 +644,17 @@ mod tests {
         let claimed_messages = vec![create_test_message(2, 2, 2000)];
         let ctx = create_test_context(storage);
 
-        let result = ctx.generate_inbox_proofs(account_id, &claimed_messages, 5);
+        let result = ctx.generate_inbox_proofs_at(account_id, &claimed_messages, 5, 1);
 
         assert!(result.is_err(), "Should fail for missing inbox index");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, BlockAssemblyError::InboxLeafNotFound { .. }),
-            "Expected InboxLeafNotFound, got: {:?}",
+            matches!(
+                err,
+                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
+                    | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
+            ),
+            "Expected Db(MmrIndexOutOfRange|MmrLeafNotFound), got: {:?}",
             err
         );
     }
@@ -723,7 +673,7 @@ mod tests {
         let claimed_messages = vec![create_test_message(2, 2, 2000)];
         let ctx = create_test_context(storage);
 
-        let result = ctx.generate_inbox_proofs(account_id, &claimed_messages, 0);
+        let result = ctx.generate_inbox_proofs_at(account_id, &claimed_messages, 0, 1);
 
         assert!(
             result.is_err(),

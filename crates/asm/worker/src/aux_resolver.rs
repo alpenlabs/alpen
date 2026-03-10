@@ -44,6 +44,8 @@ pub struct AuxDataResolver<'a> {
     context: &'a dyn WorkerContext,
     /// Rollup parameters for genesis height calculation
     l1_genesis: L1BlockCommitment,
+    /// Leaf count at which manifest proofs should be generated.
+    at_leaf_count: u64,
 }
 
 impl<'a> AuxDataResolver<'a> {
@@ -53,10 +55,16 @@ impl<'a> AuxDataResolver<'a> {
     ///
     /// * `context` - Worker context for ASM state access and MMR database
     /// * `l1_genesis` - L1 genesis block commitment
-    pub fn new(context: &'a dyn WorkerContext, l1_genesis: L1BlockCommitment) -> Self {
+    /// * `at_leaf_count` - MMR leaf count snapshot for proof generation
+    pub fn new(
+        context: &'a dyn WorkerContext,
+        l1_genesis: L1BlockCommitment,
+        at_leaf_count: u64,
+    ) -> Self {
         Self {
             context,
             l1_genesis,
+            at_leaf_count,
         }
     }
 
@@ -213,7 +221,9 @@ impl<'a> AuxDataResolver<'a> {
                     .ok_or(WorkerError::ManifestHashNotFound { index: mmr_index })?;
 
                 // Generate MMR proof for this index
-                let proof_b32 = self.context.generate_mmr_proof(mmr_index)?;
+                let proof_b32 = self
+                    .context
+                    .generate_mmr_proof_at(mmr_index, self.at_leaf_count)?;
 
                 // Convert MerkleProofB32 to MerkleProof<Hash32> (AsmMerkleProof)
                 // Both types contain the same data: index and cohashes

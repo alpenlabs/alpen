@@ -16,10 +16,10 @@ pub use managers::{
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
     client_state::ClientStateManager,
-    global_mmr::{GlobalMmrManager, MmrHandle},
     l1::L1BlockManager,
     l2::L2BlockManager,
     mempool::MempoolDbManager,
+    mmr_index::{MmrIndexHandle, MmrIndexManager, MmrStateView},
     ol::OLBlockManager,
     ol_checkpoint::OLCheckpointManager,
     ol_state::OLStateManager,
@@ -58,7 +58,7 @@ pub struct NodeStorage {
     checkpoint_manager: Arc<CheckpointDbManager>,
 
     ol_block_manager: Arc<OLBlockManager>,
-    global_mmr_manager: Arc<GlobalMmrManager>,
+    mmr_index_manager: Arc<MmrIndexManager>,
     mempool_db_manager: Arc<MempoolDbManager>,
     ol_state_manager: Arc<OLStateManager>,
     ol_checkpoint_manager: Arc<OLCheckpointManager>,
@@ -77,7 +77,7 @@ impl Clone for NodeStorage {
             client_state_manager: self.client_state_manager.clone(),
             checkpoint_manager: self.checkpoint_manager.clone(),
             ol_block_manager: self.ol_block_manager.clone(),
-            global_mmr_manager: self.global_mmr_manager.clone(),
+            mmr_index_manager: self.mmr_index_manager.clone(),
             mempool_db_manager: self.mempool_db_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
             ol_checkpoint_manager: self.ol_checkpoint_manager.clone(),
@@ -128,8 +128,8 @@ impl NodeStorage {
         &self.checkpoint_manager
     }
 
-    pub fn global_mmr(&self) -> &Arc<GlobalMmrManager> {
-        &self.global_mmr_manager
+    pub fn mmr_index(&self) -> &Arc<MmrIndexManager> {
+        &self.mmr_index_manager
     }
 
     pub fn ol_block(&self) -> &Arc<OLBlockManager> {
@@ -169,7 +169,7 @@ pub fn create_node_storage(
     let mempool_db = db.mempool_db();
     let ol_state_db = db.ol_state_db();
     let ol_checkpoint_db = db.ol_checkpoint_db();
-    let global_mmr_db = db.global_mmr_db();
+    let mmr_index_db = db.mmr_index_db();
 
     let account_genesis_manager = Arc::new(AccountManager::new(pool.clone(), account_genesis_db));
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
@@ -186,7 +186,7 @@ pub fn create_node_storage(
     let checkpoint_manager = Arc::new(CheckpointDbManager::new(pool.clone(), checkpoint_db));
 
     let ol_block_manager = Arc::new(OLBlockManager::new(pool.clone(), ol_block_db));
-    let global_mmr_manager = Arc::new(GlobalMmrManager::new(pool.clone(), global_mmr_db));
+    let mmr_index_manager = Arc::new(MmrIndexManager::new(pool.clone(), mmr_index_db));
     let mempool_db_manager = Arc::new(MempoolDbManager::new(pool.clone(), mempool_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db.clone()));
     let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
@@ -202,7 +202,7 @@ pub fn create_node_storage(
         client_state_manager,
         checkpoint_manager,
         ol_block_manager,
-        global_mmr_manager,
+        mmr_index_manager,
         mempool_db_manager,
         ol_state_manager,
         ol_checkpoint_manager,

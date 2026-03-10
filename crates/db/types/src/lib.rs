@@ -2,7 +2,7 @@
 
 pub mod chainstate;
 pub mod errors;
-pub mod mmr_helpers;
+mod mmr_index;
 pub mod traits;
 pub mod types;
 
@@ -13,3 +13,7 @@ pub mod stubs;
 pub type DbResult<T> = anyhow::Result<T, errors::DbError>;
 
 pub use errors::DbError;
+pub use mmr_index::{
+    num_leaves_to_mmr_size, BatchWrite, LeafPos, MmrBatchWrite, MmrIndexPrecondition, MmrNodePos,
+    MmrNodeTable, NodePos, NodeTable,
+};

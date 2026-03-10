@@ -1,10 +1,7 @@
 use strata_asm_common::AsmManifest;
 use strata_primitives::{L1Height, l1::L1BlockId};
 
-use crate::{
-    define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
-    impl_borsh_value_codec,
-};
+use crate::{define_table_with_default_codec, define_table_with_integer_key};
 
 define_table_with_default_codec!(
     /// A table to store L1 Block data (as ASM Manifest). Maps block id to manifest

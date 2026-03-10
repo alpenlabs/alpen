@@ -24,6 +24,7 @@ use strata_bridge_types as _;
 use strata_btc_types as _;
 use strata_checkpoint_types_ssz as _;
 use strata_crypto as _;
+use strata_db_types as _;
 use strata_identifiers as _;
 use strata_l1_txfmt as _;
 use strata_merkle as _;

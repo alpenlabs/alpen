@@ -14617,8 +14617,6 @@ dependencies = [
  "sled",
  "ssz",
  "ssz_derive",
- "ssz_types",
- "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
@@ -14644,6 +14642,7 @@ name = "strata-db-tests"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "proptest",
  "strata-asm-common",
  "strata-btc-verification",
  "strata-checkpoint-types",
@@ -14673,9 +14672,9 @@ dependencies = [
  "bitcoin",
  "borsh",
  "parking_lot 0.12.5",
+ "proptest",
  "serde",
  "serde_json",
- "strata-acct-types",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
@@ -15774,7 +15773,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "borsh",
  "futures",
  "proptest",
  "strata-asm-common",
