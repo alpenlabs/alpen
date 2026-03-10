@@ -84,9 +84,7 @@ class RollupParamsArtifacts:
 
 def write_blockasm_config(params_path: Path, ol_block_time_ms: int) -> Path:
     """Writes the block-assembly sidecar config next to the rollup params file."""
-    blockasm_config_path = params_path.with_name(
-        f"{params_path.stem}.blockasm{params_path.suffix}"
-    )
+    blockasm_config_path = params_path.with_name(f"{params_path.stem}.blockasm{params_path.suffix}")
     blockasm_config_path.write_text(
         json.dumps({"ol_block_time_ms": ol_block_time_ms}, indent=2) + "\n"
     )
