@@ -14986,6 +14986,7 @@ dependencies = [
  "strata-btc-verification",
  "strata-config",
  "strata-crypto",
+ "strata-da-framework",
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",

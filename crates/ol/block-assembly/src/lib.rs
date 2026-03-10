@@ -4,6 +4,7 @@ mod block_assembly;
 mod builder;
 mod command;
 mod context;
+mod da_accumulation;
 mod epoch_sealing;
 mod error;
 mod handle;
@@ -19,6 +20,7 @@ pub use context::{
     AccumulatorProofGenerator, BlockAssemblyAnchorContext, BlockAssemblyContext,
     BlockAssemblyStateAccess,
 };
+pub use da_accumulation::AccumulatedDaData;
 pub use epoch_sealing::{EpochSealingPolicy, FixedSlotSealing};
 pub use error::BlockAssemblyError;
 pub use handle::BlockasmHandle;

@@ -21,7 +21,7 @@ use strata_snark_acct_types::{
 };
 use strata_storage::NodeStorage;
 
-use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
+use crate::{AccumulatedDaData, BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
 
 /// Account state capabilities required by block assembly.
 pub trait BlockAssemblyAccountState:
@@ -74,6 +74,21 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
         &self,
         start_height: u64,
     ) -> BlockAssemblyResult<Vec<AsmManifest>>;
+
+    /// Fetch accumulated DA data for a given block commitment.
+    ///
+    /// Returns None if no DA data exists for the given commitment (e.g., genesis or pre-DA blocks).
+    async fn fetch_accumulated_da(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> BlockAssemblyResult<Option<AccumulatedDaData>>;
+
+    /// Store accumulated DA data for a newly created block.
+    async fn store_accumulated_da(
+        &self,
+        commitment: OLBlockCommitment,
+        da_data: AccumulatedDaData,
+    ) -> BlockAssemblyResult<()>;
 }
 
 /// Generates MMR proofs needed during block assembly.
@@ -277,6 +292,24 @@ where
         }
 
         Ok(manifests)
+    }
+
+    async fn fetch_accumulated_da(
+        &self,
+        _commitment: OLBlockCommitment,
+    ) -> BlockAssemblyResult<Option<AccumulatedDaData>> {
+        // TODO: Implement actual storage retrieval once storage layer is ready
+        // For now, return None to indicate no DA data exists
+        Ok(None)
+    }
+
+    async fn store_accumulated_da(
+        &self,
+        _commitment: OLBlockCommitment,
+        _da_data: AccumulatedDaData,
+    ) -> BlockAssemblyResult<()> {
+        // TODO: Implement actual storage once storage layer is ready
+        Ok(())
     }
 }
 

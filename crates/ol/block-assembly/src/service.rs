@@ -7,6 +7,7 @@ use strata_crypto::hash::raw;
 use strata_identifiers::OLBlockId;
 use strata_ol_chain_types::verify_sequencer_signature;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ledger_types::{IAccountStateMut, IStateAccessor};
 use strata_ol_state_types::StateProvider;
 use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
@@ -50,6 +51,7 @@ where
     S: StateProvider + Send + Sync + 'static,
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
+    <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
@@ -99,6 +101,7 @@ async fn generate_block_template<
 where
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
+    <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     // Check if we already have a pending template for this parent block ID
     if let Ok(template) = state

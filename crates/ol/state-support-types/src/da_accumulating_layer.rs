@@ -3,16 +3,16 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt,
-    mem::take,
+    mem::{self, take},
 };
 
 use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
 use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
-    CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
-    LinearAccumulator,
+    Codec, CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
+    Decoder, Encoder, LinearAccumulator,
     counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16, CtrU64ByUnsignedVarInt},
-    encode_to_vec,
+    decode_map, decode_vec, encode_map, encode_to_vec, encode_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{
@@ -108,7 +108,7 @@ pub enum DaAccumulationError {
 
 /// Tracked snark account fields needed for diffing.
 #[derive(Clone, Debug)]
-struct SnarkDelta {
+pub struct SnarkDelta {
     base_seq_no: u64,
     final_seq_no: u64,
     base_proof_state: DaProofState,
@@ -158,9 +158,43 @@ impl SnarkDelta {
     }
 }
 
+impl Codec for SnarkDelta {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.base_seq_no.encode(enc)?;
+        self.final_seq_no.encode(enc)?;
+        self.base_proof_state.encode(enc)?;
+        self.final_proof_state.encode(enc)?;
+        // Encode inbox entries manually since DaLinacc doesn't have Codec
+        // We encode the new_entries vector from the DaLinacc
+        let entries = self.inbox.new_entries();
+        encode_vec(entries, enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let base_seq_no = u64::decode(dec)?;
+        let final_seq_no = u64::decode(dec)?;
+        let base_proof_state = DaProofState::decode(dec)?;
+        let final_proof_state = DaProofState::decode(dec)?;
+        // Decode inbox entries and reconstruct DaLinacc
+        let entries = decode_vec::<DaMessageEntry>(dec)?;
+        let mut inbox = DaLinacc::new();
+        for entry in entries {
+            inbox.append_entry(entry);
+        }
+        Ok(Self {
+            base_seq_no,
+            final_seq_no,
+            base_proof_state,
+            final_proof_state,
+            inbox,
+        })
+    }
+}
+
 /// Tracked account fields for DA diffing.
 #[derive(Clone, Debug)]
-struct AccountDelta {
+pub struct AccountDelta {
     serial: AccountSerial,
     base_balance: BitcoinAmount,
     final_balance: BitcoinAmount,
@@ -186,16 +220,79 @@ impl AccountDelta {
     }
 }
 
+impl Codec for AccountDelta {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.serial.encode(enc)?;
+        self.base_balance.encode(enc)?;
+        self.final_balance.encode(enc)?;
+        // AccountTypeId is an enum, encode it manually
+        match self.ty {
+            AccountTypeId::Empty => 0u8.encode(enc)?,
+            AccountTypeId::Snark => 1u8.encode(enc)?,
+        }
+        // Option<SnarkDelta> - encode presence flag then value if Some
+        match &self.snark {
+            Some(snark) => {
+                true.encode(enc)?;
+                snark.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let serial = AccountSerial::decode(dec)?;
+        let base_balance = BitcoinAmount::decode(dec)?;
+        let final_balance = BitcoinAmount::decode(dec)?;
+        // Decode AccountTypeId
+        let ty = match u8::decode(dec)? {
+            0 => AccountTypeId::Empty,
+            1 => AccountTypeId::Snark,
+            _ => return Err(CodecError::MalformedField("Invalid AccountTypeId value")),
+        };
+        // Decode Option<SnarkDelta>
+        let snark = if bool::decode(dec)? {
+            Some(SnarkDelta::decode(dec)?)
+        } else {
+            None
+        };
+        Ok(Self {
+            serial,
+            base_balance,
+            final_balance,
+            ty,
+            snark,
+        })
+    }
+}
+
 /// Minimal tracking data for a newly created account.
 #[derive(Clone, Debug)]
-struct NewAccountRecord {
+pub struct NewAccountRecord {
     serial: AccountSerial,
     account_id: AccountId,
 }
 
+impl Codec for NewAccountRecord {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.serial.encode(enc)?;
+        self.account_id.encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let serial = AccountSerial::decode(dec)?;
+        let account_id = AccountId::decode(dec)?;
+        Ok(Self { serial, account_id })
+    }
+}
+
 /// Per-epoch accumulator of DA writes before encoding.
 #[derive(Default)]
-struct EpochDaAccumulator {
+pub struct EpochDaAccumulator {
     /// Slot counter builder for the epoch.
     slot_builder: Option<DaCounterBuilder<CtrU64ByU16>>,
 
@@ -450,6 +547,107 @@ impl EpochDaAccumulator {
     }
 }
 
+impl Clone for EpochDaAccumulator {
+    fn clone(&self) -> Self {
+        // For DaCounterBuilder, recreate it preserving both original and new values
+        let slot_builder = self.slot_builder.as_ref().map(|builder| {
+            let mut new_builder =
+                DaCounterBuilder::<CtrU64ByU16>::from_source(*builder.original_value());
+            // Set the new value to match the current state
+            let _ = new_builder.set(*builder.new_value());
+            new_builder
+        });
+
+        Self {
+            slot_builder,
+            expected_first_serial: self.expected_first_serial,
+            new_account_records: self.new_account_records.clone(),
+            new_account_ids: self.new_account_ids.clone(),
+            account_deltas: self.account_deltas.clone(),
+        }
+    }
+}
+
+impl Codec for EpochDaAccumulator {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        // Encode slot_builder state as Option<(u64, u64)>
+        // We store both original and new values to preserve the delta
+        match self.slot_builder.as_ref() {
+            Some(builder) => {
+                true.encode(enc)?;
+                (*builder.original_value()).encode(enc)?;
+                (*builder.new_value()).encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+
+        // Encode expected_first_serial
+        match self.expected_first_serial {
+            Some(serial) => {
+                true.encode(enc)?;
+                serial.encode(enc)?;
+            }
+            None => {
+                false.encode(enc)?;
+            }
+        }
+
+        // Encode new_account_records
+        encode_vec(&self.new_account_records, enc)?;
+
+        // Encode new_account_ids as a Vec (BTreeSet -> Vec)
+        let ids_vec: Vec<AccountId> = self.new_account_ids.iter().cloned().collect();
+        encode_vec(&ids_vec, enc)?;
+
+        // Encode account_deltas
+        encode_map(&self.account_deltas, enc)?;
+
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        // Decode slot_builder state
+        // We now have both original and new values preserved
+        let slot_builder = if bool::decode(dec)? {
+            let original = u64::decode(dec)?;
+            let new = u64::decode(dec)?;
+            let mut builder = DaCounterBuilder::<CtrU64ByU16>::from_source(original);
+            // Set the new value (we know it's valid since we encoded it)
+            let _ = builder.set(new);
+            Some(builder)
+        } else {
+            None
+        };
+
+        // Decode expected_first_serial
+        let expected_first_serial = if bool::decode(dec)? {
+            Some(AccountSerial::decode(dec)?)
+        } else {
+            None
+        };
+
+        // Decode new_account_records
+        let new_account_records = decode_vec(dec)?;
+
+        // Decode new_account_ids
+        let ids_vec: Vec<AccountId> = decode_vec(dec)?;
+        let new_account_ids = ids_vec.into_iter().collect();
+
+        // Decode account_deltas
+        let account_deltas = decode_map(dec)?;
+
+        Ok(Self {
+            slot_builder,
+            expected_first_serial,
+            new_account_records,
+            new_account_ids,
+            account_deltas,
+        })
+    }
+}
+
 /// State accessor that accumulates DA-covered writes for a single epoch.
 ///
 /// This wrapper should only be used for preseal execution; epoch sealing
@@ -483,6 +681,35 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
             pending_epoch_blobs: VecDeque::new(),
             pending_epoch_error: None,
         }
+    }
+
+    /// Creates a new DA accumulating state with an existing accumulator.
+    /// This allows continuing accumulation from a previous state.
+    pub fn new_with_accumulator(inner: S, accumulator: EpochDaAccumulator) -> Self {
+        Self {
+            inner,
+            epoch_acc: accumulator,
+            pending_epoch_diffs: VecDeque::new(),
+            pending_epoch_blobs: VecDeque::new(),
+            pending_epoch_error: None,
+        }
+    }
+
+    /// Returns a reference to the current epoch accumulator.
+    /// This can be used to serialize the accumulator state between blocks.
+    pub fn accumulator(&self) -> &EpochDaAccumulator {
+        &self.epoch_acc
+    }
+
+    /// Takes ownership of the accumulator, replacing it with a default one.
+    /// This is useful for extracting the accumulator for serialization.
+    pub fn take_accumulator(&mut self) -> EpochDaAccumulator {
+        mem::take(&mut self.epoch_acc)
+    }
+
+    /// Consumes the DaAccumulatingState and returns the inner state.
+    pub fn into_inner(self) -> S {
+        self.inner
     }
 
     /// Returns a reference to the wrapped state accessor.

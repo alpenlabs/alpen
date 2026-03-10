@@ -12,6 +12,7 @@ strata-acct-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-config.workspace = true
 strata-crypto.workspace = true
+strata-da-framework.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
