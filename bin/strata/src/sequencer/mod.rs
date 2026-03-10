@@ -1,8 +1,7 @@
 //! OL sequencer implementation.
 
-mod duty_executor;
-mod duty_fetcher;
 mod helpers;
+mod node_context;
 mod rpc;
 mod signer;
 
