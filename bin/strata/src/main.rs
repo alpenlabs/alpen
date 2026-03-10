@@ -6,6 +6,12 @@ use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::logging;
 use strata_db_types as _;
+#[cfg(test)]
+use strata_checkpoint_types as _;
+#[cfg(test)]
+use strata_ol_state_types as _;
+#[cfg(test)]
+use strata_predicate as _;
 use strata_node_context::NodeContext;
 use tokio::runtime::{self, Handle};
 use tracing::info;

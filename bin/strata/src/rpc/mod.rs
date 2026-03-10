@@ -2,6 +2,8 @@
 
 pub(crate) mod errors;
 mod node;
+#[cfg(test)]
+mod node_tests;
 
 use std::sync::Arc;
 
