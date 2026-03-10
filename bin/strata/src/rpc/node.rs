@@ -19,7 +19,7 @@ use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::ProofState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::rpc::errors::{
     db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
@@ -372,6 +372,8 @@ impl OLClientRpcServer for OLRpcServer {
             .submit_transaction(mempool_tx)
             .await
             .map_err(map_mempool_error_to_rpc)?;
+
+        info!(%txid, "submitted transaction to OL mempool");
 
         Ok(txid)
     }

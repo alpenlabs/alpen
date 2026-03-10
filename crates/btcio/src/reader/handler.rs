@@ -23,7 +23,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
                 .l1()
                 .revert_canonical_chain_async(height)
                 .await?;
-            debug!(%height, "reverted L1 block database");
+            warn!(%height, "reverted L1 block database");
             // We don't submit events related to reverts,
             // as long as we updated canonical chain in the db.
             Option::None

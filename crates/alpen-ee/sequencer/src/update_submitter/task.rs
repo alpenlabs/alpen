@@ -9,7 +9,7 @@ use alpen_ee_common::{
 use eyre::{eyre, Result};
 use strata_snark_acct_types::SnarkAccountUpdate;
 use tokio::{sync::watch, time};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::update_submitter::update_builder::build_update_from_batch;
 
@@ -178,7 +178,7 @@ async fn process_ready_batches(
 
         ol_client.submit_update(update).await?;
 
-        debug!(batch_idx, "Submitted update for batch");
+        info!(%batch_idx, "Submitted update for batch");
         batch_idx += 1;
     }
 
