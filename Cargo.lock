@@ -15414,7 +15414,6 @@ name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-checkpoint-types",
- "strata-proofimpl-cl-stf",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
@@ -15436,21 +15435,6 @@ dependencies = [
  "strata-ol-da",
  "strata-ol-state-types",
  "strata-ol-stf",
- "zkaleido",
- "zkaleido-native-adapter",
-]
-
-[[package]]
-name = "strata-proofimpl-cl-stf"
-version = "0.3.0-alpha.1"
-dependencies = [
- "borsh",
- "strata-chainexec",
- "strata-chaintsn",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
@@ -15491,25 +15475,20 @@ dependencies = [
  "anyhow",
  "argh",
  "async-trait",
- "bincode",
- "bitcoind-async-client",
- "borsh",
  "hex",
  "jsonrpsee",
  "serde",
  "serde_json",
  "sp1-sdk",
  "sp1-verifier",
+ "strata-checkpoint-types",
  "strata-common",
  "strata-db-store-sled",
  "strata-db-types",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
  "strata-paas",
  "strata-params",
  "strata-primitives",
  "strata-proofimpl-checkpoint",
- "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-prover-client-rpc-api",
  "strata-rpc-api",
@@ -15548,6 +15527,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde_json",
  "sp1-sdk",
+ "strata-checkpoint-types",
  "strata-codec",
  "strata-da-framework",
  "strata-identifiers",
@@ -15557,11 +15537,9 @@ dependencies = [
  "strata-ol-stf",
  "strata-proofimpl-checkpoint",
  "strata-proofimpl-checkpoint-new",
- "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
  "strata-test-utils-evm-ee",
- "strata-test-utils-l2",
  "strata-zkvm-hosts",
  "tokio",
  "tracing",
@@ -15966,7 +15944,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-primitives",
  "strata-proofimpl-checkpoint",
- "strata-proofimpl-cl-stf",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
  "zkaleido",

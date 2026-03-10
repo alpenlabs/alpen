@@ -8,7 +8,6 @@ workspace = true
 
 [dependencies]
 strata-checkpoint-types.workspace = true
-strata-proofimpl-cl-stf.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
 

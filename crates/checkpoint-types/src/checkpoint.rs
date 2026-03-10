@@ -5,7 +5,7 @@ use strata_crypto::{hash, schnorr::verify_schnorr_sig};
 use strata_identifiers::{Buf32, Buf64, CredRule};
 use zkaleido::{Proof, ProofReceipt, PublicValues};
 
-use super::{batch::BatchInfo, transition::BatchTransition};
+use super::batch::BatchInfo;
 
 /// Consolidates all the information that the checkpoint is committing to, signing and proving.
 #[derive(
@@ -13,10 +13,8 @@ use super::{batch::BatchInfo, transition::BatchTransition};
 )]
 pub struct CheckpointCommitment {
     /// Information regarding the current batches of l1 and l2 blocks along with epoch.
+    /// This is verified by the proof
     batch_info: BatchInfo,
-
-    /// Transition information verifiable by the proof
-    transition: BatchTransition,
 }
 
 /// Consolidates all information required to describe and verify a batch checkpoint.
@@ -37,17 +35,9 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
-    pub fn new(
-        batch_info: BatchInfo,
-        transition: BatchTransition,
-        proof: Proof,
-        sidecar: CheckpointSidecar,
-    ) -> Self {
+    pub fn new(batch_info: BatchInfo, proof: Proof, sidecar: CheckpointSidecar) -> Self {
         Self {
-            commitment: CheckpointCommitment {
-                batch_info,
-                transition,
-            },
+            commitment: CheckpointCommitment { batch_info },
             proof,
             sidecar,
         }
@@ -55,10 +45,6 @@ impl Checkpoint {
 
     pub fn batch_info(&self) -> &BatchInfo {
         &self.commitment.batch_info
-    }
-
-    pub fn batch_transition(&self) -> &BatchTransition {
-        &self.commitment.transition
     }
 
     pub fn commitment(&self) -> &CheckpointCommitment {
@@ -78,7 +64,7 @@ impl Checkpoint {
     // understand the rationale for making it deprecated
     pub fn construct_receipt(&self) -> ProofReceipt {
         let proof = self.proof().clone();
-        let output = self.batch_transition();
+        let output = self.batch_info();
         let public_values =
             PublicValues::new(borsh::to_vec(&output).expect("checkpoint: proof output"));
         ProofReceipt::new(proof, public_values)

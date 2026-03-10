@@ -3,7 +3,7 @@ use std::fmt::{self, Display};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::{EvmEeBlockCommitment, L2BlockCommitment};
+use crate::EvmEeBlockCommitment;
 
 /// Represents a context for different types of proofs.
 ///
@@ -26,10 +26,6 @@ pub enum ProofContext {
     /// Identifier for the EVM Execution Environment (EE) blocks used in generating the State
     /// Transition Function (STF) proof.
     EvmEeStf(EvmEeBlockCommitment, EvmEeBlockCommitment),
-
-    /// Identifier for the Consensus Layer (CL) blocks used in generating the State Transition
-    /// Function (STF) proof.
-    ClStf(L2BlockCommitment, L2BlockCommitment),
 
     /// Identifier for a specific checkpoint being proven.
     Checkpoint(u64),
