@@ -31,7 +31,7 @@ pub struct UpdateBuilder<'i, P: SnarkAccountProgramVerification> {
     program: P,
     snark_state: SnarkAccountState,
     pre_state: P::State,
-    current_state: P::State,
+    cur_state: P::State,
     vstate: P::VState<'i>,
     messages: Vec<MessageEntry>,
     coinputs: Vec<Vec<u8>>,
@@ -74,7 +74,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
             program,
             snark_state,
             pre_state,
-            current_state,
+            cur_state: current_state,
             vstate,
             messages: Vec::new(),
             coinputs: Vec::new(),
@@ -106,7 +106,13 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     /// Returns the current inner state of the snark account, accounting for the
     /// messages processed.
     pub fn cur_state(&self) -> &P::State {
-        &self.current_state
+        &self.cur_state
+    }
+
+    /// Returns a mutable reference to the current state.  Be careful with what
+    /// you do with this!
+    pub fn cur_state_mut(&mut self) -> &mut P::State {
+        &mut self.cur_state
     }
 
     /// Returns the current verification state of the update, accounting for the
@@ -159,12 +165,12 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
 
         // Verify coinput.
         self.program
-            .verify_coinput(&self.current_state, &mut self.vstate, &inp_msg, &coinput)
+            .verify_coinput(&self.cur_state, &mut self.vstate, &inp_msg, &coinput)
             .map_err(|e| e.at_msg(idx))?;
 
         // Process the message.
         self.program
-            .process_message(&mut self.current_state, inp_msg)
+            .process_message(&mut self.cur_state, inp_msg)
             .map_err(|e| e.at_msg(idx))?;
 
         self.coinputs.push(coinput);
@@ -179,16 +185,6 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
             self.provide_coinput(Vec::new())?;
         }
         Ok(())
-    }
-
-    /// Returns a reference to the current (mutated) state.
-    pub fn current_state(&self) -> &P::State {
-        &self.current_state
-    }
-
-    /// Returns a mutable reference to the current state.
-    pub fn current_state_mut(&mut self) -> &mut P::State {
-        &mut self.current_state
     }
 
     /// Returns a reference to the outputs.
@@ -225,7 +221,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     {
         self.assert_all_coinputs_provided()?;
 
-        let mut post_state = self.current_state.clone();
+        let mut post_state = self.cur_state.clone();
 
         // Pre-finalize state.
         self.program
@@ -262,7 +258,7 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     ) -> ProgramResult<FinalizedUpdate<P>, P::Error> {
         self.assert_all_coinputs_provided()?;
 
-        let mut post_state = self.current_state.clone();
+        let mut post_state = self.cur_state.clone();
 
         // Pre-finalize state.
         self.program

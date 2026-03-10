@@ -5,7 +5,8 @@
 
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::{
-    EeAccountState, EnvError, EnvResult, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
+    EeAccountState, EnvError, EnvProgramResult, EnvResult, ExecutionEnvironment, PendingInputEntry,
+    UpdateExtraData,
 };
 use strata_ee_chain_types::{ChunkTransition, ExecOutputs, SequenceTracker};
 use strata_predicate::PredicateKeyBuf;
@@ -75,8 +76,17 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Current verified chain tip.
     cur_verified_exec_blkid: Hash,
 
-    /// Tracks the total value sent.
+    /// Tracks the total value sent in this update.
+    ///
+    /// Not sure why we're doing this after all.
     total_val_sent: BitcoinAmount,
+
+    /// Tracks current balance.
+    ///
+    /// This is the snark account's balance on the orchestration layer, as an
+    /// additional check to ensure we don't permit invalid updates.  It is still
+    /// incremented when we receive messages we don't understand.
+    cur_balance: BitcoinAmount,
 
     /// Outputs we expect to have.
     expected_outputs: UpdateOutputs,
@@ -90,21 +100,6 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Partial pre-state corresponding to the previous header.
     // TODO do something with this
     raw_partial_pre_state: &'a [u8],
-}
-
-// Manual `Clone` impl to avoid requiring `E: Clone` (we only hold `&'a E`).
-impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
-    fn clone(&self) -> Self {
-        Self {
-            ee: self.ee,
-            cur_verified_exec_blkid: self.cur_verified_exec_blkid,
-            total_val_sent: self.total_val_sent,
-            expected_outputs: self.expected_outputs.clone(),
-            accumulated_outputs: self.accumulated_outputs.clone(),
-            input_chunks: self.input_chunks,
-            raw_partial_pre_state: self.raw_partial_pre_state,
-        }
-    }
 }
 
 impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
@@ -121,6 +116,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             ee,
             cur_verified_exec_blkid: state.last_exec_blkid(),
             total_val_sent: 0.into(),
+            cur_balance: state.tracked_balance(),
             expected_outputs,
             accumulated_outputs: UpdateOutputs::new_empty(),
             input_chunks,
@@ -129,12 +125,27 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     }
 
     /// Returns the execution environment.
-    pub fn ee(&self) -> &'a E {
+    pub fn exec_env(&self) -> &'a E {
         self.ee
     }
 
     pub fn cur_verified_exec_blkid(&self) -> Hash {
         self.cur_verified_exec_blkid
+    }
+
+    pub fn cur_balance(&self) -> BitcoinAmount {
+        self.cur_balance
+    }
+
+    /// Increases our verification state tracked balance.
+    ///
+    /// This is intended for when we accept a message.
+    pub fn accept_funds(&mut self, amt: BitcoinAmount) -> EnvResult<()> {
+        self.cur_balance = self
+            .cur_balance
+            .checked_add(amt)
+            .ok_or(EnvError::BalanceOverflow)?;
+        Ok(())
     }
 
     /// Returns the raw partial pre-state.
@@ -145,7 +156,28 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Appends a package block's outputs into the pending outputs being
     /// built internally. This way we can compare it against the update op data
     /// later.
+    ///
+    /// # Errors
+    ///
+    /// If this results in overflowing buffers, then returns an error and leaves
+    /// us in a dirty state where we should abort anyways.
     pub(crate) fn merge_new_outputs(&mut self, outputs: &ExecOutputs) -> EnvResult<()> {
+        // Annoying thing to do checked summation.
+        let sent_now = BitcoinAmount::sum(
+            outputs.output_transfers().iter().map(|e| e.value()).chain(
+                outputs
+                    .output_messages()
+                    .iter()
+                    .map(|e| e.payload().value()),
+            ),
+        );
+
+        // Update the balance before anything else, throw an error for insufficient funds.
+        self.cur_balance = self
+            .cur_balance
+            .checked_sub(sent_now)
+            .ok_or(EnvError::InsufficientFunds)?;
+
         // Just merge the entries into the buffer. This is a little more
         // complicated than it really is because we have to convert between two
         // sets of similar types that are separately defined to avoid semantic
@@ -168,18 +200,11 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             )
             .map_err(|_| EnvError::OutputOverflow)?;
 
-        // Annoying thing to do checked summation.
-        let sent_amts_iter = [self.total_val_sent]
-            .into_iter()
-            .chain(outputs.output_transfers().iter().map(|e| e.value()))
-            .chain(
-                outputs
-                    .output_messages()
-                    .iter()
-                    .map(|e| e.payload().value()),
-            );
-
-        self.total_val_sent = BitcoinAmount::sum(sent_amts_iter);
+        // Finally update the total_val_sent field.
+        self.total_val_sent = self
+            .total_val_sent
+            .checked_add(sent_now)
+            .ok_or(EnvError::OutputOverflow)?;
 
         Ok(())
     }
@@ -203,6 +228,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         // Each chunk deposit must match the next pending input in order by
         // type.
         for deposit in transition.inputs().subject_deposits() {
+            // Consume the input.
             pending_inp_tracker
                 .consume_input_with(|pending| {
                     matches!(
@@ -232,6 +258,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     ) -> EnvResult<()> {
         let mut pending_inp_tracker = SequenceTracker::new(state.pending_inputs());
 
+        // Loop through all the chunks and verify them.
         for chunk in self.input_chunks {
             // Verify the proof against the chunk predicate key.
             let predicate_key = PredicateKeyBuf::try_from(state.chunk_predicate_key())
@@ -272,5 +299,21 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         // for chunk/multiproof updates so there might need to be more here
 
         Ok(())
+    }
+}
+
+/// Manual `Clone` impl to avoid requiring `E: Clone` (we only hold `&'a E`).
+impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
+    fn clone(&self) -> Self {
+        Self {
+            ee: self.ee,
+            cur_verified_exec_blkid: self.cur_verified_exec_blkid,
+            total_val_sent: self.total_val_sent,
+            cur_balance: self.cur_balance,
+            expected_outputs: self.expected_outputs.clone(),
+            accumulated_outputs: self.accumulated_outputs.clone(),
+            input_chunks: self.input_chunks,
+            raw_partial_pre_state: self.raw_partial_pre_state,
+        }
     }
 }

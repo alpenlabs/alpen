@@ -102,10 +102,13 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
     fn verify_coinput<'a>(
         &self,
         _state: &Self::State,
-        _vstate: &mut Self::VState<'a>,
-        _msg: &InputMessage<Self::Msg>,
+        vstate: &mut Self::VState<'a>,
+        msg: &InputMessage<Self::Msg>,
         coinput: &[u8],
     ) -> ProgramResult<(), Self::Error> {
+        // Update balance bookkeeping.
+        vstate.accept_funds(msg.meta().value())?;
+
         // For both Valid and Unknown messages, require empty coinput.
         // We don't need any message coinputs for the EE right now.
         if !coinput.is_empty() {
@@ -124,14 +127,24 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
         // Process and verify all chunks sequentially.
         vstate.process_chunks_on_acct(state, extra_data)?;
 
-        // Make sure the state matches the extra data.
-        if state.last_exec_blkid() != *extra_data.new_tip_blkid() {
+        // Make sure the extradata tip blkid matches what we verified.
+        if *extra_data.new_tip_blkid() != vstate.cur_verified_exec_blkid() {
             return Err(ProgramError::InvalidExtraData);
         }
 
         // Make sure the state matches what we verified.
+        //
+        // This is sorta redundant since we set it based on the extradata tip in
+        // `pre_finalize_state`, but it doesn't hurt to have an extra sanity
+        // check.
         if state.last_exec_blkid() != vstate.cur_verified_exec_blkid() {
             return Err(ProgramError::InvalidExtraData);
+        }
+
+        // Another final check to make sure we did our balance bookkeeping right.
+        if state.tracked_balance() != vstate.cur_balance() {
+            // TODO maybe replace this with a more specific error?
+            return Err(ProgramError::UnsatisfiedObligations);
         }
 
         // Check the other internal obligations.

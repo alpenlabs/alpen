@@ -30,6 +30,8 @@ use crate::{
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
     inner: GenericUpdateBuilder<'i, EeSnarkAccountProgram<E>>,
+
+    /// Seqno of the update we're proving.
     seq_no: u64,
 
     /// Current chain tip, advanced as chunks are accepted.
@@ -81,6 +83,23 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
         })
     }
 
+    /// Returns the current account state.
+    pub fn cur_acct_state(&self) -> &EeAccountState {
+        self.inner.cur_state()
+    }
+
+    /// Returns the accumulated outputs so far.
+    pub fn outputs(&self) -> &UpdateOutputs {
+        self.inner.outputs()
+    }
+
+    /// Returns the current chain tip block ID.
+    ///
+    /// A chunk's `parent_exec_blkid` must equal this value.
+    pub fn cur_tip_blkid(&self) -> Hash {
+        self.cur_tip_blkid
+    }
+
     /// Adds a message and immediately processes it with an empty coinput.
     ///
     /// Any new pending inputs created by the message (e.g. deposits) are
@@ -89,7 +108,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
         self.inner.add_message_with_coinput(msg, Vec::new())?;
 
         // Extend pending inputs with any new entries from this message.
-        let state_pending = self.inner.current_state().pending_inputs();
+        let state_pending = self.inner.cur_state().pending_inputs();
         if state_pending.len() > self.pending_inputs.len() {
             self.pending_inputs
                 .extend_from_slice(&state_pending[self.pending_inputs.len()..]);
@@ -109,13 +128,6 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             self.add_message(msg)?;
         }
         Ok(())
-    }
-
-    /// Returns the current chain tip block ID.
-    ///
-    /// A chunk's `parent_exec_blkid` must equal this value.
-    pub fn cur_tip_blkid(&self) -> Hash {
-        self.cur_tip_blkid
     }
 
     /// Returns the remaining pending inputs that haven't been consumed by
@@ -248,15 +260,5 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
         );
 
         Ok(self.inner.build_private_input(extra_data)?)
-    }
-
-    /// Returns the current account state.
-    pub fn current_state(&self) -> &EeAccountState {
-        self.inner.current_state()
-    }
-
-    /// Returns the accumulated outputs so far.
-    pub fn outputs(&self) -> &UpdateOutputs {
-        self.inner.outputs()
     }
 }

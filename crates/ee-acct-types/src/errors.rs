@@ -63,6 +63,12 @@ pub enum EnvError {
     #[error("blocks in a chunk did not match the chunk's attested io")]
     InconsistentChunkIo,
 
+    #[error("insufficient funds")]
+    InsufficientFunds,
+
+    #[error("balance overflow")]
+    BalanceOverflow,
+
     /// Accumulated output transfers or messages exceeded protocol capacity.
     #[error("output overflow")]
     OutputOverflow,

@@ -95,7 +95,7 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
     ///
     /// This is provided so that multiple sequence trackers can be checked
     /// before advancing any of them.
-    pub fn check_inputs(&mut self, inputs: &[T]) -> SeqResult<()> {
+    pub fn check_inputs(&self, inputs: &[T]) -> SeqResult<()> {
         // Bounds check early so we can skip it on each iteration.
         if inputs.len() > self.remaining().len() {
             return Err(SeqError::Overrun);
