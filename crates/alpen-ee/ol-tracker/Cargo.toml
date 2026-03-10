@@ -10,8 +10,8 @@ workspace = true
 alpen-ee-common.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
-strata-identifiers.workspace = true
 strata-evm-ee.workspace = true
+strata-identifiers.workspace = true
 strata-snark-acct-types.workspace = true
 
 eyre.workspace = true
