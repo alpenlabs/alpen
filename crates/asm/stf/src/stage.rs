@@ -14,7 +14,6 @@ use crate::manager::SubprotoManager;
 /// Stage to process txs pre-extracted from the block for each subprotocol.
 pub(crate) struct PreProcessStage<'c> {
     manager: &'c mut SubprotoManager,
-    anchor_state: &'c AnchorState,
     tx_bufs: &'c BTreeMap<SubprotocolId, Vec<TxInputRef<'c>>>,
     aux_collector: AuxRequestCollector,
 }
@@ -31,7 +30,6 @@ impl<'c> PreProcessStage<'c> {
         let aux_collector = AuxRequestCollector::new(min_manifest_height, max_manifest_height);
         Self {
             manager,
-            anchor_state,
             tx_bufs,
             aux_collector,
         }
@@ -51,7 +49,7 @@ impl Stage for PreProcessStage<'_> {
             .unwrap_or(&[]);
 
         self.manager
-            .invoke_pre_process_txs::<S>(&mut self.aux_collector, txs, self.anchor_state);
+            .invoke_pre_process_txs::<S>(&mut self.aux_collector, txs);
     }
 }
 

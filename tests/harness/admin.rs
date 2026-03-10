@@ -8,9 +8,9 @@
 //! use harness::test_harness::AsmTestHarnessBuilder;
 //! use harness::admin::{create_test_admin_setup, sequencer_update, AdminExt};
 //!
-//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let (admin_config, mut ctx) = create_test_admin_setup(2);
 //! let harness = AsmTestHarnessBuilder::default()
-//!     .with_admin_params(admin_params)
+//!     .with_admin_config(admin_config)
 //!     .build()
 //!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
@@ -24,7 +24,7 @@ use bitcoin::{
     BlockHash,
 };
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_asm_params::{AdministrationSubprotoParams, Role};
+use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
     actions::{
@@ -198,17 +198,17 @@ pub fn predicate_update(key: PredicateKey, proof_type: ProofType) -> MultisigAct
 ///
 /// Generates a random 1-of-1 [`ThresholdConfig`] keypair for both admin roles, so that
 /// signatures produced by the returned [`AdminContext`] pass verification against the
-/// returned [`AdministrationSubprotoParams`].
+/// returned [`AdministrationInitConfig`].
 pub fn create_test_admin_setup(
     confirmation_depth: u16,
-) -> (AdministrationSubprotoParams, AdminContext) {
+) -> (AdministrationInitConfig, AdminContext) {
     let secp = Secp256k1::new();
     let sk = SecretKey::new(&mut rand::thread_rng());
     let pk = CompressedPublicKey::from(PublicKey::from_secret_key(&secp, &sk));
     let config =
         ThresholdConfig::try_new(vec![pk], NonZero::new(1).unwrap()).expect("valid config");
 
-    let params = AdministrationSubprotoParams {
+    let params = AdministrationInitConfig {
         strata_administrator: config.clone(),
         strata_sequencer_manager: config,
         confirmation_depth,

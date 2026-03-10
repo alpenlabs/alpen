@@ -7,7 +7,8 @@ use bitcoin::{
     secp256k1::{PublicKey, SECP256K1},
 };
 use strata_asm_params::{
-    AdministrationSubprotoParams, AsmParams, BridgeV1Config, CheckpointConfig, SubprotocolInstance,
+    AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
+    SubprotocolInstance,
 };
 use strata_btc_types::BitcoinAmount;
 use strata_crypto::{
@@ -96,7 +97,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let threshold = ThresholdConfig::try_new(admin_keys, NonZero::new(1).expect("1 is non-zero"))?;
 
-    let admin = AdministrationSubprotoParams::new(
+    let admin = AdministrationInitConfig::new(
         threshold.clone(),
         threshold,
         cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH),
@@ -124,7 +125,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let checkpoint_predicate = resolve_checkpoint_predicate();
     let genesis_l1_height = genesis_l1_view.blk.height_u32();
 
-    let checkpoint = CheckpointConfig {
+    let checkpoint = CheckpointInitConfig {
         sequencer_predicate: PredicateKey::always_accept(),
         checkpoint_predicate,
         genesis_l1_height,
@@ -140,7 +141,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let operators: Vec<EvenPublicKey> = pubkeys.into_iter().map(EvenPublicKey::from).collect();
 
-    let bridge = BridgeV1Config {
+    let bridge = BridgeV1InitConfig {
         operators,
         denomination: BitcoinAmount::from_sat(deposit_sats),
         assignment_duration: cmd

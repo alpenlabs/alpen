@@ -1,7 +1,7 @@
-use std::mem::take;
+use std::{mem::take, num::NonZero};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_asm_params::{AdministrationSubprotoParams, Role};
+use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 
@@ -30,10 +30,15 @@ pub struct AdministrationSubprotoState {
     /// receives this many confirmations, the update is enacted automatically. During this
     /// confirmation period, the update can still be cancelled by submitting a cancel transaction.
     confirmation_depth: u16,
+
+    /// Maximum allowed gap between consecutive sequence numbers for a given authority.
+    ///
+    /// A payload with `seqno > last_seqno + max_seqno_gap` is rejected.
+    max_seqno_gap: NonZero<u8>,
 }
 
 impl AdministrationSubprotoState {
-    pub fn new(config: &AdministrationSubprotoParams) -> Self {
+    pub fn new(config: &AdministrationInitConfig) -> Self {
         let authorities = config
             .clone()
             .get_all_authorities()
@@ -46,11 +51,16 @@ impl AdministrationSubprotoState {
             queued: Vec::new(),
             next_update_id: 0,
             confirmation_depth: config.confirmation_depth,
+            max_seqno_gap: config.max_seqno_gap,
         }
     }
 
     pub fn confirmation_depth(&self) -> u16 {
         self.confirmation_depth
+    }
+
+    pub fn max_seqno_gap(&self) -> NonZero<u8> {
+        self.max_seqno_gap
     }
 
     /// Get a reference to the authority for the given role.
@@ -126,7 +136,7 @@ mod tests {
 
     use bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use rand::rngs::OsRng;
-    use strata_asm_params::{AdministrationSubprotoParams, Role};
+    use strata_asm_params::{AdministrationInitConfig, Role};
     use strata_asm_txs_admin::actions::UpdateAction;
     use strata_crypto::{
         keys::compressed::CompressedPublicKey,
@@ -136,7 +146,7 @@ mod tests {
 
     use crate::{queued_update::QueuedUpdate, state::AdministrationSubprotoState};
 
-    fn create_test_config() -> AdministrationSubprotoParams {
+    fn create_test_config() -> AdministrationInitConfig {
         let secp = Secp256k1::new();
 
         // Create admin keys
@@ -157,7 +167,7 @@ mod tests {
         let strata_sequencer_manager =
             ThresholdConfig::try_new(seq_pks, NonZero::new(2).unwrap()).unwrap();
 
-        AdministrationSubprotoParams {
+        AdministrationInitConfig {
             strata_administrator,
             strata_sequencer_manager,
             confirmation_depth: 2016,

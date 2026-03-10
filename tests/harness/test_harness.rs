@@ -21,9 +21,9 @@
 //! use harness::test_harness::AsmTestHarnessBuilder;
 //! use harness::admin::{create_test_admin_setup, sequencer_update, AdminExt};
 //!
-//! let (admin_params, mut ctx) = create_test_admin_setup(2);
+//! let (admin_config, mut ctx) = create_test_admin_setup(2);
 //! let harness = AsmTestHarnessBuilder::default()
-//!     .with_admin_params(admin_params)
+//!     .with_admin_config(admin_config)
 //!     .build()
 //!     .await?;
 //! harness.submit_admin_action(&mut ctx, sequencer_update([1u8; 32])).await?;
@@ -56,7 +56,8 @@ use bitcoind_async_client::{
 use corepc_node::Node;
 use rand::RngCore;
 use strata_asm_params::{
-    AdministrationSubprotoParams, AsmParams, BridgeV1Config, CheckpointConfig, SubprotocolInstance,
+    AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
+    SubprotocolInstance,
 };
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_btc_types::BlockHashExt;
@@ -529,24 +530,24 @@ fn create_taproot_spend_info(
 // Builder
 // ============================================================================
 
-/// Builder for [`AsmTestHarness`] with optional subprotocol param overrides.
+/// Builder for [`AsmTestHarness`] with optional subprotocol config overrides.
 ///
-/// Any subprotocol params not explicitly set will use arbitrary-generated defaults.
+/// Any subprotocol configs not explicitly set will use arbitrary-generated defaults.
 ///
 /// # Example
 ///
 /// ```ignore
 /// let harness = AsmTestHarnessBuilder::default()
-///     .with_admin_params(my_admin_params)
+///     .with_admin_config(my_admin_config)
 ///     .build()
 ///     .await?;
 /// ```
 #[derive(Debug, Default)]
 pub struct AsmTestHarnessBuilder {
     genesis_height: Option<u64>,
-    admin_params: Option<AdministrationSubprotoParams>,
-    bridge_params: Option<BridgeV1Config>,
-    checkpoint_params: Option<CheckpointConfig>,
+    admin_config: Option<AdministrationInitConfig>,
+    bridge_config: Option<BridgeV1InitConfig>,
+    checkpoint_config: Option<CheckpointInitConfig>,
 }
 
 impl AsmTestHarnessBuilder {
@@ -559,25 +560,25 @@ impl AsmTestHarnessBuilder {
         self
     }
 
-    /// Overrides the admin subprotocol params.
-    pub fn with_admin_params(mut self, params: AdministrationSubprotoParams) -> Self {
-        self.admin_params = Some(params);
+    /// Overrides the admin subprotocol config.
+    pub fn with_admin_config(mut self, config: AdministrationInitConfig) -> Self {
+        self.admin_config = Some(config);
         self
     }
 
-    /// Overrides the bridge subprotocol params.
-    pub fn with_bridge_params(mut self, params: BridgeV1Config) -> Self {
-        self.bridge_params = Some(params);
+    /// Overrides the bridge subprotocol config.
+    pub fn with_bridge_config(mut self, config: BridgeV1InitConfig) -> Self {
+        self.bridge_config = Some(config);
         self
     }
 
-    /// Overrides the checkpoint subprotocol params.
-    pub fn with_checkpoint_params(mut self, params: CheckpointConfig) -> Self {
-        self.checkpoint_params = Some(params);
+    /// Overrides the checkpoint subprotocol config.
+    pub fn with_checkpoint_config(mut self, config: CheckpointInitConfig) -> Self {
+        self.checkpoint_config = Some(config);
         self
     }
 
-    /// Builds the test harness, applying any subprotocol param overrides.
+    /// Builds the test harness, applying any subprotocol config overrides.
     pub async fn build(self) -> anyhow::Result<AsmTestHarness> {
         let genesis_height = self.genesis_height.unwrap_or(Self::DEFAULT_GENESIS_HEIGHT);
 
@@ -601,17 +602,17 @@ impl AsmTestHarnessBuilder {
         for instance in &mut asm_params.subprotocols {
             match instance {
                 SubprotocolInstance::Admin(ref mut cfg) => {
-                    if let Some(ref override_cfg) = self.admin_params {
+                    if let Some(ref override_cfg) = self.admin_config {
                         *cfg = override_cfg.clone();
                     }
                 }
                 SubprotocolInstance::Bridge(ref mut cfg) => {
-                    if let Some(ref override_cfg) = self.bridge_params {
+                    if let Some(ref override_cfg) = self.bridge_config {
                         *cfg = override_cfg.clone();
                     }
                 }
                 SubprotocolInstance::Checkpoint(ref mut cfg) => {
-                    if let Some(ref override_cfg) = self.checkpoint_params {
+                    if let Some(ref override_cfg) = self.checkpoint_config {
                         *cfg = override_cfg.clone();
                     }
                 }

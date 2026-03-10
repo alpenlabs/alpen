@@ -2,10 +2,10 @@
 
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AnchorState, AsmError, AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef,
-    VerifiedAuxData, logging,
+    AuxRequestCollector, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    logging,
 };
-use strata_asm_params::CheckpointConfig;
+use strata_asm_params::CheckpointInitConfig;
 use strata_asm_txs_checkpoint::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_signed_checkpoint_from_envelope,
 };
@@ -29,20 +29,18 @@ pub struct CheckpointSubprotocol;
 impl Subprotocol for CheckpointSubprotocol {
     const ID: SubprotocolId = CHECKPOINT_SUBPROTOCOL_ID;
 
-    type Params = CheckpointConfig;
+    type InitConfig = CheckpointInitConfig;
     type State = CheckpointState;
     type Msg = CheckpointIncomingMsg;
 
-    fn init(params: &Self::Params) -> Result<Self::State, AsmError> {
-        Ok(CheckpointState::init(params.clone()))
+    fn init(config: &Self::InitConfig) -> Self::State {
+        CheckpointState::init(config.clone())
     }
 
     fn pre_process_txs(
         state: &Self::State,
         txs: &[TxInputRef<'_>],
         collector: &mut AuxRequestCollector,
-        _anchor_pre: &AnchorState,
-        _params: &Self::Params,
     ) {
         for tx in txs {
             if tx.tag().tx_type() == OL_STF_CHECKPOINT_TX_TYPE {
@@ -70,7 +68,6 @@ impl Subprotocol for CheckpointSubprotocol {
         l1ref: &L1BlockCommitment,
         verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         let current_l1_height = l1ref.height_u32();
 

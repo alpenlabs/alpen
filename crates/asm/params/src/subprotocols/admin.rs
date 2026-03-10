@@ -6,7 +6,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_crypto::threshold_signature::ThresholdConfig;
 
-/// Parameters for the administration subprotocol, containing [`ThresholdConfig`] for each role.
+/// Initialization configuration for the administration subprotocol, containing [`ThresholdConfig`]
+/// for each role.
 ///
 /// Design choice: Uses individual named fields rather than `Vec<(Role, ThresholdConfig)>`
 /// to ensure structural completeness - the compiler guarantees all config fields are
@@ -15,7 +16,7 @@ use strata_crypto::threshold_signature::ThresholdConfig;
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
-pub struct AdministrationSubprotoParams {
+pub struct AdministrationInitConfig {
     /// ThresholdConfig for [StrataAdministrator](Role::StrataAdministrator).
     pub strata_administrator: ThresholdConfig,
 
@@ -67,7 +68,7 @@ pub enum Role {
     StrataSequencerManager,
 }
 
-impl AdministrationSubprotoParams {
+impl AdministrationInitConfig {
     pub fn new(
         strata_administrator: ThresholdConfig,
         strata_sequencer_manager: ThresholdConfig,

@@ -25,7 +25,7 @@ pub trait AsmSpec {
 pub trait Loader {
     /// Invoked by the ASM spec to perform logic to load the subprotocol for
     /// execution in this ASM invocation.
-    fn load_subprotocol<S: Subprotocol>(&mut self, params: S::Params);
+    fn load_subprotocol<S: Subprotocol>(&mut self, config: S::InitConfig);
 }
 
 /// Impl of a subprotocol execution stage.

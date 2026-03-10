@@ -26,12 +26,11 @@ impl Subprotocol for DebugSubproto {
     const ID: SubprotocolId = DEBUG_SUBPROTOCOL_ID;
 
     type Msg = NullMsg<DEBUG_SUBPROTOCOL_ID>;
-    type Params = ();
+    type InitConfig = ();
     type State = ();
 
-    fn init(_config: &Self::Params) -> Result<Self::State, AsmError> {
+    fn init(_config: &Self::InitConfig) -> Self::State {
         logging::info!("Initializing debug subprotocol state");
-        Ok(())
     }
 
     fn process_txs(
@@ -40,7 +39,6 @@ impl Subprotocol for DebugSubproto {
         _l1ref: &L1BlockCommitment,
         _verified_aux_data: &VerifiedAuxData,
         relayer: &mut impl MsgRelayer,
-        _params: &Self::Params,
     ) {
         for tx_ref in txs {
             logging::debug!(

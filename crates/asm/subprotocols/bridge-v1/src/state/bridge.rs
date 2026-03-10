@@ -1,6 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
-use strata_asm_params::BridgeV1Config;
+use strata_asm_params::BridgeV1InitConfig;
 use strata_asm_txs_bridge_v1::{deposit::DepositInfo, errors::Mismatch};
 use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
@@ -56,7 +56,7 @@ impl BridgeV1State {
     /// # Returns
     ///
     /// A new [`BridgeV1State`] instance.
-    pub fn new(config: &BridgeV1Config) -> Self {
+    pub fn new(config: &BridgeV1InitConfig) -> Self {
         let operators = OperatorTable::from_operator_list(&config.operators);
         Self {
             operators,
