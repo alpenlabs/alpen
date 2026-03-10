@@ -6,7 +6,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::{BtcParams, GenesisL1View};
 use strata_crypto::hash::compute_borsh_hash;
-use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId};
+use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height};
 use thiserror::Error;
 
 use crate::{BtcWork, timestamp_store::TimestampStore, utils_btc::compute_block_hash};
@@ -263,9 +263,15 @@ impl HeaderVerificationState {
 ///   the second, and so on.
 /// * `start` - The starting height from which to calculate.
 /// * `params` - [`Params`] of the bitcoin network in use
-pub fn get_relative_difficulty_adjustment_height(idx: u64, start: u64, params: &Params) -> u64 {
-    let difficulty_adjustment_interval = params.difficulty_adjustment_interval();
-    ((start / difficulty_adjustment_interval) + idx) * difficulty_adjustment_interval
+pub fn get_relative_difficulty_adjustment_height(
+    idx: usize,
+    start: L1Height,
+    params: &Params,
+) -> L1Height {
+    // `difficulty_adjustment_interval()` returns `u64` but the value is always less than u32, so
+    // the cast is safe. Upstream rust-bitcoin has since changed the return type to `u32` in https://github.com/rust-bitcoin/rust-bitcoin/commit/943a7863c8baeed9e06342fa98e67b390bedec43.
+    let difficulty_adjustment_interval = params.difficulty_adjustment_interval() as u32;
+    ((start / difficulty_adjustment_interval) + idx as u32) * difficulty_adjustment_interval
 }
 
 #[cfg(test)]
@@ -274,6 +280,7 @@ mod tests {
     use bitcoin::{BlockHash, CompactTarget, hashes::Hash, params::MAINNET};
     use borsh::{BorshDeserialize, BorshSerialize};
     use rand::{Rng, rngs::OsRng};
+    use strata_identifiers::L1Height;
     use strata_test_utils_btc::segment::BtcChainSegment;
 
     use crate::*;
@@ -294,10 +301,13 @@ mod tests {
 
     #[test]
     fn test_get_difficulty_adjustment_height() {
-        let start = 0;
-        let idx = OsRng.gen_range(1..1000);
+        let start: L1Height = 0;
+        let idx = OsRng.gen_range(1..1000usize);
         let h = get_relative_difficulty_adjustment_height(idx, start, &MAINNET);
-        assert_eq!(h, MAINNET.difficulty_adjustment_interval() * idx);
+        assert_eq!(
+            h,
+            MAINNET.difficulty_adjustment_interval() as u32 * idx as u32
+        );
     }
 
     #[test]
@@ -469,10 +479,7 @@ mod tests {
         }
 
         // Verify we successfully crossed the boundary
-        assert_eq!(
-            verification_state.last_verified_block.height(),
-            end_height as u32
-        );
+        assert_eq!(verification_state.last_verified_block.height(), end_height);
     }
 
     /// Test that epoch_start_timestamp is correctly tracked across multiple adjustments.
@@ -602,7 +609,7 @@ mod tests {
     #[test]
     fn test_difficulty_adjustment_height_calculation() {
         let params = &MAINNET;
-        let interval = params.difficulty_adjustment_interval();
+        let interval = params.difficulty_adjustment_interval() as L1Height;
 
         // Test various starting points and adjustment indices
         assert_eq!(

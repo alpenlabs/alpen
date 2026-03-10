@@ -9,7 +9,7 @@ use strata_bridge_types::DepositIntent;
 use strata_identifiers::DepositDescriptor;
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
-use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
+use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment, L1Height};
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},
@@ -24,12 +24,12 @@ use crate::{
 /// pieces of the state transition logic.
 #[derive(Debug, Clone)]
 pub struct SegmentAuxData<'b> {
-    first_height: u64,
+    first_height: L1Height,
     segment: &'b L1Segment,
 }
 
 impl<'b> SegmentAuxData<'b> {
-    pub fn new(first_height: u64, segment: &'b L1Segment) -> Self {
+    pub fn new(first_height: L1Height, segment: &'b L1Segment) -> Self {
         Self {
             first_height,
             segment,
@@ -38,11 +38,11 @@ impl<'b> SegmentAuxData<'b> {
 }
 
 impl<'b> AuxProvider for SegmentAuxData<'b> {
-    fn get_l1_tip_height(&self) -> u64 {
+    fn get_l1_tip_height(&self) -> L1Height {
         self.segment.new_height()
     }
 
-    fn get_l1_block_manifest(&self, height: u64) -> ProviderResult<AsmManifest> {
+    fn get_l1_block_manifest(&self, height: L1Height) -> ProviderResult<AsmManifest> {
         if height < self.first_height {
             return Err(ProviderError::OutOfBounds);
         }
@@ -96,8 +96,7 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
         process_asm_logs(state, &mf)?;
 
         // Advance the verified L1 tip to the latest manifest we've processed.
-        let verified_blk = L1BlockCommitment::from_height_u64(mf.height(), *mf.blkid())
-            .expect("height should be valid");
+        let verified_blk = L1BlockCommitment::new(mf.height(), *mf.blkid());
         state.update_verified_blk(verified_blk);
     }
 

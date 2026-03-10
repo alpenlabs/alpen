@@ -167,10 +167,10 @@ fn bench_get_canonical_blockid_at_height_impl(backend: DatabaseBackend, c: &mut 
                                 setup.db.put_block_data(block.clone()).unwrap();
                                 setup
                                     .db
-                                    .set_canonical_chain_entry(i as u64, *block.blkid())
+                                    .set_canonical_chain_entry(i as u32, *block.blkid())
                                     .unwrap();
                             }
-                            let target_height = (block_count / 2) as u64;
+                            let target_height = (block_count / 2) as u32;
                             (setup, target_height)
                         },
                         |(setup, height)| {

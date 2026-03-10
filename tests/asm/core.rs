@@ -243,7 +243,7 @@ async fn test_proven_and_external_mmr_index_alignment() {
         let block_height = proven_offset + mmr_index as u64;
         let manifest = stored_manifests
             .iter()
-            .find(|m| m.height() == block_height)
+            .find(|m| m.height() as u64 == block_height)
             .unwrap_or_else(|| panic!("no stored manifest for height {block_height}"));
 
         let proven_leaf_hash: [u8; 32] = manifest.compute_hash();
@@ -259,7 +259,7 @@ async fn test_proven_and_external_mmr_index_alignment() {
     assert!(
         !stored_manifests
             .iter()
-            .filter(|m| m.height() == genesis_height)
+            .filter(|m| m.height() as u64 == genesis_height)
             .any(|genesis_mf| {
                 let genesis_hash: [u8; 32] = genesis_mf.compute_hash();
                 external_leaves.contains(&genesis_hash)

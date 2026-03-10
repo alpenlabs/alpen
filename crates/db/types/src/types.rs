@@ -16,7 +16,7 @@ use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::OLTxId;
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::{buf::Buf32, OLBlockCommitment};
+use strata_primitives::{buf::Buf32, L1Height, OLBlockCommitment};
 use zkaleido::Proof;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
@@ -239,7 +239,7 @@ pub enum L1TxStatus {
     Confirmed {
         confirmations: u64,
         block_hash: Buf32,
-        block_height: u64,
+        block_height: L1Height,
     },
 
     /// The transaction is finalized in L1 with the given number of confirmations.
@@ -248,7 +248,7 @@ pub enum L1TxStatus {
     Finalized {
         confirmations: u64,
         block_hash: Buf32,
-        block_height: u64,
+        block_height: L1Height,
     },
 
     /// The transaction is not included in L1 because it's inputs were invalid

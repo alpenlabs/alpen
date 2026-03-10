@@ -142,8 +142,7 @@ mod tests {
         setup_test_state_for_tip(&storage, create_test_block_commitment(200)).await;
 
         let client_state = ClientState::new(None, None);
-        let l1_block = L1BlockCommitment::from_height_u64(0, L1BlockId::default())
-            .expect("Failed to create L1BlockCommitment");
+        let l1_block = L1BlockCommitment::new(0, L1BlockId::default());
         let l1_status = L1Status::default();
         let status_channel = StatusChannel::new(client_state, l1_block, l1_status, None, None);
 

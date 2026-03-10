@@ -1,5 +1,5 @@
 use strata_asm_common::AsmManifest;
-use strata_primitives::l1::L1BlockId;
+use strata_primitives::{L1Height, l1::L1BlockId};
 
 use crate::{
     define_table_with_default_codec, define_table_with_integer_key, define_table_without_codec,
@@ -13,10 +13,10 @@ define_table_with_default_codec!(
 
 define_table_with_integer_key!(
     /// A table to store canonical view of L1 chain
-    (L1CanonicalBlockSchema) u64 => L1BlockId
+    (L1CanonicalBlockSchema) L1Height => L1BlockId
 );
 
 define_table_with_integer_key!(
     /// A table to keep track of all added blocks
-    (L1BlocksByHeightSchema) u64 => Vec<L1BlockId>
+    (L1BlocksByHeightSchema) L1Height => Vec<L1BlockId>
 );

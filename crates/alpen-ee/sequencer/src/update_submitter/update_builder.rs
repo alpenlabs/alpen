@@ -8,6 +8,7 @@ use futures::{future::try_join_all, FutureExt};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::UpdateExtraData;
+use strata_identifiers::L1Height;
 use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate,
     UpdateOperationData, UpdateOutputs,
@@ -59,11 +60,8 @@ pub(super) async fn build_update_from_batch(
 async fn fetch_l1_header_commitments_by_height(
     da_refs: &[L1DaBlockRef],
     ol_client: &impl SequencerOLClient,
-) -> Result<HashMap<u64, Hash>> {
-    let mut heights: Vec<u64> = da_refs
-        .iter()
-        .map(|da_ref| da_ref.block.height_u64())
-        .collect();
+) -> Result<HashMap<L1Height, Hash>> {
+    let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
     heights.sort_unstable();
     heights.dedup();
 
@@ -85,7 +83,7 @@ async fn fetch_l1_header_commitments_by_height(
 fn build_update_operation(
     seq_no: u64,
     da_refs: &[L1DaBlockRef],
-    l1_header_commitments: &HashMap<u64, Hash>,
+    l1_header_commitments: &HashMap<L1Height, Hash>,
     blocks: Vec<ExecBlockRecord>,
 ) -> Result<UpdateOperationData> {
     // 1. Get info from final block
@@ -135,12 +133,12 @@ fn build_update_operation(
     let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
-            let height = da_ref.block.height_u64();
+            let height = da_ref.block.height();
             let hash = l1_header_commitments
                 .get(&height)
                 .copied()
                 .ok_or_else(|| eyre!("missing L1 header commitment for L1 height {height}"))?;
-            Ok(AccumulatorClaim::new(height, *hash.as_ref()))
+            Ok(AccumulatorClaim::new(height as u64, *hash.as_ref()))
         })
         .collect::<Result<Vec<_>>>()?;
     // Canonicalize by height before dedup: multiple DA txns may land in the same L1 block.

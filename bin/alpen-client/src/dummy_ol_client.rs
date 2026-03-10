@@ -10,7 +10,7 @@ use alpen_ee_common::{
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
-use strata_identifiers::{Buf32, Epoch, OLBlockCommitment};
+use strata_identifiers::{Buf32, Epoch, L1Height, OLBlockCommitment};
 use strata_primitives::EpochCommitment;
 use strata_snark_acct_types::{ProofState, Seqno, SnarkAccountUpdate};
 
@@ -101,8 +101,8 @@ impl SequencerOLClient for DummyOLClient {
         })
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: u64) -> Result<Hash, OLClientError> {
-        Ok(Hash::from(u64_to_256(l1_height)))
+    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError> {
+        Ok(Hash::from(u64_to_256(l1_height as u64)))
     }
 
     async fn submit_update(&self, _update: SnarkAccountUpdate) -> Result<(), OLClientError> {

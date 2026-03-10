@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use strata_asm_common::AsmManifest;
 use strata_db_types::{traits::L1Database, DbError, DbResult};
-use strata_primitives::l1::L1BlockId;
+use strata_primitives::{l1::L1BlockId, L1Height};
 use threadpool::ThreadPool;
 use tracing::{error, instrument};
 
@@ -16,7 +16,7 @@ use crate::{cache::CacheTable, instrumentation::components, ops};
 pub struct L1BlockManager {
     ops: ops::l1::L1DataOps,
     manifest_cache: CacheTable<L1BlockId, Option<AsmManifest>>,
-    blockheight_cache: CacheTable<u64, Option<L1BlockId>>,
+    blockheight_cache: CacheTable<L1Height, Option<L1BlockId>>,
 }
 
 impl L1BlockManager {
@@ -73,7 +73,7 @@ impl L1BlockManager {
             height,
         )
     )]
-    pub fn extend_canonical_chain(&self, blockid: &L1BlockId, height: u64) -> DbResult<()> {
+    pub fn extend_canonical_chain(&self, blockid: &L1BlockId, height: L1Height) -> DbResult<()> {
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip()? {
             if height != tip_height + 1 {
                 error!(expected = %(tip_height + 1), got = %height, "attempted to extend canonical chain out of order");
@@ -101,7 +101,7 @@ impl L1BlockManager {
     pub async fn extend_canonical_chain_async(
         &self,
         blockid: &L1BlockId,
-        height: u64,
+        height: L1Height,
     ) -> DbResult<()> {
         if let Some((tip_height, _tip_blockid)) = self.get_canonical_chain_tip_async().await? {
             if height != tip_height + 1 {
@@ -126,7 +126,7 @@ impl L1BlockManager {
             revert_to_height = height,
         )
     )]
-    pub fn revert_canonical_chain(&self, height: u64) -> DbResult<()> {
+    pub fn revert_canonical_chain(&self, height: L1Height) -> DbResult<()> {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_blocking()? else {
             // no chain to revert
             // but clear cache anyway for sanity
@@ -155,7 +155,7 @@ impl L1BlockManager {
             revert_to_height = height,
         )
     )]
-    pub async fn revert_canonical_chain_async(&self, height: u64) -> DbResult<()> {
+    pub async fn revert_canonical_chain_async(&self, height: L1Height) -> DbResult<()> {
         let Some((tip_height, _)) = self.ops.get_canonical_chain_tip_async().await? else {
             // no chain to revert
             // but clear cache anyway for sanity
@@ -179,22 +179,22 @@ impl L1BlockManager {
     }
 
     // Get tracked canonical chain tip height and blockid.
-    pub fn get_canonical_chain_tip(&self) -> DbResult<Option<(u64, L1BlockId)>> {
+    pub fn get_canonical_chain_tip(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
         self.ops.get_canonical_chain_tip_blocking()
     }
 
     // Get tracked canonical chain tip height and blockid.
-    pub async fn get_canonical_chain_tip_async(&self) -> DbResult<Option<(u64, L1BlockId)>> {
+    pub async fn get_canonical_chain_tip_async(&self) -> DbResult<Option<(L1Height, L1BlockId)>> {
         self.ops.get_canonical_chain_tip_async().await
     }
 
     // Get tracked canonical chain tip height.
-    pub fn get_chain_tip_height(&self) -> DbResult<Option<u64>> {
+    pub fn get_chain_tip_height(&self) -> DbResult<Option<L1Height>> {
         Ok(self.get_canonical_chain_tip()?.map(|(height, _)| height))
     }
 
     // Get tracked canonical chain tip height.
-    pub async fn get_chain_tip_height_async(&self) -> DbResult<Option<u64>> {
+    pub async fn get_chain_tip_height_async(&self) -> DbResult<Option<L1Height>> {
         Ok(self
             .get_canonical_chain_tip_async()
             .await?
@@ -218,7 +218,7 @@ impl L1BlockManager {
     }
 
     // Get [`AsmManifest`] at `height` in tracked canonical chain.
-    pub fn get_block_manifest_at_height(&self, height: u64) -> DbResult<Option<AsmManifest>> {
+    pub fn get_block_manifest_at_height(&self, height: L1Height) -> DbResult<Option<AsmManifest>> {
         let Some(blockid) = self.get_canonical_blockid_at_height(height)? else {
             return Ok(None);
         };
@@ -229,7 +229,7 @@ impl L1BlockManager {
     // Get [`AsmManifest`] at `height` in tracked canonical chain.
     pub async fn get_block_manifest_at_height_async(
         &self,
-        height: u64,
+        height: L1Height,
     ) -> DbResult<Option<AsmManifest>> {
         let Some(blockid) = self.get_canonical_blockid_at_height_async(height).await? else {
             return Ok(None);
@@ -239,7 +239,7 @@ impl L1BlockManager {
     }
 
     // Get [`L1BlockId`] at `height` in tracked canonical chain.
-    pub fn get_canonical_blockid_at_height(&self, height: u64) -> DbResult<Option<L1BlockId>> {
+    pub fn get_canonical_blockid_at_height(&self, height: L1Height) -> DbResult<Option<L1BlockId>> {
         self.blockheight_cache.get_or_fetch_blocking(&height, || {
             self.ops.get_canonical_blockid_at_height_blocking(height)
         })
@@ -248,7 +248,7 @@ impl L1BlockManager {
     // Get [`L1BlockId`] at `height` in tracked canonical chain.
     pub async fn get_canonical_blockid_at_height_async(
         &self,
-        height: u64,
+        height: L1Height,
     ) -> DbResult<Option<L1BlockId>> {
         self.blockheight_cache
             .get_or_fetch(&height, || {
@@ -259,8 +259,8 @@ impl L1BlockManager {
 
     pub fn get_canonical_blockid_range(
         &self,
-        start_idx: u64,
-        end_idx: u64,
+        start_idx: L1Height,
+        end_idx: L1Height,
     ) -> DbResult<Vec<L1BlockId>> {
         self.ops
             .get_canonical_blockid_range_blocking(start_idx, end_idx)
@@ -268,8 +268,8 @@ impl L1BlockManager {
 
     pub async fn get_canonical_blockid_range_async(
         &self,
-        start_idx: u64,
-        end_idx: u64,
+        start_idx: L1Height,
+        end_idx: L1Height,
     ) -> DbResult<Vec<L1BlockId>> {
         self.ops
             .get_canonical_blockid_range_async(start_idx, end_idx)

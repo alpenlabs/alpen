@@ -67,11 +67,8 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         while pivot_anchor.is_err() && pivot_block.height() >= genesis_height {
             let block = ctx.get_l1_block(pivot_block.blkid())?;
             let parent_height = pivot_block.height() - 1;
-            let parent_block_id = L1BlockCommitment::from_height_u64(
-                parent_height as u64,
-                block.header.prev_blockhash.to_l1_block_id(),
-            )
-            .expect("parent height should be valid");
+            let parent_block_id =
+                L1BlockCommitment::new(parent_height, block.header.prev_blockhash.to_l1_block_id());
 
             // Push the unprocessed block.
             skipped_blocks.push((block, pivot_block));
@@ -126,7 +123,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
                 .into();
 
             let genesis_manifest = strata_asm_common::AsmManifest::new(
-                pivot_block.height_u64(),
+                pivot_block.height(),
                 *pivot_block.blkid(),
                 wtxids_root.into(),
                 vec![], // TODO: this is not supposed to be empty right?

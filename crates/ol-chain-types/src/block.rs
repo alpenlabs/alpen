@@ -2,7 +2,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_common::AsmManifest;
-use strata_primitives::prelude::*;
+use strata_primitives::{l1::L1Height, prelude::*};
 use strata_state::exec_update::ExecUpdate;
 
 use crate::header::{L2BlockHeader, SignedL2BlockHeader};
@@ -98,7 +98,7 @@ pub struct L1Segment {
     ///
     /// This partly serves as a safety measure to make sure we don't update the
     /// block heights wrong.
-    new_height: u64,
+    new_height: L1Height,
 
     /// New [`AsmManifest`]s that we've seen from L1 that we didn't see in the previous
     /// L2 block.
@@ -109,7 +109,7 @@ pub struct L1Segment {
 impl<'a> Arbitrary<'a> for L1Segment {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(L1Segment {
-            new_height: u64::arbitrary(u)?,
+            new_height: L1Height::arbitrary(u)?,
             // For testing, just use an empty vec of manifests since AsmManifest doesn't implement
             // Arbitrary
             new_manifests: Vec::new(),
@@ -120,7 +120,7 @@ impl<'a> Arbitrary<'a> for L1Segment {
 impl L1Segment {
     /// Constructs a new instance. These new [`AsmManifest`]s MUST be sorted in order
     /// of block height.
-    pub fn new(new_height: u64, new_manifests: Vec<AsmManifest>) -> Self {
+    pub fn new(new_height: L1Height, new_manifests: Vec<AsmManifest>) -> Self {
         Self {
             new_height,
             new_manifests,
@@ -128,12 +128,12 @@ impl L1Segment {
     }
 
     /// Constructs a new empty instance of [`L1Segment`] at the given height.
-    pub fn new_empty(cur_height: u64) -> Self {
+    pub fn new_empty(cur_height: L1Height) -> Self {
         Self::new(cur_height, Vec::new())
     }
 
     /// Returns the new height of the [`L1Segment`].
-    pub fn new_height(&self) -> u64 {
+    pub fn new_height(&self) -> L1Height {
         self.new_height
     }
 

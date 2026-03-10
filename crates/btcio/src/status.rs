@@ -1,9 +1,10 @@
 use bitcoin::Txid;
+use strata_primitives::L1Height;
 use strata_status::StatusChannel;
 
 #[derive(Debug, Clone)]
 pub enum L1StatusUpdate {
-    CurHeight(u64),
+    CurHeight(L1Height),
     LastUpdate(u64),
     RpcConnected(bool),
     RpcError(String),

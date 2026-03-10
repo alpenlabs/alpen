@@ -116,11 +116,11 @@ fn process_checkpoint_tip_log(
         "CSM is processing checkpoint tip update from ASM log"
     );
 
-    let l1_height = u64::from(tip.l1_height());
-    if l1_height != asm_block.height_u64() {
+    let l1_height = tip.l1_height();
+    if l1_height != asm_block.height() {
         debug!(
             tip_l1_height = l1_height,
-            asm_block_height = asm_block.height_u64(),
+            asm_block_height = asm_block.height(),
             "Checkpoint tip L1 height differs from current ASM block height; using ASM block commitment"
         );
     }
@@ -462,7 +462,7 @@ mod tests {
                 (epoch * 10) as u64,
                 L2BlockId::from(Buf32::from([epoch as u8; 32])),
             );
-            let tip = CheckpointTip::new(epoch, asm_block.height_u64() as u32, l2_tip);
+            let tip = CheckpointTip::new(epoch, asm_block.height(), l2_tip);
             let tip_update = CheckpointTipUpdate::new(tip);
             let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 

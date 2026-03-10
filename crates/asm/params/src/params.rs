@@ -132,7 +132,7 @@ mod tests {
 
         // Verify key fields
         assert_eq!(params.magic, MagicBytes::new(*b"ALPN"));
-        assert_eq!(params.l1_view.blk.height_u32(), 50462976);
+        assert_eq!(params.l1_view.blk.height(), 50462976);
         assert_eq!(params.subprotocols.len(), 3);
     }
 }

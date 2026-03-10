@@ -77,7 +77,7 @@ mod tests {
         EpochalState::new(
             BitcoinAmount::from_sat(0),
             0,
-            L1BlockCommitment::from_height_u64(0, L1BlockId::from(Buf32::zero())).unwrap(),
+            L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())),
             EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
             Mmr64B32::from_generic(&CompactMmr64::new(64)),
             1, // offset = genesis_height(0) + 1

@@ -157,7 +157,7 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     summary: &EpochSummary,
     ctx: &C,
 ) -> anyhow::Result<CheckpointPayload> {
-    let l1_height = summary.new_l1().height_u32();
+    let l1_height = summary.new_l1().height();
     let l2_commitment = *summary.terminal();
     let new_tip = CheckpointTip::new(summary.epoch(), l1_height, l2_commitment);
 
@@ -282,7 +282,7 @@ mod tests {
 
             for i in 0..=last_checkpoint {
                 let summary = &summaries[i];
-                let tip = CheckpointTip::new(summary.epoch(), summary.new_l1().height_u32(), *summary.terminal());
+                let tip = CheckpointTip::new(summary.epoch(), summary.new_l1().height(), *summary.terminal());
                 let payload = CheckpointPayload::new(tip, sidecars[i].clone(), Vec::new())
                     .expect("payload");
                 checkpoint_mgr

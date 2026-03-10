@@ -34,10 +34,7 @@ pub(crate) fn get_client_state_update(
         "Block manifest not found".to_string(),
         Box::new(()),
     ))?;
-    let block_commitment =
-        L1BlockCommitment::from_height_u64(block_mf.height(), *block_mf.blkid()).ok_or(
-            DisplayedError::InternalError("Invalid height".to_string(), Box::new(())),
-        )?;
+    let block_commitment = L1BlockCommitment::new(block_mf.height(), *block_mf.blkid());
 
     let (client_state, actions) = db
         .client_state_db()
