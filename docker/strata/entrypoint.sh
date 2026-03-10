@@ -13,6 +13,51 @@ BITCOIND_RPC_PASSWORD=${BITCOIND_RPC_PASSWORD:-}
 [ -f "${CONFIG_PATH}" ] || { echo "error: missing config '${CONFIG_PATH}'" >&2; exit 1; }
 [ -f "${PARAM_PATH}" ] || { echo "error: missing params '${PARAM_PATH}'" >&2; exit 1; }
 
+derived_blockasm_config_path() {
+    params_path="$1"
+    dir_path=$(dirname "${params_path}")
+    file_name=$(basename "${params_path}")
+    case "${file_name}" in
+        *.*)
+            stem=${file_name%.*}
+            ext=${file_name##*.}
+            printf "%s/%s.blockasm.%s\n" "${dir_path}" "${stem}" "${ext}"
+            ;;
+        *)
+            printf "%s/%s.blockasm\n" "${dir_path}" "${file_name}"
+            ;;
+    esac
+}
+
+blockasm_config_path() {
+    params_path="$1"
+    dir_path=$(dirname "${params_path}")
+    derived_path=$(derived_blockasm_config_path "${params_path}")
+    fallback_path="${dir_path}/blockasm.json"
+
+    if [ -f "${derived_path}" ]; then
+        printf "%s\n" "${derived_path}"
+    elif [ -f "${fallback_path}" ]; then
+        printf "%s\n" "${fallback_path}"
+    else
+        printf "%s\n" "${derived_path}"
+    fi
+}
+
+requires_blockasm_config() {
+    if grep -Eq '^[[:space:]]*is_sequencer[[:space:]]*=[[:space:]]*true' "${CONFIG_PATH}"; then
+        return 0
+    fi
+
+    for arg in "$@"; do
+        if [ "${arg}" = "--sequencer" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 # If BITCOIND_RPC_URL is set, query the L1 tip and patch genesis params.
 # This is needed because the L1 reader doesn't store block 0 in the canonical
 # chain, so genesis_l1_height must be > 0.
@@ -40,7 +85,12 @@ if [ -n "${BITCOIND_RPC_URL}" ]; then
     jq --argjson h "${TIP_HEIGHT}" --arg id "${TIP_HASH}" \
         '.genesis_l1_view.blk.height = $h | .genesis_l1_view.blk.blkid = $id' \
         "${PARAM_PATH}" > "${PATCHED_PARAMS}"
+    ORIGINAL_BLOCKASM_CONFIG=$(blockasm_config_path "${PARAM_PATH}")
     PARAM_PATH="${PATCHED_PARAMS}"
+    PATCHED_BLOCKASM_CONFIG=$(derived_blockasm_config_path "${PARAM_PATH}")
+    if [ -f "${ORIGINAL_BLOCKASM_CONFIG}" ]; then
+        cp "${ORIGINAL_BLOCKASM_CONFIG}" "${PATCHED_BLOCKASM_CONFIG}"
+    fi
 
     # Patch ol-params.json if provided
     if [ -n "${OL_PARAMS_PATH}" ] && [ -f "${OL_PARAMS_PATH}" ]; then
@@ -84,6 +134,14 @@ fi
 
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.network=${BITCOIN_NETWORK}"
+
+if requires_blockasm_config "$@"; then
+    BLOCKASM_CONFIG_PATH=$(blockasm_config_path "${PARAM_PATH}")
+    [ -f "${BLOCKASM_CONFIG_PATH}" ] || {
+        echo "error: missing block assembly config '${BLOCKASM_CONFIG_PATH}'" >&2
+        exit 1
+    }
+fi
 
 # Intentional word splitting of multi-arg strings
 # shellcheck disable=SC2086
