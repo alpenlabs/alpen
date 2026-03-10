@@ -1,4 +1,3 @@
-import json
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -82,13 +81,21 @@ class RollupParamsArtifacts:
     operator_keys: list[str]
 
 
-def write_blockasm_config(params_path: Path, ol_block_time_ms: int) -> Path:
-    """Writes the block-assembly sidecar config next to the rollup params file."""
-    blockasm_config_path = params_path.with_name(f"{params_path.stem}.blockasm{params_path.suffix}")
-    blockasm_config_path.write_text(
-        json.dumps({"ol_block_time_ms": ol_block_time_ms}, indent=2) + "\n"
+def write_sequencer_runtime_config(
+    config_path: Path,
+    ol_block_time_ms: int = DEFAULT_OL_BLOCK_TIME_MS,
+) -> Path:
+    """Writes the sequencer runtime config TOML."""
+    config_path.write_text(
+        "\n".join(
+            [
+                "[sequencer]",
+                f"ol_block_time_ms = {ol_block_time_ms}",
+                "",
+            ]
+        )
     )
-    return blockasm_config_path
+    return config_path
 
 
 def generate_rollup_params(
@@ -120,7 +127,6 @@ def generate_rollup_params(
         args.extend(["--opkey", opkey])
 
     run_datatool(args, bconfig)
-    write_blockasm_config(params_path, DEFAULT_OL_BLOCK_TIME_MS)
     return RollupParamsArtifacts(params_path, sequencer_key_path, operator_xprivs)
 
 

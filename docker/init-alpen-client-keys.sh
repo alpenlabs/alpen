@@ -125,7 +125,7 @@ sys.stdout.write(pk.format(compressed=True).hex())
 # --- rollup-params.json ---
 
 ROLLUP_PARAMS_PATH="${OUTPUT_DIR}/rollup-params.json"
-BLOCKASM_CONFIG_PATH="${OUTPUT_DIR}/blockasm.json"
+SEQUENCER_CONFIG_PATH="${OUTPUT_DIR}/sequencer.toml"
 if [ ! -f "${ROLLUP_PARAMS_PATH}" ]; then
     cat > "${ROLLUP_PARAMS_PATH}" <<REOF
 {
@@ -158,13 +158,16 @@ REOF
     echo "generated ${ROLLUP_PARAMS_PATH}"
 fi
 
-if [ ! -f "${BLOCKASM_CONFIG_PATH}" ]; then
-    cat > "${BLOCKASM_CONFIG_PATH}" <<BEOF
-{
-  "ol_block_time_ms": ${OL_BLOCK_TIME_MS}
-}
+if [ ! -f "${SEQUENCER_CONFIG_PATH}" ]; then
+    cat > "${SEQUENCER_CONFIG_PATH}" <<BEOF
+[sequencer]
+ol_block_time_ms = ${OL_BLOCK_TIME_MS}
+
+[epoch_sealing]
+policy = "FixedSlot"
+slots_per_epoch = 64
 BEOF
-    echo "generated ${BLOCKASM_CONFIG_PATH}"
+    echo "generated ${SEQUENCER_CONFIG_PATH}"
 fi
 
 # --- ol-params.json ---

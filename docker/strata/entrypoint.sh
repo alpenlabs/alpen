@@ -3,6 +3,7 @@ set -eu
 umask 027
 
 CONFIG_PATH=${CONFIG_PATH:-/config/config.toml}
+SEQUENCER_CONFIG_PATH=${SEQUENCER_CONFIG_PATH:-}
 PARAM_PATH=${PARAM_PATH:-/config/params.json}
 OL_PARAMS_PATH=${OL_PARAMS_PATH:-}
 ASM_PARAMS_PATH=${ASM_PARAMS_PATH:-}
@@ -13,38 +14,22 @@ BITCOIND_RPC_PASSWORD=${BITCOIND_RPC_PASSWORD:-}
 [ -f "${CONFIG_PATH}" ] || { echo "error: missing config '${CONFIG_PATH}'" >&2; exit 1; }
 [ -f "${PARAM_PATH}" ] || { echo "error: missing params '${PARAM_PATH}'" >&2; exit 1; }
 
-derived_blockasm_config_path() {
-    params_path="$1"
-    dir_path=$(dirname "${params_path}")
-    file_name=$(basename "${params_path}")
-    case "${file_name}" in
-        *.*)
-            stem=${file_name%.*}
-            ext=${file_name##*.}
-            printf "%s/%s.blockasm.%s\n" "${dir_path}" "${stem}" "${ext}"
-            ;;
-        *)
-            printf "%s/%s.blockasm\n" "${dir_path}" "${file_name}"
-            ;;
-    esac
+default_sequencer_config_path() {
+    config_path="$1"
+    dir_path=$(dirname "${config_path}")
+    printf "%s/sequencer.toml\n" "${dir_path}"
 }
 
-blockasm_config_path() {
-    params_path="$1"
-    dir_path=$(dirname "${params_path}")
-    derived_path=$(derived_blockasm_config_path "${params_path}")
-    fallback_path="${dir_path}/blockasm.json"
-
-    if [ -f "${derived_path}" ]; then
-        printf "%s\n" "${derived_path}"
-    elif [ -f "${fallback_path}" ]; then
-        printf "%s\n" "${fallback_path}"
+sequencer_config_path() {
+    config_path="$1"
+    if [ -n "${SEQUENCER_CONFIG_PATH}" ]; then
+        printf "%s\n" "${SEQUENCER_CONFIG_PATH}"
     else
-        printf "%s\n" "${derived_path}"
+        default_sequencer_config_path "${config_path}"
     fi
 }
 
-requires_blockasm_config() {
+requires_sequencer_config() {
     if grep -Eq '^[[:space:]]*is_sequencer[[:space:]]*=[[:space:]]*true' "${CONFIG_PATH}"; then
         return 0
     fi
@@ -85,12 +70,7 @@ if [ -n "${BITCOIND_RPC_URL}" ]; then
     jq --argjson h "${TIP_HEIGHT}" --arg id "${TIP_HASH}" \
         '.genesis_l1_view.blk.height = $h | .genesis_l1_view.blk.blkid = $id' \
         "${PARAM_PATH}" > "${PATCHED_PARAMS}"
-    ORIGINAL_BLOCKASM_CONFIG=$(blockasm_config_path "${PARAM_PATH}")
     PARAM_PATH="${PATCHED_PARAMS}"
-    PATCHED_BLOCKASM_CONFIG=$(derived_blockasm_config_path "${PARAM_PATH}")
-    if [ -f "${ORIGINAL_BLOCKASM_CONFIG}" ]; then
-        cp "${ORIGINAL_BLOCKASM_CONFIG}" "${PATCHED_BLOCKASM_CONFIG}"
-    fi
 
     # Patch ol-params.json if provided
     if [ -n "${OL_PARAMS_PATH}" ] && [ -f "${OL_PARAMS_PATH}" ]; then
@@ -135,12 +115,14 @@ fi
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.network=${BITCOIN_NETWORK}"
 
-if requires_blockasm_config "$@"; then
-    BLOCKASM_CONFIG_PATH=$(blockasm_config_path "${PARAM_PATH}")
-    [ -f "${BLOCKASM_CONFIG_PATH}" ] || {
-        echo "error: missing block assembly config '${BLOCKASM_CONFIG_PATH}'" >&2
+SEQUENCER_ARGS=""
+if requires_sequencer_config "$@"; then
+    RESOLVED_SEQUENCER_CONFIG_PATH=$(sequencer_config_path "${CONFIG_PATH}")
+    [ -f "${RESOLVED_SEQUENCER_CONFIG_PATH}" ] || {
+        echo "error: missing sequencer config '${RESOLVED_SEQUENCER_CONFIG_PATH}'" >&2
         exit 1
     }
+    SEQUENCER_ARGS="--sequencer-config ${RESOLVED_SEQUENCER_CONFIG_PATH}"
 fi
 
 # Intentional word splitting of multi-arg strings
@@ -148,6 +130,7 @@ fi
 exec strata \
   --config "${CONFIG_PATH}" \
   --rollup-params "${PARAM_PATH}" \
+  ${SEQUENCER_ARGS} \
   ${EXTRA_ARGS} \
   ${CONFIG_OVERRIDES} \
   "$@"

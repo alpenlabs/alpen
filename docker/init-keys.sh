@@ -75,7 +75,7 @@ op5xpriv=$(cat $OP5_SEED_FILE)
 seqpubkey=$($DATATOOL_PATH -b regtest genseqpubkey -f ${CONFIG_FILE}/sequencer.key)
 
 ROLLUP_PARAMS_FILE=$CONFIG_FILE/params.json
-BLOCKASM_CONFIG_FILE=$CONFIG_FILE/params.blockasm.json
+SEQUENCER_CONFIG_FILE=$CONFIG_FILE/sequencer.toml
 
 # Construct args for genparams.
 # Check if -n is set in args
@@ -100,8 +100,7 @@ fi
     "${extra_args[@]}" \
     "$@"
 
-cat > "$BLOCKASM_CONFIG_FILE" <<EOF
-{
-  "ol_block_time_ms": $OL_BLOCK_TIME_MS
-}
+cat > "$SEQUENCER_CONFIG_FILE" <<EOF
+[sequencer]
+ol_block_time_ms = $OL_BLOCK_TIME_MS
 EOF

@@ -23,6 +23,9 @@ const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
 /// Default TTL for pending block templates in seconds.
 const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
 
+/// Default target OL block time in milliseconds.
+const DEFAULT_OL_BLOCK_TIME_MS: u64 = 5_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -85,6 +88,10 @@ fn default_block_template_ttl_secs() -> u64 {
     DEFAULT_BLOCK_TEMPLATE_TTL_SECS
 }
 
+fn default_ol_block_time_ms() -> u64 {
+    DEFAULT_OL_BLOCK_TIME_MS
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncConfig {
     pub l1_follow_distance: u64,
@@ -109,8 +116,12 @@ impl BlockAssemblyConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SequencerConfig {
+    /// Target OL block time in milliseconds.
+    #[serde(default = "default_ol_block_time_ms")]
+    pub ol_block_time_ms: u64,
+
     /// Maximum number of transactions to fetch from mempool per block.
     #[serde(default = "default_max_txs_per_block")]
     pub max_txs_per_block: usize,
@@ -125,10 +136,20 @@ pub struct SequencerConfig {
 impl Default for SequencerConfig {
     fn default() -> Self {
         Self {
+            ol_block_time_ms: DEFAULT_OL_BLOCK_TIME_MS,
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
             block_template_ttl_secs: DEFAULT_BLOCK_TEMPLATE_TTL_SECS,
         }
     }
+}
+
+/// Configuration loaded from `sequencer.toml`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SequencerRuntimeConfig {
+    pub sequencer: SequencerConfig,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub epoch_sealing: Option<EpochSealingConfig>,
 }
 
 /// Default slots per epoch for epoch sealing.
@@ -142,7 +163,7 @@ fn default_slots_per_epoch() -> u64 {
 ///
 /// Determines when epochs should be sealed (i.e., when to create terminal blocks).
 /// Different variants support different sealing strategies.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "policy")]
 pub enum EpochSealingConfig {
     /// Seal every N slots.
@@ -274,6 +295,7 @@ mod test {
             poll_interval_ms = 1_000
 
             [sequencer]
+            ol_block_time_ms = 5_000
             max_txs_per_block = 1_000
             block_template_ttl_secs = 30
 
@@ -295,6 +317,10 @@ mod test {
         );
 
         let seq = config.sequencer.as_ref().unwrap();
+        assert_eq!(
+            seq.ol_block_time_ms, 5_000,
+            "parsed ol_block_time_ms should match TOML value"
+        );
         assert_eq!(
             seq.block_template_ttl_secs, 30,
             "parsed block_template_ttl_secs should match TOML value"
@@ -380,6 +406,7 @@ mod test {
     fn test_sequencer_config_defaults() {
         // Both fields omitted: should use defaults.
         let config: SequencerConfig = toml::from_str("").unwrap();
+        assert_eq!(config.ol_block_time_ms, DEFAULT_OL_BLOCK_TIME_MS);
         assert_eq!(config.max_txs_per_block, DEFAULT_MAX_TXS_PER_BLOCK);
         assert_eq!(
             config.block_template_ttl_secs,
@@ -388,11 +415,38 @@ mod test {
 
         // Both fields explicit.
         let toml_str = r#"
+            ol_block_time_ms = 3_000
             max_txs_per_block = 500
             block_template_ttl_secs = 120
         "#;
         let config: SequencerConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.ol_block_time_ms, 3_000);
         assert_eq!(config.max_txs_per_block, 500);
         assert_eq!(config.block_template_ttl_secs, 120);
+    }
+
+    #[test]
+    fn test_sequencer_runtime_config_load() {
+        let toml_str = r#"
+            [sequencer]
+            ol_block_time_ms = 3_000
+            max_txs_per_block = 500
+            block_template_ttl_secs = 120
+
+            [epoch_sealing]
+            policy = "FixedSlot"
+            slots_per_epoch = 10
+        "#;
+
+        let config: SequencerRuntimeConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.sequencer.ol_block_time_ms, 3_000);
+        assert_eq!(config.sequencer.max_txs_per_block, 500);
+        assert_eq!(config.sequencer.block_template_ttl_secs, 120);
+
+        match config.epoch_sealing.as_ref().unwrap() {
+            EpochSealingConfig::FixedSlot { slots_per_epoch } => {
+                assert_eq!(*slots_per_epoch, 10);
+            }
+        }
     }
 }

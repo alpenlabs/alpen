@@ -79,7 +79,9 @@ class RelayerConfig:
 
 @dataclass
 class SequencerConfig:
+    ol_block_time_ms: int = field(default=5_000)
     max_txs_per_block: int = field(default=100)
+    block_template_ttl_secs: int = field(default=60)
 
 
 @dataclass
@@ -117,11 +119,20 @@ class StrataConfig:
     sync: SyncConfig = field(default_factory=SyncConfig)
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
-    sequencer: SequencerConfig | None = field(default=None)
-    epoch_sealing: EpochSealingConfig = field(default_factory=EpochSealingConfig)
 
     def as_toml_string(self) -> str:
         d = asdict(self)
         # Remove None values (optional configs)
+        d = {k: v for k, v in d.items() if v is not None}
+        return toml.dumps(d)
+
+
+@dataclass
+class SequencerRuntimeConfig:
+    sequencer: SequencerConfig = field(default_factory=SequencerConfig)
+    epoch_sealing: EpochSealingConfig | None = field(default=None)
+
+    def as_toml_string(self) -> str:
+        d = asdict(self)
         d = {k: v for k, v in d.items() if v is not None}
         return toml.dumps(d)

@@ -1,0 +1,6 @@
+[sequencer]
+ol_block_time_ms = 5_000
+
+[epoch_sealing]
+policy = "FixedSlot"
+slots_per_epoch = 64

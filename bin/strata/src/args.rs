@@ -46,6 +46,10 @@ pub(crate) struct Args {
     #[argh(option, description = "rollup params")]
     pub rollup_params: Option<PathBuf>,
 
+    /// Path to the sequencer runtime config TOML file.
+    #[argh(option, description = "sequencer runtime config")]
+    pub sequencer_config: Option<PathBuf>,
+
     /// OL genesis params path (JSON file).
     #[argh(option, description = "OL genesis params")]
     pub ol_params: Option<PathBuf>,

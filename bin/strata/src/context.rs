@@ -11,7 +11,9 @@ use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
-use strata_config::{BitcoindConfig, BlockAssemblyConfig, Config};
+use strata_config::{
+    BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
+};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
@@ -52,9 +54,9 @@ pub(crate) fn init_node_context(
         .ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(params_path, &config)?;
     let blockasm_config = config
-        .client
-        .is_sequencer
-        .then(|| load_block_assembly_config(params_path))
+        .sequencer
+        .as_ref()
+        .map(load_block_assembly_config)
         .transpose()?;
 
     // Load ASM params
@@ -118,9 +120,11 @@ fn get_config(args: Args) -> Result<Config, InitError> {
         apply_override(&path, val, table)?;
     }
 
-    let config = config_toml
+    let mut config = config_toml
         .try_into::<Config>()
         .map_err(InitError::TomlParse)?;
+
+    populate_sequencer_runtime_config(&mut config, &args)?;
 
     validate_config(config)
 }
@@ -129,6 +133,13 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
         return Err(InitError::MissingSyncEndpoint);
     }
+
+    if config.client.is_sequencer && config.sequencer.is_none() {
+        return Err(InitError::MissingSequencerConfig(PathBuf::from(
+            "sequencer.toml",
+        )));
+    }
+
     Ok(config)
 }
 
@@ -163,51 +174,53 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     Ok(rollup_params)
 }
 
-fn resolve_block_assembly_config_path(params_path: &Path) -> PathBuf {
-    let stem = params_path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("params");
-    let file_name = match params_path.extension().and_then(|ext| ext.to_str()) {
-        Some(ext) => format!("{stem}.blockasm.{ext}"),
-        None => format!("{stem}.blockasm"),
-    };
-    params_path.with_file_name(file_name)
+fn populate_sequencer_runtime_config(config: &mut Config, args: &Args) -> Result<(), InitError> {
+    if !config.client.is_sequencer {
+        return Ok(());
+    }
+
+    let path = resolve_sequencer_config_path(args);
+    let runtime_config = load_sequencer_runtime_config(&path)?;
+
+    config.sequencer = Some(runtime_config.sequencer);
+    config.epoch_sealing = runtime_config.epoch_sealing;
+
+    Ok(())
 }
 
-fn resolve_block_assembly_config_fallback_path(params_path: &Path) -> PathBuf {
-    params_path.with_file_name("blockasm.json")
+fn resolve_default_sequencer_config_path(config_path: &Path) -> PathBuf {
+    config_path.with_file_name("sequencer.toml")
+}
+
+fn resolve_sequencer_config_path(args: &Args) -> PathBuf {
+    args.sequencer_config
+        .clone()
+        .unwrap_or_else(|| resolve_default_sequencer_config_path(args.config.as_path()))
+}
+
+fn load_sequencer_runtime_config(path: &Path) -> Result<SequencerRuntimeConfig, InitError> {
+    let config_str = fs::read_to_string(path).map_err(|err| match err.kind() {
+        io::ErrorKind::NotFound => InitError::MissingSequencerConfig(path.to_path_buf()),
+        _ => InitError::Io(err),
+    })?;
+    toml::from_str(&config_str).map_err(InitError::UnparsableSequencerConfigFile)
+}
+
+fn validate_ol_block_time_ms(ol_block_time_ms: u64) -> Result<(), InitError> {
+    if ol_block_time_ms == 0 {
+        return Err(InitError::InvalidOlBlockTimeMs(ol_block_time_ms));
+    }
+
+    Ok(())
 }
 
 pub(crate) fn load_block_assembly_config(
-    params_path: &Path,
+    sequencer_config: &SequencerConfig,
 ) -> Result<Arc<BlockAssemblyConfig>, InitError> {
-    let path = resolve_block_assembly_config_path(params_path);
-    let fallback_path = resolve_block_assembly_config_fallback_path(params_path);
-    let json = match fs::read_to_string(&path) {
-        Ok(json) => json,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => fs::read_to_string(fallback_path)?,
-        Err(err) => return Err(err.into()),
-    };
-    let config = serde_json::from_str::<serde_json::Value>(&json)
-        .map_err(|err| InitError::UnparsableBlockAssemblyConfigFile(SerdeError::new(json, err)))?;
-    let ol_block_time_ms = config
-        .get("ol_block_time_ms")
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| {
-            InitError::InvalidOlBlockTimeMs(
-                "block assembly config ol_block_time_ms must be a positive integer".to_string(),
-            )
-        })?;
-
-    if ol_block_time_ms == 0 {
-        return Err(InitError::InvalidOlBlockTimeMs(
-            "block assembly config ol_block_time_ms must be greater than 0".to_string(),
-        ));
-    }
+    validate_ol_block_time_ms(sequencer_config.ol_block_time_ms)?;
 
     Ok(Arc::new(BlockAssemblyConfig::new(Duration::from_millis(
-        ol_block_time_ms,
+        sequencer_config.ol_block_time_ms,
     ))))
 }
 
@@ -294,13 +307,15 @@ mod tests {
     use std::{
         env::temp_dir,
         fs,
-        path::PathBuf,
+        path::{Path, PathBuf},
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
+    use strata_config::SequencerConfig;
+
     use super::{
-        load_block_assembly_config, resolve_block_assembly_config_fallback_path,
-        resolve_block_assembly_config_path,
+        load_block_assembly_config, load_sequencer_runtime_config,
+        resolve_default_sequencer_config_path,
     };
     use crate::errors::InitError;
 
@@ -313,27 +328,29 @@ mod tests {
     }
 
     #[test]
-    fn resolve_block_assembly_config_path_uses_sidecar_name() {
-        let params_path = PathBuf::from("/tmp/params.json");
-        let config_path = resolve_block_assembly_config_path(&params_path);
+    fn resolve_default_sequencer_config_path_uses_sibling_name() {
+        let config_path = resolve_default_sequencer_config_path(Path::new("/tmp/config.toml"));
 
-        assert_eq!(config_path, PathBuf::from("/tmp/params.blockasm.json"));
+        assert_eq!(config_path, PathBuf::from("/tmp/sequencer.toml"));
     }
 
     #[test]
-    fn load_block_assembly_config_reads_positive_block_time() {
+    fn load_sequencer_runtime_config_reads_sequencer_toml() {
         let temp_dir = unique_temp_dir();
         fs::create_dir_all(&temp_dir).unwrap();
 
-        let params_path = temp_dir.join("params.json");
-        fs::write(&params_path, "{}").unwrap();
+        let sequencer_config_path = temp_dir.join("sequencer.toml");
         fs::write(
-            resolve_block_assembly_config_path(&params_path),
-            r#"{"ol_block_time_ms": 5000}"#,
+            &sequencer_config_path,
+            r#"
+                [sequencer]
+                ol_block_time_ms = 5000
+            "#,
         )
         .unwrap();
 
-        let config = load_block_assembly_config(&params_path).unwrap();
+        let runtime_config = load_sequencer_runtime_config(&sequencer_config_path).unwrap();
+        let config = load_block_assembly_config(&runtime_config.sequencer).unwrap();
         assert_eq!(config.ol_block_time(), Duration::from_millis(5_000));
 
         fs::remove_dir_all(temp_dir).unwrap();
@@ -341,39 +358,11 @@ mod tests {
 
     #[test]
     fn load_block_assembly_config_rejects_zero_block_time() {
-        let temp_dir = unique_temp_dir();
-        fs::create_dir_all(&temp_dir).unwrap();
-
-        let params_path = temp_dir.join("params.json");
-        fs::write(&params_path, "{}").unwrap();
-        fs::write(
-            resolve_block_assembly_config_path(&params_path),
-            r#"{"ol_block_time_ms": 0}"#,
-        )
-        .unwrap();
-
-        let error = load_block_assembly_config(&params_path).unwrap_err();
-        assert!(matches!(error, InitError::InvalidOlBlockTimeMs(_)));
-
-        fs::remove_dir_all(temp_dir).unwrap();
-    }
-
-    #[test]
-    fn load_block_assembly_config_reads_fallback_path() {
-        let temp_dir = unique_temp_dir();
-        fs::create_dir_all(&temp_dir).unwrap();
-
-        let params_path = temp_dir.join("rollup-params.json");
-        fs::write(&params_path, "{}").unwrap();
-        fs::write(
-            resolve_block_assembly_config_fallback_path(&params_path),
-            r#"{"ol_block_time_ms": 5000}"#,
-        )
-        .unwrap();
-
-        let config = load_block_assembly_config(&params_path).unwrap();
-        assert_eq!(config.ol_block_time(), Duration::from_millis(5_000));
-
-        fs::remove_dir_all(temp_dir).unwrap();
+        let error = load_block_assembly_config(&SequencerConfig {
+            ol_block_time_ms: 0,
+            ..SequencerConfig::default()
+        })
+        .unwrap_err();
+        assert!(matches!(error, InitError::InvalidOlBlockTimeMs(0)));
     }
 }
