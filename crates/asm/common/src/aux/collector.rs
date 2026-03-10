@@ -63,7 +63,7 @@ impl AuxRequestCollector {
 
     /// Requests a raw Bitcoin transaction by its txid.
     pub fn request_bitcoin_tx(&mut self, txid: Txid) {
-        self.requests.bitcoin_txs.push(txid.into());
+        self.requests.bitcoin_txs.push(txid);
     }
 
     /// Consumes the collector and returns the collected auxiliary requests.
@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(collector.requests.bitcoin_txs.len(), 2);
 
         let requests = collector.into_requests();
-        assert_eq!(requests.bitcoin_txs[0], txid1.into());
-        assert_eq!(requests.bitcoin_txs[1], txid2.into());
+        assert_eq!(requests.bitcoin_txs[0], txid1);
+        assert_eq!(requests.bitcoin_txs[1], txid2);
     }
 }

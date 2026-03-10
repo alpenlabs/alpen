@@ -1,12 +1,13 @@
 use std::fmt;
 
-use arbitrary::Arbitrary;
+use arbitrary::{Arbitrary, Unstructured};
+use bitcoin::Txid;
 use serde::{Deserialize, Serialize};
-use strata_btc_types::BitcoinTxid;
+use strata_btc_types::arbitrary_bitcoin;
 use strata_primitives::L1Height;
 
 /// Data that reflects what's happening around L1
-#[derive(Clone, Serialize, Deserialize, Default, Arbitrary, Debug)]
+#[derive(Clone, Serialize, Deserialize, Default, Debug)]
 pub struct L1Status {
     /// If the last time we tried to poll the client (as of `last_update`)
     /// we were successful.
@@ -23,7 +24,7 @@ pub struct L1Status {
     pub cur_tip_blkid: String,
 
     /// Last published txid where L2 blob was present
-    pub last_published_txid: Option<BitcoinTxid>,
+    pub last_published_txid: Option<Txid>,
 
     /// UNIX millis time of the last time we got a new update from the L1 connector.
     pub last_update: u64,
@@ -32,13 +33,31 @@ pub struct L1Status {
     pub published_reveal_txs_count: u64,
 }
 
+impl<'a> Arbitrary<'a> for L1Status {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self {
+            bitcoin_rpc_connected: u.arbitrary()?,
+            last_rpc_error: u.arbitrary()?,
+            cur_height: u.arbitrary()?,
+            cur_tip_blkid: u.arbitrary()?,
+            last_published_txid: if u.arbitrary()? {
+                Some(arbitrary_bitcoin::arbitrary_txid(u)?)
+            } else {
+                None
+            },
+            last_update: u.arbitrary()?,
+            published_reveal_txs_count: u.arbitrary()?,
+        })
+    }
+}
+
 // Custom display implementation
 impl fmt::Display for L1Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let txid_str = self
             .last_published_txid
             .as_ref()
-            .map(|txid| txid.inner().to_string())
+            .map(|txid: &Txid| txid.to_string())
             .unwrap_or_else(|| "None".to_string());
 
         write!(
@@ -57,13 +76,9 @@ impl fmt::Display for L1Status {
 mod tests {
     use super::*;
 
-    fn create_test_txid() -> BitcoinTxid {
-        // Create a sample txid for testing
-        // Using a known Bitcoin txid (Satoshi's first transaction)
+    fn create_test_txid() -> Txid {
         let txid_hex = "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b";
-        // Parse the txid from hex string
-        let bitcoin_txid: bitcoin::Txid = txid_hex.parse().unwrap();
-        BitcoinTxid::from(bitcoin_txid)
+        txid_hex.parse().unwrap()
     }
 
     #[test]
@@ -72,7 +87,6 @@ mod tests {
             bitcoin_rpc_connected: true,
             last_rpc_error: Some("test error".to_string()),
             cur_height: 12345,
-            // Bitcoin genesis block hash (display format from BlockHash::to_string())
             cur_tip_blkid: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
                 .to_string(),
             last_published_txid: Some(create_test_txid()),
@@ -82,14 +96,11 @@ mod tests {
 
         let debug_output = format!("{:?}", status);
 
-        // Verify all fields are present
         assert!(debug_output.contains("bitcoin_rpc_connected: true"));
         assert!(debug_output.contains(r#"last_rpc_error: Some("test error")"#));
         assert!(debug_output.contains("cur_height: 12345"));
-        // Verify blkid is shown as-is (display format)
         assert!(debug_output
             .contains("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"));
-        // Verify txid appears in output (BitcoinTxid's Debug shows display format)
         assert!(debug_output
             .contains("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
         assert!(debug_output.contains("last_update: 1234567890"));
@@ -110,9 +121,7 @@ mod tests {
 
         let debug_output = format!("{:?}", status);
 
-        // Invalid blkid should be shown as-is
         assert!(debug_output.contains(r#"cur_tip_blkid: "invalid""#));
-        // None should be shown as None (not as string "None")
         assert!(debug_output.contains("last_published_txid: None"));
     }
 
@@ -149,19 +158,15 @@ mod tests {
 
         let display_output = format!("{}", status);
 
-        // Should be single-line format
         assert!(display_output.starts_with("L1Status {"));
         assert!(display_output.contains("bitcoin_rpc_connected: true"));
         assert!(display_output.contains("cur_height: 12345"));
-        // Verify blkid is shown as-is (display format)
         assert!(display_output
             .contains("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"));
-        // Verify txid appears in output (display format)
         assert!(display_output
             .contains("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
         assert!(display_output.contains("published_reveal_txs_count: 42"));
 
-        // Should NOT contain fields that Display omits
         assert!(!display_output.contains("last_rpc_error"));
         assert!(!display_output.contains("last_update"));
     }
@@ -183,7 +188,6 @@ mod tests {
 
         assert!(display_output.contains("last_published_txid: None"));
         assert!(display_output.contains("bitcoin_rpc_connected: false"));
-        // Verify blkid is shown as-is (display format)
         assert!(display_output
             .contains("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"));
     }
@@ -202,7 +206,6 @@ mod tests {
 
         let display_output = format!("{}", status);
 
-        // Invalid blkid should be shown as-is
         assert!(display_output.contains("cur_tip_blkid: short"));
     }
 

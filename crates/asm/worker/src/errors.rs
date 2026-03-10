@@ -1,4 +1,4 @@
-use strata_btc_types::BitcoinTxid;
+use bitcoin::Txid;
 use strata_primitives::prelude::*;
 use thiserror::Error;
 
@@ -33,7 +33,7 @@ pub enum WorkerError {
 
     // Auxiliary data resolution errors
     #[error("Bitcoin transaction not found: {0:?}")]
-    BitcoinTxNotFound(BitcoinTxid),
+    BitcoinTxNotFound(Txid),
 
     #[error("L1 block not found at height {height}")]
     L1BlockNotFound { height: u64 },

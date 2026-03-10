@@ -22,7 +22,7 @@ pub fn create_test_slash_tx(info: &SlashInfo) -> Transaction {
     tx.output[0].script_pubkey = op_return_script;
 
     // The second input (index 1) is the stake connector.
-    tx.input[1].previous_output = info.stake_inpoint().0;
+    tx.input[1].previous_output = *info.stake_inpoint();
 
     tx
 }
@@ -51,7 +51,7 @@ pub fn create_connected_stake_and_slash_txs(
         .expect("stake transaction submission should succeed");
 
     // 2. Create the base slash transaction using the provided metadata.
-    let slash_info = SlashInfo::new(header_aux.clone(), OutPoint::new(stake_txid, 0).into());
+    let slash_info = SlashInfo::new(header_aux.clone(), OutPoint::new(stake_txid, 0));
     let mut slash_tx = create_test_slash_tx(&slash_info);
 
     let _ = harness

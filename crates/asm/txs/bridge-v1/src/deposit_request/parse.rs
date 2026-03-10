@@ -42,8 +42,7 @@ pub fn parse_drt(tx: &Transaction) -> Result<DepositRequestInfo, TxStructureErro
                 "deposit request output",
             )
         })?
-        .clone()
-        .into();
+        .clone();
 
     // Construct the validated deposit request information
     Ok(DepositRequestInfo::new(aux_data, drt_output))
@@ -76,7 +75,7 @@ mod tests {
 
         let (drt, _dt) =
             create_connected_drt_and_dt(&drt_aux, dt_aux, amount.into(), recovery_delay, &sks);
-        let info = DepositRequestInfo::new(drt_aux, drt.output[DRT_OUTPUT_INDEX].clone().into());
+        let info = DepositRequestInfo::new(drt_aux, drt.output[DRT_OUTPUT_INDEX].clone());
 
         (info, drt)
     }

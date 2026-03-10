@@ -17,7 +17,7 @@ use strata_merkle::{CompactMmr64, MerkleProofB32, Mmr, Sha256Hasher};
 use strata_primitives::{
     buf::Buf32,
     hash::Hash,
-    l1::{BitcoinTxid, L1BlockCommitment, L1BlockId},
+    l1::{L1BlockCommitment, L1BlockId},
 };
 use strata_state::asm_state::AsmState;
 use tokio::{runtime::Handle, task::block_in_place};
@@ -136,12 +136,10 @@ impl WorkerContext for TestAsmWorkerContext {
         Ok(Network::Regtest)
     }
 
-    fn get_bitcoin_tx(&self, txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
-        let txid_inner: Txid = (*txid).into();
-
+    fn get_bitcoin_tx(&self, txid: &Txid) -> WorkerResult<RawBitcoinTx> {
         // See `get_l1_block` for the two-context branching rationale.
         let client = self.client.clone();
-        let fetch = || async move { client.get_raw_transaction_verbosity_zero(&txid_inner).await };
+        let fetch = || async move { client.get_raw_transaction_verbosity_zero(txid).await };
         let raw_tx_result = if Handle::try_current().is_ok() {
             block_in_place(|| self.tokio_handle.block_on(fetch()))
         } else {

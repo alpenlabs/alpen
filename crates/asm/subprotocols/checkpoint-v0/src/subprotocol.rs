@@ -18,7 +18,7 @@ use strata_asm_txs_checkpoint_v0::{
 };
 use strata_identifiers::L1BlockCommitment;
 use strata_predicate::PredicateKey;
-use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
+use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -180,7 +180,7 @@ fn process_checkpoint_transaction_v0(
     );
 
     // Emit CheckpointUpdate log
-    let checkpoint_txid = BitcoinTxid::new(&tx.tx().compute_txid());
+    let checkpoint_txid = tx.tx().compute_txid();
     let checkpoint_update =
         CheckpointUpdate::from_checkpoint(signed_checkpoint.checkpoint(), checkpoint_txid);
 

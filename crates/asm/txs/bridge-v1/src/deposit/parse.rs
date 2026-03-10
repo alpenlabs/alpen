@@ -38,8 +38,7 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, Tx
                 "deposit output",
             )
         })?
-        .clone()
-        .into();
+        .clone();
 
     // Extract the DRT inpoint
     let drt_inpoint = tx_input
@@ -49,8 +48,7 @@ pub fn parse_deposit_tx<'a>(tx_input: &TxInputRef<'a>) -> Result<DepositInfo, Tx
         .ok_or_else(|| {
             TxStructureError::missing_input(BridgeTxType::Deposit, DRT_INPUT_INDEX, "drt input")
         })?
-        .previous_output
-        .into();
+        .previous_output;
 
     // Construct the validated deposit information
     Ok(DepositInfo::new(header_aux, deposit_output, drt_inpoint))
@@ -103,7 +101,7 @@ mod tests {
             value: amount.into(),
             script_pubkey: ScriptBuf::new_p2tr(SECP256K1, nn_key, None),
         };
-        let info = DepositInfo::new(dt_aux, deposit_output.into(), drt_inpoint.into());
+        let info = DepositInfo::new(dt_aux, deposit_output, drt_inpoint);
         (info, dt)
     }
 

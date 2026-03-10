@@ -31,7 +31,7 @@ pub(crate) fn validate_deposit_info(
         state.operators().agg_key().to_xonly_public_key(),
         state.recovery_delay(),
     );
-    let actual_script = &drt_info.deposit_request_output().inner().script_pubkey;
+    let actual_script = &drt_info.deposit_request_output().script_pubkey;
 
     if actual_script != &expected_drt_script {
         return Err(DepositValidationError::DrtOutputScriptMismatch(Mismatch {

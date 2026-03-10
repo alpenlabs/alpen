@@ -1,11 +1,14 @@
+use bitcoin::Txid;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_common::AsmLog;
+use strata_btc_types::TxidExt;
 use strata_checkpoint_types::{BatchInfo, Checkpoint};
 use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_codec::Codec;
 use strata_codec_utils::{CodecBorsh, CodecSsz};
+use strata_identifiers::Buf32;
 use strata_msg_fmt::TypeId;
-use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
+use strata_primitives::epoch::EpochCommitment;
 
 use crate::constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE};
 
@@ -23,7 +26,7 @@ pub struct CheckpointUpdate {
     batch_info: CodecBorsh<BatchInfo>,
 
     /// Hash of the L1 transaction that carried the checkpoint proof.
-    checkpoint_txid: CodecBorsh<BitcoinTxid>,
+    checkpoint_txid: CodecBorsh<Buf32>,
 }
 
 impl CheckpointUpdate {
@@ -31,17 +34,17 @@ impl CheckpointUpdate {
     pub fn new(
         epoch_commitment: EpochCommitment,
         batch_info: BatchInfo,
-        checkpoint_txid: BitcoinTxid,
+        checkpoint_txid: Txid,
     ) -> Self {
         Self {
             epoch_commitment,
             batch_info: CodecBorsh::new(batch_info),
-            checkpoint_txid: CodecBorsh::new(checkpoint_txid),
+            checkpoint_txid: CodecBorsh::new(checkpoint_txid.to_buf32()),
         }
     }
 
     /// Construct a `CheckpointUpdate` from a verified checkpoint instance.
-    pub fn from_checkpoint(checkpoint: &Checkpoint, checkpoint_txid: BitcoinTxid) -> Self {
+    pub fn from_checkpoint(checkpoint: &Checkpoint, checkpoint_txid: Txid) -> Self {
         let batch_info = checkpoint.batch_info();
 
         Self::new(
@@ -59,7 +62,7 @@ impl CheckpointUpdate {
         self.batch_info.inner()
     }
 
-    pub fn checkpoint_txid(&self) -> &BitcoinTxid {
+    pub fn checkpoint_txid(&self) -> &Buf32 {
         self.checkpoint_txid.inner()
     }
 }

@@ -65,8 +65,8 @@ fn process_checkpoint_log(
     // Create L1 checkpoint reference from the log data
     let l1_reference = CheckpointL1Ref::new(
         *asm_block,
-        checkpoint_update.checkpoint_txid().inner_raw(),
-        checkpoint_update.checkpoint_txid().inner_raw(), // TODO: get wtxid if available
+        *checkpoint_update.checkpoint_txid(),
+        *checkpoint_update.checkpoint_txid(), // TODO: get wtxid if available
     );
 
     // Create L1Checkpoint for client state
@@ -257,7 +257,6 @@ mod tests {
     use strata_primitives::{
         buf::Buf32,
         epoch::EpochCommitment,
-        l1::BitcoinTxid,
         l2::{L2BlockCommitment, L2BlockId},
         prelude::*,
     };
@@ -497,7 +496,10 @@ mod tests {
             let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
 
             // Create checkpoint txid
-            let checkpoint_txid: BitcoinTxid = arbgen.generate();
+            let checkpoint_txid = {
+                use bitcoin::hashes::Hash;
+                bitcoin::Txid::from_byte_array(arbgen.generate::<[u8; 32]>())
+            };
 
             // Create CheckpointUpdate
             let checkpoint_update =
