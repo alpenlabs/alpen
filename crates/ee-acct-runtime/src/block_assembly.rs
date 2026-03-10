@@ -1,15 +1,16 @@
 //! Helpers for working with ee account during block assembly.
 
 use strata_ee_acct_types::{DecodedEeMessageData, EeAccountState, EnvError, EnvResult};
-use strata_snark_acct_runtime::{InputMessage, MsgMeta};
+use strata_snark_acct_runtime::InputMessage;
 use strata_snark_acct_types::MessageEntry;
 
-use crate::ee_program::apply_decoded_message;
+use crate::ee_program::process_input_message;
 
-/// Applies state changes from list of messages.
+/// Applies state changes from a list of messages.
 ///
-/// Returns the successfully parsed messages along with their metadata.
-/// Unknown/unparsable messages are skipped.
+/// Returns all parsed messages, including unknown/unparsable ones (which will
+/// have `message() == None`). Value is always tracked regardless of whether the
+/// message was successfully decoded.
 pub fn apply_input_messages(
     astate: &mut EeAccountState,
     msgs: &[MessageEntry],
@@ -17,24 +18,11 @@ pub fn apply_input_messages(
     let mut parsed_messages = Vec::with_capacity(msgs.len());
 
     for entry in msgs.iter() {
-        let meta = MsgMeta::new(entry.source(), entry.incl_epoch(), entry.payload_value());
+        let input_msg = InputMessage::from_msg_entry(entry);
 
-        // Try to decode the message; skip if it fails.
-        let Ok(decoded) = DecodedEeMessageData::decode_raw(entry.payload_buf()) else {
-            continue;
-        };
+        process_input_message(astate, &input_msg).map_err(|_| EnvError::InvalidBlock)?;
 
-        // Add value to tracked balance.
-        if !meta.value().is_zero() {
-            astate.add_tracked_balance(meta.value());
-        }
-
-        // Apply the decoded message effects.
-        // Errors here indicate internal issues since we successfully decoded.
-        apply_decoded_message(astate, &decoded, meta.value())
-            .map_err(|_| EnvError::InvalidBlock)?;
-
-        parsed_messages.push(InputMessage::from_msg(meta, decoded));
+        parsed_messages.push(input_msg);
     }
 
     Ok(parsed_messages)

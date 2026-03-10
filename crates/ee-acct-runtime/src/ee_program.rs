@@ -50,17 +50,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
         state: &mut Self::State,
         msg: InputMessage<Self::Msg>,
     ) -> ProgramResult<(), Self::Error> {
-        // Add value to tracked balance, always do this.
-        if !msg.meta().value().is_zero() {
-            state.add_tracked_balance(msg.meta().value());
-        }
-
-        // If we recognize it, then we have to do something with it.
-        if let Some(decoded_msg) = msg.message() {
-            apply_decoded_message(state, decoded_msg, msg.meta().value())?;
-        }
-
-        Ok(())
+        process_input_message(state, &msg)
     }
 
     fn pre_finalize_state(
@@ -151,6 +141,28 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
 
         Ok(())
     }
+}
+
+/// Processes a single input message, updating tracked balance and applying
+/// decoded message effects.
+///
+/// This is the shared logic used by both the [`SnarkAccountProgram`]
+/// implementation and block assembly.
+pub(crate) fn process_input_message(
+    state: &mut EeAccountState,
+    msg: &InputMessage<DecodedEeMessageData>,
+) -> ProgramResult<(), EnvError> {
+    // Add value to tracked balance, always do this.
+    if !msg.meta().value().is_zero() {
+        state.add_tracked_balance(msg.meta().value());
+    }
+
+    // If we recognize it, then we have to do something with it.
+    if let Some(decoded_msg) = msg.message() {
+        apply_decoded_message(state, decoded_msg, msg.meta().value())?;
+    }
+
+    Ok(())
 }
 
 /// Applies state changes from a decoded EE message.
