@@ -69,5 +69,11 @@ toml.workspace = true
 tracing.workspace = true
 zeroize = { workspace = true, optional = true }
 
+[dev-dependencies]
+strata-checkpoint-types.workspace = true
+strata-ol-params.workspace = true
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }
+strata-predicate.workspace = true
+
 [lints]
 workspace = true
