@@ -15,7 +15,7 @@ pub(crate) async fn duty_fetcher_worker(
     blockasm_handle: Arc<BlockasmHandle>,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    ol_block_time_ms: u64,
+    ol_block_time: Duration,
     duty_tx: mpsc::Sender<Duty>,
     poll_interval: Duration,
 ) -> anyhow::Result<()> {
@@ -41,7 +41,7 @@ pub(crate) async fn duty_fetcher_worker(
             blockasm_handle.as_ref(),
             tip_blkid,
             storage.as_ref(),
-            ol_block_time_ms,
+            ol_block_time,
         )
         .await
         {

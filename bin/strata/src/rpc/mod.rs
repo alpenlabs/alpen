@@ -4,6 +4,8 @@ pub(crate) mod errors;
 mod node;
 
 use std::sync::Arc;
+#[cfg(feature = "sequencer")]
+use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
@@ -44,8 +46,8 @@ struct SeqRpcDeps {
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
 
-    /// Target OL block time in milliseconds for local sequencing.
-    ol_block_time_ms: u64,
+    /// Target OL block time for local sequencing.
+    ol_block_time: Duration,
 }
 
 #[cfg(feature = "sequencer")]
@@ -54,12 +56,12 @@ impl SeqRpcDeps {
     fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
-        ol_block_time_ms: u64,
+        ol_block_time: Duration,
     ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
-            ol_block_time_ms,
+            ol_block_time,
         }
     }
 
@@ -74,8 +76,8 @@ impl SeqRpcDeps {
     }
 
     /// Returns the target OL block time.
-    fn ol_block_time_ms(&self) -> u64 {
-        self.ol_block_time_ms
+    fn ol_block_time(&self) -> Duration {
+        self.ol_block_time
     }
 }
 
@@ -84,16 +86,18 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
-        let ol_block_time_ms = runctx
-            .config()
-            .sequencer
-            .as_ref()
-            .expect("sequencer config must exist when sequencer handles are present")
-            .ol_block_time_ms;
+        let ol_block_time = Duration::from_millis(
+            runctx
+                .config()
+                .sequencer
+                .as_ref()
+                .expect("sequencer config must exist when sequencer handles are present")
+                .ol_block_time_ms,
+        );
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
-            ol_block_time_ms,
+            ol_block_time,
         )
     });
 
@@ -152,7 +156,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
             deps.status_channel.clone(),
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
-            sequencer_deps.ol_block_time_ms(),
+            sequencer_deps.ol_block_time(),
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);
         module
