@@ -83,6 +83,10 @@ impl Subprotocol for CheckpointSubprotocol {
         // so no additional validation is performed on incoming messages.
         for msg in msgs {
             match msg {
+                CheckpointIncomingMsg::DepositProcessed(amount) => {
+                    logging::info!(amount_sat = amount.to_sat(), "Recording processed deposit");
+                    state.record_deposit(*amount);
+                }
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
                     logging::info!(%new_key, "Updating sequencer predicate");
                     let new_predicate_key =

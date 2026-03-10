@@ -345,7 +345,7 @@ impl AsmTestHarness {
     ///
     /// # Returns
     /// (txid, vout) of the created UTXO
-    async fn create_funding_utxo(
+    pub(crate) async fn create_funding_utxo(
         &self,
         address: &Address,
         amount: Amount,
@@ -548,6 +548,7 @@ pub struct AsmTestHarnessBuilder {
     admin_config: Option<AdministrationInitConfig>,
     bridge_config: Option<BridgeV1InitConfig>,
     checkpoint_config: Option<CheckpointInitConfig>,
+    txindex: bool,
 }
 
 impl AsmTestHarnessBuilder {
@@ -578,12 +579,25 @@ impl AsmTestHarnessBuilder {
         self
     }
 
+    /// Enables transaction indexing (`-txindex`) on the Bitcoin regtest node.
+    ///
+    /// Required for subprotocols that fetch confirmed non-wallet transactions
+    /// as auxiliary data (e.g., bridge deposit processing needs the DRT).
+    pub fn with_txindex(mut self) -> Self {
+        self.txindex = true;
+        self
+    }
+
     /// Builds the test harness, applying any subprotocol config overrides.
     pub async fn build(self) -> anyhow::Result<AsmTestHarness> {
         let genesis_height = self.genesis_height.unwrap_or(Self::DEFAULT_GENESIS_HEIGHT);
 
-        // 1. Start Bitcoin regtest
-        let (bitcoind, client) = strata_test_utils_btcio::get_bitcoind_and_client();
+        // 1. Start Bitcoin regtest (with txindex if requested)
+        let (bitcoind, client) = if self.txindex {
+            strata_test_utils_btcio::get_bitcoind_and_client_with_txindex()
+        } else {
+            strata_test_utils_btcio::get_bitcoind_and_client()
+        };
         let client = Arc::new(client);
 
         // 2. Mine blocks to genesis height

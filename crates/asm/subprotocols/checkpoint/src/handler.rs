@@ -5,8 +5,11 @@ use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
 
 use crate::{
-    errors::CheckpointValidationError, state::CheckpointState,
-    verification::validate_checkpoint_and_extract_withdrawal_intents,
+    errors::CheckpointValidationError,
+    state::CheckpointState,
+    verification::{
+        ValidatedCheckpointWithdrawals, validate_checkpoint_and_extract_withdrawal_intents,
+    },
 };
 
 /// Processes a checkpoint transaction from L1.
@@ -41,8 +44,13 @@ pub(crate) fn handle_checkpoint_tx(
         &payload,
         verified_aux_data,
     ) {
-        Ok(withdrawal_intents) => {
+        Ok(ValidatedCheckpointWithdrawals {
+            withdrawal_intents,
+            verified_withdrawals,
+        }) => {
             logging::info!(epoch, "checkpoint validated successfully");
+
+            state.deduct_withdrawals(verified_withdrawals);
 
             let new_tip = payload.inner().new_tip;
             state.update_verified_tip(new_tip);
