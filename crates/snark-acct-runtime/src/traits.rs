@@ -86,7 +86,8 @@ pub trait SnarkAccountProgramVerification: SnarkAccountProgram {
     /// This is a GAT parameterized by lifetime to allow storing references.
     type VInput<'a>;
 
-    /// Creates the verification context.  This is called before [`SnarkAccountProgram::start_update`].
+    /// Creates the verification context.  This is called before
+    /// [`SnarkAccountProgram::start_update`].
     ///
     /// The `vinput` parameter provides private input data needed for verification.
     /// It is passed by value so that its contents (typically references) can be
