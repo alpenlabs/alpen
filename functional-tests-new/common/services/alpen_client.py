@@ -8,9 +8,13 @@ import logging
 import subprocess
 from typing import TypedDict
 
+from common.config.constants import (
+    DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
+    DEFAULT_EE_BLOCK_TIME_MS,
+)
 from common.rpc import JsonRpcClient
 from common.services.base import RpcService
-from common.wait import wait_until
+from common.wait import timeout_for_expected_blocks, wait_until
 
 logger = logging.getLogger(__name__)
 
@@ -141,23 +145,95 @@ class AlpenClientService(RpcService):
         info = self.get_node_info()
         return info.get("enode", "")
 
-    def wait_for_block(self, block_number: int, timeout: int = 30) -> bool:
+    def get_block_wait_timeout(
+        self,
+        expected_blocks: int,
+        timeout_per_block: float = DEFAULT_EE_BLOCK_TIME_MS / 1000,
+        timeout_slack: int = DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
+    ) -> int:
+        """Compute a timeout budget for waiting on EE blocks."""
+        return timeout_for_expected_blocks(
+            expected_blocks,
+            seconds_per_block=timeout_per_block,
+            slack_seconds=timeout_slack,
+        )
+
+    def wait_for_block(
+        self,
+        block_number: int,
+        timeout: int | None = None,
+        poll_interval: float = 0.5,
+    ) -> bool:
         """
         Wait until node reaches specified block number.
 
         Args:
             block_number: Target block number
-            timeout: Maximum time to wait in seconds
+            timeout: Maximum time to wait in seconds. If omitted, derives
+                a timeout from the remaining block gap.
+            poll_interval: Time between polling attempts in seconds
 
         Returns:
             True if block reached, raises on timeout
         """
+        current_block = self.get_block_number()
+        if current_block >= block_number:
+            return True
+
+        if timeout is None:
+            remaining_blocks = block_number - current_block
+            timeout = self.get_block_wait_timeout(remaining_blocks)
+
         wait_until(
             lambda: self.get_block_number() >= block_number,
             error_with=f"Block {block_number} not reached",
             timeout=timeout,
+            step=poll_interval,
         )
         return True
+
+    def wait_for_additional_blocks(
+        self,
+        additional_blocks: int,
+        timeout_per_block: float = DEFAULT_EE_BLOCK_TIME_MS / 1000,
+        timeout_slack: int = DEFAULT_BLOCK_WAIT_SLACK_SECONDS,
+        poll_interval: float = 0.5,
+    ) -> int:
+        """
+        Wait for a number of new EE blocks from the current tip.
+
+        Args:
+            additional_blocks: Number of new blocks to wait for.
+            timeout_per_block: Timeout budget per expected block.
+            timeout_slack: Extra seconds to absorb startup and polling jitter.
+            poll_interval: Time between polling attempts in seconds.
+
+        Returns:
+            Final block number after waiting.
+        """
+        if additional_blocks < 1:
+            raise ValueError("additional_blocks must be >= 1")
+
+        start_block = self.get_block_number()
+        target_block = start_block + additional_blocks
+        timeout = self.get_block_wait_timeout(
+            additional_blocks,
+            timeout_per_block=timeout_per_block,
+            timeout_slack=timeout_slack,
+        )
+
+        logger.info(
+            "Waiting for %s new EE blocks (from %s to %s)...",
+            additional_blocks,
+            start_block + 1,
+            target_block,
+        )
+        self.wait_for_block(
+            target_block,
+            timeout=timeout,
+            poll_interval=poll_interval,
+        )
+        return self.get_block_number()
 
     def wait_for_peers(self, count: int, timeout: int = 30) -> bool:
         """
