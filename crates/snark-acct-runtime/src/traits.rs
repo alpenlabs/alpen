@@ -152,5 +152,5 @@ pub trait IAcctMsg: Clone + 'static {
 
 /// Trait describing the extra data processed by the snark account.
 pub trait IExtraData: Clone + Codec + 'static {
-    // TODO
+    // Nothing yet.
 }

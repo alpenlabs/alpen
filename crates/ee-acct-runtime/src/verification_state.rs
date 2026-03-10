@@ -97,8 +97,8 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Chunk transitions to verify.
     input_chunks: &'a [ArchivedChunkInput],
 
-    /// Partial pre-state corresponding to the previous header.
-    // TODO do something with this
+    /// Partial pre-state corresponding to the last verified block.
+    // TODO use this to support DA
     raw_partial_pre_state: &'a [u8],
 }
 
@@ -295,8 +295,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             ));
         }
 
-        // TODO check more of these obligations!  this is all being refactored
-        // for chunk/multiproof updates so there might need to be more here
+        // Maybe more in the future.
 
         Ok(())
     }

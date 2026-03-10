@@ -143,8 +143,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
 
         // Another final check to make sure we did our balance bookkeeping right.
         if state.tracked_balance() != vstate.cur_balance() {
-            // TODO maybe replace this with a more specific error?
-            return Err(ProgramError::UnsatisfiedObligations);
+            return Err(EnvError::InconsistentChunkIo.into());
         }
 
         // Check the other internal obligations.
