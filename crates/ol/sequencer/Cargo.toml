@@ -5,21 +5,27 @@ edition = "2021"
 
 [dependencies]
 strata-asm-manifest-types.workspace = true
+strata-asm-txs-checkpoint.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-checkpoint-types-ssz.workspace = true
 strata-crypto.workspace = true
 strata-csm-types.workspace = true
 strata-db-types.workspace = true
+strata-identifiers.workspace = true
 strata-ol-block-assembly.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
+strata-service.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
+strata-tasks.workspace = true
 
+anyhow.workspace = true
+async-trait.workspace = true
 serde.workspace = true
 ssz.workspace = true
 thiserror.workspace = true
@@ -27,7 +33,10 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
+strata-identifiers = { workspace = true, features = ["test-utils"] }
+strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 
 [features]
 jsonschema = ["strata-ol-block-assembly/jsonschema"]
