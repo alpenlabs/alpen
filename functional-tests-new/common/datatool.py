@@ -1,9 +1,12 @@
+import json
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
 from common.config.config import BitcoindConfig
+
+DEFAULT_OL_BLOCK_TIME_MS = 5_000
 
 
 def run_datatool(
@@ -79,6 +82,17 @@ class RollupParamsArtifacts:
     operator_keys: list[str]
 
 
+def write_blockasm_config(params_path: Path, ol_block_time_ms: int) -> Path:
+    """Writes the block-assembly sidecar config next to the rollup params file."""
+    blockasm_config_path = params_path.with_name(
+        f"{params_path.stem}.blockasm{params_path.suffix}"
+    )
+    blockasm_config_path.write_text(
+        json.dumps({"ol_block_time_ms": ol_block_time_ms}, indent=2) + "\n"
+    )
+    return blockasm_config_path
+
+
 def generate_rollup_params(
     datadir: Path,
     bconfig: BitcoindConfig,
@@ -108,6 +122,7 @@ def generate_rollup_params(
         args.extend(["--opkey", opkey])
 
     run_datatool(args, bconfig)
+    write_blockasm_config(params_path, DEFAULT_OL_BLOCK_TIME_MS)
     return RollupParamsArtifacts(params_path, sequencer_key_path, operator_xprivs)
 
 
