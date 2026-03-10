@@ -45,8 +45,8 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
     ///
     /// Calls `start_verification` and `start_update` on the program, but does
     /// NOT process any messages yet. Messages are added incrementally via
-    /// [`add_message`] or [`add_message_with_coinput`], then processed via
-    /// [`provide_coinput`].
+    /// [`Self::add_message`] or [`Self::add_message_with_coinput`], then processed via
+    /// [`Self::provide_coinput`].
     pub fn new(
         program: P,
         snark_state: SnarkAccountState,
@@ -86,14 +86,14 @@ impl<'i, P: SnarkAccountProgramVerification> UpdateBuilder<'i, P> {
 
     /// Appends a message without processing it.
     ///
-    /// The caller must later call [`provide_coinput`] to process this message.
+    /// The caller must later call [`Self::provide_coinput`] to process this message.
     pub fn add_message(&mut self, msg: MessageEntry) {
         self.messages.push(msg);
     }
 
     /// Appends a message and immediately processes it with the given coinput.
     ///
-    /// Equivalent to calling [`add_message`] followed by [`provide_coinput`].
+    /// Equivalent to calling [`Self::add_message`] followed by [`Self::provide_coinput`].
     pub fn add_message_with_coinput(
         &mut self,
         msg: MessageEntry,

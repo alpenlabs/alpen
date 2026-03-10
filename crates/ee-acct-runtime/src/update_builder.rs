@@ -25,8 +25,8 @@ use crate::{
 ///
 /// Tracks the execution chain tip and pending input queue internally,
 /// validates [`ChunkTransition`]s against this state, and accumulates
-/// outputs. The consumer can query [`remaining_pending_inputs`] and
-/// [`cur_tip_blkid`] to construct valid transitions.
+/// outputs. The consumer can query [`Self::remaining_pending_inputs`] and
+/// [`Self::cur_tip_blkid`] to construct valid transitions.
 #[expect(missing_debug_implementations, reason = "E may not implement Debug")]
 pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
     inner: GenericUpdateBuilder<'i, EeSnarkAccountProgram<E>>,
@@ -50,7 +50,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     /// Creates a new EE update builder.
     ///
     /// Initializes with an empty message set. Messages are added incrementally
-    /// via [`add_message`] or [`add_messages`].
+    /// via [`Self::add_message`] or [`Self::add_messages`].
     pub fn new(
         seq_no: u64,
         snark_state: SnarkAccountState,
@@ -100,7 +100,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
 
     /// Adds multiple messages, processing each with an empty coinput.
     ///
-    /// Convenience batch method equivalent to calling [`add_message`] for each.
+    /// Convenience batch method equivalent to calling [`Self::add_message`] for each.
     pub fn add_messages(
         &mut self,
         msgs: impl IntoIterator<Item = MessageEntry>,
@@ -142,7 +142,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
 
     /// Accepts a chunk transition, validating chain linkage and input matching.
     ///
-    /// The transition's `parent_exec_blkid` must equal [`cur_tip_blkid`], and
+    /// The transition's `parent_exec_blkid` must equal [`Self::cur_tip_blkid`], and
     /// its deposits must match the next pending inputs in order.
     ///
     /// On success, advances the chain tip, accumulates outputs, and tracks
@@ -219,7 +219,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     /// and forced inclusion count, then delegates to the generic builder.
     ///
     /// Uses the unverified finalization path since the builder has already
-    /// validated chunk transitions locally via [`accept_chunk_transition`].
+    /// validated chunk transitions locally via [`Self::accept_chunk_transition`].
     /// Clones internal state so the builder can be reused.
     pub fn build(&mut self) -> BuilderResult<(UpdateOperationData, Vec<Vec<u8>>)> {
         let extra_data = UpdateExtraData::new(

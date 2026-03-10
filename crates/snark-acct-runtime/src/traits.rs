@@ -73,7 +73,7 @@ pub trait SnarkAccountProgramVerification: SnarkAccountProgram {
     /// not persisted or accessible when modifying the state.
     ///
     /// This is a GAT parameterized by lifetime to allow storing references,
-    /// especially ones taken from [`VInput`].
+    /// especially ones taken from [`Self::VInput`].
     type VState<'a>;
 
     /// Private input data required for verification.
@@ -86,7 +86,7 @@ pub trait SnarkAccountProgramVerification: SnarkAccountProgram {
     /// This is a GAT parameterized by lifetime to allow storing references.
     type VInput<'a>;
 
-    /// Creates the verification context.  This is called before [`start_update`].
+    /// Creates the verification context.  This is called before [`SnarkAccountProgram::start_update`].
     ///
     /// The `vinput` parameter provides private input data needed for verification.
     /// It is passed by value so that its contents (typically references) can be

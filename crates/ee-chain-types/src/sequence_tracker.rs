@@ -52,7 +52,7 @@ impl<'a, T> SequenceTracker<'a, T> {
     }
 
     /// Gets the entry that would need to be consumed after some number of
-    /// calls to [`consume_input`], if there is one.
+    /// calls to [`Self::consume_input`], if there is one.
     fn expected_next_rel(&self, off: usize) -> Option<&'a T> {
         self.expected_inputs.get(self.consumed + off)
     }
@@ -60,8 +60,8 @@ impl<'a, T> SequenceTracker<'a, T> {
     /// Checks if the next entry satisfies a predicate. If it does, increments
     /// the pointer. Errors on mismatch or overrun.
     ///
-    /// This is like [`consume_input`](SequenceTracker::consume_input) but
-    /// works with types that don't implement `Eq`.
+    /// This is like [`Self::consume_input`] but works with types that don't
+    /// implement `Eq`.
     pub fn consume_input_with(&mut self, f: impl FnOnce(&T) -> bool) -> SeqResult<()> {
         let Some(exp_next) = self.expected_next() else {
             return Err(SeqError::Overrun);
@@ -83,8 +83,8 @@ impl<'a, T: Eq + PartialEq> SequenceTracker<'a, T> {
         self.consume_inputs(slice::from_ref(input))
     }
 
-    /// Like [`consume_input`], but checks multiple inputs and only updates the
-    /// consumed pointer state on success.
+    /// Like [`Self::consume_input`], but checks multiple inputs and only
+    /// updates the consumed pointer state on success.
     pub fn consume_inputs(&mut self, inputs: &[T]) -> SeqResult<()> {
         self.check_inputs(inputs)?;
         self.advance_unchecked(inputs.len());
