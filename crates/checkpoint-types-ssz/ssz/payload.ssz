@@ -16,7 +16,7 @@ MAX_OL_LOGS_PER_CHECKPOINT = 1 << 14
 MAX_PROOF_LEN = 1 << 12
 
 ### Checkpoint tip position after processing an epoch.
-#~# derive: Copy, Serialize, Deserialize
+#~# derive: std::marker::Copy, serde::Serialize, serde::Deserialize
 class CheckpointTip(Container):
     ### Checkpoint epoch number.
     epoch: strata_identifiers.Epoch

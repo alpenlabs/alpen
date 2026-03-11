@@ -5,7 +5,7 @@ import strata_snark_acct_types
 MAX_TX_PAYLOAD_LEN = 1 << 16
 
 ### Additional constraints that we can place on a transaction.
-#~# derive: Default
+#~# derive: std::default::Default
 class TransactionAttachment(StableContainer[16]):
     ### Minimum slot for inclusion
     min_slot: Optional[strata_identifiers.Slot]

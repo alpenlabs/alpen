@@ -5,7 +5,7 @@ MAX_LOG_DATA_BYTES = 1 << 12
 ### AsmLogEntry encapsulates raw log data as bytes, providing a consistent interface
 ### for storing and retrieving different types of ASM log events. The raw bytes can
 ### optionally be interpreted as an SPS-52 message with type information.
-#~# derive: Serialize, Deserialize
+#~# derive: serde::Serialize, serde::Deserialize
 class AsmLogEntry(Container):
     ### Raw log data bytes (can be SPS-52 messages or arbitrary data)
     data: List[uint8, MAX_LOG_DATA_BYTES]

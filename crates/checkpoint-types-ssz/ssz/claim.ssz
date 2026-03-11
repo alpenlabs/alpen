@@ -1,7 +1,7 @@
 import strata_identifiers
 
 ### Range of L2 (OL) blocks.
-#~# derive: Copy, Serialize, Deserialize
+#~# derive: std::marker::Copy, serde::Serialize, serde::Deserialize
 class L2BlockRange(Container):
     #~# external_kind: container
     start: strata_identifiers.OLBlockCommitment
