@@ -26,8 +26,12 @@ use bitcoind_async_client::{
 use rand::{rngs::OsRng, RngCore};
 use strata_config::btcio::FeePolicy;
 use strata_l1tx::envelope::builder::build_envelope_script;
-use strata_primitives::{l1::payload::L1Payload, params::Params};
+use strata_primitives::{
+    l1::{payload::L1Payload, BitcoinAmount},
+    params::Params,
+};
 use thiserror::Error;
+use tracing::{debug, info};
 
 use super::context::WriterContext;
 
@@ -97,8 +101,18 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     let utxos = ctx.client.get_utxos().await?;
 
     let fee_rate = match ctx.config.fee_policy {
-        FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
-        FeePolicy::Fixed(val) => val,
+        FeePolicy::Smart => {
+            let estimate = ctx.client.estimate_smart_fee(1).await?;
+            info!(
+                fee_estimate_sats_per_byte = estimate,
+                "Bitcoin network fee estimate"
+            );
+            estimate
+        }
+        FeePolicy::Fixed(val) => {
+            debug!(fixed_fee_rate = val, "Using fixed fee rate");
+            val
+        }
     };
     let env_config = EnvelopeConfig::new(
         ctx.params.clone(),
@@ -143,6 +157,21 @@ pub fn create_envelope_transactions(
         env_config.fee_rate,
         &reveal_script,
         &taproot_spend_info,
+    );
+    // The reveal fee is the difference between commit value and reveal amount
+    let reveal_fee = commit_value - env_config.reveal_amount;
+
+    debug!(
+        commit_output_sats = %commit_value,
+        reveal_amount_sats = %env_config.reveal_amount,
+        reveal_fee_sats = %reveal_fee,
+        reveal_fee_btc = format!(
+            "{:.8}",
+            reveal_fee as f64 / BitcoinAmount::SATS_FACTOR as f64
+        ),
+        fee_rate_sats_per_byte = %env_config.fee_rate,
+        reveal_script_size_bytes = %reveal_script.len(),
+        "Calculated reveal transaction fees"
     );
 
     // Build commit tx
