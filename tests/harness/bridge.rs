@@ -33,8 +33,6 @@ use bitcoin::{
 use bitcoin_bosd::Descriptor;
 use rand::RngCore;
 use strata_asm_common::{AnchorState, Subprotocol};
-use strata_codec::encode_to_vec;
-use strata_codec_utils::CodecSsz;
 use strata_asm_params::{BridgeV1InitConfig, CheckpointInitConfig};
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
@@ -47,7 +45,8 @@ use strata_asm_txs_bridge_v1::{
 };
 use strata_btc_types::BitcoinAmount;
 use strata_checkpoint_types_ssz::CheckpointTip;
-use strata_codec::VarVec;
+use strata_codec::{encode_to_vec, VarVec};
+use strata_codec_utils::CodecSsz;
 use strata_crypto::{test_utils::schnorr::Musig2Tweak, EvenPublicKey, EvenSecretKey};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_l1_txfmt::{ParseConfig, TagData};
@@ -189,20 +188,13 @@ impl BridgeExt for AsmTestHarness {
 
         // 5. Encode payload with CodecSsz and submit as envelope tx with sequencer keypair (SPS-51)
         let codec_payload = CodecSsz::new(payload);
-        let payload_bytes =
-            encode_to_vec(&codec_payload).expect("codec encoding should not fail");
+        let payload_bytes = encode_to_vec(&codec_payload).expect("codec encoding should not fail");
         let checkpoint_tag = TagData::new(1, 1, vec![]).expect("valid checkpoint tag");
         let secp = Secp256k1::new();
-        let sequencer_keypair = UntweakedKeypair::from_seckey_slice(
-            &secp,
-            checkpoint_harness.sequencer_secret_key(),
-        )?;
+        let sequencer_keypair =
+            UntweakedKeypair::from_seckey_slice(&secp, checkpoint_harness.sequencer_secret_key())?;
         let tx = self
-            .build_envelope_tx_with_keypair(
-                checkpoint_tag,
-                payload_bytes,
-                &sequencer_keypair,
-            )
+            .build_envelope_tx_with_keypair(checkpoint_tag, payload_bytes, &sequencer_keypair)
             .await?;
         let block_hash = self.submit_and_mine_tx(&tx).await?;
 

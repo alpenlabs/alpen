@@ -16,7 +16,7 @@ use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 use strata_predicate::PredicateTypeId;
 
 use crate::{
-    errors::{CheckpointValidationResult, InvalidCheckpointPayload},
+    errors::{CheckpointValidationResult, InvalidCheckpointPayload, InvalidSequencerPredicate},
     state::{CheckpointState, VerifiedWithdrawals},
 };
 
@@ -56,17 +56,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     // Per SPS-51, when the ASM recognizes the envelope's taproot pubkey as the
     // sequencer's key, the taproot script-spend signature (already verified by
     // Bitcoin consensus) transitively authenticates the envelope contents.
-    let predicate = state.sequencer_predicate();
-    if predicate.id() != PredicateTypeId::Bip340Schnorr.as_u8() {
-        return Err(InvalidCheckpointPayload::UnsupportedSequencerPredicateType.into());
-    }
-    if envelope.envelope_pubkey != predicate.condition() {
-        return Err(InvalidCheckpointPayload::SequencerPubkeyMismatch {
-            expected: predicate.condition().to_vec(),
-            actual: envelope.envelope_pubkey.clone(),
-        }
-        .into());
-    }
+    verify_sequencer_predicate(state, &envelope.envelope_pubkey)?;
 
     // 2. Validate epoch progression
     let expected_epoch = state
@@ -150,6 +140,44 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         withdrawal_intents,
         verified_withdrawals,
     })
+}
+
+/// Verifies that the envelope pubkey is authorized by the sequencer predicate.
+///
+/// Dispatches on the predicate type:
+/// - [`NeverAccept`](PredicateTypeId::NeverAccept): always rejects.
+/// - [`AlwaysAccept`](PredicateTypeId::AlwaysAccept): always accepts (useful for testing).
+/// - [`Bip340Schnorr`](PredicateTypeId::Bip340Schnorr): compares the envelope pubkey against the
+///   predicate's condition bytes (the sequencer's x-only public key).
+/// - [`Sp1Groth16`](PredicateTypeId::Sp1Groth16): not a valid sequencer predicate type.
+/// - Unknown type IDs are rejected.
+fn verify_sequencer_predicate(
+    state: &CheckpointState,
+    envelope_pubkey: &[u8],
+) -> CheckpointValidationResult<()> {
+    let predicate = state.sequencer_predicate();
+
+    let type_id = PredicateTypeId::try_from(predicate.id())
+        .map_err(|_| InvalidSequencerPredicate::UnknownPredicateType(predicate.id()))?;
+
+    match type_id {
+        PredicateTypeId::NeverAccept => Err(InvalidSequencerPredicate::NeverAccept.into()),
+        PredicateTypeId::AlwaysAccept => Ok(()),
+        PredicateTypeId::Bip340Schnorr => {
+            if envelope_pubkey != predicate.condition() {
+                Err(InvalidSequencerPredicate::PubkeyMismatch {
+                    expected: predicate.condition().to_vec(),
+                    actual: envelope_pubkey.to_vec(),
+                }
+                .into())
+            } else {
+                Ok(())
+            }
+        }
+        PredicateTypeId::Sp1Groth16 => {
+            Err(InvalidSequencerPredicate::UnsupportedType(type_id).into())
+        }
+    }
 }
 
 /// Constructs a complete checkpoint claim for verification by combining the verified tip state
@@ -241,10 +269,11 @@ mod tests {
     use strata_checkpoint_types_ssz::TerminalHeaderComplement;
     use strata_identifiers::AccountSerial;
     use strata_ol_chain_types_new::OLLog;
+    use strata_predicate::PredicateKey;
     use strata_test_utils_l2::CheckpointTestHarness;
 
     use crate::{
-        errors::{CheckpointValidationError, InvalidCheckpointPayload},
+        errors::{CheckpointValidationError, InvalidCheckpointPayload, InvalidSequencerPredicate},
         state::CheckpointState,
         verification::{
             compute_asm_manifests_hash_for_checkpoint,
@@ -303,14 +332,14 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             err,
-            CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::SequencerPubkeyMismatch { .. }
+            CheckpointValidationError::InvalidSequencerPredicate(
+                InvalidSequencerPredicate::PubkeyMismatch { .. }
             )
         ));
     }
 
-    /// Even though, the bitcoin would reject an envelope without a envelope_pubkey set,
-    /// this test is the additional railguard that check that the ASM checkpoint verification
+    /// Even though Bitcoin would reject an envelope without an envelope_pubkey set,
+    /// this test is an additional railguard checking that the ASM checkpoint verification
     /// **would reject it as well**.
     #[test]
     fn test_empty_envelope_pubkey_rejected() {
@@ -333,8 +362,63 @@ mod tests {
         .unwrap_err();
         assert!(matches!(
             err,
-            CheckpointValidationError::InvalidPayload(
-                InvalidCheckpointPayload::SequencerPubkeyMismatch { .. }
+            CheckpointValidationError::InvalidSequencerPredicate(
+                InvalidSequencerPredicate::PubkeyMismatch { .. }
+            )
+        ));
+    }
+
+    #[test]
+    fn test_always_accept_predicate_skips_pubkey_check() {
+        let harness = CheckpointTestHarness::new_random();
+        let state = CheckpointState::new(
+            PredicateKey::always_accept(),
+            harness.checkpoint_predicate(),
+            *harness.verified_tip(),
+        );
+        let payload = harness.build_payload();
+        let current_l1_height = payload.new_tip().l1_height + 1;
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+
+        // Envelope with arbitrary pubkey — should still pass.
+        let envelope = EnvelopeCheckpoint {
+            payload,
+            envelope_pubkey: vec![0xab; 32],
+        };
+
+        let res = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &envelope,
+            &verified_aux_data,
+        );
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_never_accept_predicate_always_rejects() {
+        let harness = CheckpointTestHarness::new_random();
+        let state = CheckpointState::new(
+            PredicateKey::never_accept(),
+            harness.checkpoint_predicate(),
+            *harness.verified_tip(),
+        );
+        let payload = harness.build_payload();
+        let current_l1_height = payload.new_tip().l1_height + 1;
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+        let envelope = harness.wrap_in_envelope(payload);
+
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &envelope,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidSequencerPredicate(
+                InvalidSequencerPredicate::NeverAccept
             )
         ));
     }

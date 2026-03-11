@@ -573,7 +573,6 @@ mod tests {
         #[test]
         fn checkpoint_missing_entry_returns_error(
             duty in checkpoint_duty_strategy(),
-            key in buf32_strategy(),
             duty_id in buf32_strategy(),
         ) {
             let rt = Runtime::new().unwrap();

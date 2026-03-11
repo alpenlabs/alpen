@@ -84,6 +84,9 @@ pub(crate) fn handle_checkpoint_tx(
                 logging::error!(epoch, error = %e, "invalid aux data");
                 panic!("invalid aux");
             }
+            CheckpointValidationError::InvalidSequencerPredicate(e) => {
+                logging::warn!(epoch, error = %e, "sequencer predicate verification failed");
+            }
             CheckpointValidationError::InvalidPayload(e) => {
                 logging::warn!(epoch, error = %e, "invalid checkpoint payload");
             }

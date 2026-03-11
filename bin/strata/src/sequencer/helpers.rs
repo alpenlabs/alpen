@@ -1,15 +1,13 @@
 //! Helpers for sequencer.
 //!
-//! Mostly related to secure key derivation and signing.
+//! Mostly related to secure key derivation.
 
 use std::{fs, path::Path, str::FromStr};
 
 use bitcoin::bip32::Xpriv;
-use ssz::Encode;
-use strata_crypto::{hash, keys::zeroizable::ZeroizableXpriv, sign_schnorr_sig};
+use strata_crypto::keys::zeroizable::ZeroizableXpriv;
 use strata_key_derivation::sequencer::SequencerKeys;
-use strata_ol_chain_types_new::OLBlockHeader;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_primitives::buf::Buf32;
 use tracing::debug;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -45,11 +43,4 @@ pub(crate) fn load_seqkey(path: &Path) -> anyhow::Result<SequencerKey> {
 
     debug!(pubkey = ?key.pk, "ready to sign as sequencer");
     Ok(key)
-}
-
-/// Signs a [`OLBlockHeader`] and returns the signature.
-pub(crate) fn sign_header(header: &OLBlockHeader, sk: &Buf32) -> Buf64 {
-    let encoded = header.as_ssz_bytes();
-    let msg = hash::raw(&encoded);
-    sign_schnorr_sig(&msg, sk)
 }

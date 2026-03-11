@@ -36,6 +36,7 @@ use std::{
 
 use bitcoin::{
     absolute::LockTime,
+    blockdata::script,
     hashes::Hash,
     key::UntweakedKeypair,
     secp256k1::{All, Message, Secp256k1, XOnlyPublicKey, SECP256K1},
@@ -57,7 +58,7 @@ use strata_asm_params::{
 };
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_btc_types::BlockHashExt;
-use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+use strata_l1_envelope_fmt::builder::{build_envelope_script, EnvelopeScriptBuilder};
 use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
@@ -497,13 +498,12 @@ impl AsmTestHarness {
             };
             let leaf_hash =
                 bitcoin::TapLeafHash::from_script(&reveal_script, LeafVersion::TapScript);
-            let sighash = SighashCache::new(&reveal_tx)
-                .taproot_script_spend_signature_hash(
-                    0,
-                    &Prevouts::All(&[&commit_output]),
-                    leaf_hash,
-                    TapSighashType::Default,
-                )?;
+            let sighash = SighashCache::new(&reveal_tx).taproot_script_spend_signature_hash(
+                0,
+                &Prevouts::All(&[&commit_output]),
+                leaf_hash,
+                TapSighashType::Default,
+            )?;
             let msg = Message::from_digest_slice(&sighash.to_byte_array())?;
             let signature = SECP256K1.sign_schnorr(&msg, keypair);
             witness.push(signature.as_ref());
@@ -523,22 +523,11 @@ impl AsmTestHarness {
 /// Build a simple envelope script for subprotocols that don't need SPS-51 auth.
 ///
 /// Creates an `OP_FALSE OP_IF <data> OP_ENDIF OP_TRUE` tapscript.
+/// Uses [`build_envelope_script`] for the envelope body and appends `OP_TRUE`
+/// so the tapscript leaves a truthy value on the stack (no CHECKSIG).
 fn build_simple_envelope_script(payload: &[u8]) -> ScriptBuf {
-    use bitcoin::blockdata::script;
-    use bitcoin::opcodes::all::{OP_ENDIF, OP_IF};
-    use bitcoin::opcodes::OP_FALSE;
-    use bitcoin::script::PushBytesBuf;
-
-    let mut builder = script::Builder::new()
-        .push_opcode(OP_FALSE)
-        .push_opcode(OP_IF);
-
-    for chunk in payload.chunks(520) {
-        builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
-    }
-
-    builder
-        .push_opcode(OP_ENDIF)
+    let envelope = build_envelope_script(payload).expect("envelope build should not fail in tests");
+    script::Builder::from(envelope.into_bytes())
         .push_int(1)
         .into_script()
 }
