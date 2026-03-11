@@ -60,8 +60,7 @@ $DATATOOL_PATH -b regtest genxpriv -f $OP3_SEED_FILE
 $DATATOOL_PATH -b regtest genxpriv -f $OP4_SEED_FILE
 $DATATOOL_PATH -b regtest genxpriv -f $OP5_SEED_FILE
 
-seqprivkey=$($DATATOOL_PATH -b regtest genseqprivkey -f ${SEQ_SEED_FILE})
-echo -n "$seqprivkey" > $CONFIG_FILE/sequencer.key
+cp "${SEQ_SEED_FILE}" "$CONFIG_FILE/sequencer.key"
 
 op1xpriv=$(cat $OP1_SEED_FILE)
 op2xpriv=$(cat $OP2_SEED_FILE)
