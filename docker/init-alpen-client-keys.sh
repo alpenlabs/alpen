@@ -204,7 +204,7 @@ GEOF
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             genparams \
             -o "${ROLLUP_PARAMS}" \
-            -n alpn \
+            -n ALPN \
             -s "${SEQ_XPUB}" \
             -b "${OPERATOR_XPRIV}" \
             -g 0 \
@@ -228,7 +228,7 @@ GEOF
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             gen-asm-params \
             -o "${ASM_PARAMS}" \
-            -n alpn \
+            -n ALPN \
             -b "${OPERATOR_XPRIV}" \
             -g 0 \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
