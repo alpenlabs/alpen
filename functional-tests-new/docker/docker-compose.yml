@@ -1,0 +1,19 @@
+services:
+  functional-tests:
+    build:
+      context: ../..
+      dockerfile: functional-tests-new/docker/Dockerfile
+    volumes:
+      # Persist test output/logs on host
+      - ../_dd:/tests/_dd
+    # Resource limits — adjust as needed
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512MB
+    # Pass test args via TESTARGS env or override command
+    # Examples:
+    #   docker compose run functional-tests -t test_node_version
+    #   docker compose run functional-tests -g bridge
+    #   docker compose run functional-tests --list
