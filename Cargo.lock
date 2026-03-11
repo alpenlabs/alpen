@@ -13872,6 +13872,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "borsh",
+ "proptest",
  "serde",
  "serde_json",
  "strata-btc-types",
@@ -14498,6 +14499,7 @@ dependencies = [
  "borsh",
  "hex",
  "musig2",
+ "proptest",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",

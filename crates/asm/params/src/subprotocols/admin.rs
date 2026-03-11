@@ -15,7 +15,6 @@ use strata_crypto::threshold_signature::ThresholdConfig;
 /// like using the same config for multiple roles or mismatched role-field assignments.
 /// The benefit is avoiding missing fields at compile-time rather than runtime validation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
-#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct AdministrationInitConfig {
     /// ThresholdConfig for [StrataAdministrator](Role::StrataAdministrator).
     pub strata_administrator: ThresholdConfig,
@@ -95,5 +94,25 @@ impl AdministrationInitConfig {
             (Role::StrataAdministrator, self.strata_administrator),
             (Role::StrataSequencerManager, self.strata_sequencer_manager),
         ]
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> Arbitrary<'a> for AdministrationInitConfig {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let strata_administrator = u.arbitrary()?;
+        let strata_sequencer_manager = u.arbitrary()?;
+        let confirmation_depth = u.arbitrary()?;
+        // Generate a valid NonZero<u8> by mapping [0, 255) to [1, 256) via saturating add.
+        let raw: u8 = u.arbitrary()?;
+        let max_seqno_gap = NonZero::new(raw.saturating_add(1))
+            .expect("saturating_add(1) on u8 always produces a non-zero value");
+
+        Ok(Self {
+            strata_administrator,
+            strata_sequencer_manager,
+            confirmation_depth,
+            max_seqno_gap,
+        })
     }
 }
