@@ -16,6 +16,7 @@ shift
 BITCOIN_RPC_URL=${BITCOIN_RPC_URL:-"http://localhost:18443"}
 BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-"rpcuser"}
 BITCOIN_RPC_PASSWORD=${BITCOIN_RPC_PASSWORD:-"rpcpassword"}
+OL_BLOCK_TIME_MS=${OL_BLOCK_TIME_MS:-5000}
 
 echo "Checking if 'base58' is installed.".
 if ! command -v base58 &> /dev/null; then \
@@ -74,6 +75,7 @@ op5xpriv=$(cat $OP5_SEED_FILE)
 seqpubkey=$($DATATOOL_PATH -b regtest genseqpubkey -f ${CONFIG_FILE}/sequencer.key)
 
 ROLLUP_PARAMS_FILE=$CONFIG_FILE/params.json
+SEQUENCER_CONFIG_FILE=$CONFIG_FILE/sequencer.toml
 
 # Construct args for genparams.
 # Check if -n is set in args
@@ -97,3 +99,8 @@ fi
     -b "$op2xpriv" \
     "${extra_args[@]}" \
     "$@"
+
+cat > "$SEQUENCER_CONFIG_FILE" <<EOF
+[sequencer]
+ol_block_time_ms = $OL_BLOCK_TIME_MS
+EOF

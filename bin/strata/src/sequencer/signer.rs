@@ -69,6 +69,7 @@ pub(crate) fn start_sequencer_signer(runctx: &RunContext, args: &Args) -> Result
     // Zeroize the sequencer key.
     sequencer_key.zeroize();
 
+    // Log the sequencer signer started with poll interval.
     info!(%poll_interval_ms, "Sequencer signer started");
 
     Ok(())

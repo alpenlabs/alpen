@@ -16,6 +16,9 @@ pub(crate) enum InitError {
     #[error("unparsable params file: {0}")]
     UnparsableParamsFile(#[from] SerdeError),
 
+    #[error("failed to parse sequencer TOML configuration: {0}")]
+    UnparsableSequencerConfigFile(#[source] de::Error),
+
     #[error("config: {0}")]
     MalformedConfig(#[from] ConfigError),
 
@@ -42,6 +45,12 @@ pub(crate) enum InitError {
 
     #[error("missing sync endpoint (required for non-sequencer nodes)")]
     MissingSyncEndpoint,
+
+    #[error("missing sequencer config file: {0}")]
+    MissingSequencerConfig(path::PathBuf),
+
+    #[error("invalid OL block time ms: {0}")]
+    InvalidOlBlockTimeMs(u64),
 
     #[error("failed to parse TOML configuration: {0}")]
     TomlParse(#[source] de::Error),

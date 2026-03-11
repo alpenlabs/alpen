@@ -8,20 +8,16 @@ use crate::errors::*;
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
-pub(crate) struct EnvArgs {
-    // TODO: relevant items that will be populated from env vars
-}
+pub(crate) struct EnvArgs;
 
 impl EnvArgs {
     /// Loads environment variables that should override the config.
-    pub(crate) fn from_env() -> Self {
-        // Here we load particular env vars that should probably override the config.
-        Self {}
+    pub(crate) fn from_env() -> Result<Self, InitError> {
+        Ok(Self)
     }
 
     /// Get strings of overrides gathered from env.
     pub(crate) fn get_overrides(&self) -> Vec<String> {
-        // TODO: add stuffs as necessary
         Vec::new()
     }
 }
@@ -49,6 +45,10 @@ pub(crate) struct Args {
     /// Rollup params path that will override the params in the config toml.
     #[argh(option, description = "rollup params")]
     pub rollup_params: Option<PathBuf>,
+
+    /// Path to the sequencer runtime config TOML file.
+    #[argh(option, description = "sequencer runtime config")]
+    pub sequencer_config: Option<PathBuf>,
 
     /// OL genesis params path (JSON file).
     #[argh(option, description = "OL genesis params")]
@@ -110,5 +110,16 @@ impl Args {
         }
 
         Ok(overrides)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_env_args_no_longer_generate_overrides() {
+        let env_args = EnvArgs;
+        assert!(env_args.get_overrides().is_empty());
     }
 }

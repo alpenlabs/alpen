@@ -16,6 +16,9 @@ type GenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>
 /// Type alias for block template lookup result.
 type GetBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
 
+/// Type alias for block template lookup/generation result.
+type GetOrGenerateBlockTemplateResult = Result<FullBlockTemplate, BlockAssemblyError>;
+
 /// Type alias for block template completion result.
 type CompleteBlockTemplateResult = Result<OLBlock, BlockAssemblyError>;
 
@@ -32,6 +35,10 @@ pub(crate) enum BlockasmCommand {
     GetBlockTemplate {
         parent_block_id: OLBlockId,
         completion: CommandCompletionSender<GetBlockTemplateResult>,
+    },
+    GetOrGenerateBlockTemplate {
+        parent_block_id: OLBlockId,
+        completion: CommandCompletionSender<GetOrGenerateBlockTemplateResult>,
     },
     CompleteBlockTemplate {
         /// The ID of a previously generated template, used to look up the cached template.

@@ -11,6 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/configs/alpen-client"
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
+OL_BLOCK_TIME_MS=5000
 
 case "${BITCOIN_NETWORK}" in
     regtest)
@@ -123,12 +124,13 @@ sys.stdout.write(pk.format(compressed=True).hex())
 
 # --- rollup-params.json ---
 
-ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
-if [ ! -f "${ROLLUP_PARAMS}" ]; then
-    cat > "${ROLLUP_PARAMS}" <<REOF
+ROLLUP_PARAMS_PATH="${OUTPUT_DIR}/rollup-params.json"
+SEQUENCER_CONFIG_PATH="${OUTPUT_DIR}/sequencer.toml"
+if [ ! -f "${ROLLUP_PARAMS_PATH}" ]; then
+    cat > "${ROLLUP_PARAMS_PATH}" <<REOF
 {
   "magic_bytes": "ALPN",
-  "block_time": 5000,
+  "block_time": ${OL_BLOCK_TIME_MS},
   "cred_rule": "unchecked",
   "genesis_l1_view": {
     "blk": {
@@ -153,7 +155,19 @@ if [ ! -f "${ROLLUP_PARAMS}" ]; then
   "network": "${BITCOIN_NETWORK}"
 }
 REOF
-    echo "generated ${ROLLUP_PARAMS}"
+    echo "generated ${ROLLUP_PARAMS_PATH}"
+fi
+
+if [ ! -f "${SEQUENCER_CONFIG_PATH}" ]; then
+    cat > "${SEQUENCER_CONFIG_PATH}" <<BEOF
+[sequencer]
+ol_block_time_ms = ${OL_BLOCK_TIME_MS}
+
+[epoch_sealing]
+policy = "FixedSlot"
+slots_per_epoch = 64
+BEOF
+    echo "generated ${SEQUENCER_CONFIG_PATH}"
 fi
 
 # --- ol-params.json ---

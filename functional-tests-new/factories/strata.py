@@ -14,6 +14,7 @@ from common.config import (
     ClientConfig,
     EpochSealingConfig,
     SequencerConfig,
+    SequencerRuntimeConfig,
     ServiceType,
     StrataConfig,
 )
@@ -73,16 +74,22 @@ class StrataFactory(flexitest.Factory):
 
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
-        sequencer_config = SequencerConfig() if is_sequencer else None
         config = StrataConfig(
             bitcoind=bconfig,
             client=client_config,
-            sequencer=sequencer_config,
-            epoch_sealing=epoch_sealing_config,
         )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
             f.write(config.as_toml_string())
+
+        sequencer_config_path = datadir / "sequencer.toml"
+        if is_sequencer:
+            sequencer_runtime_config = SequencerRuntimeConfig(
+                sequencer=SequencerConfig(),
+                epoch_sealing=epoch_sealing_config,
+            )
+            with open(sequencer_config_path, "w") as f:
+                f.write(sequencer_runtime_config.as_toml_string())
 
         # Generate rollup params via datatool (also produces keys used below).
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
@@ -119,7 +126,15 @@ class StrataFactory(flexitest.Factory):
         ]
 
         if is_sequencer:
-            cmd.extend(["--sequencer", "--sequencer-key", str(params_data.sequencer_key_path)])
+            cmd.extend(
+                [
+                    "--sequencer",
+                    "--sequencer-config",
+                    str(sequencer_config_path),
+                    "--sequencer-key",
+                    str(params_data.sequencer_key_path),
+                ]
+            )
 
         # Add config overrides
         if config_overrides:

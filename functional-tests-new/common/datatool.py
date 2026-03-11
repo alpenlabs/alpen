@@ -5,6 +5,8 @@ from pathlib import Path
 
 from common.config.config import BitcoindConfig
 
+DEFAULT_OL_BLOCK_TIME_MS = 5_000
+
 
 def run_datatool(
     args: list[str], bconfig: BitcoindConfig | None = None
@@ -77,6 +79,23 @@ class RollupParamsArtifacts:
     params_path: Path
     sequencer_key_path: Path
     operator_keys: list[str]
+
+
+def write_sequencer_runtime_config(
+    config_path: Path,
+    ol_block_time_ms: int = DEFAULT_OL_BLOCK_TIME_MS,
+) -> Path:
+    """Writes the sequencer runtime config TOML."""
+    config_path.write_text(
+        "\n".join(
+            [
+                "[sequencer]",
+                f"ol_block_time_ms = {ol_block_time_ms}",
+                "",
+            ]
+        )
+    )
+    return config_path
 
 
 def generate_rollup_params(

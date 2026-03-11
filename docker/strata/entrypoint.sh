@@ -3,6 +3,7 @@ set -eu
 umask 027
 
 CONFIG_PATH=${CONFIG_PATH:-/config/config.toml}
+SEQUENCER_CONFIG_PATH=${SEQUENCER_CONFIG_PATH:-}
 PARAM_PATH=${PARAM_PATH:-/config/params.json}
 OL_PARAMS_PATH=${OL_PARAMS_PATH:-}
 ASM_PARAMS_PATH=${ASM_PARAMS_PATH:-}
@@ -12,6 +13,35 @@ BITCOIND_RPC_PASSWORD=${BITCOIND_RPC_PASSWORD:-}
 
 [ -f "${CONFIG_PATH}" ] || { echo "error: missing config '${CONFIG_PATH}'" >&2; exit 1; }
 [ -f "${PARAM_PATH}" ] || { echo "error: missing params '${PARAM_PATH}'" >&2; exit 1; }
+
+default_sequencer_config_path() {
+    config_path="$1"
+    dir_path=$(dirname "${config_path}")
+    printf "%s/sequencer.toml\n" "${dir_path}"
+}
+
+sequencer_config_path() {
+    config_path="$1"
+    if [ -n "${SEQUENCER_CONFIG_PATH}" ]; then
+        printf "%s\n" "${SEQUENCER_CONFIG_PATH}"
+    else
+        default_sequencer_config_path "${config_path}"
+    fi
+}
+
+requires_sequencer_config() {
+    if grep -Eq '^[[:space:]]*is_sequencer[[:space:]]*=[[:space:]]*true' "${CONFIG_PATH}"; then
+        return 0
+    fi
+
+    for arg in "$@"; do
+        if [ "${arg}" = "--sequencer" ]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
 
 # If BITCOIND_RPC_URL is set, query the L1 tip and patch genesis params.
 # This is needed because the L1 reader doesn't store block 0 in the canonical
@@ -85,11 +115,22 @@ fi
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 CONFIG_OVERRIDES="${CONFIG_OVERRIDES} -o bitcoind.network=${BITCOIN_NETWORK}"
 
+SEQUENCER_ARGS=""
+if requires_sequencer_config "$@"; then
+    RESOLVED_SEQUENCER_CONFIG_PATH=$(sequencer_config_path "${CONFIG_PATH}")
+    [ -f "${RESOLVED_SEQUENCER_CONFIG_PATH}" ] || {
+        echo "error: missing sequencer config '${RESOLVED_SEQUENCER_CONFIG_PATH}'" >&2
+        exit 1
+    }
+    SEQUENCER_ARGS="--sequencer-config ${RESOLVED_SEQUENCER_CONFIG_PATH}"
+fi
+
 # Intentional word splitting of multi-arg strings
 # shellcheck disable=SC2086
 exec strata \
   --config "${CONFIG_PATH}" \
   --rollup-params "${PARAM_PATH}" \
+  ${SEQUENCER_ARGS} \
   ${EXTRA_ARGS} \
   ${CONFIG_OVERRIDES} \
   "$@"

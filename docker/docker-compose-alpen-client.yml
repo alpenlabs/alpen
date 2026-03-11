@@ -57,6 +57,7 @@ services:
       - "0.0.0.0"
     environment:
       CONFIG_PATH: /app/configs/config.regtest.toml
+      SEQUENCER_CONFIG_PATH: /app/configs/alpen-client/sequencer.toml
       PARAM_PATH: /app/configs/alpen-client/rollup-params.json
       OL_PARAMS_PATH: /app/configs/alpen-client/ol-params.json
       ASM_PARAMS_PATH: /app/configs/alpen-client/asm-params.json

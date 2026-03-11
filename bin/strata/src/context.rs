@@ -1,12 +1,19 @@
 //! Node context initialization and configuration loading.
 
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
-use strata_config::{BitcoindConfig, Config};
+use strata_config::{
+    BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
+};
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
@@ -46,6 +53,11 @@ pub(crate) fn init_node_context(
         .as_ref()
         .ok_or(InitError::MissingRollupParams)?;
     let params = resolve_and_validate_params(params_path, &config)?;
+    let blockasm_config = config
+        .sequencer
+        .as_ref()
+        .map(load_block_assembly_config)
+        .transpose()?;
 
     // Load ASM params
     let asm_params_path = args
@@ -71,6 +83,7 @@ pub(crate) fn init_node_context(
         handle,
         config,
         params,
+        blockasm_config,
         Arc::new(asm_params),
         ol_params.into(),
         storage,
@@ -86,7 +99,7 @@ pub(crate) fn init_node_context(
 fn get_config(args: Args) -> Result<Config, InitError> {
     let mut config_toml = load_config_from_path(args.config.as_ref())?;
 
-    let env_args = EnvArgs::from_env();
+    let env_args = EnvArgs::from_env()?;
     let mut override_strs = env_args.get_overrides();
 
     override_strs.extend_from_slice(&args.get_all_overrides()?);
@@ -107,9 +120,11 @@ fn get_config(args: Args) -> Result<Config, InitError> {
         apply_override(&path, val, table)?;
     }
 
-    let config = config_toml
+    let mut config = config_toml
         .try_into::<Config>()
         .map_err(InitError::TomlParse)?;
+
+    populate_sequencer_runtime_config(&mut config, &args)?;
 
     validate_config(config)
 }
@@ -118,6 +133,13 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
         return Err(InitError::MissingSyncEndpoint);
     }
+
+    if config.client.is_sequencer && config.sequencer.is_none() {
+        return Err(InitError::MissingSequencerConfig(PathBuf::from(
+            "sequencer.toml",
+        )));
+    }
+
     Ok(config)
 }
 
@@ -150,6 +172,56 @@ fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
     let rollup_params =
         serde_json::from_str::<RollupParams>(&json).map_err(|err| SerdeError::new(json, err))?;
     Ok(rollup_params)
+}
+
+fn populate_sequencer_runtime_config(config: &mut Config, args: &Args) -> Result<(), InitError> {
+    if !config.client.is_sequencer {
+        return Ok(());
+    }
+
+    let path = resolve_sequencer_config_path(args);
+    let runtime_config = load_sequencer_runtime_config(&path)?;
+
+    config.sequencer = Some(runtime_config.sequencer);
+    config.epoch_sealing = runtime_config.epoch_sealing;
+
+    Ok(())
+}
+
+fn resolve_default_sequencer_config_path(config_path: &Path) -> PathBuf {
+    config_path.with_file_name("sequencer.toml")
+}
+
+fn resolve_sequencer_config_path(args: &Args) -> PathBuf {
+    args.sequencer_config
+        .clone()
+        .unwrap_or_else(|| resolve_default_sequencer_config_path(args.config.as_path()))
+}
+
+fn load_sequencer_runtime_config(path: &Path) -> Result<SequencerRuntimeConfig, InitError> {
+    let config_str = fs::read_to_string(path).map_err(|err| match err.kind() {
+        io::ErrorKind::NotFound => InitError::MissingSequencerConfig(path.to_path_buf()),
+        _ => InitError::Io(err),
+    })?;
+    toml::from_str(&config_str).map_err(InitError::UnparsableSequencerConfigFile)
+}
+
+fn validate_ol_block_time_ms(ol_block_time_ms: u64) -> Result<(), InitError> {
+    if ol_block_time_ms == 0 {
+        return Err(InitError::InvalidOlBlockTimeMs(ol_block_time_ms));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn load_block_assembly_config(
+    sequencer_config: &SequencerConfig,
+) -> Result<Arc<BlockAssemblyConfig>, InitError> {
+    validate_ol_block_time_ms(sequencer_config.ol_block_time_ms)?;
+
+    Ok(Arc::new(BlockAssemblyConfig::new(Duration::from_millis(
+        sequencer_config.ol_block_time_ms,
+    ))))
 }
 
 fn load_asm_params(path: &Path) -> Result<AsmParams, InitError> {
@@ -227,5 +299,70 @@ pub(crate) fn check_and_init_genesis(
             Ok((l1blk, init_state))
         }
         Some(recent_state) => Ok(recent_state),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        env::temp_dir,
+        fs,
+        path::{Path, PathBuf},
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    use strata_config::SequencerConfig;
+
+    use super::{
+        load_block_assembly_config, load_sequencer_runtime_config,
+        resolve_default_sequencer_config_path,
+    };
+    use crate::errors::InitError;
+
+    fn unique_temp_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time after unix epoch")
+            .as_nanos();
+        temp_dir().join(format!("strata-context-tests-{nanos}"))
+    }
+
+    #[test]
+    fn resolve_default_sequencer_config_path_uses_sibling_name() {
+        let config_path = resolve_default_sequencer_config_path(Path::new("/tmp/config.toml"));
+
+        assert_eq!(config_path, PathBuf::from("/tmp/sequencer.toml"));
+    }
+
+    #[test]
+    fn load_sequencer_runtime_config_reads_sequencer_toml() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let sequencer_config_path = temp_dir.join("sequencer.toml");
+        fs::write(
+            &sequencer_config_path,
+            r#"
+                [sequencer]
+                ol_block_time_ms = 5000
+            "#,
+        )
+        .unwrap();
+
+        let runtime_config = load_sequencer_runtime_config(&sequencer_config_path).unwrap();
+        let config = load_block_assembly_config(&runtime_config.sequencer).unwrap();
+        assert_eq!(config.ol_block_time(), Duration::from_millis(5_000));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn load_block_assembly_config_rejects_zero_block_time() {
+        let error = load_block_assembly_config(&SequencerConfig {
+            ol_block_time_ms: 0,
+            ..SequencerConfig::default()
+        })
+        .unwrap_err();
+        assert!(matches!(error, InitError::InvalidOlBlockTimeMs(0)));
     }
 }

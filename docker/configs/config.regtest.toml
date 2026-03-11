@@ -44,12 +44,6 @@ client_checkpoint_interval = 10
 rpc_url = "alpen-client:8551"
 secret = "/app/configs/alpen-client/jwt.hex"
 
-[sequencer]
-
-[epoch_sealing]
-policy = "FixedSlot"
-slots_per_epoch = 64
-
 [relayer]
 refresh_interval = 10
 stale_duration = 120

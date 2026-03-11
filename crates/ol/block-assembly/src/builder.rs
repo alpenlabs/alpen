@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use strata_config::SequencerConfig;
+use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ol_state_types::StateProvider;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
@@ -27,6 +27,7 @@ where
     S: StateProvider,
 {
     params: Arc<Params>,
+    blockasm_config: Arc<BlockAssemblyConfig>,
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     epoch_sealing_policy: E,
@@ -43,6 +44,7 @@ where
 {
     pub fn new(
         params: Arc<Params>,
+        blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
         mempool_provider: M,
         epoch_sealing_policy: E,
@@ -51,6 +53,7 @@ where
     ) -> Self {
         Self {
             params,
+            blockasm_config,
             storage,
             mempool_provider,
             epoch_sealing_policy,
@@ -84,6 +87,7 @@ where
 
         let state = BlockasmServiceState::new(
             self.params,
+            self.blockasm_config,
             self.sequencer_config,
             context,
             self.epoch_sealing_policy,
@@ -116,6 +120,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlockasmBuilder")
             .field("params", &"<Params>")
+            .field("blockasm_config", &self.blockasm_config)
             .field("storage", &"<NodeStorage>")
             .field("sequencer_config", &self.sequencer_config)
             .field("command_buffer_size", &self.command_buffer_size)
