@@ -7,7 +7,7 @@ MAX_LOGS_PER_MANIFEST = 1 << 10
 ###
 ### This structure represents the result of parsing and validating an L1 (Bitcoin) block,
 ### containing the essential commitments and execution logs needed.
-#~# derive: Serialize, Deserialize
+#~# derive: serde::Serialize, serde::Deserialize
 class AsmManifest(Container):
     ### The L1 block height
     height: strata_identifiers.L1Height
