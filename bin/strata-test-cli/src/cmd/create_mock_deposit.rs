@@ -8,7 +8,7 @@ use crate::{bridge::types::BitcoinDConfig, mock_ee::deposit, taproot::new_bitcoi
 
 /// Create a mock deposit transaction via the debug subprotocol.
 ///
-/// Injects a DepositIntentLogData into the ASM by constructing a Bitcoin transaction
+/// Injects a DepositLog into the ASM by constructing a Bitcoin transaction
 /// with a debug subprotocol (ID 255) MockAsmLog OP_RETURN payload.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "create-mock-deposit")]

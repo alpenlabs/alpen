@@ -16066,6 +16066,7 @@ dependencies = [
  "shrex_macros",
  "ssz",
  "strata-acct-types",
+ "strata-asm-logs",
  "strata-asm-manifest-types",
  "strata-asm-txs-bridge-v1",
  "strata-cli-common",

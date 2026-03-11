@@ -1,14 +1,14 @@
 //! Mock deposit injection via debug subprotocol.
 //!
-//! Creates a Bitcoin transaction that injects a [`DepositIntentLogData`] into the ASM
+//! Creates a Bitcoin transaction that injects a [`DepositLog`] into the ASM
 //! via the debug subprotocol's MockAsmLog mechanism (subprotocol ID 255, tx_type 1).
 
 use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
 };
-use strata_asm_manifest_types::DepositIntentLogData;
-use strata_identifiers::{AccountSerial, SubjectId};
+use strata_asm_logs::DepositLog;
+use strata_identifiers::{AccountSerial, DepositDescriptor, SubjectIdBytes};
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
 use crate::{
@@ -29,21 +29,25 @@ const MOCK_ASM_LOG_TX_TYPE: u8 = 1;
 /// The transaction contains an OP_RETURN output with an SPS-50 tag encoding:
 /// - Subprotocol ID: 255 (debug)
 /// - Tx type: 1 (MockAsmLog)
-/// - Aux data: encoded `DepositIntentLogData` as an `AsmLogEntry`
+/// - Aux data: encoded `DepositLog` as an `AsmLogEntry`
 pub(crate) fn create_mock_deposit_tx(
     account_serial: u32,
     amount: u64,
     bitcoind_config: BitcoinDConfig,
 ) -> Result<Vec<u8>, Error> {
-    // Build the deposit intent log data
-    let deposit_log_data = DepositIntentLogData::new(
+    // Build the deposit descriptor and encode it as bridge-v1 would
+    let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
-        SubjectId::from([0u8; 32]),
-        amount,
-    );
+        SubjectIdBytes::try_new(vec![0u8; 32]).map_err(|e| {
+            Error::TxBuilder(format!("failed to create subject bytes: {e}"))
+        })?,
+    )
+    .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
+
+    let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
 
     // Encode as AsmLogEntry via the AsmLog trait
-    let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log_data)
+    let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
         .map_err(|e| Error::TxBuilder(format!("failed to encode deposit log: {e}")))?;
     let raw_bytes = log_entry.into_bytes();
 
@@ -64,20 +68,24 @@ pub(crate) fn create_mock_deposit_tx(
 
 /// Builds the SPS-50 OP_RETURN script for a mock deposit.
 ///
-/// Exposed for unit testing. Encodes `DepositIntentLogData` into
+/// Exposed for unit testing. Encodes `DepositLog` into
 /// a debug subprotocol tagged script.
 #[cfg(test)]
 pub(crate) fn build_mock_deposit_op_return(
     account_serial: u32,
     amount: u64,
 ) -> Result<ScriptBuf, Error> {
-    let deposit_log_data = DepositIntentLogData::new(
+    let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
-        SubjectId::from([0u8; 32]),
-        amount,
-    );
+        SubjectIdBytes::try_new(vec![0u8; 32]).map_err(|e| {
+            Error::TxBuilder(format!("failed to create subject bytes: {e}"))
+        })?,
+    )
+    .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
 
-    let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log_data)
+    let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
+
+    let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
         .map_err(|e| Error::TxBuilder(format!("failed to encode deposit log: {e}")))?;
     let raw_bytes = log_entry.into_bytes();
 
@@ -129,7 +137,7 @@ fn build_and_sign_tx(
 
 #[cfg(test)]
 mod tests {
-    use strata_asm_manifest_types::DepositIntentLogData;
+    use strata_identifiers::DepositDescriptor;
 
     use super::*;
 
@@ -150,34 +158,44 @@ mod tests {
         let serial = 0x42u32;
         let amount = 200_000_000u64;
 
-        let deposit_log_data = DepositIntentLogData::new(
+        let descriptor = DepositDescriptor::new(
             AccountSerial::from(serial),
-            SubjectId::from([0u8; 32]),
-            amount,
-        );
+            SubjectIdBytes::try_new(vec![0u8; 32]).expect("valid subject bytes"),
+        )
+        .expect("valid descriptor");
+
+        let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
 
         // Encode to AsmLogEntry
-        let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log_data)
+        let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
             .expect("should encode");
 
         // Decode back
-        let decoded: DepositIntentLogData = log_entry
+        let decoded: DepositLog = log_entry
             .try_into_log()
-            .expect("should decode back to DepositIntentLogData");
+            .expect("should decode back to DepositLog");
 
-        assert_eq!(decoded.dest_acct_serial(), AccountSerial::from(serial));
-        assert_eq!(decoded.amt(), amount);
+        // Verify the descriptor roundtrips correctly
+        let decoded_descriptor =
+            DepositDescriptor::decode_from_slice(&decoded.destination).expect("valid descriptor");
+        assert_eq!(
+            decoded_descriptor.dest_acct_serial(),
+            &AccountSerial::from(serial)
+        );
+        assert_eq!(decoded.amount, amount);
     }
 
     #[test]
     fn test_deposit_tag_data_structure() {
-        let deposit_log_data = DepositIntentLogData::new(
+        let descriptor = DepositDescriptor::new(
             AccountSerial::from(1),
-            SubjectId::from([0u8; 32]),
-            50_000_000,
-        );
+            SubjectIdBytes::try_new(vec![0u8; 32]).expect("valid subject bytes"),
+        )
+        .expect("valid descriptor");
 
-        let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log_data)
+        let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), 50_000_000);
+
+        let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
             .expect("should encode");
         let raw_bytes = log_entry.into_bytes();
 
