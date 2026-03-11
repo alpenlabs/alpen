@@ -4,6 +4,7 @@ Alpen-client test environment configurations.
 
 import flexitest
 
+from common.config.config import EpochSealingConfig
 from common.config.constants import ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
@@ -33,19 +34,27 @@ class EeOLEnv(flexitest.EnvConfig):
         pure_discovery: bool = False,
         mesh_bootnodes: bool = False,
         pre_generate_blocks: int = 0,
+        seal_epoch_slots: int | None = None,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
         self.pure_discovery = pure_discovery
         self.mesh_bootnodes = mesh_bootnodes
         self.pre_generate_blocks = pre_generate_blocks
+        self.epoch_seal_config = (
+            EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
+            if seal_epoch_slots
+            else EpochSealingConfig()
+        )
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
         if mesh_bootnodes and not enable_discovery:
             raise ValueError("mesh_bootnodes requires enable_discovery=True")
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
-        strata_services = StrataEnvConfig.get_services(ectx, self.pre_generate_blocks)
+        strata_services = StrataEnvConfig.get_services(
+            ectx, self.pre_generate_blocks, epoch_sealing_config=self.epoch_seal_config
+        )
 
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]

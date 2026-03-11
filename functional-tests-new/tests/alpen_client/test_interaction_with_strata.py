@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # This is empirical and is used to allow alpen to create and submit DA and get it confirmed.
 # TODO: might need to more intelligently calculate this
-EXPECT_UPDATE_WITHIN_EPOCH = 15
+EXPECT_UPDATE_WITHIN_EPOCH = 20
 CHECK_N_UPDATES = 3  # How many updates from alpen to check in strata
 
 
@@ -27,11 +27,6 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         ctx.set_env("el_ol")
 
     def main(self, ctx):
-        # Temporarily disabled because this test is flaky and causes unrelated PR failures.
-        # TODO: activate this test when addressing STR-2424.
-        logger.warning("Temporarily skipping flaky test_interaction_with_strata")
-        return
-
         alpen_seq: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         strata_seq: StrataService = self.get_service(ServiceType.Strata)
         bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
@@ -92,4 +87,5 @@ def get_sync_status_and_mine_blocks(strata: StrataService, btc_rpc):
     """
     mine_address = btc_rpc.proxy.getnewaddress()
     btc_rpc.proxy.generatetoaddress(2, mine_address)
-    return strata.get_sync_status()
+    st = strata.get_sync_status()
+    return st

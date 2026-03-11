@@ -110,6 +110,10 @@ class EpochSealingConfig:
     policy: str = field(default="FixedSlot")
     slots_per_epoch: int | None = field(default=4)
 
+    @classmethod
+    def new_fixed_slot(cls, slots: int):
+        return cls("FixedSlot", slots)
+
 
 @dataclass
 class StrataConfig:
