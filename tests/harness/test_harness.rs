@@ -36,14 +36,10 @@ use std::{
 
 use bitcoin::{
     absolute::LockTime,
-    blockdata::script,
+    hashes::Hash,
     key::UntweakedKeypair,
-    opcodes::{
-        all::{OP_ENDIF, OP_IF},
-        OP_FALSE,
-    },
-    script::PushBytesBuf,
-    secp256k1::{All, Secp256k1, XOnlyPublicKey},
+    secp256k1::{All, Message, Secp256k1, XOnlyPublicKey, SECP256K1},
+    sighash::{Prevouts, SighashCache, TapSighashType},
     taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo},
     transaction::Version,
     Address, Amount, Block, BlockHash, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
@@ -61,6 +57,7 @@ use strata_asm_params::{
 };
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_btc_types::BlockHashExt;
+use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
 use strata_l1_txfmt::{ParseConfig, TagData};
 use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 use strata_state::{asm_state::AsmState, BlockSubmitter};
@@ -375,32 +372,65 @@ impl AsmTestHarness {
     ///
     /// This creates a proper Bitcoin transaction that:
     /// 1. Spends a real UTXO (funded by mining blocks)
-    /// 2. Contains the payload in taproot envelope script format
+    /// 2. Contains the payload in taproot envelope script format (SPS-51)
     /// 3. Has SPS-50 compliant OP_RETURN tag
     ///
     /// # Arguments
-    /// * `subprotocol_id` - SPS-50 subprotocol ID (0=admin, 1=checkpoint, 2=bridge)
-    /// * `tx_type` - Transaction type within the subprotocol
+    /// * `sps50_tag` - SPS-50 tag data (subprotocol ID + tx type)
     /// * `payload` - Serialized payload to embed in witness
     pub async fn build_envelope_tx(
         &self,
         sps50_tag: TagData,
         payload: Vec<u8>,
     ) -> anyhow::Result<Transaction> {
+        self.build_envelope_tx_inner(sps50_tag, payload, None).await
+    }
+
+    /// Build a funded SPS-50 envelope transaction with a specific envelope keypair.
+    ///
+    /// The keypair's public key is embedded in the envelope script per SPS-51,
+    /// and the tapscript spend is signed with the keypair's secret key.
+    pub async fn build_envelope_tx_with_keypair(
+        &self,
+        sps50_tag: TagData,
+        payload: Vec<u8>,
+        envelope_keypair: &UntweakedKeypair,
+    ) -> anyhow::Result<Transaction> {
+        self.build_envelope_tx_inner(sps50_tag, payload, Some(envelope_keypair))
+            .await
+    }
+
+    async fn build_envelope_tx_inner(
+        &self,
+        sps50_tag: TagData,
+        payload: Vec<u8>,
+        envelope_keypair: Option<&UntweakedKeypair>,
+    ) -> anyhow::Result<Transaction> {
         let fee = Self::DEFAULT_FEE;
-        // Calculate funding amount needed (outputs + fee buffer)
         let dust_amount = Amount::from_sat(1000);
         let funding_amount = fee + dust_amount + Amount::from_sat(1000);
 
-        // Generate taproot keypair and build reveal script
         let secp = Secp256k1::new();
+
+        // Generate a random keypair (used as internal key in both paths)
         let mut rng = rand::thread_rng();
         let mut key_bytes = [0u8; 32];
         rng.fill_bytes(&mut key_bytes);
-        let keypair = UntweakedKeypair::from_seckey_slice(&secp, &key_bytes)?;
-        let (internal_key, _parity) = XOnlyPublicKey::from_keypair(&keypair);
+        let random_keypair = UntweakedKeypair::from_seckey_slice(&secp, &key_bytes)?;
 
-        let reveal_script = build_reveal_script(&internal_key, &payload);
+        let keypair = envelope_keypair.unwrap_or(&random_keypair);
+        let (internal_key, _parity) = XOnlyPublicKey::from_keypair(keypair);
+
+        // Build the reveal script. When an envelope keypair is provided, use the
+        // real SPS-51 envelope format (pubkey + OP_CHECKSIG + data). Otherwise
+        // use a simple OP_TRUE envelope for subprotocols that don't need SPS-51.
+        let reveal_script = if envelope_keypair.is_some() {
+            EnvelopeScriptBuilder::with_pubkey(&internal_key.serialize())?
+                .add_envelope(&payload)?
+                .build()?
+        } else {
+            build_simple_envelope_script(&payload)
+        };
 
         // Create taproot spend info
         let taproot_spend_info =
@@ -420,7 +450,7 @@ impl AsmTestHarness {
             .await?;
         let commit_outpoint = OutPoint::new(commit_txid, commit_vout);
 
-        // Build SPS-50 compliant OP_RETURN tag using TagData and ParseConfig
+        // Build SPS-50 compliant OP_RETURN tag
         let op_return_script =
             ParseConfig::new(self.asm_params.magic).encode_script_buf(&sps50_tag.as_ref())?;
 
@@ -437,28 +467,50 @@ impl AsmTestHarness {
             script_pubkey: change_address.script_pubkey(),
         };
 
-        // Create witness with control block and reveal script
+        // Build control block for tapscript spend
         let control_block = taproot_spend_info
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or_else(|| anyhow::anyhow!("Failed to create control block"))?;
 
-        let mut witness = Witness::new();
-        witness.push(reveal_script.as_bytes());
-        witness.push(control_block.serialize());
-
+        // Build unsigned tx first
         let tx_input = TxIn {
             previous_output: commit_outpoint,
             script_sig: ScriptBuf::new(),
             sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            witness,
+            witness: Witness::new(),
         };
 
-        let reveal_tx = Transaction {
+        let mut reveal_tx = Transaction {
             version: Version::TWO,
             lock_time: LockTime::ZERO,
             input: vec![tx_input],
             output: vec![op_return_output, change_output],
         };
+
+        // Build witness. SPS-51 envelopes need a Schnorr signature; simple
+        // envelopes just need the script and control block.
+        let mut witness = Witness::new();
+        if envelope_keypair.is_some() {
+            let commit_output = TxOut {
+                value: funding_amount,
+                script_pubkey: taproot_address.script_pubkey(),
+            };
+            let leaf_hash =
+                bitcoin::TapLeafHash::from_script(&reveal_script, LeafVersion::TapScript);
+            let sighash = SighashCache::new(&reveal_tx)
+                .taproot_script_spend_signature_hash(
+                    0,
+                    &Prevouts::All(&[&commit_output]),
+                    leaf_hash,
+                    TapSighashType::Default,
+                )?;
+            let msg = Message::from_digest_slice(&sighash.to_byte_array())?;
+            let signature = SECP256K1.sign_schnorr(&msg, keypair);
+            witness.push(signature.as_ref());
+        }
+        witness.push(reveal_script.as_bytes());
+        witness.push(control_block.serialize());
+        reveal_tx.input[0].witness = witness;
 
         Ok(reveal_tx)
     }
@@ -468,38 +520,27 @@ impl AsmTestHarness {
 // Helper Functions
 // ============================================================================
 
-/// Build envelope script for embedding data in Bitcoin transaction.
+/// Build a simple envelope script for subprotocols that don't need SPS-51 auth.
 ///
-/// Creates an OP_FALSE OP_IF ... OP_ENDIF envelope containing the payload,
-/// followed by OP_TRUE to satisfy tapscript's requirement that exactly one
-/// value remains on the stack after execution.
-fn build_envelope_script(payload: &[u8]) -> ScriptBuf {
+/// Creates an `OP_FALSE OP_IF <data> OP_ENDIF OP_TRUE` tapscript.
+fn build_simple_envelope_script(payload: &[u8]) -> ScriptBuf {
+    use bitcoin::blockdata::script;
+    use bitcoin::opcodes::all::{OP_ENDIF, OP_IF};
+    use bitcoin::opcodes::OP_FALSE;
+    use bitcoin::script::PushBytesBuf;
+
     let mut builder = script::Builder::new()
         .push_opcode(OP_FALSE)
         .push_opcode(OP_IF);
 
-    // Insert data in chunks (max 520 bytes per push)
     for chunk in payload.chunks(520) {
         builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
     }
 
-    builder = builder.push_opcode(OP_ENDIF);
-
-    // Tapscript requires exactly one element on stack after execution
-    // OP_TRUE (OP_1) leaves a single TRUE value
-    builder = builder.push_int(1);
-
-    builder.into_script()
-}
-
-/// Build taproot reveal script containing payload envelope.
-///
-/// Creates a taproot leaf script with just the envelope pattern.
-/// In tapscript, we don't need OP_CHECKMULTISIG - the taproot control
-/// block already proves the script is authorized.
-fn build_reveal_script(_taproot_public_key: &XOnlyPublicKey, payload: &[u8]) -> ScriptBuf {
-    // In tapscript, we only need the envelope - the control block proves authorization
-    build_envelope_script(payload)
+    builder
+        .push_opcode(OP_ENDIF)
+        .push_int(1)
+        .into_script()
 }
 
 /// Create taproot spend info with reveal script.

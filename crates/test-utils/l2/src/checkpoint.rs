@@ -22,6 +22,11 @@ use strata_test_utils::ArbitraryGenerator;
 )]
 pub struct CheckpointTestHarness {
     genesis_l1_height: u32,
+    /// Raw secret key bytes for the sequencer identity.
+    ///
+    /// Stored so integration tests can reconstruct a Bitcoin keypair for SPS-51
+    /// envelope signing where the envelope pubkey must match the sequencer predicate.
+    sequencer_secret_key: [u8; 32],
     sequencer_pubkey: Vec<u8>,
     checkpoint_predicate: SigningKey,
     verified_tip: CheckpointTip,
@@ -42,12 +47,14 @@ impl CheckpointTestHarness {
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
         let sequencer_key = SigningKey::random(&mut rng);
+        let sequencer_secret_key = sequencer_key.to_bytes().into();
         let sequencer_pubkey = sequencer_key.verifying_key().to_bytes().to_vec();
         let checkpoint_predicate = SigningKey::random(&mut rng);
 
         let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
         Self {
             genesis_l1_height,
+            sequencer_secret_key,
             sequencer_pubkey,
             checkpoint_predicate,
             verified_tip: genesis_tip,
@@ -64,12 +71,14 @@ impl CheckpointTestHarness {
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
         let sequencer_key = SigningKey::random(&mut rng);
+        let sequencer_secret_key = sequencer_key.to_bytes().into();
         let sequencer_pubkey = sequencer_key.verifying_key().to_bytes().to_vec();
         let checkpoint_predicate = SigningKey::random(&mut rng);
 
         let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
         Self {
             genesis_l1_height,
+            sequencer_secret_key,
             sequencer_pubkey,
             checkpoint_predicate,
             verified_tip: genesis_tip,
@@ -96,6 +105,14 @@ impl CheckpointTestHarness {
     /// Returns the sequencer's x-only public key bytes (used as envelope pubkey).
     pub fn sequencer_pubkey(&self) -> &[u8] {
         &self.sequencer_pubkey
+    }
+
+    /// Returns the sequencer's raw secret key bytes.
+    ///
+    /// Used by integration tests to construct a Bitcoin keypair for SPS-51 envelope
+    /// transactions where the taproot pubkey must match the sequencer predicate.
+    pub fn sequencer_secret_key(&self) -> &[u8; 32] {
+        &self.sequencer_secret_key
     }
 
     pub fn genesis_l1_height(&self) -> u32 {
