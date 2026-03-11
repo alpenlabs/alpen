@@ -21,7 +21,9 @@ pub enum CheckpointValidationError {
 pub enum InvalidCheckpointPayload {
     /// Envelope pubkey does not match the sequencer predicate pubkey.
     #[error(
-        "envelope pubkey does not match sequencer predicate: expected {expected:?}, got {actual:?}"
+        "envelope pubkey does not match sequencer predicate: expected {}, got {}",
+        hex_encode(expected),
+        hex_encode(actual)
     )]
     SequencerPubkeyMismatch { expected: Vec<u8>, actual: Vec<u8> },
 
@@ -97,4 +99,15 @@ pub enum InvalidCheckpointPayload {
         available_sat: u64,
         required_sat: u64,
     },
+}
+
+/// Encode bytes as a hex string for error display.
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            use std::fmt::Write;
+            write!(s, "{b:02x}").unwrap();
+            s
+        })
 }
