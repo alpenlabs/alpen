@@ -15321,7 +15321,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-manifest-types",
  "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",

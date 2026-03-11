@@ -27,7 +27,7 @@ pub(crate) fn build_snark_withdrawal_json(
     fees: u32,
 ) -> Result<serde_json::Value, Error> {
     // Build withdrawal message data
-    let withdrawal_msg_data = WithdrawalMsgData::new(fees, dest_bytes)
+    let withdrawal_msg_data = WithdrawalMsgData::new(fees, dest_bytes, 0)
         .ok_or_else(|| Error::TxBuilder("destination descriptor too long".to_string()))?;
 
     let encoded_body = strata_codec::encode_to_vec(&withdrawal_msg_data)
