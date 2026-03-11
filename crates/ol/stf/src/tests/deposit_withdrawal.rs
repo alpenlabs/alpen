@@ -2,8 +2,8 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
-use strata_asm_manifest_types::DepositIntentLogData;
-use strata_identifiers::{Buf32, SubjectId, WtxidsRoot};
+use strata_asm_logs::DepositLog;
+use strata_identifiers::{Buf32, DepositDescriptor, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
@@ -47,17 +47,15 @@ fn test_snark_account_deposit_and_withdrawal() {
     let deposit_amount = 150_000_000u64; // 1.5 BTC in satoshis (must be enough to cover withdrawal)
     let dest_subject = SubjectId::from([42u8; 32]);
 
-    // Create a deposit intent log in the manifest
-    let deposit_log_data = DepositIntentLogData::new(snark_serial, dest_subject, deposit_amount);
-    let deposit_log_payload =
-        strata_codec::encode_to_vec(&deposit_log_data).expect("Should encode deposit log data");
+    // Create a deposit log matching what bridge-v1 emits
+    let dest_subject_bytes =
+        SubjectIdBytes::try_new(dest_subject.inner().to_vec()).expect("valid subject bytes");
+    let descriptor = DepositDescriptor::new(snark_serial, dest_subject_bytes)
+        .expect("valid deposit descriptor");
+    let deposit_log_data = DepositLog::new(descriptor.encode_to_varvec(), deposit_amount);
 
-    // Create an ASM log entry with the deposit intent
-    let deposit_log = AsmLogEntry::from_msg(
-        strata_asm_manifest_types::DEPOSIT_INTENT_ASM_LOG_TYPE_ID,
-        deposit_log_payload,
-    )
-    .expect("Should create deposit log");
+    // Create an ASM log entry with the deposit
+    let deposit_log = AsmLogEntry::from_log(&deposit_log_data).expect("Should create deposit log");
 
     // Create manifest with the deposit log
     let genesis_manifest = AsmManifest::new(
