@@ -309,6 +309,36 @@ mod tests {
         ));
     }
 
+    /// Even though, the bitcoin would reject an envelope without a envelope_pubkey set,
+    /// this test is the additional railguard that check that the ASM checkpoint verification
+    /// **would reject it as well**.
+    #[test]
+    fn test_empty_envelope_pubkey_rejected() {
+        let (state, harness) = test_setup();
+        let payload = harness.build_payload();
+        let current_l1_height = payload.new_tip().l1_height + 1;
+        let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
+
+        let envelope = EnvelopeCheckpoint {
+            payload,
+            envelope_pubkey: vec![], // empty pubkey
+        };
+
+        let err = validate_checkpoint_and_extract_withdrawal_intents(
+            &state,
+            current_l1_height,
+            &envelope,
+            &verified_aux_data,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CheckpointValidationError::InvalidPayload(
+                InvalidCheckpointPayload::SequencerPubkeyMismatch { .. }
+            )
+        ));
+    }
+
     #[test]
     fn test_invalid_epoch_progression() {
         let (state, harness) = test_setup();

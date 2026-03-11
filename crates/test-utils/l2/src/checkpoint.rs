@@ -253,8 +253,7 @@ impl CheckpointTestHarness {
         ol_logs: Vec<OLLog>,
         manifest_hashes: &[[u8; 32]],
     ) -> CheckpointPayload {
-        use k256::ecdsa::signature::SignatureEncoding;
-        use k256::schnorr::signature::Signer;
+        use k256::{ecdsa::signature::SignatureEncoding, schnorr::signature::Signer};
 
         let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let mut arb = ArbitraryGenerator::new();

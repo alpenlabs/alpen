@@ -186,11 +186,8 @@ impl BridgeExt for AsmTestHarness {
         let payload =
             checkpoint_harness.build_payload_with_tip_and_logs(new_tip, ol_logs, &mmr_leaves);
 
-        // 5. Sign with sequencer predicate
-        let signed_payload = checkpoint_harness.sign_payload(payload);
-
-        // 6. Serialize to SSZ and submit as envelope tx (subprotocol=1, tx_type=1)
-        let payload_bytes = signed_payload.as_ssz_bytes();
+        // 5. Serialize payload to SSZ and submit as envelope tx (subprotocol=1, tx_type=1)
+        let payload_bytes = payload.as_ssz_bytes();
         let checkpoint_tag = TagData::new(1, 1, vec![]).expect("valid checkpoint tag");
         let tx = self
             .build_envelope_tx(checkpoint_tag, payload_bytes)
