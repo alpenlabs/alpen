@@ -5,6 +5,7 @@ use alpen_ee_common::{
 };
 use strata_ee_acct_runtime::process_update_unconditionally;
 use strata_ee_acct_types::EeAccountState;
+use strata_predicate::PredicateKey;
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_identifiers::EpochCommitment;
 use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
@@ -190,8 +191,12 @@ pub(crate) fn apply_epoch_operations(
             op.extra_data().to_vec(),
             op.processed_messages().to_vec(),
         );
-        process_update_unconditionally::<EvmExecutionEnvironment>(state, &manifest)
-            .map_err(|e| OLTrackerError::Other(e.to_string()))?;
+        process_update_unconditionally::<EvmExecutionEnvironment>(
+            state,
+            &manifest,
+            PredicateKey::always_accept(),
+        )
+        .map_err(|e| OLTrackerError::Other(e.to_string()))?;
     }
 
     Ok(())
@@ -277,7 +282,6 @@ mod tests {
             // Scenario: Apply empty operations list
             // Expected: State unchanged, returns Ok
             let mut state = EeAccountState::new(
-                vec![],
                 Hash::new([0u8; 32]),
                 BitcoinAmount::zero(),
                 vec![],

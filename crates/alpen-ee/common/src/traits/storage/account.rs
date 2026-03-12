@@ -123,7 +123,6 @@ pub mod tests {
 
     fn create_test_ee_account_state() -> EeAccountState {
         EeAccountState::new(
-            Vec::new(),
             [0u8; 32].into(),
             BitcoinAmount::ZERO,
             Vec::new(),

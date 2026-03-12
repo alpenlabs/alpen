@@ -219,7 +219,6 @@ mod tests {
         parent_blockhash: Hash,
     ) -> ExecBlockRecord {
         let account_state = EeAccountState::new(
-            Vec::new(),
             blockhash,
             BitcoinAmount::ZERO,
             Vec::new(),

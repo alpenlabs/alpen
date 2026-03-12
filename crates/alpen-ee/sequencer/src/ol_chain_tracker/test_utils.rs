@@ -100,7 +100,7 @@ pub(crate) fn create_mock_exec_record(ol_block: OLBlockCommitment) -> ExecBlockR
         ExecOutputs::new_empty(),
     );
 
-    let account_state = EeAccountState::new(vec![], hash, BitcoinAmount::ZERO, vec![], vec![]);
+    let account_state = EeAccountState::new(hash, BitcoinAmount::ZERO, vec![], vec![]);
 
     ExecBlockRecord::new(
         package,
