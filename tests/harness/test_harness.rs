@@ -56,6 +56,7 @@ use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     SubprotocolInstance,
 };
+use strata_asm_spec::StrataAsmSpec;
 use strata_asm_worker::{AsmWorkerBuilder, AsmWorkerHandle, WorkerContext};
 use strata_btc_types::BlockHashExt;
 use strata_l1_envelope_fmt::builder::{build_envelope_script, EnvelopeScriptBuilder};
@@ -665,9 +666,11 @@ impl AsmTestHarnessBuilder {
         let executor = task_manager.create_executor();
 
         // 7. Launch ASM worker service
+        let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
         let asm_handle = AsmWorkerBuilder::new()
             .with_context(context.clone())
             .with_asm_params(asm_params.clone())
+            .with_asm_spec(asm_spec)
             .launch(&executor)?;
 
         let harness = AsmTestHarness {

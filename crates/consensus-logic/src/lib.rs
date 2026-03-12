@@ -1,5 +1,10 @@
 //! Consensus validation logic and core state machine
 
+// When debug-asm is enabled, StrataAsmSpec is not directly imported but
+// strata-asm-spec is still needed as a transitive dependency (DebugAsmSpec wraps it).
+#[cfg(feature = "debug-asm")]
+use strata_asm_spec as _;
+
 pub mod asm_worker_context;
 pub mod chain_worker_context;
 pub mod checkpoint_verification;
