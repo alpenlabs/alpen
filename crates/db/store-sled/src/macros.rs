@@ -217,6 +217,101 @@ macro_rules! impl_borsh_value_codec {
 }
 
 #[macro_export]
+macro_rules! impl_rkyv_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                ::rkyv::to_bytes::<::rkyv::rancor::Error>(self)
+                    .map(::rkyv::util::AlignedVec::into_vec)
+                    .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    })
+            }
+
+            fn decode_value(
+                data: &[u8],
+            ) -> ::std::result::Result<Self, ::typed_sled::codec::CodecError> {
+                ::rkyv::from_bytes::<Self, ::rkyv::rancor::Error>(data).map_err(|err| {
+                    ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    }
+                })
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_rkyv_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                ::rkyv::to_bytes::<::rkyv::rancor::Error>(self)
+                    .map(::rkyv::util::AlignedVec::into_vec)
+                    .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    })
+            }
+
+            fn decode_value(
+                data: ::sled::IVec,
+            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
+                ::borsh::BorshDeserialize::deserialize_reader(&mut data.as_ref()).map_err(|err| {
+                    ::typed_sled::codec::CodecError::DeserializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    }
+                })
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_rkyv_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            type Decoded = ::typed_sled::codec::RkyvView<
+                ::rkyv::util::AlignedVec,
+                <Self as ::rkyv::Archive>::Archived,
+            >;
+
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                ::rkyv::to_bytes::<::rkyv::rancor::Error>(self)
+                    .map(::rkyv::util::AlignedVec::into_vec)
+                    .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    })
+            }
+
+            fn decode_value(
+                data: ::sled::IVec,
+            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
+                let mut aligned = ::rkyv::util::AlignedVec::with_capacity(data.len());
+                aligned.extend_from_slice(data.as_ref());
+
+                ::typed_sled::codec::RkyvView::try_new(aligned).map_err(|err| {
+                    ::typed_sled::codec::CodecError::DeserializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: err.into(),
+                    }
+                })
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! impl_codec_key_codec {
     ($table_name:ident, $key:ty) => {
         impl ::typed_sled::codec::KeyCodec<$table_name> for $key {
@@ -321,4 +416,38 @@ macro_rules! define_sled_database {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use rkyv::{Archive, Deserialize, Serialize};
+    use typed_sled::SledDb;
+
+    #[derive(Archive, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+    pub(crate) struct RkyvValue {
+        block_height: u64,
+        payload: Vec<u8>,
+    }
+
+    define_table_without_codec!(
+        /// Schema used to verify the rkyv value codec macro.
+        (RkyvValueSchema) u64 => RkyvValue
+    );
+    impl_rkyv_value_codec!(RkyvValueSchema, RkyvValue);
+
+    #[test]
+    fn rkyv_value_codec_roundtrips_through_typed_sled() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = SledDb::new(db).unwrap();
+        let tree = sled_db.get_tree::<RkyvValueSchema>().unwrap();
+
+        let expected = RkyvValue {
+            block_height: 7,
+            payload: vec![1, 2, 3, 4],
+        };
+
+        tree.insert(&expected.block_height, &expected).unwrap();
+
+        assert_eq!(tree.get(&expected.block_height).unwrap(), Some(expected));
+    }
 }
