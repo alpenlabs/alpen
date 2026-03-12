@@ -9,6 +9,8 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
+strata-asm-proto-checkpoint.workspace = true
+strata-asm-txs-checkpoint.workspace = true
 strata-asm-worker.workspace = true
 strata-checkpoint-types.workspace = true
 strata-common.workspace = true

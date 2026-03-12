@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
+use strata_asm_txs_checkpoint::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_csm_types::ClientState;
 use strata_identifiers::Epoch;
 use strata_params::Params;
@@ -36,6 +38,9 @@ pub struct CsmWorkerState {
     /// Last epoch we processed a checkpoint for.
     pub(crate) last_processed_epoch: Option<Epoch>,
 
+    /// Checkpoint Subprotocol State after processing last_asm_block
+    pub(crate) last_checkpoint_state: Option<CheckpointState>,
+
     /// Status channel for publishing state updates.
     pub(crate) status_channel: Arc<StatusChannel>,
 }
@@ -53,12 +58,29 @@ impl CsmWorkerState {
             .fetch_most_recent_state()?
             .unwrap_or((params.rollup.genesis_l1_view.blk, ClientState::default()));
 
+        // This can be `None` before the checkpoint subprotocol is first loaded,
+        // or if no ASM state exists yet for this block.
+        let checkpoint_state = storage
+            .asm()
+            .get_state(cur_block)?
+            .and_then(|asm_state| {
+                asm_state
+                    .state()
+                    .find_section(CHECKPOINT_SUBPROTOCOL_ID)
+                    .map(|section| {
+                        section
+                            .try_to_state::<CheckpointSubprotocol>()
+                            .expect("SectionState to SubprotocolState must be infallible")
+                    })
+            });
+
         Ok(Self {
             _params: params,
             storage,
             cur_state: Arc::new(cur_state),
             last_asm_block: Some(cur_block),
             last_processed_epoch: None,
+            last_checkpoint_state: checkpoint_state,
             status_channel,
         })
     }

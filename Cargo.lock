@@ -14545,6 +14545,8 @@ dependencies = [
  "serde_json",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-asm-proto-checkpoint",
+ "strata-asm-txs-checkpoint",
  "strata-asm-worker",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",

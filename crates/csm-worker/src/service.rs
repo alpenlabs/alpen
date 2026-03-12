@@ -1,5 +1,7 @@
 //! CSM worker service implementation.
 
+use strata_asm_proto_checkpoint::subprotocol::CheckpointSubprotocol;
+use strata_asm_txs_checkpoint::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
@@ -42,10 +44,35 @@ impl SyncService for CsmWorkerService {
             return Ok(Response::Continue);
         };
 
-        trace!("CSM is processing ASM logs.");
-
         // Track which block we're processing
         state.last_asm_block = Some(asm_block);
+
+        let new_checkpoint_state = state
+            .storage
+            .asm()
+            .get_state(asm_block)
+            .unwrap()
+            .unwrap()
+            .state()
+            .find_section(CHECKPOINT_SUBPROTOCOL_ID)
+            .unwrap()
+            .try_to_state::<CheckpointSubprotocol>()
+            .unwrap();
+
+        if let Some(old_state) = &state.last_checkpoint_state {
+            if old_state == &new_checkpoint_state {
+                info!("No changes to the checkpoint state after processing L1 block");
+                return Ok(Response::Continue);
+            } else {
+                info!(
+                    "Changes to the checkpoint state after processing L1 block. We need to do something"
+                );
+            }
+        } else {
+            info!("nothing to do let's just update the state and continue")
+        }
+
+        trace!("CSM is processing ASM logs.");
 
         // Extract checkpoint logs from ASM status
         let logs = asm_status.logs();
