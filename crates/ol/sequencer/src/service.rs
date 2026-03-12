@@ -159,6 +159,11 @@ pub struct SequencerServiceState<C: SequencerContext> {
     context: Arc<C>,
     seen_duties: HashSet<Buf32>,
     duty_context: DutyContext<C>,
+    #[expect(
+        dead_code,
+        reason = "placeholder state for GenerationTick follow-up commit"
+    )]
+    last_seen_tip: Option<OLBlockId>,
     active_duties: Arc<AtomicU32>,
     failed_duty_count: Arc<AtomicU32>,
     failed_duties_rx: mpsc::Receiver<Buf32>,
@@ -186,6 +191,7 @@ impl<C: SequencerContext> SequencerServiceState<C> {
             context,
             seen_duties: HashSet::new(),
             duty_context,
+            last_seen_tip: None,
             active_duties,
             failed_duty_count,
             failed_duties_rx,
@@ -237,10 +243,15 @@ impl<C: SequencerContext> AsyncService for SequencerService<C> {
     async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
         match input {
             SequencerEvent::Tick => process_tick(state).await,
+            SequencerEvent::GenerationTick => process_generation_tick(state).await,
         }
 
         Ok(Response::Continue)
     }
+}
+
+async fn process_generation_tick<C: SequencerContext>(_state: &mut SequencerServiceState<C>) {
+    // Placeholder for follow-up commit that adds explicit template generation on this tick.
 }
 
 async fn process_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>) {

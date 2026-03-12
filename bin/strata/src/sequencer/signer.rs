@@ -38,6 +38,12 @@ pub(crate) fn start_sequencer_signer(
     let poll_interval_ms = args
         .duty_poll_interval
         .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL_MS);
+    let ol_block_interval_ms = runctx
+        .config()
+        .sequencer
+        .as_ref()
+        .ok_or_else(|| anyhow!("sequencer config required when sequencer signer is enabled"))?
+        .ol_block_time_ms;
 
     let context = Arc::new(NodeSequencerContext::new(
         handles.blockasm_handle().clone(),
@@ -52,6 +58,7 @@ pub(crate) fn start_sequencer_signer(
             context,
             sequencer_key.sk,
             Duration::from_millis(poll_interval_ms),
+            Duration::from_millis(ol_block_interval_ms),
         )
         .launch(runctx.executor())
         .await
@@ -62,7 +69,11 @@ pub(crate) fn start_sequencer_signer(
 
     let service_monitor = launch_result?;
 
-    info!(%poll_interval_ms, "Sequencer signer service started");
+    info!(
+        %poll_interval_ms,
+        %ol_block_interval_ms,
+        "Sequencer signer service started"
+    );
 
     Ok(service_monitor)
 }
