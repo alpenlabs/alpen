@@ -1,7 +1,12 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
+use ssz_types::FixedVector;
 use strata_btc_types::TIMESTAMPS_FOR_MEDIAN;
+use tree_hash::{PackedEncoding, Sha256Hasher, TreeHash, TreeHashType};
+use tree_hash_derive::TreeHash;
 
 /// The middle index for selecting the median timestamp.
 /// Since TIMESTAMPS_FOR_MEDIAN is odd, the median is the element at index 5 (the 6th element)
@@ -23,6 +28,15 @@ pub struct TimestampStore {
     head: usize,
 }
 
+/// The SSZ representation of the [`TimestampStore`].
+#[derive(DeriveEncode, DeriveDecode, TreeHash)]
+struct TimestampStoreSsz {
+    /// The array that holds exactly `TIMESTAMPS_FOR_MEDIAN` timestamps.
+    buffer: FixedVector<u32, TIMESTAMPS_FOR_MEDIAN>,
+    /// The index in the buffer where the next timestamp will be inserted.
+    head: u64,
+}
+
 impl Default for TimestampStore {
     fn default() -> Self {
         Self {
@@ -33,6 +47,35 @@ impl Default for TimestampStore {
 }
 
 impl TimestampStore {
+    /// Converts the [`TimestampStore`] to its SSZ representation.
+    fn to_ssz(&self) -> TimestampStoreSsz {
+        TimestampStoreSsz {
+            buffer: self.buffer.into(),
+            head: self.head as u64,
+        }
+    }
+
+    /// Converts the SSZ representation of a [`TimestampStore`] to a [`TimestampStore`].
+    fn from_ssz(value: TimestampStoreSsz) -> Result<Self, DecodeError> {
+        let head = usize::try_from(value.head)
+            .map_err(|_| DecodeError::BytesInvalid("timestamp head exceeds usize".into()))?;
+        if head >= TIMESTAMPS_FOR_MEDIAN {
+            return Err(DecodeError::BytesInvalid(format!(
+                "timestamp head {} exceeds buffer length {}",
+                head, TIMESTAMPS_FOR_MEDIAN
+            )));
+        }
+
+        Ok(Self {
+            buffer: value
+                .buffer
+                .to_vec()
+                .try_into()
+                .map_err(|_| DecodeError::BytesInvalid("invalid timestamp buffer length".into()))?,
+            head,
+        })
+    }
+
     /// Creates a new `TimestampStore` initialized with the given timestamps.
     /// The `initial_timestamps` array fills the buffer, and the `head` is set to 0,
     /// meaning that the next inserted timestamp will overwrite the first element.
@@ -61,9 +104,62 @@ impl TimestampStore {
     }
 }
 
+impl Encode for TimestampStore {
+    fn is_ssz_fixed_len() -> bool {
+        <TimestampStoreSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <TimestampStoreSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for TimestampStore {
+    fn is_ssz_fixed_len() -> bool {
+        <TimestampStoreSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <TimestampStoreSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::from_ssz(TimestampStoreSsz::from_ssz_bytes(bytes)?)
+    }
+}
+
+impl TreeHash for TimestampStore {
+    fn tree_hash_type() -> TreeHashType {
+        <TimestampStoreSsz as TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> PackedEncoding {
+        <TimestampStoreSsz as TreeHash>::tree_hash_packed_encoding(&self.to_ssz())
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <TimestampStoreSsz as TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> <Sha256Hasher as tree_hash::TreeHashDigest>::Output {
+        <TimestampStoreSsz as TreeHash>::tree_hash_root(&self.to_ssz())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::array;
+
+    use ssz::{Decode, Encode};
+    use tree_hash::{Sha256Hasher, TreeHash};
 
     use super::*;
 
@@ -165,5 +261,27 @@ mod tests {
 
         timestamps.insert(2); // Replaces 15, sorted becomes [1,2,3,4,6,7,8,9,11,12,20], median = 7
         assert_eq!(timestamps.median(), 7);
+    }
+
+    #[test]
+    fn test_ssz_roundtrip() {
+        let initial_timestamps: [u32; 11] = array::from_fn(|i| (i + 1) as u32);
+        let timestamps = TimestampStore::new(initial_timestamps);
+
+        let bytes = timestamps.as_ssz_bytes();
+        let decoded = TimestampStore::from_ssz_bytes(&bytes).unwrap();
+
+        assert_eq!(timestamps, decoded);
+    }
+
+    #[test]
+    fn test_tree_hash_deterministic() {
+        let initial_timestamps: [u32; 11] = array::from_fn(|i| (i + 10) as u32);
+        let timestamps = TimestampStore::new(initial_timestamps);
+
+        let hash1 = <TimestampStore as TreeHash<Sha256Hasher>>::tree_hash_root(&timestamps);
+        let hash2 = <TimestampStore as TreeHash<Sha256Hasher>>::tree_hash_root(&timestamps);
+
+        assert_eq!(hash1, hash2);
     }
 }

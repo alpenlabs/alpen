@@ -14303,11 +14303,16 @@ dependencies = [
  "borsh",
  "rand 0.8.5",
  "serde",
+ "ssz",
+ "ssz_derive",
+ "ssz_types",
  "strata-btc-types",
  "strata-crypto",
  "strata-identifiers",
  "strata-test-utils-btc",
  "thiserror 2.0.18",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]

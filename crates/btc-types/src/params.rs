@@ -3,6 +3,8 @@ use std::io;
 use bitcoin::params::{MAINNET, Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use tree_hash::{PackedEncoding, TreeHash, TreeHashDigest, TreeHashType};
 
 #[derive(Debug, Clone)]
 pub struct BtcParams(Params);
@@ -24,19 +26,7 @@ impl Default for BtcParams {
 
 impl BorshSerialize for BtcParams {
     fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize the network type as an index since Network doesn't implement BorshSerialize
-        let network_index = match self.0.network {
-            bitcoin::Network::Bitcoin => 0u8,
-            bitcoin::Network::Testnet => 1u8,
-            bitcoin::Network::Signet => 2u8,
-            bitcoin::Network::Regtest => 3u8,
-            _ => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Unsupported network type",
-                ));
-            }
-        };
+        let network_index = self.network_index()?;
         BorshSerialize::serialize(&network_index, writer)
     }
 }
@@ -100,6 +90,35 @@ impl From<Params> for BtcParams {
 }
 
 impl BtcParams {
+    fn network_index(&self) -> io::Result<u8> {
+        match self.0.network {
+            bitcoin::Network::Bitcoin => Ok(0),
+            bitcoin::Network::Testnet => Ok(1),
+            bitcoin::Network::Signet => Ok(2),
+            bitcoin::Network::Regtest => Ok(3),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unsupported network type",
+            )),
+        }
+    }
+
+    fn from_network_index(network_index: u8) -> io::Result<Self> {
+        let network = match network_index {
+            0 => bitcoin::Network::Bitcoin,
+            1 => bitcoin::Network::Testnet,
+            2 => bitcoin::Network::Signet,
+            3 => bitcoin::Network::Regtest,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid network index",
+                ));
+            }
+        };
+        Ok(BtcParams::from(Params::from(network)))
+    }
+
     pub fn into_inner(self) -> Params {
         self.0
     }
@@ -113,6 +132,68 @@ impl BtcParams {
     }
 }
 
+impl Encode for BtcParams {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <u8 as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.network_index()
+            .expect("btc params should only contain supported networks")
+            .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as Encode>::ssz_fixed_len()
+    }
+}
+
+impl Decode for BtcParams {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <u8 as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let network_index = u8::from_ssz_bytes(bytes)?;
+        Self::from_network_index(network_index)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+    }
+}
+
+impl<H: TreeHashDigest> TreeHash<H> for BtcParams {
+    fn tree_hash_type() -> TreeHashType {
+        <u8 as TreeHash<H>>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> PackedEncoding {
+        <u8 as TreeHash<H>>::tree_hash_packed_encoding(
+            &self
+                .network_index()
+                .expect("btc params should only contain supported networks"),
+        )
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <u8 as TreeHash<H>>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> H::Output {
+        <u8 as TreeHash<H>>::tree_hash_root(
+            &self
+                .network_index()
+                .expect("btc params should only contain supported networks"),
+        )
+    }
+}
+
 impl AsRef<Params> for BtcParams {
     fn as_ref(&self) -> &Params {
         &self.0
@@ -122,6 +203,8 @@ impl AsRef<Params> for BtcParams {
 #[cfg(test)]
 mod tests {
     use bitcoin::Network;
+    use ssz::{Decode, Encode};
+    use tree_hash::{Sha256Hasher, TreeHash};
 
     use super::*;
 
@@ -147,5 +230,25 @@ mod tests {
             let serde_result: BtcParams = serde_json::from_str(&json_data).unwrap();
             assert_eq!(params, serde_result);
         }
+    }
+
+    #[test]
+    fn test_ssz_roundtrip() {
+        let params = BtcParams::from(Params::from(Network::Signet));
+
+        let bytes = params.as_ssz_bytes();
+        let decoded = BtcParams::from_ssz_bytes(&bytes).unwrap();
+
+        assert_eq!(params, decoded);
+    }
+
+    #[test]
+    fn test_tree_hash_deterministic() {
+        let params = BtcParams::from(Params::from(Network::Regtest));
+
+        let hash1 = <BtcParams as TreeHash<Sha256Hasher>>::tree_hash_root(&params);
+        let hash2 = <BtcParams as TreeHash<Sha256Hasher>>::tree_hash_root(&params);
+
+        assert_eq!(hash1, hash2);
     }
 }

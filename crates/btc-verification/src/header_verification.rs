@@ -4,10 +4,12 @@ use arbitrary::Arbitrary;
 use bitcoin::{BlockHash, CompactTarget, Network, block::Header, hashes::Hash, params::Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use strata_btc_types::{BtcParams, GenesisL1View};
 use strata_crypto::hash::compute_borsh_hash;
 use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height};
 use thiserror::Error;
+use tree_hash_derive::TreeHash;
 
 use crate::{BtcWork, timestamp_store::TimestampStore, utils_btc::compute_block_hash};
 
@@ -80,6 +82,9 @@ pub enum L1VerificationError {
     BorshDeserialize,
     Deserialize,
     Serialize,
+    Encode,
+    Decode,
+    TreeHash,
 )]
 pub struct HeaderVerificationState {
     /// Bitcoin network parameters used for header verification.

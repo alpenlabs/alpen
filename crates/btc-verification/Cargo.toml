@@ -12,7 +12,12 @@ arbitrary.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
 serde.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_types.workspace = true
 thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
 
 [dev-dependencies]
 strata-test-utils-btc.workspace = true

@@ -18,6 +18,7 @@ use bitcoin::{
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode as SszDecode, DecodeError as SszDecodeError, Encode as SszEncode};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
@@ -307,6 +308,39 @@ impl BitcoinTxid {
     }
 }
 
+impl SszEncode for BitcoinTxid {
+    fn is_ssz_fixed_len() -> bool {
+        <Buf32 as SszEncode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Buf32 as SszEncode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.inner_raw().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.inner_raw().ssz_bytes_len()
+    }
+}
+
+impl SszDecode for BitcoinTxid {
+    fn is_ssz_fixed_len() -> bool {
+        <Buf32 as SszDecode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Buf32 as SszDecode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, SszDecodeError> {
+        let raw = Buf32::from_ssz_bytes(bytes)?;
+        Ok(Self(Txid::from_byte_array(raw.0)))
+    }
+}
+
 impl BorshSerialize for BitcoinTxid {
     fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         // Serialize the txid using bitcoin's built-in serialization
@@ -508,6 +542,43 @@ impl RawBitcoinTx {
     /// Creates a new `RawBitcoinTx` from a raw byte vector.
     pub fn from_raw_bytes(bytes: Vec<u8>) -> Self {
         RawBitcoinTx(bytes)
+    }
+
+    /// Returns the underlying raw transaction bytes.
+    pub fn as_raw_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl SszEncode for RawBitcoinTx {
+    fn is_ssz_fixed_len() -> bool {
+        <Vec<u8> as SszEncode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Vec<u8> as SszEncode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.0.ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.0.ssz_bytes_len()
+    }
+}
+
+impl SszDecode for RawBitcoinTx {
+    fn is_ssz_fixed_len() -> bool {
+        <Vec<u8> as SszDecode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Vec<u8> as SszDecode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, SszDecodeError> {
+        Ok(Self(Vec::<u8>::from_ssz_bytes(bytes)?))
     }
 }
 
