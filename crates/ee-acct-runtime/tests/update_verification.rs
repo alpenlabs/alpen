@@ -16,6 +16,7 @@ use common::{
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
 use strata_ee_acct_runtime::{EeVerificationInput, UpdateBuilder};
 use strata_ee_chain_types::ExecOutputs;
+use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
 
 #[test]
@@ -98,7 +99,8 @@ fn test_single_deposit_with_chunk() {
     let message = create_deposit_message(dest, value, source, 1);
 
     // Build using the builder to get correct pending inputs
-    let vinput = EeVerificationInput::new(&ee, &[], &[]);
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
         UpdateBuilder::new(1, snark_state, initial_state.clone(), vinput).expect("create builder");
 
@@ -146,7 +148,8 @@ fn test_multiple_deposits_multiple_chunks() {
     let msg1 = create_deposit_message(dest1, value1, source, 1);
     let msg2 = create_deposit_message(dest2, value2, source, 1);
 
-    let vinput = EeVerificationInput::new(&ee, &[], &[]);
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
         UpdateBuilder::new(1, snark_state, initial_state.clone(), vinput).expect("create builder");
 

@@ -18,6 +18,7 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{BuilderError, EeVerificationInput, UpdateBuilder};
 use strata_ee_acct_types::{PendingInputEntry, UpdateExtraData};
 use strata_ee_chain_types::{ExecInputs, ExecOutputs, SequenceTracker, SubjectDepositData};
+use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
 use strata_snark_acct_runtime::ProgramError;
 use strata_snark_acct_types::{
@@ -161,7 +162,8 @@ fn test_builder_rejects_wrong_parent() {
     let (initial_state, snark_state) = create_initial_state();
     let ee = SimpleExecutionEnvironment;
 
-    let vinput = EeVerificationInput::new(&ee, &[], &[]);
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
         UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
 
@@ -187,7 +189,8 @@ fn test_builder_rejects_wrong_deposit() {
     let source = AccountId::from([2u8; 32]);
     let message = create_deposit_message(dest, value, source, 1);
 
-    let vinput = EeVerificationInput::new(&ee, &[], &[]);
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
         UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
 
@@ -225,7 +228,8 @@ fn test_builder_advances_tip() {
     let msg1 = create_deposit_message(dest1, value, source, 1);
     let msg2 = create_deposit_message(dest2, value, source, 1);
 
-    let vinput = EeVerificationInput::new(&ee, &[], &[]);
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
     let mut builder =
         UpdateBuilder::new(1, snark_state, initial_state, vinput).expect("create builder");
 
@@ -276,7 +280,13 @@ fn test_process_decoded_transition_happy_path() {
         ExecOutputs::new_empty(),
     );
 
-    let mut vstate = create_vstate(&ee, &initial_state, UpdateOutputs::new_empty());
+    let predicate_key = PredicateKey::always_accept();
+    let mut vstate = create_vstate(
+        &ee,
+        &predicate_key,
+        &initial_state,
+        UpdateOutputs::new_empty(),
+    );
 
     let pending: Vec<PendingInputEntry> = vec![];
     let mut tracker = SequenceTracker::new(&pending);
@@ -301,7 +311,13 @@ fn test_chain_linkage_mismatch() {
         ExecOutputs::new_empty(),
     );
 
-    let mut vstate = create_vstate(&ee, &initial_state, UpdateOutputs::new_empty());
+    let predicate_key = PredicateKey::always_accept();
+    let mut vstate = create_vstate(
+        &ee,
+        &predicate_key,
+        &initial_state,
+        UpdateOutputs::new_empty(),
+    );
 
     let pending: Vec<PendingInputEntry> = vec![];
     let mut tracker = SequenceTracker::new(&pending);
@@ -325,7 +341,6 @@ fn test_deposit_mismatch_in_chunk() {
     let deposit = SubjectDepositData::new(dest, value);
 
     let initial_state = strata_ee_acct_types::EeAccountState::new(
-        Vec::new(),
         Hash::new([0u8; 32]),
         BitcoinAmount::from(0u64),
         vec![PendingInputEntry::Deposit(deposit)],
@@ -342,7 +357,13 @@ fn test_deposit_mismatch_in_chunk() {
 
     let transition = create_chunk_transition(parent, tip, inputs, ExecOutputs::new_empty());
 
-    let mut vstate = create_vstate(&ee, &initial_state, UpdateOutputs::new_empty());
+    let predicate_key = PredicateKey::always_accept();
+    let mut vstate = create_vstate(
+        &ee,
+        &predicate_key,
+        &initial_state,
+        UpdateOutputs::new_empty(),
+    );
 
     let pending = initial_state.pending_inputs().to_vec();
     let mut tracker = SequenceTracker::new(&pending);
@@ -362,7 +383,6 @@ fn test_input_count_mismatch() {
     let ee = SimpleExecutionEnvironment;
 
     let initial_state = strata_ee_acct_types::EeAccountState::new(
-        Vec::new(),
         Hash::new([0u8; 32]),
         BitcoinAmount::from(0u64),
         Vec::new(),
@@ -380,7 +400,13 @@ fn test_input_count_mismatch() {
 
     let transition = create_chunk_transition(parent, tip, inputs, ExecOutputs::new_empty());
 
-    let mut vstate = create_vstate(&ee, &initial_state, UpdateOutputs::new_empty());
+    let predicate_key = PredicateKey::always_accept();
+    let mut vstate = create_vstate(
+        &ee,
+        &predicate_key,
+        &initial_state,
+        UpdateOutputs::new_empty(),
+    );
 
     let pending: Vec<PendingInputEntry> = vec![];
     let mut tracker = SequenceTracker::new(&pending);

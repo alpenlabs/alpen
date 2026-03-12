@@ -201,7 +201,6 @@ mod tests {
         ssz_proptest!(
             EeAccountState,
             (
-                prop::collection::vec(any::<u8>(), 0..32),
                 any::<[u8; 32]>(),
                 any::<u64>(),
                 prop::collection::vec(pending_input_entry_strategy(), 0..5),
@@ -213,17 +212,14 @@ mod tests {
                     0..5,
                 ),
             )
-                .prop_map(
-                    |(chunk_predicate_key, last_exec_blkid, balance, inputs, fincls)| {
-                        EeAccountState {
-                            chunk_predicate_key: chunk_predicate_key.into(),
-                            last_exec_blkid: last_exec_blkid.into(),
-                            tracked_balance: BitcoinAmount::from_sat(balance),
-                            pending_inputs: inputs.into(),
-                            pending_fincls: fincls.into(),
-                        }
-                    },
-                )
+                .prop_map(|(last_exec_blkid, balance, inputs, fincls)| {
+                    EeAccountState {
+                        last_exec_blkid: last_exec_blkid.into(),
+                        tracked_balance: BitcoinAmount::from_sat(balance),
+                        pending_inputs: inputs.into(),
+                        pending_fincls: fincls.into(),
+                    }
+                },)
         );
     }
 }

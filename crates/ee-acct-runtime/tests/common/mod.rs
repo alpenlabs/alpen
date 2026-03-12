@@ -14,6 +14,7 @@ use strata_ee_acct_runtime::{
 use strata_ee_acct_types::{DecodedEeMessageData, EeAccountState, EnvError, UpdateExtraData};
 use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
 use strata_msg_fmt::Msg as MsgTrait;
+use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
 use strata_snark_acct_runtime::{
     ArchivedPrivateInput as ArchivedSnarkPrivateInput, Coinput, IInnerState, InputMessage,
@@ -107,8 +108,11 @@ pub fn apply_unconditionally(
         operation.processed_messages().to_vec(),
     );
 
+    let predicate_key = PredicateKey::always_accept();
     strata_ee_acct_runtime::process_update_unconditionally::<SimpleExecutionEnvironment>(
-        &mut state, &manifest,
+        &mut state,
+        &manifest,
+        predicate_key,
     )?;
 
     Ok(())
@@ -142,7 +146,8 @@ pub fn verify_update(
     let ee_priv = EePrivateInput::new(vec![], vec![], vec![]);
 
     with_archived_inputs(&ee_priv, &snark_priv, |archived_ee, archived_snark| {
-        let vinput = EeVerificationInput::new(ee, archived_ee.chunks(), &[]);
+        let predicate_key = PredicateKey::always_accept();
+        let vinput = EeVerificationInput::new(ee, &predicate_key, archived_ee.chunks(), &[]);
 
         let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
         strata_snark_acct_runtime::verify_and_process_update(&program, archived_snark, vinput)
@@ -164,7 +169,6 @@ pub fn assert_both_paths_succeed(
 /// Creates a simple initial state for testing.
 pub(crate) fn create_initial_state() -> (EeAccountState, SnarkAccountState) {
     let ee_state = EeAccountState::new(
-        vec![0x01],
         Hash::new([0u8; 32]),
         BitcoinAmount::from(0u64),
         Vec::new(),
@@ -208,7 +212,8 @@ pub(crate) fn build_update_operation(
     snark_state: &SnarkAccountState,
     ee: &SimpleExecutionEnvironment,
 ) -> (UpdateOperationData, Vec<Vec<u8>>, SnarkPrivateInput) {
-    let vinput = EeVerificationInput::new(ee, &[], &[]);
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(ee, &predicate_key, &[], &[]);
 
     let mut builder =
         UpdateBuilder::new(seq_no, snark_state.clone(), initial_state.clone(), vinput)
@@ -297,7 +302,8 @@ pub(crate) fn verify_with_chunks(
     let ee_priv = EePrivateInput::new(vec![], vec![], chunk_inputs);
 
     with_archived_inputs(&ee_priv, &snark_priv, |archived_ee, archived_snark| {
-        let vinput = EeVerificationInput::new(ee, archived_ee.chunks(), &[]);
+        let predicate_key = PredicateKey::always_accept();
+        let vinput = EeVerificationInput::new(ee, &predicate_key, archived_ee.chunks(), &[]);
         let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
         strata_snark_acct_runtime::verify_and_process_update(&program, archived_snark, vinput)
     })
@@ -317,7 +323,8 @@ pub(crate) fn verify_with_private_input(
     let ee_priv = EePrivateInput::new(vec![], vec![], chunk_inputs);
 
     with_archived_inputs(&ee_priv, snark_priv, |archived_ee, archived_snark| {
-        let vinput = EeVerificationInput::new(ee, archived_ee.chunks(), &[]);
+        let predicate_key = PredicateKey::always_accept();
+        let vinput = EeVerificationInput::new(ee, &predicate_key, archived_ee.chunks(), &[]);
         let program = EeSnarkAccountProgram::<SimpleExecutionEnvironment>::new();
         strata_snark_acct_runtime::verify_and_process_update(&program, archived_snark, vinput)
     })
@@ -347,8 +354,16 @@ pub(crate) fn assert_verified_chunks_succeed(
 /// Creates an [`EeVerificationState`] for testing.
 pub(crate) fn create_vstate<'a>(
     ee: &'a SimpleExecutionEnvironment,
+    chunk_predicate_key: &'a PredicateKey,
     initial_state: &EeAccountState,
     expected_outputs: UpdateOutputs,
 ) -> EeVerificationState<'a, SimpleExecutionEnvironment> {
-    EeVerificationState::new_from_state(ee, initial_state, expected_outputs, &[], &[])
+    EeVerificationState::new_from_state(
+        ee,
+        chunk_predicate_key,
+        initial_state,
+        expected_outputs,
+        &[],
+        &[],
+    )
 }
