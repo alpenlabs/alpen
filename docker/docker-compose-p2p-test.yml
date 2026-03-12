@@ -2,7 +2,7 @@
 # No strata or bitcoind needed. Verifies gossip handshake works.
 #
 # Usage:
-#   docker compose --env-file .env.alpen-client -f docker-compose-p2p-test.yml up
+#   docker compose --env-file .env.alpen -f docker-compose-p2p-test.yml up
 
 services:
 
@@ -41,7 +41,7 @@ services:
       - "8545:8545"
       - "30303:30303"
     volumes:
-      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+      - ./configs/generated/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
       - p2p_test
@@ -87,7 +87,7 @@ services:
       - "9545:8545"
       - "31303:30303"
     volumes:
-      - ./configs/alpen-client/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
+      - ./configs/generated/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
       - p2p_test

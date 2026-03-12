@@ -42,7 +42,7 @@ client_checkpoint_interval = 10
 
 [exec.reth]
 rpc_url = "alpen-client:8551"
-secret = "/app/configs/alpen-client/jwt.hex"
+secret = "/app/configs/generated/jwt.hex"
 
 [relayer]
 refresh_interval = 10
