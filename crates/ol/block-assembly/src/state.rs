@@ -215,10 +215,6 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
         &self.sequencer_config
     }
 
-    pub(crate) fn blockasm_config(&self) -> &BlockAssemblyConfig {
-        self.blockasm_config.as_ref()
-    }
-
     pub(crate) fn context(&self) -> &BlockAssemblyContext<M, S> {
         self.ctx.as_ref()
     }
