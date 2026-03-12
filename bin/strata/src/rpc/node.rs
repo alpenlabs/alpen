@@ -189,8 +189,7 @@ impl OLClientRpcServer for OLRpcServer {
 
         let latest = chain_sync_status.tip;
         let parent = chain_sync_status.prev_epoch;
-        // TODO: STR-2420 Address this incorrect setting of confirmed epoch
-        let confirmed = chain_sync_status.prev_epoch;
+        let confirmed = chain_sync_status.confirmed_epoch;
         let finalized = chain_sync_status.finalized_epoch;
 
         Ok(RpcOLChainStatus::new(latest, parent, confirmed, finalized))
