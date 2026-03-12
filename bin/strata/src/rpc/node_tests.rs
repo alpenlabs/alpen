@@ -15,9 +15,15 @@ use strata_ol_chain_types_new::{
 use strata_ol_mempool::{MempoolBuilder, OLMempoolConfig, OLMempoolError};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::OLClientRpcServer;
+use strata_ol_rpc_types::{
+    RpcGenericAccountMessage, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
+    RpcTransactionPayload,
+};
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
-use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount};
+use strata_primitives::{
+    HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
+};
 use strata_snark_acct_types::Seqno;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
@@ -27,8 +33,7 @@ use tokio::runtime::Handle;
 
 use super::OLRpcServer;
 use crate::rpc::errors::{
-    INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE,
-    map_mempool_error_to_rpc,
+    INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE, map_mempool_error_to_rpc,
 };
 
 // -- Helpers --
@@ -192,6 +197,34 @@ async fn setup_rpc(
     (rpc, storage)
 }
 
+/// Build an `OLRpcServer` with empty accounts, so the mempool can validate txs.
+async fn setup_rpc_with_accounts(tip: OLBlockCommitment, accounts: &[AccountId]) -> OLRpcServer {
+    let storage = create_test_storage();
+    let mut state = genesis_ol_state();
+    state.set_cur_slot(tip.slot());
+    for account_id in accounts {
+        let new_acct = NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Empty);
+        state.create_new_account(*account_id, new_acct).unwrap();
+    }
+    storage
+        .ol_state()
+        .put_toplevel_ol_state_async(tip, state)
+        .await
+        .expect("insert tip state");
+
+    let status = status_channel_with_ol(tip, EpochCommitment::null(), EpochCommitment::null());
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    OLRpcServer::new(storage, Arc::new(status), mempool)
+}
+
+fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
+    let gam = RpcGenericAccountMessage::new(HexBytes32::from(*target.inner()), HexBytes(payload));
+    RpcOLTransaction::new(
+        RpcTransactionPayload::GenericAccountMessage(gam),
+        RpcTransactionAttachment::new(None, None),
+    )
+}
+
 // ── map_mempool_error_to_rpc ──
 
 #[test]
@@ -200,7 +233,10 @@ fn mempool_full_maps_to_capacity_code() {
         current: 100,
         limit: 100,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), MEMPOOL_CAPACITY_ERROR_CODE);
+    assert_eq!(
+        map_mempool_error_to_rpc(err).code(),
+        MEMPOOL_CAPACITY_ERROR_CODE
+    );
 }
 
 #[test]
@@ -209,7 +245,10 @@ fn byte_limit_exceeded_maps_to_capacity_code() {
         current: 5000,
         limit: 4096,
     };
-    assert_eq!(map_mempool_error_to_rpc(err).code(), MEMPOOL_CAPACITY_ERROR_CODE);
+    assert_eq!(
+        map_mempool_error_to_rpc(err).code(),
+        MEMPOOL_CAPACITY_ERROR_CODE
+    );
 }
 
 #[test]
@@ -438,7 +477,13 @@ async fn epoch_summary_nonexistent_account_errors() {
     let terminal = OLBlockCommitment::new(10, blkid);
 
     insert_block_with_state(&storage, &block, genesis_ol_state()).await;
-    insert_epoch_summary(&storage, 0, terminal, OLBlockCommitment::new(0, null_blkid())).await;
+    insert_epoch_summary(
+        &storage,
+        0,
+        terminal,
+        OLBlockCommitment::new(0, null_blkid()),
+    )
+    .await;
 
     let status = status_channel_with_ol(terminal, EpochCommitment::null(), EpochCommitment::null());
     let mempool = launch_mempool(storage.clone(), &status, terminal).await;
@@ -510,7 +555,13 @@ async fn epoch_summary_epoch_zero_null_prev() {
         ol_state_with_snark_account(account_id, 0, 5),
     )
     .await;
-    insert_epoch_summary(&storage, 0, terminal, OLBlockCommitment::new(0, null_blkid())).await;
+    insert_epoch_summary(
+        &storage,
+        0,
+        terminal,
+        OLBlockCommitment::new(0, null_blkid()),
+    )
+    .await;
 
     let status = status_channel_with_ol(terminal, EpochCommitment::null(), EpochCommitment::null());
     let mempool = launch_mempool(storage.clone(), &status, terminal).await;
@@ -534,7 +585,13 @@ async fn epoch_summary_non_snark_account() {
     let terminal = OLBlockCommitment::new(5, blkid);
 
     insert_block_with_state(&storage, &block, ol_state_with_empty_account(account_id, 5)).await;
-    insert_epoch_summary(&storage, 0, terminal, OLBlockCommitment::new(0, null_blkid())).await;
+    insert_epoch_summary(
+        &storage,
+        0,
+        terminal,
+        OLBlockCommitment::new(0, null_blkid()),
+    )
+    .await;
 
     let status = status_channel_with_ol(terminal, EpochCommitment::null(), EpochCommitment::null());
     let mempool = launch_mempool(storage.clone(), &status, terminal).await;
@@ -546,4 +603,59 @@ async fn epoch_summary_non_snark_account() {
         .expect("non-snark");
     assert_eq!(summary.balance(), 0);
     assert!(summary.update_input().is_none());
+}
+
+// ── submit_transaction ──
+
+#[tokio::test]
+async fn submit_transaction_generic_message_succeeds() {
+    let account_id = test_account_id(1);
+    let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
+
+    let rpc = setup_rpc_with_accounts(tip, &[account_id]).await;
+
+    let tx = make_gam_rpc_tx(account_id, vec![1, 2, 3, 4]);
+    let txid = rpc
+        .submit_transaction(tx)
+        .await
+        .expect("submit_transaction");
+
+    assert_ne!(txid, OLTxId::from(Buf32::zero()));
+}
+
+#[tokio::test]
+async fn submit_transaction_invalid_snark_update_returns_invalid_params() {
+    let account_id = test_account_id(1);
+    let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
+
+    let rpc = setup_rpc_with_accounts(tip, &[account_id]).await;
+
+    // Garbage bytes that can't be decoded as UpdateOperationData SSZ
+    let bad_tx = RpcOLTransaction::new(
+        RpcTransactionPayload::SnarkAccountUpdate(RpcSnarkAccountUpdate::new(
+            HexBytes32::from(*account_id.inner()),
+            HexBytes(vec![0xDE, 0xAD]),
+            HexBytes(vec![]),
+        )),
+        RpcTransactionAttachment::new(None, None),
+    );
+
+    let result = rpc.submit_transaction(bad_tx).await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn submit_transaction_nonexistent_account_returns_error() {
+    let existing = test_account_id(1);
+    let missing = test_account_id(99);
+    let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
+
+    let rpc = setup_rpc_with_accounts(tip, &[existing]).await;
+
+    let tx = make_gam_rpc_tx(missing, vec![1, 2, 3]);
+    let result = rpc.submit_transaction(tx).await;
+    assert!(result.is_err());
+    // AccountDoesNotExist maps to INVALID_PARAMS_CODE via map_mempool_error_to_rpc
+    assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
 }
