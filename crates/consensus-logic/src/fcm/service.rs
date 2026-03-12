@@ -12,7 +12,7 @@ use strata_primitives::{
     OLBlockCommitment, OLBlockId,
 };
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
-use strata_status::{ChainSyncStatus, OLSyncStatusUpdate};
+use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
 use strata_storage::OLBlockManager;
 use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc::{channel as mpsc_channel, Sender};
@@ -163,10 +163,16 @@ async fn process_fc_message(
                         "expected epoch commitment for previous epoch {} not in db",
                         prev_epoch_num
                     ))?;
-                let status = ChainSyncStatus {
+                let csm_status = fcm_state.ctx().csm_monitor().get_current();
+                let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
+
+                // If there is no confirmed epoch then set it to be the finalized epoch.
+                let confirmed_epoch = csm_status.last_confirmed_epoch.unwrap_or(finalized_epoch);
+                let status = OLSyncStatus {
                     tip: fcm_state.cur_best_block(),
                     prev_epoch,
-                    finalized_epoch: *fcm_state.chain_tracker().finalized_epoch(),
+                    confirmed_epoch,
+                    finalized_epoch,
                     // FIXME this is a bit convoluted, could this be simpler?
                     safe_l1: last_l1_blk,
                 };

@@ -448,12 +448,19 @@ pub fn tracker_task(
     #[expect(unused, reason = "used for fork choice manager")]
     let prev_epoch = *fcm.get_chainstate_prev_epoch();
 
+    let finalized_epoch = *fcm.chain_tracker.finalized_epoch();
+
+    // NOTE: This module is going to be deprecated and removed soon. So, for simplicity and to make
+    // this forward compatible, just set it to the finalized epoch.
+    let confirmed_epoch = finalized_epoch;
+
     // Update status.
     // TODO: avoid repetition from process_fc_message
     let status = ChainSyncStatus {
         tip: fcm.cur_best_block,
         prev_epoch: *fcm.get_chainstate_prev_epoch(),
-        finalized_epoch: *fcm.chain_tracker.finalized_epoch(),
+        confirmed_epoch,
+        finalized_epoch,
         // FIXME this is a bit convoluted, could this be simpler?
         safe_l1: fcm.cur_chainstate.l1_view().get_safe_block(),
     };
@@ -619,11 +626,19 @@ fn process_fc_message(
                     }
                 }
 
+                let finalized_epoch = *fcm_state.chain_tracker.finalized_epoch();
+
+                // NOTE: This module is going to be deprecated and removed soon. So, for simplicity
+                // and to make this forward compatible, just set it to the finalized
+                // epoch.
+                let confirmed_epoch = finalized_epoch;
+
                 // Update status.
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block,
                     prev_epoch: *fcm_state.get_chainstate_prev_epoch(),
-                    finalized_epoch: *fcm_state.chain_tracker.finalized_epoch(),
+                    finalized_epoch,
+                    confirmed_epoch,
                     // FIXME this is a bit convoluted, could this be simpler?
                     safe_l1: fcm_state.cur_chainstate.l1_view().get_safe_block(),
                 };
