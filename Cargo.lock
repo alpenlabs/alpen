@@ -7195,7 +7195,7 @@ dependencies = [
 [[package]]
 name = "moho-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/moho#c34c7f01acec9e0e909dd1d7cbfc289feec62bfd"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1912#d98a1d0975732229a9b010089bd90be8bc7cd63f"
 dependencies = [
  "hex",
  "sha2",

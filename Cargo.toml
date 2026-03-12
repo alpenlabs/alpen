@@ -299,9 +299,9 @@ strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled", branch = "STR-1914" } # TODO: remove branch once STR-1914 is merged
 
 # moho
-moho-runtime-impl = { git = "https://github.com/alpenlabs/moho" }
-moho-runtime-interface = { git = "https://github.com/alpenlabs/moho" }
-moho-types = { git = "https://github.com/alpenlabs/moho" }
+moho-runtime-impl = { git = "https://github.com/alpenlabs/moho", branch = "STR-1912" }      # TODO: remove branch once STR-1912 is merged
+moho-runtime-interface = { git = "https://github.com/alpenlabs/moho", branch = "STR-1912" } # TODO: remove branch once STR-1912 is merged
+moho-types = { git = "https://github.com/alpenlabs/moho", branch = "STR-1912" }             # TODO: remove branch once STR-1912 is merged
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc20" }
