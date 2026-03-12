@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 bitcoin-bosd.workspace = true
 ssz.workspace = true
+ssz_derive.workspace = true
 ssz_primitives.workspace = true
 strata-asm-bridge-msgs.workspace = true
 strata-asm-checkpoint-msgs.workspace = true

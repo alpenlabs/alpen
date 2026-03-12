@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_params::CheckpointInitConfig;
 use strata_btc_types::BitcoinAmount;
@@ -44,7 +46,45 @@ pub struct CheckpointState {
     available_funds: BTreeMap<BitcoinAmount, u32>,
 }
 
+/// The SSZ representation of the [`CheckpointState`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct CheckpointStateSsz {
+    /// The sequencer predicate.
+    sequencer_predicate: PredicateKey,
+
+    /// The checkpoint predicate.
+    checkpoint_predicate: PredicateKey,
+
+    /// The verified tip.
+    verified_tip: CheckpointTip,
+
+    /// The available funds.
+    available_funds: Vec<u8>,
+}
+
 impl CheckpointState {
+    /// Converts the [`CheckpointState`] to its SSZ representation.
+    fn to_ssz(&self) -> CheckpointStateSsz {
+        CheckpointStateSsz {
+            sequencer_predicate: self.sequencer_predicate.clone(),
+            checkpoint_predicate: self.checkpoint_predicate.clone(),
+            verified_tip: self.verified_tip,
+            available_funds: borsh::to_vec(&self.available_funds)
+                .expect("checkpoint available funds should serialize"),
+        }
+    }
+
+    /// Converts the SSZ representation of a [`CheckpointState`] to a [`CheckpointState`].
+    fn from_ssz(value: CheckpointStateSsz) -> Result<Self, DecodeError> {
+        Ok(Self {
+            sequencer_predicate: value.sequencer_predicate,
+            checkpoint_predicate: value.checkpoint_predicate,
+            verified_tip: value.verified_tip,
+            available_funds: borsh::from_slice(&value.available_funds)
+                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+        })
+    }
+
     /// Initializes checkpoint state from configuration.
     pub fn init(config: CheckpointInitConfig) -> Self {
         let genesis_epoch = 0;
@@ -165,6 +205,38 @@ impl CheckpointState {
     /// [`verify_can_honor_withdrawals`](Self::verify_can_honor_withdrawals).
     pub(crate) fn deduct_withdrawals(&mut self, token: VerifiedWithdrawals) {
         self.available_funds = token.0;
+    }
+}
+
+impl Encode for CheckpointState {
+    fn is_ssz_fixed_len() -> bool {
+        <CheckpointStateSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <CheckpointStateSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for CheckpointState {
+    fn is_ssz_fixed_len() -> bool {
+        <CheckpointStateSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <CheckpointStateSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::from_ssz(CheckpointStateSsz::from_ssz_bytes(bytes)?)
     }
 }
 

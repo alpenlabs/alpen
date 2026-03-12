@@ -14018,6 +14018,8 @@ dependencies = [
  "bitcoin",
  "borsh",
  "rand 0.8.5",
+ "ssz",
+ "ssz_derive",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
  "strata-asm-params",
@@ -14041,6 +14043,8 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
@@ -14063,6 +14067,7 @@ dependencies = [
  "bitcoin-bosd",
  "borsh",
  "ssz",
+ "ssz_derive",
  "ssz_primitives",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
@@ -14088,6 +14093,8 @@ name = "strata-asm-proto-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "ssz",
+ "ssz_derive",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
@@ -14106,6 +14113,8 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",

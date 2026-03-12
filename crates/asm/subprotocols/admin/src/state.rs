@@ -1,6 +1,8 @@
 use std::{mem::take, num::NonZero};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
@@ -38,7 +40,58 @@ pub struct AdministrationSubprotoState {
     max_seqno_gap: NonZero<u8>,
 }
 
+/// The SSZ representation of the [`AdministrationSubprotoState`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct AdministrationSubprotoStateSsz {
+    /// The serialized authorities.
+    authorities: Vec<u8>,
+
+    /// The serialized queued updates.
+    queued: Vec<u8>,
+
+    /// The next update ID.
+    next_update_id: UpdateId,
+
+    /// The confirmation depth.
+    confirmation_depth: u16,
+
+    /// The maximum sequence number gap.
+    max_seqno_gap: u8,
+}
+
 impl AdministrationSubprotoState {
+    /// Converts the [`AdministrationSubprotoState`] to its SSZ representation.
+    fn to_ssz(&self) -> AdministrationSubprotoStateSsz {
+        AdministrationSubprotoStateSsz {
+            authorities: borsh::to_vec(&self.authorities)
+                .expect("administration authorities should serialize"),
+            queued: borsh::to_vec(&self.queued).expect("administration queue should serialize"),
+            next_update_id: self.next_update_id,
+            confirmation_depth: self.confirmation_depth,
+            max_seqno_gap: self.max_seqno_gap.get(),
+        }
+    }
+
+    /// Converts the SSZ representation of a [`AdministrationSubprotoState`] to a
+    /// [`AdministrationSubprotoState`].
+    fn from_ssz(value: AdministrationSubprotoStateSsz) -> Result<Self, DecodeError> {
+        let authorities = borsh::from_slice(&value.authorities)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        let queued = borsh::from_slice(&value.queued)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        let max_seqno_gap = NonZero::new(value.max_seqno_gap)
+            .ok_or_else(|| DecodeError::BytesInvalid("max_seqno_gap cannot be zero".into()))?;
+
+        Ok(Self {
+            authorities,
+            queued,
+            next_update_id: value.next_update_id,
+            confirmation_depth: value.confirmation_depth,
+            max_seqno_gap,
+        })
+    }
+
+    /// Creates a new [`AdministrationSubprotoState`] with the given configuration.
     pub fn new(config: &AdministrationInitConfig) -> Self {
         let authorities = config
             .clone()
@@ -128,6 +181,38 @@ impl AdministrationSubprotoState {
             .partition(|u| u.activation_height() <= current_height);
         self.queued = rest;
         ready
+    }
+}
+
+impl Encode for AdministrationSubprotoState {
+    fn is_ssz_fixed_len() -> bool {
+        <AdministrationSubprotoStateSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AdministrationSubprotoStateSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for AdministrationSubprotoState {
+    fn is_ssz_fixed_len() -> bool {
+        <AdministrationSubprotoStateSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AdministrationSubprotoStateSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::from_ssz(AdministrationSubprotoStateSsz::from_ssz_bytes(bytes)?)
     }
 }
 
