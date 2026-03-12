@@ -51,6 +51,7 @@ pub(crate) fn start_sequencer_signer(
         runctx.storage().clone(),
         runctx.fcm_handle().clone(),
         runctx.status_channel().clone(),
+        ol_block_interval_ms,
     ));
 
     let launch_result = runctx.task_manager().handle().block_on(async {

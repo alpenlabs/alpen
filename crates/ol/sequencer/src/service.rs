@@ -62,6 +62,13 @@ pub enum SequencerContextError {
         source: BlockAssemblyError,
     },
 
+    #[error("template generation failed at tip {tip_blkid}")]
+    TemplateGeneration {
+        tip_blkid: OLBlockId,
+        #[source]
+        source: BlockAssemblyError,
+    },
+
     #[error("failed to send block {blkid} to fcm")]
     FcmChannelClosed { blkid: OLBlockId },
 
@@ -87,6 +94,8 @@ pub enum SequencerDutyError {
 #[async_trait]
 pub trait SequencerContext: Send + Sync + 'static {
     async fn poll_duties(&self) -> Result<Vec<Duty>, SequencerContextError>;
+
+    async fn generate_template_for_tip(&self) -> Result<Option<OLBlockId>, SequencerContextError>;
 
     async fn complete_block_template(
         &self,
@@ -159,10 +168,6 @@ pub struct SequencerServiceState<C: SequencerContext> {
     context: Arc<C>,
     seen_duties: HashSet<Buf32>,
     duty_context: DutyContext<C>,
-    #[expect(
-        dead_code,
-        reason = "placeholder state for GenerationTick follow-up commit"
-    )]
     last_seen_tip: Option<OLBlockId>,
     active_duties: Arc<AtomicU32>,
     failed_duty_count: Arc<AtomicU32>,
@@ -250,8 +255,21 @@ impl<C: SequencerContext> AsyncService for SequencerService<C> {
     }
 }
 
-async fn process_generation_tick<C: SequencerContext>(_state: &mut SequencerServiceState<C>) {
-    // Placeholder for follow-up commit that adds explicit template generation on this tick.
+async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>) {
+    let generated_tip = match state.context.generate_template_for_tip().await {
+        Ok(tip) => tip,
+        Err(err) => {
+            error!(%err, "failed to generate template on generation tick");
+            return;
+        }
+    };
+
+    let previous_tip = state.last_seen_tip;
+    state.last_seen_tip = generated_tip;
+
+    if previous_tip != state.last_seen_tip {
+        debug!(?previous_tip, current_tip = ?state.last_seen_tip, "sequencer tip changed");
+    }
 }
 
 async fn process_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>) {
@@ -434,6 +452,12 @@ mod tests {
     impl SequencerContext for MockContext {
         async fn poll_duties(&self) -> Result<Vec<Duty>, SequencerContextError> {
             Ok(self.duties.lock().await.clone())
+        }
+
+        async fn generate_template_for_tip(
+            &self,
+        ) -> Result<Option<OLBlockId>, SequencerContextError> {
+            Ok(None)
         }
 
         async fn complete_block_template(
