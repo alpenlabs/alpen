@@ -383,7 +383,7 @@ mod tests {
             &mut wallet,
             &header_aux,
             &deposit_output,
-            "ALPN".parse().expect("valid magic bytes"),
+            MagicBytes::new(*b"ALPN"),
             FeeRate::from_sat_per_vb(1).expect("valid fee rate"),
         )
         .expect("tx should be built");

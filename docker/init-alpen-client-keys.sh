@@ -9,7 +9,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
-OL_BLOCK_TIME_MS=5000
 
 MODE="sequencer"
 PARAMS_DIR=""
