@@ -2,9 +2,11 @@
 # Supports regtest and signet via BITCOIN_NETWORK env var.
 #
 # Prerequisites:
-#   1. Run ./init-alpen-client-keys.sh  (or BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh)
-#   2. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
-#   3. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
+#   1. Build datatool: cargo build --release --bin strata-datatool
+#   2. Run ./init-alpen-client-keys.sh <path-to-datatool>
+#      (or BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh <path-to-datatool>)
+#   3. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
+#   4. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
 
 services:
 
@@ -143,6 +145,7 @@ services:
       - never
     environment:
       SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
+      ALPEN_EE_BLOCK_TIME_MS: ${ALPEN_EE_BLOCK_TIME_MS:-5000}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "${SEQ_HTTP_PORT:-8545}:8545"

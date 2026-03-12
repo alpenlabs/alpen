@@ -80,7 +80,7 @@ SEQUENCER_CONFIG_FILE=$CONFIG_FILE/sequencer.toml
 # Check if -n is set in args
 # shellcheck disable=2199
 if [[ "$@" != *"-n "* ]]; then
-    extra_args+=("-n" "alpn")
+    extra_args+=("-n" "ALPN")
 fi
 
 if [ -z "$output_found" ]; then

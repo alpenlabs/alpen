@@ -2,3 +2,5 @@
 configs/*
 !configs/*.toml
 .env.alpen-client
+.env.alpen-client-fullnode
+data/
