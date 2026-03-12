@@ -14,10 +14,10 @@ use strata_ol_chain_types_new::{
 };
 use strata_ol_mempool::{MempoolBuilder, OLMempoolConfig, OLMempoolError};
 use strata_ol_params::OLParams;
-use strata_ol_rpc_api::OLClientRpcServer;
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    RpcGenericAccountMessage, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
-    RpcTransactionPayload,
+    OLBlockOrTag, RpcGenericAccountMessage, RpcOLTransaction, RpcSnarkAccountUpdate,
+    RpcTransactionAttachment, RpcTransactionPayload,
 };
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
@@ -51,7 +51,7 @@ fn test_account_id(byte: u8) -> AccountId {
 }
 
 fn test_l1_commitment() -> L1BlockCommitment {
-    L1BlockCommitment::from_height_u64(0, L1BlockId::default()).unwrap()
+    L1BlockCommitment::new(0, L1BlockId::default())
 }
 
 fn null_blkid() -> OLBlockId {
@@ -657,5 +657,205 @@ async fn submit_transaction_nonexistent_account_returns_error() {
     let result = rpc.submit_transaction(tx).await;
     assert!(result.is_err());
     // AccountDoesNotExist maps to INVALID_PARAMS_CODE via map_mempool_error_to_rpc
+    assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
+}
+
+// ── get_snark_account_state ──
+
+#[tokio::test]
+async fn snark_account_state_latest_returns_state() {
+    let storage = create_test_storage();
+    let account_id = test_account_id(1);
+
+    let block = make_block(5, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(5, blkid);
+
+    insert_block_with_state(
+        &storage,
+        &block,
+        ol_state_with_snark_account(account_id, 7, 5),
+    )
+    .await;
+
+    let status = status_channel_with_ol(tip, EpochCommitment::null(), EpochCommitment::null());
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    let rpc = OLRpcServer::new(storage, Arc::new(status), mempool);
+
+    let state = rpc
+        .get_snark_account_state(account_id, OLBlockOrTag::Latest)
+        .await
+        .expect("snark state")
+        .expect("should be Some");
+
+    assert_eq!(state.seq_no(), 7);
+    assert_eq!(state.next_inbox_msg_idx(), 0);
+}
+
+#[tokio::test]
+async fn snark_account_state_by_slot() {
+    let storage = create_test_storage();
+    let account_id = test_account_id(1);
+
+    let block = make_block(10, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(10, blkid);
+
+    insert_block_with_state(
+        &storage,
+        &block,
+        ol_state_with_snark_account(account_id, 3, 10),
+    )
+    .await;
+
+    let status = status_channel_with_ol(tip, EpochCommitment::null(), EpochCommitment::null());
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    let rpc = OLRpcServer::new(storage, Arc::new(status), mempool);
+
+    let state = rpc
+        .get_snark_account_state(account_id, OLBlockOrTag::Slot(10))
+        .await
+        .expect("snark state")
+        .expect("should be Some");
+
+    assert_eq!(state.seq_no(), 3);
+}
+
+#[tokio::test]
+async fn snark_account_state_non_snark_returns_none() {
+    let storage = create_test_storage();
+    let account_id = test_account_id(1);
+
+    let block = make_block(5, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(5, blkid);
+
+    insert_block_with_state(&storage, &block, ol_state_with_empty_account(account_id, 5)).await;
+
+    let status = status_channel_with_ol(tip, EpochCommitment::null(), EpochCommitment::null());
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    let rpc = OLRpcServer::new(storage, Arc::new(status), mempool);
+
+    let result = rpc
+        .get_snark_account_state(account_id, OLBlockOrTag::Latest)
+        .await
+        .expect("should succeed");
+
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn snark_account_state_missing_account_returns_none() {
+    let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
+    let (rpc, _) = setup_rpc(tip, EpochCommitment::null(), EpochCommitment::null()).await;
+
+    let result = rpc
+        .get_snark_account_state(test_account_id(99), OLBlockOrTag::Latest)
+        .await
+        .expect("should succeed");
+
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn snark_account_state_no_ol_sync_returns_error() {
+    let storage = create_test_storage();
+    let tip = OLBlockCommitment::new(0, null_blkid());
+    let mut gs = genesis_ol_state();
+    gs.set_cur_slot(0);
+    storage
+        .ol_state()
+        .put_toplevel_ol_state_async(tip, gs)
+        .await
+        .unwrap();
+
+    let status = status_channel_no_ol();
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    let rpc = OLRpcServer::new(storage, Arc::new(status), mempool);
+
+    let result = rpc
+        .get_snark_account_state(test_account_id(1), OLBlockOrTag::Latest)
+        .await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code(), INTERNAL_ERROR_CODE);
+}
+
+#[tokio::test]
+async fn snark_account_state_by_block_id() {
+    let storage = create_test_storage();
+    let account_id = test_account_id(1);
+
+    let block = make_block(8, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(8, blkid);
+
+    insert_block_with_state(
+        &storage,
+        &block,
+        ol_state_with_snark_account(account_id, 11, 8),
+    )
+    .await;
+
+    let status = status_channel_with_ol(tip, EpochCommitment::null(), EpochCommitment::null());
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    let rpc = OLRpcServer::new(storage, Arc::new(status), mempool);
+
+    let state = rpc
+        .get_snark_account_state(account_id, OLBlockOrTag::OLBlockId(blkid))
+        .await
+        .expect("snark state")
+        .expect("should be Some");
+
+    assert_eq!(state.seq_no(), 11);
+}
+
+// ── get_raw_blocks_range ──
+
+#[tokio::test]
+async fn raw_blocks_range_returns_blocks_in_order() {
+    let storage = create_test_storage();
+
+    let block0 = make_block(0, 0, null_blkid());
+    let blkid0 = block0.header().compute_blkid();
+    let block1 = make_block(1, 0, blkid0);
+    let blkid1 = block1.header().compute_blkid();
+    let block2 = make_block(2, 0, blkid1);
+    let blkid2 = block2.header().compute_blkid();
+
+    insert_block_with_state(&storage, &block0, genesis_ol_state()).await;
+    insert_block_with_state(&storage, &block1, genesis_ol_state()).await;
+    insert_block_with_state(&storage, &block2, genesis_ol_state()).await;
+
+    let tip = OLBlockCommitment::new(2, blkid2);
+    let status = status_channel_with_ol(tip, EpochCommitment::null(), EpochCommitment::null());
+    let mempool = launch_mempool(storage.clone(), &status, tip).await;
+    let rpc = OLRpcServer::new(storage, Arc::new(status), mempool);
+
+    let entries = rpc.get_raw_blocks_range(0, 2).await.expect("blocks");
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0].slot(), 0);
+    assert_eq!(entries[1].slot(), 1);
+    assert_eq!(entries[2].slot(), 2);
+    assert_eq!(entries[0].blkid(), blkid0);
+}
+
+#[tokio::test]
+async fn raw_blocks_range_start_gt_end_returns_invalid_params() {
+    let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
+    let (rpc, _) = setup_rpc(tip, EpochCommitment::null(), EpochCommitment::null()).await;
+
+    let result = rpc.get_raw_blocks_range(10, 5).await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn raw_blocks_range_exceeds_max_returns_invalid_params() {
+    let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
+    let (rpc, _) = setup_rpc(tip, EpochCommitment::null(), EpochCommitment::null()).await;
+
+    // MAX_RAW_BLOCKS_RANGE is 5000, request 5001
+    let result = rpc.get_raw_blocks_range(0, 5000).await;
+    assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
 }
