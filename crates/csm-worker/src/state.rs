@@ -60,19 +60,16 @@ impl CsmWorkerState {
 
         // This can be `None` before the checkpoint subprotocol is first loaded,
         // or if no ASM state exists yet for this block.
-        let checkpoint_state = storage
-            .asm()
-            .get_state(cur_block)?
-            .and_then(|asm_state| {
-                asm_state
-                    .state()
-                    .find_section(CHECKPOINT_SUBPROTOCOL_ID)
-                    .map(|section| {
-                        section
-                            .try_to_state::<CheckpointSubprotocol>()
-                            .expect("SectionState to SubprotocolState must be infallible")
-                    })
-            });
+        let checkpoint_state = storage.asm().get_state(cur_block)?.and_then(|asm_state| {
+            asm_state
+                .state()
+                .find_section(CHECKPOINT_SUBPROTOCOL_ID)
+                .map(|section| {
+                    section
+                        .try_to_state::<CheckpointSubprotocol>()
+                        .expect("SectionState to SubprotocolState must be infallible")
+                })
+        });
 
         Ok(Self {
             _params: params,

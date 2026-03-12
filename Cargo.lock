@@ -14556,6 +14556,7 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-params",
+ "strata-predicate",
  "strata-primitives",
  "strata-service",
  "strata-status",

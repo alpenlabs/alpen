@@ -1,136 +1,15 @@
-//! Checkpoint log processing logic.
+//! Shared checkpoint processing logic used by both v0 and v1 processors.
 
 use std::sync::Arc;
 
-use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{
-    CheckpointTipUpdate, CheckpointUpdate,
-    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
-};
-use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
-use strata_csm_types::{
-    CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
-};
+use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction};
 use strata_identifiers::Epoch;
-use strata_primitives::prelude::*;
 use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
 
-pub(crate) fn process_log(
-    state: &mut CsmWorkerState,
-    log: &AsmLogEntry,
-    asm_block: &L1BlockCommitment,
-) -> anyhow::Result<()> {
-    match log.ty() {
-        Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
-            let ckpt_upd = log
-                .try_into_log()
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointUpdate: {}", e))?;
-
-            return process_checkpoint_log(state, &ckpt_upd, asm_block);
-        }
-        Some(CHECKPOINT_TIP_UPDATE_LOG_TYPE) => {
-            let tip_upd = log
-                .try_into_log()
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize CheckpointTipUpdate: {}", e))?;
-
-            return process_checkpoint_tip_log(state, &tip_upd, asm_block);
-        }
-        Some(log_type) => {
-            debug!(log_type, "log type not processed by CSM");
-        }
-        None => {
-            warn!("logs without a type ID?");
-        }
-    }
-    Ok(())
-}
-
-/// Process a single ASM log entry, extracting and handling checkpoint updates.
-fn process_checkpoint_log(
-    state: &mut CsmWorkerState,
-    checkpoint_update: &CheckpointUpdate,
-    asm_block: &L1BlockCommitment,
-) -> anyhow::Result<()> {
-    let epoch = checkpoint_update.batch_info().epoch();
-
-    info!(
-        %epoch,
-        %asm_block,
-        checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
-        "CSM is processing checkpoint update from ASM log"
-    );
-
-    // Create L1 checkpoint reference from the log data
-    let l1_reference = CheckpointL1Ref::new(
-        *asm_block,
-        checkpoint_update.checkpoint_txid().inner_raw(),
-        checkpoint_update.checkpoint_txid().inner_raw(), // TODO: get wtxid if available
-    );
-
-    // Create L1Checkpoint for client state
-    let l1_checkpoint =
-        L1Checkpoint::new(checkpoint_update.batch_info().clone(), l1_reference.clone());
-
-    // Update the client state with this checkpoint
-    update_client_state_with_checkpoint(state, l1_checkpoint, epoch)?;
-
-    // Create sync action to update checkpoint entry in database
-    let sync_action = SyncAction::UpdateCheckpointInclusion {
-        checkpoint: create_checkpoint_from_update(checkpoint_update),
-        l1_reference,
-    };
-
-    // Apply the sync action
-    apply_action(sync_action, &state.storage)?;
-
-    // Track the last processed epoch
-    state.last_processed_epoch = Some(epoch);
-
-    Ok(())
-}
-
-/// Process a checkpoint tip update log from the v1 checkpoint subprotocol.
-fn process_checkpoint_tip_log(
-    state: &mut CsmWorkerState,
-    checkpoint_tip_update: &CheckpointTipUpdate,
-    asm_block: &L1BlockCommitment,
-) -> anyhow::Result<()> {
-    let tip = checkpoint_tip_update.tip();
-    let epoch = tip.epoch;
-
-    info!(
-        %epoch,
-        %asm_block,
-        l1_height = tip.l1_height(),
-        l2_slot = tip.l2_commitment().slot(),
-        "CSM is processing checkpoint tip update from ASM log"
-    );
-
-    let l1_height = tip.l1_height();
-    if l1_height != asm_block.height() {
-        debug!(
-            tip_l1_height = l1_height,
-            asm_block_height = asm_block.height(),
-            "Checkpoint tip L1 height differs from current ASM block height; using ASM block commitment"
-        );
-    }
-
-    // v1 tip logs do not contain txid/wtxid or full batch transition details.
-    // CSM only needs epoch progression for finalized-epoch signaling, so we
-    // synthesize a minimal checkpoint view from the tip.
-    // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
-    // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
-    let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
-    update_client_state_with_checkpoint(state, synthetic_checkpoint, epoch)?;
-
-    state.last_processed_epoch = Some(epoch);
-    Ok(())
-}
-
 /// Update client state with a new checkpoint.
-fn update_client_state_with_checkpoint(
+pub(crate) fn update_client_state_with_checkpoint(
     state: &mut CsmWorkerState,
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
@@ -201,63 +80,16 @@ fn update_client_state_with_checkpoint(
     Ok(())
 }
 
-/// Build a compatibility synthetic [`L1Checkpoint`] from a v1 checkpoint tip update.
-// TODO(STR-2438): Remove this adapter once CSM consumes checkpoint-v1-native
-// structures without legacy `L1Checkpoint` synthesis.
-fn checkpoint_from_tip_update(
-    checkpoint_tip_update: &CheckpointTipUpdate,
-    asm_block: &L1BlockCommitment,
-) -> L1Checkpoint {
-    let tip = checkpoint_tip_update.tip();
-    let l1_reference = CheckpointL1Ref::new(*asm_block, Buf32::zero(), Buf32::zero());
-
-    // TODO(STR-2438): This v0-shaped `BatchInfo` synthesis is
-    // semantically incorrect for checkpoint-v1 tip updates (start/end L1 and
-    // L2 commitments are duplicated placeholders). Replace with v1-native data
-    // flow and remove legacy `BatchInfo` construction.
-    let batch_info = BatchInfo::new(
-        tip.epoch,
-        (*asm_block, *asm_block),
-        (*tip.l2_commitment(), *tip.l2_commitment()),
-    );
-
-    L1Checkpoint::new(batch_info, l1_reference)
-}
-
-/// Create a [`Checkpoint`] from a [`CheckpointUpdate`] log.
-///
-/// Note: The log doesn't contain the full signed checkpoint, so we reconstruct
-/// what we can. The signature verification was already done by ASM.
-// TODO(STR-2438): This function exists for compatibility to avoid larger changes.
-// It should be reworked for the new OL STF where checkpoint structures differ.
-fn create_checkpoint_from_update(update: &CheckpointUpdate) -> Checkpoint {
-    // Create empty sidecar - checkpoint was already verified by ASM
-    let sidecar = CheckpointSidecar::new(vec![]);
-
-    Checkpoint::new(
-        update.batch_info().clone(),
-        Default::default(), // Empty proof - actual proof was already verified by ASM
-        sidecar,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{
-        CheckpointTipUpdate, CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE,
-    };
     use strata_checkpoint_types::BatchInfo;
-    use strata_checkpoint_types_ssz::CheckpointTip;
-    use strata_csm_types::{ClientState, ClientUpdateOutput};
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::{
         buf::Buf32,
-        epoch::EpochCommitment,
-        l1::BitcoinTxid,
         l2::{L2BlockCommitment, L2BlockId},
         prelude::*,
     };
@@ -265,13 +97,11 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::process_log;
+    use super::update_client_state_with_checkpoint;
     use crate::state::CsmWorkerState;
 
-    /// Helper to create a test CSM worker state
+    /// Helper to create a test CSM worker state.
     fn create_test_state() -> (CsmWorkerState, Arc<strata_storage::NodeStorage>) {
-        // rollup params (taken from a fntests run).
-        // Don't we have some util fn for such?
         let params_json = r#"{
             "magic_bytes": "ALPN",
             "block_time": 1000,
@@ -358,73 +188,29 @@ mod tests {
         (state, storage)
     }
 
-    /// Helper to create an unknown log type entry
-    fn create_unknown_log_type() -> AsmLogEntry {
-        AsmLogEntry::from_msg(999, vec![1, 2, 3, 4]).expect("Failed to create log")
-    }
-
-    /// Helper to create a log entry without a type
-    fn create_typeless_log() -> AsmLogEntry {
-        AsmLogEntry::from_raw(vec![5, 6, 7, 8])
-    }
-
-    #[test]
-    fn test_process_log_with_unknown_log_type() {
-        let (mut state, _) = create_test_state();
-        let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
-
-        let log = create_unknown_log_type();
-
-        // Should succeed but do nothing
-        let result = process_log(&mut state, &log, &asm_block);
-        assert!(result.is_ok(), "process_log should handle unknown types");
-
-        // State should not be updated
-        assert_eq!(state.last_processed_epoch, None);
-    }
-
-    #[test]
-    fn test_process_log_with_no_log_type() {
-        let (mut state, _) = create_test_state();
-        let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
-
-        let log = create_typeless_log();
-
-        // Should succeed but do nothing
-        let result = process_log(&mut state, &log, &asm_block);
-        assert!(result.is_ok(), "process_log should handle typeless logs");
-
-        // State should not be updated
-        assert_eq!(state.last_processed_epoch, None);
-    }
-
-    #[test]
-    fn test_process_log_with_invalid_checkpoint_data() {
-        let (mut state, _) = create_test_state();
-        let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
-        state.last_asm_block = Some(asm_block);
-
-        // Create a log with checkpoint type but invalid data
-        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
-            .expect("Failed to create log");
-
-        // Should fail with deserialization error
-        let result = process_log(&mut state, &invalid_log, &asm_block);
-        assert!(
-            result.is_err(),
-            "process_log should fail with invalid checkpoint data"
+    /// Helper to build a minimal [`L1Checkpoint`] for testing.
+    fn make_checkpoint(
+        epoch: u32,
+        asm_block: &L1BlockCommitment,
+        arbgen: &mut ArbitraryGenerator,
+    ) -> L1Checkpoint {
+        let l2_start = L2BlockCommitment::new(
+            ((epoch - 1) * 10) as u64,
+            L2BlockId::from(Buf32::from([epoch as u8; 32])),
         );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Failed to deserialize CheckpointUpdate"),
-            "Error should mention deserialization failure"
+        let l2_end = L2BlockCommitment::new(
+            (epoch * 10) as u64,
+            L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
         );
+        let l1_start = L1BlockCommitment::new(90 + epoch - 1, arbgen.generate());
+        let l1_end = L1BlockCommitment::new(90 + epoch, arbgen.generate());
+        let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));
+        let l1_ref = CheckpointL1Ref::new(*asm_block, Buf32::zero(), Buf32::zero());
+        L1Checkpoint::new(batch_info, l1_ref)
     }
 
     #[test]
-    fn test_process_sequential_checkpoint_tip_logs_happy_path() {
+    fn test_sequential_checkpoint_updates_finalize_epoch() {
         let (mut state, _) = create_test_state();
         let mut arbgen = ArbitraryGenerator::new();
 
@@ -432,137 +218,20 @@ mod tests {
             let asm_block = L1BlockCommitment::new(200 + epoch, arbgen.generate());
             state.last_asm_block = Some(asm_block);
 
-            let l2_tip = L2BlockCommitment::new(
-                (epoch * 10) as u64,
-                L2BlockId::from(Buf32::from([epoch as u8; 32])),
-            );
-            let tip = CheckpointTip::new(epoch, asm_block.height(), l2_tip);
-            let tip_update = CheckpointTipUpdate::new(tip);
-            let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
-
-            let result = process_log(&mut state, &log, &asm_block);
+            let checkpoint = make_checkpoint(epoch, &asm_block, &mut arbgen);
+            let result = update_client_state_with_checkpoint(&mut state, checkpoint, epoch);
             assert!(
                 result.is_ok(),
-                "process_log should succeed for tip epoch {}: {:?}",
-                epoch,
-                result
-            );
-
-            assert_eq!(
-                state.last_processed_epoch,
-                Some(epoch),
-                "Last processed epoch should be updated to {}",
-                epoch
+                "update should succeed for epoch {epoch}: {result:?}",
             );
         }
 
+        // After two sequential checkpoints, epoch 1 should be declared finalized.
         let declared_final_epoch = state
             .cur_state
             .as_ref()
             .get_declared_final_epoch()
-            .expect("expected finalized epoch after two tip updates");
+            .expect("expected finalized epoch after two updates");
         assert_eq!(declared_final_epoch.epoch(), 1);
-    }
-
-    #[test]
-    fn test_process_sequential_checkpoint_logs_happy_path() {
-        let (mut state, storage) = create_test_state();
-
-        // Create 3 sequential checkpoints with increasing epochs
-        let mut arbgen = ArbitraryGenerator::new();
-
-        for epoch in 1u32..=3u32 {
-            // Create L1 block commitment for this checkpoint
-            let asm_block = L1BlockCommitment::new(100 + epoch, arbgen.generate());
-            state.last_asm_block = Some(asm_block);
-
-            // Create L2 block range
-            let l2_start = L2BlockCommitment::new(
-                ((epoch - 1) * 10) as u64,
-                L2BlockId::from(Buf32::from([epoch as u8; 32])),
-            );
-            let l2_end = L2BlockCommitment::new(
-                (epoch * 10) as u64,
-                L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
-            );
-
-            // Create L1 block range
-            let l1_start = L1BlockCommitment::new(90 + epoch - 1, arbgen.generate());
-            let l1_end = L1BlockCommitment::new(90 + epoch, arbgen.generate());
-
-            // Create batch info
-            let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));
-
-            // Create epoch commitment
-            let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
-
-            // Create checkpoint txid
-            let checkpoint_txid: BitcoinTxid = arbgen.generate();
-
-            // Create CheckpointUpdate
-            let checkpoint_update =
-                CheckpointUpdate::new(epoch_commitment, batch_info, checkpoint_txid);
-
-            // Create log entry
-            let log = AsmLogEntry::from_log(&checkpoint_update).expect("make log");
-
-            // Process the log
-            let result = process_log(&mut state, &log, &asm_block);
-            assert!(
-                result.is_ok(),
-                "process_log should succeed for epoch {}: {:?}",
-                epoch,
-                result
-            );
-
-            // Verify state was updated
-            assert_eq!(
-                state.last_processed_epoch,
-                Some(epoch),
-                "Last processed epoch should be updated to {}",
-                epoch
-            );
-
-            // Verify checkpoint was stored in database
-            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-            let stored_checkpoint = storage
-                .checkpoint()
-                .get_checkpoint_blocking(epoch as u64)
-                .expect("Failed to query checkpoint database");
-            assert!(
-                stored_checkpoint.is_some(),
-                "Checkpoint for epoch {} should be stored in database",
-                epoch
-            );
-
-            // Verify client state was updated
-            let current_client_state = state.cur_state.as_ref();
-            let last_checkpoint = current_client_state.get_last_checkpoint();
-            assert!(
-                last_checkpoint.is_some(),
-                "Client state should have a last checkpoint after epoch {}",
-                epoch
-            );
-            assert_eq!(
-                last_checkpoint.unwrap().batch_info.epoch(),
-                epoch,
-                "Last checkpoint in client state should be for epoch {}",
-                epoch
-            );
-        }
-
-        // After processing 3 checkpoints, verify we have all of them in the database
-        for epoch in 1u32..=3u32 {
-            #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
-            let stored_checkpoint = storage
-                .checkpoint()
-                .get_checkpoint_blocking(epoch as u64)
-                .expect("Failed to query checkpoint database");
-            assert!(
-                stored_checkpoint.is_some(),
-                "Checkpoint for epoch {} should still be in database",
-                epoch
-            );
-        }
     }
 }

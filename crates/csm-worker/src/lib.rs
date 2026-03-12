@@ -6,6 +6,8 @@
 
 mod constants;
 mod processor;
+mod processor_v0;
+mod processor_v1;
 mod service;
 mod state;
 mod status;

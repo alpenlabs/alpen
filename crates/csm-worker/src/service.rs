@@ -1,12 +1,13 @@
 //! CSM worker service implementation.
 
-use strata_asm_proto_checkpoint::subprotocol::CheckpointSubprotocol;
-use strata_asm_txs_checkpoint::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{
+    processor_v0::handle_checkpoint_v0_updates, processor_v1::handle_checkpoint_v1_updates,
+    state::CsmWorkerState, status::CsmWorkerStatus,
+};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -47,53 +48,10 @@ impl SyncService for CsmWorkerService {
         // Track which block we're processing
         state.last_asm_block = Some(asm_block);
 
-        let new_checkpoint_state = state
-            .storage
-            .asm()
-            .get_state(asm_block)
-            .unwrap()
-            .unwrap()
-            .state()
-            .find_section(CHECKPOINT_SUBPROTOCOL_ID)
-            .unwrap()
-            .try_to_state::<CheckpointSubprotocol>()
-            .unwrap();
+        // Extract checkpoint-v0 logs from ASM status
+        handle_checkpoint_v0_updates(state, &asm_block, asm_status.logs())?;
 
-        if let Some(old_state) = &state.last_checkpoint_state {
-            if old_state == &new_checkpoint_state {
-                info!("No changes to the checkpoint state after processing L1 block");
-                return Ok(Response::Continue);
-            } else {
-                info!(
-                    "Changes to the checkpoint state after processing L1 block. We need to do something"
-                );
-            }
-        } else {
-            info!("nothing to do let's just update the state and continue")
-        }
-
-        trace!("CSM is processing ASM logs.");
-
-        // Extract checkpoint logs from ASM status
-        let logs = asm_status.logs();
-
-        if logs.is_empty() {
-            trace!("No logs in ASM status update.");
-            return Ok(Response::Continue);
-        }
-
-        let logs_num = logs.len();
-        trace!(%logs_num, "CSM received logs from ASM status update.");
-
-        // Process each checkpoint update log
-        for log in logs {
-            if let Err(e) = process_log(state, log, &asm_block) {
-                error!(%asm_block, err = %e, "Failed to process ASM log");
-                // Continue processing other logs instead of failing completely
-            }
-        }
-
-        trace!(%asm_block, "CSM successfully processed ASM logs.");
+        handle_checkpoint_v1_updates(state, &asm_block)?;
 
         Ok(Response::Continue)
     }
