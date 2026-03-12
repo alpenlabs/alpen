@@ -21,9 +21,6 @@ class PendingFinclEntry(Container):
 
 ### EE account internal state
 class EeAccountState(Container):
-    ### Predicate key used for chunk verification.
-    chunk_predicate_key: List[uint8, MAX_CHUNK_PRED_LEN]
-
     ### ID of the last execution block that we've processed
     last_exec_blkid: Bytes32
 

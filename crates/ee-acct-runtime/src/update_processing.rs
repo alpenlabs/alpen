@@ -1,6 +1,7 @@
 //! High-level entrypoint functions for EE account update processing.
 
 use strata_ee_acct_types::{EeAccountState, EnvError, ExecutionEnvironment};
+use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::{
     ArchivedPrivateInput as ArchivedUpdatePrivateInput, ProgramResult,
 };
@@ -15,12 +16,14 @@ use crate::{
 /// and an execution environment context.
 pub fn verify_and_process_update<E: ExecutionEnvironment>(
     ee: &E,
+    chunk_predicate_key: &PredicateKey,
     ee_priv_input: &ArchivedEePrivateInput,
     upd_priv_input: &ArchivedUpdatePrivateInput,
 ) -> ProgramResult<(), EnvError> {
     // 1. Construct verification input.
     let vinput = EeVerificationInput::new(
         ee,
+        chunk_predicate_key,
         ee_priv_input.chunks(),
         ee_priv_input.raw_partial_pre_state(),
     );
@@ -38,6 +41,7 @@ pub fn verify_and_process_update<E: ExecutionEnvironment>(
 pub fn process_update_unconditionally<E: ExecutionEnvironment>(
     state: &mut EeAccountState,
     update_manifest: &UpdateManifest,
+    chunk_predicate_key: PredicateKey,
 ) -> ProgramResult<(), EnvError> {
     // 1. Construct the program instance and call out to the general update
     // processing.

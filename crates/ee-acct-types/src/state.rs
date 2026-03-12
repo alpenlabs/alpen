@@ -9,14 +9,12 @@ use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, Pendin
 
 impl EeAccountState {
     pub fn new(
-        chunk_predicate_key: Vec<u8>,
         last_exec_blkid: Hash,
         tracked_balance: BitcoinAmount,
         pending_inputs: Vec<PendingInputEntry>,
         pending_fincls: Vec<PendingFinclEntry>,
     ) -> Self {
         Self {
-            chunk_predicate_key: chunk_predicate_key.into(),
             last_exec_blkid: last_exec_blkid.0.into(),
             tracked_balance,
             pending_inputs: pending_inputs.into(),
@@ -27,14 +25,12 @@ impl EeAccountState {
     pub fn into_parts(
         self,
     ) -> (
-        Vec<u8>,
         Hash,
         BitcoinAmount,
         Vec<PendingInputEntry>,
         Vec<PendingFinclEntry>,
     ) {
         (
-            self.chunk_predicate_key.into(),
             self.last_exec_blkid
                 .as_ref()
                 .try_into()
@@ -43,11 +39,6 @@ impl EeAccountState {
             self.pending_inputs.into(),
             self.pending_fincls.into(),
         )
-    }
-
-    /// Gets the key used to verify chunk transition proofs.
-    pub fn chunk_predicate_key(&self) -> &[u8] {
-        &self.chunk_predicate_key
     }
 
     pub fn last_exec_blkid(&self) -> Hash {

@@ -9,7 +9,7 @@ use strata_ee_acct_types::{
     UpdateExtraData,
 };
 use strata_ee_chain_types::{ChunkTransition, ExecOutputs, SequenceTracker};
-use strata_predicate::PredicateKeyBuf;
+use strata_predicate::{PredicateKey, PredicateKeyBuf};
 use strata_snark_acct_types::{OutputMessage, OutputTransfer, UpdateOutputs};
 
 use crate::private_input::ArchivedChunkInput;
@@ -27,6 +27,9 @@ pub struct EeVerificationInput<'a, E: ExecutionEnvironment> {
     /// Execution environment for block execution.
     ee: &'a E,
 
+    /// Predicate used for verifying chunk proofs.
+    chunk_predicate_key: &'a PredicateKey,
+
     /// Chunk transitions that we've already proven.
     input_chunks: &'a [ArchivedChunkInput],
 
@@ -40,11 +43,13 @@ impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
     /// The input chunk transitions MUST already be verified.
     pub fn new(
         ee: &'a E,
+        chunk_predicate_key: &'a PredicateKey,
         input_chunks: &'a [ArchivedChunkInput],
         raw_partial_pre_state: &'a [u8],
     ) -> Self {
         Self {
             ee,
+            chunk_predicate_key,
             input_chunks,
             raw_partial_pre_state,
         }
@@ -52,6 +57,10 @@ impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
 
     pub fn ee(&self) -> &'a E {
         self.ee
+    }
+
+    pub fn chunk_predicate_key(&self) -> &'a PredicateKey {
+        self.chunk_predicate_key
     }
 
     pub fn input_chunks(&self) -> &'a [ArchivedChunkInput] {
@@ -72,6 +81,9 @@ impl<'a, E: ExecutionEnvironment> EeVerificationInput<'a, E> {
 pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Execution environment for block execution.
     ee: &'a E,
+
+    /// Predicate used for verifying chunk proofs.
+    chunk_predicate_key: &'a PredicateKey,
 
     /// Current verified chain tip.
     cur_verified_exec_blkid: Hash,
@@ -107,6 +119,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// reference, along with the verification input data.
     pub fn new_from_state(
         ee: &'a E,
+        chunk_predicate_key: &'a PredicateKey,
         state: &EeAccountState,
         expected_outputs: UpdateOutputs,
         input_chunks: &'a [ArchivedChunkInput],
@@ -114,6 +127,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     ) -> Self {
         Self {
             ee,
+            chunk_predicate_key,
             cur_verified_exec_blkid: state.last_exec_blkid(),
             total_val_sent: 0.into(),
             cur_balance: state.tracked_balance(),
@@ -127,6 +141,11 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
     /// Returns the execution environment.
     pub fn exec_env(&self) -> &'a E {
         self.ee
+    }
+
+    /// Returns the predkey used to verify chunk transition proofs.
+    pub fn chunk_predicate_key(&self) -> &'a PredicateKey {
+        self.chunk_predicate_key
     }
 
     pub fn cur_verified_exec_blkid(&self) -> Hash {
@@ -260,10 +279,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
 
         // Loop through all the chunks and verify them.
         for chunk in self.input_chunks {
-            // Verify the proof against the chunk predicate key.
-            let predicate_key = PredicateKeyBuf::try_from(state.chunk_predicate_key())
-                .map_err(|_| EnvError::InvalidChunkProof)?;
-            predicate_key
+            self.chunk_predicate_key()
                 .verify_claim_witness(chunk.chunk_transition_ssz(), chunk.proof())
                 .map_err(|_| EnvError::InvalidChunkProof)?;
 
@@ -306,6 +322,7 @@ impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
     fn clone(&self) -> Self {
         Self {
             ee: self.ee,
+            chunk_predicate_key: self.chunk_predicate_key,
             cur_verified_exec_blkid: self.cur_verified_exec_blkid,
             total_val_sent: self.total_val_sent,
             cur_balance: self.cur_balance,

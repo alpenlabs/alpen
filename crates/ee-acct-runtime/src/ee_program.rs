@@ -11,6 +11,7 @@ use strata_ee_acct_types::{
     UpdateExtraData,
 };
 use strata_ee_chain_types::SubjectDepositData;
+use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::*;
 
 use crate::verification_state::{EeVerificationInput, EeVerificationState};
@@ -31,6 +32,7 @@ impl<E: ExecutionEnvironment> EeSnarkAccountProgram<E> {
     }
 }
 
+/// Manual impl for [`Default`] because the derive macro wouldn't work here.
 impl<E: ExecutionEnvironment> Default for EeSnarkAccountProgram<E> {
     fn default() -> Self {
         Self {
@@ -92,8 +94,9 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
     ) -> ProgramResult<Self::VState<'i>, Self::Error> {
         Ok(EeVerificationState::new_from_state(
             vinput.ee(),
+            vinput.chunk_predicate_key(),
             state,
-            ulinfo.outputs().clone(), // ugh
+            ulinfo.outputs().clone(), // TODO ugh, avoid this clone
             vinput.input_chunks(),
             vinput.raw_partial_pre_state(),
         ))
