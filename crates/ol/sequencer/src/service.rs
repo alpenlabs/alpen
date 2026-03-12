@@ -256,6 +256,8 @@ impl<C: SequencerContext> AsyncService for SequencerService<C> {
 }
 
 async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>) {
+    debug!(last_seen_tip = ?state.last_seen_tip, "generation tick fired");
+
     let generated_tip = match state.context.generate_template_for_tip().await {
         Ok(tip) => tip,
         Err(err) => {
@@ -263,6 +265,10 @@ async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServi
             return;
         }
     };
+
+    if generated_tip.is_none() {
+        debug!("generation tick skipped: no canonical tip");
+    }
 
     let previous_tip = state.last_seen_tip;
     state.last_seen_tip = generated_tip;
