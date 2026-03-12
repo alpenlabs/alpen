@@ -2,8 +2,12 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_manifest_types::{AsmManifest, Hash32};
-use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher, error::MerkleError};
+use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Mmr64B32, Sha256Hasher, error::MerkleError};
+use tree_hash::{PackedEncoding, Sha256Hasher as TreeHashSha256Hasher, TreeHash, TreeHashType};
+use tree_hash_derive::TreeHash;
 
 /// Capacity of the ASM MMR as a power of 2.
 ///
@@ -49,7 +53,33 @@ pub struct AsmHistoryAccumulatorState {
     offset: u64,
 }
 
+/// The SSZ representation of the [`AsmHistoryAccumulatorState`].
+#[derive(DeriveEncode, DeriveDecode, TreeHash)]
+struct AsmHistoryAccumulatorStateSsz {
+    /// The serialized manifest MMR.
+    manifest_mmr: Mmr64B32,
+    /// The offset.
+    offset: u64,
+}
+
 impl AsmHistoryAccumulatorState {
+    /// Converts the [`AsmHistoryAccumulatorState`] to its SSZ representation.
+    fn to_ssz(&self) -> AsmHistoryAccumulatorStateSsz {
+        AsmHistoryAccumulatorStateSsz {
+            manifest_mmr: Mmr64B32::from_generic(&self.manifest_mmr),
+            offset: self.offset,
+        }
+    }
+
+    /// Converts the SSZ representation of a [`AsmHistoryAccumulatorState`] to a
+    /// [`AsmHistoryAccumulatorState`].
+    fn from_ssz(value: AsmHistoryAccumulatorStateSsz) -> Self {
+        Self {
+            manifest_mmr: value.manifest_mmr.to_generic(),
+            offset: value.offset,
+        }
+    }
+
     /// Creates a new compact MMR for the given genesis height.
     ///
     /// The internal `offset` is set to `genesis_height + 1` since manifests
@@ -98,5 +128,57 @@ impl AsmHistoryAccumulatorState {
     pub fn add_manifest(&mut self, manifest: &AsmManifest) -> Result<(), MerkleError> {
         let leaf_hash = manifest.compute_hash();
         self.add_manifest_leaf(leaf_hash)
+    }
+}
+
+impl Encode for AsmHistoryAccumulatorState {
+    fn is_ssz_fixed_len() -> bool {
+        <AsmHistoryAccumulatorStateSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AsmHistoryAccumulatorStateSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for AsmHistoryAccumulatorState {
+    fn is_ssz_fixed_len() -> bool {
+        <AsmHistoryAccumulatorStateSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AsmHistoryAccumulatorStateSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Ok(Self::from_ssz(
+            AsmHistoryAccumulatorStateSsz::from_ssz_bytes(bytes)?,
+        ))
+    }
+}
+
+impl TreeHash for AsmHistoryAccumulatorState {
+    fn tree_hash_type() -> TreeHashType {
+        <AsmHistoryAccumulatorStateSsz as TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> PackedEncoding {
+        <AsmHistoryAccumulatorStateSsz as TreeHash>::tree_hash_packed_encoding(&self.to_ssz())
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <AsmHistoryAccumulatorStateSsz as TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> <TreeHashSha256Hasher as tree_hash::TreeHashDigest>::Output {
+        <AsmHistoryAccumulatorStateSsz as TreeHash>::tree_hash_root(&self.to_ssz())
     }
 }

@@ -1,6 +1,13 @@
+use std::io::Error as IoError;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
+use ssz_types::VariableList;
 use strata_btc_verification::HeaderVerificationState;
+use tree_hash::{PackedEncoding, Sha256Hasher, TreeHash, TreeHashType};
+use tree_hash_derive::TreeHash;
 
 use crate::{AsmError, AsmHistoryAccumulatorState, Mismatched, Subprotocol, SubprotocolId};
 
@@ -13,7 +20,17 @@ use crate::{AsmError, AsmHistoryAccumulatorState, Mismatched, Subprotocol, Subpr
 /// receiving protocol transactions at L1 and updating its storage. A zk-SNARK proof
 /// attests that the transition from the previous ASM state to the new state
 /// was performed correctly on the given L1 block.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    DeriveEncode,
+    DeriveDecode,
+)]
 pub struct AnchorState {
     /// The current view of the L1 chain required for state transitions.
     pub chain_view: ChainViewState,
@@ -31,7 +48,18 @@ impl AnchorState {
 
 /// Represents the on‐chain view required by the Anchor State Machine (ASM) to process
 /// state transitions for each new L1 block.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    DeriveEncode,
+    DeriveDecode,
+    TreeHash,
+)]
 pub struct ChainViewState {
     /// All data needed to validate a Bitcoin block header, including past‐n timestamps,
     /// accumulated work, and difficulty adjustments.
@@ -55,7 +83,17 @@ impl ChainViewState {
 ///
 /// Each `SectionState` pairs the subprotocol’s unique ID with its current serialized state,
 /// allowing the ASM to apply the appropriate state transition logic for that subprotocol.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    DeriveEncode,
+    DeriveDecode,
+)]
 pub struct SectionState {
     /// Identifier of the subprotocol
     pub id: SubprotocolId,
@@ -74,9 +112,7 @@ impl SectionState {
 
     /// Constructs an instance by serializing a subprotocol state.
     pub fn from_state<S: Subprotocol>(state: &S::State) -> Self {
-        let mut buf = Vec::new();
-        <S::State as BorshSerialize>::serialize(state, &mut buf).expect("asm: serialize");
-        Self::new(S::ID, buf)
+        Self::new(S::ID, state.as_ssz_bytes())
     }
 
     /// Tries to deserialize the section data as a particular subprotocol's state.
@@ -89,7 +125,118 @@ impl SectionState {
             .into());
         }
 
-        <S::State as BorshDeserialize>::try_from_slice(&self.data)
-            .map_err(|e| AsmError::Deserialization(self.id, e))
+        <S::State as Decode>::from_ssz_bytes(&self.data)
+            .map_err(|e| AsmError::Deserialization(self.id, IoError::other(e.to_string())))
+    }
+}
+
+/// The maximum number of bytes for a section state.
+const MAX_SECTION_STATE_BYTES: usize = 1 << 20;
+
+/// The maximum number of sections.
+const MAX_SECTIONS: usize = 256;
+
+/// The [`TreeHash`] representation of the [`SectionState`].
+#[derive(TreeHash)]
+struct SectionStateTreeHash {
+    /// The subprotocol ID.
+    id: SubprotocolId,
+
+    /// The serialized data.
+    data: VariableList<u8, MAX_SECTION_STATE_BYTES>,
+}
+
+/// The [`TreeHash`] representation of the [`AnchorState`].
+#[derive(TreeHash)]
+struct AnchorStateTreeHash {
+    /// The chain view.
+    chain_view: ChainViewState,
+
+    /// The sections.
+    sections: VariableList<SectionState, MAX_SECTIONS>,
+}
+
+impl TreeHash for SectionState {
+    fn tree_hash_type() -> TreeHashType {
+        <SectionStateTreeHash as TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> PackedEncoding {
+        <SectionStateTreeHash as TreeHash>::tree_hash_packed_encoding(&SectionStateTreeHash {
+            id: self.id,
+            data: VariableList::from(self.data.clone()),
+        })
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <SectionStateTreeHash as TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> <Sha256Hasher as tree_hash::TreeHashDigest>::Output {
+        <SectionStateTreeHash as TreeHash>::tree_hash_root(&SectionStateTreeHash {
+            id: self.id,
+            data: VariableList::from(self.data.clone()),
+        })
+    }
+}
+
+impl TreeHash for AnchorState {
+    fn tree_hash_type() -> TreeHashType {
+        <AnchorStateTreeHash as TreeHash>::tree_hash_type()
+    }
+
+    fn tree_hash_packed_encoding(&self) -> PackedEncoding {
+        <AnchorStateTreeHash as TreeHash>::tree_hash_packed_encoding(&AnchorStateTreeHash {
+            chain_view: self.chain_view.clone(),
+            sections: VariableList::from(self.sections.clone()),
+        })
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        <AnchorStateTreeHash as TreeHash>::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> <Sha256Hasher as tree_hash::TreeHashDigest>::Output {
+        <AnchorStateTreeHash as TreeHash>::tree_hash_root(&AnchorStateTreeHash {
+            chain_view: self.chain_view.clone(),
+            sections: VariableList::from(self.sections.clone()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ssz::{Decode, Encode};
+    use tree_hash::{Sha256Hasher, TreeHash};
+
+    use super::*;
+    use crate::AsmHistoryAccumulatorState;
+
+    fn sample_anchor_state() -> AnchorState {
+        AnchorState {
+            chain_view: ChainViewState {
+                pow_state: HeaderVerificationState::default(),
+                history_accumulator: AsmHistoryAccumulatorState::new(0),
+            },
+            sections: vec![SectionState::new(7, vec![1, 2, 3, 4])],
+        }
+    }
+
+    #[test]
+    fn test_anchor_state_ssz_roundtrip() {
+        let state = sample_anchor_state();
+        let bytes = state.as_ssz_bytes();
+        let decoded = AnchorState::from_ssz_bytes(&bytes).unwrap();
+
+        assert_eq!(state, decoded);
+    }
+
+    #[test]
+    fn test_anchor_state_tree_hash_deterministic() {
+        let state = sample_anchor_state();
+        let hash1 = <AnchorState as TreeHash<Sha256Hasher>>::tree_hash_root(&state);
+        let hash2 = <AnchorState as TreeHash<Sha256Hasher>>::tree_hash_root(&state);
+
+        assert_eq!(hash1, hash2);
     }
 }

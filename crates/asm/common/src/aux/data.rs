@@ -5,6 +5,7 @@
 //! to subprotocols after verification.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
 use strata_asm_manifest_types::Hash32;
 use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
 
@@ -67,6 +68,43 @@ impl AuxData {
     /// Returns a slice of raw Bitcoin transactions.
     pub fn bitcoin_txs(&self) -> &[RawBitcoinTx] {
         &self.bitcoin_txs
+    }
+}
+
+impl Encode for AuxData {
+    fn is_ssz_fixed_len() -> bool {
+        <Vec<u8> as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Vec<u8> as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        borsh::to_vec(self)
+            .expect("aux data borsh serialization should succeed")
+            .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        borsh::to_vec(self)
+            .expect("aux data borsh serialization should succeed")
+            .ssz_bytes_len()
+    }
+}
+
+impl Decode for AuxData {
+    fn is_ssz_fixed_len() -> bool {
+        <Vec<u8> as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Vec<u8> as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let encoded = Vec::<u8>::from_ssz_bytes(bytes)?;
+        borsh::from_slice(&encoded).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 

@@ -13926,6 +13926,9 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
+ "ssz_types",
  "strata-asm-manifest-types",
  "strata-btc-types",
  "strata-btc-verification",
@@ -13936,6 +13939,8 @@ dependencies = [
  "strata-test-utils",
  "thiserror 2.0.18",
  "tracing",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]
