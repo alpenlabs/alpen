@@ -57,6 +57,8 @@ pub struct TestBitcoinClient {
 pub enum SendRawTransactionMode {
     Success,
     MissingOrInvalidInput,
+    InvalidParameter,
+    HttpInternalServerError,
     GenericError,
 }
 
@@ -249,6 +251,13 @@ impl Broadcaster for TestBitcoinClient {
             SendRawTransactionMode::MissingOrInvalidInput => Err(ClientError::Server(
                 -26,
                 "missing or invalid input".to_string(),
+            )),
+            SendRawTransactionMode::InvalidParameter => {
+                Err(ClientError::Server(-22, "invalid parameter".to_string()))
+            }
+            SendRawTransactionMode::HttpInternalServerError => Err(ClientError::Status(
+                500,
+                "Internal Server Error".to_string(),
             )),
             SendRawTransactionMode::GenericError => Err(ClientError::Server(
                 -1,
