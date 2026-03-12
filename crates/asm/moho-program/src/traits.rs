@@ -1,19 +1,17 @@
 // FIXME: Duplicated from https://github.com/alpenlabs/moho/blob/main/crates/runtime-interface/src/traits.rs for faster code iteration
 //! Traits used to describe an inner state transition.
-//!
-//! This module is using borsh as a transitive measure.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
+use ssz::{Decode, Encode};
 use strata_predicate::PredicateKey;
 
 /// Trait implementation for the Moho program.
 pub trait MohoProgram {
     /// The inner state.
-    type State: BorshDeserialize + BorshSerialize;
+    type State: Decode + Encode;
 
     /// Private input to process the next state.
-    type StepInput: BorshDeserialize + BorshSerialize;
+    type StepInput: Decode + Encode;
 
     /// The specification type that defines program behavior and configuration.
     type Spec;
@@ -51,6 +49,6 @@ pub trait MohoProgram {
     /// Extracts the inner state after a transition from the step’s output.
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State;
 
-    /// Computes the updated exported state from the output.
-    fn compute_export_state(export_state: ExportState, output: &Self::StepOutput) -> ExportState;
+    /// Computes the new exported state from the previous one and the step output.
+    fn compute_next_export_state(prev: ExportState, output: &Self::StepOutput) -> ExportState;
 }

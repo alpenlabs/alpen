@@ -1,18 +1,17 @@
-use std::io::{self, Read, Write};
-
 use bitcoin::{
     Block,
     consensus::{deserialize, serialize},
     hashes::Hash,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_common::AuxData;
 
 /// Private input to process the next state.
 ///
 /// This includes all the L1
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, DeriveEncode, DeriveDecode)]
 pub struct AsmStepInput {
     /// The full Bitcoin L1 block
     pub block: L1Block,
@@ -58,33 +57,38 @@ impl AsmStepInput {
 #[derive(Debug, Clone, PartialEq)]
 pub struct L1Block(pub Block);
 
-impl BorshSerialize for L1Block {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        // Serialize the inner Bitcoin block via consensus encoding
-        let serialized_block = serialize(&self.0);
-        let len = serialized_block.len() as u32;
-        // Write length prefix (little-endian)
-        writer.write_all(&len.to_le_bytes())?;
-        // Write block bytes
-        writer.write_all(&serialized_block)?;
-        Ok(())
+impl Encode for L1Block {
+    fn is_ssz_fixed_len() -> bool {
+        <Vec<u8> as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <Vec<u8> as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        serialize(&self.0).ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        serialize(&self.0).ssz_bytes_len()
     }
 }
 
-impl BorshDeserialize for L1Block {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
-        // Read the length prefix
-        let mut len_bytes = [0u8; 4];
-        reader.read_exact(&mut len_bytes)?;
-        let len = u32::from_le_bytes(len_bytes) as usize;
+impl Decode for L1Block {
+    fn is_ssz_fixed_len() -> bool {
+        <Vec<u8> as Decode>::is_ssz_fixed_len()
+    }
 
-        // Read the serialized block data
-        let mut buf = vec![0u8; len];
-        reader.read_exact(&mut buf)?;
+    fn ssz_fixed_len() -> usize {
+        <Vec<u8> as Decode>::ssz_fixed_len()
+    }
 
-        // Deserialize into a Bitcoin block via consensus rules
-        let block = deserialize(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(L1Block(block))
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let encoded = Vec::<u8>::from_ssz_bytes(bytes)?;
+        let block =
+            deserialize(&encoded).map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        Ok(Self(block))
     }
 }
 
@@ -96,13 +100,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_borsh_roundtrip() {
+    fn test_ssz_roundtrip() {
         let block = BtcChainSegment::load_full_block();
         let l1_block = L1Block(block);
 
-        let borsh_serialized = borsh::to_vec(&l1_block).unwrap();
-        let borsh_deserialized: L1Block = borsh::from_slice(&borsh_serialized).unwrap();
+        let ssz_serialized = l1_block.as_ssz_bytes();
+        let ssz_deserialized = L1Block::from_ssz_bytes(&ssz_serialized).unwrap();
 
-        assert_eq!(l1_block, borsh_deserialized);
+        assert_eq!(l1_block, ssz_deserialized);
     }
 }

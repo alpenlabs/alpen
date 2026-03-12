@@ -4,9 +4,9 @@ use strata_asm_common::{AnchorState, AsmSpec};
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
-use strata_crypto::hash::compute_borsh_hash;
 use strata_predicate::PredicateKey;
 use strata_primitives::Buf32;
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{input::AsmStepInput, traits::MohoProgram};
 
@@ -31,7 +31,8 @@ impl MohoProgram for AsmStfProgram {
     }
 
     fn compute_state_commitment(state: &AnchorState) -> InnerStateCommitment {
-        InnerStateCommitment::new(compute_borsh_hash(state).into())
+        let root = TreeHash::<Sha256Hasher>::tree_hash_root(state);
+        InnerStateCommitment::from(root.into_inner())
     }
 
     fn process_transition(
@@ -86,9 +87,9 @@ impl MohoProgram for AsmStfProgram {
         })
     }
 
-    fn compute_export_state(export_state: ExportState, output: &Self::StepOutput) -> ExportState {
+    fn compute_next_export_state(prev: ExportState, output: &Self::StepOutput) -> ExportState {
         // Iterate through each AsmLog; if we find an NewExportEntry, add it to ExportState
-        let mut new_export_state = export_state;
+        let mut new_export_state = prev;
         for log in &output.manifest.logs {
             if let Ok(export) = log.try_into_log::<NewExportEntry>() {
                 new_export_state

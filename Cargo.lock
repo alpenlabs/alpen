@@ -13982,16 +13982,17 @@ name = "strata-asm-moho-program-impl"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
  "moho-types",
+ "ssz",
+ "ssz_derive",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-spec",
  "strata-asm-stf",
- "strata-crypto",
  "strata-predicate",
  "strata-primitives",
  "strata-test-utils-btc",
+ "tree_hash 0.14.0",
 ]
 
 [[package]]
