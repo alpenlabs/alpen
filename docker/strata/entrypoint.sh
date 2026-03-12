@@ -122,6 +122,17 @@ if requires_sequencer_config "$@"; then
         echo "error: missing sequencer config '${RESOLVED_SEQUENCER_CONFIG_PATH}'" >&2
         exit 1
     }
+
+    # Patch OL block time from env var so infra can override without re-running init.
+    OL_BLOCK_TIME_MS="${OL_BLOCK_TIME_MS:-}"
+    if [ -n "${OL_BLOCK_TIME_MS}" ]; then
+        PATCHED_SEQ_CONFIG="/app/data/sequencer.toml"
+        sed "s/^ol_block_time_ms.*/ol_block_time_ms = ${OL_BLOCK_TIME_MS}/" \
+            "${RESOLVED_SEQUENCER_CONFIG_PATH}" > "${PATCHED_SEQ_CONFIG}"
+        RESOLVED_SEQUENCER_CONFIG_PATH="${PATCHED_SEQ_CONFIG}"
+        echo "patched ol_block_time_ms=${OL_BLOCK_TIME_MS}"
+    fi
+
     SEQUENCER_ARGS="--sequencer-config ${RESOLVED_SEQUENCER_CONFIG_PATH}"
 fi
 
