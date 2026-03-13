@@ -13713,6 +13713,7 @@ dependencies = [
  "jsonrpsee",
  "serde_json",
  "ssz",
+ "strata-asm-common",
  "strata-asm-params",
  "strata-asm-txs-checkpoint",
  "strata-asm-worker",

@@ -4,12 +4,14 @@ pub(crate) mod errors;
 mod node;
 #[cfg(test)]
 mod node_tests;
+mod provider;
 
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
 use node::*;
+use provider::NodeRpcProvider;
 #[cfg(feature = "sequencer")]
 use strata_btcio::writer::EnvelopeHandle;
 #[cfg(feature = "sequencer")]
@@ -105,22 +107,24 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     });
 
     // Create and register OL client RPC server
-    let ol_rpc_server = OLRpcServer::new(
+    let client_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
+    let ol_rpc_server = OLRpcServer::new(client_provider);
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
         .map_err(|e| anyhow!("Failed to merge OL RPC module: {}", e))?;
 
     // Create and register OL fullnode RPC listener
-    let ol_fullnode_listener = OLRpcServer::new(
+    let fullnode_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
+    let ol_fullnode_listener = OLRpcServer::new(fullnode_provider);
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)
