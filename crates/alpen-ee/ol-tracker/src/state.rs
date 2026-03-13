@@ -266,6 +266,7 @@ mod tests {
 
             let ol_status = OLChainStatus {
                 tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };
@@ -300,6 +301,7 @@ mod tests {
             let best_state = make_state_at_epoch(5, 50, 105, 105);
             let ol_status = OLChainStatus {
                 tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };
@@ -333,6 +335,7 @@ mod tests {
 
             let ol_status = OLChainStatus {
                 tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };
@@ -367,6 +370,7 @@ mod tests {
             let best_state = make_state_at_epoch(5, 50, 105, 105);
             let ol_status = OLChainStatus {
                 tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };

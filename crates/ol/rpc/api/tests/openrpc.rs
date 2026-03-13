@@ -211,6 +211,49 @@ fn non_optional_return_type_is_required() {
 }
 
 #[test]
+fn chain_status_schema_has_expected_properties() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getChainStatus")
+        .expect("strata_getChainStatus should exist");
+
+    let schema = &method["result"]["schema"];
+    let properties = if let Some(props) = schema["properties"].as_object() {
+        props
+    } else if let Some(schema_ref) = schema["$ref"].as_str() {
+        let schema_name = schema_ref
+            .rsplit('/')
+            .next()
+            .expect("schema $ref should contain schema name");
+        spec["components"]["schemas"][schema_name]["properties"]
+            .as_object()
+            .expect("referenced schema should contain properties")
+    } else {
+        panic!("chain status result schema should be inline or $ref: {schema:?}");
+    };
+
+    assert!(
+        properties.contains_key("tip"),
+        "chain status schema missing `tip` property"
+    );
+    assert!(
+        properties.contains_key("latest"),
+        "chain status schema missing `latest` property"
+    );
+    assert!(
+        properties.contains_key("confirmed"),
+        "chain status schema missing `confirmed` property"
+    );
+    assert!(
+        properties.contains_key("finalized"),
+        "chain status schema missing `finalized` property"
+    );
+}
+
+#[test]
 fn sequencer_rpc_complete_block_template_has_two_params() {
     let spec = build_spec();
     let methods = spec["methods"].as_array().unwrap();

@@ -1,11 +1,13 @@
 use strata_acct_types::Hash;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
-/// Status of the OL chain including tip, confirmed, and finalized blocks.
+/// Status of the OL chain including tip, latest summarized epoch, confirmed, and finalized epochs.
 #[derive(Debug, Clone, Copy)]
 pub struct OLChainStatus {
     /// Tip block commitment.
     pub tip: OLBlockCommitment,
+    /// Latest summarized epoch commitment.
+    pub latest: EpochCommitment,
     /// Confirmed block commitment.
     pub confirmed: EpochCommitment,
     /// Finalized block commitment.
@@ -16,6 +18,11 @@ impl OLChainStatus {
     /// Returns the tip block commitment.
     pub fn tip(&self) -> &OLBlockCommitment {
         &self.tip
+    }
+
+    /// Returns the latest summarized epoch commitment.
+    pub fn latest(&self) -> &EpochCommitment {
+        &self.latest
     }
 
     /// Returns the confirmed block commitment.

@@ -106,6 +106,7 @@ impl OLClient for RpcOLClient {
 
                 Ok(OLChainStatus {
                     tip: *status.tip(),
+                    latest: *status.latest(),
                     confirmed: *status.confirmed(),
                     finalized: *status.finalized(),
                 })

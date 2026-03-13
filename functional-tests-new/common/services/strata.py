@@ -229,12 +229,14 @@ class StrataService(RpcService):
 
         if target_epoch is None:
             current_status = self.get_sync_status(rpc)
-            parent = current_status.get("parent")
-            if not isinstance(parent, dict) or not isinstance(parent.get("epoch"), int):
+            latest_completed_epoch = current_status.get("latest")
+            if not isinstance(latest_completed_epoch, dict) or not isinstance(
+                latest_completed_epoch.get("epoch"), int
+            ):
                 raise AssertionError(
                     f"Unable to determine current epoch from status: {current_status}"
                 )
-            current_epoch = parent["epoch"] + 1
+            current_epoch = latest_completed_epoch["epoch"] + 1
             target_epoch = current_epoch + 1
 
         def _onchain_epoch_reached(status: dict) -> bool:

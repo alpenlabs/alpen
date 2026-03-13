@@ -25,21 +25,21 @@ class TestSequencerEpochProgression(StrataNodeTest):
         rpc = strata.wait_for_rpc_ready(timeout=10)
 
         initial_status = strata.get_sync_status(rpc)
-        prev_epoch = initial_status["parent"]
-        logger.info("initial parent epoch %s", prev_epoch["epoch"])
-        assert prev_epoch["last_blkid"] != "00" * 32
+        latest_epoch = initial_status["latest"]
+        logger.info("initial latest epoch %s", latest_epoch["epoch"])
+        assert latest_epoch["last_blkid"] != "00" * 32
 
         epochs_to_check = 3
 
         for _ in range(epochs_to_check):
             epoch = wait_until_with_value(
-                lambda: strata.get_sync_status(rpc)["parent"],
-                lambda v, cur_epoch=prev_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
+                lambda: strata.get_sync_status(rpc)["latest"],
+                lambda v, cur_epoch=latest_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
                 timeout=10,
-                error_with="Parent epoch not progressing",
+                error_with="Latest epoch not progressing",
             )
-            logger.info("parent epoch advanced to %s", epoch["epoch"])
+            logger.info("latest epoch advanced to %s", epoch["epoch"])
             assert epoch["last_blkid"] != "00" * 32
-            prev_epoch = epoch
+            latest_epoch = epoch
 
         return True
