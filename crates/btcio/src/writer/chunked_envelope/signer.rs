@@ -30,6 +30,13 @@ use crate::{
     writer::builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
 };
 
+fn format_reveal_refs(reveals: &[RevealTxMeta]) -> Vec<String> {
+    reveals
+        .iter()
+        .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
+        .collect()
+}
+
 /// Builds and signs a chunked envelope's commit + N reveal transactions.
 ///
 /// The commit tx is signed via wallet RPC and stored in the broadcast database.
@@ -39,13 +46,17 @@ use crate::{
 ///
 /// Returns the updated entry with status [`Unpublished`](ChunkedEnvelopeStatus::Unpublished).
 pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
+    envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     prev_tail_wtxid: Buf32,
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<ChunkedWriterContext<R>>,
 ) -> Result<ChunkedEnvelopeEntry, EnvelopeError> {
     trace!(
+        component = "btcio_chunked_envelope",
+        envelope_idx,
         chunk_count = entry.chunk_data.len(),
+        prev_tail_wtxid = %prev_tail_wtxid,
         "signing chunked envelope"
     );
 
@@ -120,9 +131,14 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         });
     }
 
+    let reveal_refs = format_reveal_refs(&reveals);
     debug!(
+        component = "btcio_chunked_envelope",
+        envelope_idx,
+        prev_tail_wtxid = %prev_tail_wtxid,
         commit_txid = %commit_txid,
         reveal_count = reveals.len(),
+        reveal_refs = ?reveal_refs,
         "signed chunked envelope, commit stored, reveals pending"
     );
 
