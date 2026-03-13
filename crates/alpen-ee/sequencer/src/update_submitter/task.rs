@@ -178,7 +178,7 @@ async fn process_ready_batches(
 
         ol_client.submit_update(update).await?;
 
-        info!(%batch_idx, "Submitted update for batch");
+        info!(%batch_idx, %batch_id, "Submitted update for batch");
         batch_idx += 1;
     }
 

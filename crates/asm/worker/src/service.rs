@@ -54,7 +54,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         // Traverse back the chain of l1 blocks until we find an l1 block which has AnchorState.
         // Remember all the blocks along the way and pass it (in the reverse order) to process.
-        let pivot_span = info_span!("asm.pivot_lookup",
+        let pivot_span = debug_span!("asm.pivot_lookup",
             target_height = height,
             target_block = %incoming_block.blkid()
         );
@@ -139,7 +139,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         // Process the whole chain of unprocessed blocks, starting from older blocks till
         // incoming_block.
         for (block, block_id) in skipped_blocks.iter().rev() {
-            let transition_span = info_span!("asm.block_transition",
+            let transition_span = debug_span!("asm.block_transition",
                 height = block_id.height(),
                 block_id = %block_id.blkid()
             );

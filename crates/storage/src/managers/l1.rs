@@ -34,6 +34,7 @@ impl L1BlockManager {
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
     #[instrument(
+        level = "debug",
         skip(self, manifest),
         fields(
             component = components::STORAGE_L1,
@@ -49,6 +50,7 @@ impl L1BlockManager {
 
     /// Save an [`AsmManifest`] to database. Does not add block to tracked canonical chain.
     #[instrument(
+        level = "debug",
         skip(self, manifest),
         fields(
             component = components::STORAGE_L1,
@@ -66,6 +68,7 @@ impl L1BlockManager {
     // Note: In the new architecture, btcio stores chain tracking data first,
     // then the ASM worker stores manifests asynchronously.
     #[instrument(
+        level = "debug",
         skip(self),
         fields(
             component = components::STORAGE_L1,
@@ -91,6 +94,7 @@ impl L1BlockManager {
     // Note: In the new architecture, btcio stores chain tracking data first,
     // then the ASM worker stores manifests asynchronously.
     #[instrument(
+        level = "debug",
         skip(self),
         fields(
             component = components::STORAGE_L1,
