@@ -2,6 +2,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_identifiers::SubjectId;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
 
@@ -20,6 +22,14 @@ pub struct WithdrawalIntent {
     withdrawal_txid: Buf32,
 
     /// User's operator selection for withdrawal assignment.
+    selected_operator: OperatorSelection,
+}
+
+#[derive(DeriveEncode, DeriveDecode)]
+struct WithdrawalIntentSsz {
+    amt: BitcoinAmount,
+    destination: Vec<u8>,
+    withdrawal_txid: Buf32,
     selected_operator: OperatorSelection,
 }
 
@@ -56,6 +66,59 @@ impl WithdrawalIntent {
 
     pub fn selected_operator(&self) -> OperatorSelection {
         self.selected_operator
+    }
+}
+
+impl Encode for WithdrawalIntent {
+    fn is_ssz_fixed_len() -> bool {
+        <WithdrawalIntentSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <WithdrawalIntentSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        WithdrawalIntentSsz {
+            amt: self.amt,
+            destination: self.destination.to_bytes(),
+            withdrawal_txid: self.withdrawal_txid,
+            selected_operator: self.selected_operator,
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        WithdrawalIntentSsz {
+            amt: self.amt,
+            destination: self.destination.to_bytes(),
+            withdrawal_txid: self.withdrawal_txid,
+            selected_operator: self.selected_operator,
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for WithdrawalIntent {
+    fn is_ssz_fixed_len() -> bool {
+        <WithdrawalIntentSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <WithdrawalIntentSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = WithdrawalIntentSsz::from_ssz_bytes(bytes)?;
+        let destination = Descriptor::from_bytes(&value.destination)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+
+        Ok(Self {
+            amt: value.amt,
+            destination,
+            withdrawal_txid: value.withdrawal_txid,
+            selected_operator: value.selected_operator,
+        })
     }
 }
 
