@@ -12,7 +12,7 @@ use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{OLMempoolResult, OLMempoolTransaction};
 use strata_ol_state_types::OLState;
-use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment, nonempty_vec::NonEmptyVec};
+use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec, OLBlockCommitment};
 use strata_status::OLSyncStatus;
 
 /// Extra data associated with an account at a given epoch.
@@ -46,16 +46,11 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     ) -> DbResult<Option<AccountExtraData>>;
 
     /// Get the epoch in which an account was created.
-    async fn get_account_creation_epoch(
-        &self,
-        account_id: AccountId,
-    ) -> DbResult<Option<Epoch>>;
+    async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
 
     /// Get the L1 block manifest at a given height.
-    async fn get_block_manifest_at_height(
-        &self,
-        height: L1Height,
-    ) -> DbResult<Option<AsmManifest>>;
+    async fn get_block_manifest_at_height(&self, height: L1Height)
+        -> DbResult<Option<AsmManifest>>;
 
     /// Get current OL chain sync status.
     fn get_ol_sync_status(&self) -> Option<OLSyncStatus>;

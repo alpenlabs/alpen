@@ -4,8 +4,6 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
-#[cfg(test)]
-use strata_checkpoint_types as _;
 use strata_common::logging;
 use strata_db_types as _;
 use strata_node_context::NodeContext;

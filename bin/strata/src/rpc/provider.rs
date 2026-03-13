@@ -79,10 +79,7 @@ impl OLRpcProvider for NodeRpcProvider {
             .await
     }
 
-    async fn get_account_creation_epoch(
-        &self,
-        account_id: AccountId,
-    ) -> DbResult<Option<Epoch>> {
+    async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>> {
         self.storage
             .account()
             .get_account_creation_epoch_blocking(account_id)
