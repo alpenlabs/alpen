@@ -8,8 +8,8 @@
 use std::cmp;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_primitives::{l1::BitcoinAmount, sorted_vec::SortedVec};
 
 use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
@@ -39,7 +39,7 @@ use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
 /// formed the N/N multisig when this deposit was locked. Any one honest operator
 /// from this set can properly process user withdrawals. We store this historical
 /// set because the active operator set may change over time.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, DeriveEncode, DeriveDecode)]
 pub struct DepositEntry {
     /// Unique deposit identifier assigned by the bridge and provided in the deposit transaction.
     deposit_idx: u32,
@@ -126,13 +126,17 @@ impl<'a> Arbitrary<'a> for DepositEntry {
         // Generate a random deposit index
         let deposit_idx: u32 = u.arbitrary()?;
 
-        // Create OperatorBitmap directly by setting sequential operators as active
-        let notary_operators = u.arbitrary()?;
+        let notary_operators = loop {
+            let bitmap: OperatorBitmap = u.arbitrary()?;
+            if bitmap.active_count() > 0 {
+                break bitmap;
+            }
+        };
 
         // Generate a random Bitcoin amount (between 1 satoshi and 21 million BTC)
         let amount: BitcoinAmount = u.arbitrary()?;
 
-        // Create the DepositEntry - this should not fail since we ensure operators is non-empty
+        // This should not fail since we ensure the operator bitmap is non-empty.
         Self::new(deposit_idx, notary_operators, amount)
             .map_err(|_| arbitrary::Error::IncorrectFormat)
     }
@@ -152,7 +156,7 @@ impl<'a> Arbitrary<'a> for DepositEntry {
 ///
 /// - Deposit indices are provided by the caller (from DepositInfo)
 /// - Out-of-order insertions are supported and maintain sorted order
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DepositsTable {
     /// Vector of deposit entries, sorted by deposit index.
     ///
@@ -160,7 +164,24 @@ pub struct DepositsTable {
     deposits: SortedVec<DepositEntry>,
 }
 
+#[derive(DeriveEncode, DeriveDecode)]
+struct DepositsTableSsz {
+    deposits: Vec<DepositEntry>,
+}
+
 impl DepositsTable {
+    fn to_ssz(&self) -> DepositsTableSsz {
+        DepositsTableSsz {
+            deposits: self.deposits.as_slice().to_vec(),
+        }
+    }
+
+    fn from_ssz(value: DepositsTableSsz) -> Result<Self, ssz::DecodeError> {
+        let deposits = SortedVec::try_from(value.deposits)
+            .map_err(|err| ssz::DecodeError::BytesInvalid(err.to_string()))?;
+        Ok(Self { deposits })
+    }
+
     /// Creates a new empty deposits table.
     ///
     /// Initializes the table with no deposits, ready for deposit registrations.
@@ -273,6 +294,38 @@ impl DepositsTable {
             self.deposits.remove(&oldest);
             Some(oldest)
         }
+    }
+}
+
+impl ssz::Encode for DepositsTable {
+    fn is_ssz_fixed_len() -> bool {
+        <DepositsTableSsz as ssz::Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <DepositsTableSsz as ssz::Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl ssz::Decode for DepositsTable {
+    fn is_ssz_fixed_len() -> bool {
+        <DepositsTableSsz as ssz::Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <DepositsTableSsz as ssz::Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        Self::from_ssz(DepositsTableSsz::from_ssz_bytes(bytes)?)
     }
 }
 

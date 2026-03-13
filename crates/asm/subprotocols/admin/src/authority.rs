@@ -1,6 +1,6 @@
 use std::num::NonZero;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_params::Role;
 use strata_asm_txs_admin::{actions::Sighash, parser::SignedPayload};
 use strata_crypto::threshold_signature::{ThresholdConfig, verify_threshold_signatures};
@@ -20,7 +20,7 @@ pub struct SeqNoToken(u64);
 
 /// Manages threshold signature operations for a given role and key set, with replay protection via
 /// a sequence number.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, DeriveEncode, DeriveDecode)]
 pub struct MultisigAuthority {
     /// The role of this threshold signature authority.
     role: Role,

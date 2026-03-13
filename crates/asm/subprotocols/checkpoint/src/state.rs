@@ -1,6 +1,3 @@
-use std::collections::BTreeMap;
-
-use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, DecodeError, Encode};
 use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_bridge_msgs::WithdrawOutput;
@@ -21,10 +18,148 @@ use crate::errors::InvalidCheckpointPayload;
 /// This type has no public constructor or accessors, and is neither [`Clone`] nor [`Copy`],
 /// so that each verification produces exactly one deduction.
 #[derive(Debug)]
-pub struct VerifiedWithdrawals(BTreeMap<BitcoinAmount, u32>);
+pub struct VerifiedWithdrawals(AvailableFunds);
+
+/// An entry in the available funds.
+#[derive(Clone, Debug, PartialEq, Eq, DeriveEncode, DeriveDecode)]
+struct AvailableFundsEntry {
+    /// The denomination of the available funds.
+    denomination: BitcoinAmount,
+
+    /// The count of the available funds.
+    count: u32,
+}
+
+/// Available funds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct AvailableFunds {
+    /// The entries of the available funds.
+    entries: Vec<AvailableFundsEntry>,
+}
+
+impl AvailableFunds {
+    /// Creates a new empty available funds.
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Converts a vector of available funds entries to an available funds.
+    fn from_entries(entries: Vec<AvailableFundsEntry>) -> Result<Self, DecodeError> {
+        for entry in &entries {
+            if entry.count == 0 {
+                return Err(DecodeError::BytesInvalid(
+                    "available funds count cannot be zero".into(),
+                ));
+            }
+        }
+
+        if entries
+            .windows(2)
+            .any(|pair| pair[0].denomination >= pair[1].denomination)
+        {
+            return Err(DecodeError::BytesInvalid(
+                "available funds entries must be strictly sorted by denomination".into(),
+            ));
+        }
+
+        Ok(Self { entries })
+    }
+
+    /// Returns an iterator over the available funds entries.
+    fn iter(&self) -> impl Iterator<Item = (&BitcoinAmount, &u32)> {
+        self.entries
+            .iter()
+            .map(|entry| (&entry.denomination, &entry.count))
+    }
+
+    /// Increments the count of the available funds for the given denomination.
+    fn increment(&mut self, denomination: BitcoinAmount) {
+        match self
+            .entries
+            .binary_search_by_key(&denomination, |entry| entry.denomination)
+        {
+            Ok(index) => self.entries[index].count += 1,
+            Err(index) => self.entries.insert(
+                index,
+                AvailableFundsEntry {
+                    denomination,
+                    count: 1,
+                },
+            ),
+        }
+    }
+
+    /// Decrements the count of the available funds for the given denomination.
+    fn decrement(&mut self, denomination: BitcoinAmount) -> bool {
+        let Ok(index) = self
+            .entries
+            .binary_search_by_key(&denomination, |entry| entry.denomination)
+        else {
+            return false;
+        };
+
+        let Some(next_count) = self.entries[index].count.checked_sub(1) else {
+            return false;
+        };
+
+        if next_count == 0 {
+            self.entries.remove(index);
+        } else {
+            self.entries[index].count = next_count;
+        }
+
+        true
+    }
+}
+
+/// SSZ-friendly representation of [`AvailableFunds`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct AvailableFundsSsz {
+    /// The entries of the available funds.
+    entries: Vec<AvailableFundsEntry>,
+}
+
+impl Encode for AvailableFunds {
+    fn is_ssz_fixed_len() -> bool {
+        <AvailableFundsSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AvailableFundsSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        AvailableFundsSsz {
+            entries: self.entries.clone(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        AvailableFundsSsz {
+            entries: self.entries.clone(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for AvailableFunds {
+    fn is_ssz_fixed_len() -> bool {
+        <AvailableFundsSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AvailableFundsSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = AvailableFundsSsz::from_ssz_bytes(bytes)?;
+        Self::from_entries(value.entries)
+    }
+}
 
 /// Checkpoint subprotocol state.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, DeriveEncode, DeriveDecode)]
 pub struct CheckpointState {
     /// Predicate for sequencer signature verification.
     /// Updated via `UpdateSequencerKey` message from admin subprotocol.
@@ -43,48 +178,10 @@ pub struct CheckpointState {
     /// Maps each deposit denomination to the count of UTXOs at that denomination that have
     /// been processed by the bridge but not yet consumed by withdrawal dispatches. Used for
     /// rejecting checkpoints whose withdrawal intents cannot be matched to available UTXOs.
-    available_funds: BTreeMap<BitcoinAmount, u32>,
-}
-
-/// The SSZ representation of the [`CheckpointState`].
-#[derive(DeriveEncode, DeriveDecode)]
-struct CheckpointStateSsz {
-    /// The sequencer predicate.
-    sequencer_predicate: PredicateKey,
-
-    /// The checkpoint predicate.
-    checkpoint_predicate: PredicateKey,
-
-    /// The verified tip.
-    verified_tip: CheckpointTip,
-
-    /// The available funds.
-    available_funds: Vec<u8>,
+    available_funds: AvailableFunds,
 }
 
 impl CheckpointState {
-    /// Converts the [`CheckpointState`] to its SSZ representation.
-    fn to_ssz(&self) -> CheckpointStateSsz {
-        CheckpointStateSsz {
-            sequencer_predicate: self.sequencer_predicate.clone(),
-            checkpoint_predicate: self.checkpoint_predicate.clone(),
-            verified_tip: self.verified_tip,
-            available_funds: borsh::to_vec(&self.available_funds)
-                .expect("checkpoint available funds should serialize"),
-        }
-    }
-
-    /// Converts the SSZ representation of a [`CheckpointState`] to a [`CheckpointState`].
-    fn from_ssz(value: CheckpointStateSsz) -> Result<Self, DecodeError> {
-        Ok(Self {
-            sequencer_predicate: value.sequencer_predicate,
-            checkpoint_predicate: value.checkpoint_predicate,
-            verified_tip: value.verified_tip,
-            available_funds: borsh::from_slice(&value.available_funds)
-                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
-        })
-    }
-
     /// Initializes checkpoint state from configuration.
     pub fn init(config: CheckpointInitConfig) -> Self {
         let genesis_epoch = 0;
@@ -113,7 +210,7 @@ impl CheckpointState {
             sequencer_predicate,
             checkpoint_predicate,
             verified_tip,
-            available_funds: BTreeMap::new(),
+            available_funds: AvailableFunds::new(),
         }
     }
 
@@ -158,7 +255,7 @@ impl CheckpointState {
 
     /// Records a processed deposit, incrementing the UTXO count for this denomination.
     pub(crate) fn record_deposit(&mut self, amount: BitcoinAmount) {
-        *self.available_funds.entry(amount).or_insert(0) += 1;
+        self.available_funds.increment(amount);
     }
 
     /// Verifies that the available funds can cover all withdrawal intents using **exact
@@ -188,11 +285,8 @@ impl CheckpointState {
 
         for intent in withdrawal_intents {
             let denom = intent.amt();
-            let count = funds.get_mut(&denom).ok_or_else(&insufficient)?;
-            *count = count.checked_sub(1).ok_or_else(&insufficient)?;
-
-            if *count == 0 {
-                funds.remove(&denom);
+            if !funds.decrement(denom) {
+                return Err(insufficient());
             }
         }
 
@@ -208,41 +302,10 @@ impl CheckpointState {
     }
 }
 
-impl Encode for CheckpointState {
-    fn is_ssz_fixed_len() -> bool {
-        <CheckpointStateSsz as Encode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_fixed_len() -> usize {
-        <CheckpointStateSsz as Encode>::ssz_fixed_len()
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        self.to_ssz().ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        self.to_ssz().ssz_bytes_len()
-    }
-}
-
-impl Decode for CheckpointState {
-    fn is_ssz_fixed_len() -> bool {
-        <CheckpointStateSsz as Decode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_fixed_len() -> usize {
-        <CheckpointStateSsz as Decode>::ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        Self::from_ssz(CheckpointStateSsz::from_ssz_bytes(bytes)?)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bitcoin_bosd::Descriptor;
+    use ssz::{Decode, Encode};
     use strata_asm_bridge_msgs::WithdrawOutput;
     use strata_btc_types::BitcoinAmount;
     use strata_checkpoint_types_ssz::CheckpointTip;
@@ -337,5 +400,17 @@ mod tests {
 
         assert!(state.verify_can_honor_withdrawals(&[]).is_ok());
         assert_eq!(state.available_deposit_sum(), 500_000_000);
+    }
+
+    #[test]
+    fn test_checkpoint_state_ssz_roundtrip() {
+        let mut state = dummy_state();
+        state.record_deposit(BitcoinAmount::from_sat(500_000_000));
+        state.record_deposit(BitcoinAmount::from_sat(1_000_000_000));
+
+        let encoded = state.as_ssz_bytes();
+        let decoded = CheckpointState::from_ssz_bytes(&encoded).expect("ssz decode should succeed");
+
+        assert_eq!(state, decoded);
     }
 }

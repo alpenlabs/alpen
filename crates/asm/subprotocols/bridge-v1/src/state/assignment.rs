@@ -7,12 +7,12 @@
 use std::cmp::Ordering;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
 };
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::{
     L1BlockCommitment,
@@ -94,7 +94,7 @@ fn filter_eligible_operators(
 /// Each assignment represents a task, assigned to a specific operator to process
 /// a withdrawal of from a particular deposit UTXO.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
+    Clone, Debug, Eq, PartialEq, Arbitrary, Serialize, Deserialize, DeriveEncode, DeriveDecode,
 )]
 pub struct AssignmentEntry {
     /// Deposit entry that has been assigned
@@ -317,7 +317,7 @@ impl AssignmentEntry {
 /// - Looking up assignments by deposit index
 /// - Filtering assignments by operator or expiration status
 /// - Removing completed assignments
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssignmentTable {
     /// Vector of assignment entries, sorted by deposit index.
     ///
@@ -330,7 +330,35 @@ pub struct AssignmentTable {
     assignment_duration: u16,
 }
 
+/// SSZ representation of the [`AssignmentTable`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct AssignmentTableSsz {
+    /// The assignments.
+    assignments: Vec<AssignmentEntry>,
+
+    /// The duration (in blocks) for which the operator is assigned to fulfill the withdrawal.
+    assignment_duration: u16,
+}
+
 impl AssignmentTable {
+    /// Converts the [`AssignmentTable`] to its SSZ representation.
+    fn to_ssz(&self) -> AssignmentTableSsz {
+        AssignmentTableSsz {
+            assignments: self.assignments.as_slice().to_vec(),
+            assignment_duration: self.assignment_duration,
+        }
+    }
+
+    /// Converts the SSZ representation of the [`AssignmentTable`] to a [`AssignmentTable`].
+    fn from_ssz(value: AssignmentTableSsz) -> Result<Self, ssz::DecodeError> {
+        let assignments = SortedVec::try_from(value.assignments)
+            .map_err(|err| ssz::DecodeError::BytesInvalid(err.to_string()))?;
+        Ok(Self {
+            assignments,
+            assignment_duration: value.assignment_duration,
+        })
+    }
+
     /// Creates a new empty assignment table with no assignments
     pub fn new(assignment_duration: u16) -> Self {
         Self {
@@ -489,6 +517,38 @@ impl AssignmentTable {
 
         self.assignments.insert(entry);
         Ok(())
+    }
+}
+
+impl ssz::Encode for AssignmentTable {
+    fn is_ssz_fixed_len() -> bool {
+        <AssignmentTableSsz as ssz::Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AssignmentTableSsz as ssz::Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl ssz::Decode for AssignmentTable {
+    fn is_ssz_fixed_len() -> bool {
+        <AssignmentTableSsz as ssz::Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <AssignmentTableSsz as ssz::Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        Self::from_ssz(AssignmentTableSsz::from_ssz_bytes(bytes)?)
     }
 }
 

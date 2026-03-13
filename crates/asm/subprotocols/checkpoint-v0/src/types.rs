@@ -6,7 +6,6 @@
 //! NOTE: This is checkpoint v0 which focuses on feature parity with the current
 //! checkpoint system. Future versions will be fully SPS-62 compatible.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, DecodeError, Encode};
 use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_checkpoint_types::Checkpoint;
@@ -18,7 +17,7 @@ use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::L1
 ///
 /// NOTE: This maintains state similar to the current core subprotocol but
 /// simplified for checkpoint v0 compatibility
-#[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug)]
 pub struct CheckpointV0VerifierState {
     /// The last verified checkpoint
     pub last_checkpoint: Option<Checkpoint>,
@@ -39,8 +38,8 @@ pub struct CheckpointV0VerifierState {
 /// The SSZ representation of the [`CheckpointV0VerifierState`].
 #[derive(DeriveEncode, DeriveDecode)]
 struct CheckpointV0VerifierStateSsz {
-    /// The serialized last checkpoint.
-    last_checkpoint: Vec<u8>,
+    /// The last checkpoint, if one has been verified.
+    last_checkpoint: Option<Checkpoint>,
 
     /// The last checkpoint L1 height.
     last_checkpoint_l1_height: L1Height,
@@ -48,8 +47,8 @@ struct CheckpointV0VerifierStateSsz {
     /// The current verified epoch.
     current_verified_epoch: Epoch,
 
-    /// The serialized cred rule.
-    cred_rule: Vec<u8>,
+    /// The credential rule governing signature verification.
+    cred_rule: CredRule,
 
     /// The serialized predicate.
     predicate: PredicateKey,
@@ -77,12 +76,10 @@ impl CheckpointV0VerifierState {
     /// Converts the [`CheckpointV0VerifierState`] to its SSZ representation.
     fn to_ssz(&self) -> CheckpointV0VerifierStateSsz {
         CheckpointV0VerifierStateSsz {
-            last_checkpoint: borsh::to_vec(&self.last_checkpoint)
-                .expect("checkpoint v0 checkpoint should serialize"),
+            last_checkpoint: self.last_checkpoint.clone(),
             last_checkpoint_l1_height: self.last_checkpoint_l1_height,
             current_verified_epoch: self.current_verified_epoch,
-            cred_rule: borsh::to_vec(&self.cred_rule)
-                .expect("checkpoint v0 cred rule should serialize"),
+            cred_rule: self.cred_rule.clone(),
             predicate: self.predicate.clone(),
         }
     }
@@ -91,12 +88,10 @@ impl CheckpointV0VerifierState {
     /// [`CheckpointV0VerifierState`].
     fn from_ssz(value: CheckpointV0VerifierStateSsz) -> Result<Self, DecodeError> {
         Ok(Self {
-            last_checkpoint: borsh::from_slice(&value.last_checkpoint)
-                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            last_checkpoint: value.last_checkpoint,
             last_checkpoint_l1_height: value.last_checkpoint_l1_height,
             current_verified_epoch: value.current_verified_epoch,
-            cred_rule: borsh::from_slice(&value.cred_rule)
-                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
+            cred_rule: value.cred_rule,
             predicate: value.predicate,
         })
     }

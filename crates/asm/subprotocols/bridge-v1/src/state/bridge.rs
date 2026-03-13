@@ -1,5 +1,3 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use ssz::{Decode, DecodeError, Encode};
 use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_params::BridgeV1InitConfig;
@@ -21,7 +19,7 @@ use crate::{
 ///
 /// This structure holds all the persistent state for the bridge, including
 /// operator registrations, deposit tracking, and assignment management.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, DeriveEncode, DeriveDecode)]
 pub struct BridgeV1State {
     /// Table of registered bridge operators.
     operators: OperatorTable,
@@ -43,57 +41,7 @@ pub struct BridgeV1State {
     recovery_delay: u16,
 }
 
-/// The SSZ representation of the [`BridgeV1State`].
-#[derive(DeriveEncode, DeriveDecode)]
-struct BridgeV1StateSsz {
-    /// The serialized operator table.
-    operators: Vec<u8>,
-
-    /// The serialized deposits table.
-    deposits: Vec<u8>,
-
-    /// The serialized assignment table.
-    assignments: Vec<u8>,
-
-    /// The denomination.
-    denomination: BitcoinAmount,
-
-    /// The operator fee.
-    operator_fee: BitcoinAmount,
-
-    /// The recovery delay.
-    recovery_delay: u16,
-}
-
 impl BridgeV1State {
-    /// Converts the [`BridgeV1State`] to its SSZ representation.
-    fn to_ssz(&self) -> BridgeV1StateSsz {
-        BridgeV1StateSsz {
-            operators: borsh::to_vec(&self.operators).expect("operator table should serialize"),
-            deposits: borsh::to_vec(&self.deposits).expect("deposits table should serialize"),
-            assignments: borsh::to_vec(&self.assignments)
-                .expect("assignment table should serialize"),
-            denomination: self.denomination,
-            operator_fee: self.operator_fee,
-            recovery_delay: self.recovery_delay,
-        }
-    }
-
-    /// Converts the SSZ representation of a [`BridgeV1State`] to a [`BridgeV1State`].
-    fn from_ssz(value: BridgeV1StateSsz) -> Result<Self, DecodeError> {
-        Ok(Self {
-            operators: borsh::from_slice(&value.operators)
-                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
-            deposits: borsh::from_slice(&value.deposits)
-                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
-            assignments: borsh::from_slice(&value.assignments)
-                .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?,
-            denomination: value.denomination,
-            operator_fee: value.operator_fee,
-            recovery_delay: value.recovery_delay,
-        })
-    }
-
     /// Creates a new bridge state with the specified configuration.
     ///
     /// Initializes all component tables as empty, creates an operator table from the provided
@@ -278,40 +226,9 @@ impl BridgeV1State {
     }
 }
 
-impl Encode for BridgeV1State {
-    fn is_ssz_fixed_len() -> bool {
-        <BridgeV1StateSsz as Encode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_fixed_len() -> usize {
-        <BridgeV1StateSsz as Encode>::ssz_fixed_len()
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        self.to_ssz().ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        self.to_ssz().ssz_bytes_len()
-    }
-}
-
-impl Decode for BridgeV1State {
-    fn is_ssz_fixed_len() -> bool {
-        <BridgeV1StateSsz as Decode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_fixed_len() -> usize {
-        <BridgeV1StateSsz as Decode>::ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        Self::from_ssz(BridgeV1StateSsz::from_ssz_bytes(bytes)?)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use ssz::{Decode, Encode};
     use strata_primitives::l1::L1BlockCommitment;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -383,5 +300,25 @@ mod tests {
             assert_eq!(mismatch.got, output.amt.to_sat());
             assert_eq!(mismatch.expected, deposit.amt().to_sat());
         }
+    }
+
+    #[test]
+    fn test_bridge_state_ssz_roundtrip() {
+        let (mut state, _privkeys) = create_test_state();
+        let mut arb = ArbitraryGenerator::new();
+
+        add_deposits(&mut state, 2);
+
+        let l1blk: L1BlockCommitment = arb.generate();
+        let mut output: WithdrawOutput = arb.generate();
+        output.amt = state.denomination;
+        state
+            .create_withdrawal_assignment(&output, OperatorSelection::any(), &l1blk)
+            .unwrap();
+
+        let encoded = state.as_ssz_bytes();
+        let decoded = BridgeV1State::from_ssz_bytes(&encoded).expect("ssz decode should succeed");
+
+        assert_eq!(state, decoded);
     }
 }

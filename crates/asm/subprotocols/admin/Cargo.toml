@@ -16,7 +16,6 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
-borsh.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
 thiserror.workspace = true

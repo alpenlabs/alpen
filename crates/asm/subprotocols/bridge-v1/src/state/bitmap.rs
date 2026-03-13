@@ -3,12 +3,11 @@
 //! This module contains bitmap types and operations for efficiently tracking
 //! and filtering operators in various contexts.
 
-use std::io;
-
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_bridge_types::OperatorIdx;
 
 use crate::BitmapError;
@@ -32,31 +31,69 @@ pub struct OperatorBitmap {
     pub(crate) bits: BitVec<u8>,
 }
 
-impl BorshSerialize for OperatorBitmap {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize as bytes: [length, data...]
-        let bytes = self.bits.as_raw_slice();
-        let bit_len = self.bits.len();
+/// SSZ representation of the [`OperatorBitmap`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct OperatorBitmapSsz {
+    /// The length of the bitmap.
+    bit_len: u32,
 
-        // Serialize the bit length first
-        BorshSerialize::serialize(&bit_len, writer)?;
-        // Then serialize the byte data
-        BorshSerialize::serialize(&bytes, writer)
+    /// The bytes of the bitmap.
+    bytes: Vec<u8>,
+}
+
+impl OperatorBitmap {
+    /// Converts the [`OperatorBitmap`] to its SSZ representation.
+    fn to_ssz(&self) -> OperatorBitmapSsz {
+        OperatorBitmapSsz {
+            bit_len: self.bits.len() as u32,
+            bytes: self.bits.as_raw_slice().to_vec(),
+        }
+    }
+
+    /// Converts the SSZ representation of the [`OperatorBitmap`] to a [`OperatorBitmap`].
+    fn from_ssz(value: OperatorBitmapSsz) -> Result<Self, DecodeError> {
+        let bit_len = value.bit_len as usize;
+        if value.bytes.len().saturating_mul(u8::BITS as usize) < bit_len {
+            return Err(DecodeError::BytesInvalid(
+                "operator bitmap bytes are shorter than bit length".into(),
+            ));
+        }
+
+        let mut bits = BitVec::from_vec(value.bytes);
+        bits.truncate(bit_len);
+        Ok(Self { bits })
     }
 }
 
-impl BorshDeserialize for OperatorBitmap {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize bit length first
-        let bit_len = usize::deserialize_reader(reader)?;
-        // Then deserialize the byte data
-        let bytes = Vec::<u8>::deserialize_reader(reader)?;
+impl Encode for OperatorBitmap {
+    fn is_ssz_fixed_len() -> bool {
+        <OperatorBitmapSsz as Encode>::is_ssz_fixed_len()
+    }
 
-        // Reconstruct BitVec from bytes and bit length
-        let mut bits = BitVec::from_vec(bytes);
-        bits.truncate(bit_len);
+    fn ssz_fixed_len() -> usize {
+        <OperatorBitmapSsz as Encode>::ssz_fixed_len()
+    }
 
-        Ok(Self { bits })
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for OperatorBitmap {
+    fn is_ssz_fixed_len() -> bool {
+        <OperatorBitmapSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <OperatorBitmapSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::from_ssz(OperatorBitmapSsz::from_ssz_bytes(bytes)?)
     }
 }
 
@@ -301,11 +338,12 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_bitmap_serialization_roundtrip() {
+    fn test_operator_bitmap_ssz_roundtrip() {
         let mut arb = ArbitraryGenerator::new();
         let bitmap: OperatorBitmap = arb.generate();
-        let serialized_bytes = borsh::to_vec(&bitmap).unwrap();
-        let deserialized_bitmap = borsh::from_slice(&serialized_bytes).unwrap();
-        assert_eq!(bitmap, deserialized_bitmap);
+        let encoded = bitmap.as_ssz_bytes();
+        let decoded = OperatorBitmap::from_ssz_bytes(&encoded).expect("ssz decode should succeed");
+
+        assert_eq!(bitmap, decoded);
     }
 }

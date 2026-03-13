@@ -7,6 +7,7 @@
 //! NOTE: Leverage the current proof/signature verification pipeline until the predicate framework
 //! lands
 
+use ssz::Decode;
 use strata_asm_common::logging;
 use strata_checkpoint_types::{
     BatchInfo, Checkpoint, SignedCheckpoint, verify_signed_checkpoint_sig,
@@ -56,7 +57,7 @@ fn verify_checkpoint_proof(
 ) -> Result<(), CheckpointV0Error> {
     let proof_receipt = checkpoint.construct_receipt();
     let expected_output = checkpoint.batch_info();
-    let actual_output: BatchInfo = borsh::from_slice(proof_receipt.public_values().as_bytes())
+    let actual_output = BatchInfo::from_ssz_bytes(proof_receipt.public_values().as_bytes())
         .map_err(|_| CheckpointV0Error::SerializationError)?;
 
     if expected_output != &actual_output {
