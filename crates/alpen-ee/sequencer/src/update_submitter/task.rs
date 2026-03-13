@@ -176,9 +176,23 @@ async fn process_ready_batches(
             update
         };
 
-        ol_client.submit_update(update).await?;
+        let seq_no = update.operation().seq_no();
+        let l1_ref_count = update.operation().ledger_refs().l1_header_refs().len();
+        let txid = ol_client.submit_update(update).await?;
 
-        info!(%batch_idx, %batch_id, "Submitted update for batch");
+        info!(
+            component = "alpen_ee_update_submitter",
+            %batch_idx,
+            %batch_id,
+            %txid,
+            seq_no,
+            proof_id = %proof,
+            prev_block = %batch.prev_block(),
+            last_block = %batch.last_block(),
+            l1_ref_count,
+            "Submitted update for batch"
+        );
+
         batch_idx += 1;
     }
 

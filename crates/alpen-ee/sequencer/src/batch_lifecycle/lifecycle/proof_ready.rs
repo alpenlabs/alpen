@@ -37,7 +37,15 @@ where
             // Check proof status
             match ctx.prover.check_proof_status(batch.id()).await? {
                 ProofGenerationStatus::Ready { proof_id } => {
-                    debug!(batch_idx = target_idx, batch_id = ?batch.id(), "Proof ready");
+                    debug!(
+                        component = "alpen_ee_batch_lifecycle",
+                        batch_idx = target_idx,
+                        batch_id = %batch.id(),
+                        proof_id = %proof_id,
+                        prev_block = %batch.prev_block(),
+                        last_block = %batch.last_block(),
+                        "Proof ready"
+                    );
 
                     ctx.batch_storage
                         .update_batch_status(
@@ -58,8 +66,9 @@ where
                 ProofGenerationStatus::Failed { reason } => {
                     // CRITICAL: Manual intervention required
                     error!(
+                        component = "alpen_ee_batch_lifecycle",
                         batch_idx = target_idx,
-                        batch_id = ?batch.id(),
+                        batch_id = %batch.id(),
                         reason = %reason,
                         "CRITICAL: Proof generation failed - manual intervention required. \
                          Batch is stuck in ProofPending state."
@@ -75,8 +84,9 @@ where
                     // We've marked the batch as proof pending, but prover says proof generation has
                     // not started. Try to re-request proof generation and hope for the best.
                     warn!(
+                        component = "alpen_ee_batch_lifecycle",
                         batch_idx = target_idx,
-                        batch_id = ?batch.id(),
+                        batch_id = %batch.id(),
                         "Expected proof generation to have been started. Retrying proof generation"
                     );
 

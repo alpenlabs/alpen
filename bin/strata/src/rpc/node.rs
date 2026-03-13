@@ -364,6 +364,24 @@ impl OLClientRpcServer for OLRpcServer {
         let mempool_tx: OLMempoolTransaction = tx
             .try_into()
             .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
+        let target = mempool_tx.target();
+        let update_log = mempool_tx.base_update().map(|base_update| {
+            let operation = base_update.operation();
+            let l1_ref_heights: Vec<_> = operation
+                .ledger_refs()
+                .l1_header_refs()
+                .iter()
+                .map(|claim| claim.idx())
+                .collect();
+
+            (
+                operation.seq_no(),
+                operation.new_proof_state().inner_state(),
+                operation.new_proof_state().next_inbox_msg_idx(),
+                l1_ref_heights,
+                operation.extra_data().len(),
+            )
+        });
 
         // Submit to mempool
         let txid = self
@@ -372,7 +390,30 @@ impl OLClientRpcServer for OLRpcServer {
             .await
             .map_err(map_mempool_error_to_rpc)?;
 
-        info!(%txid, "submitted transaction to OL mempool");
+        match update_log {
+            Some((seq_no, inner_state, next_inbox_msg_idx, l1_ref_heights, extra_data_len)) => {
+                info!(
+                    component = "ol_rpc_server",
+                    %txid,
+                    target = %target,
+                    seq_no,
+                    inner_state = %inner_state,
+                    next_inbox_msg_idx,
+                    extra_data_len,
+                    l1_ref_count = l1_ref_heights.len(),
+                    l1_ref_heights = ?l1_ref_heights,
+                    "submitted snark update to OL mempool"
+                );
+            }
+            None => {
+                info!(
+                    component = "ol_rpc_server",
+                    %txid,
+                    target = %target,
+                    "submitted transaction to OL mempool"
+                );
+            }
+        }
 
         Ok(txid)
     }
