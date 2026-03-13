@@ -101,9 +101,7 @@ macro_rules! impl_buf_serde_inner {
                         for i in 0..$len {
                             array[i] = seq
                                 .next_element::<u8>()?
-                                .ok_or_else(|| {
-                                    ::serde::de::Error::invalid_length(i, &self)
-                                })?;
+                                .ok_or_else(|| ::serde::de::Error::invalid_length(i, &self))?;
                         }
                         Ok($name(array))
                     }

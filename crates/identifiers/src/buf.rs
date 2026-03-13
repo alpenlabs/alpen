@@ -32,7 +32,7 @@ buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
 crate::macros::borsh::impl_buf_borsh!(Buf20, 20);
 crate::macros::arbitrary::impl_buf_arbitrary!(Buf20, 20);
-crate::macros::codec::impl_buf_codec!(Buf20, 20);
+strata_codec::impl_wrapper_codec!(Buf20 => [u8; 20]);
 crate::macros::serde_impl::impl_buf_serde!(Buf20, 20);
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf20` is `Copy`.
@@ -71,7 +71,7 @@ buf_macros::impl_buf_core!(Buf32, 32);
 buf_macros::impl_buf_fmt!(Buf32, 32);
 crate::macros::borsh::impl_buf_borsh!(Buf32, 32);
 crate::macros::arbitrary::impl_buf_arbitrary!(Buf32, 32);
-crate::macros::codec::impl_buf_codec!(Buf32, 32);
+strata_codec::impl_wrapper_codec!(Buf32 => [u8; 32]);
 crate::macros::serde_impl::impl_buf_serde!(Buf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
@@ -101,7 +101,7 @@ buf_macros::impl_buf_core!(RBuf32, 32);
 buf_macros::impl_rbuf_fmt!(RBuf32, 32);
 crate::macros::borsh::impl_buf_borsh!(RBuf32, 32);
 crate::macros::arbitrary::impl_buf_arbitrary!(RBuf32, 32);
-crate::macros::codec::impl_buf_codec!(RBuf32, 32);
+strata_codec::impl_wrapper_codec!(RBuf32 => [u8; 32]);
 crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
@@ -167,7 +167,7 @@ buf_macros::impl_buf_core!(Buf64, 64);
 buf_macros::impl_buf_fmt!(Buf64, 64);
 crate::macros::borsh::impl_buf_borsh!(Buf64, 64);
 crate::macros::arbitrary::impl_buf_arbitrary!(Buf64, 64);
-crate::macros::codec::impl_buf_codec!(Buf64, 64);
+strata_codec::impl_wrapper_codec!(Buf64 => [u8; 64]);
 crate::macros::serde_impl::impl_buf_serde!(Buf64, 64);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
