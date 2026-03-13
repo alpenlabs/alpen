@@ -23,6 +23,7 @@ use bitcoin::{
     secp256k1::{PublicKey, Secp256k1, SecretKey},
     BlockHash,
 };
+use ssz::Encode;
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
@@ -135,8 +136,7 @@ impl AdminContext {
     fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> Vec<u8> {
         let sighash = action.compute_sighash(seqno);
         let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        borsh::to_vec(&SignedPayload::new(seqno, action.clone(), sig_set))
-            .expect("serialization should succeed")
+        SignedPayload::new(seqno, action.clone(), sig_set).as_ssz_bytes()
     }
 }
 
