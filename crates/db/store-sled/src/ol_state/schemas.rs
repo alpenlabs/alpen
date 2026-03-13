@@ -1,3 +1,4 @@
+use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
@@ -22,12 +23,14 @@ impl_codec_key_codec!(OLWriteBatchSchema, OLBlockCommitment);
 
 // OLState is SSZ-generated, use SSZ serialization directly
 impl ValueCodec<OLStateSchema> for OLState {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.as_ssz_bytes())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
-        Self::from_ssz_bytes(data).map_err(|err| CodecError::SerializationFailed {
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
+        Self::from_ssz_bytes(data.as_ref()).map_err(|err| CodecError::DeserializationFailed {
             schema: OLStateSchema::tree_name(),
             source: format!("SSZ decode error: {err:?}").into(),
         })
