@@ -1,7 +1,13 @@
 #[macro_use]
-mod borsh;
+pub(crate) mod arbitrary;
+#[macro_use]
+pub(crate) mod borsh;
 #[macro_use]
 pub(crate) mod buf;
+#[macro_use]
+pub(crate) mod codec;
+#[macro_use]
+pub(crate) mod serde_impl;
 #[macro_use]
 mod ssz;
 #[macro_use]
@@ -15,10 +21,10 @@ mod tests {
 
     crate::macros::buf::impl_buf_core!(TestBuf20, 20);
     crate::macros::buf::impl_buf_fmt!(TestBuf20, 20);
-    crate::macros::buf::impl_buf_borsh!(TestBuf20, 20);
-    crate::macros::buf::impl_buf_arbitrary!(TestBuf20, 20);
-    crate::macros::buf::impl_buf_codec!(TestBuf20, 20);
-    crate::macros::buf::impl_buf_serde!(TestBuf20, 20);
+    crate::macros::borsh::impl_buf_borsh!(TestBuf20, 20);
+    crate::macros::arbitrary::impl_buf_arbitrary!(TestBuf20, 20);
+    crate::macros::codec::impl_buf_codec!(TestBuf20, 20);
+    crate::macros::serde_impl::impl_buf_serde!(TestBuf20, 20);
 
     #[test]
     fn test_from_into_array() {

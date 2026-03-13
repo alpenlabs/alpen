@@ -39,6 +39,7 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
+impl_opaque_thin_wrapper_codec!(AccountId => RawAccountId);
 
 impl AccountId {
     /// The "zero" account ID.
@@ -110,6 +111,7 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
+impl_opaque_thin_wrapper_codec!(AccountSerial => RawAccountSerial);
 
 impl AccountSerial {
     /// Returns the zero serial.
@@ -179,6 +181,7 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
 pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
+impl_opaque_thin_wrapper_codec!(SubjectId => RawSubjectId);
 
 impl fmt::Display for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
