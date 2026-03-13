@@ -22,18 +22,7 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
 #[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Decode,
-    Encode,
-    Serialize,
-    Deserialize,
+    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode, Serialize, Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -94,18 +83,7 @@ type RawAccountSerial = u32;
 const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
 
 /// Incrementally assigned account serial number.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Decode,
-    Encode,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct AccountSerial(RawAccountSerial);
@@ -162,18 +140,7 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
 #[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Decode,
-    Encode,
-    Serialize,
-    Deserialize,
+    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode, Serialize, Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]

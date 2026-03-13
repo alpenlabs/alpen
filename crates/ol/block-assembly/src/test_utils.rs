@@ -14,8 +14,7 @@ use strata_asm_manifest_types::AsmManifest;
 use strata_btc_verification::HeaderVerificationState;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_db_types::errors::DbError;
-use strata_db_types::MmrId;
+use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot, test_utils::ol_block_commitment_strategy,

@@ -3,7 +3,7 @@ use std::str::FromStr;
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
-use borsh::{BorshSerialize, BorshDeserialize};
+use borsh::{BorshDeserialize, BorshSerialize};
 use const_hex as hex;
 use ssz_derive::{Decode, Encode};
 use ssz_primitives::FixedBytes;

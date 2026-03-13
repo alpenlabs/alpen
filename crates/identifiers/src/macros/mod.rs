@@ -275,8 +275,7 @@ mod tests {
             );
 
             // Test deserialization
-            let decoded2 =
-                EpochCommitment::deserialize_reader(&mut buffer2.as_slice()).unwrap();
+            let decoded2 = EpochCommitment::deserialize_reader(&mut buffer2.as_slice()).unwrap();
             assert_eq!(decoded2.epoch(), 5);
             assert_eq!(decoded2.last_slot(), 100);
         }

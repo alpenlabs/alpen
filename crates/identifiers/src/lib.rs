@@ -23,9 +23,9 @@ pub use acct::{
 };
 pub use buf::{Buf20, Buf32, Buf64, RBuf32};
 pub use epoch::{EpochCommitment, EpochCommitmentRef};
-pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment};
 #[cfg(feature = "borsh")]
 pub use exec::create_evm_extra_payload;
+pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment};
 pub use hash::Hash;
 pub use l1::{L1BlockCommitment, L1BlockCommitmentRef, L1BlockId, L1Height, WtxidsRoot};
 pub use ol::{
