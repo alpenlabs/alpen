@@ -14749,6 +14749,7 @@ dependencies = [
  "bincode",
  "borsh",
  "proptest",
+ "rkyv",
  "sled",
  "ssz",
  "ssz_derive",
@@ -17170,9 +17171,10 @@ dependencies = [
 [[package]]
 name = "typed-sled"
 version = "0.1.1"
-source = "git+https://github.com/alpenlabs/typed-sled#9062bff3067ffb31fc6582ad7c659fc6e26ccd78"
+source = "git+https://github.com/alpenlabs/typed-sled#63bdf02a551ba384894748c41f908783864a8fc1"
 dependencies = [
  "dashmap 6.1.0",
+ "rkyv",
  "sled",
  "thiserror 1.0.69",
 ]
