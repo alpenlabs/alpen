@@ -4,10 +4,11 @@
 //! the pre-processing phase, along with the response structures returned
 //! to subprotocols after verification.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_manifest_types::Hash32;
 use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
+use strata_merkle::MerkleProofB32;
 
 use crate::AsmMerkleProof;
 
@@ -15,7 +16,7 @@ use crate::AsmMerkleProof;
 ///
 /// During pre-processing, subprotocols declare what auxiliary data they need.
 /// External workers fulfill that before the main processing phase.
-#[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, DeriveEncode, DeriveDecode)]
 pub struct AuxRequests {
     /// Requested manifest hash height ranges.
     pub(crate) manifest_hashes: Vec<ManifestHashRange>,
@@ -40,7 +41,7 @@ impl AuxRequests {
 ///
 /// Contains unverified Bitcoin transactions and manifest hashes returned by external workers.
 /// This data must be validated before use during the main processing phase.
-#[derive(Debug, Clone, Default, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Default, PartialEq, DeriveEncode, DeriveDecode)]
 pub struct AuxData {
     /// Manifest hashes with their MMR proofs (unverified)
     manifest_hashes: Vec<VerifiableManifestHash>,
@@ -71,47 +72,10 @@ impl AuxData {
     }
 }
 
-impl Encode for AuxData {
-    fn is_ssz_fixed_len() -> bool {
-        <Vec<u8> as Encode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_fixed_len() -> usize {
-        <Vec<u8> as Encode>::ssz_fixed_len()
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        borsh::to_vec(self)
-            .expect("aux data borsh serialization should succeed")
-            .ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        borsh::to_vec(self)
-            .expect("aux data borsh serialization should succeed")
-            .ssz_bytes_len()
-    }
-}
-
-impl Decode for AuxData {
-    fn is_ssz_fixed_len() -> bool {
-        <Vec<u8> as Decode>::is_ssz_fixed_len()
-    }
-
-    fn ssz_fixed_len() -> usize {
-        <Vec<u8> as Decode>::ssz_fixed_len()
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let encoded = Vec::<u8>::from_ssz_bytes(bytes)?;
-        borsh::from_slice(&encoded).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
-    }
-}
-
 /// Manifest hash height range (inclusive).
 ///
 /// Represents a range of L1 block heights for which manifest hashes are requested.
-#[derive(Debug, Clone, Copy, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, Copy, DeriveEncode, DeriveDecode)]
 pub struct ManifestHashRange {
     /// Start height (inclusive)
     pub(crate) start_height: u64,
@@ -146,12 +110,18 @@ impl ManifestHashRange {
 ///
 /// This is unverified data - the proof must be verified against a trusted compact MMR
 /// before the hash can be considered valid.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VerifiableManifestHash {
     /// The hash of an [`AsmManifest`](crate::AsmManifest)
     hash: Hash32,
     /// The MMR proof for this manifest hash
     proof: AsmMerkleProof,
+}
+
+#[derive(DeriveEncode, DeriveDecode)]
+struct VerifiableManifestHashSsz {
+    hash: Hash32,
+    proof: MerkleProofB32,
 }
 
 impl VerifiableManifestHash {
@@ -168,5 +138,49 @@ impl VerifiableManifestHash {
     /// Returns a reference to the MMR proof.
     pub fn proof(&self) -> &AsmMerkleProof {
         &self.proof
+    }
+}
+
+impl Encode for VerifiableManifestHash {
+    fn is_ssz_fixed_len() -> bool {
+        <VerifiableManifestHashSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <VerifiableManifestHashSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        VerifiableManifestHashSsz {
+            hash: self.hash,
+            proof: MerkleProofB32::from_generic(&self.proof),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        VerifiableManifestHashSsz {
+            hash: self.hash,
+            proof: MerkleProofB32::from_generic(&self.proof),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for VerifiableManifestHash {
+    fn is_ssz_fixed_len() -> bool {
+        <VerifiableManifestHashSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <VerifiableManifestHashSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = VerifiableManifestHashSsz::from_ssz_bytes(bytes)?;
+        Ok(Self {
+            hash: value.hash,
+            proof: AsmMerkleProof::from_cohashes(value.proof.cohashes(), value.proof.index()),
+        })
     }
 }

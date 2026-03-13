@@ -1,6 +1,5 @@
 //! History accumulator for ASM.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode};
 use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
@@ -44,7 +43,7 @@ pub type AsmMerkleProof = MerkleProof<Hash32>;
 /// accumulator.add_leaf(hash2)?; // MMR index 1 → L1 block height 800002
 /// accumulator.add_leaf(hash3)?; // MMR index 2 → L1 block height 800003
 /// ```
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AsmHistoryAccumulatorState {
     /// MMR accumulator for [`AsmManifest`]
     manifest_mmr: CompactMmr64<Hash32>,

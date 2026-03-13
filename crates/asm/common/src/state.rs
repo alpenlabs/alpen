@@ -1,6 +1,5 @@
 use std::io::Error as IoError;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
@@ -20,17 +19,7 @@ use crate::{AsmError, AsmHistoryAccumulatorState, Mismatched, Subprotocol, Subpr
 /// receiving protocol transactions at L1 and updating its storage. A zk-SNARK proof
 /// attests that the transition from the previous ASM state to the new state
 /// was performed correctly on the given L1 block.
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    Deserialize,
-    DeriveEncode,
-    DeriveDecode,
-)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, DeriveEncode, DeriveDecode)]
 pub struct AnchorState {
     /// The current view of the L1 chain required for state transitions.
     pub chain_view: ChainViewState,
@@ -48,18 +37,7 @@ impl AnchorState {
 
 /// Represents the on‐chain view required by the Anchor State Machine (ASM) to process
 /// state transitions for each new L1 block.
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    Deserialize,
-    DeriveEncode,
-    DeriveDecode,
-    TreeHash,
-)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, DeriveEncode, DeriveDecode, TreeHash)]
 pub struct ChainViewState {
     /// All data needed to validate a Bitcoin block header, including past‐n timestamps,
     /// accumulated work, and difficulty adjustments.
@@ -83,17 +61,7 @@ impl ChainViewState {
 ///
 /// Each `SectionState` pairs the subprotocol’s unique ID with its current serialized state,
 /// allowing the ASM to apply the appropriate state transition logic for that subprotocol.
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    Deserialize,
-    DeriveEncode,
-    DeriveDecode,
-)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, DeriveEncode, DeriveDecode)]
 pub struct SectionState {
     /// Identifier of the subprotocol
     pub id: SubprotocolId,

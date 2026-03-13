@@ -1,4 +1,5 @@
-use borsh::io;
+use std::io;
+
 // Re-export error types from manifest-types crate
 pub use strata_asm_manifest_types::{AsmManifestError, AsmManifestResult, Mismatched};
 use strata_btc_verification::L1VerificationError;
