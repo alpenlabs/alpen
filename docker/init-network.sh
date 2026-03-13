@@ -8,10 +8,19 @@ set -euo pipefail
 #   ./init-network.sh <datatool_path>
 #   ./init-network.sh --sequencer <datatool_path>
 #   ./init-network.sh --fullnode <datatool_path> --params-dir <path>
-#   BITCOIN_NETWORK=signet ./init-network.sh <datatool_path>
+#   BITCOIN_NETWORK=signet GENESIS_L1_HEIGHT=200000 ./init-network.sh <datatool_path>
+#
+# When BITCOIN_RPC_URL is set, the script fetches the real GenesisL1View from
+# the Bitcoin node via `datatool genl1view`. Without it, a network-specific
+# placeholder is used (suitable for regtest where the strata entrypoint patches
+# params at runtime).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
+GENESIS_L1_HEIGHT="${GENESIS_L1_HEIGHT:-0}"
+BITCOIN_RPC_URL="${BITCOIN_RPC_URL:-}"
+BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-}"
+BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-}"
 
 MODE="sequencer"
 PARAMS_DIR=""
@@ -42,8 +51,12 @@ while [ $# -gt 0 ]; do
             echo "  --params-dir <dir>  Directory with existing params (required for --fullnode)"
             echo ""
             echo "Environment:"
-            echo "  BITCOIN_NETWORK  regtest (default) or signet"
-            echo "  OUTPUT_DIR       output directory (default: ./configs/generated)"
+            echo "  BITCOIN_NETWORK       regtest (default) or signet"
+            echo "  GENESIS_L1_HEIGHT     L1 block height for genesis (default: 0)"
+            echo "  BITCOIN_RPC_URL       Bitcoin RPC URL (enables fetching real L1 view)"
+            echo "  BITCOIN_RPC_USER      Bitcoin RPC username"
+            echo "  BITCOIN_RPC_PASSWORD  Bitcoin RPC password"
+            echo "  OUTPUT_DIR            output directory (default: ./configs/generated)"
             exit 0
             ;;
         -*)
@@ -184,13 +197,34 @@ if [ "${MODE}" = "sequencer" ]; then
 
     SEQ_XPUB=$("${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" genseqpubkey -f "${SEQ_ROOT_KEY}")
 
-    # Placeholder L1 view; entrypoint.sh patches this at runtime with actual tip.
     GENESIS_L1_VIEW="${OUTPUT_DIR}/genesis-l1-view.json"
     if [ ! -f "${GENESIS_L1_VIEW}" ]; then
-        cat > "${GENESIS_L1_VIEW}" <<GEOF
+        if [ -n "${BITCOIN_RPC_URL}" ] && [ -n "${BITCOIN_RPC_USER}" ] && [ -n "${BITCOIN_RPC_PASSWORD}" ]; then
+            # Fetch real L1 view from Bitcoin node — produces correct values for
+            # all fields (next_target, epoch_start_timestamp, last_11_timestamps).
+            echo "fetching genesis L1 view from ${BITCOIN_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
+            "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
+                --bitcoin-rpc-url "${BITCOIN_RPC_URL}" \
+                --bitcoin-rpc-user "${BITCOIN_RPC_USER}" \
+                --bitcoin-rpc-password "${BITCOIN_RPC_PASSWORD}" \
+                genl1view \
+                -g "${GENESIS_L1_HEIGHT}" \
+                -o "${GENESIS_L1_VIEW}"
+            echo "generated ${GENESIS_L1_VIEW} (from Bitcoin RPC)"
+        else
+            # No RPC available — write a placeholder L1 view using network-specific
+            # genesis block values.  On regtest the strata entrypoint patches
+            # height + blkid at runtime; on signet this will be incomplete and you
+            # should provide BITCOIN_RPC_* vars instead.
+            if [ "${BITCOIN_NETWORK}" != "regtest" ] && [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
+                echo "warning: generating placeholder L1 view for ${BITCOIN_NETWORK} at height ${GENESIS_L1_HEIGHT}" >&2
+                echo "         without Bitcoin RPC, next_target / timestamps will be WRONG." >&2
+                echo "         Set BITCOIN_RPC_URL, BITCOIN_RPC_USER, BITCOIN_RPC_PASSWORD for correct values." >&2
+            fi
+            cat > "${GENESIS_L1_VIEW}" <<GEOF
 {
   "blk": {
-    "height": 0,
+    "height": ${GENESIS_L1_HEIGHT},
     "blkid": "${GENESIS_BLKID}"
   },
   "next_target": ${L1_NEXT_TARGET},
@@ -198,7 +232,8 @@ if [ "${MODE}" = "sequencer" ]; then
   "last_11_timestamps": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 }
 GEOF
-        echo "generated ${GENESIS_L1_VIEW}"
+            echo "generated ${GENESIS_L1_VIEW} (placeholder)"
+        fi
     fi
 
     ROLLUP_PARAMS="${OUTPUT_DIR}/rollup-params.json"
@@ -209,7 +244,7 @@ GEOF
             -n ALPN \
             -s "${SEQ_XPUB}" \
             -b "${OPERATOR_XPRIV}" \
-            -g 0 \
+            -g "${GENESIS_L1_HEIGHT}" \
             --proof-timeout 30 \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}"
         echo "generated ${ROLLUP_PARAMS}"
@@ -220,7 +255,7 @@ GEOF
         "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
             gen-ol-params \
             -o "${OL_PARAMS}" \
-            -g 0 \
+            -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}"
         echo "generated ${OL_PARAMS}"
     fi
@@ -232,7 +267,7 @@ GEOF
             -o "${ASM_PARAMS}" \
             -n ALPN \
             -b "${OPERATOR_XPRIV}" \
-            -g 0 \
+            -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
             --ol-params "${OL_PARAMS}"
         echo "generated ${ASM_PARAMS}"
