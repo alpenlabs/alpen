@@ -1,5 +1,8 @@
+use ssz::{Decode, Encode};
 use strata_checkpoint_types::BatchInfo;
-use zkaleido::{PublicValues, ZkVmInputResult, ZkVmProgram, ZkVmResult};
+use zkaleido::{
+    DataFormatError, PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult,
+};
 use zkaleido_native_adapter::NativeHost;
 
 use crate::process_checkpoint_proof;
@@ -23,14 +26,18 @@ impl ZkVmProgram for CheckpointProgram {
     where
         B: zkaleido::ZkVmInputBuilder<'a>,
     {
-        B::new().write_borsh(&input)?.build()
+        B::new().write_buf(&input.as_ssz_bytes())?.build()
     }
 
     fn process_output<H>(public_values: &PublicValues) -> ZkVmResult<Self::Output>
     where
         H: zkaleido::ZkVmHost,
     {
-        H::extract_borsh_public_output(public_values)
+        BatchInfo::from_ssz_bytes(public_values.as_bytes()).map_err(|err| {
+            ZkVmError::OutputExtractionError {
+                source: DataFormatError::Other(err.to_string()),
+            }
+        })
     }
 }
 
