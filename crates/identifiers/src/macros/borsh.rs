@@ -1,26 +1,3 @@
-/// Generates `BorshSerialize` and `BorshDeserialize` impls for a fixed-size byte buffer.
-macro_rules! impl_buf_borsh {
-    ($name:ident, $len:expr) => {
-        impl ::borsh::BorshSerialize for $name {
-            fn serialize<W: ::std::io::Write>(&self, writer: &mut W) -> ::std::io::Result<()> {
-                let bytes = self.0.as_ref();
-                let _ = writer.write(bytes)?;
-                Ok(())
-            }
-        }
-
-        impl ::borsh::BorshDeserialize for $name {
-            fn deserialize_reader<R: ::std::io::Read>(
-                reader: &mut R,
-            ) -> ::std::io::Result<Self> {
-                let mut array = [0u8; $len];
-                reader.read_exact(&mut array)?;
-                Ok(array.into())
-            }
-        }
-    };
-}
-
 /// Implements Borsh serialization as a shim over SSZ bytes with length-prefixing.
 ///
 /// This macro generates BorshSerialize and BorshDeserialize implementations that:
@@ -149,5 +126,3 @@ macro_rules! impl_borsh_via_ssz_fixed {
         }
     };
 }
-
-pub(crate) use impl_buf_borsh;

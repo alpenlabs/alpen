@@ -2,6 +2,7 @@ use std::{fmt, str};
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -22,14 +23,13 @@ pub type Epoch = u32;
     Ord,
     PartialOrd,
     Hash,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     Encode,
     Decode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
@@ -110,6 +110,7 @@ impl fmt::Display for OLBlockCommitment {
 }
 
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
+#[cfg(feature = "borsh")]
 crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
 
 /// Alias for backward compatibility
@@ -125,14 +126,13 @@ pub type L2BlockCommitment = OLBlockCommitment;
     Ord,
     PartialOrd,
     Hash,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     Encode,
     Decode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);
