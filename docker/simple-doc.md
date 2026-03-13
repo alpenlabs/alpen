@@ -34,7 +34,7 @@ alpen-client \
   --http --http.addr 0.0.0.0 --http.port 8545 --http.api eth,net,web3,txpool \
   --ws --ws.addr 0.0.0.0 --ws.port 8546 --ws.api eth,net,web3,txpool \
   --authrpc.addr 0.0.0.0 --authrpc.port 8551 --authrpc.jwtsecret /path/to/jwt.hex \
-  --ee-da-magic-bytes ALPT \
+  --ee-da-magic-bytes ALPN \
   --btc-rpc-url http://<bitcoind-host>:18443 \
   --btc-rpc-user <user> \
   --btc-rpc-password <pass> \
@@ -89,7 +89,7 @@ alpen-client \
 
 | Flag | Description |
 |------|-------------|
-| `--ee-da-magic-bytes <4-chars>` | 4-byte ASCII tag for OP_RETURN DA envelopes on Bitcoin. Example: `ALPT`. |
+| `--ee-da-magic-bytes <4-chars>` | 4-byte ASCII tag for OP_RETURN DA envelopes on Bitcoin. Example: `ALPN`. |
 | `--btc-rpc-url <url>` | Bitcoin Core RPC endpoint. |
 | `--btc-rpc-user <user>` | Bitcoin RPC username. |
 | `--btc-rpc-password <pass>` | Bitcoin RPC password. |
