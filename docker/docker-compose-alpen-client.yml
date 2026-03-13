@@ -126,7 +126,7 @@ services:
       - --authrpc.jwtsecret
       - /app/keys/jwt.hex
       - --ee-da-magic-bytes
-      - ${EE_DA_MAGIC_BYTES:-ALPT}
+      - ${EE_DA_MAGIC_BYTES:-ALPN}
       - --btc-rpc-url
       - http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
       - --btc-rpc-user

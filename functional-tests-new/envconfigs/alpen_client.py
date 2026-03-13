@@ -12,7 +12,7 @@ from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypai
 from factories.bitcoin import BitcoinFactory
 
 # Default magic bytes for DA testing (must be 4 bytes)
-DEFAULT_DA_MAGIC_BYTES = b"ALPT"
+DEFAULT_DA_MAGIC_BYTES = b"ALPN"
 
 
 class AlpenClientEnv(flexitest.EnvConfig):
@@ -28,7 +28,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                         (in addition to sequencer) to help form mesh topology.
                         Requires enable_discovery=True. (default False)
         enable_l1_da: Enable DA pipeline for posting state diffs to Bitcoin L1 (default False)
-        da_magic_bytes: 4-byte magic for OP_RETURN tagging (default: b"ALPT")
+        da_magic_bytes: 4-byte magic for OP_RETURN tagging (default: b"ALPN")
         l1_reorg_safe_depth: Confirmation depth for L1 transactions (default: 1)
         batch_sealing_block_count: Number of blocks before sealing a batch (default: 5)
     """
