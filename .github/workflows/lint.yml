@@ -64,7 +64,7 @@ jobs:
           - strata-state
           # - strata-primitives # unsupported due to `secp256k1` FFI dependency
           - strata-identifiers
-          - strata-dbtool
+          # - strata-dbtool # unsupported due to `rkyv` dependency
           # - alpen-client # unsupported due to `rkyv` dependency
           # - alpen-cli # unsupported due to `secp256k1` FFI dependency
           # - strata-test-utils-btcio # unsupported due to `tokio::test` macro usage
