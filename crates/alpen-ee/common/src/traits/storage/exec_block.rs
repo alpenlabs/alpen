@@ -304,12 +304,7 @@ pub mod exec_block_storage_test_fns {
 
     /// Helper to create an EeAccountState with a specific block hash
     fn create_account_state(blockhash: Hash) -> EeAccountState {
-        EeAccountState::new(
-            blockhash,
-            BitcoinAmount::ZERO,
-            Vec::new(),
-            Vec::new(),
-        )
+        EeAccountState::new(blockhash, BitcoinAmount::ZERO, Vec::new(), Vec::new())
     }
 
     /// Helper to create a test MessageEntry

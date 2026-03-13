@@ -5,9 +5,9 @@ use alpen_ee_common::{
 };
 use strata_ee_acct_runtime::process_update_unconditionally;
 use strata_ee_acct_types::EeAccountState;
-use strata_predicate::PredicateKey;
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_identifiers::EpochCommitment;
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -281,12 +281,8 @@ mod tests {
         fn test_apply_empty_operations() {
             // Scenario: Apply empty operations list
             // Expected: State unchanged, returns Ok
-            let mut state = EeAccountState::new(
-                Hash::new([0u8; 32]),
-                BitcoinAmount::zero(),
-                vec![],
-                vec![],
-            );
+            let mut state =
+                EeAccountState::new(Hash::new([0u8; 32]), BitcoinAmount::zero(), vec![], vec![]);
             let operations: Vec<UpdateInputData> = vec![];
 
             let result = apply_epoch_operations(&mut state, &operations);
