@@ -13,11 +13,14 @@ mod wrapper;
 mod tests {
     #[derive(PartialEq)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(
+        feature = "borsh",
+        derive(borsh::BorshSerialize, borsh::BorshDeserialize)
+    )]
     pub struct TestBuf20([u8; 20]);
 
     crate::macros::buf::impl_buf_core!(TestBuf20, 20);
     crate::macros::buf::impl_buf_fmt!(TestBuf20, 20);
-    crate::macros::borsh::impl_buf_borsh!(TestBuf20, 20);
     strata_codec::impl_wrapper_codec!(TestBuf20 => [u8; 20]);
     crate::macros::serde_impl::impl_buf_serde!(TestBuf20, 20);
 
@@ -100,8 +103,6 @@ mod tests {
         assert_eq!(buf, decoded);
     }
 
-    use std::io;
-
     // Test the SSZ transparent wrapper macros
     use ssz::{Decode, Encode};
     use ssz_derive::{Decode, Encode};
@@ -151,128 +152,133 @@ mod tests {
         assert_eq!(wrapper, owned);
     }
 
-    // Test the Borsh-via-SSZ macro
-    #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
-    struct TestBorshViaSsz {
-        value: u64,
-        data: Vec<u8>,
-    }
+    #[cfg(feature = "borsh")]
+    mod borsh_tests {
+        use std::io;
 
-    crate::impl_borsh_via_ssz!(TestBorshViaSsz);
-
-    #[test]
-    fn test_borsh_via_ssz_roundtrip() {
         use borsh::{BorshDeserialize, BorshSerialize};
+        use ssz_derive::{Decode, Encode};
 
-        let original = TestBorshViaSsz {
-            value: 42,
-            data: vec![1, 2, 3, 4, 5],
-        };
-
-        // Test Borsh serialization roundtrip
-        let mut buffer = Vec::new();
-        original.serialize(&mut buffer).unwrap();
-
-        let decoded = TestBorshViaSsz::deserialize_reader(&mut buffer.as_slice()).unwrap();
-        assert_eq!(original, decoded);
-    }
-
-    #[test]
-    fn test_borsh_via_ssz_nested() {
-        use borsh::{BorshDeserialize, BorshSerialize};
-
-        // Test that our length-prefixed approach works when nested
-        #[derive(Clone, Debug, Eq, PartialEq)]
-        struct Container {
-            first: TestBorshViaSsz,
-            second: TestBorshViaSsz,
+        // Test the Borsh-via-SSZ macro
+        #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
+        struct TestBorshViaSsz {
+            value: u64,
+            data: Vec<u8>,
         }
 
-        impl borsh::BorshSerialize for Container {
-            fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-                self.first.serialize(writer)?;
-                self.second.serialize(writer)?;
-                Ok(())
+        crate::impl_borsh_via_ssz!(TestBorshViaSsz);
+
+        #[test]
+        fn test_borsh_via_ssz_roundtrip() {
+            let original = TestBorshViaSsz {
+                value: 42,
+                data: vec![1, 2, 3, 4, 5],
+            };
+
+            // Test Borsh serialization roundtrip
+            let mut buffer = Vec::new();
+            original.serialize(&mut buffer).unwrap();
+
+            let decoded = TestBorshViaSsz::deserialize_reader(&mut buffer.as_slice()).unwrap();
+            assert_eq!(original, decoded);
+        }
+
+        #[test]
+        fn test_borsh_via_ssz_nested() {
+            // Test that our length-prefixed approach works when nested
+            #[derive(Clone, Debug, Eq, PartialEq)]
+            struct Container {
+                first: TestBorshViaSsz,
+                second: TestBorshViaSsz,
             }
-        }
 
-        impl borsh::BorshDeserialize for Container {
-            fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-                let first = TestBorshViaSsz::deserialize_reader(reader)?;
-                let second = TestBorshViaSsz::deserialize_reader(reader)?;
-                Ok(Container { first, second })
+            impl BorshSerialize for Container {
+                fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+                    self.first.serialize(writer)?;
+                    self.second.serialize(writer)?;
+                    Ok(())
+                }
             }
+
+            impl BorshDeserialize for Container {
+                fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+                    let first = TestBorshViaSsz::deserialize_reader(reader)?;
+                    let second = TestBorshViaSsz::deserialize_reader(reader)?;
+                    Ok(Container { first, second })
+                }
+            }
+
+            let container = Container {
+                first: TestBorshViaSsz {
+                    value: 100,
+                    data: vec![1, 2, 3],
+                },
+                second: TestBorshViaSsz {
+                    value: 200,
+                    data: vec![4, 5, 6, 7],
+                },
+            };
+
+            // Serialize and deserialize
+            let mut buffer = Vec::new();
+            container.serialize(&mut buffer).unwrap();
+
+            let decoded = Container::deserialize_reader(&mut buffer.as_slice()).unwrap();
+            assert_eq!(container.first, decoded.first);
+            assert_eq!(container.second, decoded.second);
         }
 
-        let container = Container {
-            first: TestBorshViaSsz {
-                value: 100,
-                data: vec![1, 2, 3],
-            },
-            second: TestBorshViaSsz {
-                value: 200,
-                data: vec![4, 5, 6, 7],
-            },
-        };
+        // Test the fixed-size Borsh-via-SSZ macro
+        #[test]
+        fn test_borsh_via_ssz_fixed() {
+            use crate::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
 
-        // Serialize and deserialize
-        let mut buffer = Vec::new();
-        container.serialize(&mut buffer).unwrap();
+            // Test OLBlockCommitment - should be 40 bytes, no length prefix
+            let commitment =
+                OLBlockCommitment::new(12345, OLBlockId::from(Buf32::from([42u8; 32])));
 
-        let decoded = Container::deserialize_reader(&mut buffer.as_slice()).unwrap();
-        assert_eq!(container.first, decoded.first);
-        assert_eq!(container.second, decoded.second);
-    }
+            let mut buffer = Vec::new();
+            commitment.serialize(&mut buffer).unwrap();
 
-    // Test the fixed-size Borsh-via-SSZ macro
-    #[test]
-    fn test_borsh_via_ssz_fixed() {
-        use borsh::{BorshDeserialize, BorshSerialize};
+            // Should be exactly 40 bytes (8 for slot + 32 for blkid), no length prefix
+            assert_eq!(buffer.len(), 40, "OLBlockCommitment should be 40 bytes");
 
-        use crate::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
+            // First 8 bytes should be the slot in little-endian
+            let slot_bytes = 12345u64.to_le_bytes();
+            assert_eq!(&buffer[0..8], &slot_bytes, "First 8 bytes should be slot");
 
-        // Test OLBlockCommitment - should be 40 bytes, no length prefix
-        let commitment = OLBlockCommitment::new(12345, OLBlockId::from(Buf32::from([42u8; 32])));
+            // Next 32 bytes should be the blkid
+            assert_eq!(&buffer[8..40], &[42u8; 32], "Next 32 bytes should be blkid");
 
-        let mut buffer = Vec::new();
-        commitment.serialize(&mut buffer).unwrap();
+            // Test deserialization
+            let decoded = OLBlockCommitment::deserialize_reader(&mut buffer.as_slice()).unwrap();
+            assert_eq!(decoded.slot(), 12345);
+            assert_eq!(decoded.blkid().as_ref(), &[42u8; 32]);
 
-        // Should be exactly 40 bytes (8 for slot + 32 for blkid), no length prefix
-        assert_eq!(buffer.len(), 40, "OLBlockCommitment should be 40 bytes");
+            // Test EpochCommitment - should be 44 bytes, no length prefix
+            let epoch_commitment =
+                EpochCommitment::new(5, 100, OLBlockId::from(Buf32::from([99u8; 32])));
 
-        // First 8 bytes should be the slot in little-endian
-        let slot_bytes = 12345u64.to_le_bytes();
-        assert_eq!(&buffer[0..8], &slot_bytes, "First 8 bytes should be slot");
+            let mut buffer2 = Vec::new();
+            epoch_commitment.serialize(&mut buffer2).unwrap();
 
-        // Next 32 bytes should be the blkid
-        assert_eq!(&buffer[8..40], &[42u8; 32], "Next 32 bytes should be blkid");
+            // Should be exactly 44 bytes (4 for epoch + 8 for slot + 32 for blkid), no length
+            // prefix
+            assert_eq!(buffer2.len(), 44, "EpochCommitment should be 44 bytes");
 
-        // Test deserialization
-        let decoded = OLBlockCommitment::deserialize_reader(&mut buffer.as_slice()).unwrap();
-        assert_eq!(decoded.slot(), 12345);
-        assert_eq!(decoded.blkid().as_ref(), &[42u8; 32]);
+            // Verify no length prefix by checking first 4 bytes are the epoch, not a length
+            let epoch_bytes = 5u32.to_le_bytes();
+            assert_eq!(
+                &buffer2[0..4],
+                &epoch_bytes,
+                "First 4 bytes should be epoch"
+            );
 
-        // Test EpochCommitment - should be 44 bytes, no length prefix
-        let epoch_commitment =
-            EpochCommitment::new(5, 100, OLBlockId::from(Buf32::from([99u8; 32])));
-
-        let mut buffer2 = Vec::new();
-        epoch_commitment.serialize(&mut buffer2).unwrap();
-
-        // Should be exactly 44 bytes (4 for epoch + 8 for slot + 32 for blkid), no length prefix
-        assert_eq!(buffer2.len(), 44, "EpochCommitment should be 44 bytes");
-
-        // Verify no length prefix by checking first 4 bytes are the epoch, not a length
-        let epoch_bytes = 5u32.to_le_bytes();
-        assert_eq!(
-            &buffer2[0..4],
-            &epoch_bytes,
-            "First 4 bytes should be epoch"
-        );
-
-        // Test deserialization
-        let decoded2 = EpochCommitment::deserialize_reader(&mut buffer2.as_slice()).unwrap();
-        assert_eq!(decoded2.epoch(), 5);
-        assert_eq!(decoded2.last_slot(), 100);
+            // Test deserialization
+            let decoded2 =
+                EpochCommitment::deserialize_reader(&mut buffer2.as_slice()).unwrap();
+            assert_eq!(decoded2.epoch(), 5);
+            assert_eq!(decoded2.last_slot(), 100);
+        }
     }
 }

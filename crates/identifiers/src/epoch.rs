@@ -132,6 +132,7 @@ impl fmt::Display for EpochCommitment {
 }
 
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
+#[cfg(feature = "borsh")]
 crate::impl_borsh_via_ssz_fixed!(EpochCommitment);
 
 impl Ord for EpochCommitment {

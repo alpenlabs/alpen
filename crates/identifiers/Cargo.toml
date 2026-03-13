@@ -15,7 +15,7 @@ strata-codec.workspace = true
 tree_hash.workspace = true
 
 arbitrary = { workspace = true, optional = true }
-borsh.workspace = true
+borsh = { workspace = true, optional = true }
 const-hex = "1.14"
 hex.workspace = true
 int-enum.workspace = true
@@ -33,6 +33,8 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
+default = ["arbitrary", "borsh"]
 arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh"]
 jsonschema = ["dep:schemars"]
 test-utils = ["dep:proptest", "arbitrary"]

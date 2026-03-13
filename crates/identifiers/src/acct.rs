@@ -2,6 +2,7 @@ use std::{fmt, mem};
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
@@ -33,10 +34,9 @@ type RawAccountId = [u8; ACCT_ID_LEN];
     Encode,
     Serialize,
     Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
@@ -105,10 +105,9 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
     Hash,
     Decode,
     Encode,
-    BorshSerialize,
-    BorshDeserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
@@ -175,10 +174,9 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
     Encode,
     Serialize,
     Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);

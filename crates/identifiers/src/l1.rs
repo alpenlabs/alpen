@@ -2,6 +2,7 @@ use std::{cmp::Ordering, fmt};
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -25,14 +26,13 @@ pub type L1Height = u32;
     PartialOrd,
     Hash,
     Default,
-    BorshSerialize,
-    BorshDeserialize,
     Serialize,
     Deserialize,
     Encode,
     Decode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct L1BlockId(RBuf32);
 
 // Debug, Display, From<RBuf32>, AsRef<[u8; 32]> via RBuf32 delegation.
@@ -68,14 +68,13 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
     PartialOrd,
     Hash,
     Default,
-    BorshSerialize,
-    BorshDeserialize,
     Deserialize,
     Serialize,
     Encode,
     Decode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct WtxidsRoot(Buf32);
 
 // Implement standard wrapper traits (Debug, Display, From, AsRef)
@@ -101,6 +100,7 @@ crate::impl_ssz_type_info_fixed!(L1BlockCommitment, [L1Height, L1BlockId]);
 crate::impl_ssz_container_ref!(L1BlockCommitmentRef, L1BlockCommitment);
 
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
+#[cfg(feature = "borsh")]
 crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
 
 impl Codec for L1BlockCommitment {
