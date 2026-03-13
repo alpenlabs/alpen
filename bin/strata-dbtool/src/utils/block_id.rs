@@ -1,3 +1,4 @@
+#![expect(rustdoc::private_doc_tests, reason = "an AI added these, ignore it")]
 //! Utilities for parsing and validating block IDs
 
 use hex::FromHex;

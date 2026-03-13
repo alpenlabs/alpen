@@ -24,7 +24,6 @@ class SentTransfer(Container):
     ### Value sent.
     value: strata_btc_types.BitcoinAmount
 
-
 ### Describes a message being received by an account.
 class ReceivedMessage(Container):
     source: strata_identifiers.AccountId

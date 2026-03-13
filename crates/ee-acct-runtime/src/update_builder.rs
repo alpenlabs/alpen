@@ -1,221 +1,264 @@
-//! Builder for constructing update operations for testing.
+//! EE-specific update builder with chunk-aware interface.
+//!
+//! Wraps the generic snark account builder and tracks chain tip and pending
+//! inputs, allowing the consumer to query available inputs and accept
+//! validated [`ChunkTransition`]s.
 
 use strata_acct_types::Hash;
-use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
-    CommitChainSegment, EeAccountState, ExecBlock, ExecutionEnvironment, UpdateExtraData,
+    EeAccountState, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
 };
+use strata_ee_chain_types::ChunkTransition;
+use strata_snark_acct_runtime::{PrivateInput, UpdateBuilder as GenericUpdateBuilder};
 use strata_snark_acct_types::{
-    LedgerRefs, MAX_MESSAGES, MAX_TRANSFERS, MessageEntry, OutputMessage, OutputTransfer,
-    ProofState, UpdateOperationData, UpdateOutputs,
+    LedgerRefs, MessageEntry, OutputMessage, OutputTransfer, SnarkAccountState,
+    UpdateOperationData, UpdateOutputs,
 };
 
 use crate::{
-    builder_errors::BuilderResult,
-    private_input::SharedPrivateInput,
-    update_processing::{MsgData, apply_message},
+    builder_errors::{BuilderError, BuilderResult},
+    ee_program::EeSnarkAccountProgram,
+    verification_state::EeVerificationInput,
 };
 
-/// Builder for constructing complete update operations.
+/// EE update builder with chunk-aware interface.
 ///
-/// This helps assemble all the pieces needed to call
-/// `verify_and_apply_update_operation` in tests. It tracks the account state
-/// and accumulates changes as messages are processed and segments are added.
-//#[expect(missing_debug_implementations, reason = "clippy is wrong")]
-#[derive(Debug)]
-pub struct UpdateBuilder {
+/// Tracks the execution chain tip and pending input queue internally,
+/// validates [`ChunkTransition`]s against this state, and accumulates
+/// outputs. The consumer can query [`Self::remaining_pending_inputs`] and
+/// [`Self::cur_tip_blkid`] to construct valid transitions.
+#[expect(missing_debug_implementations, reason = "E may not implement Debug")]
+pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
+    inner: GenericUpdateBuilder<'i, EeSnarkAccountProgram<E>>,
+
+    /// Seqno of the update we're proving.
     seq_no: u64,
-    current_state: EeAccountState,
-    processed_messages: Vec<MessageEntry>,
-    message_coinputs: Vec<Vec<u8>>,
-    ledger_refs: LedgerRefs,
-    accumulated_outputs: UpdateOutputs,
-    commit_segments: Vec<CommitChainSegment>,
-    total_inputs_processed: usize,
-    total_fincls_processed: usize,
+
+    /// Current chain tip, advanced as chunks are accepted.
+    cur_tip_blkid: Hash,
+
+    /// Snapshot of pending inputs after message processing. Not mutated —
+    /// used to validate chunks and let the consumer query remaining inputs.
+    pending_inputs: Vec<PendingInputEntry>,
+
+    /// How many pending inputs have been consumed by accepted chunks.
+    inputs_consumed: usize,
+
+    /// Number of forced inclusions processed.
+    fincls_processed: usize,
 }
 
-impl UpdateBuilder {
-    /// Creates a new update builder with a sequence number and initial state.
-    pub fn new(seq_no: u64, initial_state: EeAccountState) -> Self {
-        Self {
-            seq_no,
-            current_state: initial_state,
-            processed_messages: Vec::new(),
-            message_coinputs: Vec::new(),
-            ledger_refs: LedgerRefs::new_empty(),
-            accumulated_outputs: UpdateOutputs::new_empty(),
-            commit_segments: Vec::new(),
-            total_inputs_processed: 0,
-            total_fincls_processed: 0,
-        }
-    }
-
-    /// Accepts and processes a message, updating the account state.
+impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
+    /// Creates a new EE update builder.
     ///
-    /// This applies the message's effects to the current state (adding balance,
-    /// queuing pending inputs) just as it would during normal update processing.
-    /// For now, coinput verification is not performed (just stored).
-    pub fn accept_message(
-        mut self,
-        message: MessageEntry,
-        coinput: Vec<u8>,
+    /// Initializes with an empty message set. Messages are added incrementally
+    /// via [`Self::add_message`] or [`Self::add_messages`].
+    pub fn new(
+        seq_no: u64,
+        snark_state: SnarkAccountState,
+        initial_state: EeAccountState,
+        vinput: EeVerificationInput<'i, E>,
     ) -> BuilderResult<Self> {
-        // Decode the message
-        let msg_data = MsgData::from_entry(&message)?;
+        let pending_inputs = initial_state.pending_inputs().to_vec();
+        let cur_tip_blkid = initial_state.last_exec_blkid();
 
-        // Apply message effects to the state using the same function as normal processing
-        apply_message(&mut self.current_state, &msg_data)?;
+        let program = EeSnarkAccountProgram::new();
 
-        // Store the message and coinput for later
-        self.processed_messages.push(message);
-        self.message_coinputs.push(coinput);
+        let inner = GenericUpdateBuilder::new(
+            program,
+            snark_state,
+            initial_state,
+            vinput,
+            LedgerRefs::new_empty(),
+            UpdateOutputs::new_empty(),
+        )?;
 
-        Ok(self)
+        Ok(Self {
+            inner,
+            seq_no,
+            cur_tip_blkid,
+            pending_inputs,
+            inputs_consumed: 0,
+            fincls_processed: 0,
+        })
     }
 
-    /// Sets the ledger references for this update.
-    pub fn with_ledger_refs(mut self, refs: LedgerRefs) -> Self {
-        self.ledger_refs = refs;
-        self
-    }
-
-    /// Adds a chain segment to the update.
-    ///
-    /// This automatically accumulates the outputs from all blocks in the segment
-    /// and removes consumed inputs from the current state.
-    pub fn add_segment(mut self, segment: CommitChainSegment) -> Self {
-        // Track total inputs consumed across all blocks
-        let mut total_inputs_consumed = 0;
-
-        // Accumulate outputs from all blocks in the segment
-        for block in segment.blocks() {
-            let block_notpackage = block.package();
-            let block_outputs = block_notpackage.outputs();
-            let block_inputs = block_notpackage.inputs();
-
-            // Count inputs consumed by this block
-            total_inputs_consumed += block_inputs.total_inputs();
-
-            // Add transfers
-            self.accumulated_outputs
-                .try_extend_transfers(
-                    block_outputs
-                        .output_transfers()
-                        .iter()
-                        .map(|t| OutputTransfer::new(t.dest(), t.value())),
-                )
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "transfers capacity exceeded in test builder: {e}. Current: {}, Adding: {}, Max: {}",
-                        self.accumulated_outputs.transfers().len(),
-                        block_outputs.output_transfers().len(),
-                        MAX_TRANSFERS
-                    )
-                });
-
-            // Add messages (converting payload types)
-            self.accumulated_outputs
-                .try_extend_messages(
-                    block_outputs
-                        .output_messages()
-                        .iter()
-                        .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
-                )
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "messages capacity exceeded in test builder: {e}. Current: {}, Adding: {}, Max: {}",
-                        self.accumulated_outputs.messages().len(),
-                        block_outputs.output_messages().len(),
-                        MAX_MESSAGES
-                    )
-                });
-        }
-
-        // Remove consumed inputs from the current state
-        self.current_state
-            .remove_pending_inputs(total_inputs_consumed);
-
-        // Track total inputs processed
-        self.total_inputs_processed += total_inputs_consumed;
-
-        self.commit_segments.push(segment);
-        self
-    }
-
-    /// Sets the number of forced inclusions processed.
-    pub fn with_processed_fincls(mut self, count: usize) -> Self {
-        self.total_fincls_processed = count;
-        self
-    }
-
-    /// Builds the update operation data and shared private input.
-    ///
-    /// Requires the initial state (before any changes), previous header, and
-    /// partial state for the shared private input. The extra data is
-    /// automatically constructed from:
-    /// - new_tip_blkid: the last block ID from the last segment
-    /// - processed_inputs: calculated from segments (total inputs consumed)
-    /// - processed_fincls: set via with_processed_fincls
-    pub fn build<E: ExecutionEnvironment>(
-        self,
-        initial_state: &EeAccountState,
-        prev_header: &<E::Block as ExecBlock>::Header,
-        prev_partial_state: &E::PartialState,
-    ) -> BuilderResult<(UpdateOperationData, SharedPrivateInput, Vec<Vec<u8>>)> {
-        // Determine the new tip block ID from the last segment
-        let new_tip_blkid = self
-            .commit_segments
-            .last()
-            .and_then(|seg| seg.new_exec_tip_blkid())
-            .unwrap_or(initial_state.last_exec_blkid());
-
-        // Construct the extra data using tracked values
-        let extra_data = UpdateExtraData::new(
-            new_tip_blkid,
-            self.total_inputs_processed as u32,
-            self.total_fincls_processed as u32,
-        );
-
-        // Encode the extra data
-        let extra_data_buf = encode_to_vec(&extra_data)?;
-
-        // Compute the new state by simulating the update
-        // For now we just use a placeholder state
-        // TODO: compute actual state root
-        let new_state = ProofState::new(Hash::new([0; 32]), 0);
-
-        // Encode the previous header and partial state
-        let prev_header_buf = encode_to_vec(prev_header)?;
-        let prev_partial_state_buf = encode_to_vec(prev_partial_state)?;
-
-        // Build the operation data
-        let operation = UpdateOperationData::new(
-            self.seq_no,
-            new_state,
-            self.processed_messages,
-            self.ledger_refs,
-            self.accumulated_outputs,
-            extra_data_buf,
-        );
-
-        // Build the shared private input
-        let shared_private = SharedPrivateInput::new(
-            self.commit_segments,
-            prev_header_buf,
-            prev_partial_state_buf,
-        );
-
-        Ok((operation, shared_private, self.message_coinputs))
-    }
-
-    /// Returns the current state.
-    pub fn current_state(&self) -> &EeAccountState {
-        &self.current_state
+    /// Returns the current account state.
+    pub fn cur_acct_state(&self) -> &EeAccountState {
+        self.inner.cur_state()
     }
 
     /// Returns the accumulated outputs so far.
-    pub fn accumulated_outputs(&self) -> &UpdateOutputs {
-        &self.accumulated_outputs
+    pub fn outputs(&self) -> &UpdateOutputs {
+        self.inner.outputs()
+    }
+
+    /// Returns the current chain tip block ID.
+    ///
+    /// A chunk's `parent_exec_blkid` must equal this value.
+    pub fn cur_tip_blkid(&self) -> Hash {
+        self.cur_tip_blkid
+    }
+
+    /// Adds a message and immediately processes it with an empty coinput.
+    ///
+    /// Any new pending inputs created by the message (e.g. deposits) are
+    /// appended to the internal tracking list.
+    pub fn add_message(&mut self, msg: MessageEntry) -> BuilderResult<()> {
+        self.inner.add_message_with_coinput(msg, Vec::new())?;
+
+        // Extend pending inputs with any new entries from this message.
+        let state_pending = self.inner.cur_state().pending_inputs();
+        if state_pending.len() > self.pending_inputs.len() {
+            self.pending_inputs
+                .extend_from_slice(&state_pending[self.pending_inputs.len()..]);
+        }
+
+        Ok(())
+    }
+
+    /// Adds multiple messages, processing each with an empty coinput.
+    ///
+    /// Convenience batch method equivalent to calling [`Self::add_message`] for each.
+    pub fn add_messages(
+        &mut self,
+        msgs: impl IntoIterator<Item = MessageEntry>,
+    ) -> BuilderResult<()> {
+        for msg in msgs {
+            self.add_message(msg)?;
+        }
+        Ok(())
+    }
+
+    /// Returns the remaining pending inputs that haven't been consumed by
+    /// chunks yet.
+    ///
+    /// A chunk's deposits must match these in order.
+    pub fn remaining_pending_inputs(&self) -> &[PendingInputEntry] {
+        &self.pending_inputs[self.inputs_consumed..]
+    }
+
+    /// Returns the next `count` pending inputs available for consumption.
+    ///
+    /// Returns fewer than `count` if not enough remain.
+    pub fn next_pending_inputs(&self, count: usize) -> &[PendingInputEntry] {
+        let remaining = self.remaining_pending_inputs();
+        let n = count.min(remaining.len());
+        &remaining[..n]
+    }
+
+    /// Returns the total number of pending inputs remaining.
+    pub fn remaining_input_count(&self) -> usize {
+        self.pending_inputs.len() - self.inputs_consumed
+    }
+
+    /// Accepts a chunk transition, validating chain linkage and input matching.
+    ///
+    /// The transition's `parent_exec_blkid` must equal [`Self::cur_tip_blkid`], and
+    /// its deposits must match the next pending inputs in order.
+    ///
+    /// On success, advances the chain tip, accumulates outputs, and tracks
+    /// consumed input count.
+    pub fn accept_chunk_transition(&mut self, transition: &ChunkTransition) -> BuilderResult<()> {
+        // 1. Validate chain linkage.
+        if transition.parent_exec_blkid() != self.cur_tip_blkid {
+            return Err(BuilderError::ChainLinkage {
+                expected: self.cur_tip_blkid,
+                parent: transition.parent_exec_blkid(),
+            });
+        }
+
+        // 2. Validate input matching against pending inputs.
+        let deposits = transition.inputs().subject_deposits();
+        let remaining = self.remaining_pending_inputs();
+
+        if deposits.len() > remaining.len() {
+            return Err(BuilderError::InputMismatch {
+                position: remaining.len(),
+            });
+        }
+
+        for (i, deposit) in deposits.iter().enumerate() {
+            match &remaining[i] {
+                PendingInputEntry::Deposit(expected) if deposit == expected => {}
+                _ => {
+                    return Err(BuilderError::InputMismatch {
+                        position: self.inputs_consumed + i,
+                    });
+                }
+            }
+        }
+
+        // 3. Merge outputs.
+        let outputs = transition.outputs();
+
+        self.inner
+            .outputs_mut()
+            .try_extend_transfers(
+                outputs
+                    .output_transfers()
+                    .iter()
+                    .map(|t| OutputTransfer::new(t.dest(), t.value())),
+            )
+            .map_err(|_| BuilderError::OutputOverflow)?;
+
+        self.inner
+            .outputs_mut()
+            .try_extend_messages(
+                outputs
+                    .output_messages()
+                    .iter()
+                    .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
+            )
+            .map_err(|_| BuilderError::OutputOverflow)?;
+
+        // 4. Advance tip and consumed count.
+        self.cur_tip_blkid = transition.tip_exec_blkid();
+        self.inputs_consumed += deposits.len();
+
+        Ok(())
+    }
+
+    /// Sets the number of forced inclusions processed.
+    pub fn with_processed_fincls(&mut self, count: usize) -> &mut Self {
+        self.fincls_processed = count;
+        self
+    }
+
+    /// Builds the update, returning operation data and raw coinputs.
+    ///
+    /// Sets [`UpdateExtraData`] with the current tip, consumed input count,
+    /// and forced inclusion count, then delegates to the generic builder.
+    ///
+    /// Uses the unverified finalization path since the builder has already
+    /// validated chunk transitions locally via [`Self::accept_chunk_transition`].
+    /// Clones internal state so the builder can be reused.
+    pub fn build(&mut self) -> BuilderResult<(UpdateOperationData, Vec<Vec<u8>>)> {
+        let extra_data = UpdateExtraData::new(
+            self.cur_tip_blkid,
+            self.inputs_consumed as u32,
+            self.fincls_processed as u32,
+        );
+
+        let (op, coinputs) = self
+            .inner
+            .build_operation_data_unverified(self.seq_no, extra_data)?;
+        Ok((op, coinputs))
+    }
+
+    /// Builds a [`PrivateInput`] for proof generation.
+    ///
+    /// Constructs [`UpdateExtraData`] from the current tip, consumed input
+    /// count, and forced inclusion count, then delegates to the inner builder's
+    /// verified finalization path. Clones internal state so the builder can be
+    /// reused.
+    pub fn build_private_input(&mut self) -> BuilderResult<PrivateInput> {
+        let extra_data = UpdateExtraData::new(
+            self.cur_tip_blkid,
+            self.inputs_consumed as u32,
+            self.fincls_processed as u32,
+        );
+
+        Ok(self.inner.build_private_input(extra_data)?)
     }
 }

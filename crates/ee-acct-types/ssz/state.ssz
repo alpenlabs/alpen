@@ -3,6 +3,7 @@ import strata_ee_chain_types
 
 MAX_PENDING_INPUTS = 1 << 16
 MAX_PENDING_FINCLS = 1 << 16
+MAX_CHUNK_PRED_LEN = 1024
 
 ### Pending input we expect to see in a block
 class PendingInputEntry(Union):

@@ -3,10 +3,12 @@ use std::time::Duration;
 use alpen_ee_common::{
     chain_status_checked, EeAccountStateAtEpoch, OLChainStatus, OLClient, Storage,
 };
-use strata_ee_acct_runtime::apply_update_operation_unconditionally;
+use strata_ee_acct_runtime::process_update_unconditionally;
 use strata_ee_acct_types::EeAccountState;
+use strata_evm_ee::EvmExecutionEnvironment;
 use strata_identifiers::EpochCommitment;
-use strata_snark_acct_types::UpdateInputData;
+use strata_predicate::PredicateKey;
+use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
 use tokio::time;
 use tracing::{debug, error, info, warn};
 
@@ -184,8 +186,17 @@ pub(crate) fn apply_epoch_operations(
     epoch_operations: &[UpdateInputData],
 ) -> Result<()> {
     for op in epoch_operations {
-        apply_update_operation_unconditionally(state, op)
-            .map_err(|e| OLTrackerError::Other(e.to_string()))?;
+        let manifest = UpdateManifest::new(
+            op.new_state(),
+            op.extra_data().to_vec(),
+            op.processed_messages().to_vec(),
+        );
+        process_update_unconditionally::<EvmExecutionEnvironment>(
+            state,
+            &manifest,
+            PredicateKey::always_accept(),
+        )
+        .map_err(|e| OLTrackerError::Other(e.to_string()))?;
     }
 
     Ok(())

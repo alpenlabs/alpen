@@ -1,24 +1,23 @@
 //! Basic EE account runtime framework.
-//!
-//! This is expected to be used within the SNARK proof program used as a snark
-//! account in order to implement an execution environment host account on the
-//! Strata orchestration layer.  There are a collection of utilities in order to
-//! help manipulate EE accounts like by building chain segments and updates.
 
 #![cfg_attr(test, expect(unused_crate_dependencies, reason = "test weirdness"))]
+#![expect(unused, reason = "lots of stuff being refactored")]
 
 mod block_assembly;
-mod exec_processing;
+mod ee_program;
+mod errors;
 mod private_input;
 mod update_processing;
 mod verification_state;
 
 pub use block_assembly::apply_input_messages;
-pub use private_input::SharedPrivateInput;
-pub use update_processing::{
-    MsgData, MsgMeta, apply_final_update_changes, apply_update_operation_unconditionally,
-    verify_and_apply_update_operation,
+pub use ee_program::EeSnarkAccountProgram;
+pub use private_input::{
+    ArchivedChunkInput, ArchivedPrivateInput as ArchivedEePrivateInput, ChunkInput,
+    PrivateInput as EePrivateInput,
 };
+pub use update_processing::{process_update_unconditionally, verify_and_process_update};
+pub use verification_state::{EeVerificationInput, EeVerificationState};
 
 // Builder utils
 //
@@ -28,15 +27,12 @@ pub use update_processing::{
 #[cfg(feature = "builders")]
 mod builder_errors;
 #[cfg(feature = "builders")]
-mod chain_segment_builder;
-#[cfg(feature = "builders")]
 mod update_builder;
 
 #[cfg(feature = "builders")]
 mod builder_reexports {
     pub use super::{
         builder_errors::{BuilderError, BuilderResult},
-        chain_segment_builder::ChainSegmentBuilder,
         update_builder::UpdateBuilder,
     };
 }

@@ -288,7 +288,7 @@ mod tests {
     use std::vec;
 
     use strata_acct_types::BitcoinAmount;
-    use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment};
+    use strata_ee_chain_types::{ExecBlockCommitment, ExecInputs, ExecOutputs};
     use strata_identifiers::Buf32;
 
     use super::*;
@@ -309,8 +309,8 @@ mod tests {
         let hash = Hash::from(Buf32::new([blocknum as u8; 32]));
         let package = ExecBlockPackage::new(
             ExecBlockCommitment::new(hash, hash),
-            BlockInputs::new_empty(),
-            BlockOutputs::new_empty(),
+            ExecInputs::new_empty(),
+            ExecOutputs::new_empty(),
         );
         let account_state = EeAccountState::new(hash, BitcoinAmount::ZERO, vec![], vec![]);
         ExecBlockRecord::new(

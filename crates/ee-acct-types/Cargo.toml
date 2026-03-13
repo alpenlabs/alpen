@@ -13,6 +13,7 @@ strata-codec.workspace = true
 strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
 strata-msg-fmt.workspace = true
+strata-snark-acct-runtime.workspace = true
 tree_hash.workspace = true
 tree_hash_derive.workspace = true
 

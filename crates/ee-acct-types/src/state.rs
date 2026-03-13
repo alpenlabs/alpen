@@ -2,6 +2,8 @@
 
 use strata_acct_types::BitcoinAmount;
 use strata_identifiers::Hash;
+use strata_snark_acct_runtime::IInnerState;
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry};
 
@@ -100,6 +102,13 @@ impl EeAccountState {
             self.pending_fincls = vec.into();
             true
         }
+    }
+}
+
+impl IInnerState for EeAccountState {
+    fn compute_state_root(&self) -> Hash {
+        // Just call out to the SSZ tree hash fn and convert.
+        <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self).into()
     }
 }
 
@@ -210,7 +219,7 @@ mod tests {
                         pending_inputs: inputs.into(),
                         pending_fincls: fincls.into(),
                     }
-                })
+                },)
         );
     }
 }

@@ -207,7 +207,7 @@ pub async fn init_exec_chain_state_from_storage<TStorage: ExecBlockStorage>(
 mod tests {
     use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
-    use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
+    use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
     use strata_identifiers::{Buf32, OLBlockCommitment};
 
     use super::*;
@@ -223,8 +223,8 @@ mod tests {
 
         let package = ExecBlockPackage::new(
             ExecBlockCommitment::new(blockhash, Hash::new([0; 32])),
-            BlockInputs::new_empty(),
-            BlockOutputs::new_empty(),
+            ExecInputs::new_empty(),
+            ExecOutputs::new_empty(),
         );
 
         let ol_block = OLBlockCommitment::new(0, Buf32::new([0u8; 32]).into());

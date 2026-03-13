@@ -2,7 +2,7 @@ use alpen_ee_common::{ExecBlockPayload, ExecBlockRecord};
 use alpen_ee_config::AlpenEeParams;
 use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::EeAccountState;
-use strata_ee_chain_types::{BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage};
+use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
 use strata_identifiers::{Buf32, OLBlockCommitment};
 
 pub fn build_genesis_ee_account_state(params: &AlpenEeParams) -> EeAccountState {
@@ -25,8 +25,8 @@ pub fn build_genesis_exec_block_package(params: &AlpenEeParams) -> ExecBlockPack
             params.genesis_blockhash().0.into(),
             genesis_raw_block_encoded_hash,
         ),
-        BlockInputs::new_empty(),
-        BlockOutputs::new_empty(),
+        ExecInputs::new_empty(),
+        ExecOutputs::new_empty(),
     )
 }
 

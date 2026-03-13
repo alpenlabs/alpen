@@ -1,47 +1,56 @@
 use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SentMessage};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_bridge_types::OperatorSelection;
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::MsgData;
 use strata_ee_acct_types::DecodedEeMessageData;
 use strata_ee_chain_types::{
-    BlockInputs, BlockOutputs, ExecBlockCommitment, ExecBlockPackage, SubjectDepositData,
+    ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs, OutputMessage,
+    SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
+use strata_snark_acct_runtime::InputMessage;
 use tracing::warn;
 
-/// Builds [`BlockInputs`] from parsed input messages.
+/// Builds [`ExecInputs`] from parsed input messages.
 ///
 /// Only `Deposit` messages are processed; other message types are logged and ignored.
-pub(crate) fn build_block_inputs(parsed_inputs: Vec<MsgData>) -> BlockInputs {
-    let mut inputs = BlockInputs::new_empty();
+// TODO(STR-2583) convert this to do it based on extracting pending inputs from the
+// current EE account inner state
+pub(crate) fn build_block_inputs(
+    parsed_inputs: Vec<InputMessage<DecodedEeMessageData>>,
+) -> ExecInputs {
+    let mut inputs = ExecInputs::new_empty();
     for msg in parsed_inputs {
-        match msg.decoded_message() {
-            DecodedEeMessageData::Deposit(deposit_msg_data) => {
+        let value = msg.meta().value();
+        match msg.message() {
+            Some(DecodedEeMessageData::Deposit(deposit_msg_data)) => {
                 inputs.add_subject_deposit(SubjectDepositData::new(
                     *deposit_msg_data.dest_subject(),
-                    msg.value(),
+                    value,
                 ));
             }
-            DecodedEeMessageData::SubjTransfer(_) => {
-                warn!("ignoring unsupported message type: SubjTransfer")
+            Some(DecodedEeMessageData::SubjTransfer(_)) => {
+                // no need to warn on this
             }
-            DecodedEeMessageData::Commit(_) => {
-                warn!("ignoring unsupported message type: Commit")
+            Some(DecodedEeMessageData::Commit(_)) => {
+                // no need to warn on this
+            }
+            None => {
+                // Unknown message, skip
             }
         }
     }
     inputs
 }
 
-/// Builds [`BlockOutputs`] from withdrawal intents in the payload.
+/// Builds [`ExecOutputs`] from withdrawal intents in the payload.
 pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
     bridge_gateway_account_id: AccountId,
     payload: &TPayload,
-) -> BlockOutputs {
-    let mut outputs = BlockOutputs::new_empty();
+) -> ExecOutputs {
+    let mut outputs = ExecOutputs::new_empty();
     for withdrawal_intent in payload.withdrawal_intents() {
         let Some(msg_payload) = create_withdrawal_init_message_payload(
             withdrawal_intent.destination.clone(),
@@ -54,7 +63,7 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
             );
             continue;
         };
-        outputs.add_message(SentMessage::new(bridge_gateway_account_id, msg_payload));
+        outputs.add_message(OutputMessage::new(bridge_gateway_account_id, msg_payload));
     }
     outputs
 }
@@ -62,7 +71,7 @@ pub(crate) fn build_block_outputs<TPayload: EnginePayload>(
 /// Builds the block package based on execution inputs and results.
 pub(crate) fn build_block_package<TPayload: EnginePayload>(
     bridge_gateway_account_id: AccountId,
-    parsed_inputs: Vec<MsgData>,
+    parsed_inputs: Vec<InputMessage<DecodedEeMessageData>>,
     payload: &TPayload,
 ) -> ExecBlockPackage {
     // 1. build block commitment
@@ -103,23 +112,20 @@ mod tests {
     use strata_acct_types::SubjectId;
     use strata_codec::VarVec;
     use strata_ee_acct_types::{CommitMsgData, DepositMsgData, SubjTransferMsgData};
+    use strata_snark_acct_runtime::MsgMeta;
 
     use super::*;
 
-    fn make_deposit_msg(dest_bytes: [u8; 32], sats: u64) -> MsgData {
-        MsgData::new_for_test(
-            AccountId::zero(),
-            0,
-            BitcoinAmount::from_sat(sats),
+    fn make_deposit_msg(dest_bytes: [u8; 32], sats: u64) -> InputMessage<DecodedEeMessageData> {
+        InputMessage::from_msg(
+            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
             DecodedEeMessageData::Deposit(DepositMsgData::new(SubjectId::new(dest_bytes))),
         )
     }
 
-    fn make_subj_transfer_msg(sats: u64) -> MsgData {
-        MsgData::new_for_test(
-            AccountId::zero(),
-            0,
-            BitcoinAmount::from_sat(sats),
+    fn make_subj_transfer_msg(sats: u64) -> InputMessage<DecodedEeMessageData> {
+        InputMessage::from_msg(
+            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(sats)),
             DecodedEeMessageData::SubjTransfer(SubjTransferMsgData::new(
                 SubjectId::new([0xaa; 32]),
                 SubjectId::new([0xbb; 32]),
@@ -128,11 +134,9 @@ mod tests {
         )
     }
 
-    fn make_commit_msg() -> MsgData {
-        MsgData::new_for_test(
-            AccountId::zero(),
-            0,
-            BitcoinAmount::from_sat(0),
+    fn make_commit_msg() -> InputMessage<DecodedEeMessageData> {
+        InputMessage::from_msg(
+            MsgMeta::new(AccountId::zero(), 0, BitcoinAmount::from_sat(0)),
             DecodedEeMessageData::Commit(CommitMsgData::new([0xcc; 32])),
         )
     }

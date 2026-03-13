@@ -27,7 +27,8 @@ impl ExecBlock for EvmBlock {
     }
 
     fn check_header_matches_body(header: &Self::Header, body: &Self::Body) -> bool {
-        // Validate that the transactions root in the header matches the body's transactions
+        // Validate that the transactions root in the header matches the body's
+        // transactions.
         let computed_tx_root = calculate_transaction_root(body.transactions());
         let header_tx_root = header.header().transactions_root;
 

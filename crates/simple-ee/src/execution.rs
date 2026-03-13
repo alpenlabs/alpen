@@ -4,7 +4,7 @@ use strata_ee_acct_types::{
     BlockAssembler, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
     ExecutionEnvironment,
 };
-use strata_ee_chain_types::{BlockInputs, BlockOutputs};
+use strata_ee_chain_types::{ExecInputs, ExecOutputs};
 
 use crate::types::{SimpleBlock, SimpleHeader, SimplePartialState, SimpleWriteBatch};
 
@@ -21,13 +21,13 @@ impl ExecutionEnvironment for SimpleExecutionEnvironment {
         &self,
         pre_state: &Self::PartialState,
         exec_payload: &ExecPayload<'_, Self::Block>,
-        inputs: &BlockInputs,
+        inputs: &ExecInputs,
     ) -> EnvResult<ExecBlockOutput<Self>> {
         let body = exec_payload.body();
 
         // Start with a copy of the pre-state
         let mut accounts = pre_state.accounts().clone();
-        let mut outputs = BlockOutputs::new_empty();
+        let mut outputs = ExecOutputs::new_empty();
 
         // 1. Apply deposits from inputs
         for deposit in inputs.subject_deposits() {
@@ -93,7 +93,7 @@ mod tests {
 
     use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
     use strata_ee_acct_types::{EnvError, EnvResult, ExecHeader, ExecPartialState, ExecPayload};
-    use strata_ee_chain_types::BlockInputs;
+    use strata_ee_chain_types::ExecInputs;
 
     use super::*;
     use crate::types::{SimpleBlockBody, SimpleHeader, SimpleHeaderIntrinsics, SimpleTransaction};
@@ -120,7 +120,7 @@ mod tests {
         pre_state: &SimplePartialState,
         intrinsics: &SimpleHeaderIntrinsics,
         body: SimpleBlockBody,
-        inputs: BlockInputs,
+        inputs: ExecInputs,
     ) -> EnvResult<SimplePartialState> {
         let payload = ExecPayload::new(intrinsics, &body);
         let output = ee.execute_block_body(pre_state, &payload, &inputs)?;
@@ -160,7 +160,7 @@ mod tests {
             value: 300,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -206,7 +206,7 @@ mod tests {
         ];
 
         let body = SimpleBlockBody::new(txs);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -231,7 +231,7 @@ mod tests {
         let pre_state = SimplePartialState::new_empty();
 
         // Create a deposit of 1000 to alice
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
             alice(),
             BitcoinAmount::from(1000u64),
@@ -259,7 +259,7 @@ mod tests {
         let pre_state = SimplePartialState::new(accounts);
 
         // Create multiple deposits
-        let mut inputs = BlockInputs::new_empty();
+        let mut inputs = ExecInputs::new_empty();
         inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
             alice(),
             BitcoinAmount::from(500u64),
@@ -303,7 +303,7 @@ mod tests {
             value: 400,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -360,7 +360,7 @@ mod tests {
         ];
 
         let body = SimpleBlockBody::new(txs);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -410,7 +410,7 @@ mod tests {
 
         // Block 1: Deposit 2000 to alice, 1500 to bob
         {
-            let mut inputs = BlockInputs::new_empty();
+            let mut inputs = ExecInputs::new_empty();
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 alice(),
                 BitcoinAmount::from(2000u64),
@@ -436,7 +436,7 @@ mod tests {
             // Compute parent_blkid for next block
             let empty_body = SimpleBlockBody::new(vec![]);
             let payload = ExecPayload::new(&intrinsics, &empty_body);
-            let empty_inputs = BlockInputs::new_empty();
+            let empty_inputs = ExecInputs::new_empty();
             let output = ee
                 .execute_block_body(&state, &payload, &empty_inputs)
                 .unwrap();
@@ -460,7 +460,7 @@ mod tests {
             ];
 
             let body = SimpleBlockBody::new(txs);
-            let inputs = BlockInputs::new_empty();
+            let inputs = ExecInputs::new_empty();
             index += 1;
             let intrinsics = SimpleHeaderIntrinsics {
                 parent_blkid,
@@ -479,7 +479,7 @@ mod tests {
 
             let empty_body = SimpleBlockBody::new(vec![]);
             let payload = ExecPayload::new(&intrinsics, &empty_body);
-            let empty_inputs = BlockInputs::new_empty();
+            let empty_inputs = ExecInputs::new_empty();
             let output = ee
                 .execute_block_body(&state, &payload, &empty_inputs)
                 .unwrap();
@@ -489,7 +489,7 @@ mod tests {
 
         // Block 3: Deposit 500 to charlie, alice withdraws 600, charlie -> bob: 200
         {
-            let mut inputs = BlockInputs::new_empty();
+            let mut inputs = ExecInputs::new_empty();
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 charlie(),
                 BitcoinAmount::from(500u64),
@@ -544,7 +544,7 @@ mod tests {
 
         // Block 4: bob withdraws 800, charlie withdraws 400, deposit 1000 to alice
         {
-            let mut inputs = BlockInputs::new_empty();
+            let mut inputs = ExecInputs::new_empty();
             inputs.add_subject_deposit(strata_ee_chain_types::SubjectDepositData::new(
                 alice(),
                 BitcoinAmount::from(1000u64),
@@ -617,7 +617,7 @@ mod tests {
             value: 200,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -641,7 +641,7 @@ mod tests {
             value: 100,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -667,7 +667,7 @@ mod tests {
             value: 100,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -691,7 +691,7 @@ mod tests {
             value: 100,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -717,7 +717,7 @@ mod tests {
             value: 750,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -775,7 +775,7 @@ mod tests {
         ];
 
         let body = SimpleBlockBody::new(txs);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -804,7 +804,7 @@ mod tests {
             value: 1000,
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -836,7 +836,7 @@ mod tests {
             data: msg_data.clone(),
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -906,7 +906,7 @@ mod tests {
         ];
 
         let body = SimpleBlockBody::new(txs);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -966,7 +966,7 @@ mod tests {
             data: vec![1, 2, 3],
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -992,7 +992,7 @@ mod tests {
             data: vec![],
         };
         let body = SimpleBlockBody::new(vec![tx]);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
@@ -1051,7 +1051,7 @@ mod tests {
         ];
 
         let body = SimpleBlockBody::new(txs);
-        let inputs = BlockInputs::new_empty();
+        let inputs = ExecInputs::new_empty();
         let intrinsics = SimpleHeaderIntrinsics {
             parent_blkid: Hash::new([0; 32]),
             index: 1,
