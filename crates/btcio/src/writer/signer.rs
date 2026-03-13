@@ -19,15 +19,25 @@ use crate::broadcaster::L1BroadcastHandle;
 /// 2. A signed intent needs to be resigned because somehow its inputs were spent/missing
 /// 3. A confirmed block that includes the tx gets reorged
 pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Wallet>(
+    payload_idx: u64,
     payloadentry: &BundledPayloadEntry,
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<WriterContext<R>>,
 ) -> Result<(Buf32, Buf32), EnvelopeError> {
-    trace!("Creating and signing payload envelopes");
+    trace!(
+        component = "btcio_writer_signer",
+        payload_idx,
+        "Creating and signing payload envelopes"
+    );
     let (commit, reveal) = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
     let ctxid = commit.compute_txid();
-    debug!(commit_txid = ?ctxid, "Signing commit transaction");
+    debug!(
+        component = "btcio_writer_signer",
+        payload_idx,
+        commit_txid = ?ctxid,
+        "Signing commit transaction"
+    );
     let signed_commit = ctx
         .client
         .sign_raw_transaction_with_wallet(&commit, None)
@@ -50,6 +60,13 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
         .put_tx_entry(rid, rentry)
         .await
         .map_err(|e| EnvelopeError::Other(e.into()))?;
+    info!(
+        component = "btcio_writer_signer",
+        payload_idx,
+        commit_txid = %cid,
+        reveal_txid = %rid,
+        "signed payload envelope transactions"
+    );
     Ok((cid, rid))
 }
 
@@ -84,7 +101,7 @@ mod test {
             .await
             .unwrap();
 
-        let (cid, rid) = create_and_sign_payload_envelopes(&entry, bcast_handle.as_ref(), ctx)
+        let (cid, rid) = create_and_sign_payload_envelopes(0, &entry, bcast_handle.as_ref(), ctx)
             .await
             .unwrap();
 

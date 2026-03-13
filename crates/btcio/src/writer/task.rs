@@ -236,6 +236,7 @@ pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
                 L1BundleStatus::Unsigned | L1BundleStatus::NeedsResign => {
                     debug!(current_status=?payloadentry.status);
                     match create_and_sign_payload_envelopes(
+                        curr_payloadidx,
                         &payloadentry,
                         &broadcast_handle,
                         context.clone(),
@@ -285,6 +286,21 @@ pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
                             let new_status =
                                 determine_payload_next_status(&ctx.status, &rtx.status);
                             debug!(?new_status, "The next status for payload");
+                            if matches!(
+                                new_status,
+                                L1BundleStatus::Confirmed | L1BundleStatus::Finalized
+                            ) {
+                                info!(
+                                    component = "btcio_writer",
+                                    payload_idx = curr_payloadidx,
+                                    commit_txid = %payloadentry.commit_txid,
+                                    reveal_txid = %payloadentry.reveal_txid,
+                                    payload_status = ?new_status,
+                                    commit_l1_status = ?ctx.status,
+                                    reveal_l1_status = ?rtx.status,
+                                    "payload advanced on L1"
+                                );
+                            }
 
                             update_l1_status(&payloadentry, &new_status, &context.status_channel)
                                 .await;

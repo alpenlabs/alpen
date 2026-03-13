@@ -70,6 +70,12 @@ async fn process_unbundled_entries(
         // TODO: the following block till "Atomic Ends" should be atomic.
         let idx = ops.get_next_payload_idx_async().await?;
         ops.put_payload_entry_async(idx, payload_entry).await?;
+        info!(
+            component = "btcio_writer_bundler",
+            intent_commitment = %entry.intent.commitment(),
+            payload_idx = idx,
+            "bundled L1 intent into payload entry"
+        );
 
         // Set the entry to be bundled so that it won't be processed next time.
         entry.status = IntentStatus::Bundled(idx);
