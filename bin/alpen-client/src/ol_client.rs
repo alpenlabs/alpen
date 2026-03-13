@@ -5,7 +5,7 @@ use alpen_ee_common::{
     SequencerOLClient,
 };
 use async_trait::async_trait;
-use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height};
+use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLTxId};
 use strata_snark_acct_types::SnarkAccountUpdate;
 
 use crate::{dummy_ol_client::DummyOLClient, rpc_client::RpcOLClient};
@@ -80,7 +80,7 @@ impl SequencerOLClient for OLClientKind {
         }
     }
 
-    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError> {
+    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<OLTxId, OLClientError> {
         match self {
             Self::Rpc(client) => client.submit_update(update).await,
             Self::Dummy(client) => client.submit_update(update).await,
