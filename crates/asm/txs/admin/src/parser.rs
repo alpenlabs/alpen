@@ -1,4 +1,5 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::Decode;
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_common::TxInputRef;
 use strata_crypto::threshold_signature::SignatureSet;
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
@@ -7,9 +8,9 @@ use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
 
 /// A signed administration payload containing both the action and its signatures.
 ///
-/// This structure is serialized with Borsh and embedded in the witness envelope.
+/// This structure is serialized with SSZ and embedded in the witness envelope.
 /// The OP_RETURN only contains the SPS-50 tag (magic bytes, subprotocol ID, tx type).
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, DeriveEncode, DeriveDecode)]
 pub struct SignedPayload {
     /// Sequence number used to prevent replay attacks and enforce ordering.
     pub seqno: u64,
@@ -59,7 +60,7 @@ pub fn parse_tx(tx: &TxInputRef<'_>) -> Result<SignedPayload, AdministrationTxPa
     let envelope_payload = parse_envelope_payload(&payload_script.into())?;
 
     // Deserialize the signed payload (action + signatures) from the envelope
-    let signed_payload: SignedPayload = borsh::from_slice(&envelope_payload)
+    let signed_payload = SignedPayload::from_ssz_bytes(&envelope_payload)
         .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
 
     Ok(signed_payload)

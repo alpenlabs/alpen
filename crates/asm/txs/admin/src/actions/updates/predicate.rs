@@ -1,11 +1,12 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_predicate::PredicateKey;
 
 use crate::{actions::Sighash, constants::AdminTxType};
 
 /// An update to the verifying key for a given Strata proof layer.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, DeriveEncode, DeriveDecode)]
 pub struct PredicateUpdate {
     key: PredicateKey,
     kind: ProofType,
@@ -50,8 +51,50 @@ impl Sighash for PredicateUpdate {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary)]
 pub enum ProofType {
     Asm,
     OLStf,
+}
+
+impl Encode for ProofType {
+    fn is_ssz_fixed_len() -> bool {
+        <u8 as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <u8 as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        let value = match self {
+            Self::Asm => 0u8,
+            Self::OLStf => 1u8,
+        };
+        value.ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <u8 as Encode>::ssz_fixed_len()
+    }
+}
+
+impl Decode for ProofType {
+    fn is_ssz_fixed_len() -> bool {
+        <u8 as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <u8 as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        match u8::from_ssz_bytes(bytes)? {
+            0 => Ok(Self::Asm),
+            1 => Ok(Self::OLStf),
+            value => Err(DecodeError::BytesInvalid(format!(
+                "invalid proof type discriminant: {value}"
+            ))),
+        }
+    }
 }

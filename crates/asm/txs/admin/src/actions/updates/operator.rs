@@ -1,5 +1,5 @@
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_primitives::buf::Buf32;
 
 use crate::{actions::Sighash, constants::AdminTxType};
@@ -7,7 +7,7 @@ use crate::{actions::Sighash, constants::AdminTxType};
 /// An update to the Bridge Operator Set:
 /// - removes the specified `remove_members`
 /// - adds the specified `add_members`
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, DeriveEncode, DeriveDecode)]
 pub struct OperatorSetUpdate {
     add_members: Vec<Buf32>,
     remove_members: Vec<Buf32>,

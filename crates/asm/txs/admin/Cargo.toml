@@ -7,6 +7,8 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params = { workspace = true, features = ["arbitrary"] }
 strata-asm-txs-test-utils = { workspace = true, optional = true }
@@ -18,7 +20,6 @@ strata-primitives.workspace = true
 
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
-borsh.workspace = true
 hex-literal.workspace = true
 thiserror.workspace = true
 
