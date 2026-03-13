@@ -7,6 +7,10 @@ use argh::from_env;
 use strata_common::logging;
 use strata_db_types as _;
 use strata_node_context::NodeContext;
+#[cfg(test)]
+use strata_ol_state_types as _;
+#[cfg(test)]
+use strata_predicate as _;
 use tokio::runtime::{self, Handle};
 use tracing::info;
 

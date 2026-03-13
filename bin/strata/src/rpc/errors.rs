@@ -1,14 +1,12 @@
 use std::fmt::Display;
 
-use jsonrpsee::types::{
-    ErrorObjectOwned,
-    error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE},
-};
+use jsonrpsee::types::ErrorObjectOwned;
+pub(crate) use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use strata_ol_mempool::OLMempoolError;
 use tracing::*;
 
 /// Custom error code for mempool capacity-related errors.
-const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
+pub(crate) const MEMPOOL_CAPACITY_ERROR_CODE: i32 = -32001;
 
 /// Creates an RPC error for database failures.
 pub(crate) fn db_error(e: impl Display) -> ErrorObjectOwned {
