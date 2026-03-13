@@ -16,7 +16,7 @@ use tracing::warn;
 /// Builds [`ExecInputs`] from parsed input messages.
 ///
 /// Only `Deposit` messages are processed; other message types are logged and ignored.
-// TODO convert this to do it based on extracting pending inputs from the
+// TODO(STR-2583) convert this to do it based on extracting pending inputs from the
 // current EE account inner state
 pub(crate) fn build_block_inputs(
     parsed_inputs: Vec<InputMessage<DecodedEeMessageData>>,
