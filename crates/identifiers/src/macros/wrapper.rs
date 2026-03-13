@@ -18,8 +18,6 @@ macro_rules! impl_opaque_thin_wrapper {
             }
         }
 
-        $crate::strata_codec::impl_wrapper_codec!($target => $inner);
-
         impl From<$inner> for $target {
             fn from(value: $inner) -> $target {
                 <$target>::new(value)
@@ -89,25 +87,6 @@ macro_rules! impl_buf_wrapper {
         impl ::core::fmt::Display for $wrapper {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                 ::core::fmt::Display::fmt(&self.0, f)
-            }
-        }
-
-        // Codec implementation for Buf wrapper types - passthrough to underlying Buf
-        impl $crate::strata_codec::Codec for $wrapper {
-            fn encode(
-                &self,
-                enc: &mut impl $crate::strata_codec::Encoder,
-            ) -> Result<(), $crate::strata_codec::CodecError> {
-                // Delegate to the underlying Buf type's Codec implementation
-                self.0.encode(enc)
-            }
-
-            fn decode(
-                dec: &mut impl $crate::strata_codec::Decoder,
-            ) -> Result<Self, $crate::strata_codec::CodecError> {
-                // Decode the underlying Buf type and wrap it
-                let buf = $name::decode(dec)?;
-                Ok(Self(buf))
             }
         }
     };

@@ -34,8 +34,9 @@ pub type L1Height = u32;
 )]
 pub struct L1BlockId(RBuf32);
 
-// Debug, Display, From<RBuf32>, AsRef<[u8; 32]>, and Codec via RBuf32 delegation.
+// Debug, Display, From<RBuf32>, AsRef<[u8; 32]> via RBuf32 delegation.
 crate::impl_buf_wrapper!(L1BlockId, RBuf32, 32);
+crate::impl_buf_wrapper_codec!(L1BlockId, RBuf32, 32);
 
 impl From<Buf32> for L1BlockId {
     fn from(value: Buf32) -> Self {
@@ -76,8 +77,9 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
 )]
 pub struct WtxidsRoot(Buf32);
 
-// Implement standard wrapper traits (Debug, Display, From, AsRef, Codec)
+// Implement standard wrapper traits (Debug, Display, From, AsRef)
 crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
+crate::impl_buf_wrapper_codec!(WtxidsRoot, Buf32, 32);
 
 // Manual TreeHash implementation for transparent wrapper
 crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
