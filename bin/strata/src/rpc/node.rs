@@ -1,61 +1,40 @@
 //! OL RPC server implementation for a strata node.
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_identifiers::{
-    AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
-};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
-use strata_ol_mempool::{MempoolHandle, OLMempoolTransaction};
+use strata_ol_mempool::OLMempoolTransaction;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockRangeEntry,
-    RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
+    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
+    RpcBlockRangeEntry, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
+    RpcUpdateInputData,
 };
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::ProofState;
-use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
 use tracing::{error, info};
 
 use crate::rpc::errors::{
     db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
 };
 
-/// OL RPC server implementation.
-pub(crate) struct OLRpcServer {
-    /// Storage backend.
-    storage: Arc<NodeStorage>,
-
-    /// Status channel.
-    status_channel: Arc<StatusChannel>,
-
-    /// Mempool handle for transaction submission.
-    mempool_handle: Arc<MempoolHandle>,
+/// OL RPC server implementation, generic over a provider.
+pub(crate) struct OLRpcServer<P: OLRpcProvider> {
+    provider: P,
 }
 
-impl OLRpcServer {
+impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
-    pub(crate) fn new(
-        storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
-        mempool_handle: Arc<MempoolHandle>,
-    ) -> Self {
-        Self {
-            storage,
-            status_channel,
-            mempool_handle,
-        }
+    pub(crate) fn new(provider: P) -> Self {
+        Self { provider }
     }
 
     async fn get_canonical_block_at_height(&self, height: u64) -> RpcResult<Option<OLBlockId>> {
         let blkid = self
-            .storage
-            .ol_block()
-            .get_canonical_block_at_async(height)
+            .provider
+            .get_canonical_block_at(height)
             .await
             .map_err(db_error)?
             .map(|b| b.blkid);
@@ -64,9 +43,8 @@ impl OLRpcServer {
 
     async fn get_block(&self, blkid: OLBlockId) -> RpcResult<OLBlock> {
         let blk = self
-            .storage
-            .ol_block()
-            .get_block_data_async(blkid)
+            .provider
+            .get_block_data(blkid)
             .await
             .map_err(db_error)?
             .ok_or(not_found_error(format!("block not found: {blkid}")))?;
@@ -75,7 +53,7 @@ impl OLRpcServer {
 }
 
 #[async_trait]
-impl OLClientRpcServer for OLRpcServer {
+impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
     async fn get_acct_epoch_summary(
         &self,
         account_id: AccountId,
@@ -83,9 +61,8 @@ impl OLClientRpcServer for OLRpcServer {
     ) -> RpcResult<RpcAccountEpochSummary> {
         // Get epoch commitments for the given epoch
         let epoch_commitment = self
-            .storage
-            .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_async(epoch as u64)
+            .provider
+            .get_canonical_epoch_commitment_at(epoch as u64)
             .await
             .map_err(|e| {
                 error!(?e, ?epoch, "Failed to get canonical epoch commitment");
@@ -99,9 +76,8 @@ impl OLClientRpcServer for OLRpcServer {
         // (EpochCommitment already contains the terminal slot and block ID)
         let terminal_commitment = epoch_commitment.to_block_commitment();
         let ol_state = self
-            .storage
-            .ol_state()
-            .get_toplevel_ol_state_async(terminal_commitment)
+            .provider
+            .get_toplevel_ol_state(terminal_commitment)
             .await
             .map_err(|e| {
                 error!(?e, %terminal_commitment, "Failed to get OL state");
@@ -137,9 +113,8 @@ impl OLClientRpcServer for OLRpcServer {
 
         // Get previous epoch commitment if available
         let prev_epoch_commitment = if epoch > 0 {
-            self.storage
-                .ol_checkpoint()
-                .get_canonical_epoch_commitment_at_async((epoch - 1) as u64)
+            self.provider
+                .get_canonical_epoch_commitment_at((epoch - 1) as u64)
                 .await
                 .map_err(db_error)?
                 .ok_or_else(|| {
@@ -150,9 +125,8 @@ impl OLClientRpcServer for OLRpcServer {
         };
 
         let update = if let Some(extra_data) = self
-            .storage
-            .account()
-            .get_account_extra_data_async((account_id, epoch))
+            .provider
+            .get_account_extra_data((account_id, epoch))
             .await
             .map_err(db_error)?
         {
@@ -183,7 +157,7 @@ impl OLClientRpcServer for OLRpcServer {
 
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus> {
         let chain_sync_status = self
-            .status_channel
+            .provider
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
@@ -207,7 +181,7 @@ impl OLClientRpcServer for OLRpcServer {
 
         // Get finalized slot - blocks at or before this are guaranteed to be on canonical chain
         let finalized_slot = self
-            .status_channel
+            .provider
             .get_ol_sync_status()
             .map(|css| css.finalized_epoch.last_slot())
             .unwrap_or(0);
@@ -273,9 +247,8 @@ impl OLClientRpcServer for OLRpcServer {
 
             // Get OL state at this block
             let ol_state = self
-                .storage
-                .ol_state()
-                .get_toplevel_ol_state_async(block_commitment)
+                .provider
+                .get_toplevel_ol_state(block_commitment)
                 .await
                 .map_err(|e| {
                     error!(?e, %block_commitment, "Failed to get OL state");
@@ -332,17 +305,16 @@ impl OLClientRpcServer for OLRpcServer {
         account_id: AccountId,
     ) -> RpcResult<EpochCommitment> {
         let epoch = self
-            .storage
-            .account()
-            .get_account_creation_epoch_blocking(account_id)
+            .provider
+            .get_account_creation_epoch(account_id)
+            .await
             .map_err(db_error)?
             .ok_or_else(|| {
                 not_found_error(format!("No creation epoch found for account {account_id}"))
             })?;
 
-        self.storage
-            .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_async(epoch as u64)
+        self.provider
+            .get_canonical_epoch_commitment_at(epoch as u64)
             .await
             .map_err(db_error)?
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
@@ -350,9 +322,8 @@ impl OLClientRpcServer for OLRpcServer {
 
     async fn get_l1_header_commitment(&self, l1_height: L1Height) -> RpcResult<Option<HexBytes32>> {
         let manifest = self
-            .storage
-            .l1()
-            .get_block_manifest_at_height_async(l1_height)
+            .provider
+            .get_block_manifest_at_height(l1_height)
             .await
             .map_err(db_error)?;
 
@@ -367,7 +338,7 @@ impl OLClientRpcServer for OLRpcServer {
 
         // Submit to mempool
         let txid = self
-            .mempool_handle
+            .provider
             .submit_transaction(mempool_tx)
             .await
             .map_err(map_mempool_error_to_rpc)?;
@@ -386,14 +357,14 @@ impl OLClientRpcServer for OLRpcServer {
         let block_commitment = match block_or_tag {
             OLBlockOrTag::Latest => {
                 let chain_sync_status = self
-                    .status_channel
+                    .provider
                     .get_ol_sync_status()
                     .ok_or_else(|| internal_error("OL sync status not available"))?;
                 chain_sync_status.tip
             }
             OLBlockOrTag::Confirmed => {
                 let chain_sync_status = self
-                    .status_channel
+                    .provider
                     .get_ol_sync_status()
                     .ok_or_else(|| internal_error("OL sync status not available"))?;
                 // TODO: STR-2420 Address this incorrect use of prev_epoch as confirmed epoch
@@ -401,16 +372,15 @@ impl OLClientRpcServer for OLRpcServer {
             }
             OLBlockOrTag::Finalized => {
                 let chain_sync_status = self
-                    .status_channel
+                    .provider
                     .get_ol_sync_status()
                     .ok_or_else(|| internal_error("OL sync status not available"))?;
                 chain_sync_status.finalized_epoch.to_block_commitment()
             }
             OLBlockOrTag::OLBlockId(block_id) => {
                 let block = self
-                    .storage
-                    .ol_block()
-                    .get_block_data_async(block_id)
+                    .provider
+                    .get_block_data(block_id)
                     .await
                     .map_err(|e| {
                         error!(?e, %block_id, "Failed to get block data");
@@ -420,9 +390,8 @@ impl OLClientRpcServer for OLRpcServer {
                 OLBlockCommitment::new(block.header().slot(), block_id)
             }
             OLBlockOrTag::Slot(slot) => self
-                .storage
-                .ol_block()
-                .get_canonical_block_at_async(slot)
+                .provider
+                .get_canonical_block_at(slot)
                 .await
                 .map_err(db_error)?
                 .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
@@ -430,9 +399,8 @@ impl OLClientRpcServer for OLRpcServer {
 
         // Get OL state at the resolved block
         let ol_state = self
-            .storage
-            .ol_state()
-            .get_toplevel_ol_state_async(block_commitment)
+            .provider
+            .get_toplevel_ol_state(block_commitment)
             .await
             .map_err(|e| {
                 error!(?e, %block_commitment, "Failed to get OL state");
@@ -455,7 +423,6 @@ impl OLClientRpcServer for OLRpcServer {
         // Try to get snark account state; return None if not a snark account
         match account_state.as_snark_account() {
             Ok(snark_state) => {
-                // Manually construct RpcSnarkAccountState from the native state
                 // Note: update_vk is not available from NativeSnarkAccountState (it's stored
                 // as account metadata, not runtime state), so we return an empty vec for now
                 let seq_no: u64 = *snark_state.seqno().inner();
@@ -478,7 +445,7 @@ impl OLClientRpcServer for OLRpcServer {
 const MAX_RAW_BLOCKS_RANGE: usize = 5000; // FIXME: make this configurable
 
 #[async_trait]
-impl OLFullNodeRpcServer for OLRpcServer {
+impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     async fn get_raw_blocks_range(
         &self,
         start_height: u64,
