@@ -12,7 +12,7 @@ use strata_consensus_logic::{
 use strata_identifiers::OLBlockCommitment;
 use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
-use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_ol_mempool::{FifoPriority, MempoolBuilder, MempoolHandle, OLMempoolConfig};
 
 use crate::{
     context::check_and_init_genesis,
@@ -282,7 +282,7 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     // to initialize the mempool which requires async operations. The mempool
     // handle must be available before RunContext is constructed.
     nodectx.task_manager().handle().block_on(async {
-        MempoolBuilder::new(config, storage, status_channel, current_tip)
+        MempoolBuilder::<FifoPriority>::new(config, storage, status_channel, current_tip)
             .launch(&executor)
             .await
     })
