@@ -1,6 +1,9 @@
+use std::io::{Error as IoError, ErrorKind as IoErrorKind, Read, Result as IoResult, Write};
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, Encode};
 use strata_asm_common::AsmManifest;
 use strata_primitives::{l1::L1Height, prelude::*};
 use strata_state::exec_update::ExecUpdate;
@@ -90,7 +93,7 @@ impl L2BlockBody {
 
 /// Container for [`AsmManifest`]s that we've observed from the L1, if there
 /// are any.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct L1Segment {
     /// New L1 block height.  This should correspond with the last manifest in
     /// the new_manifests, or the current chainstate height if it's not being
@@ -113,6 +116,37 @@ impl<'a> Arbitrary<'a> for L1Segment {
             // For testing, just use an empty vec of manifests since AsmManifest doesn't implement
             // Arbitrary
             new_manifests: Vec::new(),
+        })
+    }
+}
+
+impl BorshSerialize for L1Segment {
+    fn serialize<W: Write>(&self, writer: &mut W) -> IoResult<()> {
+        BorshSerialize::serialize(&self.new_height, writer)?;
+        let manifests: Vec<Vec<u8>> = self
+            .new_manifests
+            .iter()
+            .map(AsmManifest::as_ssz_bytes)
+            .collect();
+        BorshSerialize::serialize(&manifests, writer)
+    }
+}
+
+impl BorshDeserialize for L1Segment {
+    fn deserialize_reader<R: Read>(reader: &mut R) -> IoResult<Self> {
+        let new_height = L1Height::deserialize_reader(reader)?;
+        let manifest_bytes = Vec::<Vec<u8>>::deserialize_reader(reader)?;
+        let new_manifests = manifest_bytes
+            .into_iter()
+            .map(|bytes| {
+                AsmManifest::from_ssz_bytes(&bytes)
+                    .map_err(|err| IoError::new(IoErrorKind::InvalidData, err.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self {
+            new_height,
+            new_manifests,
         })
     }
 }
