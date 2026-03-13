@@ -25,11 +25,13 @@ def wait_for_checkpoint_duty(
     """
     if min_epoch is None:
         status = rpc.call("strata_getChainStatus")
-        parent = status.get("parent")
-        if not isinstance(parent, dict) or not isinstance(parent.get("epoch"), int):
+        latest_completed_epoch = status.get("latest")
+        if not isinstance(latest_completed_epoch, dict) or not isinstance(
+            latest_completed_epoch.get("epoch"), int
+        ):
             raise AssertionError(f"Unable to determine current epoch from chain status: {status}")
 
-        current_epoch = parent["epoch"] + 1
+        current_epoch = latest_completed_epoch["epoch"] + 1
         min_epoch = current_epoch + 1
 
     def _get_duty():

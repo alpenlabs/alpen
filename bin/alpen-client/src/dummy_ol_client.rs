@@ -37,7 +37,8 @@ impl DummyOLClient {
 impl OLClient for DummyOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
         Ok(OLChainStatus {
-            latest: self.genesis_epoch.to_block_commitment(),
+            tip: self.genesis_epoch.to_block_commitment(),
+            latest: self.genesis_epoch,
             confirmed: self.genesis_epoch,
             finalized: self.genesis_epoch,
         })

@@ -155,17 +155,10 @@ def wait_for_chain_epoch(
     timeout: int = 120,
     error_with: str | None = None,
 ) -> dict[str, Any]:
-    """Wait until chain latest epoch reaches target epoch.
-
-    Checks ``parent`` (most recently completed epoch) since ``latest`` is an
-    ``OLBlockCommitment`` (slot + blkid) without an epoch field.
-    ``parent.epoch >= target_epoch - 1`` means the chain is in target_epoch.
-    """
+    """Wait until chain latest summarized epoch reaches target epoch."""
     return wait_until_with_value(
-        lambda: strata_service.get_sync_status(strata_rpc).get("parent"),
-        lambda parent: (
-            isinstance(parent, dict) and int(parent.get("epoch", -1)) >= target_epoch - 1
-        ),
+        lambda: strata_service.get_sync_status(strata_rpc).get("latest"),
+        lambda latest: isinstance(latest, dict) and int(latest.get("epoch", -1)) >= target_epoch,
         timeout=timeout,
         error_with=error_with or f"Timed out waiting for chain epoch >= {target_epoch}",
     )
@@ -538,7 +531,7 @@ def verify_tip_resumed_with_new_blkid(
 ) -> dict[str, Any]:
     """Verify resumed tip moved forward and tip block id changed from pre-revert value."""
     resumed_sync = strata_service.get_sync_status(rpc)
-    latest = resumed_sync["latest"]
+    latest = resumed_sync["tip"]
     assert resumed_tip > old_tip_slot
     assert latest["blkid"] != old_tip_blkid
     return resumed_sync

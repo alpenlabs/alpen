@@ -1,18 +1,19 @@
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
-/// OL chain status with latest block, parent epoch, confirmed epoch and finalized epoch.
+/// OL chain status with tip block, latest summarized epoch, confirmed epoch, and finalized epoch.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLChainStatus {
-    /// Latest block commitment.
-    pub latest: OLBlockCommitment,
-    /// Parent epoch commitment (the most recently completed epoch).
-    pub parent: EpochCommitment,
+    /// Tip block commitment.
+    pub tip: OLBlockCommitment,
+
+    /// Latest summarized epoch commitment.
+    pub latest: EpochCommitment,
+
     /// Confirmed epoch commitment.
-    ///
-    /// Currently set to the same value as `parent` for compatibility.
     pub confirmed: EpochCommitment,
+
     /// Finalized epoch commitment.
     pub finalized: EpochCommitment,
 }
@@ -20,27 +21,27 @@ pub struct RpcOLChainStatus {
 impl RpcOLChainStatus {
     /// Creates a new [`RpcOLChainStatus`].
     pub fn new(
-        latest: OLBlockCommitment,
-        parent: EpochCommitment,
+        tip: OLBlockCommitment,
+        latest: EpochCommitment,
         confirmed: EpochCommitment,
         finalized: EpochCommitment,
     ) -> Self {
         Self {
+            tip,
             latest,
-            parent,
             confirmed,
             finalized,
         }
     }
 
-    /// Returns the latest block commitment.
-    pub fn latest(&self) -> &OLBlockCommitment {
-        &self.latest
+    /// Returns the tip block commitment.
+    pub fn tip(&self) -> &OLBlockCommitment {
+        &self.tip
     }
 
-    /// Returns the parent epoch commitment.
-    pub fn parent(&self) -> &EpochCommitment {
-        &self.parent
+    /// Returns the latest summarized epoch commitment.
+    pub fn latest(&self) -> &EpochCommitment {
+        &self.latest
     }
 
     /// Returns the confirmed epoch commitment.

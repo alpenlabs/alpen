@@ -105,6 +105,7 @@ impl OLClient for RpcOLClient {
                 let status = call_rpc!(self, chain_status())?;
 
                 Ok(OLChainStatus {
+                    tip: *status.tip(),
                     latest: *status.latest(),
                     confirmed: *status.confirmed(),
                     finalized: *status.finalized(),

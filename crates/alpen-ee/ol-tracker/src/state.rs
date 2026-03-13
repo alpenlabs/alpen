@@ -265,7 +265,8 @@ mod tests {
             setup_mock_storage_with_chain(&mut mock_storage, chain);
 
             let ol_status = OLChainStatus {
-                latest: make_block_commitment(50, 105),
+                tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };
@@ -299,7 +300,8 @@ mod tests {
 
             let best_state = make_state_at_epoch(5, 50, 105, 105);
             let ol_status = OLChainStatus {
-                latest: make_block_commitment(50, 105),
+                tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };
@@ -332,7 +334,8 @@ mod tests {
             let mut mock_storage = MockStorage::new();
 
             let ol_status = OLChainStatus {
-                latest: make_block_commitment(50, 105),
+                tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };
@@ -366,7 +369,8 @@ mod tests {
 
             let best_state = make_state_at_epoch(5, 50, 105, 105);
             let ol_status = OLChainStatus {
-                latest: make_block_commitment(50, 105),
+                tip: make_block_commitment(50, 105),
+                latest: make_epoch_commitment(4, 40, 104),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
             };

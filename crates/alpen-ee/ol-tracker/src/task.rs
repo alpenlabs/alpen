@@ -78,9 +78,13 @@ pub(crate) struct OLEpochOperations {
 }
 
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "Keep OLChainStatus inline because it is Copy"
+)]
 pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
-    /// TODO: stream
+    // TODO: Switch this batch payload to streaming once tracker supports incremental fetch.
     Extend(Vec<OLEpochOperations>, OLChainStatus),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
@@ -308,7 +312,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(30, 103),
+                    tip: make_block_commitment(30, 103),
+                    latest: make_epoch_commitment(3, 30, 103),
                     confirmed: make_epoch_commitment(3, 30, 103),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -333,7 +338,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(30, 103),
+                    tip: make_block_commitment(30, 103),
+                    latest: make_epoch_commitment(3, 30, 103),
                     confirmed: make_epoch_commitment(3, 30, 103),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -358,7 +364,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(30, 199),
+                    tip: make_block_commitment(30, 199),
+                    latest: make_epoch_commitment(3, 30, 199),
                     confirmed: make_epoch_commitment(3, 30, 199), // Same epoch, different block ID
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -387,7 +394,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(40, 104),
+                    tip: make_block_commitment(40, 104),
+                    latest: make_epoch_commitment(4, 40, 104),
                     confirmed: make_epoch_commitment(4, 40, 104),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -417,7 +425,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(50, 105),
+                    tip: make_block_commitment(50, 105),
+                    latest: make_epoch_commitment(5, 50, 105),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -457,7 +466,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(100, 110),
+                    tip: make_block_commitment(100, 110),
+                    latest: make_epoch_commitment(10, 100, 110),
                     confirmed: make_epoch_commitment(10, 100, 110),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -497,7 +507,8 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(50, 105),
+                    tip: make_block_commitment(50, 105),
+                    latest: make_epoch_commitment(5, 50, 105),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })

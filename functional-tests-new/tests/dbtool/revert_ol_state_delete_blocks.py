@@ -39,8 +39,8 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
         seq_service.wait_for_additional_blocks(5, seq_rpc, timeout_per_block=10)
 
         live_sync = seq_service.get_sync_status(seq_rpc)
-        old_live_tip_slot = live_sync["latest"]["slot"]
-        old_live_tip_blkid = live_sync["latest"]["blkid"]
+        old_live_tip_slot = live_sync["tip"]["slot"]
+        old_live_tip_blkid = live_sync["tip"]["blkid"]
         logger.info(
             "Pre-revert live tip: slot=%s blkid=%s",
             old_live_tip_slot,
@@ -87,7 +87,7 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
             "Chain resumed past old tip (old=%s new=%s) with new tip blkid=%s",
             old_live_tip_slot,
             resumed_slot,
-            resumed_sync["latest"]["blkid"],
+            resumed_sync["tip"]["blkid"],
         )
         wait_for_finalized_epoch_with_mining(
             seq_service,
