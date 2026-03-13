@@ -1588,7 +1588,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1599,7 +1599,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4228,7 +4228,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -4512,7 +4512,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4811,7 +4811,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7193,6 +7193,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "moho-runtime-interface"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/moho?branch=STR-1912#d98a1d0975732229a9b010089bd90be8bc7cd63f"
+dependencies = [
+ "moho-types",
+ "ssz",
+ "strata-predicate",
+]
+
+[[package]]
 name = "moho-types"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/moho?branch=STR-1912#d98a1d0975732229a9b010089bd90be8bc7cd63f"
@@ -7397,7 +7407,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12309,7 +12319,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13899,8 +13909,9 @@ name = "strata-asm-bridge-msgs"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",
  "strata-bridge-types",
@@ -13911,7 +13922,8 @@ dependencies = [
 name = "strata-asm-checkpoint-msgs"
 version = "0.1.0"
 dependencies = [
- "borsh",
+ "ssz",
+ "ssz_derive",
  "strata-asm-common",
  "strata-asm-txs-checkpoint",
  "strata-asm-txs-checkpoint-v0",
@@ -13924,7 +13936,6 @@ name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
  "serde",
  "ssz",
  "ssz_derive",
@@ -13947,7 +13958,6 @@ dependencies = [
 name = "strata-asm-logs"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
@@ -13964,7 +13974,6 @@ name = "strata-asm-manifest-types"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "borsh",
  "proptest",
  "serde",
  "ssz",
@@ -13987,6 +13996,7 @@ name = "strata-asm-moho-program-impl"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "moho-runtime-interface",
  "moho-types",
  "ssz",
  "ssz_derive",
@@ -14005,9 +14015,10 @@ name = "strata-asm-params"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "borsh",
  "serde",
  "serde_json",
+ "ssz",
+ "ssz_derive",
  "strata-btc-types",
  "strata-crypto",
  "strata-identifiers",
@@ -14021,7 +14032,6 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "rand 0.8.5",
  "ssz",
  "ssz_derive",
@@ -14043,7 +14053,6 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "bitvec",
- "borsh",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -14070,7 +14079,6 @@ name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
  "bitcoin-bosd",
- "borsh",
  "ssz",
  "ssz_derive",
  "ssz_primitives",
@@ -14097,7 +14105,6 @@ dependencies = [
 name = "strata-asm-proto-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "ssz",
  "ssz_derive",
  "strata-asm-bridge-msgs",
@@ -14116,7 +14123,6 @@ dependencies = [
 name = "strata-asm-proto-debug-v1"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "serde",
  "ssz",
  "ssz_derive",
@@ -14170,10 +14176,11 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "borsh",
  "hex-literal",
  "proptest",
  "rand 0.8.5",
+ "ssz",
+ "ssz_derive",
  "strata-asm-common",
  "strata-asm-params",
  "strata-asm-txs-test-utils",
@@ -14224,13 +14231,11 @@ name = "strata-asm-txs-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
  "ssz",
  "strata-asm-common",
  "strata-bridge-types",
  "strata-checkpoint-types",
  "strata-l1-envelope-fmt",
- "strata-ol-chainstate-types",
  "thiserror 2.0.18",
 ]
 
@@ -14281,6 +14286,8 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-identifiers",
  "strata-primitives",
 ]
@@ -14454,6 +14461,9 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-bridge-types",
  "strata-crypto",
  "strata-identifiers",
  "zkaleido",
@@ -14597,9 +14607,9 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "bitcoind-async-client",
- "borsh",
  "rand 0.8.5",
  "serde",
+ "ssz",
  "strata-asm-common",
  "strata-asm-params",
  "strata-asm-worker",
@@ -14653,6 +14663,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "ssz",
+ "ssz_derive",
  "strata-identifiers",
  "strata-test-utils",
  "thiserror 2.0.18",
@@ -15169,6 +15181,7 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "ssz",
  "strata-asm-common",
  "strata-crypto",
  "strata-params",
@@ -15571,6 +15584,7 @@ dependencies = [
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "ssz",
  "strata-checkpoint-types",
  "zkaleido",
  "zkaleido-native-adapter",
@@ -16066,7 +16080,6 @@ name = "strata-test-utils-l2"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
- "borsh",
  "k256",
  "rand 0.8.5",
  "ssz",
@@ -16347,7 +16360,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -17632,7 +17645,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
