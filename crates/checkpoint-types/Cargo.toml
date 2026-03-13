@@ -7,6 +7,9 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
+ssz_derive.workspace = true
+strata-bridge-types.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
 

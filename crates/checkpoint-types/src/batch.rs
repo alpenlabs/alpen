@@ -3,6 +3,8 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment, L2BlockId, Slot,
 };
@@ -139,6 +141,25 @@ pub struct BatchInfo {
     pub l2_range: (L2BlockCommitment, L2BlockCommitment),
 }
 
+/// SSZ-friendly representation of [`BatchInfo`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct BatchInfoSsz {
+    /// The epoch index.
+    epoch: Epoch,
+
+    /// The start of the L1 block range(inclusive).
+    l1_start: L1BlockCommitment,
+
+    /// The end of the L1 block range(inclusive).
+    l1_end: L1BlockCommitment,
+
+    /// The start of the L2 block range(inclusive).
+    l2_start: L2BlockCommitment,
+
+    /// The end of the L2 block range(inclusive).
+    l2_end: L2BlockCommitment,
+}
+
 impl fmt::Display for BatchInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         <Self as fmt::Debug>::fmt(self, f)
@@ -200,5 +221,56 @@ impl BatchInfo {
     pub fn l1_height_at_or_before_end(&self, height: L1Height) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
         height <= last_l1_commitment.height()
+    }
+}
+
+impl Encode for BatchInfo {
+    fn is_ssz_fixed_len() -> bool {
+        <BatchInfoSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <BatchInfoSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        BatchInfoSsz {
+            epoch: self.epoch,
+            l1_start: self.l1_range.0,
+            l1_end: self.l1_range.1,
+            l2_start: self.l2_range.0,
+            l2_end: self.l2_range.1,
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        BatchInfoSsz {
+            epoch: self.epoch,
+            l1_start: self.l1_range.0,
+            l1_end: self.l1_range.1,
+            l2_start: self.l2_range.0,
+            l2_end: self.l2_range.1,
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for BatchInfo {
+    fn is_ssz_fixed_len() -> bool {
+        <BatchInfoSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <BatchInfoSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = BatchInfoSsz::from_ssz_bytes(bytes)?;
+        Ok(Self {
+            epoch: value.epoch,
+            l1_range: (value.l1_start, value.l1_end),
+            l2_range: (value.l2_start, value.l2_end),
+        })
     }
 }
