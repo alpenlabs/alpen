@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-worker.workspace = true
@@ -42,7 +43,6 @@ zkaleido.workspace = true
 anyhow.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
-borsh.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
