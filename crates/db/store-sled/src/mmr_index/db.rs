@@ -2,7 +2,8 @@ use strata_db_types::{
     DbError, DbResult, LeafPos, MmrBatchWrite, MmrIndexPrecondition, MmrNodePos, MmrNodeTable,
     NodePos, traits::MmrIndexDatabase,
 };
-use strata_identifiers::{Hash, RawMmrId};
+use strata_db_types::RawMmrId;
+use strata_identifiers::Hash;
 use typed_sled::{error, tree::SledTransactionalTree};
 
 use super::schemas::{MmrIndexLeafCountSchema, MmrIndexNodeSchema, MmrIndexPreimageSchema};

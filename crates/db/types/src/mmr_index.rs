@@ -4,7 +4,32 @@
 
 use std::{collections::BTreeMap, fmt};
 
-use strata_identifiers::{Hash, RawMmrId};
+use borsh::{BorshDeserialize, BorshSerialize};
+use strata_identifiers::{AccountId, Hash};
+
+/// Opaque serialized form of [`MmrId`], used as a database key.
+pub type RawMmrId = Vec<u8>;
+
+/// Identifier for a specific MMR instance in unified storage.
+///
+/// Each variant represents a different MMR type, with optional scoping
+/// within that type (e.g., per-account MMRs).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub enum MmrId {
+    /// ASM manifest MMR (singleton, no account scope).
+    Asm,
+    /// Snark message inbox MMR (per-account scope).
+    SnarkMsgInbox(AccountId),
+}
+
+impl MmrId {
+    /// Serializes `MmrId` to bytes for use as a database key.
+    ///
+    /// Uses borsh encoding to ensure stable, deterministic serialization.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        borsh::to_vec(&self).expect("MmrId serialization should not fail")
+    }
+}
 
 /// Convert leaves count to total MMR size (number of nodes).
 ///
