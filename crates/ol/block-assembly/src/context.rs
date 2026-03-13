@@ -8,8 +8,7 @@ use std::{
 use async_trait::async_trait;
 use strata_acct_types::{AccountId, tree_hash::TreeHash};
 use strata_asm_manifest_types::AsmManifest;
-use strata_db_types::errors::DbError;
-use strata_db_types::MmrId;
+use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{
     IAccountStateConstructible, IAccountStateMut, IStateAccessor, asm_manifests_mmr_start_height,

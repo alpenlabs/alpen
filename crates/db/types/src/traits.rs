@@ -11,8 +11,6 @@ use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId, Slot,
 };
-
-use crate::RawMmrId;
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
@@ -36,7 +34,7 @@ use crate::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1TxEntry,
         MempoolTxData, OLCheckpointEntry,
     },
-    DbResult,
+    DbResult, RawMmrId,
 };
 
 /// Common database backend interface that we can parameterize worker tasks over if

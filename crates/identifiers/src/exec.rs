@@ -36,18 +36,7 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
 ///
 /// This type was previously named `EvmEeBlockCommitment` but has been renamed
 /// to `ExecBlockCommitment` to be more generic and not tied to EVM.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Deserialize,
-    Serialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
 #[cfg_attr(feature = "borsh", derive(BorshDeserialize, BorshSerialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct ExecBlockCommitment {
