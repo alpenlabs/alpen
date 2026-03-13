@@ -13719,7 +13719,6 @@ dependencies = [
  "strata-asm-worker",
  "strata-btcio",
  "strata-chain-worker-new",
- "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-common",
  "strata-config",

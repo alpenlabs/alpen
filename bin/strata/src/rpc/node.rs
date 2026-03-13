@@ -2,7 +2,9 @@
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
+use strata_identifiers::{
+    AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
+};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::OLMempoolTransaction;
