@@ -62,6 +62,13 @@ pub enum SequencerContextError {
         source: BlockAssemblyError,
     },
 
+    #[error("template generation failed at tip {tip_blkid}")]
+    TemplateGeneration {
+        tip_blkid: OLBlockId,
+        #[source]
+        source: BlockAssemblyError,
+    },
+
     #[error("failed to send block {blkid} to fcm")]
     FcmChannelClosed { blkid: OLBlockId },
 
@@ -87,6 +94,8 @@ pub enum SequencerDutyError {
 #[async_trait]
 pub trait SequencerContext: Send + Sync + 'static {
     async fn poll_duties(&self) -> Result<Vec<Duty>, SequencerContextError>;
+
+    async fn generate_template_for_tip(&self) -> Result<Option<OLBlockId>, SequencerContextError>;
 
     async fn complete_block_template(
         &self,
@@ -159,6 +168,7 @@ pub struct SequencerServiceState<C: SequencerContext> {
     context: Arc<C>,
     seen_duties: HashSet<Buf32>,
     duty_context: DutyContext<C>,
+    last_seen_tip: Option<OLBlockId>,
     active_duties: Arc<AtomicU32>,
     failed_duty_count: Arc<AtomicU32>,
     failed_duties_rx: mpsc::Receiver<Buf32>,
@@ -186,6 +196,7 @@ impl<C: SequencerContext> SequencerServiceState<C> {
             context,
             seen_duties: HashSet::new(),
             duty_context,
+            last_seen_tip: None,
             active_duties,
             failed_duty_count,
             failed_duties_rx,
@@ -237,9 +248,33 @@ impl<C: SequencerContext> AsyncService for SequencerService<C> {
     async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
         match input {
             SequencerEvent::Tick => process_tick(state).await,
+            SequencerEvent::GenerationTick => process_generation_tick(state).await,
         }
 
         Ok(Response::Continue)
+    }
+}
+
+async fn process_generation_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>) {
+    debug!(last_seen_tip = ?state.last_seen_tip, "generation tick fired");
+
+    let generated_tip = match state.context.generate_template_for_tip().await {
+        Ok(tip) => tip,
+        Err(err) => {
+            error!(%err, "failed to generate template on generation tick");
+            return;
+        }
+    };
+
+    if generated_tip.is_none() {
+        debug!("generation tick skipped: no canonical tip");
+    }
+
+    let previous_tip = state.last_seen_tip;
+    state.last_seen_tip = generated_tip;
+
+    if previous_tip != state.last_seen_tip {
+        debug!(?previous_tip, current_tip = ?state.last_seen_tip, "sequencer tip changed");
     }
 }
 
@@ -423,6 +458,12 @@ mod tests {
     impl SequencerContext for MockContext {
         async fn poll_duties(&self) -> Result<Vec<Duty>, SequencerContextError> {
             Ok(self.duties.lock().await.clone())
+        }
+
+        async fn generate_template_for_tip(
+            &self,
+        ) -> Result<Option<OLBlockId>, SequencerContextError> {
+            Ok(None)
         }
 
         async fn complete_block_template(

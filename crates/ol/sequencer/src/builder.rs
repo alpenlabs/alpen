@@ -19,15 +19,22 @@ use crate::{
 pub struct SequencerBuilder<C: SequencerContext> {
     context: Arc<C>,
     sequencer_key: Buf32,
-    poll_interval: Duration,
+    duty_poll_interval: Duration,
+    ol_block_interval: Duration,
 }
 
 impl<C: SequencerContext> SequencerBuilder<C> {
-    pub fn new(context: Arc<C>, sequencer_key: Buf32, poll_interval: Duration) -> Self {
+    pub fn new(
+        context: Arc<C>,
+        sequencer_key: Buf32,
+        duty_poll_interval: Duration,
+        ol_block_interval: Duration,
+    ) -> Self {
         Self {
             context,
             sequencer_key,
-            poll_interval,
+            duty_poll_interval,
+            ol_block_interval,
         }
     }
 
@@ -48,7 +55,7 @@ impl<C: SequencerContext> SequencerBuilder<C> {
             failed_duties_rx,
         );
 
-        let timer_input = SequencerTimerInput::new(self.poll_interval);
+        let timer_input = SequencerTimerInput::new(self.duty_poll_interval, self.ol_block_interval);
 
         ServiceBuilder::<SequencerService<C>, _>::new()
             .with_state(state)
