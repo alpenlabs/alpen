@@ -14,7 +14,7 @@ ssz_types = { workspace = true, features = ["serde"] }
 strata-codec.workspace = true
 tree_hash.workspace = true
 
-arbitrary.workspace = true
+arbitrary = { workspace = true, optional = true }
 borsh.workspace = true
 const-hex = "1.14"
 hex.workspace = true
@@ -33,5 +33,6 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
+arbitrary = ["dep:arbitrary"]
 jsonschema = ["dep:schemars"]
-test-utils = ["dep:proptest"]
+test-utils = ["dep:proptest", "arbitrary"]

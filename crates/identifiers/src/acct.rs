@@ -1,5 +1,6 @@
 use std::{fmt, mem};
 
+#[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
@@ -28,7 +29,6 @@ type RawAccountId = [u8; ACCT_ID_LEN];
     Ord,
     PartialOrd,
     Hash,
-    Arbitrary,
     Decode,
     Encode,
     Serialize,
@@ -36,6 +36,7 @@ type RawAccountId = [u8; ACCT_ID_LEN];
     BorshSerialize,
     BorshDeserialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
@@ -102,12 +103,12 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
     Ord,
     PartialOrd,
     Hash,
-    Arbitrary,
     Decode,
     Encode,
     BorshSerialize,
     BorshDeserialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
@@ -174,10 +175,10 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
     Encode,
     Serialize,
     Deserialize,
-    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
@@ -262,7 +263,8 @@ impl SubjectIdBytes {
     }
 }
 
-impl<'a> Arbitrary<'a> for SubjectIdBytes {
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for SubjectIdBytes {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate bytes with length between 0 and SUBJ_ID_LEN
         let len = u.int_in_range(0..=SUBJ_ID_LEN)?;

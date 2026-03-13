@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, fmt};
 
-use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -24,7 +25,6 @@ pub type L1Height = u32;
     PartialOrd,
     Hash,
     Default,
-    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
     Serialize,
@@ -32,6 +32,7 @@ pub type L1Height = u32;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct L1BlockId(RBuf32);
 
 // Debug, Display, From<RBuf32>, AsRef<[u8; 32]> via RBuf32 delegation.
@@ -67,7 +68,6 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
     PartialOrd,
     Hash,
     Default,
-    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
     Deserialize,
@@ -75,6 +75,7 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct WtxidsRoot(Buf32);
 
 // Implement standard wrapper traits (Debug, Display, From, AsRef)
@@ -88,6 +89,7 @@ crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[ssz(struct_behaviour = "container")]
 pub struct L1BlockCommitment {
     pub height: L1Height,
@@ -139,14 +141,6 @@ impl L1BlockCommitment {
     /// Get the block ID.
     pub fn blkid(&self) -> &L1BlockId {
         &self.blkid
-    }
-}
-
-impl Arbitrary<'_> for L1BlockCommitment {
-    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
-        let height = u32::arbitrary(u)?;
-        let blkid = L1BlockId::arbitrary(u)?;
-        Ok(Self { height, blkid })
     }
 }
 

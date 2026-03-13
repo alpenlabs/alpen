@@ -1,5 +1,6 @@
 use std::{fmt, str};
 
+#[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,6 @@ pub type Epoch = u32;
     Ord,
     PartialOrd,
     Hash,
-    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
     Serialize,
@@ -29,6 +29,7 @@ pub type Epoch = u32;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
@@ -66,10 +67,10 @@ pub type L2BlockId = OLBlockId;
     Encode,
     Decode,
     Codec,
-    Arbitrary,
     PartialOrd,
     Ord,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[ssz(struct_behaviour = "container")]
 pub struct OLBlockCommitment {
     pub slot: Slot,
@@ -124,7 +125,6 @@ pub type L2BlockCommitment = OLBlockCommitment;
     Ord,
     PartialOrd,
     Hash,
-    Arbitrary,
     BorshSerialize,
     BorshDeserialize,
     Serialize,
@@ -132,6 +132,7 @@ pub type L2BlockCommitment = OLBlockCommitment;
     Encode,
     Decode,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);

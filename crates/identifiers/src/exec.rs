@@ -1,3 +1,4 @@
+#[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -41,12 +42,12 @@ pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
     Ord,
     PartialOrd,
     Hash,
-    Arbitrary,
     BorshDeserialize,
     BorshSerialize,
     Deserialize,
     Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct ExecBlockCommitment {
     slot: u64,
     blkid: Buf32,
