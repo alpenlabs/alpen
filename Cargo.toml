@@ -296,7 +296,7 @@ strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0
 strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc9" }
 
 # sled wrapper
-typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
+typed-sled = { git = "https://github.com/alpenlabs/typed-sled", branch = "STR-1914" } # TODO: remove branch once STR-1914 is merged
 
 # moho
 moho-runtime-impl = { git = "https://github.com/alpenlabs/moho" }
