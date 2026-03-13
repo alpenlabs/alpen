@@ -15968,6 +15968,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argh",
+ "bitcoin",
+ "jsonrpsee",
+ "serde",
+ "strata-common",
+ "strata-crypto",
+ "strata-key-derivation",
+ "strata-ol-rpc-api",
+ "strata-ol-sequencer",
+ "strata-primitives",
+ "strata-tasks",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.5.11",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
 name = "strata-simple-ee"
 version = "0.1.0"
 dependencies = [
