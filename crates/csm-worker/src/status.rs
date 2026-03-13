@@ -11,5 +11,6 @@ use strata_primitives::{EpochCommitment, l1::L1BlockCommitment};
 pub struct CsmWorkerStatus {
     pub cur_block: Option<L1BlockCommitment>,
     pub last_processed_epoch: Option<u64>,
+    pub last_confirmed_epoch: Option<EpochCommitment>,
     pub last_finalized_epoch: Option<EpochCommitment>,
 }

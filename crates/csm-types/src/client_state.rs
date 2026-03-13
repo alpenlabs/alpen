@@ -55,6 +55,13 @@ impl ClientState {
         self.last_seen_checkpoint.clone()
     }
 
+    /// Gets the last epoch seen on L1.
+    pub fn get_last_epoch(&self) -> Option<EpochCommitment> {
+        self.last_seen_checkpoint
+            .as_ref()
+            .map(|c| c.batch_info.get_epoch_commitment())
+    }
+
     /// Gets the last checkpoint that has already been finalized.
     pub fn get_last_finalized_checkpoint(&self) -> Option<L1Checkpoint> {
         self.last_finalized_checkpoint.clone()

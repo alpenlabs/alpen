@@ -19,8 +19,11 @@ pub struct ChainSyncStatus {
     /// The previous epoch (ie. epoch most recently completed).
     pub prev_epoch: EpochCommitment,
 
-    /// The finalized epoch, ie what's witnessed on L1.
+    /// The finalized epoch, ie what's buried enough on L1.
     pub finalized_epoch: EpochCommitment,
+
+    /// The confirmed epoch (ie. epoch most recently seen on L1).
+    pub confirmed_epoch: EpochCommitment,
 
     /// The last L1 block we've observed.
     pub safe_l1: L1BlockCommitment,
@@ -48,12 +51,14 @@ impl ChainSyncStatus {
     pub fn new(
         tip: L2BlockCommitment,
         prev_epoch: EpochCommitment,
+        confirmed_epoch: EpochCommitment,
         finalized_epoch: EpochCommitment,
         safe_l1: L1BlockCommitment,
     ) -> Self {
         Self {
             tip,
             prev_epoch,
+            confirmed_epoch,
             finalized_epoch,
             safe_l1,
         }
