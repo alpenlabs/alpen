@@ -14281,9 +14281,12 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "borsh",
+ "proptest",
  "serde",
+ "strata-codec",
  "strata-identifiers",
  "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
