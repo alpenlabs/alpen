@@ -13,7 +13,6 @@ ssz_primitives.workspace = true
 ssz_types = { workspace = true, features = ["serde"] }
 strata-codec.workspace = true
 tree_hash.workspace = true
-tree_hash_derive.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
@@ -25,9 +24,6 @@ schemars = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
-
-[build-dependencies]
-ssz_codegen.workspace = true
 
 [dev-dependencies]
 strata-test-utils-ssz.workspace = true
