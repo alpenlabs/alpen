@@ -43,17 +43,28 @@ requires_sequencer_config() {
     return 1
 }
 
-# If BITCOIND_RPC_URL is set, query the L1 tip and patch genesis params.
-# This is needed because the L1 reader doesn't store block 0 in the canonical
-# chain, so genesis_l1_height must be > 0.
-if [ -n "${BITCOIND_RPC_URL}" ]; then
+# Runtime genesis patching.
+#
+# If params were generated with a real GenesisL1View (via datatool genl1view
+# at init time), the genesis height will already be > 0 and all fields
+# (next_target, epoch_start_timestamp, last_11_timestamps) will be correct.
+# In that case we skip patching.
+#
+# If params have genesis height == 0 (placeholder from init without RPC),
+# we patch height + blkid from the current L1 tip.  This is a partial patch
+# (next_target and timestamps are NOT updated) which is acceptable on regtest
+# where difficulty is constant, but NOT sufficient for signet/mainnet.  For
+# non-regtest networks, generate params with BITCOIN_RPC_* at init time.
+CURRENT_GENESIS_HEIGHT=$(jq -r '.genesis_l1_view.blk.height // 0' "${PARAM_PATH}" 2>/dev/null || echo "0")
+
+if [ -n "${BITCOIND_RPC_URL}" ] && [ "${CURRENT_GENESIS_HEIGHT}" -eq 0 ]; then
     rpc_call() {
         curl -sf -u "${BITCOIND_RPC_USER}:${BITCOIND_RPC_PASSWORD}" \
             -d "{\"jsonrpc\":\"1.0\",\"method\":\"$1\",\"params\":$2}" \
             "${BITCOIND_RPC_URL}"
     }
 
-    echo "querying bitcoind for L1 tip..."
+    echo "genesis height is 0 (placeholder) — patching from L1 tip..."
     INFO=$(rpc_call getblockchaininfo '[]')
     TIP_HEIGHT=$(echo "${INFO}" | jq -r '.result.blocks')
     TIP_HASH=$(echo "${INFO}" | jq -r '.result.bestblockhash')
@@ -89,6 +100,8 @@ if [ -n "${BITCOIND_RPC_URL}" ]; then
             "${ASM_PARAMS_PATH}" > "${PATCHED_ASM}"
         ASM_PARAMS_PATH="${PATCHED_ASM}"
     fi
+elif [ "${CURRENT_GENESIS_HEIGHT}" -gt 0 ]; then
+    echo "genesis height is ${CURRENT_GENESIS_HEIGHT} — params already initialized, skipping patching"
 fi
 
 EXTRA_ARGS=""
@@ -122,6 +135,17 @@ if requires_sequencer_config "$@"; then
         echo "error: missing sequencer config '${RESOLVED_SEQUENCER_CONFIG_PATH}'" >&2
         exit 1
     }
+
+    # Patch OL block time from env var so infra can override without re-running init.
+    OL_BLOCK_TIME_MS="${OL_BLOCK_TIME_MS:-}"
+    if [ -n "${OL_BLOCK_TIME_MS}" ]; then
+        PATCHED_SEQ_CONFIG="/app/data/sequencer.toml"
+        sed "s/^ol_block_time_ms.*/ol_block_time_ms = ${OL_BLOCK_TIME_MS}/" \
+            "${RESOLVED_SEQUENCER_CONFIG_PATH}" > "${PATCHED_SEQ_CONFIG}"
+        RESOLVED_SEQUENCER_CONFIG_PATH="${PATCHED_SEQ_CONFIG}"
+        echo "patched ol_block_time_ms=${OL_BLOCK_TIME_MS}"
+    fi
+
     SEQUENCER_ARGS="--sequencer-config ${RESOLVED_SEQUENCER_CONFIG_PATH}"
 fi
 

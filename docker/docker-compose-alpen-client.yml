@@ -2,9 +2,11 @@
 # Supports regtest and signet via BITCOIN_NETWORK env var.
 #
 # Prerequisites:
-#   1. Run ./init-alpen-client-keys.sh  (or BITCOIN_NETWORK=signet ./init-alpen-client-keys.sh)
-#   2. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml build
-#   3. docker compose --env-file .env.alpen-client -f docker-compose-alpen-client.yml up -d
+#   1. Build datatool: cargo build --release --bin strata-datatool
+#   2. Run ./init-network.sh <path_to_datatool>
+#      (or BITCOIN_NETWORK=signet ./init-network.sh <path_to_datatool>)
+#   3. docker compose --env-file .env.alpen -f docker-compose-alpen-client.yml build
+#   4. docker compose --env-file .env.alpen -f docker-compose-alpen-client.yml up -d
 
 services:
 
@@ -52,19 +54,20 @@ services:
     command:
       - "--sequencer"
       - "--sequencer-key"
-      - /app/configs/alpen-client/sequencer.key
+      - /app/configs/generated/sequencer.key
       - "--rpc-host"
       - "0.0.0.0"
     environment:
       CONFIG_PATH: /app/configs/config.regtest.toml
-      SEQUENCER_CONFIG_PATH: /app/configs/alpen-client/sequencer.toml
-      PARAM_PATH: /app/configs/alpen-client/rollup-params.json
-      OL_PARAMS_PATH: /app/configs/alpen-client/ol-params.json
-      ASM_PARAMS_PATH: /app/configs/alpen-client/asm-params.json
+      SEQUENCER_CONFIG_PATH: /app/configs/generated/sequencer.toml
+      PARAM_PATH: /app/configs/generated/rollup-params.json
+      OL_PARAMS_PATH: /app/configs/generated/ol-params.json
+      ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
       BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
       BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
       BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
       BITCOIN_NETWORK: ${BITCOIN_NETWORK:-regtest}
+      OL_BLOCK_TIME_MS: ${OL_BLOCK_TIME_MS:-5000}
       RUST_LOG: ${RUST_LOG:-info}
       RUST_BACKTRACE: 1
       NO_COLOR: 1
@@ -143,14 +146,15 @@ services:
       - never
     environment:
       SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
+      ALPEN_EE_BLOCK_TIME_MS: ${ALPEN_EE_BLOCK_TIME_MS:-5000}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "${SEQ_HTTP_PORT:-8545}:8545"
       - "${SEQ_WS_PORT:-8546}:8546"
       - "${SEQ_P2P_PORT:-30303}:30303"
     volumes:
-      - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
-      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+      - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
+      - ./configs/generated/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
       - ./data/alpen-client-seq:/app/data
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
@@ -214,7 +218,7 @@ services:
       - "${FN_WS_PORT:-9546}:8546"
       - "${FN_P2P_PORT:-31303}:30303"
     volumes:
-      - ./configs/alpen-client/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
+      - ./configs/generated/fn-p2p.hex:/app/keys/fn-p2p.hex:ro
       - ./data/alpen-client-fn:/app/data
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:

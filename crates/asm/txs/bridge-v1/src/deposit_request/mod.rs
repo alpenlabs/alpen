@@ -14,7 +14,7 @@
 //!
 //! ### Outputs
 //! 1. **OP_RETURN Output (Index 0)** (required): Contains SPS-50 tagged data with:
-//!    - Magic number (4 bytes): Protocol instance identifier (e.g., `b"alpn"`)
+//!    - Magic number (4 bytes): Protocol instance identifier (e.g., `b"ALPN"`)
 //!    - Subprotocol ID (1 byte): Bridge v1 subprotocol identifier (value: 2)
 //!    - Transaction type (1 byte): Deposit request transaction type (value: 0)
 //!    - Auxiliary data (>32 bytes):
