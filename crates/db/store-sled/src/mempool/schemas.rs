@@ -1,3 +1,4 @@
+use sled::IVec;
 use ssz_derive::{Decode, Encode};
 use strata_identifiers::OLTxId;
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
@@ -50,14 +51,18 @@ impl KeyCodec<MempoolTxSchema> for OLTxId {
 
 // Use SSZ encoding for the value (MempoolTxEntry)
 impl ValueCodec<MempoolTxSchema> for MempoolTxEntry {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(ssz::Encode::as_ssz_bytes(self))
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
-        ssz::Decode::from_ssz_bytes(data).map_err(|err| CodecError::SerializationFailed {
-            schema: MempoolTxSchema::tree_name(),
-            source: anyhow::anyhow!("SSZ decode error: {:?}", err).into(),
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
+        ssz::Decode::from_ssz_bytes(data.as_ref()).map_err(|err| {
+            CodecError::DeserializationFailed {
+                schema: MempoolTxSchema::tree_name(),
+                source: anyhow::anyhow!("SSZ decode error: {:?}", err).into(),
+            }
         })
     }
 }

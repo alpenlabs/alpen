@@ -1,4 +1,5 @@
 use revm_primitives::alloy_primitives::B256;
+use sled::IVec;
 use strata_db_store_sled::{define_table_without_codec, impl_bincode_key_codec};
 use typed_sled::codec::{CodecError, ValueCodec};
 
@@ -31,41 +32,49 @@ impl_bincode_key_codec!(PublishedCodeHashSchema, B256);
 
 // Vec<u8> value codec - stored as raw bytes
 impl ValueCodec<BlockWitnessSchema> for Vec<u8> {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
         Ok(data.to_vec())
     }
 }
 
 impl ValueCodec<BlockStateChangesSchema> for Vec<u8> {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
         Ok(data.to_vec())
     }
 }
 
 impl ValueCodec<BlockHashByNumber> for Vec<u8> {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
         Ok(data.to_vec())
     }
 }
 
 impl ValueCodec<PublishedCodeHashSchema> for Vec<u8> {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.clone())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
         Ok(data.to_vec())
     }
 }
