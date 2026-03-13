@@ -53,7 +53,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                 lambda: get_sync_status_and_mine_blocks(strata_seq, btc_rpc),
                 lambda s, next_epoch=next_epoch: s["parent"]["epoch"] >= next_epoch,
                 error_with=f"Expected epoch {next_epoch} not found",
-                timeout=10,
+                timeout=30,
             )
             new_epochs_since_last = range(next_epoch, status["parent"]["epoch"] + 1)
 

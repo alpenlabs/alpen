@@ -35,7 +35,7 @@ class TestSequencerEpochProgression(StrataNodeTest):
             epoch = wait_until_with_value(
                 lambda: strata.get_sync_status(rpc)["parent"],
                 lambda v, cur_epoch=prev_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
-                timeout=10,
+                timeout=30,
                 error_with="Parent epoch not progressing",
             )
             logger.info("parent epoch advanced to %s", epoch["epoch"])

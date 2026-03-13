@@ -11,9 +11,6 @@ use zeroize::Zeroize;
 use super::{helpers::load_seqkey, node_context::NodeSequencerContext};
 use crate::{args::Args, run_context::RunContext};
 
-/// Default duty poll interval in milliseconds.
-const DEFAULT_DUTY_POLL_INTERVAL_MS: u64 = 1_000;
-
 /// Starts the sequencer signer service.
 pub(crate) fn start_sequencer_signer(
     runctx: &RunContext,
@@ -34,10 +31,12 @@ pub(crate) fn start_sequencer_signer(
     // Load the sequencer key.
     let mut sequencer_key = load_seqkey(sequencer_key_path)?;
 
-    // Get the duty poll interval.
-    let poll_interval_ms = args
-        .duty_poll_interval
-        .unwrap_or(DEFAULT_DUTY_POLL_INTERVAL_MS);
+    let sequencer_config = runctx
+        .config()
+        .sequencer
+        .as_ref()
+        .ok_or_else(|| anyhow!("sequencer config not available"))?;
+    let poll_interval_ms = sequencer_config.ol_block_time_ms;
 
     let context = Arc::new(NodeSequencerContext::new(
         handles.blockasm_handle().clone(),
