@@ -593,7 +593,8 @@ fn process_fc_message(
                 .ok_or(Error::MissingL2Block(blkid))?;
 
             let slot = block_bundle.header().slot();
-            info!(%slot, %blkid, "processing new block");
+            let timestamp = block_bundle.header().timestamp();
+            info!(%slot, %blkid, %timestamp, "processing new block");
 
             let ok = match handle_new_block(fcm_state, &block_bundle) {
                 Ok(v) => v,
