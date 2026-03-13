@@ -26,22 +26,18 @@ pub mod writer;
 
 use std::{path::Path, sync::Arc};
 
-// Re-exports
-pub use account::db::AccountGenesisDBSled;
-pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
 use chunked_envelope::db::L1ChunkedEnvelopeDBSled;
 use client_state::db::ClientStateDBSled;
-pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
-pub use mmr_index::MmrIndexDb;
 use ol::db::OLBlockDBSled;
 use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
+use rkyv as _;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
     DbResult,
@@ -55,6 +51,13 @@ use strata_db_types::{
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
+
+// Re-exports
+#[rustfmt::skip]
+pub use account::db::AccountGenesisDBSled;
+pub use asm::AsmDBSled;
+pub use config::SledDbConfig;
+pub use mmr_index::MmrIndexDb;
 
 pub use crate::{
     init::{init_core_dbs, open_sled_database},
