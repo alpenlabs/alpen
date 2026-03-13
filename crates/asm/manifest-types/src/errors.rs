@@ -1,6 +1,8 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    io,
+};
 
-use borsh::io;
 use strata_codec::CodecError;
 use strata_msg_fmt::TypeId;
 use thiserror::Error;
