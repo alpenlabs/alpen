@@ -1,13 +1,12 @@
-use std::{cmp, fmt, str};
+use std::{fmt, str};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use const_hex as hex;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+use strata_codec::Codec;
 
-use crate::{buf::Buf32, ssz_generated::ssz::commitments::OLBlockCommitment};
+use crate::buf::Buf32;
 
 pub type Slot = u64;
 pub type Epoch = u32;
@@ -52,7 +51,35 @@ impl OLBlockId {
 /// Alias for backward compatibility
 pub type L2BlockId = OLBlockId;
 
-impl crate::OLBlockCommitment {
+/// Commitment to an OL block by ID at a particular slot.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Codec,
+    Arbitrary,
+    PartialOrd,
+    Ord,
+)]
+#[ssz(struct_behaviour = "container")]
+pub struct OLBlockCommitment {
+    pub slot: Slot,
+    pub blkid: OLBlockId,
+}
+
+crate::impl_tree_hash_container!(OLBlockCommitment, [slot, blkid]);
+crate::impl_ssz_type_info_fixed!(OLBlockCommitment, [Slot, OLBlockId]);
+crate::impl_ssz_container_ref!(OLBlockCommitmentRef, OLBlockCommitment);
+
+impl OLBlockCommitment {
     pub fn new(slot: Slot, blkid: OLBlockId) -> Self {
         Self { slot, blkid }
     }
@@ -76,64 +103,12 @@ impl crate::OLBlockCommitment {
 
 impl fmt::Display for OLBlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
-        let blkid_bytes = self.blkid.as_ref();
-        let first_2 = &blkid_bytes[..2];
-        let last_2 = &blkid_bytes[30..];
-
-        let mut first_hex = [0u8; 4];
-        let mut last_hex = [0u8; 4];
-        hex::encode_to_slice(first_2, &mut first_hex)
-            .expect("Failed to encode first 2 bytes to hex");
-        hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
-
-        write!(
-            f,
-            "{}@{}..{}",
-            self.slot,
-            str::from_utf8(&first_hex).expect("Failed to convert first hex bytes to UTF-8 string"),
-            str::from_utf8(&last_hex).expect("Failed to convert last hex bytes to UTF-8 string")
-        )
-    }
-}
-
-impl Codec for OLBlockCommitment {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.slot.encode(enc)?;
-        self.blkid.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let slot = u64::decode(dec)?;
-        let blkid = OLBlockId::decode(dec)?;
-        Ok(Self { slot, blkid })
+        write!(f, "{}@{}", self.slot, self.blkid)
     }
 }
 
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
 crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
-
-impl<'a> arbitrary::Arbitrary<'a> for OLBlockCommitment {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-        Ok(Self {
-            slot: u.arbitrary()?,
-            blkid: u.arbitrary()?,
-        })
-    }
-}
-
-impl Ord for OLBlockCommitment {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        (self.slot, &self.blkid).cmp(&(other.slot, &other.blkid))
-    }
-}
-
-impl PartialOrd for OLBlockCommitment {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 /// Alias for backward compatibility
 pub type L2BlockCommitment = OLBlockCommitment;

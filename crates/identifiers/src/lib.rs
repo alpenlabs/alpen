@@ -27,27 +27,15 @@ pub use exec::{
 };
 pub use hash::Hash;
 pub use l1::{L1BlockId, L1Height, WtxidsRoot};
-pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockId, OLTxId, Slot};
+pub use ol::{
+    Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockCommitmentRef, OLBlockId,
+    OLTxId, Slot,
+};
 
 // Re-export for macro use
 #[doc(hidden)]
 #[rustfmt::skip]
 pub use strata_codec;
 
-/// SSZ-generated types for serialization and merkleization.
-#[allow(
-    clippy::all,
-    unreachable_pub,
-    clippy::allow_attributes,
-    clippy::absolute_paths,
-    reason = "generated code"
-)]
-pub mod ssz_generated {
-    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
-}
-
-// Re-export generated commitment types
-pub use ssz_generated::ssz::commitments::{
-    EpochCommitment, EpochCommitmentRef, L1BlockCommitment, L1BlockCommitmentRef,
-    OLBlockCommitment, OLBlockCommitmentRef,
-};
+pub use epoch::{EpochCommitment, EpochCommitmentRef};
+pub use l1::{L1BlockCommitment, L1BlockCommitmentRef};

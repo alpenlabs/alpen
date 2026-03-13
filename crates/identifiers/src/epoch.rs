@@ -16,14 +16,30 @@
 use std::{cmp, fmt, str};
 
 use const_hex as hex;
+use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
 use crate::{
     Epoch, Slot,
     buf::Buf32,
-    ol::OLBlockId,
-    ssz_generated::ssz::commitments::{EpochCommitment, OLBlockCommitment},
+    ol::{OLBlockCommitment, OLBlockId},
 };
+
+/// Commitment to a particular epoch by the last block and slot.
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
+)]
+#[ssz(struct_behaviour = "container")]
+pub struct EpochCommitment {
+    pub epoch: Epoch,
+    pub last_slot: Slot,
+    pub last_blkid: OLBlockId,
+}
+
+crate::impl_tree_hash_container!(EpochCommitment, [epoch, last_slot, last_blkid]);
+crate::impl_ssz_type_info_fixed!(EpochCommitment, [Epoch, Slot, OLBlockId]);
+crate::impl_ssz_container_ref!(EpochCommitmentRef, EpochCommitment);
 
 impl EpochCommitment {
     pub fn new(epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId) -> Self {

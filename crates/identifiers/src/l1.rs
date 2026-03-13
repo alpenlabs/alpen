@@ -6,10 +6,7 @@ use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 
-use crate::{
-    buf::{Buf32, RBuf32},
-    ssz_generated::ssz::commitments::L1BlockCommitment,
-};
+use crate::buf::{Buf32, RBuf32};
 
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;
@@ -84,6 +81,20 @@ crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
 
 // Manual TreeHash implementation for transparent wrapper
 crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
+
+/// Commitment to an L1 block with height and ID.
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
+)]
+#[ssz(struct_behaviour = "container")]
+pub struct L1BlockCommitment {
+    pub height: L1Height,
+    pub blkid: L1BlockId,
+}
+
+crate::impl_tree_hash_container!(L1BlockCommitment, [height, blkid]);
+crate::impl_ssz_type_info_fixed!(L1BlockCommitment, [L1Height, L1BlockId]);
+crate::impl_ssz_container_ref!(L1BlockCommitmentRef, L1BlockCommitment);
 
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
 crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);

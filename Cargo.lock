@@ -15049,7 +15049,6 @@ dependencies = [
  "serde",
  "serde_json",
  "ssz",
- "ssz_codegen",
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
@@ -15057,7 +15056,6 @@ dependencies = [
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.14.0",
- "tree_hash_derive 0.14.0",
  "zeroize",
 ]
 
