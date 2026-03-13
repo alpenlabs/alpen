@@ -1,4 +1,4 @@
-use std::iter;
+use std::{fmt, iter};
 
 use bitcoin::{Txid, Wtxid};
 use strata_acct_types::Hash;
@@ -12,6 +12,17 @@ use crate::{BlockNumHash, ProofId};
 pub struct BatchId {
     prev_block: Hash,
     last_block: Hash,
+}
+
+impl fmt::Display for BatchId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "BatchId(prev_block={}, last_block={})",
+            self.prev_block(),
+            self.last_block()
+        )
+    }
 }
 
 impl BatchId {

@@ -262,7 +262,7 @@ async fn process_tick<C: SequencerContext>(state: &mut SequencerServiceState<C>)
     }
 
     let duties_display: Vec<String> = duties.iter().map(ToString::to_string).collect();
-    debug!(duties = ?duties_display, "got some sequencer duties");
+    info!(duties = ?duties_display, "got some sequencer duties");
 
     for duty in duties {
         let duty_id = duty.generate_id();
