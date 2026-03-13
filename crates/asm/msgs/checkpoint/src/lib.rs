@@ -6,7 +6,8 @@
 
 use std::any::Any;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz as _;
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_checkpoint::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_asm_txs_checkpoint_v0::CHECKPOINT_V0_SUBPROTOCOL_ID;
@@ -18,7 +19,8 @@ use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
 /// Messages are routed to both the checkpoint-v0 and the new checkpoint.
 /// Admin configuration updates target both, while deposit notifications
 /// target the new checkpoint subprotocol.
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, DeriveEncode, DeriveDecode)]
+#[ssz(enum_behaviour = "union")]
 pub enum CheckpointIncomingMsg {
     /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
     // TODO: (@PG) make this directly take PredicateKey

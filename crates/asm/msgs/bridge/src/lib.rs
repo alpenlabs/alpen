@@ -7,8 +7,9 @@
 use std::any::Any;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_bridge_types::OperatorSelection;
@@ -24,9 +25,7 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 ///
 /// The destination uses Bitcoin Output Script Descriptors (BOSD), which provide
 /// a standardized way to specify Bitcoin addresses and locking conditions.
-#[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Arbitrary)]
 pub struct WithdrawOutput {
     /// Bitcoin Output Script Descriptor specifying the destination address.
     pub destination: Descriptor,
@@ -52,11 +51,68 @@ impl WithdrawOutput {
     }
 }
 
+/// SSZ-friendly representation of [`WithdrawOutput`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct WithdrawOutputSsz {
+    /// The Bitcoin Output Script Descriptor specifying the destination address.
+    destination: Vec<u8>,
+
+    /// The amount to withdraw (in satoshis).
+    amt: BitcoinAmount,
+}
+
+impl Encode for WithdrawOutput {
+    fn is_ssz_fixed_len() -> bool {
+        <WithdrawOutputSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <WithdrawOutputSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        WithdrawOutputSsz {
+            destination: self.destination.to_bytes(),
+            amt: self.amt,
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        WithdrawOutputSsz {
+            destination: self.destination.to_bytes(),
+            amt: self.amt,
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for WithdrawOutput {
+    fn is_ssz_fixed_len() -> bool {
+        <WithdrawOutputSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <WithdrawOutputSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = WithdrawOutputSsz::from_ssz_bytes(bytes)?;
+        let destination = Descriptor::from_bytes(&value.destination)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+
+        Ok(Self {
+            destination,
+            amt: value.amt,
+        })
+    }
+}
+
 /// Incoming message types received from other subprotocols.
 ///
 /// This enum represents all possible message types that the bridge subprotocol can
 /// receive from other subprotocols in the ASM.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BridgeIncomingMsg {
     /// Emitted after a checkpoint proof has been validated. Contains the withdrawal command
     /// specifying the destination descriptor and amount to be withdrawn.

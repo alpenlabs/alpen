@@ -7,8 +7,8 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-borsh.workspace = true
-
+ssz.workspace = true
+ssz_derive.workspace = true
 strata-asm-common.workspace = true
 strata-asm-txs-checkpoint.workspace = true
 strata-asm-txs-checkpoint-v0.workspace = true
