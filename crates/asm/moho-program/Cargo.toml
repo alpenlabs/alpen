@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-bitcoin.workspace = true
+moho-runtime-interface.workspace = true
 moho-types.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true
@@ -18,6 +18,8 @@ strata-asm-stf.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 tree_hash.workspace = true
+
+bitcoin.workspace = true
 
 [dev-dependencies]
 strata-test-utils-btc.workspace = true

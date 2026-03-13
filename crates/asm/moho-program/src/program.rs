@@ -8,7 +8,7 @@ use strata_predicate::PredicateKey;
 use strata_primitives::Buf32;
 use tree_hash::{Sha256Hasher, TreeHash};
 
-use crate::{input::AsmStepInput, traits::MohoProgram};
+use crate::{AsmStepInput, MohoProgram};
 
 #[derive(Debug)]
 pub struct AsmStfProgram;
