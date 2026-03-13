@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment};
+use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLTxId};
 use strata_snark_acct_types::{MessageEntry, ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
@@ -89,7 +89,9 @@ pub trait SequencerOLClient {
     async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError>;
 
     /// Submits an account update with proof to the OL chain sequencer.
-    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError>;
+    ///
+    /// Returns the OL transaction ID assigned to the submitted update.
+    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<OLTxId, OLClientError>;
 }
 
 /// Retrieves inbox messages with validation checks.

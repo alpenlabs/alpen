@@ -52,6 +52,28 @@ impl ChunkedEnvelopeDaProvider {
     }
 }
 
+fn format_tx_pairs(tx_pairs: &[(Txid, Wtxid)]) -> Vec<String> {
+    tx_pairs
+        .iter()
+        .map(|(txid, wtxid)| format!("{txid}/{wtxid}"))
+        .collect()
+}
+
+fn format_da_block_refs(block_refs: &[L1DaBlockRef]) -> Vec<String> {
+    block_refs
+        .iter()
+        .map(|block_ref| {
+            let reveal_refs = format_tx_pairs(&block_ref.txns);
+            format!(
+                "{}@{} txns={:?}",
+                block_ref.block.height(),
+                block_ref.block.blkid(),
+                reveal_refs
+            )
+        })
+        .collect()
+}
+
 #[async_trait]
 impl BatchDaProvider for ChunkedEnvelopeDaProvider {
     async fn post_batch_da(&self, batch_id: BatchId) -> eyre::Result<u64> {
@@ -60,6 +82,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
         let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes);
+        let chunk_count = entry.chunk_data.len();
 
         let idx = self
             .envelope_handle
@@ -67,7 +90,13 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             .await
             .map_err(|e| eyre::eyre!("failed to submit envelope entry: {e}"))?;
 
-        info!(?batch_id, %idx, "submitted chunked envelope for batch DA");
+        info!(
+            component = "alpen_ee_da_provider",
+            batch_id = %batch_id,
+            envelope_idx = %idx,
+            chunk_count,
+            "submitted chunked envelope for batch DA"
+        );
         Ok(idx)
     }
 
@@ -85,11 +114,31 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             bail!("envelope entry {envelope_idx} missing from DB for batch {batch_id:?}");
         };
 
-        debug!(?batch_id, ?entry.status, "checking chunked envelope status");
+        debug!(
+            component = "alpen_ee_da_provider",
+            batch_id = %batch_id,
+            envelope_idx,
+            commit_txid = %entry.commit_txid,
+            reveal_refs = ?entry
+                .reveals
+                .iter()
+                .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
+                .collect::<Vec<_>>(),
+            status = ?entry.status,
+            "checking chunked envelope status"
+        );
 
         match entry.status {
             ChunkedEnvelopeStatus::Finalized => {
                 let block_refs = self.build_da_block_refs(&entry).await?;
+                info!(
+                    component = "alpen_ee_da_provider",
+                    batch_id = %batch_id,
+                    envelope_idx,
+                    commit_txid = %entry.commit_txid,
+                    da_block_refs = ?format_da_block_refs(&block_refs),
+                    "batch DA finalized on L1"
+                );
                 Ok(DaStatus::Ready(block_refs))
             }
             ChunkedEnvelopeStatus::Unsigned

@@ -356,6 +356,7 @@ async fn handle_sign_checkpoint_duty<C: SequencerContext>(
 
     let sig = sign_checkpoint(duty.checkpoint(), sequencer_key);
     let signed_checkpoint = SignedCheckpointPayload::new(duty.checkpoint().clone(), sig);
+    let checkpoint_tip = duty.checkpoint().new_tip();
 
     let payload = L1Payload::new(
         vec![signed_checkpoint.as_ssz_bytes()],
@@ -373,8 +374,12 @@ async fn handle_sign_checkpoint_duty<C: SequencerContext>(
     context.persist_checkpoint(epoch, entry).await?;
 
     info!(
+        component = "ol_sequencer",
         ?duty_id,
         %epoch,
+        l1_height = checkpoint_tip.l1_height(),
+        l2_commitment = %checkpoint_tip.l2_commitment(),
+        sighash = %sighash,
         %intent_idx,
         "checkpoint signing complete"
     );
