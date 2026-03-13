@@ -312,8 +312,7 @@ impl CheckpointEntry {
         reason = "legacy old code CheckpointEntry is retained for compatibility"
     )]
     pub fn new_pending_proof(info: BatchInfo, chainstate: &Chainstate) -> Self {
-        let sidecar =
-            CheckpointSidecar::new(borsh::to_vec(chainstate).expect("serialize chainstate"));
+        let sidecar = CheckpointSidecar::from_withdrawals(chainstate.pending_withdraws().entries().to_vec());
         let checkpoint = Checkpoint::new(info, Proof::default(), sidecar);
         Self::new(
             checkpoint,
