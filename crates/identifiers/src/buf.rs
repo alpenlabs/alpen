@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use const_hex as hex;
 use ssz_derive::{Decode, Encode};
 use ssz_primitives::FixedBytes;
@@ -27,11 +29,11 @@ use crate::macros::buf as buf_macros;
 /// assert_eq!(buf, Buf20::from([0; 20]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct Buf20(pub [u8; 20]);
 buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
 crate::macros::borsh::impl_buf_borsh!(Buf20, 20);
-crate::macros::arbitrary::impl_buf_arbitrary!(Buf20, 20);
 strata_codec::impl_wrapper_codec!(Buf20 => [u8; 20]);
 crate::macros::serde_impl::impl_buf_serde!(Buf20, 20);
 
@@ -65,12 +67,12 @@ impl Zeroize for Buf20 {
 /// assert_eq!(buf, Buf32::from([0; 32]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(transparent)]
 pub struct Buf32(pub [u8; 32]);
 buf_macros::impl_buf_core!(Buf32, 32);
 buf_macros::impl_buf_fmt!(Buf32, 32);
 crate::macros::borsh::impl_buf_borsh!(Buf32, 32);
-crate::macros::arbitrary::impl_buf_arbitrary!(Buf32, 32);
 strata_codec::impl_wrapper_codec!(Buf32 => [u8; 32]);
 crate::macros::serde_impl::impl_buf_serde!(Buf32, 32);
 
@@ -95,12 +97,12 @@ impl FromStr for Buf32 {
 /// type (e.g., `BlockHash`, `Txid`, `Wtxid`) that follows this
 /// convention.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(transparent)]
 pub struct RBuf32(pub [u8; 32]);
 buf_macros::impl_buf_core!(RBuf32, 32);
 buf_macros::impl_rbuf_fmt!(RBuf32, 32);
 crate::macros::borsh::impl_buf_borsh!(RBuf32, 32);
-crate::macros::arbitrary::impl_buf_arbitrary!(RBuf32, 32);
 strata_codec::impl_wrapper_codec!(RBuf32 => [u8; 32]);
 crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
@@ -162,11 +164,11 @@ impl Zeroize for Buf32 {
 /// assert_eq!(buf, Buf64::from([0; 64]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct Buf64(pub [u8; 64]);
 buf_macros::impl_buf_core!(Buf64, 64);
 buf_macros::impl_buf_fmt!(Buf64, 64);
 crate::macros::borsh::impl_buf_borsh!(Buf64, 64);
-crate::macros::arbitrary::impl_buf_arbitrary!(Buf64, 64);
 strata_codec::impl_wrapper_codec!(Buf64 => [u8; 64]);
 crate::macros::serde_impl::impl_buf_serde!(Buf64, 64);
 
