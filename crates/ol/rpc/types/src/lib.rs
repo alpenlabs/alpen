@@ -9,6 +9,7 @@ mod block;
 mod blocktag;
 mod chain_status;
 mod duty;
+mod provider;
 mod snark_acct_update;
 mod txn;
 
@@ -20,6 +21,7 @@ pub use block::RpcBlockRangeEntry;
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::RpcOLChainStatus;
 pub use duty::*;
+pub use provider::{AccountExtraData, OLRpcProvider};
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use txn::{
     RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionAttachment, RpcTransactionPayload,
