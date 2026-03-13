@@ -25,21 +25,22 @@ class TestSequencerEpochProgression(StrataNodeTest):
         rpc = strata.wait_for_rpc_ready(timeout=10)
 
         initial_status = strata.get_sync_status(rpc)
-        prev_epoch = initial_status["parent"]
-        logger.info("initial parent epoch %s", prev_epoch["epoch"])
-        assert prev_epoch["last_blkid"] != "00" * 32
+        tip = initial_status["tip"]
+        cur_tip_epoch = tip["epoch"]
+        logger.info("initial tip epoch %s", cur_tip_epoch)
+        assert tip["blkid"] != "00" * 32
 
         epochs_to_check = 3
 
         for _ in range(epochs_to_check):
-            epoch = wait_until_with_value(
-                lambda: strata.get_sync_status(rpc)["parent"],
-                lambda v, cur_epoch=prev_epoch: v is not None and v["epoch"] > cur_epoch["epoch"],
+            tip = wait_until_with_value(
+                lambda: strata.get_sync_status(rpc)["tip"],
+                lambda v, prev=cur_tip_epoch: v is not None and v["epoch"] > prev,
                 timeout=60,
-                error_with="Parent epoch not progressing",
+                error_with="Epoch not progressing",
             )
-            logger.info("parent epoch advanced to %s", epoch["epoch"])
-            assert epoch["last_blkid"] != "00" * 32
-            prev_epoch = epoch
+            assert tip["blkid"] != "00" * 32
+            cur_tip_epoch = tip["epoch"]
+            logger.info("tip epoch advanced to %s", cur_tip_epoch)
 
         return True

@@ -443,10 +443,16 @@ pub fn tracker_task(
         }
     };
 
-    #[expect(unused, reason = "used for fork choice manager")]
     let cur_tip = fcm.cur_best_block();
-    #[expect(unused, reason = "used for fork choice manager")]
     let prev_epoch = *fcm.get_chainstate_prev_epoch();
+    let tip_bundle = fcm
+        .get_block_data(cur_tip.blkid())?
+        .ok_or(Error::MissingL2Block(*cur_tip.blkid()))?;
+    let tip_epoch =
+        u32::try_from(tip_bundle.header().epoch()).expect("l2 header epoch must fit in u32");
+    // This is consistent with tip_epoch: both reflect the canonical tip.
+    // cur_chainstate is the post-state of cur_best_block.
+    let tip_is_terminal = fcm.cur_chainstate.is_epoch_finishing();
 
     let finalized_epoch = *fcm.chain_tracker.finalized_epoch();
 
@@ -458,7 +464,9 @@ pub fn tracker_task(
     // TODO: avoid repetition from process_fc_message
     let status = ChainSyncStatus {
         tip: fcm.cur_best_block,
-        prev_epoch: *fcm.get_chainstate_prev_epoch(),
+        tip_epoch,
+        tip_is_terminal,
+        prev_epoch,
         confirmed_epoch,
         finalized_epoch,
         // FIXME this is a bit convoluted, could this be simpler?
@@ -632,11 +640,22 @@ fn process_fc_message(
                 // and to make this forward compatible, just set it to the finalized
                 // epoch.
                 let confirmed_epoch = finalized_epoch;
+                let prev_epoch = *fcm_state.get_chainstate_prev_epoch();
+                let tip_bundle = fcm_state
+                    .get_block_data(fcm_state.cur_best_block.blkid())?
+                    .ok_or(Error::MissingL2Block(*fcm_state.cur_best_block.blkid()))?;
+                let tip_epoch = u32::try_from(tip_bundle.header().epoch())
+                    .expect("l2 header epoch must fit in u32");
+                // Consistent with tip_epoch: both reflect the canonical tip.
+                // cur_chainstate is the post-state of cur_best_block.
+                let tip_is_terminal = fcm_state.cur_chainstate.is_epoch_finishing();
 
                 // Update status.
                 let status = ChainSyncStatus {
                     tip: fcm_state.cur_best_block,
-                    prev_epoch: *fcm_state.get_chainstate_prev_epoch(),
+                    tip_epoch,
+                    tip_is_terminal,
+                    prev_epoch,
                     finalized_epoch,
                     confirmed_epoch,
                     // FIXME this is a bit convoluted, could this be simpler?

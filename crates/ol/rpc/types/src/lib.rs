@@ -19,7 +19,7 @@ pub use account_summary::{
 };
 pub use block::RpcBlockRangeEntry;
 pub use blocktag::OLBlockOrTag;
-pub use chain_status::RpcOLChainStatus;
+pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
 pub use duty::*;
 pub use provider::{AccountExtraData, OLRpcProvider};
 pub use snark_acct_update::RpcSnarkAccountUpdate;

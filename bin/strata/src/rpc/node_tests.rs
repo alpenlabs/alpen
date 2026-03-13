@@ -166,12 +166,16 @@ fn null_blkid() -> OLBlockId {
 
 fn make_sync_status(
     tip: OLBlockCommitment,
+    tip_epoch: Epoch,
+    tip_is_terminal: bool,
     prev_epoch: EpochCommitment,
     confirmed_epoch: EpochCommitment,
     finalized_epoch: EpochCommitment,
 ) -> OLSyncStatus {
     OLSyncStatus::new(
         tip,
+        tip_epoch,
+        tip_is_terminal,
         prev_epoch,
         confirmed_epoch,
         finalized_epoch,
@@ -341,13 +345,15 @@ async fn chain_status_returns_correct_values() {
     let finalized = EpochCommitment::new(0, 20, OLBlockId::from(Buf32::from([4u8; 32])));
 
     let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(tip, prev, confirmed, finalized))
+        .with_sync_status(make_sync_status(tip, 2, false, prev, confirmed, finalized))
         .with_state_at(tip, genesis_ol_state());
     let rpc = make_rpc(provider);
 
     let status = rpc.chain_status().await.expect("chain_status");
-    assert_eq!(status.latest().slot(), 100);
-    assert_eq!(status.parent().epoch(), 1);
+    assert_eq!(status.tip().slot(), 100);
+    assert_eq!(status.tip().epoch(), 2);
+    assert!(!status.tip().is_terminal());
+    assert_eq!(status.confirmed().epoch(), 0);
     assert_eq!(status.finalized().epoch(), 0);
     assert_eq!(status.finalized().last_slot(), 20);
 }
@@ -359,6 +365,8 @@ async fn blocks_summaries_start_gt_end_returns_invalid_params() {
     let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         tip,
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
@@ -375,6 +383,8 @@ async fn blocks_summaries_no_block_at_end_returns_empty() {
     let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         tip,
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
@@ -400,10 +410,13 @@ async fn blocks_summaries_returns_ascending_order() {
     let blkid2 = block2.header().compute_blkid();
 
     let tip = OLBlockCommitment::new(2, blkid2);
+    let prev = EpochCommitment::new(1, 50, OLBlockId::from(Buf32::from([2u8; 32])));
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
-            EpochCommitment::null(),
+            1,
+            false,
+            prev,
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
@@ -439,6 +452,8 @@ async fn blocks_summaries_snark_vs_non_snark() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -468,6 +483,8 @@ async fn blocks_summaries_snark_vs_non_snark() {
 async fn epoch_summary_nonexistent_epoch_errors() {
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
@@ -488,6 +505,8 @@ async fn epoch_summary_nonexistent_account_errors() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             terminal,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -516,7 +535,9 @@ async fn epoch_summary_valid_snark_account() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             terminal,
-            epoch1_commit,
+            1,
+            false,
+            epoch0_commit,
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
@@ -547,6 +568,8 @@ async fn epoch_summary_epoch_zero_null_prev() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             terminal,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -575,6 +598,8 @@ async fn epoch_summary_non_snark_account() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             terminal,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -598,6 +623,8 @@ async fn submit_transaction_generic_message_succeeds() {
     let account_id = test_account_id(1);
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
@@ -620,6 +647,8 @@ async fn submit_transaction_invalid_snark_update_returns_invalid_params() {
     // so submit_behavior doesn't matter here.
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
@@ -646,6 +675,8 @@ async fn submit_transaction_nonexistent_account_returns_error() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -672,6 +703,8 @@ async fn snark_account_state_latest_returns_state() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -700,6 +733,8 @@ async fn snark_account_state_by_slot() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -727,6 +762,8 @@ async fn snark_account_state_non_snark_returns_none() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -748,6 +785,8 @@ async fn snark_account_state_missing_account_returns_none() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -786,6 +825,8 @@ async fn snark_account_state_by_block_id() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -817,6 +858,8 @@ async fn raw_blocks_range_returns_blocks_in_order() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            0,
+            false,
             EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
@@ -839,6 +882,8 @@ async fn raw_blocks_range_start_gt_end_returns_invalid_params() {
     let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         tip,
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
@@ -855,6 +900,8 @@ async fn raw_blocks_range_exceeds_max_returns_invalid_params() {
     let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         tip,
+        0,
+        false,
         EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),

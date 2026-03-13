@@ -168,8 +168,15 @@ async fn process_fc_message(
 
                 // If there is no confirmed epoch then set it to be the finalized epoch.
                 let confirmed_epoch = csm_status.last_confirmed_epoch.unwrap_or(finalized_epoch);
+                let canonical_tip = fcm_state.cur_best_block();
+                let tip_block_data = blk_db
+                    .get_block_data_async(*canonical_tip.blkid())
+                    .await?
+                    .ok_or(Error::MissingL2Block(*canonical_tip.blkid()))?;
                 let status = OLSyncStatus {
-                    tip: fcm_state.cur_best_block(),
+                    tip: canonical_tip,
+                    tip_epoch: tip_block_data.header().epoch(),
+                    tip_is_terminal: tip_block_data.header().is_terminal(),
                     prev_epoch,
                     confirmed_epoch,
                     finalized_epoch,
