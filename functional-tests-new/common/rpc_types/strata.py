@@ -20,7 +20,7 @@ class EpochCommitment(TypedDict):
 
 
 class ChainSyncStatus(TypedDict):
-    latest: OLBlockCommitment
+    tip: OLBlockCommitment
     parent: EpochCommitment
     confirmed: EpochCommitment
     finalized: EpochCommitment

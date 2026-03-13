@@ -538,7 +538,7 @@ def verify_tip_resumed_with_new_blkid(
 ) -> dict[str, Any]:
     """Verify resumed tip moved forward and tip block id changed from pre-revert value."""
     resumed_sync = strata_service.get_sync_status(rpc)
-    latest = resumed_sync["latest"]
+    latest = resumed_sync["tip"]
     assert resumed_tip > old_tip_slot
     assert latest["blkid"] != old_tip_blkid
     return resumed_sync

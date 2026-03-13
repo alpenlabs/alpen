@@ -123,7 +123,7 @@ class StrataService(RpcService):
             Current block height (slot number)
         """
         sync_status = self.get_sync_status(rpc)
-        return sync_status["latest"]["slot"]
+        return sync_status["tip"]["slot"]
 
     def wait_for_block_height(
         self,
@@ -146,7 +146,7 @@ class StrataService(RpcService):
 
         wait_until_with_value(
             lambda: rpc.strata_getChainStatus(),
-            lambda status: status.get("latest", {}).get("slot", 0) >= target_height,
+            lambda status: status.get("tip", {}).get("slot", 0) >= target_height,
             error_with=f"Timeout waiting for block height {target_height}",
             timeout=timeout,
             step=poll_interval,

@@ -37,8 +37,8 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
         seq_service.wait_for_additional_blocks(5, seq_rpc, timeout_per_block=10)
 
         live_sync = seq_service.get_sync_status(seq_rpc)
-        old_live_tip = live_sync["latest"]["slot"]
-        old_live_blkid = live_sync["latest"]["blkid"]
+        old_live_tip = live_sync["tip"]["slot"]
+        old_live_blkid = live_sync["tip"]["blkid"]
         logger.info("Pre-revert live tip: slot=%s blkid=%s", old_live_tip, old_live_blkid)
         seq_service.stop()
 
@@ -96,7 +96,7 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
             "Chain resumed past old tip (old=%s new=%s) with new tip blkid=%s",
             old_live_tip,
             resumed_tip,
-            resumed_sync["latest"]["blkid"],
+            resumed_sync["tip"]["blkid"],
         )
         logger.info(
             "Criterion passed: checkpoint for latest checkpoint epoch "

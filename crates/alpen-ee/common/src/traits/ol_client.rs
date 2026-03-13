@@ -13,7 +13,7 @@ use crate::{OLChainStatus, OLEpochSummary};
 pub trait OLClient: Sized + Send + Sync {
     /// Returns the current status of the OL chain.
     ///
-    /// Includes the latest, confirmed, and finalized block commitments.
+    /// Includes the tip, confirmed, and finalized block commitments.
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError>;
 
     /// Retrieves epoch commitment and update operations for the specified epoch.
@@ -27,14 +27,14 @@ pub trait OLClient: Sized + Send + Sync {
 /// Returns the current status of the OL chain.
 ///
 /// This is a checked version of [`OLClient::chain_status`] that validates
-/// the slot numbers of latest >= confirmed >= finalized
+/// the slot numbers of tip >= confirmed >= finalized.
 pub async fn chain_status_checked(client: &impl OLClient) -> Result<OLChainStatus, OLClientError> {
     let status = client.chain_status().await?;
     if status.finalized.last_slot() > status.confirmed.last_slot()
-        || status.confirmed.last_slot() > status.latest.slot()
+        || status.confirmed.last_slot() > status.tip.slot()
     {
         return Err(OLClientError::InvalidChainStatusSlotOrder {
-            latest: status.latest.slot(),
+            tip: status.tip.slot(),
             confirmed: status.confirmed.last_slot(),
             finalized: status.finalized.last_slot(),
         });
@@ -67,7 +67,7 @@ pub struct OLAccountStateView {
 pub trait SequencerOLClient {
     /// Returns the current status of the OL chain.
     ///
-    /// Includes the latest, confirmed, and finalized block commitments.
+    /// Includes the tip, confirmed, and finalized block commitments.
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError>;
 
     /// Retrieves inbox messages for the specified slot range (inclusive).
@@ -139,10 +139,10 @@ pub enum OLClientError {
     #[error("unexpected inbox message count: expected {expected} message lists, got {actual}")]
     UnexpectedInboxMessageCount { expected: usize, actual: usize },
 
-    /// Chain status slots are not in the correct order (latest >= confirmed >= finalized).
-    #[error("unexpected chain status slot order: {latest} >= {confirmed} >= {finalized}")]
+    /// Chain status slots are not in the correct order (tip >= confirmed >= finalized).
+    #[error("unexpected chain status slot order: {tip} >= {confirmed} >= {finalized}")]
     InvalidChainStatusSlotOrder {
-        latest: u64,
+        tip: u64,
         confirmed: u64,
         finalized: u64,
     },

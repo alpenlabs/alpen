@@ -187,12 +187,12 @@ impl OLClientRpcServer for OLRpcServer {
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
-        let latest = chain_sync_status.tip;
+        let tip = chain_sync_status.tip;
         let parent = chain_sync_status.prev_epoch;
         let confirmed = chain_sync_status.confirmed_epoch;
         let finalized = chain_sync_status.finalized_epoch;
 
-        Ok(RpcOLChainStatus::new(latest, parent, confirmed, finalized))
+        Ok(RpcOLChainStatus::new(tip, parent, confirmed, finalized))
     }
 
     async fn get_blocks_summaries(

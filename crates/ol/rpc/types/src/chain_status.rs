@@ -1,18 +1,21 @@
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
-/// OL chain status with latest block, parent epoch, confirmed epoch and finalized epoch.
+/// OL chain status with tip block, parent epoch, confirmed epoch and finalized epoch.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLChainStatus {
-    /// Latest block commitment.
-    pub latest: OLBlockCommitment,
+    /// Tip block commitment.
+    pub tip: OLBlockCommitment,
+
     /// Parent epoch commitment (the most recently completed epoch).
     pub parent: EpochCommitment,
+
     /// Confirmed epoch commitment.
     ///
     /// Currently set to the same value as `parent` for compatibility.
     pub confirmed: EpochCommitment,
+
     /// Finalized epoch commitment.
     pub finalized: EpochCommitment,
 }
@@ -20,22 +23,22 @@ pub struct RpcOLChainStatus {
 impl RpcOLChainStatus {
     /// Creates a new [`RpcOLChainStatus`].
     pub fn new(
-        latest: OLBlockCommitment,
+        tip: OLBlockCommitment,
         parent: EpochCommitment,
         confirmed: EpochCommitment,
         finalized: EpochCommitment,
     ) -> Self {
         Self {
-            latest,
+            tip,
             parent,
             confirmed,
             finalized,
         }
     }
 
-    /// Returns the latest block commitment.
-    pub fn latest(&self) -> &OLBlockCommitment {
-        &self.latest
+    /// Returns the tip block commitment.
+    pub fn tip(&self) -> &OLBlockCommitment {
+        &self.tip
     }
 
     /// Returns the parent epoch commitment.
