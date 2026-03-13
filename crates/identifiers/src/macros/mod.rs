@@ -5,8 +5,6 @@ pub(crate) mod borsh;
 #[macro_use]
 pub(crate) mod buf;
 #[macro_use]
-pub(crate) mod codec;
-#[macro_use]
 pub(crate) mod serde_impl;
 #[macro_use]
 mod ssz;
@@ -23,7 +21,7 @@ mod tests {
     crate::macros::buf::impl_buf_fmt!(TestBuf20, 20);
     crate::macros::borsh::impl_buf_borsh!(TestBuf20, 20);
     crate::macros::arbitrary::impl_buf_arbitrary!(TestBuf20, 20);
-    crate::macros::codec::impl_buf_codec!(TestBuf20, 20);
+    strata_codec::impl_wrapper_codec!(TestBuf20 => [u8; 20]);
     crate::macros::serde_impl::impl_buf_serde!(TestBuf20, 20);
 
     #[test]

@@ -32,7 +32,7 @@ pub type Epoch = u32;
 pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
-impl_buf_wrapper_codec!(OLBlockId, Buf32, 32);
+strata_codec::impl_wrapper_codec!(OLBlockId => Buf32);
 
 // Manual TreeHash implementation for transparent wrapper
 impl_ssz_transparent_buf32_wrapper!(OLBlockId);
@@ -135,7 +135,7 @@ pub type L2BlockCommitment = OLBlockCommitment;
 pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);
-impl_buf_wrapper_codec!(OLTxId, Buf32, 32);
+strata_codec::impl_wrapper_codec!(OLTxId => Buf32);
 
 crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
 
