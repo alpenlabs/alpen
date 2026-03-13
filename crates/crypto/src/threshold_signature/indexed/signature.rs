@@ -3,6 +3,8 @@
 use std::collections::HashSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 
 use super::ThresholdSignatureError;
 
@@ -35,6 +37,16 @@ pub struct IndexedSignature {
     /// The header byte contains the recovery ID, possibly with BIP-137 address type encoding.
     /// See struct-level documentation for format details.
     signature: [u8; 65],
+}
+
+/// SSZ-friendly representation of [`IndexedSignature`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct IndexedSignatureSsz {
+    /// The index of the signer in the ThresholdConfig keys array (0-255).
+    index: u8,
+
+    /// The 65-byte recoverable ECDSA signature (header || r || s).
+    signature: Vec<u8>,
 }
 
 impl IndexedSignature {
@@ -82,11 +94,69 @@ impl IndexedSignature {
     }
 }
 
+impl Encode for IndexedSignature {
+    fn is_ssz_fixed_len() -> bool {
+        <IndexedSignatureSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <IndexedSignatureSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        IndexedSignatureSsz {
+            index: self.index,
+            signature: self.signature.to_vec(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        IndexedSignatureSsz {
+            index: self.index,
+            signature: self.signature.to_vec(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for IndexedSignature {
+    fn is_ssz_fixed_len() -> bool {
+        <IndexedSignatureSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <IndexedSignatureSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = IndexedSignatureSsz::from_ssz_bytes(bytes)?;
+        let signature: [u8; 65] = value.signature.try_into().map_err(|actual: Vec<u8>| {
+            DecodeError::BytesInvalid(format!(
+                "indexed signature must be 65 bytes, got {}",
+                actual.len()
+            ))
+        })?;
+
+        Ok(Self {
+            index: value.index,
+            signature,
+        })
+    }
+}
+
 /// A set of indexed ECDSA signatures for threshold verification.
 ///
 /// Signatures are guaranteed duplicate-free.
 #[derive(Debug, Clone, PartialEq, Eq, Default, BorshSerialize, BorshDeserialize)]
 pub struct SignatureSet {
+    /// Sorted signatures by index, no duplicates.
+    signatures: Vec<IndexedSignature>,
+}
+
+/// SSZ-friendly representation of [`SignatureSet`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct SignatureSetSsz {
     /// Sorted signatures by index, no duplicates.
     signatures: Vec<IndexedSignature>,
 }
@@ -136,6 +206,45 @@ impl SignatureSet {
     /// Consume and return the inner signatures.
     pub fn into_inner(self) -> Vec<IndexedSignature> {
         self.signatures
+    }
+}
+
+impl Encode for SignatureSet {
+    fn is_ssz_fixed_len() -> bool {
+        <SignatureSetSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <SignatureSetSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        SignatureSetSsz {
+            signatures: self.signatures.clone(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        SignatureSetSsz {
+            signatures: self.signatures.clone(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl Decode for SignatureSet {
+    fn is_ssz_fixed_len() -> bool {
+        <SignatureSetSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <SignatureSetSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let value = SignatureSetSsz::from_ssz_bytes(bytes)?;
+        Self::new(value.signatures).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 

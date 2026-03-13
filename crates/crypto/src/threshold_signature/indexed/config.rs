@@ -10,6 +10,8 @@ use std::{
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{de::Error, Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
+use ssz_derive::{Decode as DeriveDecode, Encode as DeriveEncode};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -35,6 +37,15 @@ pub struct ThresholdConfig {
     keys: Vec<CompressedPublicKey>,
     /// Minimum number of signatures required (always >= 1).
     threshold: NonZero<u8>,
+}
+
+/// SSZ-friendly representation of [`ThresholdConfig`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct ThresholdConfigSsz {
+    /// The public keys of the authorized signers.
+    keys: Vec<CompressedPublicKey>,
+    /// The minimum number of signatures required.
+    threshold: u8,
 }
 
 /// [`Deserialize`] is implemented manually to route through [`Self::try_new`].
@@ -92,6 +103,22 @@ impl<'a> Arbitrary<'a> for ThresholdConfig {
 }
 
 impl ThresholdConfig {
+    /// Converts the [`ThresholdConfig`] to its SSZ representation.
+    fn to_ssz(&self) -> ThresholdConfigSsz {
+        ThresholdConfigSsz {
+            keys: self.keys.clone(),
+            threshold: self.threshold.get(),
+        }
+    }
+
+    /// Converts the SSZ representation of the [`ThresholdConfig`] to a [`ThresholdConfig`].
+    fn from_ssz(value: ThresholdConfigSsz) -> Result<Self, DecodeError> {
+        let threshold = NonZero::new(value.threshold)
+            .ok_or_else(|| DecodeError::BytesInvalid("threshold cannot be zero".into()))?;
+        Self::try_new(value.keys, threshold)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+    }
+
     /// Create a new threshold configuration.
     ///
     /// # Errors
@@ -205,6 +232,38 @@ impl ThresholdConfig {
     }
 }
 
+impl Encode for ThresholdConfig {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <ThresholdConfigSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for ThresholdConfig {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <ThresholdConfigSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::from_ssz(ThresholdConfigSsz::from_ssz_bytes(bytes)?)
+    }
+}
+
 impl Hash for CompressedPublicKey {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.serialize().hash(state);
@@ -219,7 +278,36 @@ pub struct ThresholdConfigUpdate {
     new_threshold: NonZero<u8>,
 }
 
+/// SSZ-friendly representation of [`ThresholdConfigUpdate`].
+#[derive(DeriveEncode, DeriveDecode)]
+struct ThresholdConfigUpdateSsz {
+    add_members: Vec<CompressedPublicKey>,
+    remove_members: Vec<CompressedPublicKey>,
+    new_threshold: u8,
+}
+
 impl ThresholdConfigUpdate {
+    /// Converts the [`ThresholdConfigUpdate`] to its SSZ representation.
+    fn to_ssz(&self) -> ThresholdConfigUpdateSsz {
+        ThresholdConfigUpdateSsz {
+            add_members: self.add_members.clone(),
+            remove_members: self.remove_members.clone(),
+            new_threshold: self.new_threshold.get(),
+        }
+    }
+
+    /// Converts the SSZ representation of the [`ThresholdConfigUpdate`] to a
+    /// [`ThresholdConfigUpdate`].
+    fn from_ssz(value: ThresholdConfigUpdateSsz) -> Result<Self, DecodeError> {
+        let new_threshold = NonZero::new(value.new_threshold)
+            .ok_or_else(|| DecodeError::BytesInvalid("new_threshold cannot be zero".into()))?;
+        Ok(Self {
+            add_members: value.add_members,
+            remove_members: value.remove_members,
+            new_threshold,
+        })
+    }
+
     /// Creates a new threshold configuration update.
     pub fn new(
         add_members: Vec<CompressedPublicKey>,
@@ -257,6 +345,38 @@ impl ThresholdConfigUpdate {
         NonZero<u8>,
     ) {
         (self.add_members, self.remove_members, self.new_threshold)
+    }
+}
+
+impl Encode for ThresholdConfigUpdate {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigUpdateSsz as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <ThresholdConfigUpdateSsz as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.to_ssz().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.to_ssz().ssz_bytes_len()
+    }
+}
+
+impl Decode for ThresholdConfigUpdate {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigUpdateSsz as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <ThresholdConfigUpdateSsz as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Self::from_ssz(ThresholdConfigUpdateSsz::from_ssz_bytes(bytes)?)
     }
 }
 
@@ -351,6 +471,17 @@ mod tests {
     }
 
     #[test]
+    fn test_config_ssz_roundtrip() {
+        let keys = vec![make_key(1), make_key(2)];
+        let config = ThresholdConfig::try_new(keys, NonZero::new(2).unwrap()).unwrap();
+
+        let encoded = config.as_ssz_bytes();
+        let decoded = ThresholdConfig::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(config, decoded);
+    }
+
+    #[test]
     fn test_config_serde_json_roundtrip_arbitrary() {
         let config: ThresholdConfig = ArbitraryGenerator::new().generate();
 
@@ -368,5 +499,16 @@ mod tests {
         let decoded: ThresholdConfig = borsh::from_slice(&encoded).unwrap();
 
         assert_eq!(config, decoded);
+    }
+
+    #[test]
+    fn test_config_update_ssz_roundtrip_arbitrary() {
+        let update: ThresholdConfigUpdate = ArbitraryGenerator::new().generate();
+
+        let encoded = update.as_ssz_bytes();
+        let decoded: ThresholdConfigUpdate =
+            ThresholdConfigUpdate::from_ssz_bytes(&encoded).unwrap();
+
+        assert_eq!(update, decoded);
     }
 }

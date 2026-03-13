@@ -6,6 +6,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, DecodeError, Encode};
 
 /// A compressed secp256k1 public key (33 bytes).
 ///
@@ -103,6 +104,39 @@ impl BorshDeserialize for CompressedPublicKey {
         let pk = PublicKey::from_slice(&buf)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(Self(pk))
+    }
+}
+
+impl Encode for CompressedPublicKey {
+    fn is_ssz_fixed_len() -> bool {
+        <[u8; 33] as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <[u8; 33] as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.serialize().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.serialize().ssz_bytes_len()
+    }
+}
+
+impl Decode for CompressedPublicKey {
+    fn is_ssz_fixed_len() -> bool {
+        <[u8; 33] as Decode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <[u8; 33] as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let bytes = <[u8; 33]>::from_ssz_bytes(bytes)?;
+        Self::from_slice(&bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
