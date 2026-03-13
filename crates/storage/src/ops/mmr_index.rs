@@ -3,7 +3,8 @@
 use strata_db_types::{
     traits::MmrIndexDatabase, LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos,
 };
-use strata_identifiers::{Hash, RawMmrId};
+use strata_db_types::RawMmrId;
+use strata_identifiers::Hash;
 
 use crate::{exec::*, instrumentation::components};
 

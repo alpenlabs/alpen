@@ -27,8 +27,7 @@ pub use managers::{
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
 use strata_db_types::traits::DatabaseBackend;
-// Re-export MmrId from identifiers for convenience
-pub use strata_identifiers::MmrId;
+pub use strata_db_types::MmrId;
 
 /// A consolidation of database managers.
 // TODO move this to its own module
