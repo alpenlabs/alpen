@@ -56,8 +56,10 @@ fn process_checkpoint_log(
     let epoch = checkpoint_update.batch_info().epoch();
 
     info!(
+        component = "csm_worker",
         %epoch,
         %asm_block,
+        l1_height = asm_block.height(),
         checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
         "CSM is processing checkpoint update from ASM log"
     );
@@ -101,6 +103,7 @@ fn process_checkpoint_tip_log(
     let epoch = tip.epoch;
 
     info!(
+        component = "csm_worker",
         %epoch,
         %asm_block,
         l1_height = tip.l1_height(),
@@ -111,6 +114,7 @@ fn process_checkpoint_tip_log(
     let l1_height = tip.l1_height();
     if l1_height != asm_block.height() {
         debug!(
+            component = "csm_worker",
             tip_l1_height = l1_height,
             asm_block_height = asm_block.height(),
             "Checkpoint tip L1 height differs from current ASM block height; using ASM block commitment"
