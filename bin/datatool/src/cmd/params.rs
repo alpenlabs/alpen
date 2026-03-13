@@ -12,9 +12,9 @@ use bitcoin::{
 use reth_chainspec::ChainSpec;
 use strata_key_derivation::error::KeyError;
 use strata_l1_txfmt::MagicBytes;
-use strata_params::{ProofPublishMode, RollupParams};
+use strata_params::{CredRule, ProofPublishMode, RollupParams};
 use strata_predicate::PredicateKey;
-use strata_primitives::{block_credential, buf::Buf32, l1::GenesisL1View, L1Height};
+use strata_primitives::{buf::Buf32, l1::GenesisL1View, L1Height};
 
 use crate::{
     args::{CmdContext, SubcParams},
@@ -181,8 +181,8 @@ struct ParamsConfig {
 fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     let cr = config
         .seqkey
-        .map(block_credential::CredRule::SchnorrKey)
-        .unwrap_or(block_credential::CredRule::Unchecked);
+        .map(CredRule::SchnorrKey)
+        .unwrap_or(CredRule::Unchecked);
 
     let opkeys: Vec<XOnlyPublicKey> = config
         .opkeys

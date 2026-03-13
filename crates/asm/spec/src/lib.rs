@@ -16,7 +16,7 @@ use strata_asm_proto_checkpoint_v0::{
     CheckpointV0InitConfig, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
 use strata_l1_txfmt::MagicBytes;
-use strata_primitives::CredRule;
+use strata_params::CredRule;
 
 /// ASM specification for the Strata protocol.
 ///

@@ -1098,6 +1098,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
+ "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-types",
  "threadpool",
@@ -1166,7 +1167,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "strata-acct-types",
- "strata-identifiers",
+ "strata-predicate",
 ]
 
 [[package]]
@@ -14108,6 +14109,7 @@ dependencies = [
  "strata-asm-txs-checkpoint-v0",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-params",
  "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.18",
@@ -14140,7 +14142,7 @@ dependencies = [
  "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-v0",
  "strata-l1-txfmt",
- "strata-primitives",
+ "strata-params",
 ]
 
 [[package]]
@@ -14450,6 +14452,7 @@ dependencies = [
  "serde",
  "strata-crypto",
  "strata-identifiers",
+ "strata-params",
  "zkaleido",
 ]
 

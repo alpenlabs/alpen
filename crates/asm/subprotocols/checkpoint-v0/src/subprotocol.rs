@@ -17,8 +17,9 @@ use strata_asm_txs_checkpoint_v0::{
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
 use strata_identifiers::L1BlockCommitment;
+use strata_params::CredRule;
 use strata_predicate::PredicateKey;
-use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
+use strata_primitives::{L1Height, buf::Buf32, l1::BitcoinTxid};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -232,7 +233,8 @@ fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_predicate: 
 
 #[cfg(test)]
 mod tests {
-    use strata_primitives::{block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
+    use strata_params::CredRule;
+    use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
 
     use super::*;
 
