@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strata_identifiers::CredRule;
+use strata_predicate::PredicateKey;
 
 use crate::{defaults::DEFAULT_DB_RETRY_COUNT, AlpenEeParams};
 
@@ -11,7 +11,7 @@ pub struct AlpenEeConfig {
     params: Arc<AlpenEeParams>,
 
     /// To verify preconfirmed updates from sequencer.
-    sequencer_credrule: CredRule,
+    sequencer_credrule: PredicateKey,
 
     /// Connection OL RPC client.
     ol_client_http: String,
@@ -27,7 +27,7 @@ impl AlpenEeConfig {
     /// Creates a new Alpen EE configuration.
     pub fn new(
         params: AlpenEeParams,
-        sequencer_credrule: CredRule,
+        sequencer_credrule: PredicateKey,
         ol_client_http: String,
         ee_sequencer_http: Option<String>,
         db_retry_count: Option<u16>,
@@ -47,7 +47,7 @@ impl AlpenEeConfig {
     }
 
     /// Returns the sequencer credential rule for signature verification.
-    pub fn sequencer_credrule(&self) -> &CredRule {
+    pub fn sequencer_credrule(&self) -> &PredicateKey {
         &self.sequencer_credrule
     }
 

@@ -9,8 +9,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_checkpoint_types::Checkpoint;
 use strata_identifiers::Epoch;
+use strata_params::CredRule;
 use strata_predicate::PredicateKey;
-use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::L1BlockCommitment};
+use strata_primitives::{L1Height, buf::Buf32, l1::L1BlockCommitment};
 
 /// Checkpoint verifier state for checkpoint v0
 ///
