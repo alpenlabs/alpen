@@ -31,12 +31,24 @@ pub(crate) fn handle_checkpoint_tx(
     relayer: &mut impl MsgRelayer,
 ) {
     let Ok(envelope) = extract_checkpoint_from_envelope(tx) else {
-        logging::warn!("failed to extract checkpoint payload from envelope, ignoring");
+        logging::warn!(
+            component = "asm_checkpoint",
+            l1_height = current_l1_height,
+            txid = %tx.tx().compute_txid(),
+            "failed to extract checkpoint payload from envelope, ignoring"
+        );
         return;
     };
     let epoch = envelope.payload.new_tip().epoch;
+    let txid = tx.tx().compute_txid();
 
-    logging::debug!(epoch, "processing checkpoint transaction");
+    logging::debug!(
+        component = "asm_checkpoint",
+        epoch,
+        l1_height = current_l1_height,
+        txid = %txid,
+        "processing checkpoint transaction"
+    );
 
     match validate_checkpoint_and_extract_withdrawal_intents(
         state,
@@ -48,7 +60,13 @@ pub(crate) fn handle_checkpoint_tx(
             withdrawal_intents,
             verified_withdrawals,
         }) => {
-            logging::info!(epoch, "checkpoint validated successfully");
+            logging::info!(
+                component = "asm_checkpoint",
+                epoch,
+                l1_height = current_l1_height,
+                txid = %txid,
+                "checkpoint validated successfully"
+            );
 
             state.deduct_withdrawals(verified_withdrawals);
 
@@ -81,14 +99,35 @@ pub(crate) fn handle_checkpoint_tx(
                 // invalid aux data indicates aux data was not provided. If we silently ignored this
                 // error instead of panicking, valid checkpoints could be ignored as
                 // being invalid.
-                logging::error!(epoch, error = %e, "invalid aux data");
+                logging::error!(
+                    component = "asm_checkpoint",
+                    epoch,
+                    l1_height = current_l1_height,
+                    txid = %txid,
+                    error = %e,
+                    "invalid aux data"
+                );
                 panic!("invalid aux");
             }
             CheckpointValidationError::InvalidSequencerPredicate(e) => {
-                logging::warn!(epoch, error = %e, "sequencer predicate verification failed");
+                logging::warn!(
+                    component = "asm_checkpoint",
+                    epoch,
+                    l1_height = current_l1_height,
+                    txid = %txid,
+                    error = %e,
+                    "sequencer predicate verification failed"
+                );
             }
             CheckpointValidationError::InvalidPayload(e) => {
-                logging::warn!(epoch, error = %e, "invalid checkpoint payload");
+                logging::warn!(
+                    component = "asm_checkpoint",
+                    epoch,
+                    l1_height = current_l1_height,
+                    txid = %txid,
+                    error = %e,
+                    "invalid checkpoint payload"
+                );
             }
         },
     }
