@@ -1,8 +1,9 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{DatabaseBackend, L1Database};
+use strata_identifiers::L1Height;
 use strata_ol_chain_types::AsmManifest;
-use strata_primitives::l1::{L1BlockId, L1Height};
+use strata_primitives::l1::L1BlockId;
 
 use crate::{
     cli::OutputFormat,
@@ -14,9 +15,9 @@ use crate::{
 };
 
 #[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "get-l1-manifest")]
-/// Get L1 manifest
-pub(crate) struct GetL1ManifestArgs {
+#[argh(subcommand, name = "get-l1-block")]
+/// Get L1 block data from ASM manifest storage
+pub(crate) struct GetL1BlockArgs {
     /// block id
     #[argh(positional)]
     pub(crate) block_id: String,
@@ -55,16 +56,12 @@ pub(crate) fn get_l1_chain_tip(
 pub(crate) fn get_l1_block_id_at_height(
     db: &impl DatabaseBackend,
     height: L1Height,
+    mk_error: impl FnOnce(L1Height) -> DisplayedError,
 ) -> Result<L1BlockId, DisplayedError> {
     db.l1_db()
         .get_canonical_blockid_at_height(height)
         .internal_error(format!("Failed to get L1 block ID at height {height}"))?
-        .ok_or_else(|| {
-            DisplayedError::InternalError(
-                "L1 block id not found for height".to_string(),
-                Box::new(height),
-            )
-        })
+        .ok_or_else(|| mk_error(height))
 }
 
 /// Get L1 block manifest by block ID.
@@ -77,26 +74,31 @@ pub(crate) fn get_l1_block_manifest(
         .internal_error(format!("Failed to get block manifest for id {block_id:?}",))
 }
 
-/// Get L1 manifest by block ID.
-pub(crate) fn get_l1_manifest(
+/// Get L1 block by block ID.
+pub(crate) fn get_l1_block(
     db: &impl DatabaseBackend,
-    args: GetL1ManifestArgs,
+    args: GetL1BlockArgs,
 ) -> Result<(), DisplayedError> {
-    // Parse block ID using utility function
     let block_id = parse_l1_block_id(&args.block_id)?;
+    let Some(l1_block_manifest) = get_l1_block_manifest(db, block_id)? else {
+        return Ok(());
+    };
+    let prev_block_id = if l1_block_manifest.height() == 0 {
+        None
+    } else {
+        Some(get_l1_block_id_at_height(
+            db,
+            l1_block_manifest.height().saturating_sub(1),
+            |h| {
+                DisplayedError::InternalError(
+                    "No canonical L1 block found at height".to_string(),
+                    Box::new(h),
+                )
+            },
+        )?)
+    };
+    let block_info = L1BlockInfo::from_manifest(&block_id, &l1_block_manifest, prev_block_id);
 
-    // Get block manifest using helper function
-    let l1_block_manifest = get_l1_block_manifest(db, block_id)?.ok_or_else(|| {
-        DisplayedError::UserError(
-            "No L1 block manifest found for block id".to_string(),
-            Box::new(block_id),
-        )
-    })?;
-
-    // Create the output data structure using the new ASM manifest
-    let block_info = L1BlockInfo::from_manifest(&block_id, &l1_block_manifest);
-
-    // Use the output utility
     output(&block_info, args.output_format)
 }
 
@@ -111,43 +113,54 @@ pub(crate) fn get_l1_summary(
     let (l1_tip_height, l1_tip_block_id) = get_l1_chain_tip(db)?;
 
     let start_height = args.height_from;
-    let start_block_id = get_l1_block_id_at_height(db, start_height)?;
+    if start_height > l1_tip_height {
+        return Err(DisplayedError::UserError(
+            format!("Provided height is above canonical L1 tip {l1_tip_height}"),
+            Box::new(start_height),
+        ));
+    }
 
-    // Check if all L1 blocks from L1 horizon to tip are present
-    let mut missing_heights = Vec::new();
-    let all_l1_manifests_present = (start_height..=l1_tip_height).all(|l1_height| {
-        let Some(block_id) = l1_db
+    let start_block_id = get_l1_block_id_at_height(db, start_height, |h| {
+        DisplayedError::UserError(
+            "Provided height is not present in canonical L1 chain".to_string(),
+            Box::new(h),
+        )
+    })?;
+
+    let mut missing_blocks = Vec::new();
+    let mut has_missing_manifest = false;
+    for l1_height in start_height..=l1_tip_height {
+        let maybe_block_id = l1_db
             .get_canonical_blockid_at_height(l1_height)
-            .ok()
-            .flatten()
-        else {
-            missing_heights.push(l1_height);
-            return false;
+            .internal_error(format!(
+                "Failed to get canonical block ID at height {l1_height}"
+            ))?;
+
+        let Some(block_id) = maybe_block_id else {
+            missing_blocks.push(MissingBlockInfo {
+                height: l1_height,
+                reason: "Missing canonical block".to_string(),
+                block_id: None,
+            });
+            continue;
         };
 
-        if l1_db.get_block_manifest(block_id).ok().flatten().is_none() {
-            missing_heights.push(l1_height);
-            return false;
-        }
-
-        true
-    });
+        has_missing_manifest |= l1_db
+            .get_block_manifest(block_id)
+            .internal_error(format!(
+                "Failed to get L1 block manifest at height {l1_height}"
+            ))?
+            .is_none();
+    }
 
     let output_data = L1SummaryInfo {
         tip_height: l1_tip_height,
-        tip_block_id: format!("{l1_tip_block_id:?}"),
+        tip_block_id: l1_tip_block_id,
         from_height: start_height,
-        from_block_id: format!("{start_block_id:?}"),
-        expected_block_count: l1_tip_height.saturating_sub(start_height) + 1,
-        all_manifests_present: all_l1_manifests_present,
-        missing_blocks: missing_heights
-            .into_iter()
-            .map(|height| MissingBlockInfo {
-                height,
-                reason: "Missing block".to_string(),
-                block_id: None,
-            })
-            .collect(),
+        from_block_id: start_block_id,
+        expected_block_count: u64::from(l1_tip_height.saturating_sub(start_height) + 1),
+        all_manifests_present: !has_missing_manifest,
+        missing_blocks,
     };
 
     output(&output_data, args.output_format)

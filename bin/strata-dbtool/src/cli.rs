@@ -8,11 +8,11 @@ use argh::FromArgs;
 
 use crate::cmd::{
     broadcaster::{GetBroadcasterSummaryArgs, GetBroadcasterTxArgs},
-    chainstate::{GetChainstateArgs, RevertChainstateArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     client_state::GetClientStateUpdateArgs,
-    l1::{GetL1ManifestArgs, GetL1SummaryArgs},
-    l2::{GetL2BlockArgs, GetL2SummaryArgs},
+    l1::{GetL1BlockArgs, GetL1SummaryArgs},
+    ol::{GetOLBlockArgs, GetOLSummaryArgs},
+    ol_state::{GetOLStateArgs, RevertOLStateArgs},
     syncinfo::GetSyncinfoArgs,
     writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
 };
@@ -33,21 +33,21 @@ pub(crate) struct Cli {
 #[derive(FromArgs, Debug)]
 #[argh(subcommand)]
 pub(crate) enum Command {
-    GetL1Manifest(GetL1ManifestArgs),
+    GetL1Block(GetL1BlockArgs),
     GetL1Summary(GetL1SummaryArgs),
     GetWriterSummary(GetWriterSummaryArgs),
     GetWriterPayload(GetWriterPayloadArgs),
     GetBroadcasterSummary(GetBroadcasterSummaryArgs),
     GetBroadcasterTx(GetBroadcasterTxArgs),
-    GetL2Block(GetL2BlockArgs),
-    GetL2Summary(GetL2SummaryArgs),
+    GetOlBlock(GetOLBlockArgs),
+    GetOlSummary(GetOLSummaryArgs),
     GetClientStateUpdate(GetClientStateUpdateArgs),
     GetCheckpoint(GetCheckpointArgs),
     GetCheckpointsSummary(GetCheckpointsSummaryArgs),
     GetEpochSummary(GetEpochSummaryArgs),
     GetSyncinfo(GetSyncinfoArgs),
-    GetChainstate(GetChainstateArgs),
-    RevertChainstate(RevertChainstateArgs),
+    GetOLState(GetOLStateArgs),
+    RevertOLState(RevertOLStateArgs),
 }
 
 /// Output format

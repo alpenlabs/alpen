@@ -1,25 +1,41 @@
 //! L1 block formatting implementations
 
+use strata_identifiers::L1Height;
 use strata_ol_chain_types::AsmManifest;
-use strata_primitives::l1::{L1BlockId, L1Height};
+use strata_primitives::l1::L1BlockId;
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
-/// L1 block information displayed to the user
+/// L1 block data displayed to the user.
 #[derive(serde::Serialize)]
 pub(crate) struct L1BlockInfo<'a> {
-    pub block_id: &'a L1BlockId,
-    pub height: L1Height,
-    pub logs_count: usize,
+    pub(crate) block_id: &'a L1BlockId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) prev_block_id: Option<L1BlockId>,
+    pub(crate) asm_manifest: AsmManifestInfo,
+}
+
+/// ASM manifest fields for an L1 block.
+#[derive(serde::Serialize)]
+pub(crate) struct AsmManifestInfo {
+    pub(crate) height: L1Height,
+    pub(crate) logs_count: usize,
 }
 
 impl<'a> L1BlockInfo<'a> {
-    /// Create L1BlockInfo from an AsmManifest
-    pub(crate) fn from_manifest(block_id: &'a L1BlockId, manifest: &AsmManifest) -> Self {
+    pub(crate) fn from_manifest(
+        block_id: &'a L1BlockId,
+        manifest: &'a AsmManifest,
+        prev_block_id: Option<L1BlockId>,
+    ) -> Self {
         Self {
             block_id,
-            height: manifest.height(),
-            logs_count: manifest.logs().len(),
+            prev_block_id,
+            asm_manifest: AsmManifestInfo {
+                height: L1Height::try_from(manifest.height())
+                    .expect("manifest height should fit in L1Height"),
+                logs_count: manifest.logs().len(),
+            },
         }
     }
 }
@@ -27,33 +43,42 @@ impl<'a> L1BlockInfo<'a> {
 /// L1 summary information displayed to the user
 #[derive(serde::Serialize)]
 pub(crate) struct L1SummaryInfo {
-    pub tip_height: L1Height,
-    pub tip_block_id: String,
-    pub from_height: L1Height,
-    pub from_block_id: String,
-    pub expected_block_count: u32,
-    pub all_manifests_present: bool,
+    pub(crate) tip_height: L1Height,
+    pub(crate) tip_block_id: L1BlockId,
+    pub(crate) from_height: L1Height,
+    pub(crate) from_block_id: L1BlockId,
+    pub(crate) expected_block_count: u64,
+    pub(crate) all_manifests_present: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub missing_blocks: Vec<MissingBlockInfo>,
+    pub(crate) missing_blocks: Vec<MissingBlockInfo>,
 }
 
 /// Information about missing blocks
 #[derive(serde::Serialize)]
 pub(crate) struct MissingBlockInfo {
-    pub height: L1Height,
-    pub reason: String,
+    pub(crate) height: u32,
+    pub(crate) reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub block_id: Option<String>,
+    pub(crate) block_id: Option<L1BlockId>,
 }
 
-impl<'a> Formattable for L1BlockInfo<'a> {
+impl Formattable for L1BlockInfo<'_> {
     fn format_porcelain(&self) -> String {
-        let mut output = Vec::new();
-
-        output.push(porcelain_field("block_id", format!("{:?}", self.block_id)));
-        output.push(porcelain_field("height", self.height));
-        output.push(porcelain_field("logs_count", self.logs_count));
-
+        let mut output = vec![porcelain_field("block_id", format!("{:?}", self.block_id))];
+        if let Some(prev_block_id) = self.prev_block_id {
+            output.push(porcelain_field(
+                "prev_block_id",
+                format!("{:?}", prev_block_id),
+            ));
+        }
+        output.push(porcelain_field(
+            "asm_manifest.height",
+            self.asm_manifest.height,
+        ));
+        output.push(porcelain_field(
+            "asm_manifest.logs_count",
+            self.asm_manifest.logs_count,
+        ));
         output.join("\n")
     }
 }
@@ -62,9 +87,9 @@ impl Formattable for L1SummaryInfo {
     fn format_porcelain(&self) -> String {
         let mut output = vec![
             porcelain_field("tip_height", self.tip_height),
-            porcelain_field("tip_block_id", &self.tip_block_id),
+            porcelain_field("tip_block_id", format!("{:?}", self.tip_block_id)),
             porcelain_field("from_height", self.from_height),
-            porcelain_field("from_block_id", &self.from_block_id),
+            porcelain_field("from_block_id", format!("{:?}", self.from_block_id)),
             porcelain_field("expected_block_count", self.expected_block_count),
             porcelain_field(
                 "all_manifests_present",
@@ -83,8 +108,11 @@ impl Formattable for L1SummaryInfo {
                 &format!("{prefix}.reason"),
                 &missing_block.reason,
             ));
-            if let Some(ref block_id) = missing_block.block_id {
-                output.push(porcelain_field(&format!("{prefix}.block_id"), block_id));
+            if let Some(block_id) = missing_block.block_id {
+                output.push(porcelain_field(
+                    &format!("{prefix}.block_id"),
+                    format!("{:?}", block_id),
+                ));
             }
         }
 
@@ -97,8 +125,8 @@ impl Formattable for MissingBlockInfo {
         let mut output = Vec::new();
         output.push(porcelain_field("height", self.height));
         output.push(porcelain_field("reason", &self.reason));
-        if let Some(ref block_id) = self.block_id {
-            output.push(porcelain_field("block_id", block_id));
+        if let Some(block_id) = self.block_id {
+            output.push(porcelain_field("block_id", format!("{:?}", block_id)));
         }
         output.join("\n")
     }
