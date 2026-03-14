@@ -6,7 +6,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
-use const_hex as hex;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use ssz_primitives::FixedBytes;
 use zeroize::Zeroize;
@@ -33,13 +34,13 @@ use crate::macros::buf as buf_macros;
 /// assert_eq!(buf, Buf20::from([0; 20]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
-pub struct Buf20(pub [u8; 20]);
+pub struct Buf20(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 20]);
 buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
-crate::macros::serde_impl::impl_buf_serde!(Buf20, 20);
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf20` is `Copy`.
 impl Zeroize for Buf20 {
@@ -71,22 +72,22 @@ impl Zeroize for Buf20 {
 /// assert_eq!(buf, Buf32::from([0; 32]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[repr(transparent)]
-pub struct Buf32(pub [u8; 32]);
+pub struct Buf32(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 32]);
 buf_macros::impl_buf_core!(Buf32, 32);
 buf_macros::impl_buf_fmt!(Buf32, 32);
-crate::macros::serde_impl::impl_buf_serde!(Buf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
 
 impl FromStr for Buf32 {
-    type Err = hex::FromHexError;
+    type Err = const_hex::FromHexError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        hex::decode_to_array(s).map(Self::new)
+        const_hex::decode_to_array(s).map(Self::new)
     }
 }
 
@@ -108,6 +109,7 @@ impl FromStr for Buf32 {
 pub struct RBuf32(pub [u8; 32]);
 buf_macros::impl_buf_core!(RBuf32, 32);
 buf_macros::impl_rbuf_fmt!(RBuf32, 32);
+#[cfg(feature = "serde")]
 crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
@@ -168,13 +170,13 @@ impl Zeroize for Buf32 {
 /// assert_eq!(buf, Buf64::from([0; 64]));
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
-pub struct Buf64(pub [u8; 64]);
+pub struct Buf64(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 64]);
 buf_macros::impl_buf_core!(Buf64, 64);
 buf_macros::impl_buf_fmt!(Buf64, 64);
-crate::macros::serde_impl::impl_buf_serde!(Buf64, 64);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
 
@@ -232,20 +234,10 @@ mod tests {
 
     #[test]
     fn test_buf32_deserialization() {
-        // without 0x
         assert_eq!(
             Buf32::from([0; 32]),
             serde_json::from_str(
                 "\"0000000000000000000000000000000000000000000000000000000000000000\"",
-            )
-            .unwrap()
-        );
-
-        // with 0x
-        assert_eq!(
-            Buf32::from([1; 32]),
-            serde_json::from_str(
-                "\"0x0101010101010101010101010101010101010101010101010101010101010101\"",
             )
             .unwrap()
         );
@@ -257,7 +249,7 @@ mod tests {
                 1, 1, 1, 170u8
             ]),
             serde_json::from_str(
-                "\"0x01010101010101010101010101010101010101010101010101010101010101aa\"",
+                "\"01010101010101010101010101010101010101010101010101010101010101aa\"",
             )
             .unwrap()
         );
@@ -304,15 +296,6 @@ mod tests {
         use super::*;
 
         proptest! {
-            #[test]
-            fn bincode_same_bytes_as_buf32(bytes in any::<[u8; 32]>()) {
-                let buf = Buf32::from(bytes);
-                let rbuf = RBuf32::from(bytes);
-                let buf_encoded = bincode::serialize(&buf).unwrap();
-                let rbuf_encoded = bincode::serialize(&rbuf).unwrap();
-                prop_assert_eq!(buf_encoded, rbuf_encoded, "binary encoding should be identical");
-            }
-
             #[test]
             fn json_reverses_byte_order(bytes in any::<[u8; 32]>()) {
                 let buf = Buf32::from(bytes);

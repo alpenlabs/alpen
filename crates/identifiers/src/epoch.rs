@@ -16,6 +16,7 @@
 use std::{cmp, fmt, str};
 
 use const_hex as hex;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
@@ -28,9 +29,8 @@ use crate::{
 };
 
 /// Commitment to a particular epoch by the last block and slot.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[ssz(struct_behaviour = "container")]
