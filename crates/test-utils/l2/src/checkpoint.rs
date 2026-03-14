@@ -1,30 +1,33 @@
-use k256::{
-    ecdsa::signature::SignatureEncoding,
-    schnorr::{signature::Signer, SigningKey},
-};
+use k256::schnorr::SigningKey;
 use rand::{thread_rng, Rng};
 use ssz::Encode;
 use strata_asm_common::{
     AsmHistoryAccumulatorState, AuxData, VerifiableManifestHash, VerifiedAuxData,
 };
+use strata_asm_txs_checkpoint::EnvelopeCheckpoint;
 use strata_checkpoint_types_ssz::{
     compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
-    CheckpointTip, L2BlockRange, OLLog, SignedCheckpointPayload, TerminalHeaderComplement,
+    CheckpointTip, L2BlockRange, OLLog, TerminalHeaderComplement,
 };
 use strata_crypto::hash;
-use strata_identifiers::{Buf64, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_merkle::{CompactMmr64, Mmr, Sha256Hasher};
 use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_test_utils::ArbitraryGenerator;
 
-/// Test harness for generating valid checkpoint payloads with cryptographic signatures.
+/// Test harness for generating valid checkpoint payloads.
 #[expect(
     missing_debug_implementations,
     reason = "contains private signing keys"
 )]
 pub struct CheckpointTestHarness {
     genesis_l1_height: u32,
-    sequencer_predicate: SigningKey,
+    /// Raw secret key bytes for the sequencer identity.
+    ///
+    /// Stored so integration tests can reconstruct a Bitcoin keypair for SPS-51
+    /// envelope signing where the envelope pubkey must match the sequencer predicate.
+    sequencer_secret_key: [u8; 32],
+    sequencer_pubkey: Vec<u8>,
     checkpoint_predicate: SigningKey,
     verified_tip: CheckpointTip,
 }
@@ -43,13 +46,16 @@ impl CheckpointTestHarness {
         let genesis_ol_blkid = ArbitraryGenerator::new().generate();
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
-        let sequencer_predicate = SigningKey::random(&mut rng);
+        let sequencer_key = SigningKey::random(&mut rng);
+        let sequencer_secret_key = sequencer_key.to_bytes().into();
+        let sequencer_pubkey = sequencer_key.verifying_key().to_bytes().to_vec();
         let checkpoint_predicate = SigningKey::random(&mut rng);
 
         let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
         Self {
             genesis_l1_height,
-            sequencer_predicate,
+            sequencer_secret_key,
+            sequencer_pubkey,
             checkpoint_predicate,
             verified_tip: genesis_tip,
         }
@@ -64,13 +70,16 @@ impl CheckpointTestHarness {
         let mut rng = thread_rng();
         let genesis_blk = OLBlockCommitment::new(0, genesis_ol_blkid);
 
-        let sequencer_predicate = SigningKey::random(&mut rng);
+        let sequencer_key = SigningKey::random(&mut rng);
+        let sequencer_secret_key = sequencer_key.to_bytes().into();
+        let sequencer_pubkey = sequencer_key.verifying_key().to_bytes().to_vec();
         let checkpoint_predicate = SigningKey::random(&mut rng);
 
         let genesis_tip = CheckpointTip::new(0, genesis_l1_height, genesis_blk);
         Self {
             genesis_l1_height,
-            sequencer_predicate,
+            sequencer_secret_key,
+            sequencer_pubkey,
             checkpoint_predicate,
             verified_tip: genesis_tip,
         }
@@ -79,7 +88,7 @@ impl CheckpointTestHarness {
     pub fn sequencer_predicate(&self) -> PredicateKey {
         PredicateKey::new(
             PredicateTypeId::Bip340Schnorr,
-            self.sequencer_predicate.verifying_key().to_bytes().to_vec(),
+            self.sequencer_pubkey.clone(),
         )
     }
 
@@ -91,6 +100,19 @@ impl CheckpointTestHarness {
                 .to_bytes()
                 .to_vec(),
         )
+    }
+
+    /// Returns the sequencer's x-only public key bytes (used as envelope pubkey).
+    pub fn sequencer_pubkey(&self) -> &[u8] {
+        &self.sequencer_pubkey
+    }
+
+    /// Returns the sequencer's raw secret key bytes.
+    ///
+    /// Used by integration tests to construct a Bitcoin keypair for SPS-51 envelope
+    /// transactions where the taproot pubkey must match the sequencer predicate.
+    pub fn sequencer_secret_key(&self) -> &[u8; 32] {
+        &self.sequencer_secret_key
     }
 
     pub fn genesis_l1_height(&self) -> u32 {
@@ -193,6 +215,8 @@ impl CheckpointTestHarness {
     /// - Properly constructed checkpoint claim with manifest hashes
     /// - Valid checkpoint proof signature
     pub fn build_payload_with_tip(&self, new_tip: CheckpointTip) -> CheckpointPayload {
+        use k256::{ecdsa::signature::SignatureEncoding, schnorr::signature::Signer};
+
         let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let ol_logs = Vec::new();
         let mut arb = ArbitraryGenerator::new();
@@ -246,6 +270,8 @@ impl CheckpointTestHarness {
         ol_logs: Vec<OLLog>,
         manifest_hashes: &[[u8; 32]],
     ) -> CheckpointPayload {
+        use k256::{ecdsa::signature::SignatureEncoding, schnorr::signature::Signer};
+
         let state_diff: Vec<u8> = ArbitraryGenerator::new().generate();
         let mut arb = ArbitraryGenerator::new();
         let terminal_header_complement = TerminalHeaderComplement::new(
@@ -285,17 +311,15 @@ impl CheckpointTestHarness {
         CheckpointPayload::new(new_tip, sidecar, proof).unwrap()
     }
 
-    /// Signs a checkpoint payload with the sequencer predicate key.
+    /// Wraps a checkpoint payload into an [`EnvelopeCheckpoint`] with the sequencer's pubkey.
     ///
-    /// The sequencer signature covers the entire SSZ-encoded checkpoint payload,
-    /// attesting to the validity of the checkpoint transition.
-    pub fn sign_payload(&self, payload: CheckpointPayload) -> SignedCheckpointPayload {
-        let signature = self
-            .sequencer_predicate
-            .sign(&payload.as_ssz_bytes())
-            .to_vec();
-        let mut sig = [0u8; 64];
-        sig.copy_from_slice(&signature[..64]);
-        SignedCheckpointPayload::new(payload, Buf64::from(sig))
+    /// This simulates the extraction that would happen on the ASM side when parsing
+    /// an SPS-51 envelope transaction where the sequencer's pubkey is used as the
+    /// taproot key.
+    pub fn wrap_in_envelope(&self, payload: CheckpointPayload) -> EnvelopeCheckpoint {
+        EnvelopeCheckpoint {
+            payload,
+            envelope_pubkey: self.sequencer_pubkey.clone(),
+        }
     }
 }

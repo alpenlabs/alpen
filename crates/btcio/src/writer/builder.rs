@@ -51,6 +51,14 @@ pub struct EnvelopeConfig {
     pub network: Network,
     /// Bitcoin fee rate, sats/vByte
     pub fee_rate: u64,
+    /// Optional keypair for the taproot envelope script.
+    ///
+    /// When set, this keypair is used as the `<pubkey>` in `<pubkey> CHECKSIG` of the
+    /// envelope script. Per SPS-51, consumers can recognize this pubkey and treat the
+    /// taproot script-spend signature as transitively signing the envelope contents.
+    ///
+    /// When `None`, a random keypair is generated per transaction (legacy behavior).
+    pub envelope_keypair: Option<UntweakedKeypair>,
 }
 
 impl EnvelopeConfig {
@@ -67,7 +75,14 @@ impl EnvelopeConfig {
             reveal_amount,
             fee_rate,
             network,
+            envelope_keypair: None,
         }
+    }
+
+    /// Sets the envelope keypair for SPS-51 authentication.
+    pub fn with_envelope_keypair(mut self, keypair: UntweakedKeypair) -> Self {
+        self.envelope_keypair = Some(keypair);
+        self
     }
 }
 
@@ -115,13 +130,16 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
         FeePolicy::Fixed(val) => val,
     };
-    let env_config = EnvelopeConfig::new(
+    let mut env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
         network,
         fee_rate,
         BITCOIN_DUST_LIMIT,
     );
+    if let Some(kp) = ctx.envelope_keypair {
+        env_config = env_config.with_envelope_keypair(kp);
+    }
     create_envelope_transactions(&env_config, payload, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
@@ -131,8 +149,11 @@ pub fn create_envelope_transactions(
     payload: &L1Payload,
     utxos: Vec<ListUnspentItem>,
 ) -> Result<(Transaction, Transaction), EnvelopeError> {
-    // Create commit key
-    let key_pair = generate_key_pair()?;
+    // Use provided keypair or generate a random one
+    let key_pair = match &env_config.envelope_keypair {
+        Some(kp) => *kp,
+        None => generate_key_pair()?,
+    };
     let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
 
     let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?

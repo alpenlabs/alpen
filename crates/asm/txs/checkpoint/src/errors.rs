@@ -1,4 +1,4 @@
-use ssz::DecodeError;
+use strata_codec::CodecError;
 use strata_l1_envelope_fmt::errors::EnvelopeParseError;
 use thiserror::Error;
 
@@ -17,13 +17,17 @@ pub enum CheckpointTxError {
     #[error("checkpoint transaction missing taproot leaf script in first input witness")]
     MissingLeafScript,
 
+    /// Envelope contained no payload chunk.
+    #[error("checkpoint envelope contains no payload")]
+    MissingPayload,
+
     /// Failed to parse the envelope script structure.
     #[error("failed to parse checkpoint envelope script: {0}")]
     EnvelopeParse(#[from] EnvelopeParseError),
 
-    /// Failed to deserialize SSZ checkpoint payload.
-    #[error("failed to deserialize checkpoint payload: {0:?}")]
-    SszDecode(#[from] DecodeError),
+    /// Failed to decode the checkpoint payload via strata-codec.
+    #[error("failed to decode checkpoint payload: {0}")]
+    CodecDecode(CodecError),
 }
 
 /// Result alias for checkpoint transaction helpers.

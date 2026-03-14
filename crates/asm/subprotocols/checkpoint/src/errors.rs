@@ -1,6 +1,6 @@
 use strata_asm_common::AuxError;
 use strata_identifiers::Epoch;
-use strata_predicate::PredicateError;
+use strata_predicate::{PredicateError, PredicateTypeId};
 use thiserror::Error;
 
 /// Result type for checkpoint subprotocol operations.
@@ -11,18 +11,42 @@ pub enum CheckpointValidationError {
     #[error("invalid checkpoint payload: {0}")]
     InvalidPayload(#[from] InvalidCheckpointPayload),
 
+    /// The sequencer predicate is invalid or does not match the envelope.
+    #[error("invalid sequencer predicate: {0}")]
+    InvalidSequencerPredicate(#[from] InvalidSequencerPredicate),
+
     /// Failed to retrieve manifest hashes from auxiliary data.
     #[error("invalid auxiliary data: {0}")]
     InvalidAux(#[from] AuxError),
 }
 
-/// CheckpointPayload is invalid
+/// Sequencer predicate verification failed.
+#[derive(Debug, Error)]
+pub enum InvalidSequencerPredicate {
+    /// Envelope pubkey does not match the sequencer predicate's condition bytes.
+    #[error(
+        "envelope pubkey mismatch: expected {}, got {}",
+        hex_encode(expected),
+        hex_encode(actual)
+    )]
+    PubkeyMismatch { expected: Vec<u8>, actual: Vec<u8> },
+
+    /// Sequencer predicate is set to `NeverAccept`; no checkpoint can pass.
+    #[error("sequencer predicate is NeverAccept")]
+    NeverAccept,
+
+    /// Sequencer predicate type is not valid for envelope authentication.
+    #[error("unsupported sequencer predicate type: {0}")]
+    UnsupportedType(PredicateTypeId),
+
+    /// Sequencer predicate has an unknown type ID.
+    #[error("unknown sequencer predicate type ID: {0}")]
+    UnknownPredicateType(u8),
+}
+
+/// CheckpointPayload is invalid.
 #[derive(Debug, Error)]
 pub enum InvalidCheckpointPayload {
-    /// Predicate verification failed.
-    #[error("sequencer predicate verification failed: {0}")]
-    SequencerPredicateVerification(PredicateError),
-
     /// Predicate verification failed.
     #[error("checkpoint predicate verification failed: {0}")]
     CheckpointPredicateVerification(PredicateError),
@@ -91,4 +115,15 @@ pub enum InvalidCheckpointPayload {
         available_sat: u64,
         required_sat: u64,
     },
+}
+
+/// Encode bytes as a hex string for error display.
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            use std::fmt::Write;
+            write!(s, "{b:02x}").unwrap();
+            s
+        })
 }
