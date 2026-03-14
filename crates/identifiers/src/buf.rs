@@ -9,7 +9,6 @@ use strata_codec::Codec;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use ssz_primitives::FixedBytes;
 use zeroize::Zeroize;
 
 use crate::macros::buf as buf_macros;
@@ -114,31 +113,6 @@ crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
 
-impl From<FixedBytes<32>> for Buf32 {
-    fn from(value: FixedBytes<32>) -> Self {
-        Buf32(value.0)
-    }
-}
-
-impl From<&FixedBytes<32>> for &Buf32 {
-    fn from(value: &FixedBytes<32>) -> Self {
-        // SAFETY: FixedBytes<32> and Buf32 have the same layout
-        unsafe { &*(value as *const FixedBytes<32> as *const Buf32) }
-    }
-}
-
-impl From<Buf32> for FixedBytes<32> {
-    fn from(value: Buf32) -> Self {
-        FixedBytes(value.0)
-    }
-}
-
-impl From<&Buf32> for &FixedBytes<32> {
-    fn from(value: &Buf32) -> Self {
-        // SAFETY: Buf32 and FixedBytes<32> have the same layout
-        unsafe { &*(value as *const Buf32 as *const FixedBytes<32>) }
-    }
-}
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf32` is `Copy`.
 impl Zeroize for Buf32 {
