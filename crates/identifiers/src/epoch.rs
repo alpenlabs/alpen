@@ -13,9 +13,10 @@
 //! We also have a sentinel "null" epoch used to refer to the "finalized epoch"
 //! as of the genesis block.
 
-use std::{cmp, fmt, str};
+use std::fmt;
 
-use const_hex as hex;
+#[cfg(feature = "borsh")]
+use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
@@ -29,9 +30,10 @@ use crate::{
 };
 
 /// Commitment to a particular epoch by the last block and slot.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[ssz(struct_behaviour = "container")]
 pub struct EpochCommitment {
@@ -90,46 +92,13 @@ impl EpochCommitment {
 
 impl fmt::Display for EpochCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Show first 2 and last 2 bytes of block ID (4 hex chars each)
-        let blkid_bytes = self.last_blkid().as_ref();
-        let first_2 = &blkid_bytes[..2];
-        let last_2 = &blkid_bytes[30..];
-
-        let mut first_hex = [0u8; 4];
-        let mut last_hex = [0u8; 4];
-        hex::encode_to_slice(first_2, &mut first_hex)
-            .expect("Failed to encode first 2 bytes to hex");
-        hex::encode_to_slice(last_2, &mut last_hex).expect("Failed to encode last 2 bytes to hex");
-
-        // SAFETY: hex always encodes 2->4 bytes
         write!(
             f,
-            "{}[{}]@{}..{}",
+            "{}[{}]@{}",
             self.last_slot(),
             self.epoch(),
-            unsafe { str::from_utf8_unchecked(&first_hex) },
-            unsafe { str::from_utf8_unchecked(&last_hex) },
+            self.last_blkid(),
         )
-    }
-}
-
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-#[cfg(feature = "borsh")]
-crate::impl_borsh_via_ssz_fixed!(EpochCommitment);
-
-impl Ord for EpochCommitment {
-    fn cmp(&self, other: &Self) -> cmp::Ordering {
-        (self.epoch, self.last_slot, &self.last_blkid).cmp(&(
-            other.epoch,
-            other.last_slot,
-            &other.last_blkid,
-        ))
-    }
-}
-
-impl PartialOrd for EpochCommitment {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
