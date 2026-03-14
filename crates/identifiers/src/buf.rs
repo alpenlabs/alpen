@@ -9,8 +9,6 @@ use strata_codec::Codec;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use zeroize::Zeroize;
-
 use crate::macros::buf as buf_macros;
 
 /// A 20-byte buffer.
@@ -18,36 +16,33 @@ use crate::macros::buf as buf_macros;
 /// # Warning
 ///
 /// This type is not zeroized on drop.
-/// However, it implements the [`Zeroize`] trait, so you can zeroize it manually.
+/// However, with the `zeroize` feature enabled, it implements the [`Zeroize`](zeroize::Zeroize)
+/// trait, so you can zeroize it manually.
 /// This is useful for secret data that needs to be zeroized after use.
 ///
 /// # Example
 ///
 /// ```
 /// # use strata_identifiers::Buf20;
+/// # #[cfg(feature = "zeroize")]
+/// # {
 /// use zeroize::Zeroize;
 ///
 /// let mut buf = Buf20::from([1; 20]);
 /// buf.zeroize();
 ///
 /// assert_eq!(buf, Buf20::from([0; 20]));
+/// # }
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
+#[cfg_attr(feature = "zeroize", derive(zeroize::Zeroize))]
 pub struct Buf20(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 20]);
 buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
-
-// NOTE: we cannot do `ZeroizeOnDrop` since `Buf20` is `Copy`.
-impl Zeroize for Buf20 {
-    #[inline]
-    fn zeroize(&mut self) {
-        self.0.zeroize();
-    }
-}
 
 /// A 32-byte buffer.
 ///
@@ -56,25 +51,30 @@ impl Zeroize for Buf20 {
 /// # Warning
 ///
 /// This type is not zeroized on drop.
-/// However, it implements the [`Zeroize`] trait, so you can zeroize it manually.
+/// However, with the `zeroize` feature enabled, it implements the [`Zeroize`](zeroize::Zeroize)
+/// trait, so you can zeroize it manually.
 /// This is useful for secret data that needs to be zeroized after use.
 ///
 /// # Example
 ///
 /// ```
 /// # use strata_identifiers::Buf32;
+/// # #[cfg(feature = "zeroize")]
+/// # {
 /// use zeroize::Zeroize;
 ///
 /// let mut buf = Buf32::from([1; 32]);
 /// buf.zeroize();
 ///
 /// assert_eq!(buf, Buf32::from([0; 32]));
+/// # }
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
+#[cfg_attr(feature = "zeroize", derive(zeroize::Zeroize))]
 #[repr(transparent)]
 pub struct Buf32(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 32]);
 buf_macros::impl_buf_core!(Buf32, 32);
@@ -114,14 +114,6 @@ crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
 
 
-// NOTE: we cannot do `ZeroizeOnDrop` since `Buf32` is `Copy`.
-impl Zeroize for Buf32 {
-    #[inline]
-    fn zeroize(&mut self) {
-        self.0.zeroize();
-    }
-}
-
 /// A 64-byte buffer.
 ///
 /// This is useful for schnorr signatures.
@@ -129,38 +121,35 @@ impl Zeroize for Buf32 {
 /// # Warning
 ///
 /// This type is not zeroized on drop.
-/// However, it implements the [`Zeroize`] trait, so you can zeroize it manually.
+/// However, with the `zeroize` feature enabled, it implements the [`Zeroize`](zeroize::Zeroize)
+/// trait, so you can zeroize it manually.
 /// This is useful for secret data that needs to be zeroized after use.
 ///
 /// # Example
 ///
 /// ```
 /// # use strata_identifiers::Buf64;
+/// # #[cfg(feature = "zeroize")]
+/// # {
 /// use zeroize::Zeroize;
 ///
 /// let mut buf = Buf64::from([1; 64]);
 /// buf.zeroize();
 ///
 /// assert_eq!(buf, Buf64::from([0; 64]));
+/// # }
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
+#[cfg_attr(feature = "zeroize", derive(zeroize::Zeroize))]
 pub struct Buf64(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub [u8; 64]);
 buf_macros::impl_buf_core!(Buf64, 64);
 buf_macros::impl_buf_fmt!(Buf64, 64);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
-
-// NOTE: we cannot do `ZeroizeOnDrop` since `Buf64` is `Copy`.
-impl Zeroize for Buf64 {
-    #[inline]
-    fn zeroize(&mut self) {
-        self.0.zeroize();
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -246,8 +235,11 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "zeroize")]
     #[test]
     fn test_zeroize() {
+        use zeroize::Zeroize;
+
         let mut buf20 = Buf20::from([1; 20]);
         let mut buf32 = Buf32::from([1; 32]);
         let mut buf64 = Buf64::from([1; 64]);

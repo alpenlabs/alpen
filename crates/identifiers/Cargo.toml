@@ -23,7 +23,7 @@ proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
-zeroize.workspace = true
+zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
 strata-test-utils-ssz.workspace = true
@@ -33,7 +33,8 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["arbitrary", "borsh", "codec", "serde"]
+default = ["arbitrary", "borsh", "codec", "serde", "zeroize"]
+zeroize = ["dep:zeroize"]
 arbitrary = ["dep:arbitrary"]
 borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
