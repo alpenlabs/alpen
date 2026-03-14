@@ -1,39 +1,16 @@
-use std::str::FromStr;
-
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
-#[cfg(feature = "codec")]
-use strata_codec::Codec;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "codec")]
+use strata_codec::Codec;
+
 use crate::macros::buf as buf_macros;
 
 /// A 20-byte buffer.
-///
-/// # Warning
-///
-/// This type is not zeroized on drop.
-/// However, with the `zeroize` feature enabled, it implements the [`Zeroize`](zeroize::Zeroize)
-/// trait, so you can zeroize it manually.
-/// This is useful for secret data that needs to be zeroized after use.
-///
-/// # Example
-///
-/// ```
-/// # use strata_identifiers::Buf20;
-/// # #[cfg(feature = "zeroize")]
-/// # {
-/// use zeroize::Zeroize;
-///
-/// let mut buf = Buf20::from([1; 20]);
-/// buf.zeroize();
-///
-/// assert_eq!(buf, Buf20::from([0; 20]));
-/// # }
-/// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -45,30 +22,6 @@ buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
 
 /// A 32-byte buffer.
-///
-/// This is useful for hashes, transaction IDs, secret and public keys.
-///
-/// # Warning
-///
-/// This type is not zeroized on drop.
-/// However, with the `zeroize` feature enabled, it implements the [`Zeroize`](zeroize::Zeroize)
-/// trait, so you can zeroize it manually.
-/// This is useful for secret data that needs to be zeroized after use.
-///
-/// # Example
-///
-/// ```
-/// # use strata_identifiers::Buf32;
-/// # #[cfg(feature = "zeroize")]
-/// # {
-/// use zeroize::Zeroize;
-///
-/// let mut buf = Buf32::from([1; 32]);
-/// buf.zeroize();
-///
-/// assert_eq!(buf, Buf32::from([0; 32]));
-/// # }
-/// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -81,14 +34,6 @@ buf_macros::impl_buf_core!(Buf32, 32);
 buf_macros::impl_buf_fmt!(Buf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
-
-impl FromStr for Buf32 {
-    type Err = const_hex::FromHexError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        const_hex::decode_to_array(s).map(Self::new)
-    }
-}
 
 /// A 32-byte buffer with reversed-byte display and serialization.
 ///
@@ -113,32 +58,7 @@ crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
 
-
 /// A 64-byte buffer.
-///
-/// This is useful for schnorr signatures.
-///
-/// # Warning
-///
-/// This type is not zeroized on drop.
-/// However, with the `zeroize` feature enabled, it implements the [`Zeroize`](zeroize::Zeroize)
-/// trait, so you can zeroize it manually.
-/// This is useful for secret data that needs to be zeroized after use.
-///
-/// # Example
-///
-/// ```
-/// # use strata_identifiers::Buf64;
-/// # #[cfg(feature = "zeroize")]
-/// # {
-/// use zeroize::Zeroize;
-///
-/// let mut buf = Buf64::from([1; 64]);
-/// buf.zeroize();
-///
-/// assert_eq!(buf, Buf64::from([0; 64]));
-/// # }
-/// ```
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -153,6 +73,8 @@ crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
