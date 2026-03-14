@@ -357,5 +357,32 @@ macro_rules! impl_ssz_transparent_byte_array_wrapper {
                 <[u8; $len] as ::tree_hash::TreeHash<H>>::tree_hash_root(&self.0)
             }
         }
+
+        // FixedBytes conversions for SSZ interop
+        impl ::core::convert::From<::ssz_primitives::FixedBytes<$len>> for $wrapper {
+            fn from(value: ::ssz_primitives::FixedBytes<$len>) -> Self {
+                Self(value.0)
+            }
+        }
+
+        impl ::core::convert::From<&::ssz_primitives::FixedBytes<$len>> for &$wrapper {
+            fn from(value: &::ssz_primitives::FixedBytes<$len>) -> Self {
+                // SAFETY: FixedBytes<N> and the wrapper have the same layout
+                unsafe { &*(value as *const ::ssz_primitives::FixedBytes<$len> as *const $wrapper) }
+            }
+        }
+
+        impl ::core::convert::From<$wrapper> for ::ssz_primitives::FixedBytes<$len> {
+            fn from(value: $wrapper) -> Self {
+                ::ssz_primitives::FixedBytes(value.0)
+            }
+        }
+
+        impl ::core::convert::From<&$wrapper> for &::ssz_primitives::FixedBytes<$len> {
+            fn from(value: &$wrapper) -> Self {
+                // SAFETY: the wrapper and FixedBytes<N> have the same layout
+                unsafe { &*(value as *const $wrapper as *const ::ssz_primitives::FixedBytes<$len>) }
+            }
+        }
     };
 }
