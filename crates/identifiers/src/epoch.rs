@@ -18,7 +18,8 @@ use std::{cmp, fmt, str};
 use const_hex as hex;
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+#[cfg(feature = "codec")]
+use strata_codec::Codec;
 
 use crate::{
     Epoch, Slot,
@@ -31,6 +32,7 @@ use crate::{
     Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 #[ssz(struct_behaviour = "container")]
 pub struct EpochCommitment {
     pub epoch: Epoch,
@@ -83,26 +85,6 @@ impl EpochCommitment {
     /// for the genesis epoch (0) before the it is completed.
     pub fn is_null(&self) -> bool {
         Buf32::from(self.last_blkid).is_zero()
-    }
-}
-
-impl Codec for EpochCommitment {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.epoch.encode(enc)?;
-        self.last_slot.encode(enc)?;
-        self.last_blkid.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let epoch = u32::decode(dec)?;
-        let last_slot = u64::decode(dec)?;
-        let last_blkid = OLBlockId::decode(dec)?;
-        Ok(Self {
-            epoch,
-            last_slot,
-            last_blkid,
-        })
     }
 }
 

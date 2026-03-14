@@ -6,6 +6,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
+#[cfg(feature = "codec")]
 use strata_codec::Codec;
 
 use crate::buf::Buf32;
@@ -30,10 +31,10 @@ pub type Epoch = u32;
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
-strata_codec::impl_wrapper_codec!(OLBlockId => Buf32);
 
 // Manual TreeHash implementation for transparent wrapper
 impl_ssz_transparent_buf32_wrapper!(OLBlockId);
@@ -66,11 +67,11 @@ pub type L2BlockId = OLBlockId;
     Deserialize,
     Encode,
     Decode,
-    Codec,
     PartialOrd,
     Ord,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 #[ssz(struct_behaviour = "container")]
 pub struct OLBlockCommitment {
     pub slot: Slot,
@@ -133,10 +134,10 @@ pub type L2BlockCommitment = OLBlockCommitment;
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);
-strata_codec::impl_wrapper_codec!(OLTxId => Buf32);
 
 crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
 

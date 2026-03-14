@@ -6,7 +6,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+#[cfg(feature = "codec")]
+use strata_codec::Codec;
 
 use crate::buf::{Buf32, RBuf32};
 
@@ -33,11 +34,11 @@ pub type L1Height = u32;
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct L1BlockId(RBuf32);
 
 // Debug, Display, From<RBuf32>, AsRef<[u8; 32]> via RBuf32 delegation.
 crate::impl_buf_wrapper!(L1BlockId, RBuf32, 32);
-strata_codec::impl_wrapper_codec!(L1BlockId => RBuf32);
 
 impl From<Buf32> for L1BlockId {
     fn from(value: Buf32) -> Self {
@@ -75,11 +76,11 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct WtxidsRoot(Buf32);
 
 // Implement standard wrapper traits (Debug, Display, From, AsRef)
 crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
-strata_codec::impl_wrapper_codec!(WtxidsRoot => Buf32);
 
 // Manual TreeHash implementation for transparent wrapper
 crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
@@ -89,6 +90,8 @@ crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
     Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 #[ssz(struct_behaviour = "container")]
 pub struct L1BlockCommitment {
     pub height: L1Height,
@@ -98,24 +101,6 @@ pub struct L1BlockCommitment {
 crate::impl_tree_hash_container!(L1BlockCommitment, [height, blkid]);
 crate::impl_ssz_type_info_fixed!(L1BlockCommitment, [L1Height, L1BlockId]);
 crate::impl_ssz_container_ref!(L1BlockCommitmentRef, L1BlockCommitment);
-
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-#[cfg(feature = "borsh")]
-crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
-
-impl Codec for L1BlockCommitment {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.height.encode(enc)?;
-        self.blkid.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let height = u32::decode(dec)?;
-        let blkid = L1BlockId::decode(dec)?;
-        Ok(Self { height, blkid })
-    }
-}
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

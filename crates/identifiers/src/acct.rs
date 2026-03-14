@@ -26,10 +26,10 @@ type RawAccountId = [u8; ACCT_ID_LEN];
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
-strata_codec::impl_wrapper_codec!(AccountId => RawAccountId);
 
 impl AccountId {
     /// The "zero" account ID.
@@ -86,10 +86,10 @@ const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
-strata_codec::impl_wrapper_codec!(AccountSerial => RawAccountSerial);
 
 impl AccountSerial {
     /// Returns the zero serial.
@@ -144,10 +144,10 @@ type RawSubjectId = [u8; SUBJ_ID_LEN];
 )]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
-strata_codec::impl_wrapper_codec!(SubjectId => RawSubjectId);
 
 impl fmt::Display for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
