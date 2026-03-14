@@ -107,7 +107,6 @@ crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
 
 #[cfg(test)]
 mod tests {
-    use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -121,29 +120,12 @@ mod tests {
             buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = OLBlockId::from(Buf32::zero());
-            let encoded = zero.as_ssz_bytes();
-            let decoded = OLBlockId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod ol_block_commitment {
         use super::*;
 
         ssz_proptest!(OLBlockCommitment, ol_block_commitment_strategy());
-
-        #[test]
-        fn test_zero_ssz() {
-            let commitment = OLBlockCommitment::new(0, OLBlockId::from(Buf32::zero()));
-            let encoded = commitment.as_ssz_bytes();
-            let decoded = OLBlockCommitment::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(commitment.slot(), decoded.slot());
-            assert_eq!(commitment.blkid(), decoded.blkid());
-        }
     }
 
     mod ol_tx_id {
@@ -154,13 +136,5 @@ mod tests {
             buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = OLTxId::from(Buf32::zero());
-            let encoded = zero.as_ssz_bytes();
-            let decoded = OLTxId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 }

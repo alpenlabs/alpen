@@ -267,7 +267,6 @@ impl fmt::Display for AccountTypeId {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -280,14 +279,6 @@ mod tests {
             any::<[u8; ACCT_ID_LEN]>(),
             transparent_wrapper_of(RawAccountId, new)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = AccountId::new([0u8; ACCT_ID_LEN]);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = AccountId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod account_serial {
@@ -298,14 +289,6 @@ mod tests {
             any::<u32>(),
             transparent_wrapper_of(RawAccountSerial, new)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = AccountSerial::new(0);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = AccountSerial::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod subject_id {
@@ -316,14 +299,6 @@ mod tests {
             any::<[u8; SUBJ_ID_LEN]>(),
             transparent_wrapper_of(RawSubjectId, new)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = SubjectId::new([0u8; SUBJ_ID_LEN]);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = SubjectId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod subject_id_bytes {
