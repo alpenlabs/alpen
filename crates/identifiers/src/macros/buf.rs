@@ -92,28 +92,44 @@ macro_rules! impl_buf_core {
     };
 }
 
-/// Generates `Debug` (full hex) and `Display` (truncated hex) formatting.
+/// Generates `Debug` (full hex), `Display` (truncated hex), `FromStr` (hex parsing),
+/// `LowerHex`, and `UpperHex` formatting.
 macro_rules! impl_buf_fmt {
     ($name:ident, $len:expr) => {
         impl ::std::fmt::Debug for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                // twice as large, required by the hex::encode_to_slice.
-                let mut buf = [0; $len * 2];
-                ::hex::encode_to_slice(self.0, &mut buf).expect("buf: enc hex");
-                f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })
+                ::std::fmt::Display::fmt(&::const_hex::display(&self.0), f)
             }
         }
 
         impl ::std::fmt::Display for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                // fmt only first and last bits of data.
-                let mut buf = [0; 6];
-                ::hex::encode_to_slice(&self.0[..3], &mut buf).expect("buf: enc hex");
-                f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
-                f.write_str("..")?;
-                ::hex::encode_to_slice(&self.0[$len - 3..], &mut buf).expect("buf: enc hex");
-                f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
-                Ok(())
+                write!(
+                    f,
+                    "{}..{}",
+                    ::const_hex::display(&self.0[..3]),
+                    ::const_hex::display(&self.0[$len - 3..]),
+                )
+            }
+        }
+
+        impl ::std::str::FromStr for $name {
+            type Err = ::const_hex::FromHexError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                ::const_hex::decode_to_array(s).map(Self::new)
+            }
+        }
+
+        impl ::std::fmt::LowerHex for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::LowerHex::fmt(&::const_hex::display(&self.0), f)
+            }
+        }
+
+        impl ::std::fmt::UpperHex for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::UpperHex::fmt(&::const_hex::display(&self.0), f)
             }
         }
     };
@@ -129,9 +145,7 @@ macro_rules! impl_rbuf_fmt {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 let mut bytes = self.0;
                 bytes.reverse();
-                let mut buf = [0; $len * 2];
-                ::hex::encode_to_slice(bytes, &mut buf).expect("buf: enc hex");
-                f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })
+                ::std::fmt::Display::fmt(&::const_hex::display(&bytes), f)
             }
         }
 
@@ -139,14 +153,12 @@ macro_rules! impl_rbuf_fmt {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 let mut bytes = self.0;
                 bytes.reverse();
-                // fmt only first and last bits of the reversed data.
-                let mut buf = [0; 6];
-                ::hex::encode_to_slice(&bytes[..3], &mut buf).expect("buf: enc hex");
-                f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
-                f.write_str("..")?;
-                ::hex::encode_to_slice(&bytes[$len - 3..], &mut buf).expect("buf: enc hex");
-                f.write_str(unsafe { ::core::str::from_utf8_unchecked(&buf) })?;
-                Ok(())
+                write!(
+                    f,
+                    "{}..{}",
+                    ::const_hex::display(&bytes[..3]),
+                    ::const_hex::display(&bytes[$len - 3..]),
+                )
             }
         }
     };
