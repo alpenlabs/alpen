@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use bitcoin::{Block, hashes::Hash};
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, AsmSpec, AuxData, ChainViewState,
+};
 use strata_asm_params::AsmParams;
-use strata_asm_spec::StrataAsmSpec;
 use strata_asm_stf::{AsmStfInput, AsmStfOutput};
 use strata_btc_verification::HeaderVerificationState;
 use strata_primitives::{Buf32, l1::L1BlockCommitment};
@@ -15,7 +16,7 @@ use crate::{WorkerContext, WorkerError, WorkerResult, aux_resolver::AuxDataResol
 
 /// Service state for the ASM worker.
 #[derive(Debug)]
-pub struct AsmWorkerServiceState<W> {
+pub struct AsmWorkerServiceState<W, S: AsmSpec> {
     /// Params.
     pub(crate) asm_params: Arc<AsmParams>,
 
@@ -32,13 +33,14 @@ pub struct AsmWorkerServiceState<W> {
     pub blkid: Option<L1BlockCommitment>,
 
     /// ASM spec for ASM STF.
-    asm_spec: StrataAsmSpec,
+    asm_spec: S,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
+impl<W: WorkerContext + Send + Sync + 'static, S: AsmSpec + Send + Sync + 'static>
+    AsmWorkerServiceState<W, S>
+{
     /// A new (uninitialized) instance of the service state.
-    pub fn new(context: W, asm_params: Arc<AsmParams>) -> Self {
-        let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
+    pub fn new(context: W, asm_params: Arc<AsmParams>, asm_spec: S) -> Self {
         Self {
             asm_params,
             context,
@@ -150,7 +152,9 @@ impl<W: WorkerContext + Send + Sync + 'static> AsmWorkerServiceState<W> {
     }
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> ServiceState for AsmWorkerServiceState<W> {
+impl<W: WorkerContext + Send + Sync + 'static, S: AsmSpec + Send + Sync + 'static> ServiceState
+    for AsmWorkerServiceState<W, S>
+{
     fn name(&self) -> &str {
         constants::SERVICE_NAME
     }
@@ -168,6 +172,7 @@ mod tests {
     };
     use corepc_node::Node;
     use strata_asm_common::AsmManifest;
+    use strata_asm_spec::StrataAsmSpec;
     use strata_btc_types::{BitcoinTxid, BlockHashExt, RawBitcoinTx};
     use strata_primitives::{L1BlockId, hash::Hash, l1::GenesisL1View};
     use strata_test_utils::ArbitraryGenerator;
@@ -178,7 +183,7 @@ mod tests {
     struct TestEnv {
         pub _node: Node, // Keep node alive
         pub client: Arc<Client>,
-        pub service_state: AsmWorkerServiceState<MockWorkerContext>,
+        pub service_state: AsmWorkerServiceState<MockWorkerContext, StrataAsmSpec>,
     }
 
     async fn setup_env() -> TestEnv {
@@ -205,7 +210,8 @@ mod tests {
 
         // 3. Set worker context and initialize service state
         let context = MockWorkerContext::new();
-        let mut service_state = AsmWorkerServiceState::new(context.clone(), asm_params);
+        let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
+        let mut service_state = AsmWorkerServiceState::new(context.clone(), asm_params, asm_spec);
 
         // Initialize: this should create genesis state based on our `genesis_l1_view`
         service_state

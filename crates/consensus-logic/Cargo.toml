@@ -9,6 +9,8 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
+strata-asm-spec.workspace = true
+strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
@@ -57,4 +59,5 @@ rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
 threadpool.workspace = true
 
 [features]
+debug-asm = ["dep:strata-asm-spec-debug"]
 debug-utils = ["strata-common/debug-utils"]
