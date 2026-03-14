@@ -135,4 +135,21 @@ mod tests {
         assert_eq!(params.l1_view.blk.height(), 50462976);
         assert_eq!(params.subprotocols.len(), 3);
     }
+
+    #[cfg(feature = "arbitrary")]
+    mod proptest_arbitrary {
+        use arbitrary::{Arbitrary, Unstructured};
+        use proptest::{collection, prelude::*};
+
+        use super::*;
+
+        proptest! {
+            #[test]
+            fn test_arbitrary(seed in collection::vec(any::<u8>(), 0..4096)) {
+                let mut u = Unstructured::new(&seed);
+                let res = AsmParams::arbitrary(&mut u);
+                prop_assert!(res.is_ok());
+            }
+        }
+    }
 }
