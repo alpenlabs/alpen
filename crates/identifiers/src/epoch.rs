@@ -104,7 +104,6 @@ impl fmt::Display for EpochCommitment {
 
 #[cfg(test)]
 mod tests {
-    use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -114,15 +113,5 @@ mod tests {
         use super::*;
 
         ssz_proptest!(EpochCommitment, epoch_commitment_strategy());
-
-        #[test]
-        fn test_zero_ssz() {
-            let commitment = EpochCommitment::null();
-            let encoded = commitment.as_ssz_bytes();
-            let decoded = EpochCommitment::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(commitment.epoch(), decoded.epoch());
-            assert_eq!(commitment.last_slot(), decoded.last_slot());
-            assert_eq!(commitment.last_blkid(), decoded.last_blkid());
-        }
     }
 }

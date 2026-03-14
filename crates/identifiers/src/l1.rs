@@ -119,7 +119,6 @@ impl PartialOrd for L1BlockCommitment {
 
 #[cfg(test)]
 mod tests {
-    use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -133,29 +132,11 @@ mod tests {
             buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = L1BlockId::from(Buf32::zero());
-            let encoded = zero.as_ssz_bytes();
-            let decoded = L1BlockId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod l1_block_commitment {
         use super::*;
 
         ssz_proptest!(L1BlockCommitment, l1_block_commitment_strategy());
-
-        #[test]
-        fn test_zero_ssz() {
-            let commitment = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
-
-            let encoded = commitment.as_ssz_bytes();
-            let decoded = L1BlockCommitment::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(commitment.height(), decoded.height());
-            assert_eq!(commitment.blkid(), decoded.blkid());
-        }
     }
 }

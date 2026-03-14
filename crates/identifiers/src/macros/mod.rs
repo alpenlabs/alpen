@@ -20,9 +20,7 @@ mod tests {
         derive(borsh::BorshSerialize, borsh::BorshDeserialize)
     )]
     #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
-    pub struct TestBuf20(
-        #[cfg_attr(feature = "serde", serde(with = "hex::serde"))] [u8; 20],
-    );
+    pub struct TestBuf20(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] [u8; 20]);
 
     crate::macros::buf::impl_buf_core!(TestBuf20, 20);
     crate::macros::buf::impl_buf_fmt!(TestBuf20, 20);

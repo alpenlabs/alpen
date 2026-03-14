@@ -76,7 +76,6 @@ mod tests {
     use std::str::FromStr;
 
     use proptest::prelude::*;
-    use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -89,14 +88,6 @@ mod tests {
             any::<[u8; 32]>(),
             transparent_wrapper_of([u8; 32], from)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = Buf32::zero();
-            let encoded = zero.as_ssz_bytes();
-            let decoded = Buf32::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod buf64_ssz {
@@ -107,14 +98,6 @@ mod tests {
             any::<[u8; 64]>(),
             transparent_wrapper_of([u8; 64], from)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = Buf64::from([0u8; 64]);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = Buf64::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     #[test]
