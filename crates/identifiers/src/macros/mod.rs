@@ -17,11 +17,11 @@ mod tests {
         feature = "borsh",
         derive(borsh::BorshSerialize, borsh::BorshDeserialize)
     )]
+    #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
     pub struct TestBuf20([u8; 20]);
 
     crate::macros::buf::impl_buf_core!(TestBuf20, 20);
     crate::macros::buf::impl_buf_fmt!(TestBuf20, 20);
-    strata_codec::impl_wrapper_codec!(TestBuf20 => [u8; 20]);
     crate::macros::serde_impl::impl_buf_serde!(TestBuf20, 20);
 
     #[test]

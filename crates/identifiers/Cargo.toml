@@ -11,7 +11,7 @@ ssz.workspace = true
 ssz_derive.workspace = true
 ssz_primitives.workspace = true
 ssz_types = { workspace = true, features = ["serde"] }
-strata-codec.workspace = true
+strata-codec = { workspace = true, optional = true }
 tree_hash.workspace = true
 
 arbitrary = { workspace = true, optional = true }
@@ -33,8 +33,9 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["arbitrary", "borsh"]
+default = ["arbitrary", "borsh", "codec"]
 arbitrary = ["dep:arbitrary"]
 borsh = ["dep:borsh"]
+codec = ["dep:strata-codec"]
 jsonschema = ["dep:schemars"]
 test-utils = ["dep:proptest", "arbitrary"]

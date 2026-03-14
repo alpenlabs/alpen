@@ -4,6 +4,8 @@ use std::str::FromStr;
 use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "codec")]
+use strata_codec::Codec;
 use const_hex as hex;
 use ssz_derive::{Decode, Encode};
 use ssz_primitives::FixedBytes;
@@ -33,10 +35,10 @@ use crate::macros::buf as buf_macros;
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct Buf20(pub [u8; 20]);
 buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
-strata_codec::impl_wrapper_codec!(Buf20 => [u8; 20]);
 crate::macros::serde_impl::impl_buf_serde!(Buf20, 20);
 
 // NOTE: we cannot do `ZeroizeOnDrop` since `Buf20` is `Copy`.
@@ -71,11 +73,11 @@ impl Zeroize for Buf20 {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 #[repr(transparent)]
 pub struct Buf32(pub [u8; 32]);
 buf_macros::impl_buf_core!(Buf32, 32);
 buf_macros::impl_buf_fmt!(Buf32, 32);
-strata_codec::impl_wrapper_codec!(Buf32 => [u8; 32]);
 crate::macros::serde_impl::impl_buf_serde!(Buf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
@@ -101,11 +103,11 @@ impl FromStr for Buf32 {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 #[repr(transparent)]
 pub struct RBuf32(pub [u8; 32]);
 buf_macros::impl_buf_core!(RBuf32, 32);
 buf_macros::impl_rbuf_fmt!(RBuf32, 32);
-strata_codec::impl_wrapper_codec!(RBuf32 => [u8; 32]);
 crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
@@ -168,10 +170,10 @@ impl Zeroize for Buf32 {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct Buf64(pub [u8; 64]);
 buf_macros::impl_buf_core!(Buf64, 64);
 buf_macros::impl_buf_fmt!(Buf64, 64);
-strata_codec::impl_wrapper_codec!(Buf64 => [u8; 64]);
 crate::macros::serde_impl::impl_buf_serde!(Buf64, 64);
 
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
