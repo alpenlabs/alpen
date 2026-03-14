@@ -4,6 +4,7 @@ use std::{cmp::Ordering, fmt};
 use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
@@ -18,20 +19,8 @@ pub type L1Height = u32;
 ///
 /// Wraps [`RBuf32`] so that display and human-readable serde automatically
 /// use Bitcoin's reversed byte order convention.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
@@ -60,20 +49,8 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
 /// This is the merkle root of all witness transaction IDs (wtxids) in a block.
 /// Used instead of the regular transaction merkle root to include witness data
 /// for complete transaction verification and malleability protection.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Default,
-    Deserialize,
-    Serialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
@@ -86,9 +63,8 @@ crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
 crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
 
 /// Commitment to an L1 block with height and ID.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, Encode, Decode,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]

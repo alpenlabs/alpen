@@ -119,22 +119,15 @@ macro_rules! impl_buf_serde_inner {
     };
 }
 
-macro_rules! impl_buf_serde {
-    ($name:ident, $len:expr) => {
-        impl_buf_serde_inner!($name, $len, reverse_human_readable: false);
-    };
-}
-
 /// Generates reversed-byte `Serialize` and `Deserialize` impls.
 ///
-/// Same as [`impl_buf_serde`] but reverses the byte order for human-readable formats,
-/// matching Bitcoin's display convention for block/transaction hashes. Binary formats
-/// (e.g. bincode) are unaffected and use raw byte order.
+/// Reverses the byte order for human-readable formats, matching Bitcoin's display
+/// convention for block/transaction hashes. Binary formats (e.g. bincode) are
+/// unaffected and use raw byte order.
 macro_rules! impl_rbuf_serde {
     ($name:ident, $len:expr) => {
         impl_buf_serde_inner!($name, $len, reverse_human_readable: true);
     };
 }
 
-pub(crate) use impl_buf_serde;
 pub(crate) use impl_rbuf_serde;

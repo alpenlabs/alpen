@@ -1,9 +1,10 @@
-use std::{fmt, str};
+use std::fmt;
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
@@ -15,20 +16,8 @@ pub type Slot = u64;
 pub type Epoch = u32;
 
 /// ID of an OL (Orchestration Layer) block, usually the hash of its root header.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    Default,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Eq, Default, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
@@ -55,21 +44,8 @@ impl OLBlockId {
 pub type L2BlockId = OLBlockId;
 
 /// Commitment to an OL block by ID at a particular slot.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    PartialOrd,
-    Ord,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "codec", derive(Codec))]
 #[ssz(struct_behaviour = "container")]
@@ -118,20 +94,8 @@ crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
 pub type L2BlockCommitment = OLBlockCommitment;
 
 /// ID of an OL (Orchestration Layer) transaction.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    Default,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Eq, Default, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]

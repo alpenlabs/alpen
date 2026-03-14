@@ -2,6 +2,7 @@
 pub(crate) mod borsh;
 #[macro_use]
 pub(crate) mod buf;
+#[cfg(feature = "serde")]
 #[macro_use]
 pub(crate) mod serde_impl;
 #[macro_use]
@@ -12,17 +13,19 @@ mod wrapper;
 #[cfg(test)]
 mod tests {
     #[derive(PartialEq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
     #[cfg_attr(
         feature = "borsh",
         derive(borsh::BorshSerialize, borsh::BorshDeserialize)
     )]
     #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
-    pub struct TestBuf20([u8; 20]);
+    pub struct TestBuf20(
+        #[cfg_attr(feature = "serde", serde(with = "hex::serde"))] [u8; 20],
+    );
 
     crate::macros::buf::impl_buf_core!(TestBuf20, 20);
     crate::macros::buf::impl_buf_fmt!(TestBuf20, 20);
-    crate::macros::serde_impl::impl_buf_serde!(TestBuf20, 20);
 
     #[test]
     fn test_from_into_array() {
@@ -44,6 +47,7 @@ mod tests {
         assert_eq!(buf.as_slice(), &[0; 20]);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn test_serialize_hex() {
         let data = [1u8; 20];
@@ -54,6 +58,7 @@ mod tests {
         assert_eq!(json, expected);
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn test_deserialize_hex_without_prefix() {
         let data = [2u8; 20];
@@ -63,40 +68,11 @@ mod tests {
         assert_eq!(buf, TestBuf20(data));
     }
 
-    #[test]
-    fn test_deserialize_hex_with_prefix() {
-        let data = [3u8; 20];
-        let hex_str = hex::encode(data);
-        let json = format!("\"0x{hex_str}\"");
-        let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
-        assert_eq!(buf, TestBuf20(data));
-    }
-
-    #[test]
-    fn test_deserialize_from_seq() {
-        // Provide a JSON array of numbers.
-        let data = [5u8; 20];
-        let json = serde_json::to_string(&data).unwrap();
-        let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
-        assert_eq!(buf, TestBuf20(data));
-    }
-
-    #[test]
-    fn test_deserialize_from_bytes_via_array() {
-        // Although JSON doesn't have a native "bytes" type, this test uses a JSON array
-        // to exercise the same code path as visit_bytes when deserializing a sequence.
-        let data = [7u8; 20];
-        // Simulate input as a JSON array
-        let json = serde_json::to_string(&data).unwrap();
-        let buf: TestBuf20 = serde_json::from_str(&json).unwrap();
-        assert_eq!(buf, TestBuf20(data));
-    }
-
+    #[cfg(feature = "serde")]
     #[test]
     fn test_bincode_roundtrip() {
         let data = [9u8; 20];
         let buf = TestBuf20(data);
-        // bincode is non-human-readable so our implementation will use deserialize_tuple.
         let encoded = bincode::serialize(&buf).expect("bincode serialization failed");
         let decoded: TestBuf20 =
             bincode::deserialize(&encoded).expect("bincode deserialization failed");

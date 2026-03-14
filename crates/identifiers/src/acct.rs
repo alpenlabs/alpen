@@ -5,6 +5,7 @@ use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use ssz_derive::{Decode, Encode};
 use thiserror::Error;
@@ -21,13 +22,12 @@ const SPECIAL_ACCT_ID_BYTE: usize = ACCT_ID_LEN - 1;
 type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
-pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
+pub struct AccountId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 
@@ -139,13 +139,12 @@ crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial, RAW_ACCOUN
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
-#[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode, Serialize, Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
-pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
+pub struct SubjectId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 

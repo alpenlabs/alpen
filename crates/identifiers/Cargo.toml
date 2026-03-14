@@ -21,7 +21,7 @@ hex.workspace = true
 int-enum.workspace = true
 proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
-serde.workspace = true
+serde = { workspace = true, optional = true }
 thiserror.workspace = true
 zeroize.workspace = true
 
@@ -33,9 +33,10 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
-default = ["arbitrary", "borsh", "codec"]
+default = ["arbitrary", "borsh", "codec", "serde"]
 arbitrary = ["dep:arbitrary"]
 borsh = ["dep:borsh"]
 codec = ["dep:strata-codec"]
 jsonschema = ["dep:schemars"]
+serde = ["dep:serde"]
 test-utils = ["dep:proptest", "arbitrary"]

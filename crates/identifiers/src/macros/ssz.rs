@@ -114,9 +114,7 @@ macro_rules! impl_ssz_type_info_fixed {
 #[macro_export]
 macro_rules! impl_ssz_container_ref {
     ($ref_name:ident, $owned:ty) => {
-        #[derive(
-            Copy, Clone, Debug, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-        )]
+        #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
         pub struct $ref_name<'a> {
             inner: $owned,
             _phantom: ::std::marker::PhantomData<&'a ()>,
