@@ -4,6 +4,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
@@ -22,7 +23,8 @@ buf_macros::impl_buf_core!(Buf20, 20);
 buf_macros::impl_buf_fmt!(Buf20, 20);
 
 /// A 32-byte buffer.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -33,6 +35,7 @@ pub struct Buf32(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub 
 buf_macros::impl_buf_core!(Buf32, 32);
 buf_macros::impl_buf_fmt!(Buf32, 32);
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
 
 /// A 32-byte buffer with reversed-byte display and serialization.
@@ -45,7 +48,8 @@ crate::impl_ssz_transparent_byte_array_wrapper!(Buf32, 32);
 /// Use this instead of [`Buf32`] when the value represents a Bitcoin
 /// type (e.g., `BlockHash`, `Txid`, `Wtxid`) that follows this
 /// convention.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
@@ -56,10 +60,12 @@ buf_macros::impl_rbuf_fmt!(RBuf32, 32);
 #[cfg(feature = "serde")]
 crate::macros::serde_impl::impl_rbuf_serde!(RBuf32, 32);
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(RBuf32, 32);
 
 /// A 64-byte buffer.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -69,6 +75,7 @@ pub struct Buf64(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] pub 
 buf_macros::impl_buf_core!(Buf64, 64);
 buf_macros::impl_buf_fmt!(Buf64, 64);
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
 
 #[cfg(test)]
@@ -76,11 +83,13 @@ mod tests {
     use std::str::FromStr;
 
     use proptest::prelude::*;
-    use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
 
+    #[cfg(feature = "ssz")]
     mod buf32_ssz {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
@@ -90,7 +99,10 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ssz")]
     mod buf64_ssz {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(

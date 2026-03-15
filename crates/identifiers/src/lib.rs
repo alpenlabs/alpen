@@ -22,13 +22,18 @@ pub use acct::{
     SubjectId, SubjectIdBytes, SubjectIdBytesError,
 };
 pub use buf::{Buf20, Buf32, Buf64, RBuf32};
-pub use epoch::{EpochCommitment, EpochCommitmentRef};
+pub use epoch::EpochCommitment;
+#[cfg(feature = "ssz")]
+pub use epoch::EpochCommitmentRef;
 #[cfg(feature = "borsh")]
 pub use exec::create_evm_extra_payload;
 pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment};
 pub use hash::Hash;
-pub use l1::{L1BlockCommitment, L1BlockCommitmentRef, L1BlockId, L1Height, WtxidsRoot};
+pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
+#[cfg(feature = "ssz")]
+pub use l1::L1BlockCommitmentRef;
 pub use ol::{
-    Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockCommitmentRef, OLBlockId,
-    OLTxId, Slot,
+    Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId, Slot,
 };
+#[cfg(feature = "ssz")]
+pub use ol::OLBlockCommitmentRef;
