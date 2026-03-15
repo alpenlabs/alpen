@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::buf::Buf32;
 
+/// Alias to [`Buf32`] used as a universal hash type in EE.
+pub type Hash = Buf32;
+
 /// Structure for `ExecUpdate.input.extra_payload` for EVM EL
 #[derive(Debug)]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -24,13 +27,8 @@ impl EVMExtraPayload {
     }
 }
 
-/// Generate extra_payload for evm el
-#[cfg(feature = "borsh")]
 pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
-    let extra_payload = EVMExtraPayload {
-        block_hash: *block_hash.as_ref(),
-    };
-    borsh::to_vec(&extra_payload).expect("extra_payload vec")
+    block_hash.0.to_vec()
 }
 
 /// Commitment to an execution block, containing slot and block ID.

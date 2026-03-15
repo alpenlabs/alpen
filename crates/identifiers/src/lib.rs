@@ -7,7 +7,6 @@ mod acct;
 mod buf;
 mod epoch;
 mod exec;
-pub mod hash;
 mod l1;
 mod ol;
 
@@ -16,6 +15,10 @@ mod jsonschema;
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
+
+pub mod hash {
+    pub use crate::exec::Hash;
+}
 
 pub use acct::{
     AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS,
@@ -27,8 +30,7 @@ pub use epoch::EpochCommitment;
 pub use epoch::EpochCommitmentRef;
 #[cfg(feature = "borsh")]
 pub use exec::create_evm_extra_payload;
-pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment};
-pub use hash::Hash;
+pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment, Hash};
 #[cfg(feature = "ssz")]
 pub use l1::L1BlockCommitmentRef;
 pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
