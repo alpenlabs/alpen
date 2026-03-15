@@ -99,78 +99,48 @@ buf_macros::impl_buf_fmt!(Buf64, 64);
 #[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(Buf64, 64);
 
+/// Tests cover behavior from our own macros (`impl_buf_core`, `impl_buf_fmt`,
+/// `impl_rbuf_fmt`, `impl_rbuf_serde`, etc.), not derived traits.
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use proptest::prelude::*;
 
     use super::*;
 
+    // Each type needs its own module because `ssz_proptest!` expands to
+    // identically-named test functions (`ssz_roundtrip`, `tree_hash_deterministic`, etc.).
     #[cfg(feature = "ssz")]
-    mod buf32_ssz {
+    mod ssz {
         use strata_test_utils_ssz::ssz_proptest;
 
         use super::*;
 
-        ssz_proptest!(
-            Buf32,
-            any::<[u8; 32]>(),
-            transparent_wrapper_of([u8; 32], from)
-        );
-    }
+        mod buf32 {
+            use super::*;
+            ssz_proptest!(
+                Buf32,
+                any::<[u8; 32]>(),
+                transparent_wrapper_of([u8; 32], from)
+            );
+        }
 
-    #[cfg(feature = "ssz")]
-    mod buf64_ssz {
-        use strata_test_utils_ssz::ssz_proptest;
+        mod rbuf32 {
+            use super::*;
+            ssz_proptest!(
+                RBuf32,
+                any::<[u8; 32]>(),
+                transparent_wrapper_of([u8; 32], from)
+            );
+        }
 
-        use super::*;
-
-        ssz_proptest!(
-            Buf64,
-            any::<[u8; 64]>(),
-            transparent_wrapper_of([u8; 64], from)
-        );
-    }
-
-    #[test]
-    fn test_buf32_deserialization() {
-        assert_eq!(
-            Buf32::from([0; 32]),
-            serde_json::from_str(
-                "\"0000000000000000000000000000000000000000000000000000000000000000\"",
-            )
-            .unwrap()
-        );
-
-        // correct byte order
-        assert_eq!(
-            Buf32::from([
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 170u8
-            ]),
-            serde_json::from_str(
-                "\"01010101010101010101010101010101010101010101010101010101010101aa\"",
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn test_buf32_serialization() {
-        assert_eq!(
-            serde_json::to_string(&Buf32::from([0; 32])).unwrap(),
-            String::from("\"0000000000000000000000000000000000000000000000000000000000000000\"")
-        );
-
-        assert_eq!(
-            serde_json::to_string(&Buf32::from([
-                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 1, 170u8
-            ]))
-            .unwrap(),
-            String::from("\"01010101010101010101010101010101010101010101010101010101010101aa\"")
-        );
+        mod buf64 {
+            use super::*;
+            ssz_proptest!(
+                Buf64,
+                any::<[u8; 64]>(),
+                transparent_wrapper_of([u8; 64], from)
+            );
+        }
     }
 
     #[cfg(feature = "zeroize")]
@@ -189,37 +159,41 @@ mod tests {
         assert_eq!(buf64, Buf64::from([0; 64]));
     }
 
-    #[test]
-    fn test_buf32_parse() {
-        "0x37ad61cff1367467a98cf7c54c4ac99e989f1fbb1bc1e646235e90c065c565ba"
-            .parse::<Buf32>()
-            .unwrap();
-    }
+    proptest! {
+        #[test]
+        fn rbuf32_debug_reverses_byte_order(bytes in any::<[u8; 32]>()) {
+            let rbuf = RBuf32::from(bytes);
+            let mut reversed = bytes;
+            reversed.reverse();
+            prop_assert_eq!(format!("{rbuf:?}"), hex::encode(reversed));
+        }
 
-    mod rbuf32_serde {
-        use super::*;
-
-        proptest! {
-            #[test]
-            fn json_reverses_byte_order(bytes in any::<[u8; 32]>()) {
-                let buf = Buf32::from(bytes);
-                let rbuf = RBuf32::from(bytes);
-                let buf_json: String = serde_json::from_str(&serde_json::to_string(&buf).unwrap()).unwrap();
-                let rbuf_json: String = serde_json::from_str(&serde_json::to_string(&rbuf).unwrap()).unwrap();
-                let mut reversed_bytes = bytes;
-                reversed_bytes.reverse();
-                prop_assert_eq!(&rbuf_json, &hex::encode(reversed_bytes));
-                prop_assert_eq!(&buf_json, &hex::encode(bytes));
-            }
+        #[test]
+        fn rbuf32_display_reverses_byte_order(bytes in any::<[u8; 32]>()) {
+            let rbuf = RBuf32::from(bytes);
+            let mut reversed = bytes;
+            reversed.reverse();
+            let expected = format!(
+                "{}..{}",
+                hex::encode(&reversed[..3]),
+                hex::encode(&reversed[29..]),
+            );
+            prop_assert_eq!(format!("{rbuf}"), expected);
         }
     }
 
-    #[test]
-    fn test_buf32_from_str() {
-        Buf32::from_str("a9f913c3d7fe56c462228ad22bb7631742a121a6a138d57c1fc4a351314948fa")
-            .unwrap();
-
-        Buf32::from_str("81060cb3997dcefc463e3db0a776efb5360e458064a666459b8807f60c0201c2")
-            .unwrap();
+    #[cfg(feature = "serde")]
+    proptest! {
+        #[test]
+        fn rbuf32_json_reverses_byte_order(bytes in any::<[u8; 32]>()) {
+            let buf = Buf32::from(bytes);
+            let rbuf = RBuf32::from(bytes);
+            let buf_json: String = serde_json::from_str(&serde_json::to_string(&buf).unwrap()).unwrap();
+            let rbuf_json: String = serde_json::from_str(&serde_json::to_string(&rbuf).unwrap()).unwrap();
+            let mut reversed_bytes = bytes;
+            reversed_bytes.reverse();
+            prop_assert_eq!(&rbuf_json, &hex::encode(reversed_bytes));
+            prop_assert_eq!(&buf_json, &hex::encode(bytes));
+        }
     }
 }
