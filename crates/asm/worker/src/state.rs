@@ -168,7 +168,7 @@ mod tests {
     };
     use corepc_node::Node;
     use strata_asm_common::AsmManifest;
-    use strata_btc_types::{BitcoinTxid, BlockHashExt, RawBitcoinTx};
+    use strata_btc_types::{BlockHashExt, RawBitcoinTx};
     use strata_primitives::{L1BlockId, hash::Hash, l1::GenesisL1View};
     use strata_test_utils::ArbitraryGenerator;
     use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
@@ -308,7 +308,7 @@ mod tests {
             Ok(Network::Regtest)
         }
 
-        fn get_bitcoin_tx(&self, _txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
+        fn get_bitcoin_tx(&self, _txid: &bitcoin::Txid) -> WorkerResult<RawBitcoinTx> {
             Err(WorkerError::Unimplemented)
         }
 

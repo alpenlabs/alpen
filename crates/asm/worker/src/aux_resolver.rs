@@ -20,11 +20,11 @@
 
 use std::fmt;
 
+use bitcoin::Txid;
 use strata_asm_common::{
     AsmMerkleProof, AuxData, AuxRequests, ManifestHashRange, VerifiableManifestHash,
 };
 use strata_asm_manifest_types::Hash32;
-use strata_btc_types::BitcoinTxid;
 use strata_primitives::prelude::*;
 use tracing::*;
 
@@ -132,7 +132,7 @@ impl<'a> AuxDataResolver<'a> {
     /// - The transaction does not exist
     /// - The Bitcoin node does not have txindex enabled
     /// - There's a network or RPC communication error
-    fn resolve_bitcoin_txs(&self, txids: &[BitcoinTxid]) -> WorkerResult<Vec<RawBitcoinTx>> {
+    fn resolve_bitcoin_txs(&self, txids: &[Txid]) -> WorkerResult<Vec<RawBitcoinTx>> {
         if txids.is_empty() {
             return Ok(Vec::new());
         }

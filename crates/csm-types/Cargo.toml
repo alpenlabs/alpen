@@ -13,11 +13,11 @@ strata-identifiers.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
+bitcoin = { workspace = true, features = ["serde"] }
 borsh.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
-bitcoin.workspace = true
 
 [features]
 default = ["std"]

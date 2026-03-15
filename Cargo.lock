@@ -13956,8 +13956,10 @@ dependencies = [
 name = "strata-asm-logs"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "borsh",
  "strata-asm-common",
+ "strata-btc-types",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
@@ -14196,6 +14198,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-txs-test-utils",
  "strata-bridge-types",
+ "strata-btc-types",
  "strata-codec",
  "strata-crypto",
  "strata-l1-txfmt",
@@ -14597,7 +14600,6 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-params",
  "strata-asm-worker",
- "strata-btc-types",
  "strata-chain-worker",
  "strata-chain-worker-new",
  "strata-chainexec",
@@ -14672,6 +14674,7 @@ name = "strata-csm-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitcoin",
  "serde",
  "serde_json",
  "strata-asm-common",

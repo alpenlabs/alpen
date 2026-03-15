@@ -1,8 +1,7 @@
 //! Traits for the chain worker to interface with the underlying system.
 
-use bitcoin::{Block, Network};
+use bitcoin::{Block, Network, Txid};
 use strata_asm_common::{AsmManifest, AuxData};
-use strata_btc_types::BitcoinTxid;
 use strata_merkle::MerkleProofB32;
 use strata_primitives::{hash::Hash, prelude::*};
 use strata_state::asm_state::AsmState;
@@ -35,7 +34,7 @@ pub trait WorkerContext {
     /// Fetches a raw Bitcoin transaction by txid.
     ///
     /// Returns the raw transaction bytes.
-    fn get_bitcoin_tx(&self, txid: &BitcoinTxid) -> WorkerResult<RawBitcoinTx>;
+    fn get_bitcoin_tx(&self, txid: &Txid) -> WorkerResult<RawBitcoinTx>;
 
     /// Appends a manifest hash to the MMR database and returns the leaf index.
     ///

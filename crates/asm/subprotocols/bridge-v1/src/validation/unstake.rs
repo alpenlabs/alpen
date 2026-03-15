@@ -25,7 +25,7 @@ pub(crate) fn validate_unstake_info(
     if !state
         .operators()
         .historical_nn_scripts()
-        .any(|script| script == expected_script.inner())
+        .any(|script| script == &expected_script)
     {
         return Err(UnstakeValidationError::InvalidStakeConnectorScript);
     }

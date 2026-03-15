@@ -4,9 +4,10 @@
 //! the pre-processing phase, along with the response structures returned
 //! to subprotocols after verification.
 
+use bitcoin::Txid;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_manifest_types::Hash32;
-use strata_btc_types::{BitcoinTxid, RawBitcoinTx};
+use strata_btc_types::{RawBitcoinTx, borsh_bitcoin};
 
 use crate::AsmMerkleProof;
 
@@ -19,8 +20,12 @@ pub struct AuxRequests {
     /// Requested manifest hash height ranges.
     pub(crate) manifest_hashes: Vec<ManifestHashRange>,
 
-    /// [Txid](bitcoin::Txid) of the requested transactions.
-    pub(crate) bitcoin_txs: Vec<BitcoinTxid>,
+    /// [`Txid`] of the requested transactions.
+    #[borsh(
+        serialize_with = "borsh_bitcoin::vec_txid::serialize",
+        deserialize_with = "borsh_bitcoin::vec_txid::deserialize"
+    )]
+    pub(crate) bitcoin_txs: Vec<Txid>,
 }
 
 impl AuxRequests {
@@ -30,7 +35,7 @@ impl AuxRequests {
     }
 
     /// Returns a slice of the requested Bitcoin transaction IDs.
-    pub fn bitcoin_txs(&self) -> &[BitcoinTxid] {
+    pub fn bitcoin_txs(&self) -> &[Txid] {
         &self.bitcoin_txs
     }
 }

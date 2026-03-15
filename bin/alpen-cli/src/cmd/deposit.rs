@@ -390,7 +390,7 @@ mod tests {
         let parsed = parse_drt(&tx).expect("tx should parse as DRT");
         assert_eq!(parsed.header_aux(), &header_aux);
 
-        let parsed_output = parsed.deposit_request_output().inner();
+        let parsed_output = parsed.deposit_request_output();
         assert_eq!(parsed_output.value, bridge_in_amount);
         assert_eq!(
             parsed_output.script_pubkey,

@@ -8,7 +8,7 @@ use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
-use strata_btc_types::BitcoinScriptBuf;
+use strata_btc_types::borsh_bitcoin;
 use strata_crypto::{EvenPublicKey, aggregate_schnorr_keys};
 use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
 
@@ -73,12 +73,8 @@ impl OperatorEntry {
 }
 
 /// Builds a key-path-only P2TR script for the provided aggregated operator key.
-pub(crate) fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptBuf {
-    BitcoinScriptBuf::from(ScriptBuf::new_p2tr(
-        SECP256K1,
-        agg_key.to_xonly_public_key(),
-        None,
-    ))
+pub(crate) fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> ScriptBuf {
+    ScriptBuf::new_p2tr(SECP256K1, agg_key.to_xonly_public_key(), None)
 }
 
 /// Table for managing registered bridge operators.
@@ -146,7 +142,11 @@ pub struct OperatorTable {
     ///
     /// By storing the ScriptBuf directly instead of just keys, we avoid recomputing P2TR scripts
     /// during validation, improving performance.
-    historical_nn_scripts: Vec<BitcoinScriptBuf>,
+    #[borsh(
+        serialize_with = "borsh_bitcoin::vec_script_buf::serialize",
+        deserialize_with = "borsh_bitcoin::vec_script_buf::deserialize"
+    )]
+    historical_nn_scripts: Vec<ScriptBuf>,
 }
 
 impl OperatorTable {
@@ -217,7 +217,7 @@ impl OperatorTable {
     /// corresponding to the current operator set) and are used to validate slash transactions that
     /// reference stake connectors from those historical operator sets.
     pub fn historical_nn_scripts(&self) -> impl Iterator<Item = &ScriptBuf> {
-        self.historical_nn_scripts.iter().map(|s| s.inner())
+        self.historical_nn_scripts.iter()
     }
 
     /// Returns the current N/N multisig script for the active operator set.
@@ -228,7 +228,6 @@ impl OperatorTable {
         self.historical_nn_scripts
             .last()
             .expect("N/N script history should never be empty")
-            .inner()
     }
 
     /// Retrieves an operator entry by its unique index.

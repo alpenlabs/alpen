@@ -33,7 +33,7 @@ mod tests {
 
     fn stake_connector_script_from_aux(info: &SlashInfo, aux: &VerifiedAuxData) -> ScriptBuf {
         let txout = aux
-            .get_bitcoin_txout(info.stake_inpoint().outpoint())
+            .get_bitcoin_txout(info.stake_inpoint())
             .expect("stake connector txout should exist in aux data");
         txout.script_pubkey.clone()
     }

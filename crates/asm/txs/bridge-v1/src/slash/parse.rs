@@ -39,8 +39,7 @@ pub fn parse_slash_tx<'t>(tx: &TxInputRef<'t>) -> Result<SlashInfo, TxStructureE
                 "stake connector input",
             )
         })?
-        .previous_output
-        .into();
+        .previous_output;
 
     let info = SlashInfo::new(header_aux, stake_inpoint);
 

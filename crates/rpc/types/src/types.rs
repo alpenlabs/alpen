@@ -62,7 +62,7 @@ impl RpcL1Status {
             last_rpc_error: l1s.last_rpc_error,
             cur_height: l1s.cur_height,
             cur_tip_blkid: l1s.cur_tip_blkid,
-            last_published_txid: l1s.last_published_txid.map(Into::into),
+            last_published_txid: l1s.last_published_txid,
             published_envelope_count: l1s.published_reveal_txs_count,
             last_update: l1s.last_update,
             network,

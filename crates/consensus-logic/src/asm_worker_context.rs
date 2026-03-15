@@ -102,15 +102,10 @@ impl WorkerContext for AsmWorkerCtx {
             .map_err(|_| WorkerError::BtcClient)
     }
 
-    fn get_bitcoin_tx(&self, txid: &strata_btc_types::BitcoinTxid) -> WorkerResult<RawBitcoinTx> {
-        let bitcoin_txid = txid.inner();
-
+    fn get_bitcoin_tx(&self, txid: &bitcoin::Txid) -> WorkerResult<RawBitcoinTx> {
         let raw_tx_response = self
             .handle
-            .block_on(
-                self.bitcoin_client
-                    .get_raw_transaction_verbosity_zero(&bitcoin_txid),
-            )
+            .block_on(self.bitcoin_client.get_raw_transaction_verbosity_zero(txid))
             .map_err(|e| {
                 tracing::warn!(?txid, ?e, "Failed to fetch Bitcoin transaction");
                 WorkerError::BitcoinTxNotFound(*txid)
