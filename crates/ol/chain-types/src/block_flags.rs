@@ -11,7 +11,7 @@ const IS_TERMINAL: RawBlockFlags = 0x0001;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Encode, Decode)]
 pub struct BlockFlags(RawBlockFlags);
 
-impl_ssz_transparent_wrapper!(BlockFlags, u16, 2);
+impl_ssz_transparent_wrapper!(BlockFlags, u16);
 
 impl From<u16> for BlockFlags {
     fn from(value: u16) -> Self {

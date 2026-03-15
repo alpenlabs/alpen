@@ -7,14 +7,17 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
 serde.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 
 [features]
 default = ["std"]

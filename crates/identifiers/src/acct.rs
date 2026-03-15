@@ -1,11 +1,14 @@
-use std::{fmt, mem};
+use std::fmt;
 
+#[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
-use thiserror::Error;
 
 const ACCT_ID_LEN: usize = 32;
 pub const SUBJ_ID_LEN: usize = 32;
@@ -19,24 +22,13 @@ const SPECIAL_ACCT_ID_BYTE: usize = ACCT_ID_LEN - 1;
 type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    Decode,
-    Encode,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct AccountId(#[serde(with = "hex::serde")] RawAccountId);
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Decode, Encode))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
+pub struct AccountId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawAccountId);
 
 impl_opaque_thin_wrapper!(AccountId => RawAccountId);
 
@@ -77,36 +69,21 @@ impl AccountId {
 
 impl fmt::Display for AccountId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buf = [0; SUBJ_ID_LEN * 2];
-        hex::encode_to_slice(self.0, &mut buf).expect("ident/acct: encode hex");
-        // SAFETY: correct lengths
-        f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
+        fmt::Display::fmt(&const_hex::display(&self.0), f)
     }
 }
 
+#[cfg(feature = "ssz")]
 impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
 
 type RawAccountSerial = u32;
 
-/// Size of RawAccountSerial (u32) in bytes
-const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
-
 /// Incrementally assigned account serial number.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    Decode,
-    Encode,
-    BorshSerialize,
-    BorshDeserialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Decode, Encode))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
 pub struct AccountSerial(RawAccountSerial);
 
 impl_opaque_thin_wrapper!(AccountSerial => RawAccountSerial);
@@ -154,50 +131,30 @@ impl fmt::Display for AccountSerial {
     }
 }
 
-crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial, RAW_ACCOUNT_SERIAL_LEN);
+#[cfg(feature = "ssz")]
+crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial);
 
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Decode,
-    Encode,
-    Serialize,
-    Deserialize,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-pub struct SubjectId(#[serde(with = "hex::serde")] RawSubjectId);
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Decode, Encode))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
+pub struct SubjectId(#[cfg_attr(feature = "serde", serde(with = "hex::serde"))] RawSubjectId);
 
 impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 
 impl fmt::Display for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buf = [0; SUBJ_ID_LEN * 2];
-        hex::encode_to_slice(self.0, &mut buf).expect("ident/subj: encode hex");
-        // SAFETY: correct lengths
-        f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
+        fmt::Display::fmt(&const_hex::display(&self.0), f)
     }
 }
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(SubjectId, 32);
-
-/// Error type for [`SubjectBytes`] operations.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum SubjectIdBytesError {
-    /// Subject bytes exceed the maximum allowed length.
-    #[error("subject bytes length {0} exceeds maximum length {SUBJ_ID_LEN}")]
-    TooLong(usize),
-}
 
 /// Variable-length [`SubjectId`] bytes.
 ///
@@ -208,16 +165,11 @@ pub enum SubjectIdBytesError {
 pub struct SubjectIdBytes(Vec<u8>);
 
 impl SubjectIdBytes {
-    /// Creates a new `SubjectBytes` instance from a byte vector.
+    /// Creates a new `SubjectIdBytes` from a byte vector.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the length exceeds [`SUBJ_ID_LEN`].
-    pub fn try_new(bytes: Vec<u8>) -> Result<Self, SubjectIdBytesError> {
-        if bytes.len() > SUBJ_ID_LEN {
-            return Err(SubjectIdBytesError::TooLong(bytes.len()));
-        }
-        Ok(Self(bytes))
+    /// Returns [`None`] if the length exceeds [`SUBJ_ID_LEN`].
+    pub fn try_new(bytes: Vec<u8>) -> Option<Self> {
+        (bytes.len() <= SUBJ_ID_LEN).then_some(Self(bytes))
     }
 
     /// Returns the raw, unpadded subject bytes.
@@ -259,7 +211,8 @@ impl SubjectIdBytes {
     }
 }
 
-impl<'a> Arbitrary<'a> for SubjectIdBytes {
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for SubjectIdBytes {
     fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         // Generate bytes with length between 0 and SUBJ_ID_LEN
         let len = u.int_in_range(0..=SUBJ_ID_LEN)?;
@@ -298,12 +251,13 @@ impl fmt::Display for AccountTypeId {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use ssz::{Decode, Encode};
-    use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
 
+    #[cfg(feature = "ssz")]
     mod account_id {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
@@ -311,17 +265,12 @@ mod tests {
             any::<[u8; ACCT_ID_LEN]>(),
             transparent_wrapper_of(RawAccountId, new)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = AccountId::new([0u8; ACCT_ID_LEN]);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = AccountId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
+    #[cfg(feature = "ssz")]
     mod account_serial {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
@@ -329,17 +278,12 @@ mod tests {
             any::<u32>(),
             transparent_wrapper_of(RawAccountSerial, new)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = AccountSerial::new(0);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = AccountSerial::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
+    #[cfg(feature = "ssz")]
     mod subject_id {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
@@ -347,14 +291,6 @@ mod tests {
             any::<[u8; SUBJ_ID_LEN]>(),
             transparent_wrapper_of(RawSubjectId, new)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = SubjectId::new([0u8; SUBJ_ID_LEN]);
-            let encoded = zero.as_ssz_bytes();
-            let decoded = SubjectId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod subject_id_bytes {
@@ -363,9 +299,7 @@ mod tests {
         proptest! {
             #[test]
             fn prop_accepts_valid_length(bytes in prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)) {
-                let result = SubjectIdBytes::try_new(bytes.clone());
-                prop_assert!(result.is_ok());
-                let sb = result.unwrap();
+                let sb = SubjectIdBytes::try_new(bytes.clone()).unwrap();
                 prop_assert_eq!(sb.as_bytes(), &bytes[..]);
                 prop_assert_eq!(sb.len(), bytes.len());
                 prop_assert_eq!(sb.is_empty(), bytes.is_empty());
@@ -375,11 +309,7 @@ mod tests {
             fn prop_rejects_too_long(
                 bytes in prop::collection::vec(any::<u8>(), (SUBJ_ID_LEN + 1)..=(SUBJ_ID_LEN + 100))
             ) {
-                let len = bytes.len();
-                let result = SubjectIdBytes::try_new(bytes);
-                prop_assert!(result.is_err());
-                prop_assert!(matches!(result, Err(SubjectIdBytesError::TooLong(actual))
-                    if actual == len));
+                prop_assert!(SubjectIdBytes::try_new(bytes).is_none());
             }
 
             #[test]

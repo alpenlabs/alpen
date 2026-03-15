@@ -6,10 +6,10 @@ use strata_csm_types::ClientState;
 use strata_db_types::{traits::BlockStatus, DbError};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLBlock;
-use strata_params::RollupParams;
+use strata_params::{CredRule, RollupParams};
 use strata_primitives::{
-    crypto::verify_schnorr_sig, Buf32, CredRule, EpochCommitment, L1BlockCommitment,
-    OLBlockCommitment, OLBlockId,
+    crypto::verify_schnorr_sig, Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment,
+    OLBlockId,
 };
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate};

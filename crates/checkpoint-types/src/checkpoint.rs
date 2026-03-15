@@ -2,7 +2,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_crypto::{hash, schnorr::verify_schnorr_sig};
-use strata_identifiers::{Buf32, Buf64, CredRule};
+use strata_identifiers::{Buf32, Buf64};
+use strata_params::CredRule;
 use zkaleido::{Proof, ProofReceipt, PublicValues};
 
 use super::batch::BatchInfo;

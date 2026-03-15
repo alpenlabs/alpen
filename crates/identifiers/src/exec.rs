@@ -1,11 +1,18 @@
+#[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::buf::Buf32;
 
+/// Alias to [`Buf32`] used as a universal hash type in EE.
+pub type Hash = Buf32;
+
 /// Structure for `ExecUpdate.input.extra_payload` for EVM EL
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug)]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 pub struct EVMExtraPayload {
     block_hash: [u8; 32],
 }
@@ -20,33 +27,18 @@ impl EVMExtraPayload {
     }
 }
 
-/// Generate extra_payload for evm el
 pub fn create_evm_extra_payload(block_hash: Buf32) -> Vec<u8> {
-    let extra_payload = EVMExtraPayload {
-        block_hash: *block_hash.as_ref(),
-    };
-    borsh::to_vec(&extra_payload).expect("extra_payload vec")
+    block_hash.0.to_vec()
 }
 
 /// Commitment to an execution block, containing slot and block ID.
 ///
 /// This type was previously named `EvmEeBlockCommitment` but has been renamed
 /// to `ExecBlockCommitment` to be more generic and not tied to EVM.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Arbitrary,
-    BorshDeserialize,
-    BorshSerialize,
-    Deserialize,
-    Serialize,
-)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "borsh", derive(BorshDeserialize, BorshSerialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct ExecBlockCommitment {
     slot: u64,
     blkid: Buf32,

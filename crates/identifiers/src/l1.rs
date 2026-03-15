@@ -1,15 +1,17 @@
 use std::{cmp::Ordering, fmt};
 
-use arbitrary::{Arbitrary, Result as ArbitraryResult, Unstructured};
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
+#[cfg(feature = "borsh")]
 use borsh::{BorshDeserialize, BorshSerialize};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
-use strata_codec::{Codec, CodecError, Decoder, Encoder};
+#[cfg(feature = "codec")]
+use strata_codec::Codec;
 
-use crate::{
-    buf::{Buf32, RBuf32},
-    ssz_generated::ssz::commitments::L1BlockCommitment,
-};
+use crate::buf::{Buf32, RBuf32};
 
 /// L1 block height (as a simple u32)
 pub type L1Height = u32;
@@ -18,26 +20,15 @@ pub type L1Height = u32;
 ///
 /// Wraps [`RBuf32`] so that display and human-readable serde automatically
 /// use Bitcoin's reversed byte order convention.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Default,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct L1BlockId(RBuf32);
 
-// Debug, Display, From<RBuf32>, AsRef<[u8; 32]>, and Codec via RBuf32 delegation.
+// Debug, Display, From<RBuf32>, AsRef<[u8; 32]> via RBuf32 delegation.
 crate::impl_buf_wrapper!(L1BlockId, RBuf32, 32);
 
 impl From<Buf32> for L1BlockId {
@@ -52,55 +43,43 @@ impl From<L1BlockId> for Buf32 {
     }
 }
 
-// Manual TreeHash implementation for transparent wrapper
-crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
+#[cfg(feature = "ssz")]
+crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32);
 
 /// Witness transaction ID merkle root from a Bitcoin block.
 ///
 /// This is the merkle root of all witness transaction IDs (wtxids) in a block.
 /// Used instead of the regular transaction merkle root to include witness data
 /// for complete transaction verification and malleability protection.
-#[derive(
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Default,
-    Arbitrary,
-    BorshSerialize,
-    BorshDeserialize,
-    Deserialize,
-    Serialize,
-    Encode,
-    Decode,
-)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
 pub struct WtxidsRoot(Buf32);
 
-// Implement standard wrapper traits (Debug, Display, From, AsRef, Codec)
+// Implement standard wrapper traits (Debug, Display, From, AsRef)
 crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
 
-// Manual TreeHash implementation for transparent wrapper
-crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
+#[cfg(feature = "ssz")]
+crate::impl_ssz_transparent_wrapper!(WtxidsRoot, Buf32);
 
-// Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-crate::impl_borsh_via_ssz_fixed!(L1BlockCommitment);
-
-impl Codec for L1BlockCommitment {
-    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        self.height.encode(enc)?;
-        self.blkid.encode(enc)?;
-        Ok(())
-    }
-
-    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let height = u32::decode(dec)?;
-        let blkid = L1BlockId::decode(dec)?;
-        Ok(Self { height, blkid })
-    }
+/// Commitment to an L1 block with height and ID.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
+#[cfg_attr(feature = "codec", derive(Codec))]
+#[cfg_attr(feature = "ssz", ssz(struct_behaviour = "container"))]
+pub struct L1BlockCommitment {
+    pub height: L1Height,
+    pub blkid: L1BlockId,
 }
+
+#[cfg(feature = "ssz")]
+crate::impl_ssz_fixed_container!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -129,14 +108,6 @@ impl L1BlockCommitment {
     }
 }
 
-impl Arbitrary<'_> for L1BlockCommitment {
-    fn arbitrary(u: &mut Unstructured<'_>) -> ArbitraryResult<Self> {
-        let height = u32::arbitrary(u)?;
-        let blkid = L1BlockId::arbitrary(u)?;
-        Ok(Self { height, blkid })
-    }
-}
-
 impl Ord for L1BlockCommitment {
     fn cmp(&self, other: &Self) -> Ordering {
         (self.height(), self.blkid()).cmp(&(other.height(), other.blkid()))
@@ -149,9 +120,8 @@ impl PartialOrd for L1BlockCommitment {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ssz"))]
 mod tests {
-    use ssz::{Decode, Encode};
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
@@ -165,29 +135,11 @@ mod tests {
             buf32_strategy(),
             transparent_wrapper_of(Buf32, from)
         );
-
-        #[test]
-        fn test_zero_ssz() {
-            let zero = L1BlockId::from(Buf32::zero());
-            let encoded = zero.as_ssz_bytes();
-            let decoded = L1BlockId::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(zero, decoded);
-        }
     }
 
     mod l1_block_commitment {
         use super::*;
 
         ssz_proptest!(L1BlockCommitment, l1_block_commitment_strategy());
-
-        #[test]
-        fn test_zero_ssz() {
-            let commitment = L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero()));
-
-            let encoded = commitment.as_ssz_bytes();
-            let decoded = L1BlockCommitment::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(commitment.height(), decoded.height());
-            assert_eq!(commitment.blkid(), decoded.blkid());
-        }
     }
 }

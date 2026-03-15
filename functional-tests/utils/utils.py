@@ -683,6 +683,8 @@ def cl_slot_to_block_id(seqrpc, slot):
 def el_slot_to_block_commitment(rethrpc, block_num):
     """Get EL block commitment from block number using Ethereum RPC."""
     blk_id = rethrpc.eth_getBlockByNumber(hex(block_num), False)["hash"]
+    if blk_id.startswith(("0x", "0X")):
+        blk_id = blk_id[2:]
     return (block_num, blk_id)
 
 

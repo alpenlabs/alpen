@@ -8,7 +8,7 @@ workspace = true
 
 [dependencies]
 strata-acct-types.workspace = true
-strata-identifiers.workspace = true
+strata-predicate.workspace = true
 
 alloy-primitives.workspace = true
 

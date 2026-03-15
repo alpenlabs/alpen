@@ -4,7 +4,7 @@ use bitcoin::{Amount, Network, XOnlyPublicKey};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_btc_types::GenesisL1View;
-use strata_identifiers::{Buf32, CredRule};
+use strata_identifiers::Buf32;
 use strata_l1_txfmt::MagicBytes;
 use strata_predicate::PredicateKey;
 use thiserror::Error;
@@ -125,6 +125,17 @@ impl ProofPublishMode {
     pub fn allow_empty(&self) -> bool {
         !matches!(self, Self::Strict)
     }
+}
+
+/// Rule we use to decide how to identify if an L2 block is correctly signed.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredRule {
+    /// Any block gets accepted, unconditionally.
+    Unchecked,
+
+    /// Just sign every block with a static BIP340 schnorr pubkey.
+    SchnorrKey(Buf32),
 }
 
 /// Client sync parameters that are used to make the network work but don't

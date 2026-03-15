@@ -16,9 +16,9 @@ use strata_ol_chain_types::{
     SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::Chainstate;
-use strata_params::{Params, ProofPublishMode, RollupParams, SyncParams};
+use strata_params::{CredRule, Params, ProofPublishMode, RollupParams, SyncParams};
 use strata_predicate::PredicateKey;
-use strata_primitives::{block_credential, buf::Buf64};
+use strata_primitives::buf::Buf64;
 use strata_test_utils::ArbitraryGenerator;
 use strata_test_utils_btc::segment::BtcChainSegment;
 
@@ -101,7 +101,7 @@ fn gen_params_with_seed(seed: u64) -> Params {
         rollup: RollupParams {
             magic_bytes: (*b"ALPN").into(),
             block_time: 1000,
-            cred_rule: block_credential::CredRule::Unchecked,
+            cred_rule: CredRule::Unchecked,
             genesis_l1_view,
             operators: vec![opkey],
             evm_genesis_block_hash:
