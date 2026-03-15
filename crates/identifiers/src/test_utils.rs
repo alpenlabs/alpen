@@ -92,7 +92,7 @@ pub fn l1_block_commitment_strategy() -> impl Strategy<Value = L1BlockCommitment
 // SSZ strategies
 // =============================================================================
 
-/// Strategy for generating random [`FixedBytes<32>`] values.
+/// Strategy for generating random `ssz_types::FixedBytes<32>` values.
 #[cfg(feature = "ssz")]
 pub fn fixed_bytes_32_strategy() -> impl Strategy<Value = ssz_types::FixedBytes<32>> {
     any::<[u8; 32]>().prop_map(ssz_types::FixedBytes::from)
