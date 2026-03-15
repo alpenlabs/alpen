@@ -131,6 +131,7 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     tokio::pin!(tick);
 
     let mut curr = start_idx;
+    let mut last_published = start_idx;
     loop {
         tick.as_mut().tick().await;
         let span_curr = curr;
@@ -167,7 +168,8 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                 }
 
                 ChunkedEnvelopeStatus::Finalized => {
-                    curr += 1;
+                    // this is fine because we already increased
+                    // curr += 1;
                 }
 
                 ChunkedEnvelopeStatus::Unpublished => {
@@ -184,6 +186,10 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                         updated.status = new_status.clone();
                         ops.put_chunked_envelope_entry_async(curr, updated).await?;
                     }
+                    // make sure we increment the last published only once, per tx
+                    if last_published == curr {
+                        last_published += 1;
+                    }
                 }
 
                 ChunkedEnvelopeStatus::CommitPublished
@@ -197,7 +203,13 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                         updated.status = new_status.clone();
                         ops.put_chunked_envelope_entry_async(curr, updated).await?;
                     }
-                    if new_status == ChunkedEnvelopeStatus::Finalized {
+                    //if new_status == ChunkedEnvelopeStatus::Finalized {
+                    // curr += 1;
+                    //}
+                    // FIXME(str-2600): this is a hack, can only publish one tx a time, and not
+                    // reorg friendly
+                    // make sure we increment the current index only when a new tx got published
+                    if curr == last_published - 1 {
                         curr += 1;
                     }
                 }
