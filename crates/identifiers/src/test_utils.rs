@@ -4,7 +4,6 @@
 //! across multiple test modules to avoid code duplication.
 
 use proptest::prelude::*;
-use ssz_types::FixedBytes;
 
 use crate::{
     AccountId, AccountSerial, Buf32, Buf64, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId,
@@ -94,6 +93,7 @@ pub fn l1_block_commitment_strategy() -> impl Strategy<Value = L1BlockCommitment
 // =============================================================================
 
 /// Strategy for generating random [`FixedBytes<32>`] values.
-pub fn fixed_bytes_32_strategy() -> impl Strategy<Value = FixedBytes<32>> {
-    any::<[u8; 32]>().prop_map(FixedBytes::from)
+#[cfg(feature = "ssz")]
+pub fn fixed_bytes_32_strategy() -> impl Strategy<Value = ssz_types::FixedBytes<32>> {
+    any::<[u8; 32]>().prop_map(ssz_types::FixedBytes::from)
 }

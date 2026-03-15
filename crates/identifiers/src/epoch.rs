@@ -19,6 +19,7 @@ use std::fmt;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
@@ -30,18 +31,20 @@ use crate::{
 };
 
 /// Commitment to a particular epoch by the last block and slot.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
-#[ssz(struct_behaviour = "container")]
+#[cfg_attr(feature = "ssz", ssz(struct_behaviour = "container"))]
 pub struct EpochCommitment {
     pub epoch: Epoch,
     pub last_slot: Slot,
     pub last_blkid: OLBlockId,
 }
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_fixed_container!(EpochCommitment, [epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId]);
 
 impl EpochCommitment {
@@ -100,7 +103,7 @@ impl fmt::Display for EpochCommitment {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ssz"))]
 mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 

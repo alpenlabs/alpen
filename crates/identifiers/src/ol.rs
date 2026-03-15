@@ -6,6 +6,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
@@ -16,7 +17,8 @@ pub type Slot = u64;
 pub type Epoch = u32;
 
 /// ID of an OL (Orchestration Layer) block, usually the hash of its root header.
-#[derive(Copy, Clone, Eq, Default, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Eq, Default, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -25,6 +27,7 @@ pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_wrapper!(OLBlockId, Buf32);
 
 impl OLBlockId {
@@ -43,16 +46,18 @@ impl OLBlockId {
 pub type L2BlockId = OLBlockId;
 
 /// Commitment to an OL block by ID at a particular slot.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, PartialOrd, Ord)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "codec", derive(Codec))]
-#[ssz(struct_behaviour = "container")]
+#[cfg_attr(feature = "ssz", ssz(struct_behaviour = "container"))]
 pub struct OLBlockCommitment {
     pub slot: Slot,
     pub blkid: OLBlockId,
 }
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_fixed_container!(OLBlockCommitment, [slot: Slot, blkid: OLBlockId]);
 
 impl OLBlockCommitment {
@@ -84,14 +89,15 @@ impl fmt::Display for OLBlockCommitment {
 }
 
 // Use macro to generate Borsh implementations via SSZ (fixed-size, no length prefix)
-#[cfg(feature = "borsh")]
+#[cfg(all(feature = "borsh", feature = "ssz"))]
 crate::impl_borsh_via_ssz_fixed!(OLBlockCommitment);
 
 /// Alias for backward compatibility
 pub type L2BlockCommitment = OLBlockCommitment;
 
 /// ID of an OL (Orchestration Layer) transaction.
-#[derive(Copy, Clone, Eq, Default, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Copy, Clone, Eq, Default, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -100,9 +106,10 @@ pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_wrapper!(OLTxId, Buf32);
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ssz"))]
 mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 

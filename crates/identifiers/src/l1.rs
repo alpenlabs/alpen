@@ -6,6 +6,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 #[cfg(feature = "codec")]
 use strata_codec::Codec;
@@ -19,7 +20,8 @@ pub type L1Height = u32;
 ///
 /// Wraps [`RBuf32`] so that display and human-readable serde automatically
 /// use Bitcoin's reversed byte order convention.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -41,7 +43,7 @@ impl From<L1BlockId> for Buf32 {
     }
 }
 
-// Manual TreeHash implementation for transparent wrapper
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32);
 
 /// Witness transaction ID merkle root from a Bitcoin block.
@@ -49,7 +51,8 @@ crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32);
 /// This is the merkle root of all witness transaction IDs (wtxids) in a block.
 /// Used instead of the regular transaction merkle root to include witness data
 /// for complete transaction verification and malleability protection.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -59,20 +62,23 @@ pub struct WtxidsRoot(Buf32);
 // Implement standard wrapper traits (Debug, Display, From, AsRef)
 crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_wrapper!(WtxidsRoot, Buf32);
 
 /// Commitment to an L1 block with height and ID.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
+#[cfg_attr(feature = "ssz", derive(Encode, Decode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(Codec))]
-#[ssz(struct_behaviour = "container")]
+#[cfg_attr(feature = "ssz", ssz(struct_behaviour = "container"))]
 pub struct L1BlockCommitment {
     pub height: L1Height,
     pub blkid: L1BlockId,
 }
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_fixed_container!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
 
 impl fmt::Display for L1BlockCommitment {
@@ -114,7 +120,7 @@ impl PartialOrd for L1BlockCommitment {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ssz"))]
 mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 

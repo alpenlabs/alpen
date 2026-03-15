@@ -5,6 +5,7 @@ pub(crate) mod buf;
 #[cfg(feature = "serde")]
 #[macro_use]
 pub(crate) mod serde_impl;
+#[cfg(feature = "ssz")]
 #[macro_use]
 mod ssz;
 #[macro_use]
@@ -77,56 +78,58 @@ mod tests {
         assert_eq!(buf, decoded);
     }
 
-    // Test the SSZ transparent wrapper macros
-    use ssz::{Decode, Encode};
-    use ssz_derive::{Decode, Encode};
+    #[cfg(feature = "ssz")]
+    mod ssz_wrapper_tests {
+        use ssz::{Decode, Encode};
+        use ssz_derive::{Decode, Encode};
 
-    use crate::buf::Buf32;
+        use crate::buf::Buf32;
 
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode)]
-    #[ssz(struct_behaviour = "transparent")]
-    struct TestBuf32Wrapper(Buf32);
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode)]
+        #[ssz(struct_behaviour = "transparent")]
+        struct TestBuf32Wrapper(Buf32);
 
-    crate::impl_ssz_transparent_wrapper!(TestBuf32Wrapper, Buf32);
+        crate::impl_ssz_transparent_wrapper!(TestBuf32Wrapper, Buf32);
 
-    #[test]
-    fn test_ssz_transparent_wrapper_roundtrip() {
-        let data = [42u8; 32];
-        let wrapper = TestBuf32Wrapper(Buf32::new(data));
+        #[test]
+        fn test_ssz_transparent_wrapper_roundtrip() {
+            let data = [42u8; 32];
+            let wrapper = TestBuf32Wrapper(Buf32::new(data));
 
-        // Test SSZ encoding/decoding
-        let encoded = wrapper.as_ssz_bytes();
-        let decoded = TestBuf32Wrapper::from_ssz_bytes(&encoded).unwrap();
-        assert_eq!(wrapper, decoded);
+            // Test SSZ encoding/decoding
+            let encoded = wrapper.as_ssz_bytes();
+            let decoded = TestBuf32Wrapper::from_ssz_bytes(&encoded).unwrap();
+            assert_eq!(wrapper, decoded);
+        }
+
+        #[test]
+        fn test_ssz_transparent_wrapper_tree_hash() {
+            use tree_hash::{Sha256Hasher, TreeHash};
+
+            let data = [42u8; 32];
+            let wrapper = TestBuf32Wrapper(Buf32::new(data));
+            let inner = Buf32::new(data);
+
+            // TreeHash should be the same as inner type (transparent)
+            let wrapper_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&wrapper);
+            let inner_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&inner);
+            assert_eq!(wrapper_hash, inner_hash);
+        }
+
+        #[test]
+        fn test_ssz_transparent_wrapper_to_owned() {
+            use ssz_types::view::ToOwnedSsz;
+
+            let data = [42u8; 32];
+            let wrapper = TestBuf32Wrapper(Buf32::new(data));
+
+            // ToOwnedSsz should return a copy
+            let owned = ToOwnedSsz::to_owned(&wrapper);
+            assert_eq!(wrapper, owned);
+        }
     }
 
-    #[test]
-    fn test_ssz_transparent_wrapper_tree_hash() {
-        use tree_hash::{Sha256Hasher, TreeHash};
-
-        let data = [42u8; 32];
-        let wrapper = TestBuf32Wrapper(Buf32::new(data));
-        let inner = Buf32::new(data);
-
-        // TreeHash should be the same as inner type (transparent)
-        let wrapper_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&wrapper);
-        let inner_hash = TreeHash::<Sha256Hasher>::tree_hash_root(&inner);
-        assert_eq!(wrapper_hash, inner_hash);
-    }
-
-    #[test]
-    fn test_ssz_transparent_wrapper_to_owned() {
-        use ssz_types::view::ToOwnedSsz;
-
-        let data = [42u8; 32];
-        let wrapper = TestBuf32Wrapper(Buf32::new(data));
-
-        // ToOwnedSsz should return a copy
-        let owned = ToOwnedSsz::to_owned(&wrapper);
-        assert_eq!(wrapper, owned);
-    }
-
-    #[cfg(feature = "borsh")]
+    #[cfg(all(feature = "borsh", feature = "ssz"))]
     mod borsh_tests {
         use std::io;
 

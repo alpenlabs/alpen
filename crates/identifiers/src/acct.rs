@@ -7,6 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use int_enum::IntEnum;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
 use thiserror::Error;
 
@@ -22,7 +23,8 @@ const SPECIAL_ACCT_ID_BYTE: usize = ACCT_ID_LEN - 1;
 type RawAccountId = [u8; ACCT_ID_LEN];
 
 /// Universal account identifier.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -75,12 +77,14 @@ impl fmt::Display for AccountId {
     }
 }
 
+#[cfg(feature = "ssz")]
 impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
 
 type RawAccountSerial = u32;
 
 /// Incrementally assigned account serial number.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
 #[cfg_attr(feature = "codec", derive(strata_codec::Codec))]
@@ -131,12 +135,14 @@ impl fmt::Display for AccountSerial {
     }
 }
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial);
 
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 
 /// Identifier for a "subject" within the scope of an execution environment.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[cfg_attr(feature = "ssz", derive(Decode, Encode))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[cfg_attr(feature = "borsh", derive(BorshSerialize, BorshDeserialize))]
@@ -154,6 +160,7 @@ impl fmt::Display for SubjectId {
     }
 }
 
+#[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(SubjectId, 32);
 
 /// Error type for [`SubjectBytes`] operations.
@@ -264,11 +271,13 @@ impl fmt::Display for AccountTypeId {
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
-    use strata_test_utils_ssz::ssz_proptest;
 
     use super::*;
 
+    #[cfg(feature = "ssz")]
     mod account_id {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
@@ -278,7 +287,10 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ssz")]
     mod account_serial {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
@@ -288,7 +300,10 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ssz")]
     mod subject_id {
+        use strata_test_utils_ssz::ssz_proptest;
+
         use super::*;
 
         ssz_proptest!(
