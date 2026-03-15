@@ -1,7 +1,5 @@
 //! Snark account state types.
 
-use std::mem;
-
 use ssz_derive::{Decode, Encode};
 use strata_acct_types::{AccountTypeId, AccountTypeState, Hash, Mmr64, impl_opaque_thin_wrapper};
 use strata_identifiers::impl_ssz_transparent_wrapper;
@@ -11,9 +9,6 @@ use crate::ssz_generated::ssz::state::*;
 /// Raw sequence number type.
 type RawSeqno = u64;
 
-/// Size of RawSeqno (u64) in bytes
-const RAW_SEQNO_LEN: usize = mem::size_of::<RawSeqno>();
-
 /// Account sequence number type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[ssz(struct_behaviour = "transparent")]
@@ -21,7 +16,7 @@ pub struct Seqno(RawSeqno);
 
 impl_opaque_thin_wrapper!(Seqno => RawSeqno);
 
-impl_ssz_transparent_wrapper!(Seqno, RawSeqno, RAW_SEQNO_LEN);
+impl_ssz_transparent_wrapper!(Seqno, RawSeqno);
 
 impl Seqno {
     pub const fn zero() -> Self {

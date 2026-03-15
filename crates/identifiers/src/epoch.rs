@@ -42,9 +42,7 @@ pub struct EpochCommitment {
     pub last_blkid: OLBlockId,
 }
 
-crate::impl_tree_hash_container!(EpochCommitment, [epoch, last_slot, last_blkid]);
-crate::impl_ssz_type_info_fixed!(EpochCommitment, [Epoch, Slot, OLBlockId]);
-crate::impl_ssz_container_ref!(EpochCommitmentRef, EpochCommitment);
+crate::impl_ssz_fixed_container!(EpochCommitment, [epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId]);
 
 impl EpochCommitment {
     pub fn new(epoch: Epoch, last_slot: Slot, last_blkid: OLBlockId) -> Self {

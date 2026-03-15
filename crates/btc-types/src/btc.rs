@@ -1,7 +1,7 @@
 use std::{
     fmt::{self, Debug, Display},
     io::{self, Read, Write},
-    mem, ops,
+    ops,
 };
 
 use arbitrary::{Arbitrary, Unstructured};
@@ -113,9 +113,6 @@ impl<'a> Arbitrary<'a> for BitcoinOutPoint {
 )]
 pub struct BitcoinAmount(u64);
 
-/// Size of u64 in bytes
-const BITCOIN_AMOUNT_LEN: usize = mem::size_of::<u64>();
-
 impl Display for BitcoinAmount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -176,7 +173,7 @@ impl Codec for BitcoinAmount {
     }
 }
 
-impl_ssz_transparent_wrapper!(BitcoinAmount, u64, BITCOIN_AMOUNT_LEN);
+impl_ssz_transparent_wrapper!(BitcoinAmount, u64);
 
 impl BitcoinAmount {
     // The zero amount.

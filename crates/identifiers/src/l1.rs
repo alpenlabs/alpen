@@ -42,7 +42,7 @@ impl From<L1BlockId> for Buf32 {
 }
 
 // Manual TreeHash implementation for transparent wrapper
-crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32, 32);
+crate::impl_ssz_transparent_wrapper!(L1BlockId, RBuf32);
 
 /// Witness transaction ID merkle root from a Bitcoin block.
 ///
@@ -59,8 +59,7 @@ pub struct WtxidsRoot(Buf32);
 // Implement standard wrapper traits (Debug, Display, From, AsRef)
 crate::impl_buf_wrapper!(WtxidsRoot, Buf32, 32);
 
-// Manual TreeHash implementation for transparent wrapper
-crate::impl_ssz_transparent_buf32_wrapper!(WtxidsRoot);
+crate::impl_ssz_transparent_wrapper!(WtxidsRoot, Buf32);
 
 /// Commitment to an L1 block with height and ID.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default, Encode, Decode)]
@@ -74,9 +73,7 @@ pub struct L1BlockCommitment {
     pub blkid: L1BlockId,
 }
 
-crate::impl_tree_hash_container!(L1BlockCommitment, [height, blkid]);
-crate::impl_ssz_type_info_fixed!(L1BlockCommitment, [L1Height, L1BlockId]);
-crate::impl_ssz_container_ref!(L1BlockCommitmentRef, L1BlockCommitment);
+crate::impl_ssz_fixed_container!(L1BlockCommitment, [height: L1Height, blkid: L1BlockId]);
 
 impl fmt::Display for L1BlockCommitment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
