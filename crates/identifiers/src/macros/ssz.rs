@@ -161,12 +161,12 @@ macro_rules! impl_ssz_fixed_container {
 /// Generates SSZ view trait implementations for transparent wrappers whose
 /// inner type already implements `DecodeView`.
 ///
-/// Use this for newtypes wrapping types like [`Buf32`], `u64`, or other types
+/// Use this for newtypes wrapping types like `Buf32`, `u64`, or other types
 /// that already have `DecodeView`, `SszTypeInfo`, and `TreeHash` implementations.
 /// All trait implementations delegate to the inner type.
 ///
 /// For types wrapping raw `[u8; N]` arrays (which do *not* implement
-/// `DecodeView`), use [`impl_ssz_transparent_byte_array_wrapper!`] instead.
+/// `DecodeView`), use `impl_ssz_transparent_byte_array_wrapper!` instead.
 ///
 /// # Example
 ///
