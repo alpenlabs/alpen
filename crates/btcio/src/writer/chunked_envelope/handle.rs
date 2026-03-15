@@ -132,6 +132,7 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
 
     let mut curr = start_idx;
     let mut last_published = start_idx;
+    let mut last_final = start_idx;
     loop {
         tick.as_mut().tick().await;
         let span_curr = curr;
@@ -169,7 +170,12 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
 
                 ChunkedEnvelopeStatus::Finalized => {
                     // this is fine because we already increased
-                    // curr += 1;
+                    if last_published <= curr {
+                        last_published += 1;
+                    }
+                    if curr + 1 == last_published {
+                        curr += 1;
+                    }
                 }
 
                 ChunkedEnvelopeStatus::Unpublished => {
@@ -204,13 +210,19 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                         ops.put_chunked_envelope_entry_async(curr, updated).await?;
                     }
                     //if new_status == ChunkedEnvelopeStatus::Finalized {
-                    // curr += 1;
+                    //    curr += 1;
                     //}
                     // FIXME(str-2600): this is a hack, can only publish one tx a time, and not
                     // reorg friendly
                     // make sure we increment the current index only when a new tx got published
-                    if curr == last_published - 1 {
+                    // adding this in case block time in testing is too quick
+                    if last_published == curr {
+                        last_published += 1;
+                    }
+                    if new_status != ChunkedEnvelopeStatus::CommitPublished {
+                        //if curr + 1 == last_published {
                         curr += 1;
+                        //}
                     }
                 }
             }
@@ -218,6 +230,35 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
             Ok(())
         }
         .instrument(debug_span!("chunked_envelope", curr = %span_curr))
+        .await?;
+
+        async {
+            // trailing last (non)finalized index to finalize it
+            //if last_final < curr {
+            let Some(entry) = ops.get_chunked_envelope_entry_async(last_final).await? else {
+                trace!("no entry at current index, waiting");
+                return Ok::<(), anyhow::Error>(());
+            };
+
+            match entry.status {
+                // it's fine checking only these states, because we know this idx was published
+                ChunkedEnvelopeStatus::CommitPublished
+                | ChunkedEnvelopeStatus::Published
+                | ChunkedEnvelopeStatus::Confirmed
+                | ChunkedEnvelopeStatus::Finalized => {
+                    // Reveals are in broadcast DB, check their status.
+                    let new_status = check_full_broadcast_status(&entry, &broadcast_handle).await?;
+                    if new_status == ChunkedEnvelopeStatus::Finalized {
+                        last_final += 1;
+                    }
+                }
+
+                _ => {}
+            }
+            //}
+
+            Ok(())
+        }
         .await?;
     }
 }
