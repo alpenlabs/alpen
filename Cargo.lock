@@ -15044,6 +15044,7 @@ dependencies = [
  "const-hex",
  "hex",
  "int-enum",
+ "paste",
  "proptest",
  "schemars 1.2.0",
  "serde",

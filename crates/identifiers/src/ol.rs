@@ -25,8 +25,7 @@ pub struct OLBlockId(Buf32);
 
 impl_buf_wrapper!(OLBlockId, Buf32, 32);
 
-// Manual TreeHash implementation for transparent wrapper
-impl_ssz_transparent_buf32_wrapper!(OLBlockId);
+crate::impl_ssz_transparent_wrapper!(OLBlockId, Buf32);
 
 impl OLBlockId {
     /// Returns a dummy blkid that is all zeroes.
@@ -54,9 +53,7 @@ pub struct OLBlockCommitment {
     pub blkid: OLBlockId,
 }
 
-crate::impl_tree_hash_container!(OLBlockCommitment, [slot, blkid]);
-crate::impl_ssz_type_info_fixed!(OLBlockCommitment, [Slot, OLBlockId]);
-crate::impl_ssz_container_ref!(OLBlockCommitmentRef, OLBlockCommitment);
+crate::impl_ssz_fixed_container!(OLBlockCommitment, [slot: Slot, blkid: OLBlockId]);
 
 impl OLBlockCommitment {
     pub fn new(slot: Slot, blkid: OLBlockId) -> Self {
@@ -103,7 +100,7 @@ pub struct OLTxId(Buf32);
 
 impl_buf_wrapper!(OLTxId, Buf32, 32);
 
-crate::impl_ssz_transparent_buf32_wrapper_copy!(OLTxId);
+crate::impl_ssz_transparent_wrapper!(OLTxId, Buf32);
 
 #[cfg(test)]
 mod tests {

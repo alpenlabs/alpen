@@ -87,7 +87,7 @@ mod tests {
     #[ssz(struct_behaviour = "transparent")]
     struct TestBuf32Wrapper(Buf32);
 
-    crate::impl_ssz_transparent_buf32_wrapper_copy!(TestBuf32Wrapper);
+    crate::impl_ssz_transparent_wrapper!(TestBuf32Wrapper, Buf32);
 
     #[test]
     fn test_ssz_transparent_wrapper_roundtrip() {

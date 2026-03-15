@@ -1,4 +1,4 @@
-use std::{fmt, mem};
+use std::fmt;
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
@@ -79,9 +79,6 @@ impl_ssz_transparent_byte_array_wrapper!(AccountId, 32);
 
 type RawAccountSerial = u32;
 
-/// Size of RawAccountSerial (u32) in bytes
-const RAW_ACCOUNT_SERIAL_LEN: usize = mem::size_of::<RawAccountSerial>();
-
 /// Incrementally assigned account serial number.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Decode, Encode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -134,7 +131,7 @@ impl fmt::Display for AccountSerial {
     }
 }
 
-crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial, RAW_ACCOUNT_SERIAL_LEN);
+crate::impl_ssz_transparent_wrapper!(AccountSerial, RawAccountSerial);
 
 type RawSubjectId = [u8; SUBJ_ID_LEN];
 

@@ -19,6 +19,7 @@ borsh = { workspace = true, optional = true }
 const-hex = "1.14"
 hex.workspace = true
 int-enum.workspace = true
+paste.workspace = true
 proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
