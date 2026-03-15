@@ -23,7 +23,6 @@ paste = { workspace = true, optional = true }
 proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-thiserror.workspace = true
 zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -35,7 +34,14 @@ serde_json.workspace = true
 
 [features]
 default = ["arbitrary", "borsh", "codec", "serde", "ssz", "zeroize"]
-ssz = ["dep:ssz", "dep:ssz_derive", "dep:ssz_primitives", "dep:ssz_types", "dep:tree_hash", "dep:paste"]
+ssz = [
+  "dep:ssz",
+  "dep:ssz_derive",
+  "dep:ssz_primitives",
+  "dep:ssz_types",
+  "dep:tree_hash",
+  "dep:paste",
+]
 zeroize = ["dep:zeroize"]
 arbitrary = ["dep:arbitrary"]
 borsh = ["dep:borsh"]

@@ -9,7 +9,6 @@ use int_enum::IntEnum;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ssz")]
 use ssz_derive::{Decode, Encode};
-use thiserror::Error;
 
 const ACCT_ID_LEN: usize = 32;
 pub const SUBJ_ID_LEN: usize = 32;
@@ -70,10 +69,7 @@ impl AccountId {
 
 impl fmt::Display for AccountId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buf = [0; SUBJ_ID_LEN * 2];
-        hex::encode_to_slice(self.0, &mut buf).expect("ident/acct: encode hex");
-        // SAFETY: correct lengths
-        f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
+        fmt::Display::fmt(&const_hex::display(&self.0), f)
     }
 }
 
@@ -153,23 +149,12 @@ impl_opaque_thin_wrapper!(SubjectId => RawSubjectId);
 
 impl fmt::Display for SubjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buf = [0; SUBJ_ID_LEN * 2];
-        hex::encode_to_slice(self.0, &mut buf).expect("ident/subj: encode hex");
-        // SAFETY: correct lengths
-        f.write_str(unsafe { str::from_utf8_unchecked(&buf) })
+        fmt::Display::fmt(&const_hex::display(&self.0), f)
     }
 }
 
 #[cfg(feature = "ssz")]
 crate::impl_ssz_transparent_byte_array_wrapper!(SubjectId, 32);
-
-/// Error type for [`SubjectBytes`] operations.
-#[derive(Debug, Clone, Error, PartialEq, Eq)]
-pub enum SubjectIdBytesError {
-    /// Subject bytes exceed the maximum allowed length.
-    #[error("subject bytes length {0} exceeds maximum length {SUBJ_ID_LEN}")]
-    TooLong(usize),
-}
 
 /// Variable-length [`SubjectId`] bytes.
 ///
@@ -180,16 +165,11 @@ pub enum SubjectIdBytesError {
 pub struct SubjectIdBytes(Vec<u8>);
 
 impl SubjectIdBytes {
-    /// Creates a new `SubjectBytes` instance from a byte vector.
+    /// Creates a new `SubjectIdBytes` from a byte vector.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the length exceeds [`SUBJ_ID_LEN`].
-    pub fn try_new(bytes: Vec<u8>) -> Result<Self, SubjectIdBytesError> {
-        if bytes.len() > SUBJ_ID_LEN {
-            return Err(SubjectIdBytesError::TooLong(bytes.len()));
-        }
-        Ok(Self(bytes))
+    /// Returns [`None`] if the length exceeds [`SUBJ_ID_LEN`].
+    pub fn try_new(bytes: Vec<u8>) -> Option<Self> {
+        (bytes.len() <= SUBJ_ID_LEN).then_some(Self(bytes))
     }
 
     /// Returns the raw, unpadded subject bytes.
@@ -319,9 +299,7 @@ mod tests {
         proptest! {
             #[test]
             fn prop_accepts_valid_length(bytes in prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)) {
-                let result = SubjectIdBytes::try_new(bytes.clone());
-                prop_assert!(result.is_ok());
-                let sb = result.unwrap();
+                let sb = SubjectIdBytes::try_new(bytes.clone()).unwrap();
                 prop_assert_eq!(sb.as_bytes(), &bytes[..]);
                 prop_assert_eq!(sb.len(), bytes.len());
                 prop_assert_eq!(sb.is_empty(), bytes.is_empty());
@@ -331,11 +309,7 @@ mod tests {
             fn prop_rejects_too_long(
                 bytes in prop::collection::vec(any::<u8>(), (SUBJ_ID_LEN + 1)..=(SUBJ_ID_LEN + 100))
             ) {
-                let len = bytes.len();
-                let result = SubjectIdBytes::try_new(bytes);
-                prop_assert!(result.is_err());
-                prop_assert!(matches!(result, Err(SubjectIdBytesError::TooLong(actual))
-                    if actual == len));
+                prop_assert!(SubjectIdBytes::try_new(bytes).is_none());
             }
 
             #[test]

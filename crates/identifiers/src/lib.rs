@@ -19,7 +19,7 @@ pub mod test_utils;
 
 pub use acct::{
     AccountId, AccountSerial, AccountTypeId, RawAccountTypeId, SUBJ_ID_LEN, SYSTEM_RESERVED_ACCTS,
-    SubjectId, SubjectIdBytes, SubjectIdBytesError,
+    SubjectId, SubjectIdBytes,
 };
 pub use buf::{Buf20, Buf32, Buf64, RBuf32};
 pub use epoch::EpochCommitment;
@@ -29,11 +29,9 @@ pub use epoch::EpochCommitmentRef;
 pub use exec::create_evm_extra_payload;
 pub use exec::{EVMExtraPayload, EvmEeBlockCommitment, ExecBlockCommitment};
 pub use hash::Hash;
-pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 #[cfg(feature = "ssz")]
 pub use l1::L1BlockCommitmentRef;
-pub use ol::{
-    Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId, Slot,
-};
+pub use l1::{L1BlockCommitment, L1BlockId, L1Height, WtxidsRoot};
 #[cfg(feature = "ssz")]
 pub use ol::OLBlockCommitmentRef;
+pub use ol::{Epoch, L2BlockCommitment, L2BlockId, OLBlockCommitment, OLBlockId, OLTxId, Slot};

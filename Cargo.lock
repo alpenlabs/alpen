@@ -15034,7 +15034,6 @@ dependencies = [
  "ssz_types",
  "strata-codec",
  "strata-test-utils-ssz",
- "thiserror 2.0.18",
  "tree_hash 0.14.0",
  "zeroize",
 ]
