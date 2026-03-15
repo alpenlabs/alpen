@@ -35,6 +35,13 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         # Wait for chains to be active
         logger.info("Waiting for Strata RPC to be ready...")
         strata_rpc = strata_seq.wait_for_rpc_ready(timeout=10)
+        logger.info("Waiting for Alpen account genesis commitment...")
+        wait_until_with_value(
+            lambda: strata_rpc.strata_getAccountGenesisEpochCommitment(ALPEN_ACCOUNT_ID),
+            lambda commitment: commitment is not None,
+            error_with="Timed out waiting for Alpen account genesis commitment",
+            timeout=20,
+        )
         alpen_seq.wait_for_block(5, timeout=60)
 
         # Get alpen account summary at epoch 0 which should be none

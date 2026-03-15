@@ -44,7 +44,7 @@ class BitcoinReorgChecksTest(testenv.StrataTestBase):
         cfg: RollupConfig = ctx.env.rollup_cfg()
         finality_depth = cfg.l1_reorg_safe_depth
 
-        seq_waiter.wait_for_genesis()
+        seq_waiter.wait_until_genesis()
 
         # Wait for prover
         wait_until(
