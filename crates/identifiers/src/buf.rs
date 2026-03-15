@@ -1,3 +1,24 @@
+//! Fixed-size byte buffer types used as building blocks for identifiers.
+//!
+//! Provides [`Buf20`], [`Buf32`], [`RBuf32`], and [`Buf64`] — thin wrappers
+//! around `[u8; N]` arrays with uniform formatting, conversion, and
+//! serialization support.
+//!
+//! [`RBuf32`] is a reversed-display variant of [`Buf32`] that matches the
+//! Bitcoin convention of showing hash digests in reversed byte order.
+//!
+//! # Feature-gated functionality
+//!
+//! All buffer types conditionally derive additional traits depending on
+//! enabled Cargo features:
+//!
+//! - **`serde`** — JSON and human-readable (de)serialization via hex encoding.
+//! - **`ssz`** — SSZ encoding/decoding (available on 32- and 64-byte buffers).
+//! - **`borsh`** — Borsh (de)serialization.
+//! - **`codec`** — `strata-codec` support.
+//! - **`arbitrary`** — `Arbitrary` for fuzz testing.
+//! - **`zeroize`** — Secure memory zeroing.
+
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 #[cfg(feature = "borsh")]
