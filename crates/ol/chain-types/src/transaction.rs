@@ -6,7 +6,7 @@ use strata_identifiers::Slot;
 use strata_snark_acct_types::SnarkAccountUpdateContainer;
 
 use crate::ssz_generated::ssz::transaction::{
-    GamTxPayload, OLTransaction, SnarkAccountUpdateTxPayload, TransactionAttachment,
+    GamTxPayload, OLTransaction, SauTxPayload, SnarkAccountUpdateTxPayload, TransactionAttachment,
     TransactionPayload,
 };
 

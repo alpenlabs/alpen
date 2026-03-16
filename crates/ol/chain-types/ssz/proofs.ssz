@@ -1,0 +1,29 @@
+import strata_acct_types
+
+MAX_TYPE_PROOF_COUNT = 4096
+
+### Claim that an entry exists in a linear accumulator at some index
+class AccumulatorClaim(Container):
+    ### Index in the accumulator
+    idx: uint64
+
+    ### Hash of the entry
+    entry_hash: Bytes32
+
+### Accumulator claim with a proof.
+class ProvenAccumulatorClaim(Container):
+    ### The claim proven.
+    claim: AccumulatorClaim
+
+    ### Proof for the claim.
+    proof: strata_acct_types.MerkleProo
+
+### A list of claims into some accumulator.
+class ClaimList(Container):
+    claims: List[AccumulatorClaim, MAX_TYPE_PROOF_COUNT]
+
+### A list of raw proofs into some accumulator.
+###
+### This is assumed to match a `ClaimList` somewhere else.
+class RawProofList(Container):
+    proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_PROOF_COUNT]

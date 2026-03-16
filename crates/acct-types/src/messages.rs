@@ -5,7 +5,7 @@ use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
 
 use crate::{
     AccountId, BitcoinAmount, SentTransfer,
-    ssz_generated::ssz::messages::{MsgPayload, ReceivedMessage, SentMessage},
+    ssz_generated::ssz::messages::{MessageEntry, MsgPayload, ReceivedMessage, SentMessage},
 };
 
 impl SentMessage {
@@ -87,6 +87,42 @@ impl Codec for MsgPayload {
         enc.write_buf(&self.data)?;
 
         Ok(())
+    }
+}
+
+impl MessageEntry {
+    /// Creates a new message entry.
+    pub fn new(source: AccountId, incl_epoch: u32, payload: MsgPayload) -> Self {
+        Self {
+            source,
+            incl_epoch,
+            payload,
+        }
+    }
+
+    /// Gets the source account ID.
+    pub fn source(&self) -> AccountId {
+        self.source
+    }
+
+    /// Gets the inclusion epoch.
+    pub fn incl_epoch(&self) -> u32 {
+        self.incl_epoch
+    }
+
+    /// Gets the message payload.
+    pub fn payload(&self) -> &MsgPayload {
+        &self.payload
+    }
+
+    /// Gets the data payload buf.
+    pub fn payload_buf(&self) -> &[u8] {
+        self.payload().data()
+    }
+
+    /// Gets the payload value.
+    pub fn payload_value(&self) -> BitcoinAmount {
+        self.payload().value()
     }
 }
 

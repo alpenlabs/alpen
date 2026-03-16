@@ -6,7 +6,7 @@ fn main() {
     let out_dir = var("OUT_DIR").expect("OUT_DIR not set by cargo");
     let output_path = Path::new(&out_dir).join("generated.rs");
 
-    let entry_points = ["transaction.ssz", "log.ssz", "block.ssz"];
+    let entry_points = ["transaction.ssz", "log.ssz", "block.ssz", "proofs.ssz"];
     let base_dir = "ssz";
     let crates = [
         "strata_identifiers",
@@ -27,4 +27,5 @@ fn main() {
     println!("cargo:rerun-if-changed=ssz/block.ssz");
     println!("cargo:rerun-if-changed=ssz/transaction.ssz");
     println!("cargo:rerun-if-changed=ssz/log.ssz");
+    println!("cargo:rerun-if-changed=ssz/proofs.ssz");
 }

@@ -26,6 +26,6 @@ pub use error::OutputsError;
 pub use ledger::LedgerInterface;
 pub use manifest::UpdateManifest;
 pub use ssz_generated::ssz::{
-    accumulators::*, messages::*, outputs::*, proof_interface::*, state::*, update::*,
+    accumulators::*, outputs::*, proof_interface::*, state::*, update::*,
 };
 pub use state::Seqno;
