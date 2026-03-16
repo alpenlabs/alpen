@@ -1,15 +1,8 @@
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_predicate::PredicateKey;
 
+pub use crate::{PredicateUpdate, ProofType};
 use crate::{actions::Sighash, constants::AdminTxType};
-
-/// An update to the verifying key for a given Strata proof layer.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub struct PredicateUpdate {
-    key: PredicateKey,
-    kind: ProofType,
-}
 
 impl PredicateUpdate {
     /// Create a new `VerifyingKeyUpdate`.
@@ -35,9 +28,10 @@ impl PredicateUpdate {
 
 impl Sighash for PredicateUpdate {
     fn tx_type(&self) -> AdminTxType {
-        match self.kind {
-            ProofType::Asm => AdminTxType::AsmStfVkUpdate,
-            ProofType::OLStf => AdminTxType::OlStfVkUpdate,
+        match self.kind.value {
+            0 => AdminTxType::AsmStfVkUpdate,
+            1 => AdminTxType::OlStfVkUpdate,
+            _ => unreachable!("invalid proof type selector {}", self.kind.value),
         }
     }
 
@@ -50,8 +44,35 @@ impl Sighash for PredicateUpdate {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub enum ProofType {
-    Asm,
-    OLStf,
+impl ProofType {
+    #[expect(
+        non_upper_case_globals,
+        reason = "preserve the existing ProofType::Variant API"
+    )]
+    pub const Asm: Self = Self { value: 0 };
+
+    #[expect(
+        non_upper_case_globals,
+        reason = "preserve the existing ProofType::Variant API"
+    )]
+    pub const OLStf: Self = Self { value: 1 };
+}
+
+impl<'a> Arbitrary<'a> for ProofType {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        if bool::arbitrary(u)? {
+            Ok(Self::Asm)
+        } else {
+            Ok(Self::OLStf)
+        }
+    }
+}
+
+impl<'a> Arbitrary<'a> for PredicateUpdate {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::new(
+            PredicateKey::arbitrary(u)?,
+            ProofType::arbitrary(u)?,
+        ))
+    }
 }

@@ -1,14 +1,8 @@
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_primitives::buf::Buf32;
 
+pub use crate::SequencerUpdate;
 use crate::{actions::Sighash, constants::AdminTxType};
-
-/// An update to the public key of the sequencer.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub struct SequencerUpdate {
-    pub_key: Buf32,
-}
 
 impl SequencerUpdate {
     /// Create a new `SequencerUpdate` from the given public key.
@@ -34,5 +28,11 @@ impl Sighash for SequencerUpdate {
 
     fn sighash_payload(&self) -> Vec<u8> {
         self.pub_key.0.to_vec()
+    }
+}
+
+impl<'a> Arbitrary<'a> for SequencerUpdate {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::new(Buf32::arbitrary(u)?))
     }
 }

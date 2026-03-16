@@ -1,0 +1,23 @@
+use std::{env::var, path::Path};
+
+use ssz_codegen::{ModuleGeneration, build_ssz_files};
+
+fn main() {
+    let out_dir = var("OUT_DIR").expect("OUT_DIR not set by cargo");
+    let output_path = Path::new(&out_dir).join("generated.rs");
+
+    let entry_points = ["actions.ssz"];
+    let base_dir = "ssz";
+    let crates = ["strata_asm_params", "strata_predicate", "strata_primitives"];
+
+    build_ssz_files(
+        &entry_points,
+        base_dir,
+        &crates,
+        output_path.to_str().expect("output path is valid UTF-8"),
+        ModuleGeneration::NestedModules,
+    )
+    .expect("Failed to generate ASM admin tx SSZ types");
+
+    println!("cargo:rerun-if-changed=ssz/actions.ssz");
+}

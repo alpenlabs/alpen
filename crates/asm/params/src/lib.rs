@@ -7,7 +7,25 @@
 mod params;
 mod subprotocols;
 
+#[cfg(test)]
+use proptest as _;
+
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
 pub use params::AsmParams;
+pub use ssz_generated::ssz::admin::{
+    AdministrationInitConfigRef, CompressedPublicKeyBytes, RoleRef, ThresholdConfig,
+    ThresholdConfigRef, ThresholdConfigUpdate, ThresholdConfigUpdateRef,
+};
 pub use subprotocols::{
     AdministrationInitConfig, BridgeV1InitConfig, CheckpointInitConfig, Role, SubprotocolInstance,
 };

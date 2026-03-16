@@ -1,0 +1,29 @@
+import strata_identifiers
+import strata_predicate
+
+MAX_THRESHOLD_MEMBERS = 256
+
+CompressedPublicKeyBytes = Vector[uint8, 33]
+
+### Threshold signer configuration.
+class ThresholdConfig(Container):
+    keys: List[CompressedPublicKeyBytes, MAX_THRESHOLD_MEMBERS]
+    threshold: uint8
+
+### Threshold signer update payload.
+class ThresholdConfigUpdate(Container):
+    add_members: List[CompressedPublicKeyBytes, MAX_THRESHOLD_MEMBERS]
+    remove_members: List[CompressedPublicKeyBytes, MAX_THRESHOLD_MEMBERS]
+    new_threshold: uint8
+
+### Governance role for administration actions.
+#~# derive: std::marker::Copy, std::cmp::Ord, std::cmp::PartialOrd, std::hash::Hash, serde::Serialize, serde::Deserialize
+class Role(Container):
+    value: uint8
+
+### Initialization config for the administration subprotocol.
+class AdministrationInitConfig(Container):
+    strata_administrator: ThresholdConfig
+    strata_sequencer_manager: ThresholdConfig
+    confirmation_depth: uint16
+    max_seqno_gap: uint8

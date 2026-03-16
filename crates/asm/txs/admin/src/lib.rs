@@ -15,9 +15,28 @@
 //! - [`actions::CancelAction`]: Specific action to cancel a pending update by ID
 //! - [`actions::UpdateAction`]: Various update types (multisig, operator, sequencer, verifying key)
 
+use arbitrary as _;
+
 pub mod actions;
 pub mod constants;
 pub mod errors;
 pub mod parser;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
+
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
+pub use ssz_generated::ssz::actions::{
+    CancelAction, IndexedSignature, IndexedSignatureRef, MultisigAction, MultisigActionRef,
+    MultisigUpdate, OperatorSetUpdate, PredicateUpdate, ProofType, ProofTypeRef, SequencerUpdate,
+    SignatureSet, SignatureSetRef, SignedPayload, SignedPayloadRef, UpdateAction, UpdateActionRef,
+};

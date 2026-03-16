@@ -1,0 +1,66 @@
+import strata_asm_params
+import strata_predicate
+import strata_primitives
+
+MAX_OPERATOR_MEMBERS = 256
+MAX_SIGNATURES = 256
+
+SignatureBytes = Vector[uint8, 65]
+
+### Threshold signature with signer index.
+class IndexedSignature(Container):
+    index: uint8
+    signature: SignatureBytes
+
+### Threshold signature set for an admin action.
+class SignatureSet(Container):
+    signatures: List[IndexedSignature, MAX_SIGNATURES]
+
+### Update kind for proof verification keys.
+#~# derive: std::marker::Copy, std::cmp::Ord, std::cmp::PartialOrd, std::hash::Hash
+class ProofType(Container):
+    value: uint8
+
+### Cancel a queued admin update.
+class CancelAction(Container):
+    target_id: uint32
+
+### Update a multisig authority configuration.
+class MultisigUpdate(Container):
+    #~# external_kind: container
+    config: strata_asm_params.ThresholdConfigUpdate
+    #~# external_kind: container
+    role: strata_asm_params.Role
+
+### Update the bridge operator set.
+class OperatorSetUpdate(Container):
+    add_members: List[strata_primitives.Buf32, MAX_OPERATOR_MEMBERS]
+    remove_members: List[strata_primitives.Buf32, MAX_OPERATOR_MEMBERS]
+
+### Update the default sequencer key.
+class SequencerUpdate(Container):
+    pub_key: strata_primitives.Buf32
+
+### Update a predicate/verifying key.
+class PredicateUpdate(Container):
+    #~# external_kind: container
+    key: strata_predicate.PredicateKey
+    kind: ProofType
+
+### Admin update action union.
+class UpdateAction(Union):
+    Multisig: MultisigUpdate
+    OperatorSet: OperatorSetUpdate
+    Sequencer: SequencerUpdate
+    VerifyingKey: PredicateUpdate
+
+### Signed admin action union.
+class MultisigAction(Union):
+    Cancel: CancelAction
+    Update: UpdateAction
+
+### Signed administration payload embedded in the witness envelope.
+class SignedPayload(Container):
+    seqno: uint64
+    action: MultisigAction
+    signatures: SignatureSet

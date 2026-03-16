@@ -1,0 +1,28 @@
+import strata_asm_params
+import strata_asm_txs_admin
+
+MAX_AUTHORITIES = 2
+MAX_QUEUED_UPDATES = 1 << 10
+
+### Threshold-signature authority state for an admin role.
+class MultisigAuthority(Container):
+    #~# external_kind: container
+    role: strata_asm_params.Role
+    #~# external_kind: container
+    config: strata_asm_params.ThresholdConfig
+    last_seqno: uint64
+
+### Delayed admin update waiting for activation.
+class QueuedUpdate(Container):
+    id: uint32
+    #~# external_kind: container
+    action: strata_asm_txs_admin.UpdateAction
+    activation_height: uint32
+
+### Administration subprotocol state.
+class AdministrationSubprotoState(Container):
+    authorities: List[MultisigAuthority, MAX_AUTHORITIES]
+    queued: List[QueuedUpdate, MAX_QUEUED_UPDATES]
+    next_update_id: uint32
+    confirmation_depth: uint16
+    max_seqno_gap: uint8

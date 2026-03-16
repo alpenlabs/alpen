@@ -1,9 +1,8 @@
 use std::num::NonZero;
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use strata_asm_params::Role;
-use strata_asm_txs_admin::{actions::Sighash, parser::SignedPayload};
-use strata_crypto::threshold_signature::{ThresholdConfig, verify_threshold_signatures};
+use strata_asm_txs_admin::{SignedPayload, actions::Sighash};
+use strata_crypto::threshold_signature::verify_threshold_signatures;
 
 use crate::error::AdministrationError;
 
@@ -18,24 +17,16 @@ use crate::error::AdministrationError;
 #[derive(Debug)]
 pub struct SeqNoToken(u64);
 
-/// Manages threshold signature operations for a given role and key set, with replay protection via
-/// a sequence number.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct MultisigAuthority {
-    /// The role of this threshold signature authority.
-    role: Role,
-    /// The public keys of all grant-holders authorized to sign.
-    config: ThresholdConfig,
-    /// Last sequence number that was successfully executed. Used to prevent replay attacks.
-    last_seqno: u64,
-}
+/// Manages threshold signature operations for a given role and key set, with replay protection
+/// via a sequence number.
+pub(crate) use crate::MultisigAuthority;
 
 impl MultisigAuthority {
     /// Creates a new authority with `last_seqno` initialized to 0.
     ///
     /// Since `verify_action_signature` requires `payload.seqno > self.last_seqno`, the first
     /// valid payload must have `seqno >= 1`.
-    pub fn new(role: Role, config: ThresholdConfig) -> Self {
+    pub fn new(role: Role, config: strata_asm_params::ThresholdConfig) -> Self {
         Self {
             role,
             config,
@@ -49,12 +40,12 @@ impl MultisigAuthority {
     }
 
     /// Borrow the current threshold configuration.
-    pub fn config(&self) -> &ThresholdConfig {
+    pub fn config(&self) -> &strata_asm_params::ThresholdConfig {
         &self.config
     }
 
     /// Mutably borrow the threshold configuration.
-    pub(crate) fn config_mut(&mut self) -> &mut ThresholdConfig {
+    pub(crate) fn config_mut(&mut self) -> &mut strata_asm_params::ThresholdConfig {
         &mut self.config
     }
 
@@ -87,11 +78,13 @@ impl MultisigAuthority {
         // Compute the msg to sign by combining UpdateAction with sequence no
         let sig_hash = payload.action.compute_sighash(payload.seqno);
 
-        verify_threshold_signatures(
-            &self.config,
-            payload.signatures.signatures(),
-            &sig_hash.into(),
-        )?;
+        let config = self.config.clone().into_native();
+        let signatures = payload
+            .signatures
+            .to_native()
+            .map_err(AdministrationError::from)?;
+
+        verify_threshold_signatures(&config, signatures.signatures(), &sig_hash.into())?;
 
         Ok(SeqNoToken(payload.seqno))
     }

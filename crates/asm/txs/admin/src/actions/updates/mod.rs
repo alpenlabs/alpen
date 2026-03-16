@@ -3,10 +3,10 @@ pub mod operator;
 pub mod predicate;
 pub mod seq;
 
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_asm_params::Role;
 
+pub use crate::UpdateAction;
 use crate::{
     actions::{
         Sighash,
@@ -17,15 +17,6 @@ use crate::{
     },
     constants::AdminTxType,
 };
-
-/// An action that updates some part of the ASM.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub enum UpdateAction {
-    Multisig(MultisigUpdate),
-    OperatorSet(OperatorSetUpdate),
-    Sequencer(SequencerUpdate),
-    VerifyingKey(PredicateUpdate),
-}
 
 impl UpdateAction {
     /// The role authorized to enact this update.
@@ -81,5 +72,16 @@ impl From<SequencerUpdate> for UpdateAction {
 impl From<PredicateUpdate> for UpdateAction {
     fn from(update: PredicateUpdate) -> Self {
         UpdateAction::VerifyingKey(update)
+    }
+}
+
+impl<'a> Arbitrary<'a> for UpdateAction {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        match u.int_in_range(0..=3u8)? {
+            0 => Ok(MultisigUpdate::arbitrary(u)?.into()),
+            1 => Ok(OperatorSetUpdate::arbitrary(u)?.into()),
+            2 => Ok(SequencerUpdate::arbitrary(u)?.into()),
+            _ => Ok(PredicateUpdate::arbitrary(u)?.into()),
+        }
     }
 }

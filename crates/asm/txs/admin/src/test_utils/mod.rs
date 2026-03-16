@@ -2,13 +2,13 @@ use bitcoin::{
     Transaction,
     secp256k1::{Message, SECP256K1, SecretKey},
 };
+use ssz::Encode;
 use strata_asm_txs_test_utils::create_reveal_transaction_stub;
-use strata_crypto::threshold_signature::{IndexedSignature, SignatureSet};
 use strata_primitives::buf::Buf32;
 
 use crate::{
+    IndexedSignature, SignatureSet, SignedPayload,
     actions::{MultisigAction, Sighash},
-    parser::SignedPayload,
 };
 
 /// Creates an ECDSA signature with recoverable public key for a message hash.
@@ -84,7 +84,7 @@ pub fn create_test_admin_tx(
 
     // Create the signed payload (action + signatures) for the envelope
     let signed_payload = SignedPayload::new(seqno, action.clone(), signature_set);
-    let envelope_payload = borsh::to_vec(&signed_payload).expect("borsh serialization failed");
+    let envelope_payload = signed_payload.as_ssz_bytes();
 
     // Create a minimal reveal transaction structure
     // This is a simplified version - in practice, this would be created as part of
@@ -139,7 +139,8 @@ mod tests {
         assert_eq!(indices, vec![0, 2]);
 
         // Verify the signatures
-        let res = verify_threshold_signatures(&config, signature_set.signatures(), &sighash.0);
+        let native_signatures = signature_set.to_native().unwrap();
+        let res = verify_threshold_signatures(&config, native_signatures.signatures(), &sighash.0);
         assert!(res.is_ok());
     }
 
@@ -171,9 +172,10 @@ mod tests {
         assert_eq!(action, parsed.action);
 
         // Verify the signatures
+        let native_signatures = parsed.signatures.to_native().unwrap();
         let res = verify_threshold_signatures(
             &config,
-            parsed.signatures.signatures(),
+            native_signatures.signatures(),
             &action.compute_sighash(seqno).0,
         );
         assert!(res.is_ok());

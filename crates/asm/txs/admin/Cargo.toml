@@ -18,9 +18,17 @@ strata-primitives.workspace = true
 
 arbitrary.workspace = true
 bitcoin = { workspace = true, optional = true }
-borsh.workspace = true
 hex-literal.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
 thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [features]
 test-utils = [
@@ -30,7 +38,8 @@ test-utils = [
 ]
 
 [dev-dependencies]
+bitcoin.workspace = true
 proptest.workspace = true
 rand.workspace = true
-
+strata-asm-txs-test-utils.workspace = true
 strata-test-utils.workspace = true

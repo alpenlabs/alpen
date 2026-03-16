@@ -1,47 +1,19 @@
 use std::{mem::take, num::NonZero};
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use ssz::{Decode, DecodeError, Encode};
-use strata_asm_params::{AdministrationInitConfig, Role};
+use strata_asm_params::{AdministrationInitConfig, Role, ThresholdConfigUpdate};
 use strata_asm_txs_admin::actions::UpdateId;
-use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 use strata_primitives::L1Height;
 
+/// Holds the state for the Administration Subprotocol, including the various
+/// multisignature authorities and any actions still pending execution.
+pub use crate::ssz_generated::ssz::state::AdministrationSubprotoState;
 use crate::{
     authority::MultisigAuthority, error::AdministrationError, queued_update::QueuedUpdate,
 };
 
-/// Holds the state for the Administration Subprotocol, including the various
-/// multisignature authorities and any actions still pending execution.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct AdministrationSubprotoState {
-    /// List of configurations for multisignature authorities.
-    /// Each entry specifies who the signers are and how many signatures
-    /// are required to approve an action.
-    authorities: Vec<MultisigAuthority>,
-
-    /// List of updates that have been queued for execution.
-    /// These remain in a queued state and can be cancelled via a CancelTx until execution. If not
-    /// cancelled, they are executed automatically once their activation height is reached.
-    queued: Vec<QueuedUpdate>,
-
-    /// UpdateId for the next update.
-    next_update_id: UpdateId,
-
-    /// The confirmation depth (CD) setting, in Bitcoin blocks: after an update transaction
-    /// receives this many confirmations, the update is enacted automatically. During this
-    /// confirmation period, the update can still be cancelled by submitting a cancel transaction.
-    confirmation_depth: u16,
-
-    /// Maximum allowed gap between consecutive sequence numbers for a given authority.
-    ///
-    /// A payload with `seqno > last_seqno + max_seqno_gap` is rejected.
-    max_seqno_gap: NonZero<u8>,
-}
-
 impl AdministrationSubprotoState {
     pub fn new(config: &AdministrationInitConfig) -> Self {
-        let authorities = config
+        let authorities: Vec<_> = config
             .clone()
             .get_all_authorities()
             .into_iter()
@@ -49,11 +21,11 @@ impl AdministrationSubprotoState {
             .collect();
 
         Self {
-            authorities,
-            queued: Vec::new(),
+            authorities: authorities.into(),
+            queued: vec![].into(),
             next_update_id: 0,
             confirmation_depth: config.confirmation_depth,
-            max_seqno_gap: config.max_seqno_gap,
+            max_seqno_gap: config.max_seqno_gap().get(),
         }
     }
 
@@ -62,17 +34,17 @@ impl AdministrationSubprotoState {
     }
 
     pub fn max_seqno_gap(&self) -> NonZero<u8> {
-        self.max_seqno_gap
+        NonZero::new(self.max_seqno_gap).expect("max seqno gap must be non-zero")
     }
 
     /// Get a reference to the authority for the given role.
     pub fn authority(&self, role: Role) -> Option<&MultisigAuthority> {
-        self.authorities.get(role as usize)
+        self.authorities.get(role.index())
     }
 
     /// Get a mutable reference to the authority for the given role.
     pub fn authority_mut(&mut self, role: Role) -> Option<&mut MultisigAuthority> {
-        self.authorities.get_mut(role as usize)
+        self.authorities.get_mut(role.index())
     }
 
     /// Apply a threshold config update for the specified role.
@@ -101,13 +73,17 @@ impl AdministrationSubprotoState {
 
     /// Queue a new update.
     pub fn enqueue(&mut self, update: QueuedUpdate) {
-        self.queued.push(update);
+        self.queued
+            .push(update)
+            .expect("queued admin updates must stay within SSZ bounds");
     }
 
     /// Remove a queued update by swapping it out.
     pub fn remove_queued(&mut self, id: &UpdateId) {
         if let Some(i) = self.queued.iter().position(|u| u.id() == id) {
-            self.queued.swap_remove(i);
+            let mut queued = take(&mut self.queued).into_iter().collect::<Vec<_>>();
+            queued.swap_remove(i);
+            self.queued = queued.into();
         }
     }
 
@@ -127,37 +103,8 @@ impl AdministrationSubprotoState {
         let (ready, rest): (Vec<_>, Vec<_>) = take(&mut self.queued)
             .into_iter()
             .partition(|u| u.activation_height() <= current_height);
-        self.queued = rest;
+        self.queued = rest.into();
         ready
-    }
-}
-
-impl Encode for AdministrationSubprotoState {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        borsh::to_vec(self)
-            .expect("admin state must serialize with borsh")
-            .ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        borsh::to_vec(self)
-            .expect("admin state must serialize with borsh")
-            .ssz_bytes_len()
-    }
-}
-
-impl Decode for AdministrationSubprotoState {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
-        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
@@ -199,12 +146,12 @@ mod tests {
         let strata_sequencer_manager =
             ThresholdConfig::try_new(seq_pks, NonZero::new(2).unwrap()).unwrap();
 
-        AdministrationInitConfig {
+        AdministrationInitConfig::new(
             strata_administrator,
             strata_sequencer_manager,
-            confirmation_depth: 2016,
-            max_seqno_gap: NonZero::new(10).unwrap(),
-        }
+            2016,
+            NonZero::new(10).unwrap(),
+        )
     }
 
     #[test]
@@ -329,8 +276,9 @@ mod tests {
         let new_size = initial_members.len() + add_members.len() - remove_members.len();
         let new_threshold = NonZero::new(2).unwrap();
 
-        let update =
-            ThresholdConfigUpdate::new(add_members.clone(), remove_members.clone(), new_threshold);
+        let update = strata_asm_params::ThresholdConfigUpdate::from_native(
+            ThresholdConfigUpdate::new(add_members.clone(), remove_members.clone(), new_threshold),
+        );
 
         state.apply_multisig_update(role, &update).unwrap();
 

@@ -23,10 +23,12 @@ use bitcoin::{
     secp256k1::{PublicKey, Secp256k1, SecretKey},
     BlockHash,
 };
+use ssz::Encode;
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
+    SignedPayload,
     actions::{
         updates::{
             multisig::MultisigUpdate,
@@ -36,7 +38,6 @@ use strata_asm_txs_admin::{
         },
         CancelAction, MultisigAction, Sighash, UpdateAction,
     },
-    parser::SignedPayload,
     test_utils::create_signature_set,
 };
 use strata_crypto::{
@@ -135,8 +136,7 @@ impl AdminContext {
     fn sign_impl(&self, action: &MultisigAction, seqno: u64) -> Vec<u8> {
         let sighash = action.compute_sighash(seqno);
         let sig_set = create_signature_set(&self.privkeys, &self.signer_indices, sighash);
-        borsh::to_vec(&SignedPayload::new(seqno, action.clone(), sig_set))
-            .expect("serialization should succeed")
+        SignedPayload::new(seqno, action.clone(), sig_set).as_ssz_bytes()
     }
 }
 
@@ -173,11 +173,11 @@ pub fn multisig_config_update(
     remove_members: Vec<CompressedPublicKey>,
     new_threshold: u8,
 ) -> MultisigAction {
-    let config = ThresholdConfigUpdate::new(
+    let config = strata_asm_params::ThresholdConfigUpdate::from_native(ThresholdConfigUpdate::new(
         add_members,
         remove_members,
         NonZero::new(new_threshold).expect("threshold must be non-zero"),
-    );
+    ));
     MultisigAction::Update(UpdateAction::Multisig(MultisigUpdate::new(config, role)))
 }
 
@@ -208,12 +208,8 @@ pub fn create_test_admin_setup(
     let config =
         ThresholdConfig::try_new(vec![pk], NonZero::new(1).unwrap()).expect("valid config");
 
-    let params = AdministrationInitConfig {
-        strata_administrator: config.clone(),
-        strata_sequencer_manager: config,
-        confirmation_depth,
-        max_seqno_gap: DEFAULT_MAX_SEQNO_GAP,
-    };
+    let params =
+        AdministrationInitConfig::new(config.clone(), config, confirmation_depth, DEFAULT_MAX_SEQNO_GAP);
     let ctx = AdminContext::new(vec![sk], vec![0]);
     (params, ctx)
 }

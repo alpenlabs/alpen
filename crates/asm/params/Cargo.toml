@@ -14,8 +14,16 @@ strata-l1-txfmt.workspace = true
 strata-predicate.workspace = true
 
 arbitrary = { workspace = true, optional = true }
-borsh.workspace = true
 serde.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types = { workspace = true, features = ["serde"] }
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

@@ -1,5 +1,4 @@
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_l1_txfmt::TagData;
 
 mod cancel;
@@ -10,18 +9,10 @@ pub use cancel::CancelAction;
 pub use sighash::Sighash;
 pub use updates::UpdateAction;
 
+pub use crate::MultisigAction;
 use crate::constants::{ADMINISTRATION_SUBPROTOCOL_ID, AdminTxType};
 
 pub type UpdateId = u32;
-
-/// A high‐level multisig operation that participants can propose.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub enum MultisigAction {
-    /// Cancel a pending action.
-    Cancel(CancelAction),
-    /// Propose an update.
-    Update(UpdateAction),
-}
 
 impl Sighash for MultisigAction {
     fn tx_type(&self) -> AdminTxType {
@@ -47,5 +38,15 @@ impl MultisigAction {
     pub fn tag(&self) -> TagData {
         TagData::new(ADMINISTRATION_SUBPROTOCOL_ID, self.tx_type().into(), vec![])
             .expect("empty aux data always fits")
+    }
+}
+
+impl<'a> Arbitrary<'a> for MultisigAction {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        if bool::arbitrary(u)? {
+            Ok(Self::Cancel(CancelAction::arbitrary(u)?))
+        } else {
+            Ok(Self::Update(UpdateAction::arbitrary(u)?))
+        }
     }
 }

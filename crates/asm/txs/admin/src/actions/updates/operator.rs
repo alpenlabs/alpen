@@ -1,24 +1,15 @@
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_primitives::buf::Buf32;
 
+pub use crate::OperatorSetUpdate;
 use crate::{actions::Sighash, constants::AdminTxType};
-
-/// An update to the Bridge Operator Set:
-/// - removes the specified `remove_members`
-/// - adds the specified `add_members`
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub struct OperatorSetUpdate {
-    add_members: Vec<Buf32>,
-    remove_members: Vec<Buf32>,
-}
 
 impl OperatorSetUpdate {
     /// Creates a new `OperatorSetUpdate`.
     pub fn new(add_members: Vec<Buf32>, remove_members: Vec<Buf32>) -> Self {
         Self {
-            add_members,
-            remove_members,
+            add_members: add_members.into(),
+            remove_members: remove_members.into(),
         }
     }
 
@@ -34,7 +25,7 @@ impl OperatorSetUpdate {
 
     /// Consume and return the inner vectors `(add_members, remove_members)`.
     pub fn into_inner(self) -> (Vec<Buf32>, Vec<Buf32>) {
-        (self.add_members, self.remove_members)
+        (self.add_members.to_vec(), self.remove_members.to_vec())
     }
 }
 
@@ -58,5 +49,19 @@ impl Sighash for OperatorSetUpdate {
             buf.extend_from_slice(&member.0);
         }
         buf
+    }
+}
+
+impl<'a> Arbitrary<'a> for OperatorSetUpdate {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let add_len = u.int_in_range(0..=4usize)?;
+        let remove_len = u.int_in_range(0..=4usize)?;
+        let add_members = (0..add_len)
+            .map(|_| Buf32::arbitrary(u))
+            .collect::<arbitrary::Result<Vec<_>>>()?;
+        let remove_members = (0..remove_len)
+            .map(|_| Buf32::arbitrary(u))
+            .collect::<arbitrary::Result<Vec<_>>>()?;
+        Ok(Self::new(add_members, remove_members))
     }
 }

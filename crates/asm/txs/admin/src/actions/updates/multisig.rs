@@ -1,28 +1,17 @@
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_asm_params::Role;
-use strata_crypto::threshold_signature::ThresholdConfigUpdate;
 
+pub use crate::MultisigUpdate;
 use crate::{actions::Sighash, constants::AdminTxType};
-
-/// An update to a threshold configuration for a specific role:
-/// - adds new members
-/// - removes old members
-/// - updates the threshold
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize)]
-pub struct MultisigUpdate {
-    config: ThresholdConfigUpdate,
-    role: Role,
-}
 
 impl MultisigUpdate {
     /// Create a `MultisigUpdate` with given config and role.
-    pub fn new(config: ThresholdConfigUpdate, role: Role) -> Self {
+    pub fn new(config: strata_asm_params::ThresholdConfigUpdate, role: Role) -> Self {
         Self { config, role }
     }
 
     /// Borrow the threshold config update.
-    pub fn config(&self) -> &ThresholdConfigUpdate {
+    pub fn config(&self) -> &strata_asm_params::ThresholdConfigUpdate {
         &self.config
     }
 
@@ -32,16 +21,17 @@ impl MultisigUpdate {
     }
 
     /// Consume and return the inner config and role.
-    pub fn into_inner(self) -> (ThresholdConfigUpdate, Role) {
+    pub fn into_inner(self) -> (strata_asm_params::ThresholdConfigUpdate, Role) {
         (self.config, self.role)
     }
 }
 
 impl Sighash for MultisigUpdate {
     fn tx_type(&self) -> AdminTxType {
-        match self.role {
-            Role::StrataAdministrator => AdminTxType::StrataAdminMultisigUpdate,
-            Role::StrataSequencerManager => AdminTxType::StrataSeqManagerMultisigUpdate,
+        match self.role.value {
+            0 => AdminTxType::StrataAdminMultisigUpdate,
+            1 => AdminTxType::StrataSeqManagerMultisigUpdate,
+            _ => unreachable!("invalid role selector {}", self.role.value),
         }
     }
 
@@ -64,5 +54,14 @@ impl Sighash for MultisigUpdate {
         }
         buf.push(self.config.new_threshold().get());
         buf
+    }
+}
+
+impl<'a> Arbitrary<'a> for MultisigUpdate {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::new(
+            strata_asm_params::ThresholdConfigUpdate::arbitrary(u)?,
+            Role::arbitrary(u)?,
+        ))
     }
 }

@@ -4,8 +4,8 @@ use strata_asm_common::{
     logging::{error, info},
 };
 use strata_asm_txs_admin::{
-    actions::{MultisigAction, UpdateAction, updates::predicate::ProofType},
-    parser::SignedPayload,
+    SignedPayload,
+    actions::{MultisigAction, UpdateAction},
 };
 use strata_predicate::PredicateKey;
 use strata_primitives::{L1Height, buf::Buf32};
@@ -54,17 +54,18 @@ pub(crate) fn handle_pending_updates(
             }
             UpdateAction::VerifyingKey(update) => {
                 let (key, kind) = update.into_inner();
-                match kind {
-                    ProofType::Asm => {
+                match kind.value {
+                    0 => {
                         // TODO: STR-1721 Emit ASM Log
                     }
-                    ProofType::OLStf => {
+                    1 => {
                         relay_checkpoint_predicate(relayer, key);
                         info!(
                             %update_id,
                             "Forwarded rollup verifying key update to checkpoint subprotocol",
                         );
                     }
+                    _ => unreachable!("invalid proof type selector {}", kind.value),
                 }
             }
             UpdateAction::OperatorSet(_update) => {
@@ -182,6 +183,7 @@ mod tests {
     use strata_asm_common::{AsmLogEntry, InterprotoMsg, MsgRelayer};
     use strata_asm_params::{AdministrationInitConfig, Role};
     use strata_asm_txs_admin::{
+        SignatureSet, SignedPayload,
         actions::{
             CancelAction, MultisigAction, Sighash, UpdateAction,
             updates::{
@@ -189,12 +191,10 @@ mod tests {
                 seq::SequencerUpdate,
             },
         },
-        parser::SignedPayload,
         test_utils::create_signature_set,
     };
     use strata_crypto::{
-        keys::compressed::CompressedPublicKey,
-        threshold_signature::{SignatureSet, ThresholdConfig},
+        keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig,
     };
     use strata_predicate::PredicateKey;
     use strata_test_utils::ArbitraryGenerator;
@@ -261,12 +261,12 @@ mod tests {
         let strata_sequencer_manager =
             ThresholdConfig::try_new(strata_seq_manager_pks, NonZero::new(2).unwrap()).unwrap();
 
-        let config = AdministrationInitConfig {
+        let config = AdministrationInitConfig::new(
             strata_administrator,
             strata_sequencer_manager,
-            confirmation_depth: 2016,
-            max_seqno_gap: 10.try_into().unwrap(),
-        };
+            2016,
+            NonZero::new(10).unwrap(),
+        );
 
         (config, strata_admin_sks, strata_seq_manager_sks)
     }

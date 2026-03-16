@@ -1,23 +1,15 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::Decode;
 use strata_asm_common::TxInputRef;
-use strata_crypto::threshold_signature::SignatureSet;
+use strata_crypto::threshold_signature::{
+    IndexedSignature as NativeIndexedSignature, SignatureSet as NativeSignatureSet,
+    ThresholdSignatureError,
+};
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
-use crate::{actions::MultisigAction, errors::AdministrationTxParseError};
-
-/// A signed administration payload containing both the action and its signatures.
-///
-/// This structure is serialized with Borsh and embedded in the witness envelope.
-/// The OP_RETURN only contains the SPS-50 tag (magic bytes, subprotocol ID, tx type).
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct SignedPayload {
-    /// Sequence number used to prevent replay attacks and enforce ordering.
-    pub seqno: u64,
-    /// The administrative action being proposed
-    pub action: MultisigAction,
-    /// The set of ECDSA signatures authorizing this action
-    pub signatures: SignatureSet,
-}
+use crate::{
+    IndexedSignature, MultisigAction, SignatureSet, SignedPayload,
+    errors::AdministrationTxParseError,
+};
 
 impl SignedPayload {
     /// Creates a new signed payload combining an action with its signatures.
@@ -27,6 +19,123 @@ impl SignedPayload {
             action,
             signatures,
         }
+    }
+}
+
+impl IndexedSignature {
+    pub fn new(index: u8, signature: [u8; 65]) -> Self {
+        Self {
+            index,
+            signature: signature.into(),
+        }
+    }
+
+    pub fn from_native(signature: NativeIndexedSignature) -> Self {
+        let mut bytes = [0u8; 65];
+        bytes[0] = signature.recovery_id();
+        bytes[1..33].copy_from_slice(signature.r());
+        bytes[33..65].copy_from_slice(signature.s());
+        Self::new(signature.index(), bytes)
+    }
+
+    pub fn index(&self) -> u8 {
+        self.index
+    }
+
+    pub fn recovery_id(&self) -> u8 {
+        self.signature.0[0]
+    }
+
+    pub fn r(&self) -> &[u8; 32] {
+        self.signature.0[1..33]
+            .try_into()
+            .expect("signature r bytes are always 32 bytes")
+    }
+
+    pub fn s(&self) -> &[u8; 32] {
+        self.signature.0[33..65]
+            .try_into()
+            .expect("signature s bytes are always 32 bytes")
+    }
+
+    pub fn compact(&self) -> [u8; 64] {
+        let mut compact = [0u8; 64];
+        compact.copy_from_slice(&self.signature.0[1..65]);
+        compact
+    }
+
+    pub fn to_native(&self) -> NativeIndexedSignature {
+        let mut bytes = [0u8; 65];
+        bytes.copy_from_slice(&self.signature.0);
+        NativeIndexedSignature::new(self.index, bytes)
+    }
+
+    pub fn into_native(self) -> NativeIndexedSignature {
+        self.to_native()
+    }
+}
+
+impl SignatureSet {
+    pub fn new(signatures: Vec<IndexedSignature>) -> Result<Self, ThresholdSignatureError> {
+        NativeSignatureSet::new(signatures.iter().map(IndexedSignature::to_native).collect())?;
+        Ok(Self {
+            signatures: signatures.into(),
+        })
+    }
+
+    pub fn from_native(signatures: NativeSignatureSet) -> Self {
+        Self {
+            signatures: signatures
+                .into_inner()
+                .into_iter()
+                .map(IndexedSignature::from_native)
+                .collect::<Vec<_>>()
+                .into(),
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            signatures: vec![].into(),
+        }
+    }
+
+    pub fn signatures(&self) -> &[IndexedSignature] {
+        &self.signatures
+    }
+
+    pub fn len(&self) -> usize {
+        self.signatures.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.signatures.is_empty()
+    }
+
+    pub fn indices(&self) -> impl Iterator<Item = u8> + '_ {
+        self.signatures.iter().map(|signature| signature.index())
+    }
+
+    pub fn into_inner(self) -> Vec<IndexedSignature> {
+        self.signatures.into_iter().collect()
+    }
+
+    pub fn to_native(&self) -> Result<NativeSignatureSet, ThresholdSignatureError> {
+        NativeSignatureSet::new(
+            self.signatures
+                .iter()
+                .map(IndexedSignature::to_native)
+                .collect(),
+        )
+    }
+
+    pub fn into_native(self) -> Result<NativeSignatureSet, ThresholdSignatureError> {
+        NativeSignatureSet::new(
+            self.signatures
+                .into_iter()
+                .map(IndexedSignature::into_native)
+                .collect(),
+        )
     }
 }
 
@@ -58,8 +167,8 @@ pub fn parse_tx(tx: &TxInputRef<'_>) -> Result<SignedPayload, AdministrationTxPa
     // Parse the envelope payload from the script
     let envelope_payload = parse_envelope_payload(&payload_script.into())?;
 
-    // Deserialize the signed payload (action + signatures) from the envelope
-    let signed_payload: SignedPayload = borsh::from_slice(&envelope_payload)
+    // Deserialize the signed payload (action + signatures) from the envelope.
+    let signed_payload = SignedPayload::from_ssz_bytes(&envelope_payload)
         .map_err(|_| AdministrationTxParseError::MalformedTransaction(tx_type))?;
 
     Ok(signed_payload)
