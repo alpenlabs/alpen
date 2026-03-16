@@ -38,6 +38,40 @@ pub fn test_get_nonexistent_entry(db: &impl L1ChunkedEnvelopeDatabase) {
     assert!(result.is_none());
 }
 
+pub fn test_get_entries_from_empty(db: &impl L1ChunkedEnvelopeDatabase) {
+    let result = db.get_chunked_envelope_entries_from(0, 10).unwrap();
+    assert!(result.is_empty());
+}
+
+pub fn test_get_entries_from_dense(db: &impl L1ChunkedEnvelopeDatabase) {
+    let entry0 = make_entry(ChunkedEnvelopeStatus::Unsigned);
+    let entry1 = make_entry(ChunkedEnvelopeStatus::Unpublished);
+    let entry2 = make_entry(ChunkedEnvelopeStatus::Published);
+
+    db.put_chunked_envelope_entry(0, entry0.clone()).unwrap();
+    db.put_chunked_envelope_entry(1, entry1.clone()).unwrap();
+    db.put_chunked_envelope_entry(2, entry2.clone()).unwrap();
+
+    let result = db.get_chunked_envelope_entries_from(0, 2).unwrap();
+    assert_eq!(result, vec![(0, entry0), (1, entry1)]);
+}
+
+pub fn test_get_entries_from_sparse(db: &impl L1ChunkedEnvelopeDatabase) {
+    let entry1 = make_entry(ChunkedEnvelopeStatus::Unsigned);
+    let entry3 = make_entry(ChunkedEnvelopeStatus::Published);
+    let entry7 = make_entry(ChunkedEnvelopeStatus::Finalized);
+
+    db.put_chunked_envelope_entry(1, entry1.clone()).unwrap();
+    db.put_chunked_envelope_entry(3, entry3.clone()).unwrap();
+    db.put_chunked_envelope_entry(7, entry7.clone()).unwrap();
+
+    let result = db.get_chunked_envelope_entries_from(2, 3).unwrap();
+    assert_eq!(result, vec![(3, entry3.clone()), (7, entry7.clone())]);
+
+    let result = db.get_chunked_envelope_entries_from(1, 10).unwrap();
+    assert_eq!(result, vec![(1, entry1), (3, entry3), (7, entry7)]);
+}
+
 pub fn test_get_next_idx_empty(db: &impl L1ChunkedEnvelopeDatabase) {
     let idx = db.get_next_chunked_envelope_idx().unwrap();
     assert_eq!(idx, 0);
@@ -111,6 +145,24 @@ macro_rules! l1_chunked_envelope_db_tests {
         fn test_get_nonexistent_entry() {
             let db = $setup_expr;
             $crate::chunked_envelope_tests::test_get_nonexistent_entry(&db);
+        }
+
+        #[test]
+        fn test_get_entries_from_empty() {
+            let db = $setup_expr;
+            $crate::chunked_envelope_tests::test_get_entries_from_empty(&db);
+        }
+
+        #[test]
+        fn test_get_entries_from_dense() {
+            let db = $setup_expr;
+            $crate::chunked_envelope_tests::test_get_entries_from_dense(&db);
+        }
+
+        #[test]
+        fn test_get_entries_from_sparse() {
+            let db = $setup_expr;
+            $crate::chunked_envelope_tests::test_get_entries_from_sparse(&db);
         }
 
         #[test]
