@@ -1,9 +1,22 @@
 use sled::IVec;
 use ssz_derive::{Decode, Encode};
 use strata_identifiers::OLTxId;
+use thiserror::Error;
 use typed_sled::codec::{CodecError, KeyCodec, ValueCodec};
 
 use crate::define_table_without_codec;
+
+/// Errors raised while decoding mempool SSZ payloads from sled.
+#[derive(Debug, Error)]
+enum MempoolDecodeError {
+    /// Decoding the SSZ-encoded [`OLTxId`] key failed.
+    #[error("failed to decode mempool transaction key from SSZ")]
+    Key(#[source] ssz::DecodeError),
+
+    /// Decoding the SSZ-encoded [`MempoolTxEntry`] value failed.
+    #[error("failed to decode mempool transaction entry from SSZ")]
+    Value(#[source] ssz::DecodeError),
+}
 
 /// Wrapper type for storing transaction bytes and ordering metadata.
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
@@ -42,9 +55,9 @@ impl KeyCodec<MempoolTxSchema> for OLTxId {
     }
 
     fn decode_key(data: &[u8]) -> Result<Self, CodecError> {
-        ssz::Decode::from_ssz_bytes(data).map_err(|err| CodecError::SerializationFailed {
+        ssz::Decode::from_ssz_bytes(data).map_err(|err| CodecError::DeserializationFailed {
             schema: MempoolTxSchema::tree_name(),
-            source: anyhow::anyhow!("SSZ decode error for key: {:?}", err).into(),
+            source: Box::new(MempoolDecodeError::Key(err)),
         })
     }
 }
@@ -61,7 +74,7 @@ impl ValueCodec<MempoolTxSchema> for MempoolTxEntry {
         ssz::Decode::from_ssz_bytes(data.as_ref()).map_err(|err| {
             CodecError::DeserializationFailed {
                 schema: MempoolTxSchema::tree_name(),
-                source: anyhow::anyhow!("SSZ decode error: {:?}", err).into(),
+                source: Box::new(MempoolDecodeError::Value(err)),
             }
         })
     }

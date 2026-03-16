@@ -14768,6 +14768,7 @@ dependencies = [
  "strata-paas",
  "strata-primitives",
  "strata-state",
+ "thiserror 2.0.18",
  "tracing",
  "typed-sled",
  "zkaleido",
