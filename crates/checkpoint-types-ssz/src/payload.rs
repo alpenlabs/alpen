@@ -3,7 +3,7 @@
 use ssz_primitives::FixedBytes;
 use ssz_types::VariableList;
 use strata_identifiers::{
-    Buf32, Buf64, Epoch, OLBlockCommitment, OLBlockId, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed,
+    Buf32, Epoch, OLBlockCommitment, OLBlockId, impl_borsh_via_ssz, impl_borsh_via_ssz_fixed,
 };
 use strata_ol_chain_types_new::{OLBlockHeader, OLLog};
 use tree_hash::{Sha256Hasher, TreeHash};
@@ -11,7 +11,7 @@ use tree_hash::{Sha256Hasher, TreeHash};
 use crate::{
     CheckpointPayload, CheckpointPayloadError, CheckpointSidecar, CheckpointTip,
     MAX_LOG_PAYLOAD_BYTES, MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, MAX_TOTAL_LOG_PAYLOAD_BYTES,
-    OL_DA_DIFF_MAX_SIZE, SignedCheckpointPayload, TerminalHeaderComplement,
+    OL_DA_DIFF_MAX_SIZE, TerminalHeaderComplement,
 };
 
 impl CheckpointTip {
@@ -198,20 +198,6 @@ impl CheckpointPayload {
 }
 
 impl_borsh_via_ssz!(CheckpointPayload);
-
-impl SignedCheckpointPayload {
-    pub fn new(inner: CheckpointPayload, signature: Buf64) -> Self {
-        Self { inner, signature }
-    }
-
-    pub fn inner(&self) -> &CheckpointPayload {
-        &self.inner
-    }
-
-    pub fn signature(&self) -> &Buf64 {
-        &self.signature
-    }
-}
 
 #[cfg(test)]
 mod tests {

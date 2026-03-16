@@ -7,7 +7,8 @@ use jsonrpsee::core::RpcResult;
 use ssz::Encode;
 use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
-use strata_checkpoint_types_ssz::SignedCheckpointPayload;
+use strata_codec::encode_to_vec;
+use strata_codec_utils::CodecSsz;
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::OLCheckpointStatus;
@@ -16,7 +17,7 @@ use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_types::RpcDuty;
 use strata_ol_sequencer::{BlockCompletionData, extract_duties};
-use strata_primitives::{Buf64, HexBytes64};
+use strata_primitives::HexBytes64;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::warn;
@@ -91,7 +92,11 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         Ok(template_id)
     }
 
-    async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()> {
+    async fn complete_checkpoint_signature(&self, epoch: Epoch, _sig: HexBytes64) -> RpcResult<()> {
+        // NOTE: The signature parameter is ignored. With the SPS-51 envelope trick,
+        // authentication is handled by the envelope's taproot pubkey matching the
+        // sequencer predicate. The checkpoint payload is submitted without an
+        // explicit signature.
         let db = self.storage.ol_checkpoint();
         let Some(mut entry) = db.get_checkpoint_async(epoch).await.map_err(db_error)? else {
             return Err(not_found_error(format!(
@@ -100,14 +105,12 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         };
         // Assumes that checkpoint db contains only proven checkpoints
         if entry.status == OLCheckpointStatus::Unsigned {
-            let signed_checkpoint =
-                SignedCheckpointPayload::new(entry.checkpoint.clone(), Buf64(sig.0));
-            // TODO: verify sig
-            let payload = L1Payload::new(
-                vec![signed_checkpoint.as_ssz_bytes()],
-                OL_STF_CHECKPOINT_TX_TAG.clone(),
-            );
-            let sighash = hash::raw(&signed_checkpoint.inner().as_ssz_bytes());
+            let codec_payload = CodecSsz::new(entry.checkpoint.clone());
+            let encoded = encode_to_vec(&codec_payload)
+                .map_err(|e| internal_error(format!("failed to encode checkpoint: {e}")))?;
+
+            let payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+            let sighash = hash::raw(&entry.checkpoint.as_ssz_bytes());
 
             let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
 
@@ -123,7 +126,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
                 .await
                 .map_err(db_error)?;
         } else {
-            warn!(%epoch, "received signature for already signed checkpoint, ignoring.");
+            warn!(%epoch, "received submission for already submitted checkpoint, ignoring.");
         }
         Ok(())
     }

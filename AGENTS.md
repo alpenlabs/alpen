@@ -674,6 +674,7 @@ Key SPS (Strata Protocol Specification) documents:
 | Spec | Name | Description |
 |------|------|-------------|
 | SPS-50 | L1 Transaction Header | OP_RETURN format for protocol transactions |
+| SPS-51 | Generic Envelope format | Bitcoin envelope format for protocol transactions |
 | SPS-60 | Moho Proof Mechanism | Upgradeable proof wrapper for ASM |
 | SPS-61 | ASM Core Types | ASM state structure and lifecycle |
 | SPS-62 | OL Checkpoint Structure | Checkpoint format and verification |
