@@ -26,3 +26,9 @@ async-trait.workspace = true
 bitcoin.workspace = true
 eyre.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+strata-db-store-sled.workspace = true
+strata-storage.workspace = true
+threadpool.workspace = true
+tokio.workspace = true

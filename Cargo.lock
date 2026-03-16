@@ -1183,10 +1183,14 @@ dependencies = [
  "eyre",
  "strata-btc-types",
  "strata-btcio",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-primitives",
+ "strata-storage",
+ "threadpool",
+ "tokio",
  "tracing",
 ]
 
