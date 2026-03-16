@@ -3,6 +3,7 @@
 //! This module contains the core subprotocol implementation that integrates
 //! with the Strata Anchor State Machine (ASM).
 
+use ssz_derive::{Decode, Encode};
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{
     AsmError, AsmLogEntry, MsgRelayer, NullMsg, Subprotocol, SubprotocolId, TxInputRef,
@@ -22,15 +23,19 @@ use crate::{
 #[derive(Copy, Clone, Debug)]
 pub struct DebugSubproto;
 
+#[derive(Clone, Debug, Default, Encode, Decode)]
+pub struct DebugState;
+
 impl Subprotocol for DebugSubproto {
     const ID: SubprotocolId = DEBUG_SUBPROTOCOL_ID;
 
     type Msg = NullMsg<DEBUG_SUBPROTOCOL_ID>;
     type InitConfig = ();
-    type State = ();
+    type State = DebugState;
 
     fn init(_config: &Self::InitConfig) -> Self::State {
         logging::info!("Initializing debug subprotocol state");
+        DebugState
     }
 
     fn process_txs(

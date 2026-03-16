@@ -6,7 +6,7 @@
 
 use std::any::Any;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, Encode};
 use strata_identifiers::L1BlockCommitment;
 pub use strata_l1_txfmt::SubprotocolId;
 
@@ -78,7 +78,7 @@ pub trait Subprotocol: 'static {
     type InitConfig;
 
     /// State type serialized into the ASM state structure.
-    type State: Any + BorshDeserialize + BorshSerialize;
+    type State: Any + Decode + Encode;
 
     /// Message type that we receive messages from other subprotocols using.
     type Msg: Clone + InterprotoMsg + Any;

@@ -82,7 +82,7 @@ pub fn compute_asm_transition<'i, S: AsmSpec>(
     };
     let state = AnchorState {
         chain_view,
-        sections,
+        sections: sections.into(),
     };
     let output = AsmStfOutput { state, manifest };
     Ok(output)

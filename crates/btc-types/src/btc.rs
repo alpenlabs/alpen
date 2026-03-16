@@ -509,6 +509,16 @@ impl RawBitcoinTx {
     pub fn from_raw_bytes(bytes: Vec<u8>) -> Self {
         RawBitcoinTx(bytes)
     }
+
+    /// Returns the raw Bitcoin transaction bytes.
+    pub fn as_raw_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Consumes the wrapper and returns the raw Bitcoin transaction bytes.
+    pub fn into_raw_bytes(self) -> Vec<u8> {
+        self.0
+    }
 }
 
 impl From<Transaction> for RawBitcoinTx {

@@ -19,6 +19,18 @@ impl From<Work> for BtcWork {
     }
 }
 
+impl BtcWork {
+    /// Constructs work from little-endian bytes.
+    pub fn from_le_bytes(bytes: [u8; 32]) -> Self {
+        Self(Work::from_le_bytes(bytes))
+    }
+
+    /// Returns the work as little-endian bytes.
+    pub fn to_le_bytes(&self) -> [u8; 32] {
+        self.0.to_le_bytes()
+    }
+}
+
 impl AddAssign for BtcWork {
     fn add_assign(&mut self, rhs: Self) {
         self.0 = self.0 + rhs.0;

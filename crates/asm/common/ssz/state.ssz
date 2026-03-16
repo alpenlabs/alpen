@@ -1,0 +1,26 @@
+MAX_SECTIONS = 256
+MAX_SECTION_STATE_BYTES = 1 << 20
+
+import pow
+import strata_acct_types
+
+### Verifiable accumulator for ASM history.
+class AsmHistoryAccumulatorState(Container):
+    #~# external_kind: container
+    manifest_mmr: strata_acct_types.Mmr64
+    offset: uint64
+
+### Serialized state for a subprotocol section.
+class SectionState(Container):
+    id: uint8
+    data: List[uint8, MAX_SECTION_STATE_BYTES]
+
+### Chain view state required by the ASM transition.
+class ChainViewState(Container):
+    pow_state: pow.HeaderVerificationState
+    history_accumulator: AsmHistoryAccumulatorState
+
+### Top-level ASM state.
+class AnchorState(Container):
+    chain_view: ChainViewState
+    sections: List[SectionState, MAX_SECTIONS]

@@ -1,4 +1,4 @@
-use borsh::io;
+use ssz::DecodeError;
 // Re-export error types from manifest-types crate
 pub use strata_asm_manifest_types::{AsmManifestError, AsmManifestResult, Mismatched};
 use strata_btc_verification::L1VerificationError;
@@ -28,11 +28,7 @@ pub enum AsmError {
 
     /// Failed to deserialize the state of the given subprotocol.
     #[error("failed to deserialize subprotocol {0} state: {1}")]
-    Deserialization(SubprotocolId, #[source] io::Error),
-
-    /// Failed to serialize the state of the given subprotocol.
-    #[error("failed to serialize subprotocol {0} state: {1}")]
-    Serialization(SubprotocolId, #[source] io::Error),
+    Deserialization(SubprotocolId, #[source] DecodeError),
 
     /// L1Header do not follow consensus rules.
     #[error("L1Header do not follow consensus rules")]

@@ -13,6 +13,7 @@ bitvec.workspace = true
 borsh.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 
 strata-asm-bridge-msgs.workspace = true

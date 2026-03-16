@@ -6,11 +6,9 @@ use std::collections::HashMap;
 
 use bitcoin::{OutPoint, Transaction, TxOut, Txid};
 use strata_asm_manifest_types::Hash32;
-use strata_btc_types::RawBitcoinTx;
 
 use crate::{
-    AsmHistoryAccumulatorState, AuxError, AuxResult,
-    aux::data::{AuxData, VerifiableManifestHash},
+    AsmHistoryAccumulatorState, AuxData, AuxError, AuxResult, RawBitcoinTx, VerifiableManifestHash,
 };
 
 /// Contains verified auxiliary data for subprotocols during transaction processing.
@@ -112,15 +110,16 @@ impl VerifiedAuxData {
         let mut manifest_hashes = HashMap::with_capacity(hashes.len());
 
         for item in hashes {
-            if !manifest_mmr.verify_manifest_leaf(item.proof(), item.hash()) {
+            let hash = item.hash();
+            if !manifest_mmr.verify_manifest_leaf(item.proof(), &hash) {
                 return Err(AuxError::InvalidMmrProof {
                     index: item.proof().index(),
-                    hash: *item.hash(),
+                    hash,
                 });
             }
             // Convert MMR index to block height using offset
             let height = manifest_mmr.offset() + item.proof().index();
-            manifest_hashes.insert(height, *item.hash());
+            manifest_hashes.insert(height, hash);
         }
 
         Ok(manifest_hashes)
@@ -185,7 +184,7 @@ impl VerifiedAuxData {
 #[cfg(test)]
 mod tests {
     use bitcoin::hashes::Hash;
-    use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
+    use strata_btc_types::Buf32BitcoinExt;
     use strata_identifiers::Buf32;
     use strata_test_utils::ArbitraryGenerator;
 
@@ -211,7 +210,9 @@ mod tests {
 
     #[test]
     fn test_verified_aux_data_bitcoin_tx() {
-        let raw_tx: RawBitcoinTx = ArbitraryGenerator::new().generate();
+        let raw_tx = crate::RawBitcoinTx::from(
+            ArbitraryGenerator::new().generate::<strata_btc_types::RawBitcoinTx>(),
+        );
         let tx: Transaction = raw_tx.clone().try_into().unwrap();
         let txid = tx.compute_txid().as_raw_hash().to_byte_array();
 

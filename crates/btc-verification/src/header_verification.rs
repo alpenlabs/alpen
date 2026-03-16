@@ -118,6 +118,46 @@ pub struct HeaderVerificationState {
 }
 
 impl HeaderVerificationState {
+    /// Reconstructs the verification state from raw parts.
+    pub fn from_parts(
+        params: BtcParams,
+        last_verified_block: L1BlockCommitment,
+        next_block_target: u32,
+        epoch_start_timestamp: u32,
+        block_timestamp_history: TimestampStore,
+        total_accumulated_pow: BtcWork,
+    ) -> Self {
+        Self {
+            params,
+            last_verified_block,
+            next_block_target,
+            epoch_start_timestamp,
+            block_timestamp_history,
+            total_accumulated_pow,
+        }
+    }
+
+    /// Consumes the verification state and returns its raw parts.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BtcParams,
+        L1BlockCommitment,
+        u32,
+        u32,
+        TimestampStore,
+        BtcWork,
+    ) {
+        (
+            self.params,
+            self.last_verified_block,
+            self.next_block_target,
+            self.epoch_start_timestamp,
+            self.block_timestamp_history,
+            self.total_accumulated_pow,
+        )
+    }
+
     pub fn new(network: Network, genesis_view: &GenesisL1View) -> Self {
         let params = Params::new(network).into();
 

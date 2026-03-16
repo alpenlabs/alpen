@@ -17,6 +17,7 @@ strata-primitives.workspace = true
 
 arbitrary.workspace = true
 borsh.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

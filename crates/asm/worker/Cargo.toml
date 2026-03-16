@@ -8,12 +8,10 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
-strata-asm-manifest-types.workspace = true
 strata-asm-params.workspace = true
 strata-asm-spec.workspace = true
 strata-asm-stf.workspace = true
 strata-btc-types.workspace = true
-strata-btc-verification.workspace = true
 strata-merkle = { workspace = true, features = ["ssz"] }
 strata-primitives.workspace = true
 strata-service.workspace = true

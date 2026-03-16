@@ -1,0 +1,27 @@
+import strata_identifiers
+
+TIMESTAMPS_FOR_MEDIAN = 11
+
+### Bitcoin network params needed by ASM consensus state.
+class BtcParams(Container):
+    ### Serialized Bitcoin network identifier.
+    network: uint8
+
+### Total accumulated Bitcoin work encoded as little-endian bytes.
+class BtcWork(Container):
+    bytes_le: Bytes32
+
+### Sliding timestamp window used for Bitcoin header validation.
+class TimestampStore(Container):
+    buffer: List[uint32, TIMESTAMPS_FOR_MEDIAN]
+    head: uint8
+
+### ASM-local representation of Bitcoin header verification state.
+class HeaderVerificationState(Container):
+    params: BtcParams
+    #~# external_kind: container
+    last_verified_block: strata_identifiers.L1BlockCommitment
+    next_block_target: uint32
+    epoch_start_timestamp: uint32
+    block_timestamp_history: TimestampStore
+    total_accumulated_pow: BtcWork

@@ -19,6 +19,7 @@ strata-primitives.workspace = true
 
 bitcoin.workspace = true
 borsh.workspace = true
+ssz.workspace = true
 
 [dev-dependencies]
 strata-test-utils-btc.workspace = true

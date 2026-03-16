@@ -100,6 +100,38 @@ impl From<Params> for BtcParams {
 }
 
 impl BtcParams {
+    /// Creates params from the serialized network identifier used in consensus state.
+    pub fn from_network_id(network_id: u8) -> Result<Self, io::Error> {
+        let network = match network_id {
+            0 => bitcoin::Network::Bitcoin,
+            1 => bitcoin::Network::Testnet,
+            2 => bitcoin::Network::Signet,
+            3 => bitcoin::Network::Regtest,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid network index",
+                ));
+            }
+        };
+
+        Ok(BtcParams::from(Params::from(network)))
+    }
+
+    /// Returns the serialized network identifier used in consensus state.
+    pub fn network_id(&self) -> Result<u8, io::Error> {
+        match self.0.network {
+            bitcoin::Network::Bitcoin => Ok(0),
+            bitcoin::Network::Testnet => Ok(1),
+            bitcoin::Network::Signet => Ok(2),
+            bitcoin::Network::Regtest => Ok(3),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unsupported network type",
+            )),
+        }
+    }
+
     pub fn into_inner(self) -> Params {
         self.0
     }

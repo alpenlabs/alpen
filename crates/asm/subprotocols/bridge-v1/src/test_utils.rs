@@ -141,7 +141,7 @@ pub(crate) fn create_withdrawal_info_from_assignment(
 /// verifies it. This is useful for tests that need to provide auxiliary transaction
 /// data for validation.
 pub(crate) fn create_verified_aux_data(txs: Vec<RawBitcoinTx>) -> VerifiedAuxData {
-    let aux_data = AuxData::new(vec![], txs);
+    let aux_data = AuxData::new(vec![], txs.into_iter().map(Into::into).collect());
     let mmr = AsmHistoryAccumulatorState::new(16); // Dummy Accumulator, not used for tx lookup in tests
     VerifiedAuxData::try_new(&aux_data, &mmr).expect("Should verify aux data")
 }

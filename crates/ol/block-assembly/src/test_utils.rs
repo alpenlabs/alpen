@@ -621,7 +621,8 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     let l1_commitment = L1BlockCommitment::new(end, last_blkid);
 
     // Create minimal ASM state for testing
-    let pow_state = HeaderVerificationState::default();
+    let pow_state =
+        strata_asm_common::HeaderVerificationState::from_native(HeaderVerificationState::default());
     let history_accumulator = AsmHistoryAccumulatorState::new(0);
     let chain_view = ChainViewState {
         pow_state,
@@ -629,7 +630,7 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     };
     let anchor_state = AnchorState {
         chain_view,
-        sections: vec![],
+        sections: vec![].into(),
     };
     let asm_state = AsmState::new(anchor_state, vec![]);
 

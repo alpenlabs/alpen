@@ -7,6 +7,7 @@ use bitcoin::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
+use ssz::{Decode, DecodeError, Encode};
 use strata_asm_common::AuxData;
 
 /// Private input to process the next state.
@@ -51,6 +52,35 @@ impl AsmStepInput {
     /// Checks that the block's merkle roots are consistent.
     pub fn validate_block(&self) -> bool {
         self.block.0.check_merkle_root() && self.block.0.check_witness_commitment()
+    }
+}
+
+impl Encode for AsmStepInput {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        borsh::to_vec(self)
+            .expect("asm moho input must serialize with borsh")
+            .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        borsh::to_vec(self)
+            .expect("asm moho input must serialize with borsh")
+            .ssz_bytes_len()
+    }
+}
+
+impl Decode for AsmStepInput {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
+        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 

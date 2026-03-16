@@ -43,6 +43,16 @@ impl TimestampStore {
         }
     }
 
+    /// Reconstructs the store from raw parts.
+    pub fn from_parts(buffer: [u32; TIMESTAMPS_FOR_MEDIAN], head: usize) -> Self {
+        Self { buffer, head }
+    }
+
+    /// Consumes the store and returns its raw parts.
+    pub fn into_parts(self) -> ([u32; TIMESTAMPS_FOR_MEDIAN], usize) {
+        (self.buffer, self.head)
+    }
+
     /// Inserts a new timestamp into the buffer, overwriting the oldest timestamp.
     /// After insertion, the `head` is advanced in a circular manner.
     pub fn insert(&mut self, timestamp: u32) {

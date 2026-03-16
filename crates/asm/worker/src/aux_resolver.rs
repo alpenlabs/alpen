@@ -9,7 +9,6 @@
 //! - Maps L1 block heights to MMR indices using genesis offset
 //! - Fetches manifest hashes from fast lookup storage
 //! - Generates MMR proofs using `AsmDBSled`
-//! - Converts `MerkleProofB32` (SSZ type) to `MerkleProof<Hash32>` (ASM type)
 //!
 //! ### Bitcoin Transaction Resolution
 //!
@@ -21,10 +20,8 @@
 use std::fmt;
 
 use strata_asm_common::{
-    AsmMerkleProof, AuxData, AuxRequests, ManifestHashRange, VerifiableManifestHash,
+    AuxData, AuxRequests, BitcoinTxid, ManifestHashRange, RawBitcoinTx, VerifiableManifestHash,
 };
-use strata_asm_manifest_types::Hash32;
-use strata_btc_types::BitcoinTxid;
 use strata_primitives::prelude::*;
 use tracing::*;
 
@@ -143,7 +140,9 @@ impl<'a> AuxDataResolver<'a> {
             .iter()
             .map(|txid| {
                 trace!(?txid, "Fetching Bitcoin transaction");
-                self.context.get_bitcoin_tx(txid)
+                self.context
+                    .get_bitcoin_tx(&strata_btc_types::BitcoinTxid::from(txid.clone()))
+                    .map(Into::into)
             })
             .collect()
     }
@@ -220,20 +219,11 @@ impl<'a> AuxDataResolver<'a> {
                     .map(|x| x.0)
                     .ok_or(WorkerError::ManifestHashNotFound { index: mmr_index })?;
 
-                // Generate MMR proof for this index
-                let proof_b32 = self
+                let proof = self
                     .context
                     .generate_mmr_proof_at(mmr_index, self.at_leaf_count)?;
 
-                // Convert MerkleProofB32 to MerkleProof<Hash32> (AsmMerkleProof)
-                // Both types contain the same data: index and cohashes
-                // Extract from MerkleProofB32 and reconstruct as MerkleProof<Hash32>
-                let cohashes: Vec<[u8; 32]> = proof_b32.cohashes();
-                let index = proof_b32.index();
-                let asm_proof = AsmMerkleProof::from_cohashes(cohashes, index);
-
-                let hash = Hash32::from(manifest_hash);
-                resolved.push(VerifiableManifestHash::new(hash, asm_proof));
+                resolved.push(VerifiableManifestHash::new(manifest_hash, proof));
 
                 trace!(
                     index = mmr_index,

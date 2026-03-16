@@ -1,5 +1,6 @@
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
-use strata_btc_verification::HeaderVerificationState;
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState, HeaderVerificationState,
+};
 use strata_db_types::traits::AsmDatabase;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_state::asm_state::AsmState;
@@ -8,10 +9,12 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
     let state = AsmState::new(
         AnchorState {
             chain_view: ChainViewState {
-                pow_state: HeaderVerificationState::default(),
+                pow_state: HeaderVerificationState::from_native(
+                    strata_btc_verification::HeaderVerificationState::default(),
+                ),
                 history_accumulator: AsmHistoryAccumulatorState::new(0),
             },
-            sections: vec![],
+            sections: vec![].into(),
         },
         vec![],
     );

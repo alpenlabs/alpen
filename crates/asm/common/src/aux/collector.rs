@@ -4,10 +4,7 @@
 
 use bitcoin::Txid;
 
-use crate::{
-    aux::data::{AuxRequests, ManifestHashRange},
-    logging,
-};
+use crate::{AuxRequests, ManifestHashRange, logging};
 
 /// Collects auxiliary data requests from subprotocols.
 ///
@@ -58,12 +55,16 @@ impl AuxRequestCollector {
 
         self.requests
             .manifest_hashes
-            .push(ManifestHashRange::new(start_height, end_height));
+            .push(ManifestHashRange::new(start_height, end_height))
+            .expect("asm: manifest hash request list must stay within SSZ bounds");
     }
 
     /// Requests a raw Bitcoin transaction by its txid.
     pub fn request_bitcoin_tx(&mut self, txid: Txid) {
-        self.requests.bitcoin_txs.push(txid.into());
+        self.requests
+            .bitcoin_txs
+            .push(txid.into())
+            .expect("asm: bitcoin tx request list must stay within SSZ bounds");
     }
 
     /// Consumes the collector and returns the collected auxiliary requests.

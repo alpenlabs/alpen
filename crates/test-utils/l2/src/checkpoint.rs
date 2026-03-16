@@ -192,7 +192,13 @@ impl CheckpointTestHarness {
         let manifest_hashes = leaves
             .iter()
             .zip(proof_list)
-            .map(|(leaf, proof)| VerifiableManifestHash::new(*leaf, proof))
+            .map(|(leaf, proof)| {
+                let proof = strata_asm_common::AsmMerkleProof::from_cohashes(
+                    proof.cohashes().to_vec(),
+                    proof.index(),
+                );
+                VerifiableManifestHash::new(*leaf, proof)
+            })
             .collect();
 
         let data = AuxData::new(manifest_hashes, vec![]);

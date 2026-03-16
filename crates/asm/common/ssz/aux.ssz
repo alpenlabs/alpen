@@ -1,0 +1,35 @@
+MAX_MANIFEST_HASH_RANGES = 1 << 10
+MAX_MANIFEST_HASHES = 1 << 12
+MAX_BITCOIN_TXS = 1 << 12
+MAX_RAW_BITCOIN_TX_BYTES = 1 << 20
+
+import strata_acct_types
+
+### Bitcoin transaction identifier used by ASM auxiliary lookups.
+class BitcoinTxid(Container):
+    bytes: Bytes32
+
+### Raw serialized Bitcoin transaction bytes.
+class RawBitcoinTx(Container):
+    bytes: List[uint8, MAX_RAW_BITCOIN_TX_BYTES]
+
+### Manifest hash height range (inclusive).
+class ManifestHashRange(Container):
+    start_height: uint64
+    end_height: uint64
+
+### Manifest hash plus its MMR proof.
+class VerifiableManifestHash(Container):
+    hash: Bytes32
+    #~# external_kind: container
+    proof: strata_acct_types.MerkleProof
+
+### Collection of ASM auxiliary data requests.
+class AuxRequests(Container):
+    manifest_hashes: List[ManifestHashRange, MAX_MANIFEST_HASH_RANGES]
+    bitcoin_txs: List[BitcoinTxid, MAX_BITCOIN_TXS]
+
+### Collection of ASM auxiliary data responses.
+class AuxData(Container):
+    manifest_hashes: List[VerifiableManifestHash, MAX_MANIFEST_HASHES]
+    bitcoin_txs: List[RawBitcoinTx, MAX_BITCOIN_TXS]

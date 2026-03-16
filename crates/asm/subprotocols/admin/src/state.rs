@@ -1,6 +1,7 @@
 use std::{mem::take, num::NonZero};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
 use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_txs_admin::actions::UpdateId;
 use strata_crypto::threshold_signature::ThresholdConfigUpdate;
@@ -128,6 +129,35 @@ impl AdministrationSubprotoState {
             .partition(|u| u.activation_height() <= current_height);
         self.queued = rest;
         ready
+    }
+}
+
+impl Encode for AdministrationSubprotoState {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        borsh::to_vec(self)
+            .expect("admin state must serialize with borsh")
+            .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        borsh::to_vec(self)
+            .expect("admin state must serialize with borsh")
+            .ssz_bytes_len()
+    }
+}
+
+impl Decode for AdministrationSubprotoState {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
+        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 

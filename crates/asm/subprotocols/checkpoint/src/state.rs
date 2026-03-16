@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, DecodeError, Encode};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_params::CheckpointInitConfig;
 use strata_btc_types::BitcoinAmount;
@@ -165,6 +166,35 @@ impl CheckpointState {
     /// [`verify_can_honor_withdrawals`](Self::verify_can_honor_withdrawals).
     pub(crate) fn deduct_withdrawals(&mut self, token: VerifiedWithdrawals) {
         self.available_funds = token.0;
+    }
+}
+
+impl Encode for CheckpointState {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        borsh::to_vec(self)
+            .expect("checkpoint state must serialize with borsh")
+            .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        borsh::to_vec(self)
+            .expect("checkpoint state must serialize with borsh")
+            .ssz_bytes_len()
+    }
+}
+
+impl Decode for CheckpointState {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
+        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
