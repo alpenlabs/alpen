@@ -1,36 +1,60 @@
-use std::io::{self, Read, Write};
-
 use bitcoin::{
     Block,
     consensus::{deserialize, serialize},
     hashes::Hash,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
 use moho_types::StateReference;
-use ssz::{Decode, DecodeError, Encode};
+use ssz::{Decode, Encode};
 use strata_asm_common::AuxData;
 
-/// Private input to process the next state.
-///
-/// This includes all the L1
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
-pub struct AsmStepInput {
-    /// The full Bitcoin L1 block
-    pub block: L1Block,
-    /// Auxiliary data required to run the ASM STF
-    pub aux_data: AuxData,
-}
+use crate::{AsmStepInput, AuxDataBytes, BlockBytes};
+
+/// Private input to process the next state transition.
+#[derive(Debug, Clone, PartialEq)]
+pub struct L1Block(pub Block);
 
 impl AsmStepInput {
+    fn encode_aux_data(aux_data: AuxData) -> AuxDataBytes {
+        AuxDataBytes::new(aux_data.as_ssz_bytes())
+            .expect("moho-program aux data must fit in SSZ bounds")
+    }
+
+    fn decode_aux_data(bytes: &[u8]) -> AuxData {
+        AuxData::from_ssz_bytes(bytes).expect("moho-program aux data bytes must remain valid")
+    }
+
+    fn encode_block(block: L1Block) -> BlockBytes {
+        serialize(&block.0).into()
+    }
+
+    fn decode_block(bytes: &[u8]) -> L1Block {
+        let block = deserialize(bytes).expect("moho-program block bytes must remain valid");
+        L1Block(block)
+    }
+
+    /// Creates a new Moho step input.
     pub fn new(block: L1Block, aux_data: AuxData) -> Self {
-        AsmStepInput { block, aux_data }
+        Self {
+            block: Self::encode_block(block),
+            aux_data: Self::encode_aux_data(aux_data),
+        }
+    }
+
+    /// Returns the full Bitcoin L1 block.
+    pub fn block(&self) -> L1Block {
+        Self::decode_block(&self.block)
+    }
+
+    /// Returns the auxiliary data required for the ASM STF.
+    pub fn aux_data(&self) -> AuxData {
+        Self::decode_aux_data(&self.aux_data)
     }
 
     /// Computes the state reference.
     ///
     /// In concrete terms, this just computes the blkid/blockhash.
     pub fn compute_ref(&self) -> StateReference {
-        let raw_ref = self.block.0.block_hash().to_raw_hash().to_byte_array();
+        let raw_ref = self.block().0.block_hash().to_raw_hash().to_byte_array();
         StateReference::new(raw_ref)
     }
 
@@ -39,100 +63,34 @@ impl AsmStepInput {
     /// In concrete terms, this just extracts the parent blkid from the block's
     /// header.
     pub fn compute_prev_ref(&self) -> StateReference {
-        let parent_ref = self
-            .block
-            .0
-            .header
-            .prev_blockhash
-            .to_raw_hash()
-            .to_byte_array();
+        let block = self.block();
+        let parent_ref = block.0.header.prev_blockhash.to_raw_hash().to_byte_array();
         StateReference::new(parent_ref)
     }
 
     /// Checks that the block's merkle roots are consistent.
     pub fn validate_block(&self) -> bool {
-        self.block.0.check_merkle_root() && self.block.0.check_witness_commitment()
-    }
-}
-
-impl Encode for AsmStepInput {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        borsh::to_vec(self)
-            .expect("asm moho input must serialize with borsh")
-            .ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        borsh::to_vec(self)
-            .expect("asm moho input must serialize with borsh")
-            .ssz_bytes_len()
-    }
-}
-
-impl Decode for AsmStepInput {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
-        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
-    }
-}
-
-/// A wrapper around Bitcoin's `Block` to provide Borsh (de)serialization.
-#[derive(Debug, Clone, PartialEq)]
-pub struct L1Block(pub Block);
-
-impl BorshSerialize for L1Block {
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), io::Error> {
-        // Serialize the inner Bitcoin block via consensus encoding
-        let serialized_block = serialize(&self.0);
-        let len = serialized_block.len() as u32;
-        // Write length prefix (little-endian)
-        writer.write_all(&len.to_le_bytes())?;
-        // Write block bytes
-        writer.write_all(&serialized_block)?;
-        Ok(())
-    }
-}
-
-impl BorshDeserialize for L1Block {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> Result<Self, io::Error> {
-        // Read the length prefix
-        let mut len_bytes = [0u8; 4];
-        reader.read_exact(&mut len_bytes)?;
-        let len = u32::from_le_bytes(len_bytes) as usize;
-
-        // Read the serialized block data
-        let mut buf = vec![0u8; len];
-        reader.read_exact(&mut buf)?;
-
-        // Deserialize into a Bitcoin block via consensus rules
-        let block = deserialize(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(L1Block(block))
+        let block = self.block();
+        block.0.check_merkle_root() && block.0.check_witness_commitment()
     }
 }
 
 #[cfg(test)]
 mod tests {
-
+    use ssz::{Decode, Encode};
     use strata_test_utils_btc::segment::BtcChainSegment;
 
     use super::*;
 
     #[test]
-    fn test_borsh_roundtrip() {
+    fn test_ssz_roundtrip() {
         let block = BtcChainSegment::load_full_block();
-        let l1_block = L1Block(block);
+        let input = AsmStepInput::new(L1Block(block), AuxData::new(vec![], vec![]));
 
-        let borsh_serialized = borsh::to_vec(&l1_block).unwrap();
-        let borsh_deserialized: L1Block = borsh::from_slice(&borsh_serialized).unwrap();
+        let serialized = input.as_ssz_bytes();
+        let decoded = AsmStepInput::from_ssz_bytes(&serialized).unwrap();
 
-        assert_eq!(l1_block, borsh_deserialized);
+        assert_eq!(input.block(), decoded.block());
+        assert_eq!(input.aux_data(), decoded.aux_data());
     }
 }

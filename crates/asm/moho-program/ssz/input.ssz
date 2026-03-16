@@ -1,0 +1,10 @@
+MAX_AUX_DATA_BYTES = 1 << 24
+MAX_BLOCK_BYTES = 1 << 22
+
+AuxDataBytes = List[uint8, MAX_AUX_DATA_BYTES]
+BlockBytes = List[uint8, MAX_BLOCK_BYTES]
+
+### Private input to process the next ASM state transition.
+class AsmStepInput(Container):
+    block: BlockBytes
+    aux_data: AuxDataBytes
