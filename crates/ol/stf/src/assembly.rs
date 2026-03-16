@@ -5,13 +5,13 @@ use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
+    BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
     OLTransaction, OLTxSegment, TransactionAttachment, TransactionPayload,
 };
 
 use crate::{
     chain_processing,
-    context::{BasicExecContext, BlockContext, TxExecContext},
+    context::{BasicExecContext, BlockContext, BlockInfo, TxExecContext},
     errors::ExecResult,
     manifest_processing,
     output::{ExecOutputBuffer, OutputCtx},
@@ -220,6 +220,21 @@ impl BlockComponents {
         }
     }
 
+    /// Extracts block components from a signed block, handling absent tx segments.
+    pub fn from_block(block: &OLBlock) -> Self {
+        let empty = OLTxSegment::new(vec![])
+            .expect("empty transaction segment construction is infallible");
+        let tx_segment = block.body().tx_segment().unwrap_or(&empty).clone();
+        let manifest_container = block
+            .body()
+            .l1_update()
+            .map(|u| u.manifest_cont().clone());
+        Self {
+            tx_segment,
+            manifest_container,
+        }
+    }
+
     pub fn tx_segment(&self) -> &OLTxSegment {
         &self.tx_segment
     }
@@ -348,4 +363,38 @@ pub fn execute_and_complete_block<S: IStateAccessor>(
 ) -> ExecResult<CompletedBlock> {
     let construct_output = construct_block(state, block_context, block_components)?;
     Ok(construct_output.completed_block)
+}
+
+/// Executes a batch of blocks sequentially, verifying each produced header
+/// matches the input block's header.
+///
+/// Generic over `S: IStateAccessor` so callers can pass `OLState` directly
+/// or wrap it (e.g. `DaAccumulatingState<OLState>`) to intercept mutations.
+pub fn execute_block_batch<S: IStateAccessor>(
+    state: &mut S,
+    blocks: &[OLBlock],
+    initial_parent: &OLBlockHeader,
+) -> ExecResult<Vec<ConstructBlockOutput>> {
+    let mut parent = initial_parent.clone();
+    let mut outputs = Vec::with_capacity(blocks.len());
+
+    for block in blocks {
+        let info = BlockInfo::from_header(block.header());
+        let context = BlockContext::new(&info, Some(&parent));
+        let components = BlockComponents::from_block(block);
+
+        let output = construct_block(state, context, components)?;
+
+        assert_eq!(
+            output.completed_block().header(),
+            block.header(),
+            "computed block header does not match input block header at slot {}",
+            block.header().slot()
+        );
+
+        parent = output.completed_block().header().clone();
+        outputs.push(output);
+    }
+
+    Ok(outputs)
 }

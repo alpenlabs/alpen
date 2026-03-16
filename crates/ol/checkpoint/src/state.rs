@@ -4,14 +4,14 @@ use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
 };
-use strata_codec::encode_to_vec;
 use strata_db_types::types::OLCheckpointEntry;
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_da::{OLDaPayloadV1, StateDiff};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
+use strata_ol_state_support_types::DaAccumulatingState;
+use strata_ol_stf::execute_block_batch;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{context::CheckpointWorkerContext, errors::CheckpointNotReady};
 
@@ -168,16 +168,9 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     let l2_commitment = *summary.terminal();
     let new_tip = CheckpointTip::new(summary.epoch(), l1_height, l2_commitment);
 
-    let state_bytes = compute_da(&commitment, summary, ctx)?;
-    let ol_logs = ctx.get_epoch_logs(&commitment)?;
-    let terminal_header = ctx
-        .get_terminal_block_header(&l2_commitment)?
-        .ok_or(CheckpointNotReady::TerminalBlock(l2_commitment))?;
+    let (state_bytes, ol_logs, terminal_header) = replay_epoch_and_compute_da(summary, ctx)?;
     assert_terminal_commitment_matches(&terminal_header, l2_commitment)?;
 
-    // Extract the four header fields not derivable from L1 checkpoint data
-    // (timestamp, parent_blkid, body_root, logs_root). Other header fields are
-    // derivable: slot/blkid from new_tip, state_root from DA + manifests.
     let terminal_header_complement = TerminalHeaderComplement::from_full_header(&terminal_header);
 
     let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
@@ -246,23 +239,57 @@ fn collect_epoch_blocks<C: CheckpointWorkerContext>(
     Ok(blocks)
 }
 
-/// Computes the DA state diff for the epoch.
+/// Replays epoch blocks to produce DA state diff bytes, accumulated logs, and
+/// the terminal header.
 ///
-/// DA generation is the checkpoint service's responsibility, not a storage read.
-/// When fully implemented, this will replay epoch blocks through a DA-accumulating
-/// state layer and encode the resulting diff.
-fn compute_da<C: CheckpointWorkerContext>(
-    _commitment: &EpochCommitment,
+/// Loads the OL state at the previous terminal block, wraps it in
+/// `DaAccumulatingState` to intercept mutations, then re-executes every block
+/// in the epoch. The DA blob is extracted from the accumulating layer and the
+/// logs are collected from each block's execution output.
+fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     summary: &EpochSummary,
     ctx: &C,
-) -> anyhow::Result<Vec<u8>> {
-    let _epoch_blocks = collect_epoch_blocks(summary, ctx)?;
+) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeader)> {
+    let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
+    anyhow::ensure!(!epoch_blocks.is_empty(), "epoch has no blocks");
 
-    // TODO: Replay epoch_blocks through DaAccumulatingState<OLState> to produce
-    // the real DA payload. For now, encode an empty StateDiff.
-    warn!("compute_da: returning empty DA payload (real DA generation not yet implemented)");
-    let payload = OLDaPayloadV1::new(StateDiff::default());
-    encode_to_vec(&payload).map_err(|e| anyhow::anyhow!("failed to encode empty DA payload: {e}"))
+    let prev_terminal = summary.prev_terminal();
+    let prev_terminal_header = ctx
+        .get_terminal_block_header(prev_terminal)?
+        .ok_or_else(|| {
+            anyhow::anyhow!("missing prev terminal block header for {:?}", prev_terminal)
+        })?;
+
+    let ol_state = ctx
+        .get_ol_state(prev_terminal)?
+        .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
+
+    let mut da_state = DaAccumulatingState::new(ol_state);
+
+    let batch_outputs = execute_block_batch(&mut da_state, &epoch_blocks, &prev_terminal_header)
+        .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
+
+    // Collect logs from all block outputs.
+    let logs: Vec<OLLog> = batch_outputs
+        .iter()
+        .flat_map(|o| o.outputs().logs())
+        .cloned()
+        .collect();
+
+    let terminal_header = batch_outputs
+        .last()
+        .expect("batch_outputs is non-empty")
+        .completed_block()
+        .header()
+        .clone();
+
+    // Extract the DA blob from the accumulating layer.
+    let da_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .map_err(|e| anyhow::anyhow!("DA accumulation failed: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("no DA blob produced after epoch replay"))?;
+
+    Ok((da_bytes, logs, terminal_header))
 }
 
 #[cfg(test)]

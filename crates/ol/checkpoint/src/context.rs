@@ -5,7 +5,8 @@ use std::sync::Arc;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::types::OLCheckpointEntry;
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId};
+use strata_ol_state_types::OLState;
 use strata_primitives::epoch::EpochCommitment;
 use strata_storage::NodeStorage;
 
@@ -38,9 +39,6 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     /// Store a checkpoint entry for the given epoch.
     fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> anyhow::Result<()>;
 
-    /// Gets aggregated OL logs for the epoch.
-    fn get_epoch_logs(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<OLLog>>;
-
     /// Gets proof bytes for the checkpoint.
     fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>>;
 
@@ -52,6 +50,9 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
 
     /// Gets an OL block by its block ID.
     fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>>;
+
+    /// Gets the OL state snapshot at a given block commitment.
+    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLState>>;
 }
 
 /// Production context implementation with v1 defaults.
@@ -117,11 +118,6 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
-    fn get_epoch_logs(&self, _epoch: &EpochCommitment) -> anyhow::Result<Vec<OLLog>> {
-        // V1: empty logs
-        Ok(Vec::new())
-    }
-
     fn get_proof(&self, _epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
         // V1: empty placeholder proof
         Ok(Vec::new())
@@ -143,5 +139,13 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .ol_block()
             .get_block_data_blocking(*id)
             .map_err(Into::into)
+    }
+
+    fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLState>> {
+        let state = self
+            .storage
+            .ol_state()
+            .get_toplevel_ol_state_blocking(*commitment)?;
+        Ok(state.map(|arc| (*arc).clone()))
     }
 }
