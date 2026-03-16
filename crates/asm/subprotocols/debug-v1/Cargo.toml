@@ -7,7 +7,6 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-borsh.workspace = true
 serde.workspace = true
 ssz.workspace = true
 ssz_derive.workspace = true

@@ -1,6 +1,9 @@
+use std::io;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode, Encode};
 use strata_asm_common::AsmManifest;
 use strata_primitives::{l1::L1Height, prelude::*};
 use strata_state::exec_update::ExecUpdate;
@@ -90,7 +93,7 @@ impl L2BlockBody {
 
 /// Container for [`AsmManifest`]s that we've observed from the L1, if there
 /// are any.
-#[derive(Clone, Debug, Eq, PartialEq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct L1Segment {
     /// New L1 block height.  This should correspond with the last manifest in
     /// the new_manifests, or the current chainstate height if it's not being
@@ -103,6 +106,35 @@ pub struct L1Segment {
     /// New [`AsmManifest`]s that we've seen from L1 that we didn't see in the previous
     /// L2 block.
     new_manifests: Vec<AsmManifest>,
+}
+
+impl BorshSerialize for L1Segment {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        let manifest_bytes = self
+            .new_manifests
+            .iter()
+            .map(AsmManifest::as_ssz_bytes)
+            .collect::<Vec<_>>();
+        BorshSerialize::serialize(&(self.new_height, manifest_bytes), writer)
+    }
+}
+
+impl BorshDeserialize for L1Segment {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let (new_height, manifest_bytes): (L1Height, Vec<Vec<u8>>) =
+            BorshDeserialize::deserialize_reader(reader)?;
+        let new_manifests = manifest_bytes
+            .into_iter()
+            .map(|bytes| {
+                AsmManifest::from_ssz_bytes(&bytes)
+                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+            })
+            .collect::<io::Result<Vec<_>>>()?;
+        Ok(Self {
+            new_height,
+            new_manifests,
+        })
+    }
 }
 
 // Manual Arbitrary implementation since AsmManifest doesn't derive Arbitrary

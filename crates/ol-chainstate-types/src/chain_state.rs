@@ -147,13 +147,13 @@ impl Chainstate {
         &mut self.pending_withdraws
     }
 
-    /// Encodes the chainstate using the legacy Borsh wire format.
-    pub fn to_borsh_bytes(&self) -> Vec<u8> {
+    /// Encodes the chainstate using the legacy checkpoint sidecar wire format.
+    pub fn to_legacy_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("chainstate should serialize")
     }
 
-    /// Decodes a chainstate from the legacy Borsh wire format.
-    pub fn from_borsh_bytes(bytes: &[u8]) -> Result<Self, String> {
+    /// Decodes a chainstate from the legacy checkpoint sidecar wire format.
+    pub fn from_legacy_bytes(bytes: &[u8]) -> Result<Self, String> {
         borsh::from_slice(bytes).map_err(|err| err.to_string())
     }
 }

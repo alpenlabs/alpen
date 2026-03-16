@@ -202,6 +202,3 @@ impl TryFrom<crate::RawBitcoinTx> for Transaction {
         deserialize(value.as_raw_bytes())
     }
 }
-
-strata_identifiers::impl_borsh_via_ssz!(AuxRequests);
-strata_identifiers::impl_borsh_via_ssz!(AuxData);

@@ -37,7 +37,7 @@ impl CheckpointUpdate {
     ) -> Self {
         Self {
             epoch_commitment: encode_epoch_commitment(epoch_commitment),
-            batch_info: batch_info.to_borsh_bytes().into(),
+            batch_info: batch_info.to_legacy_bytes().into(),
             checkpoint_txid: checkpoint_txid.inner_raw().into(),
         }
     }
@@ -58,7 +58,7 @@ impl CheckpointUpdate {
     }
 
     pub fn batch_info(&self) -> BatchInfo {
-        BatchInfo::from_borsh_bytes(&self.batch_info)
+        BatchInfo::from_legacy_bytes(&self.batch_info)
             .expect("checkpoint update batch info is valid")
     }
 

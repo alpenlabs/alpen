@@ -13968,7 +13968,6 @@ name = "strata-asm-common"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
  "ssz",
  "ssz_codegen",
  "ssz_derive",
@@ -14017,7 +14016,6 @@ name = "strata-asm-manifest-types"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "borsh",
  "proptest",
  "serde",
  "ssz",
@@ -14197,7 +14195,6 @@ dependencies = [
 name = "strata-asm-proto-debug-v1"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "serde",
  "ssz",
  "ssz_derive",
@@ -15272,6 +15269,7 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "ssz",
  "strata-asm-common",
  "strata-crypto",
  "strata-params",

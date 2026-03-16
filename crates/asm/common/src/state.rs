@@ -165,8 +165,3 @@ impl crate::HeaderVerificationState {
         Ok(())
     }
 }
-
-strata_identifiers::impl_borsh_via_ssz!(HeaderVerificationState);
-strata_identifiers::impl_borsh_via_ssz!(ChainViewState);
-strata_identifiers::impl_borsh_via_ssz!(SectionState);
-strata_identifiers::impl_borsh_via_ssz!(AnchorState);

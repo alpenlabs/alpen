@@ -32,11 +32,11 @@ pub struct CheckpointV0VerificationParams {
 /// Compatibility functions for working with current checkpoint types
 impl CheckpointV0VerifierState {
     fn encode_checkpoint(checkpoint: Checkpoint) -> Vec<u8> {
-        checkpoint.to_borsh_bytes()
+        checkpoint.to_legacy_bytes()
     }
 
     fn decode_checkpoint(bytes: &[u8]) -> Checkpoint {
-        Checkpoint::from_borsh_bytes(bytes).expect("checkpoint-v0 checkpoint bytes stay valid")
+        Checkpoint::from_legacy_bytes(bytes).expect("checkpoint-v0 checkpoint bytes stay valid")
     }
 
     fn encode_cred_rule(cred_rule: CredRule) -> CredRuleState {

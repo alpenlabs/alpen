@@ -16,6 +16,7 @@ strata-state.workspace = true
 arbitrary.workspace = true
 borsh.workspace = true
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

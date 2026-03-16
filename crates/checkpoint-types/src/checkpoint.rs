@@ -87,13 +87,13 @@ impl Checkpoint {
         &self.sidecar
     }
 
-    /// Encodes the checkpoint using the legacy Borsh wire format.
-    pub fn to_borsh_bytes(&self) -> Vec<u8> {
+    /// Encodes the checkpoint using the legacy checkpoint wire format.
+    pub fn to_legacy_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("checkpoint should serialize")
     }
 
-    /// Decodes a checkpoint from the legacy Borsh wire format.
-    pub fn from_borsh_bytes(bytes: &[u8]) -> Result<Self, String> {
+    /// Decodes a checkpoint from the legacy checkpoint wire format.
+    pub fn from_legacy_bytes(bytes: &[u8]) -> Result<Self, String> {
         borsh::from_slice(bytes).map_err(|err| err.to_string())
     }
 }
@@ -138,13 +138,13 @@ impl SignedCheckpoint {
         &self.signature
     }
 
-    /// Encodes the signed checkpoint using the legacy Borsh wire format.
-    pub fn to_borsh_bytes(&self) -> Vec<u8> {
+    /// Encodes the signed checkpoint using the legacy checkpoint wire format.
+    pub fn to_legacy_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("signed checkpoint should serialize")
     }
 
-    /// Decodes a signed checkpoint from the legacy Borsh wire format.
-    pub fn from_borsh_bytes(bytes: &[u8]) -> Result<Self, String> {
+    /// Decodes a signed checkpoint from the legacy checkpoint wire format.
+    pub fn from_legacy_bytes(bytes: &[u8]) -> Result<Self, String> {
         borsh::from_slice(bytes).map_err(|err| err.to_string())
     }
 }
