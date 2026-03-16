@@ -7,7 +7,7 @@ use strata_checkpoint_types_ssz::{
 use strata_codec::encode_to_vec;
 use strata_db_types::types::OLCheckpointEntry;
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_chain_types_new::OLBlockHeader;
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_da::{OLDaPayloadV1, StateDiff};
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
@@ -168,7 +168,7 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     let l2_commitment = *summary.terminal();
     let new_tip = CheckpointTip::new(summary.epoch(), l1_height, l2_commitment);
 
-    let state_bytes = compute_da(&commitment, ctx)?;
+    let state_bytes = compute_da(&commitment, summary, ctx)?;
     let ol_logs = ctx.get_epoch_logs(&commitment)?;
     let terminal_header = ctx
         .get_terminal_block_header(&l2_commitment)?
@@ -205,17 +205,61 @@ fn assert_terminal_commitment_matches(
     Ok(())
 }
 
+/// Collects all blocks in an epoch by walking backwards from the terminal block.
+///
+/// Returns blocks in forward order (first block of epoch first, terminal last).
+fn collect_epoch_blocks<C: CheckpointWorkerContext>(
+    summary: &EpochSummary,
+    ctx: &C,
+) -> anyhow::Result<Vec<OLBlock>> {
+    let terminal_blkid = summary.terminal().blkid();
+    let prev_terminal_blkid = summary.prev_terminal().blkid();
+    let prev_terminal_slot = summary.prev_terminal().slot();
+
+    let mut blocks = Vec::new();
+    let mut cur_id = *terminal_blkid;
+
+    loop {
+        let block = ctx
+            .get_block(&cur_id)?
+            .ok_or_else(|| anyhow::anyhow!("missing block {cur_id:?} while collecting epoch"))?;
+
+        anyhow::ensure!(
+            block.header().slot() > prev_terminal_slot,
+            "block at slot {} is at or below prev terminal slot {}; \
+             epoch chain is broken",
+            block.header().slot(),
+            prev_terminal_slot,
+        );
+
+        let parent_id = *block.header().parent_blkid();
+        blocks.push(block);
+
+        if parent_id == *prev_terminal_blkid {
+            break;
+        }
+
+        cur_id = parent_id;
+    }
+
+    blocks.reverse();
+    Ok(blocks)
+}
+
 /// Computes the DA state diff for the epoch.
 ///
 /// DA generation is the checkpoint service's responsibility, not a storage read.
-/// When fully implemented, this will read OL state changes from the context and
-/// assemble them using DA framework primitives.
+/// When fully implemented, this will replay epoch blocks through a DA-accumulating
+/// state layer and encode the resulting diff.
 fn compute_da<C: CheckpointWorkerContext>(
     _commitment: &EpochCommitment,
-    _ctx: &C,
+    summary: &EpochSummary,
+    ctx: &C,
 ) -> anyhow::Result<Vec<u8>> {
-    // TODO: Replace with real DA payload generation from epoch execution.
-    // This encodes an empty StateDiff so the proof guest can decode it without panic.
+    let _epoch_blocks = collect_epoch_blocks(summary, ctx)?;
+
+    // TODO: Replay epoch_blocks through DaAccumulatingState<OLState> to produce
+    // the real DA payload. For now, encode an empty StateDiff.
     warn!("compute_da: returning empty DA payload (real DA generation not yet implemented)");
     let payload = OLDaPayloadV1::new(StateDiff::default());
     encode_to_vec(&payload).map_err(|e| anyhow::anyhow!("failed to encode empty DA payload: {e}"))

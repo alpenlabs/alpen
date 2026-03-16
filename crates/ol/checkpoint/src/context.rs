@@ -5,7 +5,7 @@ use std::sync::Arc;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::types::OLCheckpointEntry;
 use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlockHeader, OLLog};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_primitives::epoch::EpochCommitment;
 use strata_storage::NodeStorage;
 
@@ -49,6 +49,9 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
         &self,
         terminal: &OLBlockCommitment,
     ) -> anyhow::Result<Option<OLBlockHeader>>;
+
+    /// Gets an OL block by its block ID.
+    fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>>;
 }
 
 /// Production context implementation with v1 defaults.
@@ -133,5 +136,12 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .ol_block()
             .get_block_data_blocking(*terminal.blkid())?;
         Ok(maybe_block.map(|block| block.header().clone()))
+    }
+
+    fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>> {
+        self.storage
+            .ol_block()
+            .get_block_data_blocking(*id)
+            .map_err(Into::into)
     }
 }
