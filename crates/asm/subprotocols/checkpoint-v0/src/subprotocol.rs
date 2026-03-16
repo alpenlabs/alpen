@@ -21,8 +21,9 @@ use strata_predicate::PredicateKey;
 use strata_primitives::{L1Height, block_credential::CredRule, buf::Buf32, l1::BitcoinTxid};
 
 use crate::{
+    CheckpointV0VerifierState,
     error::{CheckpointV0Error, CheckpointV0Result},
-    types::{CheckpointV0VerificationParams, CheckpointV0VerifierState},
+    types::CheckpointV0VerificationParams,
     verification::process_checkpoint_v0,
 };
 
@@ -122,10 +123,11 @@ impl Subprotocol for CheckpointV0Subproto {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
-                    apply_sequencer_update(state, *new_key);
+                    apply_sequencer_update(state, new_key.new_key());
                 }
                 CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
-                    apply_rollup_vk_update(state, new_predicate);
+                    let new_predicate = new_predicate.new_predicate();
+                    apply_rollup_vk_update(state, &new_predicate);
                 }
                 // Deposit tracking is handled by the new checkpoint subprotocol (ID=1).
                 CheckpointIncomingMsg::DepositProcessed(_) => {}
@@ -190,9 +192,9 @@ fn process_checkpoint_transaction_v0(
 }
 
 fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_key: Buf32) {
-    let previous_rule = state.cred_rule.clone();
+    let previous_rule = state.cred_rule();
 
-    if matches!(&previous_rule, CredRule::SchnorrKey(existing) if existing == &new_key) {
+    if matches!(&previous_rule, CredRule::SchnorrKey(existing) if *existing == new_key) {
         logging::info!("Sequencer key update received, key unchanged");
         return;
     }
@@ -211,7 +213,7 @@ fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_key: Buf32)
 }
 
 fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_predicate: &PredicateKey) {
-    let prev_kind = state.predicate.id();
+    let prev_kind = state.predicate().id();
     let next_kind = new_predicate.id();
 
     if prev_kind == next_kind {
@@ -252,13 +254,13 @@ mod tests {
         let mut state = CheckpointV0Subproto::init(&params);
 
         let new_key = Buf32::from([42u8; 32]);
-        let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];
+        let msgs = [CheckpointIncomingMsg::update_sequencer_key(new_key)];
 
         let l1ref = L1BlockCommitment::default();
         CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1ref);
 
-        match &state.cred_rule {
-            CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),
+        match state.cred_rule() {
+            CredRule::SchnorrKey(current) => assert_eq!(current, new_key),
             CredRule::Unchecked => panic!("sequencer key should switch to schnorr rule"),
         }
     }

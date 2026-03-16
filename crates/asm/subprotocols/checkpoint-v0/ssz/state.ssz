@@ -1,0 +1,19 @@
+MAX_CHECKPOINT_BYTES = 1 << 24
+MAX_PREDICATE_BYTES = 1 << 20
+
+CheckpointBytes = List[uint8, MAX_CHECKPOINT_BYTES]
+PredicateBytes = List[uint8, MAX_PREDICATE_BYTES]
+
+### Encodes the credential rule used for checkpoint signature verification.
+class CredRuleState(Container):
+    has_schnorr_key: boolean
+    schnorr_key: Bytes32
+
+### Checkpoint verifier state for checkpoint v0.
+class CheckpointV0VerifierState(Container):
+    has_last_checkpoint: boolean
+    last_checkpoint: CheckpointBytes
+    last_checkpoint_l1_height: uint64
+    current_verified_epoch: uint64
+    cred_rule: CredRuleState
+    predicate: PredicateBytes

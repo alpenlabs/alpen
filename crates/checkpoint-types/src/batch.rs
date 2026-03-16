@@ -201,4 +201,14 @@ impl BatchInfo {
         let (_, last_l1_commitment) = self.l1_range;
         height <= last_l1_commitment.height()
     }
+
+    /// Encodes the batch metadata using the legacy Borsh wire format.
+    pub fn to_borsh_bytes(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("batch info should serialize")
+    }
+
+    /// Decodes batch metadata from the legacy Borsh wire format.
+    pub fn from_borsh_bytes(bytes: &[u8]) -> Result<Self, String> {
+        borsh::from_slice(bytes).map_err(|err| err.to_string())
+    }
 }

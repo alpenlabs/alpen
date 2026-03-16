@@ -6,29 +6,100 @@
 
 use std::any::Any;
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use ssz::{Decode, Encode};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_checkpoint::CHECKPOINT_SUBPROTOCOL_ID;
 use strata_asm_txs_checkpoint_v0::CHECKPOINT_V0_SUBPROTOCOL_ID;
+use strata_btc_types::BitcoinAmount;
 use strata_predicate::PredicateKey;
-use strata_primitives::{buf::Buf32, l1::BitcoinAmount};
+use strata_primitives::buf::Buf32;
 
-/// Incoming messages for checkpoint subprotocols.
-///
-/// Messages are routed to both the checkpoint-v0 and the new checkpoint.
-/// Admin configuration updates target both, while deposit notifications
-/// target the new checkpoint subprotocol.
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize)]
-pub enum CheckpointIncomingMsg {
-    /// Update the Schnorr public key used to verify sequencer signatures embedded in checkpoints.
-    // TODO: (@PG) make this directly take PredicateKey
-    UpdateSequencerKey(Buf32),
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
 
-    /// Update the rollup proving system verifying key used for Groth16 proof verification.
-    UpdateCheckpointPredicate(PredicateKey),
+pub use ssz_generated::ssz::messages::{
+    CheckpointIncomingMsg, CheckpointIncomingMsgRef, DepositProcessed, DepositProcessedRef,
+    PredicateBytes, UpdateCheckpointPredicate, UpdateCheckpointPredicateRef, UpdateSequencerKey,
+    UpdateSequencerKeyRef,
+};
 
-    /// Notification that a deposit has been processed by the bridge subprotocol.
-    DepositProcessed(BitcoinAmount),
+fn encode_predicate(new_predicate: PredicateKey) -> PredicateBytes {
+    PredicateBytes::new(new_predicate.as_ssz_bytes())
+        .expect("checkpoint predicate must stay within SSZ bounds")
+}
+
+fn decode_predicate(bytes: &[u8]) -> PredicateKey {
+    PredicateKey::from_ssz_bytes(bytes).expect("checkpoint predicate bytes must remain valid")
+}
+
+impl UpdateSequencerKey {
+    /// Creates a sequencer-key update payload.
+    pub fn new(new_key: Buf32) -> Self {
+        Self {
+            new_key: new_key.into(),
+        }
+    }
+
+    /// Returns the new sequencer key.
+    pub fn new_key(&self) -> Buf32 {
+        let key_bytes: [u8; 32] = self
+            .new_key
+            .as_ref()
+            .try_into()
+            .expect("checkpoint sequencer key must remain 32 bytes");
+        key_bytes.into()
+    }
+}
+
+impl DepositProcessed {
+    /// Creates a deposit-processed payload.
+    pub fn new(amount: BitcoinAmount) -> Self {
+        Self { amount }
+    }
+
+    /// Returns the processed deposit amount.
+    pub fn amount(&self) -> BitcoinAmount {
+        self.amount
+    }
+}
+
+impl UpdateCheckpointPredicate {
+    /// Creates a checkpoint-predicate update payload.
+    pub fn new(new_predicate: PredicateKey) -> Self {
+        Self {
+            new_predicate: encode_predicate(new_predicate),
+        }
+    }
+
+    /// Returns the updated checkpoint predicate.
+    pub fn new_predicate(&self) -> PredicateKey {
+        decode_predicate(&self.new_predicate)
+    }
+}
+
+impl CheckpointIncomingMsg {
+    /// Creates a sequencer-key update message.
+    pub fn update_sequencer_key(new_key: Buf32) -> Self {
+        Self::UpdateSequencerKey(UpdateSequencerKey::new(new_key))
+    }
+
+    /// Creates a checkpoint-predicate update message.
+    pub fn update_checkpoint_predicate(new_predicate: PredicateKey) -> Self {
+        Self::UpdateCheckpointPredicate(UpdateCheckpointPredicate::new(new_predicate))
+    }
+
+    /// Creates a deposit-processed notification message.
+    pub fn deposit_processed(amount: BitcoinAmount) -> Self {
+        Self::DepositProcessed(DepositProcessed::new(amount))
+    }
 }
 
 impl InterprotoMsg for CheckpointIncomingMsg {

@@ -1,0 +1,22 @@
+MAX_BATCH_INFO_BYTES = 1 << 12
+MAX_EPOCH_COMMITMENT_BYTES = 1 << 10
+MAX_PREDICATE_BYTES = 1 << 20
+
+BatchInfoBytes = List[uint8, MAX_BATCH_INFO_BYTES]
+EpochCommitmentBytes = List[uint8, MAX_EPOCH_COMMITMENT_BYTES]
+PredicateBytes = List[uint8, MAX_PREDICATE_BYTES]
+
+### Details for an execution environment verification key update.
+class AsmStfUpdate(Container):
+    new_predicate: PredicateBytes
+
+### V0 checkpoint log emitted by the checkpoint-v0 subprotocol.
+class CheckpointUpdate(Container):
+    epoch_commitment: EpochCommitmentBytes
+    batch_info: BatchInfoBytes
+    checkpoint_txid: Bytes32
+
+### Details for an export state update event.
+class NewExportEntry(Container):
+    container_id: uint8
+    entry_data: Bytes32

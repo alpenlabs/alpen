@@ -164,12 +164,12 @@ pub(crate) fn handle_action(
 }
 
 fn relay_checkpoint_sequencer_update(relayer: &mut impl MsgRelayer, new_key: Buf32) {
-    let msg = CheckpointIncomingMsg::UpdateSequencerKey(new_key);
+    let msg = CheckpointIncomingMsg::update_sequencer_key(new_key);
     relayer.relay_msg(&msg);
 }
 
 fn relay_checkpoint_predicate(relayer: &mut impl MsgRelayer, key: PredicateKey) {
-    let msg = CheckpointIncomingMsg::UpdateCheckpointPredicate(key);
+    let msg = CheckpointIncomingMsg::update_checkpoint_predicate(key);
     relayer.relay_msg(&msg);
 }
 
@@ -493,7 +493,7 @@ mod tests {
             .expect("checkpoint message expected")
         {
             CheckpointIncomingMsg::UpdateCheckpointPredicate(incoming_predicate) => {
-                assert_eq!(incoming_predicate, &predicate);
+                assert_eq!(incoming_predicate.new_predicate(), predicate);
             }
             _ => panic!("expected rollup verifying key update to checkpoint"),
         }

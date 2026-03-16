@@ -30,8 +30,8 @@ pub fn extract_signed_checkpoint_from_envelope(
 
     let payload = parse_envelope_payload(&payload_script)?;
 
-    let checkpoint: SignedCheckpoint =
-        borsh::from_slice(&payload).map_err(CheckpointTxError::Deserialization)?;
+    let checkpoint =
+        SignedCheckpoint::from_borsh_bytes(&payload).map_err(CheckpointTxError::Deserialization)?;
 
     Ok(checkpoint)
 }
@@ -41,8 +41,8 @@ pub fn extract_withdrawal_messages(
     checkpoint: &Checkpoint,
 ) -> CheckpointTxResult<Vec<WithdrawalIntent>> {
     let sidecar = checkpoint.sidecar();
-    let chain_state: Chainstate =
-        borsh::from_slice(sidecar.chainstate()).map_err(CheckpointTxError::Deserialization)?;
+    let chain_state = Chainstate::from_borsh_bytes(sidecar.chainstate())
+        .map_err(CheckpointTxError::Deserialization)?;
 
     Ok(chain_state.pending_withdraws().entries().to_vec())
 }

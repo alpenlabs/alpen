@@ -5,8 +5,8 @@ use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
 
 use crate::{
+    CheckpointState,
     errors::CheckpointValidationError,
-    state::CheckpointState,
     verification::{
         ValidatedCheckpointWithdrawals, validate_checkpoint_and_extract_withdrawal_intents,
     },

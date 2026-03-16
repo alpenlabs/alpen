@@ -38,15 +38,12 @@ use rand::rngs::OsRng;
 use ssz::Encode;
 use strata_asm_params::Role;
 use strata_asm_txs_admin::{
-    IndexedSignature, SignatureSet, SignedPayload,
     actions::{updates::predicate::ProofType, Sighash},
     constants::ADMINISTRATION_SUBPROTOCOL_ID,
     test_utils::create_signature_set,
+    IndexedSignature, SignatureSet, SignedPayload,
 };
-use strata_crypto::{
-    keys::compressed::CompressedPublicKey,
-    threshold_signature::ThresholdConfig,
-};
+use strata_crypto::{keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig};
 use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
 

@@ -16,8 +16,9 @@ use strata_ol_stf::BRIDGE_GATEWAY_ACCT_SERIAL;
 use strata_predicate::PredicateTypeId;
 
 use crate::{
+    CheckpointState,
     errors::{CheckpointValidationResult, InvalidCheckpointPayload, InvalidSequencerPredicate},
-    state::{CheckpointState, VerifiedWithdrawals},
+    state::VerifiedWithdrawals,
 };
 
 /// Successful result of checkpoint validation.
@@ -50,6 +51,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     verified_aux_data: &VerifiedAuxData,
 ) -> CheckpointValidationResult<ValidatedCheckpointWithdrawals> {
     let payload = &envelope.payload;
+    let verified_tip = state.verified_tip();
 
     // 1. Verify that the envelope pubkey matches the sequencer predicate.
     //
@@ -59,8 +61,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     verify_sequencer_predicate(state, &envelope.envelope_pubkey)?;
 
     // 2. Validate epoch progression
-    let expected_epoch = state
-        .verified_tip()
+    let expected_epoch = verified_tip
         .epoch
         .checked_add(1)
         .ok_or(InvalidCheckpointPayload::EpochOverflow)?;
@@ -73,7 +74,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     }
 
     // 3. Validate L1 progression
-    let l1_height_covered_in_last_checkpoint = state.verified_tip.l1_height();
+    let l1_height_covered_in_last_checkpoint = verified_tip.l1_height();
     let l1_height_covered_in_new_checkpoint = payload.new_tip().l1_height();
 
     // 3a. Invalid: checkpoint exceeds the current L1 tip
@@ -97,7 +98,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
     }
 
     // 4. Validate L2 progression
-    let prev_slot = state.verified_tip().l2_commitment().slot();
+    let prev_slot = verified_tip.l2_commitment().slot();
     let new_slot = payload.new_tip().l2_commitment().slot();
     if new_slot <= prev_slot {
         return Err(InvalidCheckpointPayload::L2SlotDoesNotAdvance {
@@ -117,7 +118,7 @@ pub fn validate_checkpoint_and_extract_withdrawal_intents(
         verified_aux_data,
     )?;
     let claim = construct_full_claim(
-        &state.verified_tip,
+        &verified_tip,
         payload.new_tip(),
         payload.sidecar(),
         asm_manifests_hash,
@@ -273,8 +274,8 @@ mod tests {
     use strata_test_utils_l2::CheckpointTestHarness;
 
     use crate::{
+        CheckpointState,
         errors::{CheckpointValidationError, InvalidCheckpointPayload, InvalidSequencerPredicate},
-        state::CheckpointState,
         verification::{
             compute_asm_manifests_hash_for_checkpoint,
             validate_checkpoint_and_extract_withdrawal_intents,
@@ -476,16 +477,17 @@ mod tests {
     #[test]
     fn test_zero_l1_progress_is_accepted() {
         let (state, harness) = test_setup();
+        let verified_tip = state.verified_tip();
 
         // Build a tip that keeps the same L1 height (zero progress)
         let mut new_tip = harness.gen_new_tip();
-        new_tip.l1_height = state.verified_tip().l1_height;
+        new_tip.l1_height = verified_tip.l1_height;
 
         let payload = harness.build_payload_with_tip(new_tip);
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
         let envelope = harness.wrap_in_envelope(payload);
 
-        let current_l1_height = state.verified_tip().l1_height + 1;
+        let current_l1_height = verified_tip.l1_height + 1;
 
         let res = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
@@ -499,12 +501,13 @@ mod tests {
     #[test]
     fn test_new_l1_tip_goes_backwards() {
         let (state, harness) = test_setup();
+        let verified_tip = state.verified_tip();
         let mut payload = harness.build_payload();
-        payload.new_tip.l1_height = state.verified_tip().l1_height - 1;
+        payload.new_tip.l1_height = verified_tip.l1_height - 1;
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
         let envelope = harness.wrap_in_envelope(payload);
 
-        let current_l1_height = state.verified_tip().l1_height + 1;
+        let current_l1_height = verified_tip.l1_height + 1;
 
         let err = validate_checkpoint_and_extract_withdrawal_intents(
             &state,
@@ -524,11 +527,12 @@ mod tests {
     #[test]
     fn test_l2_slot_does_not_advance() {
         let (state, harness) = test_setup();
+        let verified_tip = state.verified_tip();
         let mut payload = harness.build_payload();
         let verified_aux_data = harness.gen_verified_aux(payload.new_tip());
 
         // Set new L2 slot to be equal to the previous slot (no progression)
-        payload.new_tip.l2_commitment = *state.verified_tip().l2_commitment();
+        payload.new_tip.l2_commitment = *verified_tip.l2_commitment();
 
         let current_l1_height = payload.new_tip().l1_height + 1;
         let envelope = harness.wrap_in_envelope(payload);
@@ -552,6 +556,7 @@ mod tests {
     fn test_asm_manifests_hash_computation_invalid_aux() {
         let (state, harness) = test_setup();
         let payload = harness.build_payload();
+        let verified_tip = state.verified_tip();
 
         let aux_data = AuxData::new(vec![], vec![]);
         let asm_accumulator_state =
@@ -560,7 +565,7 @@ mod tests {
             VerifiedAuxData::try_new(&aux_data, &asm_accumulator_state).unwrap();
 
         let err = compute_asm_manifests_hash_for_checkpoint(
-            state.verified_tip.l1_height() + 1,
+            verified_tip.l1_height() + 1,
             payload.new_tip().l1_height(),
             &verified_aux_data,
         )

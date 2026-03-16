@@ -28,7 +28,6 @@ use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_params::{AdministrationInitConfig, Role};
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_txs_admin::{
-    SignedPayload,
     actions::{
         updates::{
             multisig::MultisigUpdate,
@@ -39,6 +38,7 @@ use strata_asm_txs_admin::{
         CancelAction, MultisigAction, Sighash, UpdateAction,
     },
     test_utils::create_signature_set,
+    SignedPayload,
 };
 use strata_crypto::{
     keys::compressed::CompressedPublicKey,
@@ -208,8 +208,12 @@ pub fn create_test_admin_setup(
     let config =
         ThresholdConfig::try_new(vec![pk], NonZero::new(1).unwrap()).expect("valid config");
 
-    let params =
-        AdministrationInitConfig::new(config.clone(), config, confirmation_depth, DEFAULT_MAX_SEQNO_GAP);
+    let params = AdministrationInitConfig::new(
+        config.clone(),
+        config,
+        confirmation_depth,
+        DEFAULT_MAX_SEQNO_GAP,
+    );
     let ctx = AdminContext::new(vec![sk], vec![0]);
     (params, ctx)
 }

@@ -35,7 +35,7 @@ use rand::RngCore;
 use strata_asm_common::{AnchorState, Subprotocol};
 use strata_asm_params::{BridgeV1InitConfig, CheckpointInitConfig};
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
-use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
+use strata_asm_proto_checkpoint::{subprotocol::CheckpointSubprotocol, CheckpointState};
 use strata_asm_txs_bridge_v1::{
     deposit::DepositTxHeaderAux,
     deposit_request::{

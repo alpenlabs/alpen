@@ -13,7 +13,7 @@ use strata_checkpoint_types::{
 };
 use strata_primitives::L1Height;
 
-use crate::{error::CheckpointV0Error, types::CheckpointV0VerifierState};
+use crate::{CheckpointV0VerifierState, error::CheckpointV0Error};
 
 /// Main checkpoint processing function
 ///
@@ -39,7 +39,7 @@ pub fn process_checkpoint_v0(
         });
     }
 
-    if !verify_signed_checkpoint_sig(signed_checkpoint, &state.cred_rule) {
+    if !verify_signed_checkpoint_sig(signed_checkpoint, &state.cred_rule()) {
         return Err(CheckpointV0Error::InvalidSignature);
     }
     verify_checkpoint_proof(checkpoint, state)?;
@@ -56,7 +56,7 @@ fn verify_checkpoint_proof(
 ) -> Result<(), CheckpointV0Error> {
     let proof_receipt = checkpoint.construct_receipt();
     let expected_output = checkpoint.batch_info();
-    let actual_output: BatchInfo = borsh::from_slice(proof_receipt.public_values().as_bytes())
+    let actual_output = BatchInfo::from_borsh_bytes(proof_receipt.public_values().as_bytes())
         .map_err(|_| CheckpointV0Error::SerializationError)?;
 
     if expected_output != &actual_output {
@@ -67,7 +67,7 @@ fn verify_checkpoint_proof(
         return Err(CheckpointV0Error::InvalidCheckpointProof);
     }
 
-    if let Err(err) = state.predicate.verify_claim_witness(
+    if let Err(err) = state.predicate().verify_claim_witness(
         proof_receipt.public_values().as_bytes(),
         proof_receipt.proof().as_bytes(),
     ) {

@@ -13948,12 +13948,19 @@ dependencies = [
 name = "strata-asm-checkpoint-msgs"
 version = "0.1.0"
 dependencies = [
- "borsh",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-asm-common",
  "strata-asm-txs-checkpoint",
  "strata-asm-txs-checkpoint-v0",
+ "strata-btc-types",
  "strata-predicate",
  "strata-primitives",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]
@@ -13986,8 +13993,14 @@ dependencies = [
 name = "strata-asm-logs"
 version = "0.1.0"
 dependencies = [
- "borsh",
+ "bitcoin",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-asm-common",
+ "strata-btc-types",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
@@ -13995,7 +14008,8 @@ dependencies = [
  "strata-identifiers",
  "strata-msg-fmt",
  "strata-predicate",
- "strata-primitives",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]
@@ -14125,9 +14139,11 @@ name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
  "bitcoin-bosd",
- "borsh",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
  "ssz_primitives",
+ "ssz_types",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
@@ -14145,14 +14161,19 @@ dependencies = [
  "strata-predicate",
  "strata-test-utils-l2",
  "thiserror 2.0.18",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]
 name = "strata-asm-proto-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
@@ -14163,6 +14184,8 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.18",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]
@@ -14284,7 +14307,6 @@ name = "strata-asm-txs-checkpoint-v0"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "borsh",
  "ssz",
  "strata-asm-common",
  "strata-bridge-types",

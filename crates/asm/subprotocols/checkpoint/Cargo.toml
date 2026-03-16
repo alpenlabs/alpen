@@ -9,7 +9,9 @@ workspace = true
 [dependencies]
 bitcoin-bosd.workspace = true
 ssz.workspace = true
+ssz_derive.workspace = true
 ssz_primitives.workspace = true
+ssz_types.workspace = true
 strata-asm-bridge-msgs.workspace = true
 strata-asm-checkpoint-msgs.workspace = true
 strata-asm-common.workspace = true
@@ -26,8 +28,12 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-stf.workspace = true
 strata-predicate = { workspace = true, features = ["all"] }
 
-borsh.workspace = true
 thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 strata-test-utils-l2.workspace = true

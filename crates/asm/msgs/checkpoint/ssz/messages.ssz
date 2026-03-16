@@ -1,0 +1,23 @@
+import strata_btc_types
+
+MAX_PREDICATE_BYTES = 1 << 20
+
+PredicateBytes = List[uint8, MAX_PREDICATE_BYTES]
+
+### Update the Schnorr public key used for checkpoint signature verification.
+class UpdateSequencerKey(Container):
+    new_key: Bytes32
+
+### Notification that a bridge deposit has been processed.
+class DepositProcessed(Container):
+    amount: strata_btc_types.BitcoinAmount
+
+### Update the rollup verifying predicate used for checkpoint proof verification.
+class UpdateCheckpointPredicate(Container):
+    new_predicate: PredicateBytes
+
+### Incoming messages for checkpoint subprotocols.
+class CheckpointIncomingMsg(Union):
+    UpdateSequencerKey: UpdateSequencerKey
+    UpdateCheckpointPredicate: UpdateCheckpointPredicate
+    DepositProcessed: DepositProcessed

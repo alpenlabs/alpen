@@ -28,6 +28,17 @@
 //! - Envelope transaction structure (SPS-50)
 //! - Basic verification flow concepts
 //! - Placeholder structures for future SPS-62 migration
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
 mod error;
 mod subprotocol;
 mod types;
@@ -35,8 +46,11 @@ mod verification;
 
 // Public re-exports
 pub use error::{CheckpointV0Error, CheckpointV0Result};
+pub use ssz_generated::ssz::state::{
+    CheckpointV0VerifierState, CheckpointV0VerifierStateRef, CredRuleState, CredRuleStateRef,
+};
 pub use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 pub use subprotocol::{CheckpointV0InitConfig, CheckpointV0Subproto};
-pub use types::{CheckpointV0VerificationParams, CheckpointV0VerifierState};
+pub use types::CheckpointV0VerificationParams;
 // Re-export verification functions for testing and integration
 pub use verification::process_checkpoint_v0;

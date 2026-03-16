@@ -13,8 +13,23 @@
 //! - Verified tip tracking the last successfully verified checkpoint (epoch, L1 height, L2
 //!   commitment)
 
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
 pub mod errors;
 pub mod handler;
 pub mod state;
 pub mod subprotocol;
 pub mod verification;
+
+pub use ssz_generated::ssz::state::{
+    AvailableFundEntry, AvailableFundEntryRef, CheckpointState, CheckpointStateRef,
+};

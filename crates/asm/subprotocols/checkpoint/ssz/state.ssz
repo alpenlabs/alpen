@@ -1,0 +1,20 @@
+import strata_btc_types
+
+MAX_AVAILABLE_FUNDS = 1 << 16
+MAX_CHECKPOINT_TIP_BYTES = 1 << 10
+MAX_PREDICATE_BYTES = 1 << 20
+
+CheckpointTipBytes = List[uint8, MAX_CHECKPOINT_TIP_BYTES]
+PredicateBytes = List[uint8, MAX_PREDICATE_BYTES]
+
+### Tracks available deposit UTXOs for a specific denomination.
+class AvailableFundEntry(Container):
+    denomination: strata_btc_types.BitcoinAmount
+    count: uint32
+
+### Checkpoint subprotocol state.
+class CheckpointState(Container):
+    sequencer_predicate: PredicateBytes
+    checkpoint_predicate: PredicateBytes
+    verified_tip: CheckpointTipBytes
+    available_funds: List[AvailableFundEntry, MAX_AVAILABLE_FUNDS]

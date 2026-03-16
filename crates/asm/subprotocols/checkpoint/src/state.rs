@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use ssz::{Decode, DecodeError, Encode};
+use ssz::{Decode, Encode};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_params::CheckpointInitConfig;
 use strata_btc_types::BitcoinAmount;
@@ -9,7 +8,11 @@ use strata_checkpoint_types_ssz::CheckpointTip;
 use strata_identifiers::L2BlockCommitment;
 use strata_predicate::PredicateKey;
 
-use crate::errors::InvalidCheckpointPayload;
+use crate::{
+    AvailableFundEntry, CheckpointState,
+    errors::InvalidCheckpointPayload,
+    ssz_generated::ssz::state::{CheckpointTipBytes, PredicateBytes},
+};
 
 /// Opaque proof token for a verified set of withdrawal intents.
 ///
@@ -22,30 +25,42 @@ use crate::errors::InvalidCheckpointPayload;
 #[derive(Debug)]
 pub struct VerifiedWithdrawals(BTreeMap<BitcoinAmount, u32>);
 
-/// Checkpoint subprotocol state.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
-pub struct CheckpointState {
-    /// Predicate for sequencer signature verification.
-    /// Updated via `UpdateSequencerKey` message from admin subprotocol.
-    pub sequencer_predicate: PredicateKey,
-
-    /// Predicate for checkpoint ZK proof verification.
-    /// Updated via `UpdateCheckpointPredicate` message from admin subprotocol.
-    pub checkpoint_predicate: PredicateKey,
-
-    /// Last verified checkpoint tip position.
-    /// Tracks the OL state that has been proven and verified by ASM.
-    pub verified_tip: CheckpointTip,
-
-    /// Available bridge UTXOs tracked by denomination.
-    ///
-    /// Maps each deposit denomination to the count of UTXOs at that denomination that have
-    /// been processed by the bridge but not yet consumed by withdrawal dispatches. Used for
-    /// rejecting checkpoints whose withdrawal intents cannot be matched to available UTXOs.
-    available_funds: BTreeMap<BitcoinAmount, u32>,
-}
-
 impl CheckpointState {
+    fn encode_predicate(predicate: PredicateKey) -> PredicateBytes {
+        PredicateBytes::new(predicate.as_ssz_bytes())
+            .expect("checkpoint predicate must stay within SSZ bounds")
+    }
+
+    fn decode_predicate(bytes: &[u8]) -> PredicateKey {
+        PredicateKey::from_ssz_bytes(bytes).expect("checkpoint predicate bytes must remain valid")
+    }
+
+    fn encode_tip(verified_tip: CheckpointTip) -> CheckpointTipBytes {
+        CheckpointTipBytes::new(verified_tip.as_ssz_bytes())
+            .expect("checkpoint tip must stay within SSZ bounds")
+    }
+
+    fn decode_tip(bytes: &[u8]) -> CheckpointTip {
+        CheckpointTip::from_ssz_bytes(bytes).expect("checkpoint tip bytes must remain valid")
+    }
+
+    fn available_funds_map(&self) -> BTreeMap<BitcoinAmount, u32> {
+        self.available_funds
+            .iter()
+            .map(|entry| (entry.denomination, entry.count))
+            .collect()
+    }
+
+    fn available_funds_from_map(funds: BTreeMap<BitcoinAmount, u32>) -> Vec<AvailableFundEntry> {
+        funds
+            .into_iter()
+            .map(|(denomination, count)| AvailableFundEntry {
+                denomination,
+                count,
+            })
+            .collect()
+    }
+
     /// Initializes checkpoint state from configuration.
     pub fn init(config: CheckpointInitConfig) -> Self {
         let genesis_epoch = 0;
@@ -71,26 +86,26 @@ impl CheckpointState {
         verified_tip: CheckpointTip,
     ) -> Self {
         Self {
-            sequencer_predicate,
-            checkpoint_predicate,
-            verified_tip,
-            available_funds: BTreeMap::new(),
+            sequencer_predicate: Self::encode_predicate(sequencer_predicate),
+            checkpoint_predicate: Self::encode_predicate(checkpoint_predicate),
+            verified_tip: Self::encode_tip(verified_tip),
+            available_funds: vec![].into(),
         }
     }
 
     /// Returns the sequencer predicate for signature verification.
-    pub fn sequencer_predicate(&self) -> &PredicateKey {
-        &self.sequencer_predicate
+    pub fn sequencer_predicate(&self) -> PredicateKey {
+        Self::decode_predicate(&self.sequencer_predicate)
     }
 
     /// Returns the checkpoint predicate for proof verification.
-    pub fn checkpoint_predicate(&self) -> &PredicateKey {
-        &self.checkpoint_predicate
+    pub fn checkpoint_predicate(&self) -> PredicateKey {
+        Self::decode_predicate(&self.checkpoint_predicate)
     }
 
     /// Returns the last verified checkpoint tip.
-    pub fn verified_tip(&self) -> &CheckpointTip {
-        &self.verified_tip
+    pub fn verified_tip(&self) -> CheckpointTip {
+        Self::decode_tip(&self.verified_tip)
     }
 
     /// Returns the total available deposit value in satoshis, derived from the
@@ -98,28 +113,30 @@ impl CheckpointState {
     pub fn available_deposit_sum(&self) -> u64 {
         self.available_funds
             .iter()
-            .map(|(denom, count)| denom.to_sat() * (*count as u64))
+            .map(|entry| entry.denomination.to_sat() * (entry.count as u64))
             .sum()
     }
 
     /// Update the sequencer predicate with a new Schnorr public key.
     pub(crate) fn update_sequencer_predicate(&mut self, new_predicate: PredicateKey) {
-        self.sequencer_predicate = new_predicate
+        self.sequencer_predicate = Self::encode_predicate(new_predicate)
     }
 
     /// Update the checkpoint predicate.
     pub(crate) fn update_checkpoint_predicate(&mut self, new_predicate: PredicateKey) {
-        self.checkpoint_predicate = new_predicate;
+        self.checkpoint_predicate = Self::encode_predicate(new_predicate);
     }
 
     /// Updates the verified checkpoint tip after successful verification.
     pub(crate) fn update_verified_tip(&mut self, new_tip: CheckpointTip) {
-        self.verified_tip = new_tip
+        self.verified_tip = Self::encode_tip(new_tip)
     }
 
     /// Records a processed deposit, incrementing the UTXO count for this denomination.
     pub(crate) fn record_deposit(&mut self, amount: BitcoinAmount) {
-        *self.available_funds.entry(amount).or_insert(0) += 1;
+        let mut funds = self.available_funds_map();
+        *funds.entry(amount).or_insert(0) += 1;
+        self.available_funds = Self::available_funds_from_map(funds).into();
     }
 
     /// Verifies that the available funds can cover all withdrawal intents using **exact
@@ -140,7 +157,7 @@ impl CheckpointState {
         &self,
         withdrawal_intents: &[WithdrawOutput],
     ) -> Result<VerifiedWithdrawals, InvalidCheckpointPayload> {
-        let mut funds = self.available_funds.clone();
+        let mut funds = self.available_funds_map();
 
         let insufficient = || InvalidCheckpointPayload::InsufficientFunds {
             available_sat: self.available_deposit_sum(),
@@ -165,36 +182,7 @@ impl CheckpointState {
     /// Requires a [`VerifiedWithdrawals`] token, which can only be obtained from
     /// [`verify_can_honor_withdrawals`](Self::verify_can_honor_withdrawals).
     pub(crate) fn deduct_withdrawals(&mut self, token: VerifiedWithdrawals) {
-        self.available_funds = token.0;
-    }
-}
-
-impl Encode for CheckpointState {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        borsh::to_vec(self)
-            .expect("checkpoint state must serialize with borsh")
-            .ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        borsh::to_vec(self)
-            .expect("checkpoint state must serialize with borsh")
-            .ssz_bytes_len()
-    }
-}
-
-impl Decode for CheckpointState {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
-        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+        self.available_funds = Self::available_funds_from_map(token.0).into();
     }
 }
 

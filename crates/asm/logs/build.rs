@@ -1,0 +1,23 @@
+use std::{env::var, path::Path};
+
+use ssz_codegen::{ModuleGeneration, build_ssz_files};
+
+fn main() {
+    let out_dir = var("OUT_DIR").expect("OUT_DIR not set by cargo");
+    let output_path = Path::new(&out_dir).join("generated.rs");
+
+    let entry_points = ["checkpoint.ssz"];
+    let base_dir = "ssz";
+    let crates: [&str; 0] = [];
+
+    build_ssz_files(
+        &entry_points,
+        base_dir,
+        &crates,
+        output_path.to_str().expect("output path is valid UTF-8"),
+        ModuleGeneration::NestedModules,
+    )
+    .expect("Failed to generate ASM log SSZ types");
+
+    println!("cargo:rerun-if-changed=ssz/checkpoint.ssz");
+}

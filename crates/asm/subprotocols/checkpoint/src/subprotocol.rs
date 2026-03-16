@@ -12,7 +12,7 @@ use strata_asm_txs_checkpoint::{
 use strata_identifiers::L1BlockCommitment;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
-use crate::{handler::handle_checkpoint_tx, state::CheckpointState};
+use crate::{CheckpointState, handler::handle_checkpoint_tx};
 
 /// Checkpoint subprotocol implementation.
 ///
@@ -84,18 +84,22 @@ impl Subprotocol for CheckpointSubprotocol {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::DepositProcessed(amount) => {
+                    let amount = amount.amount();
                     logging::info!(amount_sat = amount.to_sat(), "Recording processed deposit");
-                    state.record_deposit(*amount);
+                    state.record_deposit(amount);
                 }
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
+                    let new_key = new_key.new_key();
                     logging::info!(%new_key, "Updating sequencer predicate");
-                    let new_predicate_key =
-                        PredicateKey::new(PredicateTypeId::Bip340Schnorr, new_key.0.to_vec());
+                    let new_predicate_key = PredicateKey::new(
+                        PredicateTypeId::Bip340Schnorr,
+                        new_key.as_ref().to_vec(),
+                    );
                     state.update_sequencer_predicate(new_predicate_key);
                 }
                 CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
                     logging::info!("Updating checkpoint predicate");
-                    state.update_checkpoint_predicate(new_predicate.clone());
+                    state.update_checkpoint_predicate(new_predicate.new_predicate());
                 }
             }
         }

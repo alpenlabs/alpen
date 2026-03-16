@@ -1,31 +1,33 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use bitcoin::{Txid, hashes::Hash};
+use ssz::{Decode, Encode};
 use strata_asm_common::AsmLog;
+use strata_btc_types::BitcoinTxid;
 use strata_checkpoint_types::{BatchInfo, Checkpoint};
 use strata_checkpoint_types_ssz::CheckpointTip;
-use strata_codec::Codec;
-use strata_codec_utils::{CodecBorsh, CodecSsz};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
+use strata_codec_utils::CodecSsz;
+use strata_identifiers::EpochCommitment;
 use strata_msg_fmt::TypeId;
-use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
 use crate::constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE};
+pub use crate::ssz_generated::ssz::checkpoint::{
+    BatchInfoBytes, CheckpointUpdate, CheckpointUpdateRef, EpochCommitmentBytes,
+};
+
+fn encode_epoch_commitment(epoch_commitment: EpochCommitment) -> EpochCommitmentBytes {
+    EpochCommitmentBytes::new(epoch_commitment.as_ssz_bytes())
+        .expect("epoch commitment must stay within SSZ bounds")
+}
+
+fn decode_epoch_commitment(bytes: &[u8]) -> EpochCommitment {
+    EpochCommitment::from_ssz_bytes(bytes).expect("epoch commitment bytes must remain valid")
+}
 
 /// V0 checkpoint log. Emitted by the v0 checkpoint subprotocol.
 ///
 /// Contains full checkpoint metadata including batch info, chainstate transition,
 /// and the L1 transaction ID. Superseded by [`CheckpointTipUpdate`] in the main
 /// (v1) checkpoint subprotocol.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Codec)]
-pub struct CheckpointUpdate {
-    /// Commitment to the epoch terminal block.
-    epoch_commitment: EpochCommitment,
-
-    /// Metadata describing the checkpoint batch.
-    batch_info: CodecBorsh<BatchInfo>,
-
-    /// Hash of the L1 transaction that carried the checkpoint proof.
-    checkpoint_txid: CodecBorsh<BitcoinTxid>,
-}
-
 impl CheckpointUpdate {
     /// Create a new CheckpointUpdate instance.
     pub fn new(
@@ -34,9 +36,9 @@ impl CheckpointUpdate {
         checkpoint_txid: BitcoinTxid,
     ) -> Self {
         Self {
-            epoch_commitment,
-            batch_info: CodecBorsh::new(batch_info),
-            checkpoint_txid: CodecBorsh::new(checkpoint_txid),
+            epoch_commitment: encode_epoch_commitment(epoch_commitment),
+            batch_info: batch_info.to_borsh_bytes().into(),
+            checkpoint_txid: checkpoint_txid.inner_raw().into(),
         }
     }
 
@@ -52,15 +54,39 @@ impl CheckpointUpdate {
     }
 
     pub fn epoch_commitment(&self) -> EpochCommitment {
-        self.epoch_commitment
+        decode_epoch_commitment(&self.epoch_commitment)
     }
 
-    pub fn batch_info(&self) -> &BatchInfo {
-        self.batch_info.inner()
+    pub fn batch_info(&self) -> BatchInfo {
+        BatchInfo::from_borsh_bytes(&self.batch_info)
+            .expect("checkpoint update batch info is valid")
     }
 
-    pub fn checkpoint_txid(&self) -> &BitcoinTxid {
-        self.checkpoint_txid.inner()
+    pub fn checkpoint_txid(&self) -> BitcoinTxid {
+        let txid_bytes: [u8; 32] = self
+            .checkpoint_txid
+            .as_ref()
+            .try_into()
+            .expect("checkpoint txid must remain 32 bytes");
+        let txid = Txid::from_byte_array(txid_bytes);
+        BitcoinTxid::new(&txid)
+    }
+}
+
+impl Codec for CheckpointUpdate {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        let len = Varint::decode(dec)?;
+        let len_usize = len.inner() as usize;
+        let mut buffer = vec![0u8; len_usize];
+        dec.read_buf(&mut buffer)?;
+        Self::from_ssz_bytes(&buffer).map_err(|_| CodecError::MalformedField("ssz"))
+    }
+
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        let bytes = self.as_ssz_bytes();
+        let len = Varint::new_usize(bytes.len()).ok_or(CodecError::OverflowContainer)?;
+        len.encode(enc)?;
+        enc.write_buf(&bytes)
     }
 }
 
