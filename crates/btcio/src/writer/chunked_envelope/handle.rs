@@ -11,7 +11,6 @@
 
 use std::{collections::BTreeSet, future::Future, sync::Arc, time::Duration};
 
-use anyhow::{anyhow, bail};
 use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address, Transaction};
 use bitcoind_async_client::{
     error::ClientError,
@@ -22,6 +21,7 @@ use strata_config::btcio::WriterConfig;
 use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
+use thiserror::Error;
 use tokio::time::interval;
 use tracing::*;
 
@@ -34,6 +34,25 @@ use crate::{broadcaster::L1BroadcastHandle, writer::builder::EnvelopeError, Btci
 /// validate that indices are contiguous without materializing an arbitrarily
 /// large range in a single call.
 const ENTRY_SCAN_BATCH_SIZE: usize = 1_024;
+
+/// Errors raised by chunked-envelope watcher recovery and polling.
+///
+/// These represent persisted-state invariants that should never be violated
+/// during normal operation.
+#[derive(Debug, Error)]
+enum ChunkedEnvelopeWatcherError {
+    /// The observed next row index moved backward relative to the watcher's tip.
+    #[error(
+        "chunked envelope next index regressed from {expected_next_idx} to {observed_next_idx}"
+    )]
+    NextIndexRegressed {
+        expected_next_idx: u64,
+        observed_next_idx: u64,
+    },
+    /// A contiguous scan skipped a persisted row before the known tip.
+    #[error("chunked envelope entry gap at index {missing_idx}")]
+    EntryGap { missing_idx: u64 },
+}
 
 /// Handle for submitting chunked envelope entries.
 #[expect(
@@ -159,11 +178,11 @@ impl ChunkedEnvelopeWatcherState {
     async fn ingest_new_entries(&mut self, ops: &ChunkedEnvelopeOps) -> anyhow::Result<()> {
         let observed_next_idx = ops.get_next_chunked_envelope_idx_async().await?;
         if observed_next_idx < self.next_db_idx {
-            bail!(
-                "chunked envelope next index regressed from {} to {}",
-                self.next_db_idx,
-                observed_next_idx
-            );
+            return Err(ChunkedEnvelopeWatcherError::NextIndexRegressed {
+                expected_next_idx: self.next_db_idx,
+                observed_next_idx,
+            }
+            .into());
         }
 
         if observed_next_idx == self.next_db_idx {
@@ -199,18 +218,34 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     info!("starting chunked envelope watcher");
     let tick = interval(Duration::from_millis(ctx.config.write_poll_dur_ms));
     tokio::pin!(tick);
+    let mut iteration = 0_u64;
 
     loop {
         tick.as_mut().tick().await;
-        state.ingest_new_entries(ops.as_ref()).await?;
-        reconcile_active_entries(
-            &mut state,
-            ctx.client.as_ref(),
-            ops.as_ref(),
-            &broadcast_handle,
-        )
+        let next_db_idx = state.next_db_idx;
+        let forward_frontier = state.forward_frontier;
+        let active_envelopes = state.active_envelopes.len();
+        async {
+            state.ingest_new_entries(ops.as_ref()).await?;
+            reconcile_active_entries(
+                &mut state,
+                ctx.client.as_ref(),
+                ops.as_ref(),
+                &broadcast_handle,
+            )
+            .await?;
+            advance_forward_frontier(&mut state, ctx.clone(), ops.as_ref(), &broadcast_handle).await
+        }
+        .instrument(info_span!(
+            "chunked_envelope_watcher_iteration",
+            component = "chunked_envelope_watcher",
+            iteration,
+            next_db_idx,
+            forward_frontier,
+            active_envelopes,
+        ))
         .await?;
-        advance_forward_frontier(&mut state, ctx.clone(), ops.as_ref(), &broadcast_handle).await?;
+        iteration += 1;
     }
 }
 
@@ -227,8 +262,8 @@ fn entry_unlocks_successor(entry: &ChunkedEnvelopeEntry) -> bool {
 }
 
 /// Builds the canonical corruption error for a missing or skipped envelope row.
-fn invalid_gap_error(missing_idx: u64) -> anyhow::Error {
-    anyhow!("chunked envelope entry gap at index {missing_idx}")
+fn invalid_gap_error(missing_idx: u64) -> ChunkedEnvelopeWatcherError {
+    ChunkedEnvelopeWatcherError::EntryGap { missing_idx }
 }
 
 /// Loads a contiguous envelope row range during startup recovery.
@@ -250,12 +285,12 @@ fn load_entries_range_blocking(
             remaining.min(ENTRY_SCAN_BATCH_SIZE),
         )?;
         if batch.is_empty() {
-            return Err(invalid_gap_error(cursor));
+            return Err(invalid_gap_error(cursor).into());
         }
 
         for (idx, entry) in batch {
             if idx != cursor {
-                return Err(invalid_gap_error(cursor));
+                return Err(invalid_gap_error(cursor).into());
             }
             entries.push((idx, entry));
             cursor += 1;
@@ -281,12 +316,12 @@ async fn load_entries_range_async(
             .get_chunked_envelope_entries_from_async(cursor, remaining.min(ENTRY_SCAN_BATCH_SIZE))
             .await?;
         if batch.is_empty() {
-            return Err(invalid_gap_error(cursor));
+            return Err(invalid_gap_error(cursor).into());
         }
 
         for (idx, entry) in batch {
             if idx != cursor {
-                return Err(invalid_gap_error(cursor));
+                return Err(invalid_gap_error(cursor).into());
             }
             entries.push((idx, entry));
             cursor += 1;
@@ -311,7 +346,7 @@ async fn reconcile_active_entries(
     let active_indices: Vec<u64> = state.active_envelopes.iter().copied().collect();
     for idx in active_indices {
         let Some(entry) = ops.get_chunked_envelope_entry_async(idx).await? else {
-            return Err(invalid_gap_error(idx));
+            return Err(invalid_gap_error(idx).into());
         };
 
         let new_status = match entry.status {
@@ -369,7 +404,7 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
     while state.forward_frontier < state.next_db_idx {
         let idx = state.forward_frontier;
         let Some(entry) = ops.get_chunked_envelope_entry_async(idx).await? else {
-            return Err(invalid_gap_error(idx));
+            return Err(invalid_gap_error(idx).into());
         };
 
         if entry.status == ChunkedEnvelopeStatus::Finalized || entry_unlocks_successor(&entry) {
@@ -429,7 +464,7 @@ async fn resolve_prev_tail_wtxid(
     }
 
     let Some(prev_entry) = ops.get_chunked_envelope_entry_async(curr - 1).await? else {
-        return Err(invalid_gap_error(curr - 1));
+        return Err(invalid_gap_error(curr - 1).into());
     };
 
     if !entry_unlocks_successor(&prev_entry) {
@@ -705,7 +740,13 @@ mod tests {
         .unwrap();
 
         let err = ChunkedEnvelopeWatcherState::recover(&ops).unwrap_err();
-        assert!(err.to_string().contains("gap at index 1"));
+        let watcher_error = err
+            .downcast_ref::<ChunkedEnvelopeWatcherError>()
+            .expect("recovery should return a typed watcher error");
+        assert!(matches!(
+            watcher_error,
+            ChunkedEnvelopeWatcherError::EntryGap { missing_idx: 1 }
+        ));
     }
 
     #[test]
