@@ -1,6 +1,6 @@
 use bitcoin::ScriptBuf;
 
-use crate::{errors::SlashValidationError, state::BridgeV1State};
+use crate::{BridgeV1State, errors::SlashValidationError};
 
 /// Validates the stake connector script for a slash transaction locked to one of the historical N/N
 /// multisig configurations.
@@ -11,7 +11,7 @@ pub(crate) fn validate_slash_stake_connector(
     if !state
         .operators()
         .historical_nn_scripts()
-        .any(|script| script == stake_connector_script)
+        .any(|script| &script == stake_connector_script)
     {
         return Err(SlashValidationError::InvalidStakeConnectorScript);
     }

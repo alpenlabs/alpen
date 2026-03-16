@@ -61,10 +61,7 @@ pub(crate) fn handle_checkpoint_tx(
             relayer.emit_log(log_entry);
 
             for (output, selected_operator) in withdrawal_intents {
-                let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
-                    output,
-                    selected_operator,
-                };
+                let bridge_msg = BridgeIncomingMsg::dispatch_withdrawal(output, selected_operator);
                 relayer.relay_msg(&bridge_msg);
             }
         }

@@ -8,11 +8,9 @@
 use std::cmp;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
-use strata_primitives::{l1::BitcoinAmount, sorted_vec::SortedVec};
+use strata_primitives::l1::BitcoinAmount;
 
-use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
+use crate::{DepositEntry, DepositsTable, OperatorBitmap, errors::DepositValidationError};
 
 /// Bitcoin deposit entry containing UTXO reference and historical multisig operators.
 ///
@@ -39,24 +37,6 @@ use crate::{errors::DepositValidationError, state::bitmap::OperatorBitmap};
 /// formed the N/N multisig when this deposit was locked. Any one honest operator
 /// from this set can properly process user withdrawals. We store this historical
 /// set because the active operator set may change over time.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
-pub struct DepositEntry {
-    /// Unique deposit identifier assigned by the bridge and provided in the deposit transaction.
-    deposit_idx: u32,
-
-    /// Historical set of operators that formed the N/N multisig for this deposit.
-    ///
-    /// This preserves the specific operators who controlled the multisig when the
-    /// deposit was locked, since the active operator set may change over time.
-    /// Any one honest operator from this set can process user withdrawals.
-    ///
-    /// Uses a memory-efficient bitmap representation instead of storing operator indices.
-    notary_operators: OperatorBitmap,
-
-    /// Amount of Bitcoin locked in this deposit (in satoshis).
-    amt: BitcoinAmount,
-}
-
 impl PartialOrd for DepositEntry {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
@@ -152,14 +132,6 @@ impl<'a> Arbitrary<'a> for DepositEntry {
 ///
 /// - Deposit indices are provided by the caller (from DepositInfo)
 /// - Out-of-order insertions are supported and maintain sorted order
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct DepositsTable {
-    /// Vector of deposit entries, sorted by deposit index.
-    ///
-    /// **Invariant**: MUST be sorted by `DepositEntry::deposit_idx` field.
-    deposits: SortedVec<DepositEntry>,
-}
-
 impl DepositsTable {
     /// Creates a new empty deposits table.
     ///
@@ -170,7 +142,7 @@ impl DepositsTable {
     /// A new empty [`DepositsTable`].
     pub fn new_empty() -> Self {
         Self {
-            deposits: SortedVec::new_empty(),
+            deposits: vec![].into(),
         }
     }
 
@@ -210,10 +182,9 @@ impl DepositsTable {
     /// - `None` if no deposit with the given index is found
     pub fn get_deposit(&self, deposit_idx: u32) -> Option<&DepositEntry> {
         self.deposits
-            .as_slice()
             .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx)
             .ok()
-            .map(|pos| &self.deposits.as_slice()[pos])
+            .map(|pos| &self.deposits[pos])
     }
 
     /// Returns an iterator over all deposit entries.
@@ -247,8 +218,13 @@ impl DepositsTable {
         match self.get_deposit(idx) {
             Some(_) => Err(DepositValidationError::DepositIdxAlreadyExists(idx)),
             None => {
-                // SortedVec handles insertion and maintains sorted order
-                self.deposits.insert(entry);
+                let insert_at = self
+                    .deposits
+                    .binary_search_by_key(&idx, |deposit| deposit.idx())
+                    .unwrap_or_else(|pos| pos);
+                let mut deposits = self.deposits.to_vec();
+                deposits.insert(insert_at, entry);
+                self.deposits = deposits.into();
                 Ok(())
             }
         }
@@ -268,9 +244,9 @@ impl DepositsTable {
         if self.deposits.is_empty() {
             None
         } else {
-            // Get the first (oldest) deposit and remove it
-            let oldest = self.deposits.as_slice()[0].clone();
-            self.deposits.remove(&oldest);
+            let mut deposits = self.deposits.to_vec();
+            let oldest = deposits.remove(0);
+            self.deposits = deposits.into();
             Some(oldest)
         }
     }

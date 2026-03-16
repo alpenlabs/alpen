@@ -5,14 +5,12 @@
 use std::cmp;
 
 use bitcoin::{ScriptBuf, secp256k1::SECP256K1};
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 use strata_bridge_types::OperatorIdx;
 use strata_btc_types::BitcoinScriptBuf;
 use strata_crypto::{EvenPublicKey, aggregate_schnorr_keys};
-use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey, sorted_vec::SortedVec};
+use strata_primitives::{buf::Buf32, l1::BitcoinXOnlyPublicKey};
 
-use super::bitmap::OperatorBitmap;
+use crate::{OperatorBitmap, OperatorEntry, OperatorTable, ScriptBytes};
 
 /// Bridge operator entry containing identification and cryptographic keys.
 ///
@@ -26,17 +24,6 @@ use super::bitmap::OperatorBitmap;
 /// The `musig2_pk` follows [BIP 340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki#design)
 /// standard, corresponding to a [`PublicKey`](bitcoin::secp256k1::PublicKey) with even parity
 /// for compatibility with Bitcoin's Taproot and MuSig2 implementations.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Hash, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
-)]
-pub struct OperatorEntry {
-    /// Global operator index.
-    idx: OperatorIdx,
-
-    /// Public key used to compute MuSig2 public key from a set of operators.
-    musig2_pk: EvenPublicKey,
-}
-
 impl PartialOrd for OperatorEntry {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
@@ -50,6 +37,13 @@ impl Ord for OperatorEntry {
 }
 
 impl OperatorEntry {
+    pub(crate) fn new(idx: OperatorIdx, musig2_pk: EvenPublicKey) -> Self {
+        Self {
+            idx,
+            musig2_pk: musig2_pk.x_only_public_key().0.serialize().into(),
+        }
+    }
+
     /// Returns the unique operator index.
     ///
     /// # Returns
@@ -66,9 +60,15 @@ impl OperatorEntry {
     ///
     /// # Returns
     ///
-    /// Reference to the MuSig2 public key as [`EvenPublicKey`].
-    pub fn musig2_pk(&self) -> &EvenPublicKey {
-        &self.musig2_pk
+    /// The MuSig2 public key as [`EvenPublicKey`].
+    pub fn musig2_pk(&self) -> EvenPublicKey {
+        let key_bytes: [u8; 32] = self
+            .musig2_pk
+            .as_ref()
+            .try_into()
+            .expect("bridge operator key bytes must have fixed 32-byte length");
+        EvenPublicKey::try_from(Buf32::from(key_bytes))
+            .expect("bridge operator key bytes must remain a valid x-only public key")
     }
 }
 
@@ -104,52 +104,15 @@ pub(crate) fn build_nn_script(agg_key: &BitcoinXOnlyPublicKey) -> BitcoinScriptB
 /// can support at most `u32::MAX - 1` unique operator registrations over its entire
 /// lifetime. Index `u32::MAX` is reserved as a sentinel for "no selected operator"
 /// in the withdrawal assignment protocol.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct OperatorTable {
-    /// Next unassigned operator index for new registrations.
-    next_idx: OperatorIdx,
-
-    /// Vector of registered operators, sorted by operator index.
-    ///
-    /// **Invariant**: MUST be sorted by `OperatorEntry::idx` field.
-    operators: SortedVec<OperatorEntry>,
-
-    /// Bitmap indicating which operators are currently active in the N/N multisig.
-    ///
-    /// Each bit position corresponds to an operator index, where a set bit (1) indicates
-    /// the operator at that index is currently active in the multisig configuration.
-    /// This bitmap is used to efficiently track active operator membership and coordinate
-    /// with the aggregated public key for signature operations.
-    active_operators: OperatorBitmap,
-
-    /// Aggregated public key derived from operator MuSig2 keys that are currently active in the
-    /// N/N multisig.
-    ///
-    /// This key is computed by aggregating the MuSig2 public keys of only those operators
-    /// marked as active in the `active_operators` bitmap, using the MuSig2 key aggregation
-    /// protocol. It serves as the collective public key for multi-signature operations and is
-    /// used for:
-    ///
-    /// - Generating deposit addresses for the bridge
-    /// - Verifying multi-signatures from the current operator set
-    /// - Representing the current N/N multisig set as a single cryptographic entity
-    ///
-    /// The key is automatically computed when the operator table is created or
-    /// updated, ensuring it always reflects the current active multisig participants.
-    agg_key: BitcoinXOnlyPublicKey,
-
-    /// Historical N/N multisig scripts from previous operator set configurations.
-    ///
-    /// This vector tracks all P2TR scripts that represented the bridge across membership changes
-    /// due to operator entries/exits. Each script is a key-path-only P2TR output (merkle root =
-    /// None) constructed from the aggregated public key of the operator set at that time.
-    ///
-    /// By storing the ScriptBuf directly instead of just keys, we avoid recomputing P2TR scripts
-    /// during validation, improving performance.
-    historical_nn_scripts: Vec<BitcoinScriptBuf>,
-}
-
 impl OperatorTable {
+    fn encode_script(script: &ScriptBuf) -> ScriptBytes {
+        ScriptBytes::new(script.to_bytes()).expect("bridge script must stay within SSZ bounds")
+    }
+
+    fn decode_script(script: &ScriptBytes) -> ScriptBuf {
+        ScriptBuf::from_bytes(script.to_vec())
+    }
+
     /// Bootstraps an operator table with an initial active operator set.
     ///
     /// Every provided key is added and marked active, skipping any duplicates. The aggregated
@@ -177,10 +140,10 @@ impl OperatorTable {
 
         let mut table = Self {
             next_idx: 0,
-            operators: SortedVec::new_empty(),
+            operators: vec![].into(),
             active_operators: OperatorBitmap::new_empty(),
-            agg_key: placeholder_agg_key,
-            historical_nn_scripts: Vec::new(),
+            agg_key: placeholder_agg_key.to_xonly_public_key().serialize().into(),
+            historical_nn_scripts: vec![].into(),
         };
 
         // Reuse membership change flow to handle deduplication and seed script history.
@@ -201,14 +164,20 @@ impl OperatorTable {
 
     /// Returns a slice of all registered operator entries.
     pub fn operators(&self) -> &[OperatorEntry] {
-        self.operators.as_slice()
+        &self.operators
     }
 
     /// Returns the aggregated public key of the current active operators.
     ///
     /// This key is computed by aggregating the MuSig2 public keys of all active operators.
-    pub fn agg_key(&self) -> &BitcoinXOnlyPublicKey {
-        &self.agg_key
+    pub fn agg_key(&self) -> BitcoinXOnlyPublicKey {
+        BitcoinXOnlyPublicKey::new(
+            self.agg_key
+                .as_ref()
+                .try_into()
+                .expect("bridge aggregate key bytes must have fixed 32-byte length"),
+        )
+        .expect("bridge aggregate key must remain valid")
     }
 
     /// Returns an iterator over all stored N/N multisig scripts in chronological order.
@@ -216,19 +185,20 @@ impl OperatorTable {
     /// The scripts represent past N/N multisig configurations (with the last entry always
     /// corresponding to the current operator set) and are used to validate slash transactions that
     /// reference stake connectors from those historical operator sets.
-    pub fn historical_nn_scripts(&self) -> impl Iterator<Item = &ScriptBuf> {
-        self.historical_nn_scripts.iter().map(|s| s.inner())
+    pub fn historical_nn_scripts(&self) -> impl Iterator<Item = ScriptBuf> + '_ {
+        self.historical_nn_scripts.iter().map(Self::decode_script)
     }
 
     /// Returns the current N/N multisig script for the active operator set.
     ///
     /// The latest script is stored as the last entry in `historical_nn_scripts` and is reused for
     /// validating new slash transactions and stake connectors without recomputing.
-    pub fn current_nn_script(&self) -> &ScriptBuf {
-        self.historical_nn_scripts
-            .last()
-            .expect("N/N script history should never be empty")
-            .inner()
+    pub fn current_nn_script(&self) -> ScriptBuf {
+        Self::decode_script(
+            self.historical_nn_scripts
+                .last()
+                .expect("N/N script history should never be empty"),
+        )
     }
 
     /// Retrieves an operator entry by its unique index.
@@ -245,10 +215,9 @@ impl OperatorTable {
     /// - `None` if no operator with the given index is found
     pub fn get_operator(&self, idx: OperatorIdx) -> Option<&OperatorEntry> {
         self.operators
-            .as_slice()
             .binary_search_by_key(&idx, |e| e.idx)
             .ok()
-            .map(|i| &self.operators.as_slice()[i])
+            .map(|i| &self.operators[i])
     }
 
     /// Returns whether this operator is currently active in the N/N multisig set.
@@ -304,7 +273,10 @@ impl OperatorTable {
         if did_change {
             self.calculate_aggregated_key();
             self.historical_nn_scripts
-                .push(build_nn_script(&self.agg_key));
+                .push(Self::encode_script(
+                    build_nn_script(&self.agg_key()).inner(),
+                ))
+                .expect("bridge historical script list must stay within SSZ bounds");
         }
     }
 
@@ -324,7 +296,7 @@ impl OperatorTable {
         for musig2_pk in operators {
             // Check if it already exists in the table (which handles both existing operators
             // and internal duplicates in the input list, as the first occurrence is added)
-            if self.operators.iter().any(|op| op.musig2_pk() == musig2_pk) {
+            if self.operators.iter().any(|op| op.musig2_pk() == *musig2_pk) {
                 eprintln!("Skipping duplicate operator: {:?}", musig2_pk);
                 continue;
             }
@@ -334,13 +306,14 @@ impl OperatorTable {
             }
 
             let idx = self.next_idx;
-            let entry = OperatorEntry {
-                idx,
-                musig2_pk: *musig2_pk,
-            };
-
-            // SortedVec handles insertion and maintains sorted order
-            self.operators.insert(entry);
+            let entry = OperatorEntry::new(idx, *musig2_pk);
+            let insert_at = self
+                .operators
+                .binary_search_by_key(&idx, |entry| entry.idx())
+                .unwrap_or_else(|pos| pos);
+            let mut operators = self.operators.to_vec();
+            operators.insert(insert_at, entry);
+            self.operators = operators.into();
 
             // Set new operator as active in bitmap
             self.active_operators
@@ -355,12 +328,7 @@ impl OperatorTable {
     fn remove_operators(&mut self, indices: &[OperatorIdx]) {
         for &idx in indices {
             // Only update if the operator exists
-            if self
-                .operators
-                .as_slice()
-                .binary_search_by_key(&idx, |e| e.idx)
-                .is_ok()
-            {
+            if self.operators.binary_search_by_key(&idx, |e| e.idx).is_ok() {
                 // For existing operators, we can set their status directly
                 if (idx as usize) < self.active_operators.len() {
                     self.active_operators
@@ -382,7 +350,7 @@ impl OperatorTable {
             .active_indices()
             .filter_map(|op| {
                 self.get_operator(op)
-                    .map(|entry| Buf32::from(entry.musig2_pk().x_only_public_key().0.serialize()))
+                    .map(|entry| Buf32::from(entry.musig2_pk()))
             })
             .collect();
 
@@ -390,9 +358,9 @@ impl OperatorTable {
             panic!("Cannot have empty multisig - at least one operator must be active");
         }
 
-        self.agg_key = aggregate_schnorr_keys(active_keys.iter())
-            .expect("Failed to generate aggregated key")
-            .into();
+        let agg_key =
+            aggregate_schnorr_keys(active_keys.iter()).expect("Failed to generate aggregated key");
+        self.agg_key = agg_key.serialize().into();
     }
 }
 
@@ -440,7 +408,7 @@ mod tests {
             let found = table
                 .operators()
                 .iter()
-                .any(|entry| entry.musig2_pk() == op_pk);
+                .any(|entry| entry.musig2_pk() == *op_pk);
             assert!(found, "Operator {:?} not found in table", op_pk);
         }
 
@@ -466,7 +434,7 @@ mod tests {
             let idx = (i + 1) as u32;
             let entry = table.get_operator(idx).unwrap();
             assert_eq!(entry.idx(), idx);
-            assert_eq!(entry.musig2_pk(), op_pk);
+            assert_eq!(entry.musig2_pk(), *op_pk);
             assert!(table.is_in_current_multisig(idx));
         }
     }
@@ -494,7 +462,7 @@ mod tests {
         // Should have deduplicated to just 1 operator
         assert_eq!(table.len(), 1);
         assert_eq!(table.next_idx, 1);
-        assert_eq!(*table.get_operator(0).unwrap().musig2_pk(), operators[0]);
+        assert_eq!(table.get_operator(0).unwrap().musig2_pk(), operators[0]);
     }
 
     #[test]
@@ -563,7 +531,7 @@ mod tests {
         let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
         assert_eq!(historical_scripts.len(), 1);
         let initial_script = table.current_nn_script().clone();
-        assert_eq!(historical_scripts[0], &initial_script);
+        assert_eq!(historical_scripts[0], initial_script.clone());
 
         table.apply_membership_changes(&[], &[0]);
 
@@ -572,8 +540,8 @@ mod tests {
 
         let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
         assert_eq!(historical_scripts.len(), 2);
-        assert_eq!(historical_scripts[0], &initial_script);
-        assert_eq!(historical_scripts[1], &second_script);
+        assert_eq!(historical_scripts[0], initial_script.clone());
+        assert_eq!(historical_scripts[1], second_script.clone());
 
         table.apply_membership_changes(&[], &[1]);
 
@@ -582,9 +550,9 @@ mod tests {
 
         let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
         assert_eq!(historical_scripts.len(), 3);
-        assert_eq!(historical_scripts[0], &initial_script);
-        assert_eq!(historical_scripts[1], &second_script);
-        assert_eq!(historical_scripts[2], &third_script);
+        assert_eq!(historical_scripts[0], initial_script.clone());
+        assert_eq!(historical_scripts[1], second_script.clone());
+        assert_eq!(historical_scripts[2], third_script.clone());
 
         assert_ne!(initial_script, second_script);
         assert_ne!(second_script, third_script);
@@ -608,7 +576,7 @@ mod tests {
 
         let historical_scripts: Vec<_> = table.historical_nn_scripts().collect();
         assert_eq!(historical_scripts.len(), 2);
-        assert_eq!(historical_scripts[0], &initial_script);
-        assert_eq!(historical_scripts[1], &new_script);
+        assert_eq!(historical_scripts[0], initial_script.clone());
+        assert_eq!(historical_scripts[1], new_script.clone());
     }
 }

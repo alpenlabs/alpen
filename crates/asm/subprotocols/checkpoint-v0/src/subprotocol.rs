@@ -165,10 +165,7 @@ fn process_checkpoint_transaction_v0(
     // Forward each withdrawal message to the bridge subprotocol
     for intent in withdrawal_intents {
         let output = WithdrawOutput::new(intent.destination().clone(), *intent.amt());
-        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
-            output,
-            selected_operator: intent.selected_operator(),
-        };
+        let bridge_msg = BridgeIncomingMsg::dispatch_withdrawal(output, intent.selected_operator());
         relayer.relay_msg(&bridge_msg);
     }
 

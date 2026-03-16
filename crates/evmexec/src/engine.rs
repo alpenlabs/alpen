@@ -695,7 +695,7 @@ mod tests {
         let bridge_intent = to_bridge_withdrawal_intent(rpc_intent);
 
         assert_eq!(bridge_intent.amt().to_sat(), 100_000);
-        assert_eq!(*bridge_intent.destination(), descriptor);
+        assert_eq!(bridge_intent.destination(), &descriptor);
         assert_eq!(*bridge_intent.withdrawal_txid(), txid);
         assert_eq!(
             bridge_intent.selected_operator(),

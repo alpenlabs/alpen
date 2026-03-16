@@ -5,13 +5,13 @@
 //! when processing withdrawal requests from deposits.
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_bridge_types::OperatorIdx;
-use strata_codec::{Codec, encode_to_vec};
+use strata_codec::{Codec, CodecError, Decoder, Encoder, encode_to_vec};
 use strata_crypto::hash;
 use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
+
+use crate::{OperatorClaimUnlock, WithdrawalCommand};
 
 /// Command specifying a Bitcoin output for a withdrawal operation.
 ///
@@ -30,17 +30,6 @@ use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
 ///
 /// - **Batching**: Support for multiple outputs in a single withdrawal command to enable efficient
 ///   processing of multiple withdrawals in one Bitcoin transaction
-#[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
-)]
-pub struct WithdrawalCommand {
-    /// Bitcoin output to create in the withdrawal transaction.
-    output: WithdrawOutput,
-
-    /// Amount the operator can take as fees for processing withdrawal.
-    operator_fee: BitcoinAmount,
-}
-
 impl WithdrawalCommand {
     /// Creates a new withdrawal command with the specified output and operator fee.
     pub fn new(output: WithdrawOutput, operator_fee: BitcoinAmount) -> Self {
@@ -51,8 +40,8 @@ impl WithdrawalCommand {
     }
 
     /// Returns a reference to the destination descriptor for this withdrawal.
-    pub fn destination(&self) -> &Descriptor {
-        &self.output.destination
+    pub fn destination(&self) -> Descriptor {
+        self.output.destination()
     }
 
     /// Updates the operator fee for this withdrawal command.
@@ -66,6 +55,14 @@ impl WithdrawalCommand {
     /// which equals the withdrawal amount minus the operator fee.
     pub fn net_amount(&self) -> BitcoinAmount {
         self.output.amt().saturating_sub(self.operator_fee)
+    }
+}
+
+impl<'a> Arbitrary<'a> for WithdrawalCommand {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let output = WithdrawOutput::arbitrary(u)?;
+        let operator_fee = BitcoinAmount::arbitrary(u)?;
+        Ok(Self::new(output, operator_fee))
     }
 }
 
@@ -88,15 +85,6 @@ impl WithdrawalCommand {
 /// - This data is stored in the MohoState and emitted as an ASM log via `NewExportEntry`.
 /// - The Bridge proof system consumes these entries to verify operators have correctly fulfilled
 ///   withdrawal obligations before allowing them to unlock deposit UTXOs.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Codec)]
-pub struct OperatorClaimUnlock {
-    /// The index of the deposit that was fulfilled.
-    pub deposit_idx: u32,
-
-    /// The index of the operator who was assigned to (and is authorized to claim) this withdrawal.
-    pub operator_idx: OperatorIdx,
-}
-
 impl OperatorClaimUnlock {
     pub fn new(deposit_idx: u32, operator_idx: OperatorIdx) -> Self {
         Self {
@@ -108,5 +96,19 @@ impl OperatorClaimUnlock {
     pub fn compute_hash(&self) -> [u8; 32] {
         let buf = encode_to_vec(self).expect("failed to encode OperatorClaimUnlock");
         hash::raw(&buf).0
+    }
+}
+
+impl Codec for OperatorClaimUnlock {
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        Ok(Self {
+            deposit_idx: u32::decode(dec)?,
+            operator_idx: OperatorIdx::decode(dec)?,
+        })
+    }
+
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        self.deposit_idx.encode(enc)?;
+        self.operator_idx.encode(enc)
     }
 }

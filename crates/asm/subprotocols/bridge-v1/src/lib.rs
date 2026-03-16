@@ -28,9 +28,24 @@ mod validation;
 #[cfg(test)]
 mod test_utils;
 
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
+)]
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
+
 pub use errors::*;
-pub use state::{
-    AssignmentEntry, BridgeV1State, DepositEntry, OperatorBitmap, OperatorClaimUnlock,
+pub use ssz_generated::ssz::state::{
+    AssignmentEntry, AssignmentEntryRef, AssignmentTable, AssignmentTableRef, BitmapBytes,
+    BridgeV1State, BridgeV1StateRef, DepositEntry, DepositEntryRef, DepositsTable,
+    DepositsTableRef, OperatorBitmap, OperatorBitmapRef, OperatorClaimUnlock,
+    OperatorClaimUnlockRef, OperatorEntry, OperatorEntryRef, OperatorTable, OperatorTableRef,
+    ScriptBytes, WithdrawalCommand, WithdrawalCommandRef,
 };
 pub use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
 pub use subprotocol::BridgeV1Subproto;

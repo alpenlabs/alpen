@@ -13930,12 +13930,18 @@ name = "strata-asm-bridge-msgs"
 version = "0.1.0"
 dependencies = [
  "arbitrary",
- "borsh",
- "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",
  "strata-bridge-types",
+ "strata-btc-types",
  "strata-primitives",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]
@@ -14088,12 +14094,15 @@ dependencies = [
  "arbitrary",
  "bitcoin",
  "bitvec",
- "borsh",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "serde",
  "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-asm-bridge-msgs",
  "strata-asm-checkpoint-msgs",
  "strata-asm-common",
@@ -14107,6 +14116,8 @@ dependencies = [
  "strata-primitives",
  "strata-test-utils",
  "thiserror 2.0.18",
+ "tree_hash 0.14.0",
+ "tree_hash_derive 0.14.0",
 ]
 
 [[package]]

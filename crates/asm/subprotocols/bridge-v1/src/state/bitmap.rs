@@ -3,15 +3,12 @@
 //! This module contains bitmap types and operations for efficiently tracking
 //! and filtering operators in various contexts.
 
-use std::io;
-
 use arbitrary::Arbitrary;
 use bitvec::prelude::*;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error as SerdeDeError};
 use strata_bridge_types::OperatorIdx;
 
-use crate::BitmapError;
+use crate::{BitmapBytes, BitmapError, OperatorBitmap};
 
 /// Memory-efficient bitmap for tracking active operators in a multisig set.
 ///
@@ -25,47 +22,24 @@ use crate::BitmapError;
 /// - **Operator Table**: Track which operators are in the current N/N multisig
 /// - **Deposit Entries**: Store historical notary operators for each deposit
 /// - **Assignment Creation**: Efficiently select operators for new tasks
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct OperatorBitmap {
-    /// Bitmap where bit `i` is set if operator index `i` is active.
-    /// Uses `BitVec<u8>` for dynamic sizing and memory efficiency.
-    pub(crate) bits: BitVec<u8>,
-}
-
-impl BorshSerialize for OperatorBitmap {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        // Serialize as bytes: [length, data...]
-        let bytes = self.bits.as_raw_slice();
-        let bit_len = self.bits.len();
-
-        // Serialize the bit length first
-        BorshSerialize::serialize(&bit_len, writer)?;
-        // Then serialize the byte data
-        BorshSerialize::serialize(&bytes, writer)
-    }
-}
-
-impl BorshDeserialize for OperatorBitmap {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        // Deserialize bit length first
-        let bit_len = usize::deserialize_reader(reader)?;
-        // Then deserialize the byte data
-        let bytes = Vec::<u8>::deserialize_reader(reader)?;
-
-        // Reconstruct BitVec from bytes and bit length
-        let mut bits = BitVec::from_vec(bytes);
-        bits.truncate(bit_len);
-
-        Ok(Self { bits })
-    }
-}
-
 impl OperatorBitmap {
+    pub(crate) fn from_bits(bits: BitVec<u8>) -> Self {
+        Self {
+            bit_len: bits.len() as u32,
+            bytes: BitmapBytes::new(bits.as_raw_slice().to_vec())
+                .expect("bridge operator bitmap must stay within SSZ bounds"),
+        }
+    }
+
+    pub(crate) fn to_bits(&self) -> BitVec<u8> {
+        let mut bits = BitVec::from_vec(self.bytes.to_vec());
+        bits.truncate(self.bit_len as usize);
+        bits
+    }
+
     /// Creates a new empty operator bitmap.
     pub fn new_empty() -> Self {
-        Self {
-            bits: BitVec::new(),
-        }
+        Self::from_bits(BitVec::new())
     }
 
     /// Creates a new operator bitmap with specified size and initial state.
@@ -89,9 +63,7 @@ impl OperatorBitmap {
     /// let active = OperatorBitmap::new_with_size(3, true);
     /// ```
     pub fn new_with_size(size: usize, initial_state: bool) -> Self {
-        Self {
-            bits: BitVec::repeat(initial_state, size),
-        }
+        Self::from_bits(BitVec::repeat(initial_state, size))
     }
 
     /// Returns whether the operator at the given index is active.
@@ -104,7 +76,10 @@ impl OperatorBitmap {
     ///
     /// `true` if the operator is active, `false` if not active or index out of bounds
     pub fn is_active(&self, idx: OperatorIdx) -> bool {
-        self.bits.get(idx as usize).map(|b| *b).unwrap_or(false)
+        self.to_bits()
+            .get(idx as usize)
+            .map(|bit| *bit)
+            .unwrap_or(false)
     }
 
     /// Attempts to set the active state of an operator.
@@ -128,18 +103,20 @@ impl OperatorBitmap {
     /// `u32::MAX` (4,294,967,295). This limits the total number of unique operators that can
     /// ever be registered over the bridge's lifetime.
     pub fn try_set(&mut self, idx: OperatorIdx, active: bool) -> Result<(), BitmapError> {
+        let mut bits = self.to_bits();
         let idx_usize = idx as usize;
         // Only allow increasing bitmap size by 1 at a time to maintain sequential indices
-        if idx_usize > self.bits.len() {
+        if idx_usize > bits.len() {
             return Err(BitmapError::IndexOutOfBounds {
                 index: idx,
-                max_valid_index: self.bits.len() as OperatorIdx,
+                max_valid_index: bits.len() as OperatorIdx,
             });
         }
-        if idx_usize == self.bits.len() {
-            self.bits.resize(idx_usize + 1, false);
+        if idx_usize == bits.len() {
+            bits.resize(idx_usize + 1, false);
         }
-        self.bits.set(idx_usize, active);
+        bits.set(idx_usize, active);
+        *self = Self::from_bits(bits);
         Ok(())
     }
 
@@ -152,33 +129,76 @@ impl OperatorBitmap {
     /// producing incorrect results. In practice, this is constrained by the system's operator
     /// registration limit of `u32::MAX` unique operators.
     pub fn active_indices(&self) -> impl Iterator<Item = OperatorIdx> + '_ {
-        self.bits.iter_ones().map(|i| i as OperatorIdx)
+        self.to_bits()
+            .iter_ones()
+            .map(|index| index as OperatorIdx)
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Returns the number of active operators.
     pub fn active_count(&self) -> usize {
-        self.bits.count_ones()
+        self.to_bits().count_ones()
     }
 
     /// Returns the number of inactive operators.
     pub fn inactive_count(&self) -> usize {
-        self.bits.count_zeros()
+        self.len().saturating_sub(self.active_count())
     }
 
     /// Returns the number of bits in the bitmap.
     pub fn len(&self) -> usize {
-        self.bits.len()
+        self.bit_len as usize
     }
 
     /// Returns `true` if the bitmap contains no bits.
     pub fn is_empty(&self) -> bool {
-        self.bits.is_empty()
+        self.bit_len == 0
     }
 }
 
 impl From<BitVec<u8>> for OperatorBitmap {
     fn from(bits: BitVec<u8>) -> Self {
-        Self { bits }
+        Self::from_bits(bits)
+    }
+}
+
+impl Serialize for OperatorBitmap {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct BitmapSerde<'a> {
+            bit_len: u32,
+            bytes: &'a [u8],
+        }
+
+        BitmapSerde {
+            bit_len: self.bit_len,
+            bytes: &self.bytes,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for OperatorBitmap {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct BitmapSerde {
+            bit_len: u32,
+            bytes: Vec<u8>,
+        }
+
+        let bitmap = BitmapSerde::deserialize(deserializer)?;
+        Ok(Self {
+            bit_len: bitmap.bit_len,
+            bytes: BitmapBytes::new(bitmap.bytes)
+                .map_err(|err| SerdeDeError::custom(err.to_string()))?,
+        })
     }
 }
 
@@ -193,6 +213,9 @@ impl<'a> Arbitrary<'a> for OperatorBitmap {
             let bit = u.int_in_range(0..=1)? == 1;
             bits.push(bit);
         }
+        if bits.not_any() {
+            bits.set(0, true);
+        }
 
         Ok(OperatorBitmap::from(bits))
     }
@@ -200,6 +223,7 @@ impl<'a> Arbitrary<'a> for OperatorBitmap {
 
 #[cfg(test)]
 mod tests {
+    use ssz::{Decode, Encode};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -304,8 +328,8 @@ mod tests {
     fn test_operator_bitmap_serialization_roundtrip() {
         let mut arb = ArbitraryGenerator::new();
         let bitmap: OperatorBitmap = arb.generate();
-        let serialized_bytes = borsh::to_vec(&bitmap).unwrap();
-        let deserialized_bitmap = borsh::from_slice(&serialized_bytes).unwrap();
+        let serialized_bytes = bitmap.as_ssz_bytes();
+        let deserialized_bitmap = OperatorBitmap::from_ssz_bytes(&serialized_bytes).unwrap();
         assert_eq!(bitmap, deserialized_bitmap);
     }
 }

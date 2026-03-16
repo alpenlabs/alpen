@@ -18,12 +18,13 @@ use strata_asm_txs_bridge_v1::{
 };
 use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_btc_types::RawBitcoinTx;
+use strata_codec::VarVec;
 use strata_crypto::EvenSecretKey;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 use strata_test_utils::ArbitraryGenerator;
 
 use super::*;
-use crate::state::assignment::AssignmentEntry;
+use crate::AssignmentEntry;
 
 /// A Mock MsgRelayer that does nothing.
 ///
@@ -169,11 +170,18 @@ pub(crate) fn setup_deposit_test(
     recovery_delay: u16,
     operators: &[EvenSecretKey],
 ) -> (VerifiedAuxData, DepositInfo) {
+    let drt_aux = DrtHeaderAux::new(
+        *drt_aux.recovery_pk(),
+        VarVec::from_vec(drt_aux.destination().iter().copied().take(42).collect())
+            .expect("test DRT destination fits within the protocol limit"),
+    )
+    .expect("test DRT aux should be valid");
+
     // 1. Prepare DRT & DT
     let dt_aux = ArbitraryGenerator::new().generate();
 
     let (drt, dt) = create_connected_drt_and_dt(
-        drt_aux,
+        &drt_aux,
         dt_aux,
         denomination.into(),
         recovery_delay,

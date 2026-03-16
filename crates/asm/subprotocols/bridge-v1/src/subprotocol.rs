@@ -13,9 +13,9 @@ use strata_asm_txs_bridge_v1::{BRIDGE_V1_SUBPROTOCOL_ID, parser::parse_tx};
 use strata_primitives::l1::L1BlockCommitment;
 
 use crate::{
+    BridgeV1State,
     errors::BridgeSubprotocolError,
     handler::{handle_parsed_tx, preprocess_parsed_tx},
-    state::BridgeV1State,
 };
 
 /// Bridge V1 subprotocol implementation.
@@ -146,13 +146,12 @@ impl Subprotocol for BridgeV1Subproto {
     fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], l1ref: &L1BlockCommitment) {
         for msg in msgs {
             match msg {
-                BridgeIncomingMsg::DispatchWithdrawal {
-                    output,
-                    selected_operator,
-                } => {
-                    if let Err(e) =
-                        state.create_withdrawal_assignment(output, *selected_operator, l1ref)
-                    {
+                BridgeIncomingMsg::DispatchWithdrawal(dispatch) => {
+                    if let Err(e) = state.create_withdrawal_assignment(
+                        dispatch.output(),
+                        dispatch.selected_operator(),
+                        l1ref,
+                    ) {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.
                         panic!("Failed to create withdrawal assignment: {e}",);

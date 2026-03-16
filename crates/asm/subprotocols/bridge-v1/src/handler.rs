@@ -8,8 +8,8 @@ use strata_asm_txs_bridge_v1::{
 };
 
 use crate::{
+    BridgeV1State, OperatorClaimUnlock,
     errors::{BridgeSubprotocolError, DepositValidationError},
-    state::{BridgeV1State, OperatorClaimUnlock},
     validation::{
         validate_deposit_info, validate_slash_stake_connector, validate_unstake_info,
         validate_withdrawal_fulfillment_info,

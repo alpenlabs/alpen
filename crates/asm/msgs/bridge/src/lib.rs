@@ -6,44 +6,50 @@
 
 use std::any::Any;
 
-use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use arbitrary::{Arbitrary, Unstructured};
 use strata_asm_common::{InterprotoMsg, SubprotocolId};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_bridge_types::OperatorSelection;
-use strata_primitives::{bitcoin_bosd::Descriptor, l1::BitcoinAmount};
+use strata_btc_types::BitcoinAmount;
+use strata_primitives::bitcoin_bosd::Descriptor;
 
-/// Bitcoin output specification for a withdrawal operation.
-///
-/// Each withdrawal output specifies a destination address (as a Bitcoin descriptor)
-/// and the amount to be sent. This structure provides all information needed by
-/// operators to construct the appropriate Bitcoin transaction output.
-///
-/// # Bitcoin Descriptors
-///
-/// The destination uses Bitcoin Output Script Descriptors (BOSD), which provide
-/// a standardized way to specify Bitcoin addresses and locking conditions.
-#[derive(
-    Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize, Arbitrary,
+#[allow(
+    clippy::all,
+    unreachable_pub,
+    clippy::allow_attributes,
+    clippy::absolute_paths,
+    reason = "generated code"
 )]
-pub struct WithdrawOutput {
-    /// Bitcoin Output Script Descriptor specifying the destination address.
-    pub destination: Descriptor,
+mod ssz_generated {
+    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
+}
 
-    /// Amount to withdraw (in satoshis).
-    pub amt: BitcoinAmount,
+pub use ssz_generated::ssz::messages::{
+    BridgeIncomingMsg, BridgeIncomingMsgRef, DescriptorBytes, DispatchWithdrawal,
+    DispatchWithdrawalRef, WithdrawOutput, WithdrawOutputRef,
+};
+
+fn encode_descriptor(destination: Descriptor) -> DescriptorBytes {
+    DescriptorBytes::new(destination.to_bytes())
+        .expect("bridge descriptor must stay within SSZ bounds")
+}
+
+fn decode_descriptor(bytes: &[u8]) -> Descriptor {
+    Descriptor::from_vec(bytes.to_vec()).expect("bridge descriptor bytes must remain valid")
 }
 
 impl WithdrawOutput {
     /// Creates a new withdrawal output with the specified destination and amount.
     pub fn new(destination: Descriptor, amt: BitcoinAmount) -> Self {
-        Self { destination, amt }
+        Self {
+            destination: encode_descriptor(destination),
+            amt,
+        }
     }
 
-    /// Returns a reference to the destination descriptor.
-    pub fn destination(&self) -> &Descriptor {
-        &self.destination
+    /// Returns the destination descriptor.
+    pub fn destination(&self) -> Descriptor {
+        decode_descriptor(&self.destination)
     }
 
     /// Returns the withdrawal amount.
@@ -52,20 +58,49 @@ impl WithdrawOutput {
     }
 }
 
-/// Incoming message types received from other subprotocols.
-///
-/// This enum represents all possible message types that the bridge subprotocol can
-/// receive from other subprotocols in the ASM.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub enum BridgeIncomingMsg {
-    /// Emitted after a checkpoint proof has been validated. Contains the withdrawal command
-    /// specifying the destination descriptor and amount to be withdrawn.
-    DispatchWithdrawal {
-        /// The withdrawal output (destination + amount).
+impl<'a> Arbitrary<'a> for WithdrawOutput {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let amt = BitcoinAmount::arbitrary(u)?;
+        let payload: [u8; 20] = u.arbitrary()?;
+
+        let destination = match u.int_in_range(0..=2)? {
+            0 => Descriptor::new_p2pkh(&payload),
+            1 => Descriptor::new_p2sh(&payload),
+            _ => Descriptor::new_p2wpkh(&payload),
+        };
+
+        Ok(Self::new(destination, amt))
+    }
+}
+
+impl DispatchWithdrawal {
+    /// Creates a dispatch-withdrawal payload from the user intent.
+    pub fn new(output: WithdrawOutput, selected_operator: OperatorSelection) -> Self {
+        Self {
+            output,
+            selected_operator: selected_operator.raw(),
+        }
+    }
+
+    /// Returns the withdrawal output carried by the message.
+    pub fn output(&self) -> &WithdrawOutput {
+        &self.output
+    }
+
+    /// Returns the user's preferred operator selection.
+    pub fn selected_operator(&self) -> OperatorSelection {
+        OperatorSelection::from_raw(self.selected_operator)
+    }
+}
+
+impl BridgeIncomingMsg {
+    /// Creates a bridge incoming message for withdrawal dispatch.
+    pub fn dispatch_withdrawal(
         output: WithdrawOutput,
-        /// User's operator selection for withdrawal assignment.
         selected_operator: OperatorSelection,
-    },
+    ) -> Self {
+        Self::DispatchWithdrawal(DispatchWithdrawal::new(output, selected_operator))
+    }
 }
 
 impl InterprotoMsg for BridgeIncomingMsg {

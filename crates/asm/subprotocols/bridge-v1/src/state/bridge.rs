@@ -1,5 +1,3 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use ssz::{Decode, DecodeError, Encode};
 use strata_asm_bridge_msgs::WithdrawOutput;
 use strata_asm_params::BridgeV1InitConfig;
 use strata_asm_txs_bridge_v1::{deposit::DepositInfo, errors::Mismatch};
@@ -7,41 +5,15 @@ use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment};
 
 use crate::{
+    AssignmentEntry, AssignmentTable, BridgeV1State, DepositEntry, DepositsTable, OperatorTable,
+    WithdrawalCommand,
     errors::{DepositValidationError, WithdrawalCommandError},
-    state::{
-        assignment::{AssignmentEntry, AssignmentTable},
-        deposit::{DepositEntry, DepositsTable},
-        operator::OperatorTable,
-        withdrawal::WithdrawalCommand,
-    },
 };
 
 /// Main state container for the Bridge V1 subprotocol.
 ///
 /// This structure holds all the persistent state for the bridge, including
 /// operator registrations, deposit tracking, and assignment management.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct BridgeV1State {
-    /// Table of registered bridge operators.
-    operators: OperatorTable,
-
-    /// Table of Bitcoin deposits managed by the bridge.
-    deposits: DepositsTable,
-
-    /// Table of operator assignments for withdrawal processing.
-    assignments: AssignmentTable,
-
-    /// The amount of bitcoin expected to be locked in the N/N multisig.
-    denomination: BitcoinAmount,
-
-    /// Amount the operator can take as fees for processing withdrawal.
-    operator_fee: BitcoinAmount,
-
-    /// Number of blocks after Deposit Request Transaction that the depositor can reclaim
-    /// funds if operators fail to process the deposit.
-    recovery_delay: u16,
-}
-
 impl BridgeV1State {
     /// Creates a new bridge state with the specified configuration.
     ///
@@ -224,35 +196,6 @@ impl BridgeV1State {
     pub fn remove_operator(&mut self, operator_idx: OperatorIdx) {
         self.operators
             .apply_membership_changes(&[], &[operator_idx]);
-    }
-}
-
-impl Encode for BridgeV1State {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        borsh::to_vec(self)
-            .expect("bridge state must serialize with borsh")
-            .ssz_append(buf);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        borsh::to_vec(self)
-            .expect("bridge state must serialize with borsh")
-            .ssz_bytes_len()
-    }
-}
-
-impl Decode for BridgeV1State {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let borsh_bytes = Vec::<u8>::from_ssz_bytes(bytes)?;
-        borsh::from_slice(&borsh_bytes).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 

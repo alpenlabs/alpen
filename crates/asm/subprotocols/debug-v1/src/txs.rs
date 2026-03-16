@@ -207,8 +207,11 @@ mod tests {
 
         let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(output.amt, BitcoinAmount::from_sat(100_000));
-        assert_eq!(output.destination.to_bytes(), p2wpkh_descriptor.to_bytes());
+        assert_eq!(output.amt(), BitcoinAmount::from_sat(100_000));
+        assert_eq!(
+            output.destination().to_bytes(),
+            p2wpkh_descriptor.to_bytes()
+        );
         assert_eq!(selected_operator, OperatorSelection::any());
     }
 
@@ -227,8 +230,8 @@ mod tests {
 
         let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(output.amt, BitcoinAmount::from_sat(200_000));
-        assert_eq!(output.destination.to_bytes(), p2wsh_descriptor.to_bytes());
+        assert_eq!(output.amt(), BitcoinAmount::from_sat(200_000));
+        assert_eq!(output.destination().to_bytes(), p2wsh_descriptor.to_bytes());
         assert_eq!(selected_operator, OperatorSelection::specific(42));
     }
 
@@ -252,8 +255,8 @@ mod tests {
 
         let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(output.amt, BitcoinAmount::from_sat(300_000));
-        assert_eq!(output.destination.to_bytes(), p2tr_descriptor.to_bytes());
+        assert_eq!(output.amt(), BitcoinAmount::from_sat(300_000));
+        assert_eq!(output.destination().to_bytes(), p2tr_descriptor.to_bytes());
         assert_eq!(selected_operator, OperatorSelection::any());
     }
 
@@ -286,9 +289,9 @@ mod tests {
 
         let (output, selected_operator) = parse_withdrawal_from_aux_data(&aux_data).unwrap();
 
-        assert_eq!(output.amt, BitcoinAmount::from_sat(500_000));
+        assert_eq!(output.amt(), BitcoinAmount::from_sat(500_000));
         assert_eq!(selected_operator, OperatorSelection::specific(0x01020304));
-        assert_eq!(output.destination.to_bytes(), descriptor.to_bytes());
+        assert_eq!(output.destination().to_bytes(), descriptor.to_bytes());
     }
 
     #[test]

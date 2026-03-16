@@ -1,0 +1,19 @@
+import strata_btc_types
+
+MAX_DESCRIPTOR_BYTES = 1 << 10
+
+DescriptorBytes = List[uint8, MAX_DESCRIPTOR_BYTES]
+
+### Bitcoin output specification for a withdrawal operation.
+class WithdrawOutput(Container):
+    destination: DescriptorBytes
+    amt: strata_btc_types.BitcoinAmount
+
+### Dispatch-withdrawal message payload.
+class DispatchWithdrawal(Container):
+    output: WithdrawOutput
+    selected_operator: uint32
+
+### Incoming bridge message union.
+class BridgeIncomingMsg(Union):
+    DispatchWithdrawal: DispatchWithdrawal

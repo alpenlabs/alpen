@@ -544,7 +544,7 @@ impl StrataApiServer for StrataRpcImpl {
         let operator_map: BTreeMap<u32, EvenPublicKey> = operator_table
             .operators()
             .iter()
-            .map(|entry| (entry.idx(), *entry.musig2_pk()))
+            .map(|entry| (entry.idx(), entry.musig2_pk()))
             .collect();
         Ok(operator_map.into())
     }

@@ -1,10 +1,7 @@
 use strata_asm_txs_bridge_v1::unstake::UnstakeInfo;
 use strata_primitives::l1::BitcoinXOnlyPublicKey;
 
-use crate::{
-    errors::UnstakeValidationError,
-    state::{BridgeV1State, operator::build_nn_script},
-};
+use crate::{BridgeV1State, errors::UnstakeValidationError, state::operator::build_nn_script};
 
 /// Validates the parsed [`UnstakeInfo`].
 ///
@@ -25,7 +22,7 @@ pub(crate) fn validate_unstake_info(
     if !state
         .operators()
         .historical_nn_scripts()
-        .any(|script| script == expected_script.inner())
+        .any(|script| script == expected_script.inner().clone())
     {
         return Err(UnstakeValidationError::InvalidStakeConnectorScript);
     }

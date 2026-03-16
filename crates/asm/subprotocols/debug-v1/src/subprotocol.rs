@@ -87,12 +87,9 @@ fn process_parsed_debug_tx(
         }
 
         ParsedDebugTx::MockWithdrawIntent((output, selected_operator)) => {
-            logging::info!(amount = output.amt.to_sat(), "Processing mock withdrawal");
+            logging::info!(amount = output.amt().to_sat(), "Processing mock withdrawal");
 
-            let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
-                output,
-                selected_operator,
-            };
+            let bridge_msg = BridgeIncomingMsg::dispatch_withdrawal(output, selected_operator);
             relayer.relay_msg(&bridge_msg);
 
             logging::info!("Successfully sent mock withdrawal intent to bridge");

@@ -4,7 +4,7 @@ use strata_asm_txs_bridge_v1::{
     errors::Mismatch,
 };
 
-use crate::{errors::DepositValidationError, state::BridgeV1State};
+use crate::{BridgeV1State, errors::DepositValidationError};
 
 /// Validates the parsed [`DepositInfo`].
 ///
@@ -19,7 +19,7 @@ pub(crate) fn validate_deposit_info(
     drt_info: &DepositRequestInfo,
 ) -> Result<(), DepositValidationError> {
     let expected_script = state.operators().current_nn_script();
-    if info.locked_script() != expected_script {
+    if *info.locked_script() != expected_script {
         return Err(DepositValidationError::WrongOutputLock(Mismatch {
             expected: expected_script.clone(),
             got: info.locked_script().clone(),
@@ -102,9 +102,9 @@ mod tests {
         );
         let drt_info = drt_info_from_aux(&info, &aux);
 
-        let old_script = state.operators().current_nn_script().clone();
+        let old_script = state.operators().current_nn_script();
         state.remove_operator(1);
-        let new_script = state.operators().current_nn_script().clone();
+        let new_script = state.operators().current_nn_script();
 
         let err = validate_deposit_info(&state, &info, &drt_info).unwrap_err();
         let DepositValidationError::WrongOutputLock(mismatch) = err else {
@@ -127,12 +127,12 @@ mod tests {
         );
         let drt_info = drt_info_from_aux(&info, &aux);
 
-        let old_agg_key = *state.operators().agg_key();
+        let old_agg_key = state.operators().agg_key();
         state.remove_operator(1);
         let new_agg_key = state.operators().agg_key();
 
         // Set the correct locked script
-        let locked_script = state.operators().current_nn_script().clone();
+        let locked_script = state.operators().current_nn_script();
         info.set_locked_script(locked_script);
 
         let err = validate_deposit_info(&state, &info, &drt_info).unwrap_err();

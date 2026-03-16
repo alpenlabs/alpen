@@ -1,0 +1,73 @@
+import strata_asm_bridge_msgs
+import strata_btc_types
+
+MAX_BRIDGE_OPERATORS = 1 << 16
+MAX_OPERATOR_BITMAP_BYTES = 1 << 13
+MAX_DEPOSITS = 1 << 20
+MAX_ASSIGNMENTS = 1 << 20
+MAX_HISTORICAL_SCRIPTS = 1 << 16
+MAX_SCRIPT_BYTES = 1 << 10
+
+BitmapBytes = List[uint8, MAX_OPERATOR_BITMAP_BYTES]
+ScriptBytes = List[uint8, MAX_SCRIPT_BYTES]
+
+### Bitmap encoding for bridge operator membership state.
+class OperatorBitmap(Container):
+    bit_len: uint32
+    bytes: BitmapBytes
+
+### Bridge operator entry keyed by global operator index.
+class OperatorEntry(Container):
+    idx: uint32
+    musig2_pk: Bytes32
+
+### Table of registered bridge operators and multisig history.
+class OperatorTable(Container):
+    next_idx: uint32
+    operators: List[OperatorEntry, MAX_BRIDGE_OPERATORS]
+    active_operators: OperatorBitmap
+    agg_key: Bytes32
+    historical_nn_scripts: List[ScriptBytes, MAX_HISTORICAL_SCRIPTS]
+
+### Deposit entry tracked by the bridge.
+class DepositEntry(Container):
+    deposit_idx: uint32
+    notary_operators: OperatorBitmap
+    amt: strata_btc_types.BitcoinAmount
+
+### Table of bridge deposits.
+class DepositsTable(Container):
+    deposits: List[DepositEntry, MAX_DEPOSITS]
+
+### Withdrawal command assigned to an operator.
+class WithdrawalCommand(Container):
+    #~# external_kind: container
+    output: strata_asm_bridge_msgs.WithdrawOutput
+    operator_fee: strata_btc_types.BitcoinAmount
+
+### Deposit withdrawal assignment.
+class AssignmentEntry(Container):
+    deposit_entry: DepositEntry
+    withdrawal_cmd: WithdrawalCommand
+    current_assignee: uint32
+    previous_assignees: OperatorBitmap
+    fulfillment_deadline: uint32
+
+### Table of active withdrawal assignments.
+class AssignmentTable(Container):
+    assignments: List[AssignmentEntry, MAX_ASSIGNMENTS]
+    assignment_duration: uint16
+
+### Bridge subprotocol state.
+class BridgeV1State(Container):
+    operators: OperatorTable
+    deposits: DepositsTable
+    assignments: AssignmentTable
+    denomination: strata_btc_types.BitcoinAmount
+    operator_fee: strata_btc_types.BitcoinAmount
+    recovery_delay: uint16
+
+### Exported claim unlock payload for fulfilled withdrawals.
+class OperatorClaimUnlock(Container):
+    deposit_idx: uint32
+    operator_idx: uint32

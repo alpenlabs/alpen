@@ -10,11 +10,15 @@ workspace = true
 arbitrary.workspace = true
 bitcoin.workspace = true
 bitvec.workspace = true
-borsh.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
 ssz.workspace = true
+ssz_derive.workspace = true
+ssz_primitives.workspace = true
+ssz_types.workspace = true
 thiserror.workspace = true
+tree_hash.workspace = true
+tree_hash_derive.workspace = true
 
 strata-asm-bridge-msgs.workspace = true
 strata-asm-checkpoint-msgs.workspace = true
@@ -27,6 +31,9 @@ strata-btc-types.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
 strata-primitives.workspace = true
+
+[build-dependencies]
+ssz_codegen.workspace = true
 
 [dev-dependencies]
 strata-test-utils.workspace = true

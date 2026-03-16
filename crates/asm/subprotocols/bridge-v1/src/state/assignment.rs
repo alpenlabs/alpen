@@ -7,24 +7,20 @@
 use std::cmp::Ordering;
 
 use arbitrary::Arbitrary;
-use borsh::{BorshDeserialize, BorshSerialize};
 use rand_chacha::{
     ChaChaRng,
     rand_core::{RngCore, SeedableRng},
 };
-use serde::{Deserialize, Serialize};
 use strata_bridge_types::{OperatorIdx, OperatorSelection};
 use strata_primitives::{
     L1BlockCommitment,
     buf::Buf32,
     l1::{L1BlockId, L1Height},
-    sorted_vec::SortedVec,
 };
 
-use super::withdrawal::WithdrawalCommand;
 use crate::{
+    AssignmentEntry, AssignmentTable, DepositEntry, OperatorBitmap, WithdrawalCommand,
     errors::{WithdrawalAssignmentError, WithdrawalCommandError},
-    state::{bitmap::OperatorBitmap, deposit::DepositEntry},
 };
 
 /// Filters and returns eligible operators for assignment or reassignment.
@@ -79,53 +75,43 @@ fn filter_eligible_operators(
     let notary_len = notary_operators.len();
 
     // Clone and truncate current_active_operators to match notary length
-    let mut active_truncated = current_active_operators.bits.clone();
+    let mut active_truncated = current_active_operators.to_bits();
     active_truncated.truncate(notary_len);
 
     // In-place operations: active = (notary & !previous) & active
-    active_truncated &= &notary_operators.bits;
-    active_truncated &= &!previous_assignees.bits.clone();
+    active_truncated &= &notary_operators.to_bits();
+    active_truncated &= &!previous_assignees.to_bits();
 
-    Ok(active_truncated.into())
+    Ok(OperatorBitmap::from_bits(active_truncated))
 }
 
 /// Assignment entry linking a deposit UTXO to an operator for withdrawal processing.
 ///
 /// Each assignment represents a task, assigned to a specific operator to process
 /// a withdrawal of from a particular deposit UTXO.
-#[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
-)]
-pub struct AssignmentEntry {
-    /// Deposit entry that has been assigned
-    deposit_entry: DepositEntry,
-
-    /// Withdrawal command specifying outputs and amounts.
-    withdrawal_cmd: WithdrawalCommand,
-
-    /// Index of the operator currently assigned to execute this withdrawal.
-    ///
-    /// If they successfully front the withdrawal based on `withdrawal_cmd`
-    /// within the `fulfillment_deadline`, they are able to unlock their claim.
-    current_assignee: OperatorIdx,
-
-    /// Bitmap of operators who were previously assigned to this withdrawal.
-    ///
-    /// When a withdrawal is reassigned, the current assignee is marked in this
-    /// bitmap before a new operator is selected. This prevents reassigning to
-    /// operators who have already failed to execute the withdrawal.
-    previous_assignees: OperatorBitmap,
-
-    /// Bitcoin block height deadline for withdrawal execution.
-    ///
-    /// The withdrawal fulfillment transaction must be executed before this block height for the
-    /// operator to be eligible for [`ClaimUnlock`](super::withdrawal::OperatorClaimUnlock).
-    fulfillment_deadline: L1Height,
-}
-
 impl PartialOrd for AssignmentEntry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<'a> Arbitrary<'a> for AssignmentEntry {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        let deposit_entry = DepositEntry::arbitrary(u)?;
+        let withdrawal_cmd = WithdrawalCommand::arbitrary(u)?;
+        let fulfillment_deadline = L1Height::arbitrary(u)?;
+        let seed = L1BlockId::arbitrary(u)?;
+        let current_active_operators = deposit_entry.notary_operators().clone();
+
+        Self::create_with_random_assignment(
+            deposit_entry,
+            withdrawal_cmd,
+            fulfillment_deadline,
+            &current_active_operators,
+            seed,
+            OperatorSelection::any(),
+        )
+        .map_err(|_| arbitrary::Error::IncorrectFormat)
     }
 }
 
@@ -317,24 +303,11 @@ impl AssignmentEntry {
 /// - Looking up assignments by deposit index
 /// - Filtering assignments by operator or expiration status
 /// - Removing completed assignments
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
-pub struct AssignmentTable {
-    /// Vector of assignment entries, sorted by deposit index.
-    ///
-    /// **Invariant**: MUST be sorted by `AssignmentEntry::deposit_idx` field.
-    assignments: SortedVec<AssignmentEntry>,
-
-    /// The duration (in blocks) for which the operator is assigned to fulfill the withdrawal.
-    /// If the operator fails to complete the withdrawal within this period, the assignment
-    /// will be reassigned to another operator.
-    assignment_duration: u16,
-}
-
 impl AssignmentTable {
     /// Creates a new empty assignment table with no assignments
     pub fn new(assignment_duration: u16) -> Self {
         Self {
-            assignments: SortedVec::new_empty(),
+            assignments: vec![].into(),
             assignment_duration,
         }
     }
@@ -351,7 +324,7 @@ impl AssignmentTable {
 
     /// Returns a slice of all assignment entries.
     pub fn assignments(&self) -> &[AssignmentEntry] {
-        self.assignments.as_slice()
+        &self.assignments
     }
 
     /// Retrieves an assignment entry by its deposit index.
@@ -361,10 +334,9 @@ impl AssignmentTable {
     /// - `None` if no assignment for the given deposit index is found
     pub fn get_assignment(&self, deposit_idx: u32) -> Option<&AssignmentEntry> {
         self.assignments
-            .as_slice()
             .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx())
             .ok()
-            .map(|i| &self.assignments.as_slice()[i])
+            .map(|i| &self.assignments[i])
     }
 
     /// Creates a new assignment entry with optimized insertion.
@@ -381,8 +353,14 @@ impl AssignmentTable {
             );
         }
 
-        // SortedVec handles the insertion and maintains order
-        self.assignments.insert(entry);
+        let deposit_idx = entry.deposit_idx();
+        let insert_at = self
+            .assignments
+            .binary_search_by_key(&deposit_idx, |assignment| assignment.deposit_idx())
+            .unwrap_or_else(|pos| pos);
+        let mut assignments = self.assignments.to_vec();
+        assignments.insert(insert_at, entry);
+        self.assignments = assignments.into();
     }
 
     /// Removes an assignment by its deposit index.
@@ -392,15 +370,14 @@ impl AssignmentTable {
     /// - `Some(AssignmentEntry)` if the assignment was found and removed
     /// - `None` if no assignment with the given deposit index exists
     pub fn remove_assignment(&mut self, deposit_idx: u32) -> Option<AssignmentEntry> {
-        // Find the assignment first
-        let assignment = self.get_assignment(deposit_idx)?.clone();
-
-        // Remove it using SortedVec's remove method
-        if self.assignments.remove(&assignment) {
-            Some(assignment)
-        } else {
-            None
-        }
+        let remove_at = self
+            .assignments
+            .binary_search_by_key(&deposit_idx, |entry| entry.deposit_idx())
+            .ok()?;
+        let mut assignments = self.assignments.to_vec();
+        let removed = assignments.remove(remove_at);
+        self.assignments = assignments.into();
+        Some(removed)
     }
 
     /// Reassigns all expired assignments to new randomly selected operators.
@@ -487,7 +464,7 @@ impl AssignmentTable {
             selected_operator,
         )?;
 
-        self.assignments.insert(entry);
+        self.insert(entry);
         Ok(())
     }
 }
