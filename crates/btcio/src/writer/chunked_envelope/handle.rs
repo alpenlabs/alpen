@@ -9,8 +9,9 @@
 //! for the commit to be confirmed in a block to avoid hitting Bitcoin Core's mempool
 //! descendant size limit (default 101 KB).
 
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, future::Future, sync::Arc, time::Duration};
 
+use anyhow::{anyhow, bail};
 use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address, Transaction};
 use bitcoind_async_client::{
     error::ClientError,
@@ -26,6 +27,13 @@ use tracing::*;
 
 use super::{context::ChunkedWriterContext, signer::sign_chunked_envelope};
 use crate::{broadcaster::L1BroadcastHandle, writer::builder::EnvelopeError, BtcioParams};
+
+/// Maximum number of envelope rows to fetch per storage scan batch.
+///
+/// Recovery and tip-ingestion walk the DB in ordered chunks so they can
+/// validate that indices are contiguous without materializing an arbitrarily
+/// large range in a single call.
+const ENTRY_SCAN_BATCH_SIZE: usize = 1_024;
 
 /// Handle for submitting chunked envelope entries.
 #[expect(
@@ -77,7 +85,7 @@ pub fn create_chunked_envelope_task(
     ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
 ) -> anyhow::Result<(Arc<ChunkedEnvelopeHandle>, impl Future<Output = ()>)> {
-    let start_idx = find_first_pending_idx(ops.as_ref())?;
+    let watcher_state = ChunkedEnvelopeWatcherState::recover(ops.as_ref())?;
     let handle = Arc::new(ChunkedEnvelopeHandle::new(ops.clone()));
 
     let ctx = Arc::new(ChunkedWriterContext::new(
@@ -88,7 +96,7 @@ pub fn create_chunked_envelope_task(
     ));
 
     let task = async move {
-        if let Err(e) = watcher_task(start_idx, ctx, ops, broadcast_handle).await {
+        if let Err(e) = watcher_task(watcher_state, ctx, ops, broadcast_handle).await {
             error!(%e, "chunked envelope watcher exited with error");
         }
     };
@@ -96,19 +104,81 @@ pub fn create_chunked_envelope_task(
     Ok((handle, task))
 }
 
-/// Scans backwards to find the earliest non-finalized entry index.
-fn find_first_pending_idx(ops: &ChunkedEnvelopeOps) -> anyhow::Result<u64> {
-    let mut idx = ops.get_next_chunked_envelope_idx_blocking()?;
-    while idx > 0 {
-        let Some(entry) = ops.get_chunked_envelope_entry_blocking(idx - 1)? else {
-            break;
-        };
-        if entry.status == ChunkedEnvelopeStatus::Finalized {
-            break;
-        }
-        idx -= 1;
+/// In-memory scheduler state for the chunked envelope watcher.
+///
+/// The watcher tracks all non-finalized envelopes independently so older
+/// entries can continue toward finality while a separate frontier decides when
+/// the next unsigned entry may be signed.
+#[derive(Debug)]
+struct ChunkedEnvelopeWatcherState {
+    /// Next DB index expected if a newly submitted entry appears.
+    next_db_idx: u64,
+
+    /// Earliest index whose successor dependency may still block new signing.
+    forward_frontier: u64,
+
+    /// Non-finalized envelope indices that still need status reconciliation.
+    active_envelopes: BTreeSet<u64>,
+}
+
+impl ChunkedEnvelopeWatcherState {
+    /// Rebuilds watcher state from the persisted chunked-envelope rows.
+    ///
+    /// Startup recovery scans the DB from index 0 up to the current tip and
+    /// rejects gaps so the watcher does not silently skip corrupted entries.
+    fn recover(ops: &ChunkedEnvelopeOps) -> anyhow::Result<Self> {
+        let next_db_idx = ops.get_next_chunked_envelope_idx_blocking()?;
+        let entries = load_entries_range_blocking(ops, 0, next_db_idx)?;
+        Ok(Self::from_entries(next_db_idx, &entries))
     }
-    Ok(idx)
+
+    /// Derives active entries and the signing frontier from a recovered row set.
+    fn from_entries(next_db_idx: u64, entries: &[(u64, ChunkedEnvelopeEntry)]) -> Self {
+        let active_envelopes = entries
+            .iter()
+            .filter(|(_, entry)| entry.status != ChunkedEnvelopeStatus::Finalized)
+            .map(|(idx, _)| *idx)
+            .collect();
+        let forward_frontier = entries
+            .iter()
+            .find(|(_, entry)| !entry_unlocks_successor(entry))
+            .map(|(idx, _)| *idx)
+            .unwrap_or(next_db_idx);
+
+        Self {
+            next_db_idx,
+            forward_frontier,
+            active_envelopes,
+        }
+    }
+
+    /// Incorporates newly appended DB rows into the active in-memory watcher state.
+    ///
+    /// This preserves the current tip index, rejects regressions, and enrolls
+    /// any new non-finalized envelopes for reconciliation on the next tick.
+    async fn ingest_new_entries(&mut self, ops: &ChunkedEnvelopeOps) -> anyhow::Result<()> {
+        let observed_next_idx = ops.get_next_chunked_envelope_idx_async().await?;
+        if observed_next_idx < self.next_db_idx {
+            bail!(
+                "chunked envelope next index regressed from {} to {}",
+                self.next_db_idx,
+                observed_next_idx
+            );
+        }
+
+        if observed_next_idx == self.next_db_idx {
+            return Ok(());
+        }
+
+        let entries = load_entries_range_async(ops, self.next_db_idx, observed_next_idx).await?;
+        for (idx, entry) in entries {
+            if entry.status != ChunkedEnvelopeStatus::Finalized {
+                self.active_envelopes.insert(idx);
+            }
+        }
+        self.next_db_idx = observed_next_idx;
+        Ok(())
+    }
 }
 
 /// Polls entries and drives them through signing, broadcast, and confirmation.
@@ -121,7 +191,7 @@ fn find_first_pending_idx(ops: &ChunkedEnvelopeOps) -> anyhow::Result<u64> {
 /// 4. `Published` → wait for confirmation → `Confirmed`
 /// 5. `Confirmed` → wait for finalization → `Finalized`
 async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
-    start_idx: u64,
+    mut state: ChunkedEnvelopeWatcherState,
     ctx: Arc<ChunkedWriterContext<R>>,
     ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
@@ -130,102 +200,243 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     let tick = interval(Duration::from_millis(ctx.config.write_poll_dur_ms));
     tokio::pin!(tick);
 
-    let mut curr = start_idx;
     loop {
         tick.as_mut().tick().await;
-        let span_curr = curr;
+        state.ingest_new_entries(ops.as_ref()).await?;
+        reconcile_active_entries(
+            &mut state,
+            ctx.client.as_ref(),
+            ops.as_ref(),
+            &broadcast_handle,
+        )
+        .await?;
+        advance_forward_frontier(&mut state, ctx.clone(), ops.as_ref(), &broadcast_handle).await?;
+    }
+}
 
-        async {
-            let Some(entry) = ops.get_chunked_envelope_entry_async(curr).await? else {
-                trace!("no entry at current index, waiting");
-                return Ok::<(), anyhow::Error>(());
-            };
+/// Returns `true` once an entry has enough persisted transaction data for its successor.
+///
+/// A successor only needs the predecessor's final reveal wtxid, so the entry
+/// becomes a valid predecessor as soon as it has been signed and is no longer
+/// in an unsigned/re-sign state.
+fn entry_unlocks_successor(entry: &ChunkedEnvelopeEntry) -> bool {
+    !matches!(
+        entry.status,
+        ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign
+    ) && !entry.reveals.is_empty()
+}
 
-            match entry.status {
-                ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign => {
-                    debug!(status = ?entry.status, "entry needs signing");
+/// Builds the canonical corruption error for a missing or skipped envelope row.
+fn invalid_gap_error(missing_idx: u64) -> anyhow::Error {
+    anyhow!("chunked envelope entry gap at index {missing_idx}")
+}
 
-                    let prev_tail_wtxid = resolve_prev_tail_wtxid(curr, &ops).await?;
+/// Loads a contiguous envelope row range during startup recovery.
+///
+/// Any missing index below the observed tip is treated as corruption instead of
+/// "nothing to do", because later entries may still exist and would otherwise
+/// be skipped forever.
+fn load_entries_range_blocking(
+    ops: &ChunkedEnvelopeOps,
+    start_idx: u64,
+    end_idx: u64,
+) -> anyhow::Result<Vec<(u64, ChunkedEnvelopeEntry)>> {
+    let mut entries = Vec::new();
+    let mut cursor = start_idx;
+    while cursor < end_idx {
+        let remaining = usize::try_from(end_idx - cursor).unwrap_or(usize::MAX);
+        let batch = ops.get_chunked_envelope_entries_from_blocking(
+            cursor,
+            remaining.min(ENTRY_SCAN_BATCH_SIZE),
+        )?;
+        if batch.is_empty() {
+            return Err(invalid_gap_error(cursor));
+        }
 
-                    match sign_chunked_envelope(
-                        &entry,
-                        prev_tail_wtxid,
-                        &broadcast_handle,
-                        ctx.clone(),
-                    )
-                    .await
-                    {
-                        Ok(updated) => {
-                            ops.put_chunked_envelope_entry_async(curr, updated).await?;
-                            debug!("entry signed successfully");
-                        }
-                        Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
-                            error!(%need, %have, "waiting for sufficient utxos");
-                        }
-                        Err(e) => return Err(e.into()),
-                    }
-                }
+        for (idx, entry) in batch {
+            if idx != cursor {
+                return Err(invalid_gap_error(cursor));
+            }
+            entries.push((idx, entry));
+            cursor += 1;
+        }
+    }
 
-                ChunkedEnvelopeStatus::Finalized => {
-                    curr += 1;
-                }
+    Ok(entries)
+}
 
-                ChunkedEnvelopeStatus::Unpublished => {
-                    // Check if commit is published. If so, broadcast ALL reveals together.
-                    let new_status = check_commit_and_broadcast_reveals(
-                        &entry,
-                        &broadcast_handle,
-                        ctx.client.as_ref(),
-                    )
+/// Async variant of [`load_entries_range_blocking`] used while the watcher is running.
+///
+/// This is used when ingesting new rows that appeared since the last poll tick.
+async fn load_entries_range_async(
+    ops: &ChunkedEnvelopeOps,
+    start_idx: u64,
+    end_idx: u64,
+) -> anyhow::Result<Vec<(u64, ChunkedEnvelopeEntry)>> {
+    let mut entries = Vec::new();
+    let mut cursor = start_idx;
+    while cursor < end_idx {
+        let remaining = usize::try_from(end_idx - cursor).unwrap_or(usize::MAX);
+        let batch = ops
+            .get_chunked_envelope_entries_from_async(cursor, remaining.min(ENTRY_SCAN_BATCH_SIZE))
+            .await?;
+        if batch.is_empty() {
+            return Err(invalid_gap_error(cursor));
+        }
+
+        for (idx, entry) in batch {
+            if idx != cursor {
+                return Err(invalid_gap_error(cursor));
+            }
+            entries.push((idx, entry));
+            cursor += 1;
+        }
+    }
+
+    Ok(entries)
+}
+
+/// Reconciles every active non-finalized envelope against broadcast-layer state.
+///
+/// This lets older envelopes continue progressing toward finality even when the
+/// signing frontier has moved on to later queue items. Entries that regress
+/// back to `Unsigned` or `NeedsResign` pull the frontier back so successors are
+/// not allowed to outpace their predecessor dependency.
+async fn reconcile_active_entries(
+    state: &mut ChunkedEnvelopeWatcherState,
+    client: &impl Broadcaster,
+    ops: &ChunkedEnvelopeOps,
+    broadcast_handle: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    let active_indices: Vec<u64> = state.active_envelopes.iter().copied().collect();
+    for idx in active_indices {
+        let Some(entry) = ops.get_chunked_envelope_entry_async(idx).await? else {
+            return Err(invalid_gap_error(idx));
+        };
+
+        let new_status = match entry.status {
+            ChunkedEnvelopeStatus::Finalized => {
+                state.active_envelopes.remove(&idx);
+                continue;
+            }
+            ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign => {
+                state.forward_frontier = state.forward_frontier.min(idx);
+                continue;
+            }
+            ChunkedEnvelopeStatus::Unpublished => {
+                check_commit_and_broadcast_reveals(&entry, broadcast_handle, client).await?
+            }
+            ChunkedEnvelopeStatus::CommitPublished
+            | ChunkedEnvelopeStatus::Published
+            | ChunkedEnvelopeStatus::Confirmed => {
+                check_full_broadcast_status(&entry, broadcast_handle).await?
+            }
+        };
+
+        if new_status != entry.status {
+            debug!(idx, ?new_status, old_status = ?entry.status, "entry status changed");
+            let mut updated = entry;
+            updated.status = new_status.clone();
+            ops.put_chunked_envelope_entry_async(idx, updated).await?;
+            if matches!(
+                new_status,
+                ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign
+            ) {
+                state.forward_frontier = state.forward_frontier.min(idx);
+            }
+        }
+
+        if new_status == ChunkedEnvelopeStatus::Finalized {
+            state.active_envelopes.remove(&idx);
+        }
+    }
+
+    Ok(())
+}
+
+/// Advances the signing frontier as far as predecessor linkage and UTXO
+/// availability allow.
+///
+/// The frontier moves independently from finalization tracking: once an entry
+/// is signed and has persisted reveal metadata, later entries may be signed
+/// even if older ones are still waiting for confirmations.
+async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
+    state: &mut ChunkedEnvelopeWatcherState,
+    ctx: Arc<ChunkedWriterContext<R>>,
+    ops: &ChunkedEnvelopeOps,
+    broadcast_handle: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    while state.forward_frontier < state.next_db_idx {
+        let idx = state.forward_frontier;
+        let Some(entry) = ops.get_chunked_envelope_entry_async(idx).await? else {
+            return Err(invalid_gap_error(idx));
+        };
+
+        if entry.status == ChunkedEnvelopeStatus::Finalized || entry_unlocks_successor(&entry) {
+            state.forward_frontier += 1;
+            continue;
+        }
+
+        if !matches!(
+            entry.status,
+            ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign
+        ) {
+            state.forward_frontier += 1;
+            continue;
+        }
+
+        debug!(idx, status = ?entry.status, "entry needs signing");
+        let Some(prev_tail_wtxid) = resolve_prev_tail_wtxid(idx, ops).await? else {
+            break;
+        };
+
+        match sign_chunked_envelope(&entry, prev_tail_wtxid, broadcast_handle, ctx.clone()).await {
+            Ok(updated) => {
+                let signed_status = updated.status.clone();
+                ops.put_chunked_envelope_entry_async(idx, updated.clone())
                     .await?;
-                    if new_status != entry.status {
-                        debug!(?new_status, "status changed");
-                        let mut updated = entry.clone();
-                        updated.status = new_status.clone();
-                        ops.put_chunked_envelope_entry_async(curr, updated).await?;
-                    }
-                }
+                state.active_envelopes.insert(idx);
+                debug!(idx, ?signed_status, "entry signed successfully");
 
-                ChunkedEnvelopeStatus::CommitPublished
-                | ChunkedEnvelopeStatus::Published
-                | ChunkedEnvelopeStatus::Confirmed => {
-                    // Reveals are in broadcast DB, check their status.
-                    let new_status = check_full_broadcast_status(&entry, &broadcast_handle).await?;
-                    if new_status != entry.status {
-                        debug!(?new_status, "status changed");
-                        let mut updated = entry;
-                        updated.status = new_status.clone();
-                        ops.put_chunked_envelope_entry_async(curr, updated).await?;
-                    }
-                    if new_status == ChunkedEnvelopeStatus::Finalized {
-                        curr += 1;
-                    }
+                if entry_unlocks_successor(&updated) {
+                    state.forward_frontier += 1;
+                    continue;
                 }
             }
-
-            Ok(())
+            Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
+                error!(idx, %need, %have, "waiting for sufficient utxos");
+            }
+            Err(e) => return Err(e.into()),
         }
-        .instrument(debug_span!("chunked_envelope", curr = %span_curr))
-        .await?;
+
+        break;
     }
+
+    Ok(())
 }
 
 /// Resolves the correct `prev_tail_wtxid` for the entry at index `curr`.
 ///
 /// For index 0, returns [`Buf32::zero`] (first entry in chain). For all others,
-/// reads entry[curr-1] from the DB and returns its
-/// [`tail_wtxid()`](ChunkedEnvelopeEntry::tail_wtxid). The watcher's sequential
-/// processing guarantees entry[curr-1] is signed, so `tail_wtxid()` returns the
-/// actual last-reveal wtxid rather than the stale fallback.
-async fn resolve_prev_tail_wtxid(curr: u64, ops: &ChunkedEnvelopeOps) -> anyhow::Result<Buf32> {
+/// returns the predecessor's persisted tail wtxid once the predecessor has been
+/// signed. If the predecessor is still unsigned, the caller must wait.
+async fn resolve_prev_tail_wtxid(
+    curr: u64,
+    ops: &ChunkedEnvelopeOps,
+) -> anyhow::Result<Option<Buf32>> {
     if curr == 0 {
-        return Ok(Buf32::zero());
+        return Ok(Some(Buf32::zero()));
     }
-    Ok(ops
-        .get_chunked_envelope_entry_async(curr - 1)
-        .await?
-        .map(|e| e.tail_wtxid())
-        .unwrap_or(Buf32::zero()))
+
+    let Some(prev_entry) = ops.get_chunked_envelope_entry_async(curr - 1).await? else {
+        return Err(invalid_gap_error(curr - 1));
+    };
+
+    if !entry_unlocks_successor(&prev_entry) {
+        return Ok(None);
+    }
+
+    Ok(Some(prev_entry.tail_wtxid()))
 }
 
 /// Checks commit tx status and broadcasts reveals once it is safe to do so.
@@ -418,48 +629,83 @@ mod tests {
         writer::test_utils::{get_broadcast_handle, get_chunked_envelope_ops},
     };
 
-    #[test]
-    fn test_find_first_pending_idx_empty() {
-        let ops = get_chunked_envelope_ops();
-        assert_eq!(ops.get_next_chunked_envelope_idx_blocking().unwrap(), 0);
-        assert_eq!(find_first_pending_idx(&ops).unwrap(), 0);
+    fn make_recovery_entry(
+        status: ChunkedEnvelopeStatus,
+        idx_tag: u8,
+        signed: bool,
+    ) -> ChunkedEnvelopeEntry {
+        let mut entry = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![idx_tag; 50]],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+        entry.status = status;
+        if signed {
+            entry.reveals = vec![RevealTxMeta {
+                vout_index: 0,
+                txid: Buf32::from([idx_tag; 32]),
+                wtxid: Buf32::from([idx_tag.wrapping_add(1); 32]),
+                tx_bytes: vec![idx_tag],
+            }];
+        }
+        entry
     }
 
     #[test]
-    fn test_find_first_pending_idx_with_entries() {
+    fn test_recover_watcher_state_empty() {
+        let ops = get_chunked_envelope_ops();
+        let state = ChunkedEnvelopeWatcherState::recover(&ops).unwrap();
+        assert_eq!(state.next_db_idx, 0);
+        assert_eq!(state.forward_frontier, 0);
+        assert!(state.active_envelopes.is_empty());
+    }
+
+    #[test]
+    fn test_recover_watcher_state_tracks_active_entries_and_frontier() {
         let ops = get_chunked_envelope_ops();
 
-        let mut e0 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x01; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        e0.status = ChunkedEnvelopeStatus::Finalized;
-        ops.put_chunked_envelope_entry_blocking(0, e0).unwrap();
+        ops.put_chunked_envelope_entry_blocking(
+            0,
+            make_recovery_entry(ChunkedEnvelopeStatus::Finalized, 0x01, true),
+        )
+        .unwrap();
+        ops.put_chunked_envelope_entry_blocking(
+            1,
+            make_recovery_entry(ChunkedEnvelopeStatus::Published, 0x02, true),
+        )
+        .unwrap();
+        ops.put_chunked_envelope_entry_blocking(
+            2,
+            make_recovery_entry(ChunkedEnvelopeStatus::Unpublished, 0x03, true),
+        )
+        .unwrap();
+        ops.put_chunked_envelope_entry_blocking(
+            3,
+            make_recovery_entry(ChunkedEnvelopeStatus::Unsigned, 0x04, false),
+        )
+        .unwrap();
 
-        let mut e1 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x02; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        e1.status = ChunkedEnvelopeStatus::Published;
-        ops.put_chunked_envelope_entry_blocking(1, e1).unwrap();
+        let state = ChunkedEnvelopeWatcherState::recover(&ops).unwrap();
+        assert_eq!(state.next_db_idx, 4);
+        assert_eq!(state.forward_frontier, 3);
+        assert_eq!(state.active_envelopes, BTreeSet::from([1, 2, 3]));
+    }
 
-        let mut e2 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x03; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        e2.status = ChunkedEnvelopeStatus::Unsigned;
-        ops.put_chunked_envelope_entry_blocking(2, e2).unwrap();
+    #[test]
+    fn test_recover_watcher_state_rejects_gap_before_tip() {
+        let ops = get_chunked_envelope_ops();
+        ops.put_chunked_envelope_entry_blocking(
+            0,
+            make_recovery_entry(ChunkedEnvelopeStatus::Finalized, 0x01, true),
+        )
+        .unwrap();
+        ops.put_chunked_envelope_entry_blocking(
+            2,
+            make_recovery_entry(ChunkedEnvelopeStatus::Unsigned, 0x03, false),
+        )
+        .unwrap();
 
-        let mut e3 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x04; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        e3.status = ChunkedEnvelopeStatus::Unsigned;
-        ops.put_chunked_envelope_entry_blocking(3, e3).unwrap();
-
-        // e0 is Finalized, so the first non-finalized is e1 at index 1.
-        let idx = find_first_pending_idx(&ops).unwrap();
-        assert_eq!(idx, 1);
+        let err = ChunkedEnvelopeWatcherState::recover(&ops).unwrap_err();
+        assert!(err.to_string().contains("gap at index 1"));
     }
 
     #[test]
@@ -1002,10 +1248,44 @@ mod tests {
 
         // resolve_prev_tail_wtxid should return entry[0]'s real tail_wtxid.
         let resolved = resolve_prev_tail_wtxid(1, &ops).await.unwrap();
-        assert_eq!(resolved, real_tail);
+        assert_eq!(resolved, Some(real_tail));
 
         // Index 0 should return zero (first in chain).
         let resolved_zero = resolve_prev_tail_wtxid(0, &ops).await.unwrap();
-        assert_eq!(resolved_zero, Buf32::zero());
+        assert_eq!(resolved_zero, Some(Buf32::zero()));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_prev_tail_wtxid_waits_for_unsigned_predecessor() {
+        let ops = get_chunked_envelope_ops();
+
+        let e0 = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0x01; 50]],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+        ops.put_chunked_envelope_entry_async(0, e0).await.unwrap();
+
+        let e1 = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0x02; 50]],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+        ops.put_chunked_envelope_entry_async(1, e1).await.unwrap();
+
+        let resolved = resolve_prev_tail_wtxid(1, &ops).await.unwrap();
+        assert_eq!(resolved, None);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_prev_tail_wtxid_missing_predecessor_errors() {
+        let ops = get_chunked_envelope_ops();
+
+        let e1 = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0x02; 50]],
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+        ops.put_chunked_envelope_entry_async(1, e1).await.unwrap();
+
+        let err = resolve_prev_tail_wtxid(1, &ops).await.unwrap_err();
+        assert!(err.to_string().contains("gap at index 0"));
     }
 }
