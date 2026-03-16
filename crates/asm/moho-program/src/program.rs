@@ -8,7 +8,7 @@ use strata_crypto::hash::compute_borsh_hash;
 use strata_predicate::PredicateKey;
 use strata_primitives::Buf32;
 
-use crate::{input::AsmStepInput, traits::MohoProgram};
+use crate::{AsmStepInput, MohoProgram};
 
 #[derive(Debug)]
 pub struct AsmStfProgram;
@@ -86,9 +86,9 @@ impl MohoProgram for AsmStfProgram {
         })
     }
 
-    fn compute_export_state(export_state: ExportState, output: &Self::StepOutput) -> ExportState {
+    fn compute_next_export_state(prev: ExportState, output: &Self::StepOutput) -> ExportState {
         // Iterate through each AsmLog; if we find an NewExportEntry, add it to ExportState
-        let mut new_export_state = export_state;
+        let mut new_export_state = prev;
         for log in &output.manifest.logs {
             if let Ok(export) = log.try_into_log::<NewExportEntry>() {
                 new_export_state
