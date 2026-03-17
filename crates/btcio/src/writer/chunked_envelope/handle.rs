@@ -268,7 +268,6 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
         }
         .instrument(info_span!(
             "chunked_envelope_watcher_iteration",
-            component = "chunked_envelope_watcher",
             iteration,
             next_db_idx,
             forward_frontier,
@@ -401,10 +400,9 @@ async fn reconcile_active_entries(
         if new_status != entry.status {
             let reveal_refs = format_reveal_refs(&entry);
             debug!(
-                component = "btcio_chunked_envelope",
                 envelope_idx = idx,
                 commit_txid = %entry.commit_txid,
-                reveal_refs = ?reveal_refs,
+                ?reveal_refs,
                 old_status = ?entry.status,
                 ?new_status,
                 "entry status changed"
@@ -471,10 +469,9 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
                 let signed_status = updated.status.clone();
                 let reveal_refs = format_reveal_refs(&updated);
                 debug!(
-                    component = "btcio_chunked_envelope",
                     envelope_idx = idx,
                     commit_txid = %updated.commit_txid,
-                    reveal_refs = ?reveal_refs,
+                    ?reveal_refs,
                     ?signed_status,
                     "entry signed successfully"
                 );
@@ -546,7 +543,6 @@ async fn check_commit_and_broadcast_reveals(
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
     let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
         warn!(
-            component = "btcio_chunked_envelope",
             envelope_idx,
             commit_txid = %entry.commit_txid,
             "commit tx missing from broadcast db, will re-sign"
@@ -573,12 +569,11 @@ async fn check_commit_and_broadcast_reveals(
 
     let reveal_refs = format_reveal_refs(entry);
     info!(
-        component = "btcio_chunked_envelope",
         envelope_idx,
         commit_txid = %entry.commit_txid,
         commit_status = ?commit.status,
         reveal_count = entry.reveals.len(),
-        reveal_refs = ?reveal_refs,
+        ?reveal_refs,
         "commit on-chain, broadcasting all reveals"
     );
 
@@ -595,7 +590,6 @@ async fn check_commit_and_broadcast_reveals(
         match client.send_raw_transaction(tx).await {
             Ok(_) => {
                 debug!(
-                    component = "btcio_chunked_envelope",
                     envelope_idx,
                     %txid,
                     "reveal tx broadcast successfully"
@@ -605,7 +599,6 @@ async fn check_commit_and_broadcast_reveals(
                 if e.is_missing_or_invalid_input() || matches!(e, ClientError::Server(-22, _)) =>
             {
                 warn!(
-                    component = "btcio_chunked_envelope",
                     envelope_idx,
                     %txid,
                     ?e,
@@ -617,7 +610,6 @@ async fn check_commit_and_broadcast_reveals(
                 // Could be "already in mempool" which is fine, or a network error.
                 // We'll verify actual status on the next poll.
                 warn!(
-                    component = "btcio_chunked_envelope",
                     envelope_idx,
                     %txid,
                     ?e,
@@ -628,11 +620,10 @@ async fn check_commit_and_broadcast_reveals(
     }
 
     info!(
-        component = "btcio_chunked_envelope",
         envelope_idx,
         commit_txid = %entry.commit_txid,
         reveal_count = entry.reveals.len(),
-        reveal_refs = ?reveal_refs,
+        ?reveal_refs,
         "completed reveal broadcast attempt"
     );
 
@@ -660,7 +651,6 @@ async fn check_full_broadcast_status(
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
     let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
         warn!(
-            component = "btcio_chunked_envelope",
             envelope_idx,
             commit_txid = %entry.commit_txid,
             "commit tx missing from broadcast db, will re-sign"
@@ -676,7 +666,6 @@ async fn check_full_broadcast_status(
     for reveal in &entry.reveals {
         let Some(rtx) = bcast.get_tx_entry_by_id_async(reveal.txid).await? else {
             warn!(
-                component = "btcio_chunked_envelope",
                 envelope_idx,
                 txid = %reveal.txid,
                 "reveal tx missing from broadcast db, will re-sign"
@@ -687,7 +676,6 @@ async fn check_full_broadcast_status(
             // This shouldn't happen if we waited for commit to be published first,
             // but handle it gracefully by re-signing.
             warn!(
-                component = "btcio_chunked_envelope",
                 envelope_idx,
                 txid = %reveal.txid,
                 "reveal has InvalidInputs despite commit being published"
@@ -707,12 +695,11 @@ async fn check_full_broadcast_status(
     ) {
         let commit_l1_status = format_tx_status(entry.commit_txid, &commit.status);
         info!(
-            component = "btcio_chunked_envelope",
             envelope_idx,
             commit_txid = %entry.commit_txid,
-            envelope_status = ?envelope_status,
+            ?envelope_status,
             commit_l1_status = %commit_l1_status,
-            reveal_l1_statuses = ?reveal_l1_statuses,
+            ?reveal_l1_statuses,
             "chunked envelope advanced on L1"
         );
     }

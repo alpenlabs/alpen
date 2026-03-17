@@ -54,10 +54,9 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 ) -> Result<ChunkedEnvelopeEntry, EnvelopeError> {
     let sign_chunked_envelope_span = debug_span!(
         "btcio_chunked_envelope_sign",
-        component = "btcio_chunked_envelope",
         envelope_idx,
         chunk_count = entry.chunk_data.len(),
-        prev_tail_wtxid = %prev_tail_wtxid,
+        %prev_tail_wtxid,
     );
 
     async {
@@ -136,9 +135,9 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         let reveal_refs = format_reveal_refs(&reveals);
         debug!(
-            commit_txid = %commit_txid,
+            %commit_txid,
             reveal_count = reveals.len(),
-            reveal_refs = ?reveal_refs,
+            ?reveal_refs,
             "signed chunked envelope, commit stored, reveals pending"
         );
 

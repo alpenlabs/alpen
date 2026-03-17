@@ -99,8 +99,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             .map_err(|e| eyre::eyre!("failed to submit envelope entry: {e}"))?;
 
         info!(
-            component = "alpen_ee_da_provider",
-            batch_id = ?batch_id,
+            ?batch_id,
             envelope_idx = %idx,
             chunk_count,
             "submitted chunked envelope for batch DA"
@@ -126,11 +125,10 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         // Keep shared correlation fields on the span so status logs stay concise.
         let check_da_status_span = info_span!(
             "alpen_ee_check_da_status",
-            component = "alpen_ee_da_provider",
-            batch_id = ?batch_id,
+            ?batch_id,
             envelope_idx,
             commit_txid = %entry.commit_txid,
-            reveal_refs = ?reveal_refs,
+            ?reveal_refs,
         );
 
         async {

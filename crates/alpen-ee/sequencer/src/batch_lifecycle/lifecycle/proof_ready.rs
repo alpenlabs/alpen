@@ -37,9 +37,8 @@ where
             let batch_id = batch.id();
             let proof_ready_span = debug_span!(
                 "alpen_ee_proof_ready",
-                component = "alpen_ee_batch_lifecycle",
                 batch_idx = target_idx,
-                batch_id = ?batch_id,
+                ?batch_id,
                 prev_block = %batch.prev_block(),
                 last_block = %batch.last_block(),
             );
@@ -69,7 +68,7 @@ where
                     ProofGenerationStatus::Failed { reason } => {
                         // CRITICAL: Manual intervention required
                         error!(
-                            reason = %reason,
+                            %reason,
                             "CRITICAL: Proof generation failed - manual intervention required. \
                              Batch is stuck in ProofPending state."
                         );

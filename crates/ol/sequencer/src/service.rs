@@ -379,12 +379,11 @@ async fn handle_checkpoint_duty<C: SequencerContext>(
     context.persist_checkpoint(epoch, entry).await?;
 
     info!(
-        component = "ol_sequencer",
         ?duty_id,
         %epoch,
         l1_height = checkpoint_tip.l1_height(),
         l2_commitment = %checkpoint_tip.l2_commitment(),
-        sighash = %sighash,
+        %sighash,
         %intent_idx,
         "checkpoint duty complete"
     );

@@ -271,15 +271,14 @@ impl SequencerOLClient for RpcOLClient {
         .await?;
 
         info!(
-            component = "alpen_ee_ol_rpc_client",
             account_id = %self.account_id,
             %txid,
             seq_no,
-            inner_state = %inner_state,
+            %inner_state,
             next_inbox_msg_idx,
             extra_data_len,
             l1_ref_count = l1_ref_heights.len(),
-            l1_ref_heights = ?l1_ref_heights,
+            ?l1_ref_heights,
             "submitted snark update to OL"
         );
 
