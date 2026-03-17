@@ -4,7 +4,10 @@ use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{
+    processor_v0::handle_checkpoint_v0_updates, processor_v1::handle_checkpoint_v1_updates,
+    state::CsmWorkerState, status::CsmWorkerStatus,
+};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -43,31 +46,13 @@ impl SyncService for CsmWorkerService {
             return Ok(Response::Continue);
         };
 
-        trace!("CSM is processing ASM logs.");
-
         // Track which block we're processing
         state.last_asm_block = Some(asm_block);
 
-        // Extract checkpoint logs from ASM status
-        let logs = asm_status.logs();
+        // Extract checkpoint-v0 logs from ASM status
+        handle_checkpoint_v0_updates(state, &asm_block, asm_status.logs())?;
 
-        if logs.is_empty() {
-            trace!("No logs in ASM status update.");
-            return Ok(Response::Continue);
-        }
-
-        let logs_num = logs.len();
-        trace!(%logs_num, "CSM received logs from ASM status update.");
-
-        // Process each checkpoint update log
-        for log in logs {
-            if let Err(e) = process_log(state, log, &asm_block) {
-                error!(%asm_block, err = %e, "Failed to process ASM log");
-                // Continue processing other logs instead of failing completely
-            }
-        }
-
-        trace!(%asm_block, "CSM successfully processed ASM logs.");
+        handle_checkpoint_v1_updates(state, &asm_block)?;
 
         Ok(Response::Continue)
     }

@@ -22,7 +22,7 @@ use crate::errors::InvalidCheckpointPayload;
 pub struct VerifiedWithdrawals(BTreeMap<BitcoinAmount, u32>);
 
 /// Checkpoint subprotocol state.
-#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct CheckpointState {
     /// Predicate for sequencer signature verification.
     /// Updated via `UpdateSequencerKey` message from admin subprotocol.
