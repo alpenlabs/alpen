@@ -87,15 +87,15 @@ pub(crate) fn handle_checkpoint_tx(
                 CheckpointValidationError::InvalidAux(e) => {
                     // CRITICAL: We must panic here rather than ignore the error.
                     //
-                    // The checkpoint payload itself specifies which L1 heights it covers, and we verify
-                    // that:
+                    // The checkpoint payload itself specifies which L1 heights it covers, and we
+                    // verify that:
                     // 1. The L1 range doesn't go backwards
                     // 2. The L1 range doesn't exceed the current L1 tip
                     //
                     // Since we only request auxiliary data that MUST be valid and available,
-                    // invalid aux data indicates aux data was not provided. If we silently ignored this
-                    // error instead of panicking, valid checkpoints could be ignored as
-                    // being invalid.
+                    // invalid aux data indicates aux data was not provided. If we silently ignored
+                    // this error instead of panicking, valid checkpoints could
+                    // be ignored as being invalid.
                     logging::error!(error = %e, "invalid aux data");
                     panic!("invalid aux");
                 }
