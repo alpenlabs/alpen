@@ -187,11 +187,12 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                     .await
                     {
                         Ok(updated) => {
+                            let reveal_refs = format_reveal_refs(&updated);
                             debug!(
                                 component = "btcio_chunked_envelope",
                                 envelope_idx = curr,
                                 commit_txid = %updated.commit_txid,
-                                reveal_refs = ?format_reveal_refs(&updated),
+                                reveal_refs = ?reveal_refs,
                                 "entry signed successfully"
                             );
                             ops.put_chunked_envelope_entry_async(curr, updated).await?;
@@ -217,11 +218,12 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                     )
                     .await?;
                     if new_status != entry.status {
+                        let reveal_refs = format_reveal_refs(&entry);
                         debug!(
                             component = "btcio_chunked_envelope",
                             envelope_idx = curr,
                             commit_txid = %entry.commit_txid,
-                            reveal_refs = ?format_reveal_refs(&entry),
+                            reveal_refs = ?reveal_refs,
                             ?new_status,
                             "status changed"
                         );
@@ -238,11 +240,12 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
                     let new_status =
                         check_full_broadcast_status(curr, &entry, &broadcast_handle).await?;
                     if new_status != entry.status {
+                        let reveal_refs = format_reveal_refs(&entry);
                         debug!(
                             component = "btcio_chunked_envelope",
                             envelope_idx = curr,
                             commit_txid = %entry.commit_txid,
-                            reveal_refs = ?format_reveal_refs(&entry),
+                            reveal_refs = ?reveal_refs,
                             ?new_status,
                             "status changed"
                         );

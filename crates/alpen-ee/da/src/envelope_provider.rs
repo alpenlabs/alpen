@@ -59,6 +59,14 @@ fn format_tx_pairs(tx_pairs: &[(Txid, Wtxid)]) -> Vec<String> {
         .collect()
 }
 
+fn format_reveal_refs(entry: &ChunkedEnvelopeEntry) -> Vec<String> {
+    entry
+        .reveals
+        .iter()
+        .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
+        .collect()
+}
+
 fn format_da_block_refs(block_refs: &[L1DaBlockRef]) -> Vec<String> {
     block_refs
         .iter()
@@ -92,7 +100,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
 
         info!(
             component = "alpen_ee_da_provider",
-            batch_id = %batch_id,
+            batch_id = ?batch_id,
             envelope_idx = %idx,
             chunk_count,
             "submitted chunked envelope for batch DA"
@@ -114,40 +122,36 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             bail!("envelope entry {envelope_idx} missing from DB for batch {batch_id:?}");
         };
 
-        debug!(
+        let reveal_refs = format_reveal_refs(&entry);
+        let check_da_status_span = info_span!(
+            "alpen_ee_check_da_status",
             component = "alpen_ee_da_provider",
-            batch_id = %batch_id,
+            batch_id = ?batch_id,
             envelope_idx,
             commit_txid = %entry.commit_txid,
-            reveal_refs = ?entry
-                .reveals
-                .iter()
-                .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
-                .collect::<Vec<_>>(),
-            status = ?entry.status,
-            "checking chunked envelope status"
+            reveal_refs = ?reveal_refs,
         );
 
-        match entry.status {
-            ChunkedEnvelopeStatus::Finalized => {
-                let block_refs = self.build_da_block_refs(&entry).await?;
-                info!(
-                    component = "alpen_ee_da_provider",
-                    batch_id = %batch_id,
-                    envelope_idx,
-                    commit_txid = %entry.commit_txid,
-                    da_block_refs = ?format_da_block_refs(&block_refs),
-                    "batch DA finalized on L1"
-                );
-                Ok(DaStatus::Ready(block_refs))
+        async {
+            debug!(status = ?entry.status, "checking chunked envelope status");
+
+            match entry.status {
+                ChunkedEnvelopeStatus::Finalized => {
+                    let block_refs = self.build_da_block_refs(&entry).await?;
+                    let da_block_refs = format_da_block_refs(&block_refs);
+                    info!(da_block_refs = ?da_block_refs, "batch DA finalized on L1");
+                    Ok(DaStatus::Ready(block_refs))
+                }
+                ChunkedEnvelopeStatus::Unsigned
+                | ChunkedEnvelopeStatus::NeedsResign
+                | ChunkedEnvelopeStatus::Unpublished
+                | ChunkedEnvelopeStatus::CommitPublished
+                | ChunkedEnvelopeStatus::Published
+                | ChunkedEnvelopeStatus::Confirmed => Ok(DaStatus::Pending),
             }
-            ChunkedEnvelopeStatus::Unsigned
-            | ChunkedEnvelopeStatus::NeedsResign
-            | ChunkedEnvelopeStatus::Unpublished
-            | ChunkedEnvelopeStatus::CommitPublished
-            | ChunkedEnvelopeStatus::Published
-            | ChunkedEnvelopeStatus::Confirmed => Ok(DaStatus::Pending),
         }
+        .instrument(check_da_status_span)
+        .await
     }
 }
 

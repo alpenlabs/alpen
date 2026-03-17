@@ -2,7 +2,7 @@ use alpen_ee_common::{
     Batch, BatchDaProvider, BatchProver, BatchStatus, BatchStorage, ProofGenerationStatus,
 };
 use eyre::Result;
-use tracing::{debug, error, warn};
+use tracing::{debug, debug_span, error, warn, Instrument};
 
 use crate::batch_lifecycle::{ctx::BatchLifecycleCtx, state::BatchLifecycleState};
 
@@ -34,65 +34,67 @@ where
             // Not ready, no action
         }
         BatchStatus::ProofPending { da } => {
-            // Check proof status
-            match ctx.prover.check_proof_status(batch.id()).await? {
-                ProofGenerationStatus::Ready { proof_id } => {
-                    debug!(
-                        component = "alpen_ee_batch_lifecycle",
-                        batch_idx = target_idx,
-                        batch_id = %batch.id(),
-                        proof_id = %proof_id,
-                        prev_block = %batch.prev_block(),
-                        last_block = %batch.last_block(),
-                        "Proof ready"
-                    );
+            let batch_id = batch.id();
+            let proof_ready_span = debug_span!(
+                "alpen_ee_proof_ready",
+                component = "alpen_ee_batch_lifecycle",
+                batch_idx = target_idx,
+                batch_id = ?batch_id,
+                prev_block = %batch.prev_block(),
+                last_block = %batch.last_block(),
+            );
 
-                    ctx.batch_storage
-                        .update_batch_status(
-                            batch.id(),
-                            BatchStatus::ProofReady {
-                                da,
-                                proof: proof_id,
-                            },
-                        )
-                        .await?;
+            async {
+                // Check proof status
+                match ctx.prover.check_proof_status(batch_id).await? {
+                    ProofGenerationStatus::Ready { proof_id } => {
+                        debug!(proof_id = %proof_id, "Proof ready");
 
-                    // Notify watchers
-                    let _ = ctx.proof_ready_tx.send(Some(batch.id()));
+                        ctx.batch_storage
+                            .update_batch_status(
+                                batch_id,
+                                BatchStatus::ProofReady {
+                                    da,
+                                    proof: proof_id,
+                                },
+                            )
+                            .await?;
 
-                    state.advance_proof_ready(target_idx, batch.id());
+                        // Notify watchers
+                        let _ = ctx.proof_ready_tx.send(Some(batch_id));
+
+                        state.advance_proof_ready(target_idx, batch_id);
+                    }
+
+                    ProofGenerationStatus::Failed { reason } => {
+                        // CRITICAL: Manual intervention required
+                        error!(
+                            reason = %reason,
+                            "CRITICAL: Proof generation failed - manual intervention required. \
+                             Batch is stuck in ProofPending state."
+                        );
+                        // Stay at frontier - manual intervention required
+                    }
+
+                    ProofGenerationStatus::Pending => {
+                        // Still waiting, no action
+                    }
+
+                    ProofGenerationStatus::NotStarted => {
+                        // We've marked the batch as proof pending, but prover says proof generation has
+                        // not started. Try to re-request proof generation and hope for the best.
+                        warn!(
+                            "Expected proof generation to have been started. Retrying proof generation"
+                        );
+
+                        ctx.prover.request_proof_generation(batch_id).await?;
+                    }
                 }
 
-                ProofGenerationStatus::Failed { reason } => {
-                    // CRITICAL: Manual intervention required
-                    error!(
-                        component = "alpen_ee_batch_lifecycle",
-                        batch_idx = target_idx,
-                        batch_id = %batch.id(),
-                        reason = %reason,
-                        "CRITICAL: Proof generation failed - manual intervention required. \
-                         Batch is stuck in ProofPending state."
-                    );
-                    // Stay at frontier - manual intervention required
-                }
-
-                ProofGenerationStatus::Pending => {
-                    // Still waiting, no action
-                }
-
-                ProofGenerationStatus::NotStarted => {
-                    // We've marked the batch as proof pending, but prover says proof generation has
-                    // not started. Try to re-request proof generation and hope for the best.
-                    warn!(
-                        component = "alpen_ee_batch_lifecycle",
-                        batch_idx = target_idx,
-                        batch_id = %batch.id(),
-                        "Expected proof generation to have been started. Retrying proof generation"
-                    );
-
-                    ctx.prover.request_proof_generation(batch.id()).await?;
-                }
+                Ok::<(), eyre::Report>(())
             }
+            .instrument(proof_ready_span)
+            .await?;
         }
         BatchStatus::ProofReady { .. } | BatchStatus::Genesis => {
             // Already complete, advance frontier

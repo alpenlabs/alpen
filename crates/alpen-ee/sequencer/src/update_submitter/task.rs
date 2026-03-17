@@ -183,7 +183,7 @@ async fn process_ready_batches(
         info!(
             component = "alpen_ee_update_submitter",
             %batch_idx,
-            %batch_id,
+            ?batch_id,
             %txid,
             seq_no,
             proof_id = %proof,

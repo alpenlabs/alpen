@@ -13963,6 +13963,7 @@ dependencies = [
  "strata-predicate",
  "strata-test-utils-l2",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

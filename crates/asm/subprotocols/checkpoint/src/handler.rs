@@ -3,6 +3,7 @@ use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, lo
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint::extract_signed_checkpoint_from_envelope;
 use strata_identifiers::L1Height;
+use tracing::debug_span;
 
 use crate::{
     errors::CheckpointValidationError,
@@ -30,95 +31,78 @@ pub(crate) fn handle_checkpoint_tx(
     verified_aux_data: &VerifiedAuxData,
     relayer: &mut impl MsgRelayer,
 ) {
+    let txid = tx.tx().compute_txid();
     let Ok(payload) = extract_signed_checkpoint_from_envelope(tx) else {
         logging::warn!(
             component = "asm_checkpoint",
             l1_height = current_l1_height,
-            txid = %tx.tx().compute_txid(),
+            txid = %txid,
             "failed to extract checkpoint payload from envelope, ignoring"
         );
         return;
     };
     let epoch = payload.inner().new_tip().epoch;
-    let txid = tx.tx().compute_txid();
-
-    logging::debug!(
+    let checkpoint_span = debug_span!(
+        "asm_checkpoint_tx",
         component = "asm_checkpoint",
         epoch,
         l1_height = current_l1_height,
         txid = %txid,
-        "processing checkpoint transaction"
     );
 
-    match validate_checkpoint_and_extract_withdrawal_intents(
-        state,
-        current_l1_height,
-        &payload,
-        verified_aux_data,
-    ) {
-        Ok(ValidatedCheckpointWithdrawals {
-            withdrawal_intents,
-            verified_withdrawals,
-        }) => {
-            logging::info!(
-                component = "asm_checkpoint",
-                epoch,
-                l1_height = current_l1_height,
-                txid = %txid,
-                "checkpoint validated successfully"
-            );
+    checkpoint_span.in_scope(|| {
+        logging::debug!("processing checkpoint transaction");
 
-            state.deduct_withdrawals(verified_withdrawals);
+        match validate_checkpoint_and_extract_withdrawal_intents(
+            state,
+            current_l1_height,
+            &payload,
+            verified_aux_data,
+        ) {
+            Ok(ValidatedCheckpointWithdrawals {
+                withdrawal_intents,
+                verified_withdrawals,
+            }) => {
+                logging::info!("checkpoint validated successfully");
 
-            let new_tip = payload.inner().new_tip;
-            state.update_verified_tip(new_tip);
+                state.deduct_withdrawals(verified_withdrawals);
 
-            let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
-            let log_entry = AsmLogEntry::from_log(&checkpoint_tip_update)
-                .expect("CheckpointTipUpdate encoding is infallible for fixed-size SSZ");
-            relayer.emit_log(log_entry);
+                let new_tip = payload.inner().new_tip;
+                state.update_verified_tip(new_tip);
 
-            for (output, selected_operator) in withdrawal_intents {
-                let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
-                    output,
-                    selected_operator,
-                };
-                relayer.relay_msg(&bridge_msg);
+                let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
+                let log_entry = AsmLogEntry::from_log(&checkpoint_tip_update)
+                    .expect("CheckpointTipUpdate encoding is infallible for fixed-size SSZ");
+                relayer.emit_log(log_entry);
+
+                for (output, selected_operator) in withdrawal_intents {
+                    let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
+                        output,
+                        selected_operator,
+                    };
+                    relayer.relay_msg(&bridge_msg);
+                }
             }
+            Err(e) => match e {
+                CheckpointValidationError::InvalidAux(e) => {
+                    // CRITICAL: We must panic here rather than ignore the error.
+                    //
+                    // The checkpoint payload itself specifies which L1 heights it covers, and we
+                    // verify that:
+                    // 1. The L1 range doesn't go backwards
+                    // 2. The L1 range doesn't exceed the current L1 tip
+                    //
+                    // Since we only request auxiliary data that MUST be valid and available,
+                    // invalid aux data indicates aux data was not provided. If we silently ignored
+                    // this error instead of panicking, valid checkpoints could
+                    // be ignored as being invalid.
+                    logging::error!(error = %e, "invalid aux data");
+                    panic!("invalid aux");
+                }
+                CheckpointValidationError::InvalidPayload(e) => {
+                    logging::warn!(error = %e, "invalid checkpoint payload");
+                }
+            },
         }
-        Err(e) => match e {
-            CheckpointValidationError::InvalidAux(e) => {
-                // CRITICAL: We must panic here rather than ignore the error.
-                //
-                // The checkpoint payload itself specifies which L1 heights it covers, and we verify
-                // that:
-                // 1. The L1 range doesn't go backwards
-                // 2. The L1 range doesn't exceed the current L1 tip
-                //
-                // Since we only request auxiliary data that MUST be valid and available,
-                // invalid aux data indicates aux data was not provided. If we silently ignored this
-                // error instead of panicking, valid checkpoints could be ignored as
-                // being invalid.
-                logging::error!(
-                    component = "asm_checkpoint",
-                    epoch,
-                    l1_height = current_l1_height,
-                    txid = %txid,
-                    error = %e,
-                    "invalid aux data"
-                );
-                panic!("invalid aux");
-            }
-            CheckpointValidationError::InvalidPayload(e) => {
-                logging::warn!(
-                    component = "asm_checkpoint",
-                    epoch,
-                    l1_height = current_l1_height,
-                    txid = %txid,
-                    error = %e,
-                    "invalid checkpoint payload"
-                );
-            }
-        },
-    }
+    });
 }
