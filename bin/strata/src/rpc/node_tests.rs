@@ -167,9 +167,16 @@ fn null_blkid() -> OLBlockId {
 fn make_sync_status(
     tip: OLBlockCommitment,
     prev_epoch: EpochCommitment,
+    confirmed_epoch: EpochCommitment,
     finalized_epoch: EpochCommitment,
 ) -> OLSyncStatus {
-    OLSyncStatus::new(tip, prev_epoch, finalized_epoch, test_l1_commitment())
+    OLSyncStatus::new(
+        tip,
+        prev_epoch,
+        confirmed_epoch,
+        finalized_epoch,
+        test_l1_commitment(),
+    )
 }
 
 fn make_block(slot: u64, epoch: u32, parent: OLBlockId) -> OLBlock {
@@ -330,10 +337,11 @@ async fn chain_status_errors_when_ol_sync_unavailable() {
 async fn chain_status_returns_correct_values() {
     let tip = OLBlockCommitment::new(100, OLBlockId::from(Buf32::from([1u8; 32])));
     let prev = EpochCommitment::new(1, 50, OLBlockId::from(Buf32::from([2u8; 32])));
-    let finalized = EpochCommitment::new(0, 20, OLBlockId::from(Buf32::from([3u8; 32])));
+    let confirmed = EpochCommitment::new(0, 20, OLBlockId::from(Buf32::from([3u8; 32])));
+    let finalized = EpochCommitment::new(0, 20, OLBlockId::from(Buf32::from([4u8; 32])));
 
     let provider = MockProvider::new()
-        .with_sync_status(make_sync_status(tip, prev, finalized))
+        .with_sync_status(make_sync_status(tip, prev, confirmed, finalized))
         .with_state_at(tip, genesis_ol_state());
     let rpc = make_rpc(provider);
 
@@ -353,6 +361,7 @@ async fn blocks_summaries_start_gt_end_returns_invalid_params() {
         tip,
         EpochCommitment::null(),
         EpochCommitment::null(),
+        EpochCommitment::null(),
     ));
     let rpc = make_rpc(provider);
 
@@ -366,6 +375,7 @@ async fn blocks_summaries_no_block_at_end_returns_empty() {
     let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         tip,
+        EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
     ));
@@ -393,6 +403,7 @@ async fn blocks_summaries_returns_ascending_order() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
@@ -430,6 +441,7 @@ async fn blocks_summaries_snark_vs_non_snark() {
             tip,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block, state);
     let rpc = make_rpc(provider);
@@ -458,6 +470,7 @@ async fn epoch_summary_nonexistent_epoch_errors() {
         OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
         EpochCommitment::null(),
         EpochCommitment::null(),
+        EpochCommitment::null(),
     ));
     let rpc = make_rpc(provider);
 
@@ -475,6 +488,7 @@ async fn epoch_summary_nonexistent_account_errors() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             terminal,
+            EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
@@ -503,6 +517,7 @@ async fn epoch_summary_valid_snark_account() {
         .with_sync_status(make_sync_status(
             terminal,
             epoch1_commit,
+            EpochCommitment::null(),
             EpochCommitment::null(),
         ))
         .with_block_and_state(&block, ol_state_with_snark_account(account_id, 5, 20))
@@ -534,6 +549,7 @@ async fn epoch_summary_epoch_zero_null_prev() {
             terminal,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 5))
         .with_epoch_commitment(0, epoch0_commit);
@@ -561,6 +577,7 @@ async fn epoch_summary_non_snark_account() {
             terminal,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block, ol_state_with_empty_account(account_id, 5))
         .with_epoch_commitment(0, epoch0_commit);
@@ -583,6 +600,7 @@ async fn submit_transaction_generic_message_succeeds() {
         OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
         EpochCommitment::null(),
         EpochCommitment::null(),
+        EpochCommitment::null(),
     ));
     let rpc = make_rpc(provider);
 
@@ -602,6 +620,7 @@ async fn submit_transaction_invalid_snark_update_returns_invalid_params() {
     // so submit_behavior doesn't matter here.
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
+        EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
     ));
@@ -629,6 +648,7 @@ async fn submit_transaction_nonexistent_account_returns_error() {
             OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32]))),
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_submit_fn(move |_| Err(OLMempoolError::AccountDoesNotExist { account: missing }));
     let rpc = make_rpc(provider);
@@ -652,6 +672,7 @@ async fn snark_account_state_latest_returns_state() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
@@ -681,6 +702,7 @@ async fn snark_account_state_by_slot() {
             tip,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block, ol_state_with_snark_account(account_id, 3, 10));
     let rpc = make_rpc(provider);
@@ -707,6 +729,7 @@ async fn snark_account_state_non_snark_returns_none() {
             tip,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block, ol_state_with_empty_account(account_id, 5));
     let rpc = make_rpc(provider);
@@ -725,6 +748,7 @@ async fn snark_account_state_missing_account_returns_none() {
     let provider = MockProvider::new()
         .with_sync_status(make_sync_status(
             tip,
+            EpochCommitment::null(),
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
@@ -764,6 +788,7 @@ async fn snark_account_state_by_block_id() {
             tip,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block, ol_state_with_snark_account(account_id, 11, 8));
     let rpc = make_rpc(provider);
@@ -794,6 +819,7 @@ async fn raw_blocks_range_returns_blocks_in_order() {
             tip,
             EpochCommitment::null(),
             EpochCommitment::null(),
+            EpochCommitment::null(),
         ))
         .with_block_and_state(&block0, genesis_ol_state())
         .with_block_and_state(&block1, genesis_ol_state())
@@ -815,6 +841,7 @@ async fn raw_blocks_range_start_gt_end_returns_invalid_params() {
         tip,
         EpochCommitment::null(),
         EpochCommitment::null(),
+        EpochCommitment::null(),
     ));
     let rpc = make_rpc(provider);
 
@@ -828,6 +855,7 @@ async fn raw_blocks_range_exceeds_max_returns_invalid_params() {
     let tip = OLBlockCommitment::new(10, OLBlockId::from(Buf32::from([1u8; 32])));
     let provider = MockProvider::new().with_sync_status(make_sync_status(
         tip,
+        EpochCommitment::null(),
         EpochCommitment::null(),
         EpochCommitment::null(),
     ));
