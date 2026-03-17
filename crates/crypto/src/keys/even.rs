@@ -163,9 +163,14 @@ impl<'de> Deserialize<'de> for EvenPublicKey {
 
 impl<'a> Arbitrary<'a> for EvenPublicKey {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        // Generate arbitrary bytes and try to create a valid secret key
-        let sk_bytes: [u8; 32] = u.arbitrary()?;
-        let sk = SecretKey::from_slice(&sk_bytes).map_err(|_| arbitrary::Error::IncorrectFormat)?;
+        let mut sk_bytes: [u8; 32] = u.arbitrary()?;
+        // Clamp the first byte to 0xFE so the value is always below the
+        // secp256k1 curve order (which starts with 0xFF), and set the last bit
+        // to ensure the scalar is non-zero.
+        sk_bytes[0] &= 0xFE;
+        sk_bytes[31] |= 1;
+        let sk =
+            SecretKey::from_slice(&sk_bytes).expect("clamped bytes are always a valid secret key");
         let pk = PublicKey::from_secret_key(SECP256K1, &sk);
         Ok(EvenPublicKey::from(pk))
     }
@@ -263,5 +268,21 @@ mod tests {
 
         assert_eq!(SecretKey::from(even_sk), odd_sk.negate());
         assert_eq!(PublicKey::from(even_pk), odd_pk.negate(SECP256K1));
+    }
+
+    mod proptest_arbitrary {
+        use arbitrary::{Arbitrary, Unstructured};
+        use proptest::{collection::vec, num::u8, proptest};
+
+        use super::EvenPublicKey;
+
+        proptest! {
+            #[test]
+            fn test_arbitrary_never_fails(seed in vec(u8::ANY, 64)) {
+                let mut u = Unstructured::new(&seed);
+                let result = EvenPublicKey::arbitrary(&mut u);
+                proptest::prop_assert!(result.is_ok(), "arbitrary should never return IncorrectFormat");
+            }
+        }
     }
 }
