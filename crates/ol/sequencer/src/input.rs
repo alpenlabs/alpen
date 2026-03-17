@@ -8,13 +8,15 @@ use tokio::time::{self, Interval};
 /// Timer-driven input for the sequencer service.
 #[derive(Debug)]
 pub struct SequencerTimerInput {
-    interval: Interval,
+    duty_poll_interval: Interval,
+    ol_block_interval: Interval,
 }
 
 impl SequencerTimerInput {
-    pub fn new(poll_interval: Duration) -> Self {
+    pub fn new(duty_poll_interval: Duration, ol_block_interval: Duration) -> Self {
         Self {
-            interval: time::interval(poll_interval),
+            duty_poll_interval: time::interval(duty_poll_interval),
+            ol_block_interval: time::interval(ol_block_interval),
         }
     }
 }
@@ -23,6 +25,7 @@ impl SequencerTimerInput {
 #[derive(Clone, Copy, Debug)]
 pub enum SequencerEvent {
     Tick,
+    GenerationTick,
 }
 
 impl ServiceInput for SequencerTimerInput {
@@ -31,7 +34,9 @@ impl ServiceInput for SequencerTimerInput {
 
 impl AsyncServiceInput for SequencerTimerInput {
     async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
-        self.interval.tick().await;
-        Ok(Some(SequencerEvent::Tick))
+        tokio::select! {
+            _ = self.duty_poll_interval.tick() => Ok(Some(SequencerEvent::Tick)),
+            _ = self.ol_block_interval.tick() => Ok(Some(SequencerEvent::GenerationTick)),
+        }
     }
 }

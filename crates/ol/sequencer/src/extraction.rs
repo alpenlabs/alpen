@@ -1,8 +1,9 @@
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_db_types::types::OLCheckpointStatus;
-use strata_ol_block_assembly::{BlockasmHandle, FullBlockTemplate};
+use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_primitives::OLBlockId;
 use strata_storage::NodeStorage;
+use tracing::debug;
 
 use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error};
 
@@ -14,10 +15,20 @@ pub async fn extract_duties(
 ) -> Result<Vec<Duty>, Error> {
     let mut duties = vec![];
 
-    // Block duties. Try to get a cached template, or generate a new one.
-    let template = generate_or_get_template(blockasm, tip_blkid).await?;
-    let blkduty = BlockSigningDuty::new(template);
-    duties.push(Duty::SignBlock(blkduty));
+    // Block duties. Read-only lookup; generation is handled by GenerationTick.
+    match blockasm.get_block_template(tip_blkid).await {
+        Ok(template) => {
+            let blkduty = BlockSigningDuty::new(template);
+            duties.push(Duty::SignBlock(blkduty));
+        }
+        Err(BlockAssemblyError::NoPendingTemplateForParent(_)) => {
+            debug!(
+                tip_blkid = ?tip_blkid,
+                "no cached template for tip parent; skipping block duty"
+            );
+        }
+        Err(err) => return Err(err.into()),
+    }
 
     // Checkpoint duties
     let unsigned_checkpoint = get_earliest_unsigned_checkpoint(node_storage).await?;
@@ -28,16 +39,6 @@ pub async fn extract_duties(
             .map(Duty::SignCheckpoint),
     );
     Ok(duties)
-}
-
-/// Generates a block template or retrieves it from the block-assembly cache.
-async fn generate_or_get_template(
-    blockasm: &BlockasmHandle,
-    parent_block_id: OLBlockId,
-) -> Result<FullBlockTemplate, Error> {
-    Ok(blockasm
-        .get_or_generate_block_template(parent_block_id)
-        .await?)
 }
 
 /// Gets the earliest unsigned checkpoint
