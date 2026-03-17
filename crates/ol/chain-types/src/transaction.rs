@@ -4,9 +4,11 @@ use int_enum::IntEnum;
 use strata_acct_types::AccountId;
 use strata_identifiers::Slot;
 
-use crate::ssz_generated::ssz::transaction::{
-    GamTxPayload, OLTransaction, SauTxPayload, TransactionAttachment, TransactionPayload, TxData,
-    TxProofs,
+use crate::{
+    TxConstraints,
+    ssz_generated::ssz::transaction::{
+        GamTxPayload, OLTransaction, SauTxPayload, TransactionPayload, TxData, TxProofs,
+    },
 };
 
 impl OLTransaction {
@@ -22,8 +24,8 @@ impl OLTransaction {
         &self.proofs
     }
 
-    pub fn attachment(&self) -> &TransactionAttachment {
-        &self.data.attachment
+    pub fn constraints(&self) -> &TxConstraints {
+        &self.data.constraints
     }
 
     pub fn payload(&self) -> &TransactionPayload {
@@ -55,7 +57,7 @@ impl TransactionPayload {
     }
 }
 
-impl TransactionAttachment {
+impl TxConstraints {
     pub fn new(min_slot: Option<Slot>, max_slot: Option<Slot>) -> Self {
         Self {
             min_slot: min_slot.into(),
@@ -137,28 +139,26 @@ mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 
     use crate::{
-        GamTxPayload, OLTransaction, SauTxLedgerRefs, SauTxOperationData, SauTxPayload,
-        SauTxProofState, SauTxUpdateData, TransactionAttachment, TransactionPayload, TxData,
-        TxProofs,
         test_utils::{
             gam_tx_payload_strategy, ol_transaction_strategy, transaction_attachment_strategy,
             transaction_payload_strategy,
         },
+        *,
     };
 
-    mod transaction_attachment {
+    mod tx_constraints {
         use super::*;
 
-        ssz_proptest!(TransactionAttachment, transaction_attachment_strategy());
+        ssz_proptest!(TxConstraints, transaction_attachment_strategy());
 
         #[test]
         fn test_none_values() {
-            let attachment = TransactionAttachment {
+            let attachment = TxConstraints {
                 min_slot: ssz_types::Optional::None,
                 max_slot: ssz_types::Optional::None,
             };
             let encoded = attachment.as_ssz_bytes();
-            let decoded = TransactionAttachment::from_ssz_bytes(&encoded).unwrap();
+            let decoded = TxConstraints::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(attachment, decoded);
         }
     }
@@ -234,6 +234,8 @@ mod tests {
     }
 
     mod ol_transaction {
+        use strata_acct_types::TxEffects;
+
         use super::*;
 
         ssz_proptest!(OLTransaction, ol_transaction_strategy());
@@ -246,10 +248,8 @@ mod tests {
                         target: AccountId::from([0u8; 32]),
                         payload: vec![].into(),
                     }),
-                    attachment: TransactionAttachment {
-                        min_slot: ssz_types::Optional::None,
-                        max_slot: ssz_types::Optional::None,
-                    },
+                    constraints: TxConstraints::default(),
+                    effects: TxEffects::default(),
                 },
                 proofs: TxProofs {
                     inbox_proofs: ssz_types::Optional::None,
@@ -283,10 +283,11 @@ mod tests {
                         },
                         update_proof: vec![].into(),
                     }),
-                    attachment: TransactionAttachment {
+                    constraints: TxConstraints {
                         min_slot: ssz_types::Optional::Some(100),
                         max_slot: ssz_types::Optional::Some(200),
                     },
+                    effects: TxEffects::default(),
                 },
                 proofs: TxProofs {
                     inbox_proofs: ssz_types::Optional::None,

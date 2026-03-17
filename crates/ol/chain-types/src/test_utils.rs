@@ -12,16 +12,9 @@ use strata_identifiers::{
     test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy},
 };
 
-use crate::{
-    AccumulatorClaim, GamTxPayload, OLLog, OLTransaction, SauTxLedgerRefs, SauTxOperationData,
-    SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionAttachment, TransactionPayload,
-    TxData, TxProofs,
-    block_flags::BlockFlags,
-    ssz_generated::ssz::block::{
-        OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLL1ManifestContainer, OLL1Update,
-        OLTxSegment, SignedOLBlockHeader,
-    },
-};
+use strata_acct_types::TxEffects;
+
+use crate::{*, block_flags::BlockFlags, ssz_generated::ssz::block::*};
 
 /// Strategy for generating random [`OLLog`] values.
 pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
@@ -124,9 +117,9 @@ pub fn accumulator_claim_strategy() -> impl Strategy<Value = AccumulatorClaim> {
     })
 }
 
-pub fn transaction_attachment_strategy() -> impl Strategy<Value = TransactionAttachment> {
+pub fn transaction_attachment_strategy() -> impl Strategy<Value = TxConstraints> {
     (any::<Option<u64>>(), any::<Option<u64>>()).prop_map(|(min_slot, max_slot)| {
-        TransactionAttachment {
+        TxConstraints {
             min_slot: min_slot.into(),
             max_slot: max_slot.into(),
         }
@@ -189,10 +182,11 @@ pub fn ol_transaction_strategy() -> impl Strategy<Value = OLTransaction> {
         transaction_payload_strategy(),
         transaction_attachment_strategy(),
     )
-        .prop_map(|(payload, attachment)| OLTransaction {
+        .prop_map(|(payload, constraints)| OLTransaction {
             data: TxData {
                 payload,
-                attachment,
+                constraints,
+                effects: TxEffects::default(),
             },
             proofs: TxProofs {
                 inbox_proofs: ssz_types::Optional::None,

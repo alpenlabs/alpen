@@ -71,7 +71,7 @@ class SauTxPayload(Container):
 ### Additional constraints that we can place on a transaction.
 # TODO should we rename this `TxConstraints`?
 #~# derive: std::default::Default
-class TransactionAttachment(StableContainer[16]):
+class TxConstraints(StableContainer[16]):
     ### Minimum slot for inclusion
     min_slot: Optional[strata_identifiers.Slot]
 
@@ -91,7 +91,11 @@ class TxData(Container):
     payload: TransactionPayload
 
     ### Additional transaction validity conditions.
-    attachment: TransactionAttachment
+    constraints: TxConstraints
+
+    ### External effects of the transaction.
+    #~# external_kind: container
+    effects: strata_acct_types.TxEffects
 
 ### Proof data we provide alongside the tx.
 class TxProofs(StableContainer[16]):
@@ -105,8 +109,8 @@ class TxProofs(StableContainer[16]):
 ###
 ### This is what we compute the wtxid from.
 class OLTransaction(Container):
-    ### Transaction data itself.
+    ### Transaction data itself.  Used to compute txid.
     data: TxData
 
-    ### Transaction proofs.
+    ### Accumulator proofs.
     proofs: TxProofs
