@@ -71,7 +71,7 @@ jobs:
       - name: Wait for alpen-client to be ready
         run: |
           echo "Waiting for alpen-client RPC..."
-          for i in $(seq 1 30); do
+          for _i in $(seq 1 30); do
             if curl -sf -X POST http://localhost:8545 \
               -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' > /dev/null 2>&1; then
