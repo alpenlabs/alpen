@@ -402,7 +402,7 @@ impl OLClientRpcServer for OLRpcServer {
                     extra_data_len,
                     l1_ref_count = l1_ref_heights.len(),
                     l1_ref_heights = ?l1_ref_heights,
-                    "submitted snark update to OL mempool"
+                    "snark update received by the OL mempool"
                 );
             }
             None => {
@@ -410,7 +410,7 @@ impl OLClientRpcServer for OLRpcServer {
                     component = "ol_rpc_server",
                     %txid,
                     target = %target,
-                    "submitted transaction to OL mempool"
+                    "transaction received by the OL mempool"
                 );
             }
         }

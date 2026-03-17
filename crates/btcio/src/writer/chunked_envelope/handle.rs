@@ -369,11 +369,12 @@ async fn reconcile_active_entries(
         };
 
         if new_status != entry.status {
+            let reveal_refs = format_reveal_refs(&entry);
             debug!(
                 component = "btcio_chunked_envelope",
                 envelope_idx = idx,
                 commit_txid = %entry.commit_txid,
-                reveal_refs = ?format_reveal_refs(&entry),
+                reveal_refs = ?reveal_refs,
                 old_status = ?entry.status,
                 ?new_status,
                 "entry status changed"
@@ -438,11 +439,12 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
         {
             Ok(updated) => {
                 let signed_status = updated.status.clone();
+                let reveal_refs = format_reveal_refs(&updated);
                 debug!(
                     component = "btcio_chunked_envelope",
                     envelope_idx = idx,
                     commit_txid = %updated.commit_txid,
-                    reveal_refs = ?format_reveal_refs(&updated),
+                    reveal_refs = ?reveal_refs,
                     ?signed_status,
                     "entry signed successfully"
                 );

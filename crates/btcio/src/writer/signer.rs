@@ -24,50 +24,49 @@ pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Walle
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<WriterContext<R>>,
 ) -> Result<(Buf32, Buf32), EnvelopeError> {
-    trace!(
+    let create_and_sign_payload_span = debug_span!(
+        "btcio_payload_sign",
         component = "btcio_writer_signer",
         payload_idx,
-        "Creating and signing payload envelopes"
     );
-    let (commit, reveal) = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
-    let ctxid = commit.compute_txid();
-    debug!(
-        component = "btcio_writer_signer",
-        payload_idx,
-        commit_txid = ?ctxid,
-        "Signing commit transaction"
-    );
-    let signed_commit = ctx
-        .client
-        .sign_raw_transaction_with_wallet(&commit, None)
-        .await
-        .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
-        .tx;
-    let cid: Buf32 = signed_commit.compute_txid().to_buf32();
-    let rid: Buf32 = reveal.compute_txid().to_buf32();
+    async {
+        trace!("Creating and signing payload envelopes");
+        let (commit, reveal) = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
-    let centry = L1TxEntry::from_tx(&signed_commit);
-    let rentry = L1TxEntry::from_tx(&reveal);
+        let commit_txid = commit.compute_txid();
+        debug!(commit_txid = %commit_txid, "Signing commit transaction");
+        let signed_commit = ctx
+            .client
+            .sign_raw_transaction_with_wallet(&commit, None)
+            .await
+            .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
+            .tx;
+        let cid: Buf32 = signed_commit.compute_txid().to_buf32();
+        let rid: Buf32 = reveal.compute_txid().to_buf32();
 
-    // These don't need to be atomic. It will be handled by writer task if it does not find both
-    // commit-reveal txs in db by triggering re-signing.
-    let _ = broadcast_handle
-        .put_tx_entry(cid, centry)
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
-    let _ = broadcast_handle
-        .put_tx_entry(rid, rentry)
-        .await
-        .map_err(|e| EnvelopeError::Other(e.into()))?;
-    info!(
-        component = "btcio_writer_signer",
-        payload_idx,
-        commit_txid = %cid,
-        reveal_txid = %rid,
-        "signed payload envelope transactions"
-    );
-    Ok((cid, rid))
+        let centry = L1TxEntry::from_tx(&signed_commit);
+        let rentry = L1TxEntry::from_tx(&reveal);
+
+        // These don't need to be atomic. It will be handled by writer task if it does not find both
+        // commit-reveal txs in db by triggering re-signing.
+        let _ = broadcast_handle
+            .put_tx_entry(cid, centry)
+            .await
+            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        let _ = broadcast_handle
+            .put_tx_entry(rid, rentry)
+            .await
+            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        info!(
+            commit_txid = %cid,
+            reveal_txid = %rid,
+            "signed payload envelope transactions"
+        );
+        Ok((cid, rid))
+    }
+    .instrument(create_and_sign_payload_span)
+    .await
 }
 
 #[cfg(test)]
