@@ -19,6 +19,24 @@ impl L1ChunkedEnvelopeDatabase for L1ChunkedEnvelopeDBSled {
         Ok(self.entry_tree.get(&idx)?)
     }
 
+    fn get_chunked_envelope_entries_from(
+        &self,
+        start_idx: u64,
+        max_count: usize,
+    ) -> DbResult<Vec<(u64, ChunkedEnvelopeEntry)>> {
+        let mut entries = Vec::with_capacity(max_count);
+        for item in self.entry_tree.range(start_idx..)? {
+            if entries.len() >= max_count {
+                break;
+            }
+
+            let (idx, entry) = item?;
+            entries.push((idx, entry));
+        }
+
+        Ok(entries)
+    }
+
     fn get_next_chunked_envelope_idx(&self) -> DbResult<u64> {
         Ok(self
             .entry_tree

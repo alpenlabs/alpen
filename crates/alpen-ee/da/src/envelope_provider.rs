@@ -163,3 +163,202 @@ impl ChunkedEnvelopeDaProvider {
         Ok(refs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alpen_ee_common::DaBlob;
+    use async_trait::async_trait;
+    use bitcoin::{
+        absolute::LockTime, consensus::encode::serialize as btc_serialize, hashes::Hash,
+        transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+        Witness,
+    };
+    use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::{
+        traits::DatabaseBackend,
+        types::{L1TxEntry, RevealTxMeta},
+    };
+    use strata_l1_txfmt::MagicBytes;
+    use strata_storage::ops::{
+        chunked_envelope::{ChunkedEnvelopeOps, Context as ChunkedEnvelopeContext},
+        l1tx_broadcast::{BroadcastDbOps, Context as BroadcastContext},
+    };
+
+    use super::*;
+
+    struct NeverCalledBlobSource;
+
+    #[async_trait]
+    impl DaBlobSource for NeverCalledBlobSource {
+        async fn get_blob(&self, _batch_id: BatchId) -> eyre::Result<DaBlob> {
+            unreachable!("blob source is not used by check_da_status tests")
+        }
+
+        async fn are_state_diffs_ready(&self, _batch_id: BatchId) -> bool {
+            unreachable!("blob source is not used by check_da_status tests")
+        }
+    }
+
+    fn test_batch_id() -> BatchId {
+        BatchId::from_parts(Default::default(), Default::default())
+    }
+
+    fn make_test_tx() -> Transaction {
+        Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: bitcoin::Txid::all_zeros(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                witness: Witness::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        }
+    }
+
+    fn make_entry(status: ChunkedEnvelopeStatus, heights: &[u64]) -> ChunkedEnvelopeEntry {
+        let mut entry = ChunkedEnvelopeEntry::new_unsigned(
+            vec![vec![0xAA; 100]; heights.len().max(1)],
+            MagicBytes::new([0x01, 0x02, 0x03, 0x04]),
+        );
+        entry.status = status;
+        entry.commit_txid = Buf32::from([0x11; 32]);
+        entry.reveals = heights
+            .iter()
+            .enumerate()
+            .map(|(i, _)| RevealTxMeta {
+                vout_index: i as u32,
+                txid: Buf32::from([(0x20 + i as u8); 32]),
+                wtxid: Buf32::from([(0x30 + i as u8); 32]),
+                tx_bytes: btc_serialize(&make_test_tx()),
+            })
+            .collect();
+        entry
+    }
+
+    fn make_provider() -> (
+        ChunkedEnvelopeDaProvider,
+        Arc<ChunkedEnvelopeOps>,
+        Arc<BroadcastDbOps>,
+    ) {
+        let backend = get_test_sled_backend();
+        let chunked_ops = Arc::new(
+            ChunkedEnvelopeContext::new(backend.chunked_envelope_db())
+                .into_ops(threadpool::Builder::new().num_threads(2).build()),
+        );
+        let broadcast_ops = Arc::new(
+            BroadcastContext::new(backend.broadcast_db())
+                .into_ops(threadpool::Builder::new().num_threads(2).build()),
+        );
+        let provider = ChunkedEnvelopeDaProvider::new(
+            Arc::new(NeverCalledBlobSource),
+            Arc::new(ChunkedEnvelopeHandle::new(chunked_ops.clone())),
+            broadcast_ops.clone(),
+            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+        );
+
+        (provider, chunked_ops, broadcast_ops)
+    }
+
+    fn finalized_tx_entry(height: u32) -> L1TxEntry {
+        let mut entry = L1TxEntry::from_tx(&make_test_tx());
+        entry.status = L1TxStatus::Finalized {
+            confirmations: 6,
+            block_hash: Buf32::from([height as u8; 32]),
+            block_height: height,
+        };
+        entry
+    }
+
+    /// Ensures a persisted `envelope_idx` is treated as required state, not as
+    /// an implicit "not requested yet" case.
+    #[tokio::test]
+    async fn test_check_da_status_errors_when_requested_entry_is_missing() {
+        let (provider, _, _) = make_provider();
+
+        let err = provider
+            .check_da_status(test_batch_id(), 42)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("envelope entry 42 missing"));
+    }
+
+    /// Ensures DA status is determined from the specific persisted
+    /// `envelope_idx`, even if later envelopes have already finalized.
+    #[tokio::test]
+    async fn test_check_da_status_uses_requested_envelope_idx() {
+        let (provider, chunked_ops, _) = make_provider();
+
+        chunked_ops
+            .put_chunked_envelope_entry_async(
+                0,
+                make_entry(ChunkedEnvelopeStatus::Published, &[100]),
+            )
+            .await
+            .unwrap();
+        chunked_ops
+            .put_chunked_envelope_entry_async(
+                1,
+                make_entry(ChunkedEnvelopeStatus::Finalized, &[101]),
+            )
+            .await
+            .unwrap();
+
+        let status = provider.check_da_status(test_batch_id(), 0).await.unwrap();
+        assert!(matches!(status, DaStatus::Pending));
+    }
+
+    /// Ensures finalized reveal transactions are grouped into sorted
+    /// [`L1DaBlockRef`] values by their finalized L1 block height.
+    #[tokio::test]
+    async fn test_check_da_status_finalized_returns_sorted_refs() {
+        let (provider, chunked_ops, broadcast_ops) = make_provider();
+        let entry = make_entry(ChunkedEnvelopeStatus::Finalized, &[101, 100]);
+
+        chunked_ops
+            .put_chunked_envelope_entry_async(0, entry.clone())
+            .await
+            .unwrap();
+        broadcast_ops
+            .put_tx_entry_async(entry.reveals[0].txid, finalized_tx_entry(101))
+            .await
+            .unwrap();
+        broadcast_ops
+            .put_tx_entry_async(entry.reveals[1].txid, finalized_tx_entry(100))
+            .await
+            .unwrap();
+
+        let status = provider.check_da_status(test_batch_id(), 0).await.unwrap();
+        let DaStatus::Ready(refs) = status else {
+            panic!("expected finalized envelope to be ready");
+        };
+
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].block.height(), 100);
+        assert_eq!(refs[1].block.height(), 101);
+        assert_eq!(
+            refs[0].txns,
+            vec![(
+                entry.reveals[1].txid.to_txid(),
+                entry.reveals[1].wtxid.to_wtxid()
+            )]
+        );
+        assert_eq!(
+            refs[1].txns,
+            vec![(
+                entry.reveals[0].txid.to_txid(),
+                entry.reveals[0].wtxid.to_wtxid()
+            )]
+        );
+    }
+}

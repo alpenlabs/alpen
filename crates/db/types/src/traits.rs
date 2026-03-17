@@ -458,6 +458,16 @@ pub trait L1ChunkedEnvelopeDatabase: Send + Sync + 'static {
     /// Gets a [`ChunkedEnvelopeEntry`] by its index.
     fn get_chunked_envelope_entry(&self, idx: u64) -> DbResult<Option<ChunkedEnvelopeEntry>>;
 
+    /// Gets chunked envelope entries starting from a given index up to a maximum count.
+    ///
+    /// Returns entries in ascending index order. If `start_idx` doesn't exist,
+    /// starts from the next available entry after it.
+    fn get_chunked_envelope_entries_from(
+        &self,
+        start_idx: u64,
+        max_count: usize,
+    ) -> DbResult<Vec<(u64, ChunkedEnvelopeEntry)>>;
+
     /// Gets the next available index.
     fn get_next_chunked_envelope_idx(&self) -> DbResult<u64>;
 

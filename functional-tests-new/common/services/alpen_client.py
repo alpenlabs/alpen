@@ -6,6 +6,7 @@ import atexit
 import contextlib
 import logging
 import subprocess
+import time
 from typing import TypedDict
 
 from common.config.constants import (
@@ -278,3 +279,87 @@ class AlpenClientService(RpcService):
             timeout=timeout,
         )
         return True
+
+    def wait_for_non_empty_blob(
+        self,
+        btc_rpc,
+        mine_address: str,
+        all_envelopes: list,
+        end_l1: int,
+        min_last_block_num: int,
+        phase_name: str,
+        poll_attempts: int = 4,
+        blocks_per_poll: int = 2,
+        pre_poll_sleep: float = 3.0,
+        post_mine_sleep: float = 2.0,
+    ) -> tuple[object, int, int]:
+        """Mine a bounded number of L1 blocks and wait for a later non-empty DA blob.
+
+        This helper is used by DA functional tests that need to keep scanning
+        Bitcoin blocks while preserving previously observed envelopes across
+        restarts or multiple posting phases.
+        """
+        from tests.alpen_client.ee_da.helpers import scan_for_da_envelopes
+
+        mined_blocks = 0
+        for attempt in range(poll_attempts):
+            time.sleep(pre_poll_sleep)
+            btc_rpc.proxy.generatetoaddress(blocks_per_poll, mine_address)
+            mined_blocks += blocks_per_poll
+            time.sleep(post_mine_sleep)
+
+            prev_end = end_l1
+            end_l1 = btc_rpc.proxy.getblockcount()
+            new_envs = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
+            if new_envs:
+                logger.info(
+                    "%s attempt %s: found %s new DA envelope(s)",
+                    phase_name,
+                    attempt + 1,
+                    len(new_envs),
+                )
+                all_envelopes.extend(new_envs)
+            else:
+                logger.debug("%s attempt %s: no new DA envelopes", phase_name, attempt + 1)
+
+            blob = self._find_non_empty_blob_after_block(all_envelopes, min_last_block_num)
+            if blob is not None:
+                logger.info(
+                    "%s blob found on attempt %s: last_block_num=%s, state_diff=%s bytes",
+                    phase_name,
+                    attempt + 1,
+                    blob.last_block_num,
+                    len(blob.state_diff),
+                )
+                return blob, end_l1, mined_blocks
+
+        raise AssertionError(
+            f"{phase_name}: no non-empty DA blob found after block {min_last_block_num} "
+            f"within {mined_blocks} mined L1 blocks"
+        )
+
+    def advance_to_next_da_window(
+        self,
+        additional_blocks: int,
+        timeout_slack: int = 20,
+    ) -> None:
+        """Wait long enough for the current batch to seal and DA posting to begin."""
+        self.wait_for_additional_blocks(
+            additional_blocks,
+            timeout_slack=timeout_slack,
+        )
+
+    @staticmethod
+    def _find_non_empty_blob_after_block(envelopes: list, min_last_block_num: int):
+        """Return the latest non-empty reassembled blob posted after `min_last_block_num`."""
+        from tests.alpen_client.ee_da.codec import reassemble_blobs_from_envelopes
+
+        blobs = reassemble_blobs_from_envelopes(envelopes)
+        candidates = [
+            blob
+            for blob in blobs
+            if blob.last_block_num > min_last_block_num and not blob.is_empty_batch()
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda blob: blob.last_block_num)
