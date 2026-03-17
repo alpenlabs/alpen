@@ -114,6 +114,8 @@ def generate_rollup_params(
 
     args = [
         "genparams",
+        "--checkpoint-predicate",
+        "always-accept",
         "--name",
         "ALPN",
         "--genesis-l1-height",
@@ -169,6 +171,8 @@ def generate_asm_params(
 
     args = [
         "gen-asm-params",
+        "--checkpoint-predicate",
+        "always-accept",
         "--name",
         "ALPN",
         "--genesis-l1-height",

@@ -93,6 +93,7 @@ fi
     --bitcoin-rpc-user "$BITCOIN_RPC_USER" \
     --bitcoin-rpc-password "$BITCOIN_RPC_PASSWORD" \
     genparams \
+    --checkpoint-predicate always-accept \
     -s "$seqpubkey" \
     -b "$op1xpriv" \
     -b "$op2xpriv" \
