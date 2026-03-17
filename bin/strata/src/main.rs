@@ -6,7 +6,6 @@ use anyhow::{Result, anyhow};
 use argh::from_env;
 use strata_common::logging;
 use strata_db_types as _;
-use strata_node_context::NodeContext;
 #[cfg(test)]
 use strata_ol_state_types as _;
 #[cfg(test)]
@@ -16,7 +15,7 @@ use tracing::info;
 
 use crate::{
     args::Args, context::init_node_context, errors::InitError, rpc::start_rpc,
-    services::start_strata_services,
+    services::start_strata_services, startup_checks::run_startup_checks,
 };
 
 mod args;
@@ -31,6 +30,7 @@ mod run_context;
 #[cfg(feature = "sequencer")]
 mod sequencer;
 mod services;
+mod startup_checks;
 
 fn main() -> Result<()> {
     let args: Args = from_env();
@@ -63,7 +63,7 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow!("Failed to initialize node context: {e}"))?;
 
     // Check for db consistency, external rpc clients reachable, etc.
-    do_startup_checks(&nodectx)?;
+    run_startup_checks(&nodectx)?;
 
     // Load sequencer key early so it can be shared with both the envelope writer
     // (for SPS-51 taproot authentication) and the duty executor (for block signing).
@@ -103,13 +103,6 @@ fn main() -> Result<()> {
     runctx.task_manager.monitor(Some(Duration::from_secs(5)))?;
 
     info!("Exiting strata");
-    Ok(())
-}
-
-fn do_startup_checks(_ctx: &NodeContext) -> Result<()> {
-    // TODO: things like if bitcoin client is running or not, db consistency checks and any other
-    // checks prior to starting services, etc.
-
     Ok(())
 }
 
