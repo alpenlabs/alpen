@@ -1,4 +1,5 @@
 use borsh::{BorshDeserialize, to_vec};
+use sled::IVec;
 use ssz::{Decode, Encode};
 use strata_db_types::traits::BlockStatus;
 use strata_identifiers::OLBlockId;
@@ -37,12 +38,14 @@ define_table_with_integer_key!(
 
 // OLBlock is SSZ-generated, so we use SSZ serialization instead of Borsh
 impl ValueCodec<OLBlockSchema> for OLBlock {
+    type Decoded = Self;
+
     fn encode_value(&self) -> Result<Vec<u8>, CodecError> {
         Ok(self.as_ssz_bytes())
     }
 
-    fn decode_value(data: &[u8]) -> Result<Self, CodecError> {
-        Self::from_ssz_bytes(data).map_err(|err| CodecError::SerializationFailed {
+    fn decode_value(data: IVec) -> Result<Self::Decoded, CodecError> {
+        Self::from_ssz_bytes(data.as_ref()).map_err(|err| CodecError::DeserializationFailed {
             schema: OLBlockSchema::tree_name(),
             source: format!("SSZ decode error: {err:?}").into(),
         })

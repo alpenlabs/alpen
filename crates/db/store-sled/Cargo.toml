@@ -25,7 +25,9 @@ zkaleido.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 borsh.workspace = true
+rkyv.workspace = true
 sled.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

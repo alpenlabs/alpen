@@ -1,7 +1,7 @@
 use std::{fmt, ops};
 
 use strata_db_types::errors::DbError;
-use typed_sled::{Schema, error::Error, tree::SledTransactionalTree};
+use typed_sled::{Schema, ValueCodec, error::Error, tree::SledTransactionalTree};
 
 pub fn second<A, B>((_, b): (A, B)) -> B {
     b
@@ -24,6 +24,7 @@ pub fn find_next_available_id<K, V, S>(
 where
     K: Clone + ops::Add<u64, Output = K>,
     S: Schema<Key = K, Value = V>,
+    V: ValueCodec<S>,
 {
     let mut next_id = start_id;
     while tree.get(&next_id)?.is_some() {
