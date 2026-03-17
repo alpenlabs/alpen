@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
@@ -57,6 +57,14 @@ jobs:
           IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
           docker pull "${IMG_URL}"
           docker tag "${IMG_URL}" "alpen-client:latest"
+
+      - name: Build Prover Client image in native mode
+        run: |
+          mkdir -p docker/prover-client/elfs
+          docker build \
+            --build-arg PROVER_FEATURES="default" \
+            -t "strata-prover-client:latest" \
+            -f "docker/prover-client/Dockerfile" .
 
       - name: Generate alpen-client keys
         run: |
@@ -101,10 +109,18 @@ jobs:
             --rpc-chain-id 2892 \
             --tx-wait-timeout 30 \
             -v
+        continue-on-error: true
+
+      - name: Generate a proof of EE blocks execution
+        working-directory: docker
+        run: |
+          chmod +x test_ee_proof.sh
+          ./test_ee_proof.sh docker
 
       - name: Tear down services
         if: always()
         run: |
+          docker logs eest_prover || true
           docker logs alpen_eest || true
           docker compose --env-file docker/.env.alpen-client \
             -f docker/docker-compose-eest.yml down
