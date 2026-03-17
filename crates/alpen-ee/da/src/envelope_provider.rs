@@ -123,6 +123,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         };
 
         let reveal_refs = format_reveal_refs(&entry);
+        // Keep shared correlation fields on the span so status logs stay concise.
         let check_da_status_span = info_span!(
             "alpen_ee_check_da_status",
             component = "alpen_ee_da_provider",
