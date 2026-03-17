@@ -46,11 +46,11 @@ class StrataEnvConfig(flexitest.EnvConfig):
                     f"  stderr: {result.stderr.strip()}"
                 )
             bdk_addr = result.stdout.strip()
-        except FileNotFoundError:
+        except FileNotFoundError as err:
             raise RuntimeError(
                 "strata-test-cli binary not found. "
                 "Ensure it is built with: cargo build --bin strata-test-cli"
-            )
+            ) from err
         btc_rpc.proxy.sendtoaddress(bdk_addr, 10)
         mine_addr = btc_rpc.proxy.getnewaddress()
         btc_rpc.proxy.generatetoaddress(1, mine_addr)

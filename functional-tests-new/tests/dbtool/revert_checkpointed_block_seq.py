@@ -5,7 +5,7 @@ import logging
 import flexitest
 
 from common.base_test import StrataNodeTest
-from common.config import ServiceType
+from common.config import EpochSealingConfig, ServiceType
 from envconfigs.strata import StrataEnvConfig
 from tests.dbtool.helpers import (
     get_latest_checkpoint,
@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 @flexitest.register
 class RevertCheckpointedBlockSeqTest(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env(StrataEnvConfig(pre_generate_blocks=110, epoch_slots=4))
+        ctx.set_env(
+            StrataEnvConfig(
+                pre_generate_blocks=110, epoch_sealing=EpochSealingConfig.new_fixed_slot(4)
+            )
+        )
 
     def main(self, ctx):
         logger.info("Starting sequencer checkpointed-block revert test")

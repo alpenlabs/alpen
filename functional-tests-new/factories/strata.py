@@ -4,7 +4,6 @@ Creates Strata sequencer and fullnode instances.
 """
 
 import contextlib
-from dataclasses import asdict
 from pathlib import Path
 
 import flexitest
