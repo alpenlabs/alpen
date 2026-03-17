@@ -32,8 +32,10 @@ from common.config.constants import (
 from common.config.params import (
     CredRule,
     DepositTxParams,
+    GenesisAccountData,
     GenesisL1View,
     L1BlockCommitment,
+    OLParams,
     Params,
     ProofPublishMode,
     ProofPublishModeTimeout,
@@ -82,6 +84,8 @@ __all__ = [
     "SchnorrVerify",
     "CredRule",
     "DepositTxParams",
+    "GenesisAccountData",
+    "OLParams",
     "hex_bytes_repeated",
     "gen_random_keypair",
 ]

@@ -38,9 +38,8 @@ pub(crate) fn create_mock_deposit_tx(
     // Build the deposit descriptor and encode it as bridge-v1 would
     let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
-        SubjectIdBytes::try_new(vec![0u8; 32]).map_err(|e| {
-            Error::TxBuilder(format!("failed to create subject bytes: {e}"))
-        })?,
+        SubjectIdBytes::try_new(vec![0u8; 32])
+            .map_err(|e| Error::TxBuilder(format!("failed to create subject bytes: {e}")))?,
     )
     .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
 
@@ -77,9 +76,8 @@ pub(crate) fn build_mock_deposit_op_return(
 ) -> Result<ScriptBuf, Error> {
     let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
-        SubjectIdBytes::try_new(vec![0u8; 32]).map_err(|e| {
-            Error::TxBuilder(format!("failed to create subject bytes: {e}"))
-        })?,
+        SubjectIdBytes::try_new(vec![0u8; 32])
+            .map_err(|e| Error::TxBuilder(format!("failed to create subject bytes: {e}")))?,
     )
     .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
 
@@ -167,8 +165,8 @@ mod tests {
         let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
 
         // Encode to AsmLogEntry
-        let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
-            .expect("should encode");
+        let log_entry =
+            strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log).expect("should encode");
 
         // Decode back
         let decoded: DepositLog = log_entry
@@ -195,8 +193,8 @@ mod tests {
 
         let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), 50_000_000);
 
-        let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
-            .expect("should encode");
+        let log_entry =
+            strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log).expect("should encode");
         let raw_bytes = log_entry.into_bytes();
 
         // Verify we can construct the tag with debug subprotocol params

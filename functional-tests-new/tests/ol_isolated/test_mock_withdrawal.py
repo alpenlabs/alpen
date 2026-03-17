@@ -89,8 +89,7 @@ class TestMockWithdrawal(StrataNodeTest):
 
         # Step 1: Deposit via debug subprotocol
         logger.info(
-            f"Injecting mock deposit: {DEPOSIT_AMOUNT_SATS} sats "
-            f"to serial {TEST_ACCOUNT_SERIAL:#x}"
+            f"Injecting mock deposit: {DEPOSIT_AMOUNT_SATS} sats to serial {TEST_ACCOUNT_SERIAL:#x}"
         )
         txid = create_mock_deposit(
             account_serial=TEST_ACCOUNT_SERIAL,
@@ -113,7 +112,8 @@ class TestMockWithdrawal(StrataNodeTest):
         blocks_to_wait = 2 * slots_per_epoch
         logger.info(
             "Waiting %d blocks (2 * slots_per_epoch=%d) for terminal block...",
-            blocks_to_wait, slots_per_epoch,
+            blocks_to_wait,
+            slots_per_epoch,
         )
         strata.wait_for_additional_blocks(blocks_to_wait, rpc, timeout_per_block=15)
 
@@ -123,8 +123,7 @@ class TestMockWithdrawal(StrataNodeTest):
 
         if balance != DEPOSIT_AMOUNT_SATS:
             raise AssertionError(
-                f"Balance mismatch after deposit: "
-                f"expected {DEPOSIT_AMOUNT_SATS}, got {balance}"
+                f"Balance mismatch after deposit: expected {DEPOSIT_AMOUNT_SATS}, got {balance}"
             )
 
         # Step 5: Build withdrawal transaction
@@ -164,9 +163,7 @@ class TestMockWithdrawal(StrataNodeTest):
         final_balance = get_account_balance(rpc, account_id_hex)
         expected_balance = DEPOSIT_AMOUNT_SATS - WITHDRAWAL_DENOMINATION_SATS
 
-        logger.info(
-            f"Balance: {balance} -> {final_balance} (expected: {expected_balance})"
-        )
+        logger.info(f"Balance: {balance} -> {final_balance} (expected: {expected_balance})")
 
         if final_balance != expected_balance:
             raise AssertionError(

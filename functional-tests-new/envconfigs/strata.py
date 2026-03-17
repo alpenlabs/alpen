@@ -93,7 +93,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
 
         strata = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1,
+            genesis_l1.blk.height,
             is_sequencer=True,
             ol_params=ol_params,
             epoch_sealing_config=self.epoch_sealing,

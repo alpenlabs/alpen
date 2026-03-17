@@ -4,13 +4,12 @@ use std::marker;
 
 use bitcoin::hashes::Hash;
 use serde::{Deserialize, Serialize};
+use strata_asm_common::AsmSpec;
 use strata_btc_types::BlockHashExt;
 use strata_primitives::prelude::*;
 use strata_service::{Response, Service, SyncService};
 use strata_state::asm_state::AsmState;
 use tracing::*;
-
-use strata_asm_common::AsmSpec;
 
 use crate::{AsmWorkerServiceState, traits::WorkerContext};
 

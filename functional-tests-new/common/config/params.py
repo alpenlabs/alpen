@@ -86,6 +86,7 @@ class GenesisL1View:
             last_11_timestamps=timestamps,
         )
 
+
 # TODO: move this to some place common as this should be useful for other purposes as well
 def gen_random_keypair() -> tuple[str, Key]:
     """Generates a keypair and returns a tuple of xonly pubkey and privkey."""
@@ -136,6 +137,34 @@ class RollupParams:
     def with_genesis_l1(self, genesis_l1: GenesisL1View):
         self.genesis_l1_view = genesis_l1
         return self
+
+
+@dataclass
+class GenesisAccountData:
+    """Genesis snark account data. Maps to Rust GenesisSnarkAccountData."""
+
+    predicate: str = "AlwaysAccept"
+    inner_state: str = field(default_factory=lambda: hex_bytes_repeated(0))
+    balance: int = 0
+
+
+@dataclass
+class OLParams:
+    """OL genesis parameters. Maps to Rust OLParams."""
+
+    accounts: dict[str, GenesisAccountData] = field(default_factory=dict)
+    last_l1_block: L1BlockCommitment = field(default_factory=L1BlockCommitment)
+
+    def with_genesis_l1(self, genesis_l1: GenesisL1View) -> "OLParams":
+        self.last_l1_block = genesis_l1.blk
+        return self
+
+    def as_json_string(self) -> str:
+        d = {
+            "accounts": {k: asdict(v) for k, v in self.accounts.items()},
+            "last_l1_block": asdict(self.last_l1_block),
+        }
+        return json.dumps(d, indent=2)
 
 
 @dataclass

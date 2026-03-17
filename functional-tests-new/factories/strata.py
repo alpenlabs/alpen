@@ -97,8 +97,12 @@ class StrataFactory(flexitest.Factory):
         # Generate rollup params via datatool (also produces keys used below).
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
-        # Generate OL params via datatool (uses Bitcoin RPC to fetch genesis L1 block).
-        ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+        # Generate or write OL params.
+        if ol_params is not None:
+            ol_params_path = datadir / "ol-params.json"
+            ol_params_path.write_text(ol_params.as_json_string())
+        else:
+            ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
 
         # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
         asm_params_path = generate_asm_params(
