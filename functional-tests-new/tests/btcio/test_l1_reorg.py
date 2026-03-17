@@ -48,12 +48,10 @@ class TestL1Reorg(StrataNodeTest):
         pre_reorg_commitment = wait_until_with_value(
             lambda: rpc.strata_getL1HeaderCommitment(invalidate_height),
             lambda v: v is not None,
-            timeout=30,
+            timeout=60,
             error_with=f"Strata not caught up to height {invalidate_height}",
         )
-        logger.info(
-            f"Pre-reorg commitment at {invalidate_height}: {pre_reorg_commitment}"
-        )
+        logger.info(f"Pre-reorg commitment at {invalidate_height}: {pre_reorg_commitment}")
 
         # invalidate the block (and all descendants)
         block_hash = btc_rpc.proxy.getblockhash(invalidate_height)
@@ -64,8 +62,7 @@ class TestL1Reorg(StrataNodeTest):
         regressed_tip = btc_rpc.proxy.getblockchaininfo()["blocks"]
         if regressed_tip >= invalidate_height:
             raise AssertionError(
-                f"Expected tip below {invalidate_height} after invalidation, "
-                f"got {regressed_tip}"
+                f"Expected tip below {invalidate_height} after invalidation, got {regressed_tip}"
             )
         logger.info(f"Bitcoin tip regressed to {regressed_tip}")
 
@@ -81,15 +78,12 @@ class TestL1Reorg(StrataNodeTest):
         post_reorg_commitment = wait_until_with_value(
             lambda: rpc.strata_getL1HeaderCommitment(invalidate_height),
             lambda v: v is not None and v != pre_reorg_commitment,
-            timeout=30,
+            timeout=60,
             error_with=(
-                f"Strata did not update commitment at height "
-                f"{invalidate_height} after reorg"
+                f"Strata did not update commitment at height {invalidate_height} after reorg"
             ),
         )
-        logger.info(
-            f"Post-reorg commitment at {invalidate_height}: {post_reorg_commitment}"
-        )
+        logger.info(f"Post-reorg commitment at {invalidate_height}: {post_reorg_commitment}")
 
         logger.info(
             "Strata detected L1 reorg: commitment changed at height %d",

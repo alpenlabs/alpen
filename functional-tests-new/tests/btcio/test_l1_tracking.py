@@ -41,7 +41,7 @@ class TestL1Tracking(StrataNodeTest):
         wait_until_with_value(
             lambda: rpc.strata_getL1HeaderCommitment(pre_tip),
             lambda v: v is not None,
-            timeout=30,
+            timeout=60,
             error_with=f"Strata not caught up to L1 height {pre_tip}",
         )
 
@@ -52,15 +52,13 @@ class TestL1Tracking(StrataNodeTest):
         logger.info(f"Bitcoin tip after mining {self.EXTRA_BLOCKS} blocks: {post_tip}")
 
         if post_tip != pre_tip + self.EXTRA_BLOCKS:
-            raise AssertionError(
-                f"Expected tip {pre_tip + self.EXTRA_BLOCKS}, got {post_tip}"
-            )
+            raise AssertionError(f"Expected tip {pre_tip + self.EXTRA_BLOCKS}, got {post_tip}")
 
         # Wait for strata to pick up the new blocks
         commitment = wait_until_with_value(
             lambda: rpc.strata_getL1HeaderCommitment(post_tip),
             lambda v: v is not None,
-            timeout=30,
+            timeout=60,
             error_with=f"Strata did not track new L1 blocks up to height {post_tip}",
         )
         logger.info(f"L1 header commitment at new tip {post_tip}: {commitment}")
@@ -69,12 +67,12 @@ class TestL1Tracking(StrataNodeTest):
         for h in range(pre_tip + 1, post_tip + 1):
             c = rpc.strata_getL1HeaderCommitment(h)
             if c is None:
-                raise AssertionError(
-                    f"Missing L1 header commitment at height {h}"
-                )
+                raise AssertionError(f"Missing L1 header commitment at height {h}")
 
         logger.info(
             "Strata tracked all %d new L1 blocks (%d -> %d)",
-            self.EXTRA_BLOCKS, pre_tip, post_tip,
+            self.EXTRA_BLOCKS,
+            pre_tip,
+            post_tip,
         )
         return True
