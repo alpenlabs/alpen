@@ -1231,7 +1231,9 @@ mod tests {
             bcast.put_tx_entry(reveal.txid, rtx).await.unwrap();
         }
 
-        let result = check_full_broadcast_status(0, &entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::Finalized);
     }
 
@@ -1269,7 +1271,9 @@ mod tests {
         r2.status = confirmed;
         bcast.put_tx_entry(entry.reveals[2].txid, r2).await.unwrap();
 
-        let result = check_full_broadcast_status(0, &entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::Published,
@@ -1282,7 +1286,9 @@ mod tests {
         let bcast = get_broadcast_handle();
         let entry = make_entry_with_reveals(2);
 
-        let result = check_full_broadcast_status(0, &entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::Unsigned,
@@ -1309,7 +1315,9 @@ mod tests {
         bcast.put_tx_entry(entry.reveals[0].txid, r0).await.unwrap();
 
         // Second reveal is missing.
-        let result = check_full_broadcast_status(0, &entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::Unsigned,
@@ -1340,7 +1348,9 @@ mod tests {
         r1.status = L1TxStatus::InvalidInputs;
         bcast.put_tx_entry(entry.reveals[1].txid, r1).await.unwrap();
 
-        let result = check_full_broadcast_status(0, &entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::NeedsResign,
@@ -1368,7 +1378,9 @@ mod tests {
             bcast.put_tx_entry(reveal.txid, rtx).await.unwrap();
         }
 
-        let result = check_full_broadcast_status(0, &entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::CommitPublished,
