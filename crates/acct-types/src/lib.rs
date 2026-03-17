@@ -33,7 +33,7 @@ pub use mmr::{
     RawMerkleProofRef, StrataHasher,
 };
 pub use ssz_generated::ssz::{self as ssz, messages::*, state::*};
-pub use state::AccountTypeState;
+pub use state::*;
 pub use strata_btc_types::BitcoinAmount;
 pub use strata_identifiers::{
     AccountId, AccountSerial, AccountTypeId, Hash, RawAccountTypeId, SubjectId,

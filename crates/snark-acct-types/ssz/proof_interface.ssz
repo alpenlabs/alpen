@@ -2,7 +2,6 @@ import strata_acct_types
 
 import outputs
 import state
-import messages
 import update
 
 MAX_MESSAGE_ENTRIES = 2 << 10
@@ -17,6 +16,7 @@ class UpdateProofPubParams(Container):
     new_state: state.ProofState
 
     ### Messages from the inbox we're accepting.
+    #~# external_kind: container
     message_inputs: List[strata_acct_types.MessageEntry, update.MAX_PROCESSED_MESSAGES]
 
     ### Checked claims for other accumulators/state on the ledger.

@@ -16,7 +16,8 @@ class ProvenAccumulatorClaim(Container):
     claim: AccumulatorClaim
 
     ### Proof for the claim.
-    proof: strata_acct_types.MerkleProo
+    #~# external_kind: container
+    proof: strata_acct_types.MerkleProof
 
 ### A list of claims into some accumulator.
 class ClaimList(Container):
@@ -26,4 +27,5 @@ class ClaimList(Container):
 ###
 ### This is assumed to match a `ClaimList` somewhere else.
 class RawProofList(Container):
+    #~# external_kind: container
     proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_PROOF_COUNT]

@@ -20,6 +20,7 @@ class LedgerRefs(Container):
 
 class LedgerRefProofs(Container):
     ### Proofs for each entry in LedgerRefs.
+    #~# external_kind: container
     l1_headers_proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_LEDGER_REFS]
 
 ### Represents the state update that will eventually go into DA on OL.
@@ -27,7 +28,7 @@ class UpdateStateData(Container):
     ### The new state we're claiming.
     proof_state: state.ProofState
 
-    ### Arbitrary data we persist in DA.  This isstrata_acct_types formatted according to the
+    ### Arbitrary data we persist in DA.  This is formatted according to the
     ### needs of the snark account's application.
     extra_data: List[uint8, MAX_EXTRA_DATA_BYTES]
 
@@ -38,6 +39,7 @@ class UpdateInputData(Container):
     seq_no: uint64
 
     ### Messages we processed from the inbox.
+    #~# external_kind: container
     messages: List[strata_acct_types.MessageEntry, MAX_PROCESSED_MESSAGES]
 
     ### State update.
@@ -67,7 +69,8 @@ class UpdateAccumulatorProofs(Container):
     ### Proofs for inbox messages.
     ###
     ### Indexes match message entries.
+    #~# external_kind: container
     inbox_proofs: List[strata_acct_types.RawMerkleProof, MAX_PROCESSED_MESSAGES]
 
-    ### Proofs for ledger references.strata_acct_types
+    ### Proofs for ledger references.
     ledger_ref_proofs: LedgerRefProofs

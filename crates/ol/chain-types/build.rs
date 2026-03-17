@@ -23,9 +23,4 @@ fn main() {
         ModuleGeneration::NestedModules,
     )
     .expect("Failed to generate SSZ types");
-
-    println!("cargo:rerun-if-changed=ssz/block.ssz");
-    println!("cargo:rerun-if-changed=ssz/transaction.ssz");
-    println!("cargo:rerun-if-changed=ssz/log.ssz");
-    println!("cargo:rerun-if-changed=ssz/proofs.ssz");
 }

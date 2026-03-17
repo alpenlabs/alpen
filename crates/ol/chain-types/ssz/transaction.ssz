@@ -43,10 +43,12 @@ class SauTxUpdateData(Container):
     extra_data: List[uint8, SAU_MAX_EXTRA_DATA_BYTES]
 
 class SauTxLedgerRefs(StableContainer[16]):
-    asm_history_proofs: strata_acct_types.ClaimList
+    #~# external_kind: container
+    asm_history_proofs: Optional[proofs.ClaimList]
 
 class SauTxOperationData(Container):
     update_data: SauTxUpdateData
+    #~# external_kind: container
     messages: List[strata_acct_types.MessageEntry, SAU_MAX_PROCESSED_MESSAGES]
     ledger_refs: SauTxLedgerRefs
 

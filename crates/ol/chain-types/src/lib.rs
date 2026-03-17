@@ -34,12 +34,4 @@ mod ssz_generated {
 pub use block_flags::*;
 pub use log_payloads::*;
 // Re-export generated SSZ types with their canonical names
-pub use ssz_generated::ssz::{
-    block::*,
-    log::{OLLog, OLLogRef},
-    transaction::{
-        GamTxPayload, GamTxPayloadRef, OLTransaction, OLTransactionRef,
-        SnarkAccountUpdateTxPayload, SnarkAccountUpdateTxPayloadRef, TransactionAttachment,
-        TransactionAttachmentRef, TransactionPayload, TransactionPayloadRef,
-    },
-};
+pub use ssz_generated::ssz::{block::*, log::*, proofs::*, transaction::*};

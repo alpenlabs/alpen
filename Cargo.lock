@@ -15241,7 +15241,6 @@ dependencies = [
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
- "strata-snark-acct-types",
  "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.14.0",

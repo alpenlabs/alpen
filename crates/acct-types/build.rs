@@ -18,7 +18,4 @@ fn main() {
         ModuleGeneration::NestedModules,
     )
     .expect("Failed to generate SSZ types");
-
-    println!("cargo:rerun-if-changed=ssz/messages.ssz");
-    println!("cargo:rerun-if-changed=ssz/state.ssz");
 }
