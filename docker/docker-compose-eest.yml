@@ -1,5 +1,5 @@
-# Setup for Ethereum Execution Spec Tests (EEST) + EE proof generation.
-# Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind + prover-client.
+# Setup for Ethereum Execution Spec Tests (EEST).
+# Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind for DA.
 #
 # Usage:
 #   ./init-alpen-client-keys.sh
@@ -86,30 +86,6 @@ services:
     volumes:
       - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
-    networks:
-      - eest
-
-  prover-client:
-    image: strata-prover-client:latest
-    container_name: eest_prover
-    depends_on:
-      - alpen-client
-    command: [
-      "--datadir", "/app/.data",
-      "--sequencer-rpc", "http://alpen-client:8545",
-      "--reth-rpc", "http://alpen-client:8545",
-      "--bitcoind-url", "bitcoind:18443",
-      "--bitcoind-user", "${BITCOIND_RPC_USER:-rpcuser}",
-      "--bitcoind-password", "${BITCOIND_RPC_PASSWORD:-rpcpassword}",
-      "--rollup-params", "/app/params.json",
-      "--enable-dev-rpcs", "true"
-    ]
-    ports:
-      - "9851:9851"
-    volumes:
-      - ./configs/alpen-client/rollup-params.json:/app/params.json:ro
-    environment:
-      RUST_LOG: info
     networks:
       - eest
 
