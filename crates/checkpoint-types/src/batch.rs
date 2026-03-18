@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, io};
 
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -213,5 +213,10 @@ impl BatchInfo {
     pub fn l1_height_at_or_before_end(&self, height: L1Height) -> bool {
         let (_, last_l1_commitment) = self.l1_range;
         height <= last_l1_commitment.height()
+    }
+
+    /// Decodes legacy checkpoint proof public values into a [`BatchInfo`].
+    pub fn from_proof_output_bytes(bytes: &[u8]) -> io::Result<Self> {
+        borsh::from_slice(bytes)
     }
 }

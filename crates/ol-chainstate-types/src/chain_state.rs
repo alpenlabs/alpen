@@ -1,5 +1,6 @@
-// use std::ops::Deref;
+use std::io;
 
+// use std::ops::Deref;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_bridge_types::WithdrawalIntent;
@@ -145,6 +146,11 @@ impl Chainstate {
     // TODO: remove ASAP
     pub fn pending_withdraws_mut(&mut self) -> &mut StateQueue<WithdrawalIntent> {
         &mut self.pending_withdraws
+    }
+
+    /// Decodes a legacy Borsh-encoded chainstate blob.
+    pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
+        borsh::from_slice(bytes)
     }
 }
 

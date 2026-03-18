@@ -1,3 +1,5 @@
+use std::io;
+
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -41,6 +43,16 @@ impl Checkpoint {
             proof,
             sidecar,
         }
+    }
+
+    /// Decodes a legacy checkpoint payload.
+    pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
+        borsh::from_slice(bytes)
+    }
+
+    /// Encodes this checkpoint using the legacy payload format.
+    pub fn to_raw_bytes(&self) -> io::Result<Vec<u8>> {
+        borsh::to_vec(self)
     }
 
     pub fn batch_info(&self) -> &BatchInfo {
@@ -118,6 +130,11 @@ pub struct SignedCheckpoint {
 impl SignedCheckpoint {
     pub fn new(inner: Checkpoint, signature: Buf64) -> Self {
         Self { inner, signature }
+    }
+
+    /// Decodes a legacy signed checkpoint payload.
+    pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
+        borsh::from_slice(bytes)
     }
 
     pub fn checkpoint(&self) -> &Checkpoint {
