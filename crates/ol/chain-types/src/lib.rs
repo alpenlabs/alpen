@@ -5,6 +5,7 @@ mod block_flags;
 mod error;
 mod log;
 mod log_payloads;
+mod proofs;
 mod transaction;
 
 #[cfg(any(test, feature = "test-utils"))]

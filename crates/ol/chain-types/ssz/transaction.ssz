@@ -7,10 +7,7 @@ import proofs
 GAM_MAX_PAYLOAD_LEN = 1 << 16
 
 SAU_MAX_PROCESSED_MESSAGES = 1 << 16
-SAU_MAX_TYPE_LEDGER_REFS = 1 << 16
-
-### 2 MB limit for update proof
-SAU_MAX_UPDATE_PROOF_BYTES = 2 << 20
+SAU_MAX_TYPE_LEDGER_REFS = 255
 
 ### Max extra data bytes
 SAU_MAX_EXTRA_DATA_BYTES = 1024
@@ -24,14 +21,11 @@ class GamTxPayload(Container):
     ### Target account ID.
     target: strata_acct_types.AccountId
 
-    ### Message data payload bytes.
-    payload: List[uint8, GAM_MAX_PAYLOAD_LEN]
-
 # ====================
 # Snark account update tx types
 # ====================
 
-### The new state of the account.
+### The new state of the snark account.
 class SauTxProofState(Container):
     new_next_msg_idx: uint64
     inner_state_root: Bytes32
@@ -42,14 +36,19 @@ class SauTxUpdateData(Container):
     proof_state: SauTxProofState
     extra_data: List[uint8, SAU_MAX_EXTRA_DATA_BYTES]
 
+### References to other accessible ledger accumulators.
 class SauTxLedgerRefs(StableContainer[16]):
     #~# external_kind: container
     asm_history_proofs: Optional[proofs.ClaimList]
 
+### Description of a snark account changes and other constraint checks we need
+### to check.
 class SauTxOperationData(Container):
     update_data: SauTxUpdateData
+
     #~# external_kind: container
     messages: List[strata_acct_types.MessageEntry, SAU_MAX_PROCESSED_MESSAGES]
+
     ledger_refs: SauTxLedgerRefs
 
 ### Snark account update payload.
@@ -58,20 +57,15 @@ class SauTxPayload(Container):
     target: strata_acct_types.AccountId
 
     ### Snark account update data.
-    update_operation: SauTxOperationData
-
-    ### Validity proof for the update operation, validated using the account's
-    ### predicate key.
-    update_proof: List[uint8, SAU_MAX_UPDATE_PROOF_BYTES]
+    operation_data: SauTxOperationData
 
 # ====================
 # General tx structural types
 # ====================
 
 ### Additional constraints that we can place on a transaction.
-# TODO should we rename this `TxConstraints`?
 #~# derive: std::default::Default
-class TxConstraints(StableContainer[16]):
+class TxConstraints(StableContainer[8]):
     ### Minimum slot for inclusion
     min_slot: Optional[strata_identifiers.Slot]
 
@@ -86,7 +80,7 @@ class TransactionPayload(Union):
 ### Data within the transaction.
 ###
 ### This is what we compute the txid from.
-class TxData(Container):
+class OLTransactionData(Container):
     ### Transaction payload (enum variant)
     payload: TransactionPayload
 
@@ -98,19 +92,23 @@ class TxData(Container):
     effects: strata_acct_types.TxEffects
 
 ### Proof data we provide alongside the tx.
-class TxProofs(StableContainer[16]):
-    ### Inbox message proofs, as used in snark account updates.
-    inbox_proofs: Optional[proofs.RawProofList]
+###
+### This does not impact the txid since it's at partially malleable by design.
+class TxProofs(StableContainer[8]):
+    ### Satisfiers for predicate checks.
+    predicate_satisfiers: Optional[proofs.ProofSatisfierList]
 
-    ### Proofs against the ASM history accumulator.
-    asm_history_proofs: Optional[proofs.RawProofList]
+    ### Proofs for all accumulators queried by the transactions.
+    ###
+    ### The order is dependent on the tx.
+    accumulator_proofs: Optional[proofs.RawMerkleProofList]
 
 ### Transaction container.
 ###
 ### This is what we compute the wtxid from.
 class OLTransaction(Container):
     ### Transaction data itself.  Used to compute txid.
-    data: TxData
+    data: OLTransactionData
 
-    ### Accumulator proofs.
+    ### Various proofs which might be modified.
     proofs: TxProofs

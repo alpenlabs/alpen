@@ -1,22 +1,17 @@
 use std::fmt;
 
 use int_enum::IntEnum;
-use strata_acct_types::AccountId;
-use strata_identifiers::Slot;
+use strata_acct_types::{AccountId, MessageEntry, TxEffects};
+use strata_identifiers::{Buf32, Slot};
 
-use crate::{
-    TxConstraints,
-    ssz_generated::ssz::transaction::{
-        GamTxPayload, OLTransaction, SauTxPayload, TransactionPayload, TxData, TxProofs,
-    },
-};
+use crate::ssz_generated::ssz::{proofs::*, transaction::*};
 
 impl OLTransaction {
-    pub fn new(data: TxData, proofs: TxProofs) -> Self {
+    pub fn new(data: OLTransactionData, proofs: TxProofs) -> Self {
         Self { data, proofs }
     }
 
-    pub fn data(&self) -> &TxData {
+    pub fn data(&self) -> &OLTransactionData {
         &self.data
     }
 
@@ -110,25 +105,99 @@ impl fmt::Display for TxTypeId {
 }
 
 impl GamTxPayload {
-    pub fn new(target: AccountId, payload: Vec<u8>) -> Result<Self, &'static str> {
-        Ok(Self {
-            target,
-            payload: payload.into(),
-        })
+    pub fn new(target: AccountId) -> Result<Self, &'static str> {
+        Ok(Self { target })
     }
 
     pub fn target(&self) -> &AccountId {
         &self.target
-    }
-
-    pub fn payload(&self) -> &[u8] {
-        self.payload.as_ref()
     }
 }
 
 impl SauTxPayload {
     pub fn target(&self) -> &AccountId {
         &self.target
+    }
+
+    pub fn operation(&self) -> &SauTxOperationData {
+        &self.operation_data
+    }
+}
+
+impl SauTxOperationData {
+    pub fn update(&self) -> &SauTxUpdateData {
+        &self.update_data
+    }
+
+    pub fn messages_iter(&self) -> impl Iterator<Item = &MessageEntry> {
+        self.messages.iter()
+    }
+
+    pub fn ledger_refs(&self) -> &SauTxLedgerRefs {
+        &self.ledger_refs
+    }
+}
+
+impl SauTxLedgerRefs {
+    pub fn asm_history_proofs(&self) -> Option<&ClaimList> {
+        match self.asm_history_proofs.as_ref() {
+            ssz_types::Optional::None => None,
+            ssz_types::Optional::Some(l) => Some(l),
+        }
+    }
+}
+
+impl SauTxUpdateData {
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    pub fn proof_state(&self) -> &SauTxProofState {
+        &self.proof_state
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+}
+
+impl SauTxProofState {
+    pub fn new_next_msg_idx(&self) -> u64 {
+        self.new_next_msg_idx
+    }
+
+    pub fn inner_state_root(&self) -> Buf32 {
+        self.inner_state_root.0.into()
+    }
+}
+
+impl OLTransactionData {
+    pub fn payload(&self) -> &TransactionPayload {
+        &self.payload
+    }
+
+    pub fn constraints(&self) -> &TxConstraints {
+        &self.constraints
+    }
+
+    pub fn effects(&self) -> &TxEffects {
+        &self.effects
+    }
+}
+
+impl TxProofs {
+    pub fn predicate_satisfiers(&self) -> Option<&ProofSatisfierList> {
+        match &self.predicate_satisfiers {
+            ssz_types::Optional::Some(s) => Some(s),
+            ssz_types::Optional::None => None,
+        }
+    }
+
+    pub fn accumulator_proofs(&self) -> Option<&RawMerkleProofList> {
+        match &self.accumulator_proofs {
+            ssz_types::Optional::Some(p) => Some(p),
+            ssz_types::Optional::None => None,
+        }
     }
 }
 
@@ -169,21 +238,9 @@ mod tests {
         ssz_proptest!(GamTxPayload, gam_tx_payload_strategy());
 
         #[test]
-        fn test_empty_payload() {
+        fn test_roundtrip() {
             let msg = GamTxPayload {
                 target: AccountId::from([0u8; 32]),
-                payload: vec![].into(),
-            };
-            let encoded = msg.as_ssz_bytes();
-            let decoded = GamTxPayload::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(msg, decoded);
-        }
-
-        #[test]
-        fn test_with_payload() {
-            let msg = GamTxPayload {
-                target: AccountId::from([1u8; 32]),
-                payload: vec![1, 2, 3, 4, 5].into(),
             };
             let encoded = msg.as_ssz_bytes();
             let decoded = GamTxPayload::from_ssz_bytes(&encoded).unwrap();
@@ -200,7 +257,6 @@ mod tests {
         fn test_gam_tx_payload_variant() {
             let payload = TransactionPayload::GenericAccountMessage(GamTxPayload {
                 target: AccountId::from([0u8; 32]),
-                payload: vec![1, 2, 3].into(),
             });
             let encoded = payload.as_ssz_bytes();
             let decoded = TransactionPayload::from_ssz_bytes(&encoded).unwrap();
@@ -211,7 +267,7 @@ mod tests {
         fn test_snark_account_update_tx_payload_variant() {
             let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload {
                 target: AccountId::from([0u8; 32]),
-                update_operation: SauTxOperationData {
+                operation_data: SauTxOperationData {
                     update_data: SauTxUpdateData {
                         seq_no: 1,
                         proof_state: SauTxProofState {
@@ -225,7 +281,6 @@ mod tests {
                         asm_history_proofs: ssz_types::Optional::None,
                     },
                 },
-                update_proof: vec![].into(),
             });
             let encoded = payload.as_ssz_bytes();
             let decoded = TransactionPayload::from_ssz_bytes(&encoded).unwrap();
@@ -243,17 +298,16 @@ mod tests {
         #[test]
         fn test_generic_message() {
             let tx = OLTransaction {
-                data: TxData {
+                data: OLTransactionData {
                     payload: TransactionPayload::GenericAccountMessage(GamTxPayload {
                         target: AccountId::from([0u8; 32]),
-                        payload: vec![].into(),
                     }),
                     constraints: TxConstraints::default(),
                     effects: TxEffects::default(),
                 },
                 proofs: TxProofs {
-                    inbox_proofs: ssz_types::Optional::None,
-                    asm_history_proofs: ssz_types::Optional::None,
+                    predicate_satisfiers: ssz_types::Optional::None,
+                    accumulator_proofs: ssz_types::Optional::None,
                 },
             };
             let encoded = tx.as_ssz_bytes();
@@ -264,10 +318,10 @@ mod tests {
         #[test]
         fn test_snark_account_update() {
             let tx = OLTransaction {
-                data: TxData {
+                data: OLTransactionData {
                     payload: TransactionPayload::SnarkAccountUpdate(SauTxPayload {
                         target: AccountId::from([1u8; 32]),
-                        update_operation: SauTxOperationData {
+                        operation_data: SauTxOperationData {
                             update_data: SauTxUpdateData {
                                 seq_no: 42,
                                 proof_state: SauTxProofState {
@@ -281,7 +335,6 @@ mod tests {
                                 asm_history_proofs: ssz_types::Optional::None,
                             },
                         },
-                        update_proof: vec![].into(),
                     }),
                     constraints: TxConstraints {
                         min_slot: ssz_types::Optional::Some(100),
@@ -290,8 +343,8 @@ mod tests {
                     effects: TxEffects::default(),
                 },
                 proofs: TxProofs {
-                    inbox_proofs: ssz_types::Optional::None,
-                    asm_history_proofs: ssz_types::Optional::None,
+                    predicate_satisfiers: ssz_types::Optional::None,
+                    accumulator_proofs: ssz_types::Optional::None,
                 },
             };
             let encoded = tx.as_ssz_bytes();

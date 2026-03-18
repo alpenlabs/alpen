@@ -3,7 +3,7 @@ import messages
 MAX_TRANSFERS = 255
 MAX_MESSAGES = 255
 
-### Output effects that an account can result in.
+### Direct external effects that a transaction can cause.
 ###
 ### How these are validated is dependent on the kind of transaction.
 #~# derive: std::default::Default

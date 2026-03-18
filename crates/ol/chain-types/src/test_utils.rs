@@ -6,15 +6,15 @@
 #![allow(unreachable_pub, reason = "test utils module")]
 
 use proptest::prelude::*;
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, MessageEntry, MsgPayload};
+use strata_acct_types::{
+    AccountId, AccountSerial, BitcoinAmount, MessageEntry, MsgPayload, TxEffects,
+};
 use strata_identifiers::{
     Epoch, Slot,
     test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy},
 };
 
-use strata_acct_types::TxEffects;
-
-use crate::{*, block_flags::BlockFlags, ssz_generated::ssz::block::*};
+use crate::{block_flags::BlockFlags, ssz_generated::ssz::block::*, *};
 
 /// Strategy for generating random [`OLLog`] values.
 pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
@@ -118,23 +118,16 @@ pub fn accumulator_claim_strategy() -> impl Strategy<Value = AccumulatorClaim> {
 }
 
 pub fn transaction_attachment_strategy() -> impl Strategy<Value = TxConstraints> {
-    (any::<Option<u64>>(), any::<Option<u64>>()).prop_map(|(min_slot, max_slot)| {
-        TxConstraints {
-            min_slot: min_slot.into(),
-            max_slot: max_slot.into(),
-        }
+    (any::<Option<u64>>(), any::<Option<u64>>()).prop_map(|(min_slot, max_slot)| TxConstraints {
+        min_slot: min_slot.into(),
+        max_slot: max_slot.into(),
     })
 }
 
 pub fn gam_tx_payload_strategy() -> impl Strategy<Value = GamTxPayload> {
-    (
-        any::<[u8; 32]>(),
-        prop::collection::vec(any::<u8>(), 0..256),
-    )
-        .prop_map(|(target_bytes, payload)| GamTxPayload {
-            target: AccountId::from(target_bytes),
-            payload: payload.into(),
-        })
+    any::<[u8; 32]>().prop_map(|target_bytes| GamTxPayload {
+        target: AccountId::from(target_bytes),
+    })
 }
 
 pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
@@ -144,28 +137,24 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
         any::<u64>(),
         prop::collection::vec(message_entry_strategy(), 0..10),
         prop::collection::vec(any::<u8>(), 0..32),
-        prop::collection::vec(any::<u8>(), 0..64),
     )
         .prop_map(
-            |(target_bytes, state_bytes, seq_no, messages, extra_data, update_proof)| {
-                SauTxPayload {
-                    target: AccountId::from(target_bytes),
-                    update_operation: SauTxOperationData {
-                        update_data: SauTxUpdateData {
-                            seq_no,
-                            proof_state: SauTxProofState {
-                                new_next_msg_idx: 0,
-                                inner_state_root: state_bytes.into(),
-                            },
-                            extra_data: extra_data.into(),
+            |(target_bytes, state_bytes, seq_no, messages, extra_data)| SauTxPayload {
+                target: AccountId::from(target_bytes),
+                operation_data: SauTxOperationData {
+                    update_data: SauTxUpdateData {
+                        seq_no,
+                        proof_state: SauTxProofState {
+                            new_next_msg_idx: 0,
+                            inner_state_root: state_bytes.into(),
                         },
-                        messages: messages.into(),
-                        ledger_refs: SauTxLedgerRefs {
-                            asm_history_proofs: ssz_types::Optional::None,
-                        },
+                        extra_data: extra_data.into(),
                     },
-                    update_proof: update_proof.into(),
-                }
+                    messages: messages.into(),
+                    ledger_refs: SauTxLedgerRefs {
+                        asm_history_proofs: ssz_types::Optional::None,
+                    },
+                },
             },
         )
 }
@@ -183,14 +172,14 @@ pub fn ol_transaction_strategy() -> impl Strategy<Value = OLTransaction> {
         transaction_attachment_strategy(),
     )
         .prop_map(|(payload, constraints)| OLTransaction {
-            data: TxData {
+            data: OLTransactionData {
                 payload,
                 constraints,
                 effects: TxEffects::default(),
             },
             proofs: TxProofs {
-                inbox_proofs: ssz_types::Optional::None,
-                asm_history_proofs: ssz_types::Optional::None,
+                predicate_satisfiers: ssz_types::Optional::None,
+                accumulator_proofs: ssz_types::Optional::None,
             },
         })
 }

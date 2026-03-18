@@ -1,6 +1,13 @@
 import strata_acct_types
 
-MAX_TYPE_PROOF_COUNT = 4096
+### 2 MB limit for proof satisfiers.
+MAX_SATISFIER_LEN = 2 << 20
+
+### Max length of a proof satisfier.
+MAX_SATISFIER_COUNT = 255
+
+### Max number of proof 
+MAX_ACC_PROOF_COUNT = 4096
 
 ### Claim that an entry exists in a linear accumulator at some index
 class AccumulatorClaim(Container):
@@ -10,22 +17,19 @@ class AccumulatorClaim(Container):
     ### Hash of the entry
     entry_hash: Bytes32
 
-### Accumulator claim with a proof.
-class ProvenAccumulatorClaim(Container):
-    ### The claim proven.
-    claim: AccumulatorClaim
-
-    ### Proof for the claim.
-    #~# external_kind: container
-    proof: strata_acct_types.MerkleProof
-
 ### A list of claims into some accumulator.
 class ClaimList(Container):
-    claims: List[AccumulatorClaim, MAX_TYPE_PROOF_COUNT]
+    claims: List[AccumulatorClaim, MAX_ACC_PROOF_COUNT]
 
-### A list of raw proofs into some accumulator.
-###
-### This is assumed to match a `ClaimList` somewhere else.
-class RawProofList(Container):
+### A list of raw merkle proofs into accumulators.
+class RawMerkleProofList(Container):
     #~# external_kind: container
-    proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_PROOF_COUNT]
+    proofs: List[strata_acct_types.RawMerkleProof, MAX_ACC_PROOF_COUNT]
+
+### Opaque satisfier for a proof.
+class ProofSatisfier(Container):
+    proof: List[uint8, MAX_SATISFIER_LEN]
+
+### Opaque list of proof satisfiers.
+class ProofSatisfierList(Container):
+    proofs: List[ProofSatisfier, MAX_SATISFIER_COUNT]
