@@ -215,6 +215,9 @@ impl BatchInfo {
         height <= last_l1_commitment.height()
     }
 
+    #[deprecated(
+        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
+    )]
     /// Decodes legacy checkpoint proof public values into a [`BatchInfo`].
     pub fn from_proof_output_bytes(bytes: &[u8]) -> io::Result<Self> {
         borsh::from_slice(bytes)

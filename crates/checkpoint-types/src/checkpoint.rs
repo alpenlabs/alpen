@@ -45,11 +45,17 @@ impl Checkpoint {
         }
     }
 
+    #[deprecated(
+        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
+    )]
     /// Decodes a legacy checkpoint payload.
     pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
         borsh::from_slice(bytes)
     }
 
+    #[deprecated(
+        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
+    )]
     /// Encodes this checkpoint using the legacy payload format.
     pub fn to_raw_bytes(&self) -> io::Result<Vec<u8>> {
         borsh::to_vec(self)
@@ -132,6 +138,9 @@ impl SignedCheckpoint {
         Self { inner, signature }
     }
 
+    #[deprecated(
+        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
+    )]
     /// Decodes a legacy signed checkpoint payload.
     pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
         borsh::from_slice(bytes)

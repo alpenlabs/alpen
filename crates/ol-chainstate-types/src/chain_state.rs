@@ -148,6 +148,9 @@ impl Chainstate {
         &mut self.pending_withdraws
     }
 
+    #[deprecated(
+        note = "this is deprecated and will be removed in the future in favor of using SSZ representation"
+    )]
     /// Decodes a legacy Borsh-encoded chainstate blob.
     pub fn from_raw_bytes(bytes: &[u8]) -> io::Result<Self> {
         borsh::from_slice(bytes)
