@@ -48,6 +48,7 @@ class ElExexWalPruningTest(testenv.StrataTestBase):
         seqrpc = ctx.get_service("sequencer").create_rpc()
         reth = ctx.get_service("reth")
         rethrpc = reth.create_rpc()
+        reth_waiter = self.create_reth_waiter(rethrpc)
         seq_waiter = self.create_strata_waiter(seqrpc, timeout=20, interval=2)
 
         seq_waiter.wait_until_genesis()
@@ -57,11 +58,7 @@ class ElExexWalPruningTest(testenv.StrataTestBase):
         wal_dir = os.path.join(reth_datadir, "exex", "wal")
 
         # Wait for some blocks to be produced so WAL files accumulate
-        wait_until(
-            lambda: int(rethrpc.eth_blockNumber(), base=16) > 10,
-            error_with="blocks not advancing",
-            timeout=30,
-        )
+        reth_waiter.wait_until_eth_block_exceeds(10, message="blocks not advancing")
 
         # Record WAL files before finalization
         wal_files_before = set(glob.glob(os.path.join(wal_dir, "*.wal")))

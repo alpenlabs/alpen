@@ -1,4 +1,4 @@
-"""Verify ExEx WAL files are pruned after epoch finalization in EL<>OL mode."""
+"""Verify ExEx WAL files are pruned in EL<>OL mode."""
 
 import glob
 import logging
@@ -28,7 +28,7 @@ def _wal_file_id(path: str) -> int:
 
 @flexitest.register
 class TestExexWalPruning(BaseTest):
-    """Check that finalized epochs trigger pruning of old ExEx WAL files."""
+    """Check that ExEx eventually prunes old WAL files."""
 
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("el_ol")
@@ -42,10 +42,9 @@ class TestExexWalPruning(BaseTest):
         strata_rpc = strata_seq.wait_for_rpc_ready(timeout=10)
         btc_rpc = bitcoin.create_rpc()
 
-        wait_until_with_value(
-            lambda: strata_rpc.strata_getAccountGenesisEpochCommitment(ALPEN_ACCOUNT_ID),
-            lambda commitment: commitment is not None,
-            error_with="Timed out waiting for Alpen account genesis commitment",
+        strata_seq.wait_for_account_genesis_epoch_commitment(
+            ALPEN_ACCOUNT_ID,
+            rpc=strata_rpc,
             timeout=20,
         )
 
@@ -55,13 +54,13 @@ class TestExexWalPruning(BaseTest):
         wal_files_before = wait_until_with_value(
             lambda: _list_wal_files(wal_dir_root),
             lambda files: len(files) > 0,
-            error_with="Expected ExEx WAL files to exist before finalization",
+            error_with="Expected ExEx WAL files to exist before pruning check",
             timeout=60,
             step=2,
         )
-        logger.info("WAL files before finalization: %s", len(wal_files_before))
+        logger.info("Captured %s WAL files before pruning check", len(wal_files_before))
 
-        # Submit a few txs to ensure there are non-empty blocks around finalization.
+        # Submit a few txs to ensure there are non-empty blocks while pruning is observed.
         dev_account = get_dev_account(ee_rpc)
         sender = create_funded_account(ee_rpc, dev_account, 3 * 10**18)
         recipient = "0x000000000000000000000000000000000000dEaD"
@@ -76,57 +75,27 @@ class TestExexWalPruning(BaseTest):
             tx_hash = send_raw_transaction(ee_rpc, raw_tx)
             wait_for_receipt(ee_rpc, tx_hash, timeout=30)
 
-        # Mine L1 blocks while polling Strata status until epoch 1 is confirmed.
-        #
-        # In functional-tests-new `el_ol`, epoch finalization may not always be available
-        # (for example when no proving/finalization pipeline is wired in the environment),
-        # but confirmation still advances with L1 progress and is sufficient to exercise
-        # the EE/OL interaction path this test depends on.
         mine_address = btc_rpc.proxy.getnewaddress()
-        status_after_confirmation = wait_until_with_value(
-            lambda: _mine_and_get_sync_status(strata_seq, btc_rpc, mine_address),
-            lambda status: status["confirmed"] is not None and status["confirmed"]["epoch"] >= 1,
-            error_with="Epoch 1 was not confirmed in time",
-            timeout=180,
-            step=2,
-        )
-        logger.info(
-            "Epoch %s confirmed; attempting to observe finalization before WAL check",
-            status_after_confirmation["confirmed"]["epoch"],
-        )
-
-        # Best effort: observe finalization if this env supports it.
-        try:
-            status_after_finalization = wait_until_with_value(
-                lambda: _mine_and_get_sync_status(strata_seq, btc_rpc, mine_address),
-                lambda status: status["finalized"] is not None
-                and status["finalized"]["epoch"] >= 1,
-                error_with="Epoch 1 was not finalized in time",
-                timeout=120,
-                step=2,
-            )
-            logger.info(
-                "Epoch %s finalized; checking WAL pruning",
-                status_after_finalization["finalized"]["epoch"],
-            )
-        except AssertionError:
-            logger.warning(
-                "Epoch 1 was not finalized in time in this environment. "
-                "Skipping WAL-pruning assertion because pruning is finalization-driven."
-            )
-            return True
 
         def wal_files_pruned() -> bool:
-            # Keep L1 moving while checking pruning so EE keeps receiving
-            # finalization-related forkchoice updates.
+            # Track only files from the original snapshot. New WAL files can appear while
+            # blocks are still being produced, so a shrinking total file count would be a
+            # flaky signal. A set difference tells us whether any preexisting file was
+            # deleted regardless of how many new files were created meanwhile.
             btc_rpc.proxy.generatetoaddress(2, mine_address)
             current = _list_wal_files(wal_dir_root)
-            return len(wal_files_before - current) > 0
+            pruned_files = wal_files_before - current
+            if pruned_files:
+                logger.info(
+                    "Observed pruning of WAL IDs: %s",
+                    sorted(_wal_file_id(path) for path in pruned_files),
+                )
+            return bool(pruned_files)
 
         wait_until(
             wal_files_pruned,
             error_with=(
-                "No ExEx WAL files were pruned after finalization. "
+                "No preexisting ExEx WAL files were pruned while L1 kept advancing. "
                 "FinishedHeight may be reporting incorrect block numbers."
             ),
             timeout=90,
@@ -154,13 +123,3 @@ class TestExexWalPruning(BaseTest):
             )
 
         return True
-
-
-def _mine_and_get_sync_status(
-    strata: StrataService,
-    btc_rpc,
-    mine_address: str,
-):
-    """Mine a couple of L1 blocks and fetch latest Strata sync status."""
-    btc_rpc.proxy.generatetoaddress(2, mine_address)
-    return strata.get_sync_status()
