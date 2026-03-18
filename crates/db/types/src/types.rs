@@ -255,6 +255,36 @@ pub enum L1TxStatus {
     InvalidInputs,
 }
 
+impl fmt::Display for L1TxStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unpublished => f.write_str("unpublished"),
+            Self::Published => f.write_str("published"),
+            Self::Confirmed {
+                confirmations,
+                block_hash,
+                block_height,
+            } => {
+                write!(
+                    f,
+                    "confirmed@{block_height}/{block_hash} ({confirmations} confs)"
+                )
+            }
+            Self::Finalized {
+                confirmations,
+                block_hash,
+                block_height,
+            } => {
+                write!(
+                    f,
+                    "finalized@{block_height}/{block_hash} ({confirmations} confs)"
+                )
+            }
+            Self::InvalidInputs => f.write_str("invalid_inputs"),
+        }
+    }
+}
+
 /// Entry corresponding to a BatchCommitment
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 #[deprecated(note = "use `OLCheckpointEntry` for OL/EE-decoupled checkpoint storage")]
@@ -467,6 +497,27 @@ impl ChunkedEnvelopeEntry {
     }
 }
 
+impl fmt::Display for ChunkedEnvelopeEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ChunkedEnvelopeEntry(status={}, chunk_count={}, commit_txid={}, reveals=[",
+            self.status,
+            self.chunk_data.len(),
+            self.commit_txid
+        )?;
+
+        for (idx, reveal) in self.reveals.iter().enumerate() {
+            if idx > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{reveal}")?;
+        }
+
+        f.write_str("])")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AccountExtraDataEntry {
     /// Extra data for an account
@@ -499,6 +550,12 @@ pub struct RevealTxMeta {
     pub tx_bytes: Vec<u8>,
 }
 
+impl fmt::Display for RevealTxMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.txid, self.wtxid)
+    }
+}
+
 /// Lifecycle status of a chunked envelope.
 ///
 /// The lifecycle ensures reveals are not broadcast before their parent commit tx
@@ -529,6 +586,20 @@ pub enum ChunkedEnvelopeStatus {
     Finalized,
     /// Input UTXOs were spent; needs fresh signing.
     NeedsResign,
+}
+
+impl fmt::Display for ChunkedEnvelopeStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unsigned => f.write_str("unsigned"),
+            Self::Unpublished => f.write_str("unpublished"),
+            Self::CommitPublished => f.write_str("commit_published"),
+            Self::Published => f.write_str("published"),
+            Self::Confirmed => f.write_str("confirmed"),
+            Self::Finalized => f.write_str("finalized"),
+            Self::NeedsResign => f.write_str("needs_resign"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -569,5 +640,38 @@ mod tests {
             let actual: L1TxStatus = serde_json::from_str(serialized).unwrap();
             assert_eq!(actual, l1_tx_status);
         }
+    }
+
+    #[test]
+    fn display_l1txstatus_uses_log_friendly_format() {
+        let status = L1TxStatus::Confirmed {
+            confirmations: 12,
+            block_hash: Buf32::zero(),
+            block_height: 42,
+        };
+
+        assert_eq!(status.to_string(), "confirmed@42/000000..000000 (12 confs)");
+    }
+
+    #[test]
+    fn display_chunked_envelope_entry_includes_commit_and_reveals() {
+        let entry = ChunkedEnvelopeEntry {
+            chunk_data: vec![vec![1], vec![2]],
+            magic_bytes: MagicBytes::new([0; 4]),
+            prev_tail_wtxid: Buf32::zero(),
+            commit_txid: Buf32::from([1; 32]),
+            reveals: vec![RevealTxMeta {
+                vout_index: 0,
+                txid: Buf32::from([2; 32]),
+                wtxid: Buf32::from([3; 32]),
+                tx_bytes: Vec::new(),
+            }],
+            status: ChunkedEnvelopeStatus::Published,
+        };
+
+        assert_eq!(
+            entry.to_string(),
+            "ChunkedEnvelopeEntry(status=published, chunk_count=2, commit_txid=010101..010101, reveals=[020202..020202/030303..030303])"
+        );
     }
 }

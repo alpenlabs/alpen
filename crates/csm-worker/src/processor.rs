@@ -58,6 +58,7 @@ fn process_checkpoint_log(
     info!(
         %epoch,
         %asm_block,
+        l1_height = asm_block.height(),
         checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
         "CSM is processing checkpoint update from ASM log"
     );

@@ -200,6 +200,36 @@ impl ChunkedEnvelopeWatcherState {
     }
 }
 
+fn format_reveal_refs(entry: &ChunkedEnvelopeEntry) -> Vec<String> {
+    entry
+        .reveals
+        .iter()
+        .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
+        .collect()
+}
+
+fn format_tx_status(txid: Buf32, status: &L1TxStatus) -> String {
+    match status {
+        L1TxStatus::Unpublished => format!("{txid}:unpublished"),
+        L1TxStatus::Published => format!("{txid}:published"),
+        L1TxStatus::InvalidInputs => format!("{txid}:invalid_inputs"),
+        L1TxStatus::Confirmed {
+            confirmations,
+            block_hash,
+            block_height,
+        } => {
+            format!("{txid}:confirmed@{block_height}/{block_hash} ({confirmations} confs)")
+        }
+        L1TxStatus::Finalized {
+            confirmations,
+            block_hash,
+            block_height,
+        } => {
+            format!("{txid}:finalized@{block_height}/{block_hash} ({confirmations} confs)")
+        }
+    }
+}
+
 /// Polls entries and drives them through signing, broadcast, and confirmation.
 ///
 /// The lifecycle is:
@@ -238,7 +268,6 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
         }
         .instrument(info_span!(
             "chunked_envelope_watcher_iteration",
-            component = "chunked_envelope_watcher",
             iteration,
             next_db_idx,
             forward_frontier,
@@ -359,17 +388,25 @@ async fn reconcile_active_entries(
                 continue;
             }
             ChunkedEnvelopeStatus::Unpublished => {
-                check_commit_and_broadcast_reveals(&entry, broadcast_handle, client).await?
+                check_commit_and_broadcast_reveals(idx, &entry, broadcast_handle, client).await?
             }
             ChunkedEnvelopeStatus::CommitPublished
             | ChunkedEnvelopeStatus::Published
             | ChunkedEnvelopeStatus::Confirmed => {
-                check_full_broadcast_status(&entry, broadcast_handle).await?
+                check_full_broadcast_status(idx, &entry, broadcast_handle).await?
             }
         };
 
         if new_status != entry.status {
-            debug!(idx, ?new_status, old_status = ?entry.status, "entry status changed");
+            let reveal_refs = format_reveal_refs(&entry);
+            debug!(
+                envelope_idx = idx,
+                commit_txid = %entry.commit_txid,
+                ?reveal_refs,
+                old_status = ?entry.status,
+                ?new_status,
+                "entry status changed"
+            );
             let mut updated = entry;
             updated.status = new_status.clone();
             ops.put_chunked_envelope_entry_async(idx, updated).await?;
@@ -425,13 +462,22 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             break;
         };
 
-        match sign_chunked_envelope(&entry, prev_tail_wtxid, broadcast_handle, ctx.clone()).await {
+        match sign_chunked_envelope(idx, &entry, prev_tail_wtxid, broadcast_handle, ctx.clone())
+            .await
+        {
             Ok(updated) => {
                 let signed_status = updated.status.clone();
+                let reveal_refs = format_reveal_refs(&updated);
+                debug!(
+                    envelope_idx = idx,
+                    commit_txid = %updated.commit_txid,
+                    ?reveal_refs,
+                    ?signed_status,
+                    "entry signed successfully"
+                );
                 ops.put_chunked_envelope_entry_async(idx, updated.clone())
                     .await?;
                 state.active_envelopes.insert(idx);
-                debug!(idx, ?signed_status, "entry signed successfully");
 
                 if entry_unlocks_successor(&updated) {
                     state.forward_frontier += 1;
@@ -490,12 +536,17 @@ async fn resolve_prev_tail_wtxid(
 /// block) before broadcasting. Multiple large reveals would otherwise exceed
 /// the descendant-size limit and be rejected by the mempool.
 async fn check_commit_and_broadcast_reveals(
+    envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
     client: &impl Broadcaster,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
     let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
-        warn!("commit tx missing from broadcast db, will re-sign");
+        warn!(
+            envelope_idx,
+            commit_txid = %entry.commit_txid,
+            "commit tx missing from broadcast db, will re-sign"
+        );
         return Ok(ChunkedEnvelopeStatus::Unsigned);
     };
 
@@ -516,9 +567,13 @@ async fn check_commit_and_broadcast_reveals(
         return Ok(ChunkedEnvelopeStatus::Unpublished);
     }
 
+    let reveal_refs = format_reveal_refs(entry);
     info!(
+        envelope_idx,
         commit_txid = %entry.commit_txid,
+        commit_status = ?commit.status,
         reveal_count = entry.reveals.len(),
+        ?reveal_refs,
         "commit on-chain, broadcasting all reveals"
     );
 
@@ -534,25 +589,41 @@ async fn check_commit_and_broadcast_reveals(
     for (txid, tx) in &reveal_txs {
         match client.send_raw_transaction(tx).await {
             Ok(_) => {
-                debug!(%txid, "reveal tx broadcast successfully");
+                debug!(
+                    envelope_idx,
+                    %txid,
+                    "reveal tx broadcast successfully"
+                );
             }
             Err(e)
                 if e.is_missing_or_invalid_input() || matches!(e, ClientError::Server(-22, _)) =>
             {
-                warn!(%txid, ?e, "reveal tx has invalid inputs, will re-sign");
+                warn!(
+                    envelope_idx,
+                    %txid,
+                    ?e,
+                    "reveal tx has invalid inputs, will re-sign"
+                );
                 return Ok(ChunkedEnvelopeStatus::NeedsResign);
             }
             Err(e) => {
                 // Could be "already in mempool" which is fine, or a network error.
                 // We'll verify actual status on the next poll.
-                warn!(%txid, ?e, "broadcast returned error (may already be in mempool)");
+                warn!(
+                    envelope_idx,
+                    %txid,
+                    ?e,
+                    "broadcast returned error (may already be in mempool)"
+                );
             }
         }
     }
 
     info!(
+        envelope_idx,
         commit_txid = %entry.commit_txid,
         reveal_count = entry.reveals.len(),
+        ?reveal_refs,
         "completed reveal broadcast attempt"
     );
 
@@ -574,35 +645,66 @@ async fn check_commit_and_broadcast_reveals(
 /// Called when status is `CommitPublished`, `Published`, or `Confirmed`.
 /// The least-progressed transaction determines the overall envelope status.
 async fn check_full_broadcast_status(
+    envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
     let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
-        warn!("commit tx missing from broadcast db, will re-sign");
+        warn!(
+            envelope_idx,
+            commit_txid = %entry.commit_txid,
+            "commit tx missing from broadcast db, will re-sign"
+        );
         return Ok(ChunkedEnvelopeStatus::Unsigned);
     };
     if commit.status == L1TxStatus::InvalidInputs {
         return Ok(ChunkedEnvelopeStatus::NeedsResign);
     }
 
-    let mut min_progress = commit.status;
+    let mut min_progress = commit.status.clone();
+    let mut reveal_l1_statuses = Vec::with_capacity(entry.reveals.len());
     for reveal in &entry.reveals {
         let Some(rtx) = bcast.get_tx_entry_by_id_async(reveal.txid).await? else {
-            warn!(txid = %reveal.txid, "reveal tx missing from broadcast db, will re-sign");
+            warn!(
+                envelope_idx,
+                txid = %reveal.txid,
+                "reveal tx missing from broadcast db, will re-sign"
+            );
             return Ok(ChunkedEnvelopeStatus::Unsigned);
         };
         if rtx.status == L1TxStatus::InvalidInputs {
             // This shouldn't happen if we waited for commit to be published first,
             // but handle it gracefully by re-signing.
-            warn!(txid = %reveal.txid, "reveal has InvalidInputs despite commit being published");
+            warn!(
+                envelope_idx,
+                txid = %reveal.txid,
+                "reveal has InvalidInputs despite commit being published"
+            );
             return Ok(ChunkedEnvelopeStatus::NeedsResign);
         }
+        reveal_l1_statuses.push(format_tx_status(reveal.txid, &rtx.status));
         if is_less_progressed(&rtx.status, &min_progress) {
             min_progress = rtx.status;
         }
     }
 
-    Ok(to_envelope_status(&min_progress))
+    let envelope_status = to_envelope_status(&min_progress);
+    if matches!(
+        envelope_status,
+        ChunkedEnvelopeStatus::Confirmed | ChunkedEnvelopeStatus::Finalized
+    ) {
+        let commit_l1_status = format_tx_status(entry.commit_txid, &commit.status);
+        info!(
+            envelope_idx,
+            commit_txid = %entry.commit_txid,
+            ?envelope_status,
+            commit_l1_status = %commit_l1_status,
+            ?reveal_l1_statuses,
+            "chunked envelope advanced on L1"
+        );
+    }
+
+    Ok(envelope_status)
 }
 
 /// Returns a progress ordinal for comparing [`L1TxStatus`] values.
@@ -896,7 +998,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(
@@ -922,7 +1024,7 @@ mod tests {
         let entry = make_entry_with_reveals(2);
 
         // Don't store commit at all — should return Unsigned for re-signing.
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(
@@ -945,7 +1047,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::NeedsResign);
@@ -969,7 +1071,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(
@@ -1012,7 +1114,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(
@@ -1041,7 +1143,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(
@@ -1070,7 +1172,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(&entry, &bcast, &client)
+        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
             .await
             .unwrap();
         assert_eq!(
@@ -1116,7 +1218,9 @@ mod tests {
             bcast.put_tx_entry(reveal.txid, rtx).await.unwrap();
         }
 
-        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::Finalized);
     }
 
@@ -1154,7 +1258,9 @@ mod tests {
         r2.status = confirmed;
         bcast.put_tx_entry(entry.reveals[2].txid, r2).await.unwrap();
 
-        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::Published,
@@ -1167,7 +1273,9 @@ mod tests {
         let bcast = get_broadcast_handle();
         let entry = make_entry_with_reveals(2);
 
-        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::Unsigned,
@@ -1194,7 +1302,9 @@ mod tests {
         bcast.put_tx_entry(entry.reveals[0].txid, r0).await.unwrap();
 
         // Second reveal is missing.
-        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::Unsigned,
@@ -1225,7 +1335,9 @@ mod tests {
         r1.status = L1TxStatus::InvalidInputs;
         bcast.put_tx_entry(entry.reveals[1].txid, r1).await.unwrap();
 
-        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::NeedsResign,
@@ -1253,7 +1365,9 @@ mod tests {
             bcast.put_tx_entry(reveal.txid, rtx).await.unwrap();
         }
 
-        let result = check_full_broadcast_status(&entry, &bcast).await.unwrap();
+        let result = check_full_broadcast_status(0, &entry, &bcast)
+            .await
+            .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::CommitPublished,

@@ -399,6 +399,7 @@ async fn handle_checkpoint_duty<C: SequencerContext>(
     let codec_payload = CodecSsz::new(checkpoint.clone());
     let encoded = encode_to_vec(&codec_payload)
         .map_err(|e| SequencerDutyError::CheckpointEncode(e.to_string()))?;
+    let checkpoint_tip = checkpoint.new_tip();
 
     let payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
     let sighash = hash::raw(&checkpoint.as_ssz_bytes());
@@ -415,6 +416,9 @@ async fn handle_checkpoint_duty<C: SequencerContext>(
     info!(
         ?duty_id,
         %epoch,
+        l1_height = checkpoint_tip.l1_height(),
+        l2_commitment = %checkpoint_tip.l2_commitment(),
+        %sighash,
         %intent_idx,
         "checkpoint duty complete"
     );

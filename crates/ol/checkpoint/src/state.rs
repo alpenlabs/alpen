@@ -112,7 +112,14 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         let entry = OLCheckpointEntry::new_unsigned(payload);
         self.ctx.put_checkpoint(epoch, entry)?;
 
-        info!(%epoch, "stored OL checkpoint entry");
+        info!(
+            component = "ol_checkpoint",
+            %epoch,
+            l1_height = summary.new_l1().height(),
+            l1_block = %summary.new_l1(),
+            l2_commitment = %summary.terminal(),
+            "stored OL checkpoint entry"
+        );
         self.last_processed_epoch = Some(epoch);
         self.last_processed_epoch_index = Some(epoch_index);
 

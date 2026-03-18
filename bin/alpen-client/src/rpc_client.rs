@@ -11,13 +11,14 @@ use strata_common::{
     },
     ws_client::{ManagedWsClient, WsClientConfig},
 };
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, L1Height};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, L1Height, OLTxId};
 use strata_ol_rpc_api::OLClientRpcClient;
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
     RpcTransactionPayload,
 };
 use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData, UpdateStateData};
+use tracing::info;
 
 /// Max retries for startup RPC calls where the OL node may still be booting.
 const STARTUP_RPC_MAX_RETRIES: u16 = 10;
@@ -237,7 +238,19 @@ impl SequencerOLClient for RpcOLClient {
         .await
     }
 
-    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<(), OLClientError> {
+    async fn submit_update(&self, update: SnarkAccountUpdate) -> Result<OLTxId, OLClientError> {
+        let operation = update.operation();
+        let seq_no = operation.seq_no();
+        let inner_state = operation.new_proof_state().inner_state();
+        let next_inbox_msg_idx = operation.new_proof_state().next_inbox_msg_idx();
+        let l1_ref_heights: Vec<_> = operation
+            .ledger_refs()
+            .l1_header_refs()
+            .iter()
+            .map(|claim| claim.idx())
+            .collect();
+        let extra_data_len = operation.extra_data().len();
+
         let rpc_update = RpcSnarkAccountUpdate::new(
             (*self.account_id.inner()).into(),
             update.operation.as_ssz_bytes().into(),
@@ -249,17 +262,27 @@ impl SequencerOLClient for RpcOLClient {
             RpcTransactionAttachment::new(None, None),
         );
 
-        retry_with_backoff_async(
+        let txid = retry_with_backoff_async(
             "ol_client_submit_update",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
-            || async {
-                call_rpc!(self, submit_transaction(tx.clone()))?;
-
-                Ok(())
-            },
+            || async { call_rpc!(self, submit_transaction(tx.clone())) },
         )
-        .await
+        .await?;
+
+        info!(
+            account_id = %self.account_id,
+            %txid,
+            seq_no,
+            %inner_state,
+            next_inbox_msg_idx,
+            extra_data_len,
+            l1_ref_count = l1_ref_heights.len(),
+            ?l1_ref_heights,
+            "submitted snark update to OL"
+        );
+
+        Ok(txid)
     }
 }
 

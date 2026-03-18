@@ -60,6 +60,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
         let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes);
+        let chunk_count = entry.chunk_data.len();
 
         let idx = self
             .envelope_handle
@@ -67,7 +68,12 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             .await
             .map_err(|e| eyre::eyre!("failed to submit envelope entry: {e}"))?;
 
-        info!(?batch_id, %idx, "submitted chunked envelope for batch DA");
+        info!(
+            ?batch_id,
+            envelope_idx = %idx,
+            chunk_count,
+            "submitted chunked envelope for batch DA"
+        );
         Ok(idx)
     }
 
@@ -85,20 +91,38 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             bail!("envelope entry {envelope_idx} missing from DB for batch {batch_id:?}");
         };
 
-        debug!(?batch_id, ?entry.status, "checking chunked envelope status");
+        // Keep shared correlation fields on the span so status logs stay concise.
+        let check_da_status_span = info_span!(
+            "alpen_ee_check_da_status",
+            ?batch_id,
+            %envelope_idx,
+            %entry,
+        );
 
-        match entry.status {
-            ChunkedEnvelopeStatus::Finalized => {
-                let block_refs = self.build_da_block_refs(&entry).await?;
-                Ok(DaStatus::Ready(block_refs))
+        async {
+            debug!(status = %entry.status, "checking chunked envelope status");
+
+            match entry.status {
+                ChunkedEnvelopeStatus::Finalized => {
+                    let block_refs = self.build_da_block_refs(&entry).await?;
+                    let da_block_refs = block_refs
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    info!(%da_block_refs, "batch DA finalized on L1");
+                    Ok(DaStatus::Ready(block_refs))
+                }
+                ChunkedEnvelopeStatus::Unsigned
+                | ChunkedEnvelopeStatus::NeedsResign
+                | ChunkedEnvelopeStatus::Unpublished
+                | ChunkedEnvelopeStatus::CommitPublished
+                | ChunkedEnvelopeStatus::Published
+                | ChunkedEnvelopeStatus::Confirmed => Ok(DaStatus::Pending),
             }
-            ChunkedEnvelopeStatus::Unsigned
-            | ChunkedEnvelopeStatus::NeedsResign
-            | ChunkedEnvelopeStatus::Unpublished
-            | ChunkedEnvelopeStatus::CommitPublished
-            | ChunkedEnvelopeStatus::Published
-            | ChunkedEnvelopeStatus::Confirmed => Ok(DaStatus::Pending),
         }
+        .instrument(check_da_status_span)
+        .await
     }
 }
 

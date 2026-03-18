@@ -476,7 +476,19 @@ info!(%block_id, height, "processing block");
 info!("processing block {block_id} at height {height}");
 ```
 
-**Spans**: Any function with significant work must create a span with a `component` field:
+Prefer shorthand field syntax when the field name already matches the variable:
+
+```rust
+// Good: shorthand keeps tracing calls compact
+info!(?batch_id, %foo, "processing batch");
+
+// Avoid: repeated field names add noise
+info!(batch_id = ?batch_id, foo = %foo, "processing batch");
+```
+
+Avoid adding ad hoc `component` fields to logs when the module path or surrounding spans already provide enough context.
+
+**Spans**: Any function with significant work should create a span when it improves correlation. Prefer the span name and module path for context, and only add a `component` field when it adds signal beyond the existing metadata:
 ```rust
 #[tracing::instrument(fields(component = "asm_stf"))]
 fn process_block(block: &Block) -> Result<()> {

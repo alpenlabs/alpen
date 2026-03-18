@@ -337,6 +337,13 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let mempool_tx: OLMempoolTransaction = tx
             .try_into()
             .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
+        let target = mempool_tx.target();
+        let next_inbox_msg_idx = mempool_tx.base_update().map(|base_update| {
+            base_update
+                .operation()
+                .new_proof_state()
+                .next_inbox_msg_idx()
+        });
 
         // Submit to mempool
         let txid = self
@@ -345,7 +352,23 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .await
             .map_err(map_mempool_error_to_rpc)?;
 
-        info!(%txid, "submitted transaction to OL mempool");
+        match next_inbox_msg_idx {
+            Some(next_inbox_msg_idx) => {
+                info!(
+                    %txid,
+                    %target,
+                    next_inbox_msg_idx,
+                    "snark update received by the OL mempool"
+                );
+            }
+            None => {
+                info!(
+                    %txid,
+                    %target,
+                    "transaction received by the OL mempool"
+                );
+            }
+        }
 
         Ok(txid)
     }
