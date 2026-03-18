@@ -11,12 +11,14 @@ use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
+use strata_db_types::types::OLCheckpointL1ObservationEntry;
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
 
+#[expect(deprecated, reason = "v0 checkpoint path is retained intentionally")]
 pub(crate) fn process_log(
     state: &mut CsmWorkerState,
     log: &AsmLogEntry,
@@ -48,15 +50,18 @@ pub(crate) fn process_log(
 }
 
 /// Process a single ASM log entry, extracting and handling checkpoint updates.
+#[deprecated(
+    note = "Legacy checkpoint-v0 log path. Retained while v0 checkpoint subprotocol is still supported."
+)]
 fn process_checkpoint_log(
     state: &mut CsmWorkerState,
     checkpoint_update: &CheckpointUpdate,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     let epoch = checkpoint_update.batch_info().epoch();
+    let _span = info_span!("process_checkpoint_log", %epoch).entered();
 
     info!(
-        %epoch,
         %asm_block,
         l1_height = asm_block.height(),
         checkpoint_txid = ?checkpoint_update.checkpoint_txid(),
@@ -74,8 +79,17 @@ fn process_checkpoint_log(
     let l1_checkpoint =
         L1Checkpoint::new(checkpoint_update.batch_info().clone(), l1_reference.clone());
 
-    // Update the client state with this checkpoint
+    let prev_final_epoch = state.cur_state.get_declared_final_epoch();
+    // Update the client state with this checkpoint.
     update_client_state_with_checkpoint(state, l1_checkpoint, epoch)?;
+    // v0 keeps legacy finalization signaling through SyncAction.
+    let new_final_epoch = state.cur_state.get_declared_final_epoch();
+    if let Some(epoch_comm) =
+        newly_finalized_epoch(prev_final_epoch.as_ref(), new_final_epoch.as_ref())
+    {
+        info!(?epoch_comm, "Finalizing epoch from checkpoint");
+        apply_action(SyncAction::FinalizeEpoch(epoch_comm), &state.storage)?;
+    }
 
     // Create sync action to update checkpoint entry in database
     let sync_action = SyncAction::UpdateCheckpointInclusion {
@@ -100,9 +114,9 @@ fn process_checkpoint_tip_log(
 ) -> anyhow::Result<()> {
     let tip = checkpoint_tip_update.tip();
     let epoch = tip.epoch;
+    let _span = info_span!("process_checkpoint_tip_log", %epoch).entered();
 
     info!(
-        %epoch,
         %asm_block,
         l1_height = tip.l1_height(),
         l2_slot = tip.l2_commitment().slot(),
@@ -125,18 +139,19 @@ fn process_checkpoint_tip_log(
     // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
     update_client_state_with_checkpoint(state, synthetic_checkpoint, epoch)?;
+    mark_ol_checkpoint_l1_observed(state, checkpoint_tip_update, asm_block)?;
 
     state.last_processed_epoch = Some(epoch);
     Ok(())
 }
 
-/// Update client state with a new checkpoint.
+/// Update and persist client state from a checkpoint.
 fn update_client_state_with_checkpoint(
     state: &mut CsmWorkerState,
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
 ) -> anyhow::Result<()> {
-    // Get the current client state
+    // Get the current client state.
     let cur_state = state.cur_state.as_ref();
 
     // Determine if this checkpoint should be the last finalized or just recent.
@@ -165,18 +180,8 @@ fn update_client_state_with_checkpoint(
         }
     };
 
-    // Create new client state
-    let next_state = ClientState::new(last_finalized, recent.clone());
-
-    // Check if we need to finalize an epoch
-    let old_final_epoch = cur_state.get_declared_final_epoch();
-    let new_final_epoch = next_state.get_declared_final_epoch();
-
-    let should_finalize = match (old_final_epoch, new_final_epoch) {
-        (None, Some(new)) => Some(new),
-        (Some(old), Some(new)) if new.epoch() > old.epoch() => Some(new),
-        _ => None,
-    };
+    // Create new client state.
+    let next_state = ClientState::new(last_finalized, recent);
 
     // Store the new client state
     let l1_block = state.last_asm_block.expect("should have ASM block");
@@ -193,13 +198,62 @@ fn update_client_state_with_checkpoint(
         .status_channel
         .update_client_state(state.cur_state.as_ref().clone(), l1_block);
 
-    // Handle epoch finalization if needed
-    if let Some(epoch_comm) = should_finalize {
-        info!(?epoch_comm, "Finalizing epoch from checkpoint");
-        apply_action(SyncAction::FinalizeEpoch(epoch_comm), &state.storage)?;
+    Ok(())
+}
+
+fn mark_ol_checkpoint_l1_observed(
+    state: &mut CsmWorkerState,
+    checkpoint_tip_update: &CheckpointTipUpdate,
+    asm_block: &L1BlockCommitment,
+) -> anyhow::Result<()> {
+    let tip = checkpoint_tip_update.tip();
+    let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
+    let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
+    let ol_checkpoint = state.storage.ol_checkpoint();
+
+    let observation = OLCheckpointL1ObservationEntry::new(*asm_block);
+    ol_checkpoint.put_checkpoint_l1_observation_entry_blocking(commitment, observation)?;
+
+    // Update cached confirmed epoch monotonically.
+    if state
+        .confirmed_epoch
+        .is_none_or(|current| commitment.epoch() > current.epoch())
+    {
+        state.confirmed_epoch = Some(commitment);
     }
 
+    // Queue only non-finalized candidates and avoid duplicates.
+    if state
+        .finalized_epoch
+        .is_none_or(|current| commitment.epoch() > current.epoch())
+        && !state
+            .observed_checkpoints
+            .iter()
+            .any(|(epoch, _)| *epoch == commitment)
+    {
+        state
+            .observed_checkpoints
+            .push_back((commitment, observation));
+    }
+
+    debug!(
+        ?commitment,
+        l1_height = asm_block.height(),
+        "Recorded OL checkpoint L1 observation from v1 tip update"
+    );
     Ok(())
+}
+
+fn newly_finalized_epoch(
+    prev_final_epoch: Option<&EpochCommitment>,
+    new_final_epoch: Option<&EpochCommitment>,
+) -> Option<EpochCommitment> {
+    // Return the newly declared finalized epoch only when finality advanced.
+    match (prev_final_epoch, new_final_epoch) {
+        (None, Some(new)) => Some(*new),
+        (Some(old), Some(new)) if new.epoch() > old.epoch() => Some(*new),
+        _ => None,
+    }
 }
 
 /// Build a compatibility synthetic [`L1Checkpoint`] from a v1 checkpoint tip update.
@@ -248,7 +302,8 @@ mod tests {
 
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{
-        CheckpointTipUpdate, CheckpointUpdate, constants::CHECKPOINT_UPDATE_LOG_TYPE,
+        CheckpointTipUpdate, CheckpointUpdate,
+        constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
     };
     use strata_checkpoint_types::BatchInfo;
     use strata_checkpoint_types_ssz::CheckpointTip;
@@ -259,7 +314,7 @@ mod tests {
         buf::Buf32,
         epoch::EpochCommitment,
         l1::BitcoinTxid,
-        l2::{L2BlockCommitment, L2BlockId},
+        ol::{OLBlockCommitment, OLBlockId},
         prelude::*,
     };
     use strata_status::StatusChannel;
@@ -359,26 +414,34 @@ mod tests {
         (state, storage)
     }
 
-    /// Helper to create an unknown log type entry
-    fn create_unknown_log_type() -> AsmLogEntry {
-        AsmLogEntry::from_msg(999, vec![1, 2, 3, 4]).expect("Failed to create log")
+    /// Helper to create a known non-checkpoint log type entry.
+    fn create_non_checkpoint_log_type() -> AsmLogEntry {
+        let mut arbgen = ArbitraryGenerator::new();
+        let payload = (0..8).map(|_| arbgen.generate()).collect::<Vec<u8>>();
+        AsmLogEntry::from_msg(DEPOSIT_LOG_TYPE_ID, payload)
+            .expect("Failed to create non-checkpoint log")
     }
 
     /// Helper to create a log entry without a type
     fn create_typeless_log() -> AsmLogEntry {
-        AsmLogEntry::from_raw(vec![5, 6, 7, 8])
+        let mut arbgen = ArbitraryGenerator::new();
+        // Keep raw length below TypeId width so this remains typeless by construction.
+        AsmLogEntry::from_raw(vec![arbgen.generate::<u8>()])
     }
 
     #[test]
-    fn test_process_log_with_unknown_log_type() {
+    fn test_process_log_with_non_checkpoint_log_type() {
         let (mut state, _) = create_test_state();
         let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
 
-        let log = create_unknown_log_type();
+        let log = create_non_checkpoint_log_type();
 
         // Should succeed but do nothing
         let result = process_log(&mut state, &log, &asm_block);
-        assert!(result.is_ok(), "process_log should handle unknown types");
+        assert!(
+            result.is_ok(),
+            "process_log should ignore known non-checkpoint log types"
+        );
 
         // State should not be updated
         assert_eq!(state.last_processed_epoch, None);
@@ -406,7 +469,9 @@ mod tests {
         state.last_asm_block = Some(asm_block);
 
         // Create a log with checkpoint type but invalid data
-        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, vec![1, 2, 3])
+        let mut arbgen = ArbitraryGenerator::new();
+        let invalid_payload = (0..3).map(|_| arbgen.generate()).collect::<Vec<u8>>();
+        let invalid_log = AsmLogEntry::from_msg(CHECKPOINT_UPDATE_LOG_TYPE, invalid_payload)
             .expect("Failed to create log");
 
         // Should fail with deserialization error
@@ -433,11 +498,11 @@ mod tests {
             let asm_block = L1BlockCommitment::new(200 + epoch, arbgen.generate());
             state.last_asm_block = Some(asm_block);
 
-            let l2_tip = L2BlockCommitment::new(
+            let ol_tip = OLBlockCommitment::new(
                 (epoch * 10) as u64,
-                L2BlockId::from(Buf32::from([epoch as u8; 32])),
+                OLBlockId::from(Buf32::from([epoch as u8; 32])),
             );
-            let tip = CheckpointTip::new(epoch, asm_block.height(), l2_tip);
+            let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
             let tip_update = CheckpointTipUpdate::new(tip);
             let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
@@ -466,6 +531,42 @@ mod tests {
     }
 
     #[test]
+    fn test_process_checkpoint_tip_log_writes_observation_without_payload() {
+        let (mut state, storage) = create_test_state();
+
+        let epoch = 9u32;
+        let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+        state.last_asm_block = Some(asm_block);
+
+        let ol_tip = OLBlockCommitment::new(90, OLBlockId::from(Buf32::from([epoch as u8; 32])));
+        let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
+        let tip_update = CheckpointTipUpdate::new(tip);
+        let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
+
+        process_log(&mut state, &log, &asm_block).expect("tip log should process");
+
+        let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
+        let observation = storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_observation_entry_blocking(commitment)
+            .expect("query observation entry");
+        assert_eq!(
+            observation.map(|entry| entry.l1_block),
+            Some(asm_block),
+            "observation entry should be written from v1 tip log"
+        );
+
+        let payload = storage
+            .ol_checkpoint()
+            .get_checkpoint_payload_entry_blocking(commitment)
+            .expect("query payload entry");
+        assert!(
+            payload.is_none(),
+            "tip log path should not require payload entry to write observation"
+        );
+    }
+
+    #[test]
     fn test_process_sequential_checkpoint_logs_happy_path() {
         let (mut state, storage) = create_test_state();
 
@@ -477,14 +578,14 @@ mod tests {
             let asm_block = L1BlockCommitment::new(100 + epoch, arbgen.generate());
             state.last_asm_block = Some(asm_block);
 
-            // Create L2 block range
-            let l2_start = L2BlockCommitment::new(
+            // Create OL block range
+            let ol_start = OLBlockCommitment::new(
                 ((epoch - 1) * 10) as u64,
-                L2BlockId::from(Buf32::from([epoch as u8; 32])),
+                OLBlockId::from(Buf32::from([epoch as u8; 32])),
             );
-            let l2_end = L2BlockCommitment::new(
+            let ol_end = OLBlockCommitment::new(
                 (epoch * 10) as u64,
-                L2BlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
+                OLBlockId::from(Buf32::from([(epoch + 1) as u8; 32])),
             );
 
             // Create L1 block range
@@ -492,10 +593,10 @@ mod tests {
             let l1_end = L1BlockCommitment::new(90 + epoch, arbgen.generate());
 
             // Create batch info
-            let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (l2_start, l2_end));
+            let batch_info = BatchInfo::new(epoch, (l1_start, l1_end), (ol_start, ol_end));
 
             // Create epoch commitment
-            let epoch_commitment = EpochCommitment::from_terminal(epoch, l2_end);
+            let epoch_commitment = EpochCommitment::from_terminal(epoch, ol_end);
 
             // Create checkpoint txid
             let checkpoint_txid: BitcoinTxid = arbgen.generate();

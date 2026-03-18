@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 use serde::Serialize;
-use strata_csm_types::ClientState;
 use strata_db_types::{traits::BlockStatus, DbError};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLBlock;
@@ -104,7 +103,7 @@ impl AsyncService for FcmService {
     ) -> anyhow::Result<Response> {
         match input {
             FcmEvent::NewFcmMsg(m) => process_fc_message(m, fcm_state).await?,
-            FcmEvent::NewStateUpdate(st) => handle_new_client_state(fcm_state, st).await?,
+            FcmEvent::NewStateUpdate => handle_new_state_update(fcm_state).await?,
             FcmEvent::Abort => return Ok(Response::ShouldExit),
         };
         Ok(Response::Continue)
@@ -165,9 +164,8 @@ async fn process_fc_message(
                     ))?;
                 let csm_status = fcm_state.ctx().csm_monitor().get_current();
                 let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
-
-                // If there is no confirmed epoch then set it to be the finalized epoch.
                 let confirmed_epoch = csm_status.last_confirmed_epoch.unwrap_or(finalized_epoch);
+
                 let canonical_tip = fcm_state.cur_best_block();
                 let tip_block_data = blk_db
                     .get_block_data_async(*canonical_tip.blkid())
@@ -205,8 +203,9 @@ async fn process_fc_message(
     Ok(())
 }
 
-async fn handle_new_client_state(fcm_state: &mut FcmState, cs: &ClientState) -> anyhow::Result<()> {
-    let Some(new_fin_epoch) = cs.get_declared_final_epoch() else {
+async fn handle_new_state_update(fcm_state: &mut FcmState) -> anyhow::Result<()> {
+    let csm_status = fcm_state.ctx().csm_monitor().get_current();
+    let Some(new_fin_epoch) = csm_status.last_finalized_epoch else {
         debug!("got new CSM state, but finalized epoch still unset, ignoring");
         return Ok(());
     };

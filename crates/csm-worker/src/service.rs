@@ -26,8 +26,8 @@ impl Service for CsmWorkerService {
         CsmWorkerStatus {
             cur_block: state.last_asm_block,
             last_processed_epoch: state.last_processed_epoch.map(|e| e as u64),
-            last_confirmed_epoch: state.cur_state.get_last_epoch(),
-            last_finalized_epoch: state.cur_state.get_declared_final_epoch(),
+            last_confirmed_epoch: state.confirmed_epoch,
+            last_finalized_epoch: state.finalized_epoch,
         }
     }
 }
@@ -47,27 +47,54 @@ impl SyncService for CsmWorkerService {
 
         // Track which block we're processing
         state.last_asm_block = Some(asm_block);
+        let prev_confirmed_epoch = state.confirmed_epoch;
+        let prev_finalized_epoch = state.finalized_epoch;
 
-        // Extract checkpoint logs from ASM status
-        let logs = asm_status.logs();
-
-        if logs.is_empty() {
-            trace!("No logs in ASM status update.");
-            return Ok(Response::Continue);
-        }
-
-        let logs_num = logs.len();
-        trace!(%logs_num, "CSM received logs from ASM status update.");
-
-        // Process each checkpoint update log
-        for log in logs {
+        // Process checkpoint logs from ASM status
+        for log in asm_status.logs() {
             if let Err(e) = process_log(state, log, &asm_block) {
                 error!(%asm_block, err = %e, "Failed to process ASM log");
-                // Continue processing other logs instead of failing completely
             }
         }
 
-        trace!(%asm_block, "CSM successfully processed ASM logs.");
+        // Advance finalized epoch from the observation queue based on L1 depth.
+        let current_l1_tip = asm_block.height();
+        let finality_depth = state.params.rollup.l1_reorg_safe_depth.max(1);
+        while let Some((commitment, observation)) = state.observed_checkpoints.front() {
+            if state
+                .finalized_epoch
+                .is_some_and(|current| commitment.epoch() <= current.epoch())
+            {
+                state.observed_checkpoints.pop_front();
+                continue;
+            }
+
+            let confirmations = current_l1_tip
+                .saturating_sub(observation.l1_block.height())
+                .saturating_add(1);
+            if confirmations >= finality_depth {
+                let epoch = *commitment;
+                state.observed_checkpoints.pop_front();
+                if state
+                    .finalized_epoch
+                    .is_none_or(|current| epoch.epoch() > current.epoch())
+                {
+                    state.finalized_epoch = Some(epoch);
+                }
+            } else {
+                break;
+            }
+        }
+
+        // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
+        // even if client-state object itself did not change (tip-only L1 movement).
+        if state.confirmed_epoch != prev_confirmed_epoch
+            || state.finalized_epoch != prev_finalized_epoch
+        {
+            state
+                .status_channel
+                .update_client_state(state.cur_state.as_ref().clone(), asm_block);
+        }
 
         Ok(Response::Continue)
     }
