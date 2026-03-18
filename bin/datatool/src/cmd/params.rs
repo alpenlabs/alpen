@@ -86,7 +86,7 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
         .unwrap_or(1_000_000_000);
 
     // Parse the checkpoint verification key.
-    let rollup_vk = resolve_checkpoint_predicate();
+    let rollup_vk = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
 
     let chainspec_json = match cmd.chain_config {
         Some(path) => fs::read_to_string(path)?,

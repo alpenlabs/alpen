@@ -7,7 +7,7 @@ use bitcoin::Network;
 use rand_core::OsRng;
 use strata_primitives::L1Height;
 
-use crate::util::resolve_network;
+use crate::{checkpoint_predicate::CheckpointPredicateOverride, util::resolve_network};
 
 /// Args.
 #[derive(FromArgs)]
@@ -174,6 +174,12 @@ pub(crate) struct SubcParams {
     )]
     pub(crate) proof_timeout: Option<u32>,
 
+    #[argh(
+        option,
+        description = "checkpoint predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+    )]
+    pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
+
     #[argh(option, description = "directory to export the generated ELF")]
     pub(crate) elf_dir: Option<PathBuf>,
 
@@ -244,6 +250,12 @@ pub(crate) struct SubcAsmParams {
         description = "path to JSON-serialized OL params (required to compute genesis OL block ID)"
     )]
     pub(crate) ol_params: PathBuf,
+
+    #[argh(
+        option,
+        description = "checkpoint predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+    )]
+    pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
 
     #[argh(option, description = "assignment duration in blocks (default 64)")]
     pub(crate) assignment_duration: Option<u16>,
