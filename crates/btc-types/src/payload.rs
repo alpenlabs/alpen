@@ -168,15 +168,26 @@ impl PayloadSpec {
 /// Data that is submitted to L1. This can be DA, Checkpoint, etc.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct L1Payload {
+    /// Data payload.
     data: Vec<Vec<u8>>,
+
+    /// Transaction type.
     tag: TagData,
 }
 
+/// SSZ representation of a [L1Payload].
 #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
 struct L1PayloadSsz {
+    /// Data payload.
     data: Vec<Vec<u8>>,
+
+    /// Subprotocol ID (first 8 bits of the [`TagData`]).
     subproto_id: u8,
+
+    /// Transaction type (second 8 bits of the [`TagData`]).
     tx_type: u8,
+
+    /// Auxiliary data (remaining bytes of the [`TagData`]).
     aux_data: Vec<u8>,
 }
 

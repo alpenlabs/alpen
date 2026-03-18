@@ -25,11 +25,19 @@ pub struct WithdrawalIntent {
     selected_operator: OperatorSelection,
 }
 
+/// SSZ representation of a [WithdrawalIntent].
 #[derive(Clone, Debug, Encode, Decode)]
 struct WithdrawalIntentSsz {
+    /// Quantity of L1 asset, for Bitcoin this is sats.
     amt: BitcoinAmount,
+
+    /// Destination [`Descriptor`] for the withdrawal
     destination: Vec<u8>,
+
+    /// withdrawal request transaction id
     withdrawal_txid: Buf32,
+
+    /// User's operator selection for withdrawal assignment.
     selected_operator: OperatorSelection,
 }
 

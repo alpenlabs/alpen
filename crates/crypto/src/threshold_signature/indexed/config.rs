@@ -39,9 +39,12 @@ pub struct ThresholdConfig {
     threshold: NonZero<u8>,
 }
 
+/// SSZ representation of a [ThresholdConfig].
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 struct ThresholdConfigSsz {
+    /// Public keys of all authorized signers.
     keys: Vec<CompressedPublicKey>,
+    /// Minimum number of signatures required (always >= 1).
     threshold: u8,
 }
 
@@ -258,15 +261,22 @@ impl Hash for CompressedPublicKey {
 /// Represents a change to the threshold configuration.
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ThresholdConfigUpdate {
+    /// Public keys to add.
     add_members: Vec<CompressedPublicKey>,
+    /// Public keys to remove.
     remove_members: Vec<CompressedPublicKey>,
+    /// Minimum number of signatures required (always >= 1).
     new_threshold: NonZero<u8>,
 }
 
+/// SSZ representation of a [ThresholdConfigUpdate].
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 struct ThresholdConfigUpdateSsz {
+    /// Public keys of all authorized signers.
     add_members: Vec<CompressedPublicKey>,
+    /// Public keys to remove.
     remove_members: Vec<CompressedPublicKey>,
+    /// Minimum number of signatures required (always >= 1).
     new_threshold: u8,
 }
 

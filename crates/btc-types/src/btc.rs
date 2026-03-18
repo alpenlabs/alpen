@@ -437,9 +437,13 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxOut(TxOut);
 
+/// SSZ representation of a [BitcoinTxOut].
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
 struct BitcoinTxOutSsz {
+    /// Quantity of L1 asset, for Bitcoin this is in satoshis in [`Amount`].
     value: u64,
+
+    /// Script pubkey for the withdrawal in [`ScriptBuf`].
     script_pubkey: Vec<u8>,
 }
 
