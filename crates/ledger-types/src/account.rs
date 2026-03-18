@@ -1,6 +1,8 @@
-use strata_acct_types::{AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64};
+use strata_acct_types::{
+    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, MessageEntry, Mmr64,
+};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{MessageEntry, Seqno};
+use strata_snark_acct_types::Seqno;
 
 use crate::coin::Coin;
 
