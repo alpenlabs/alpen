@@ -13,7 +13,7 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
-    BlockComponents, BlockContext, BlockInfo, EpochInfo, construct_block,
+    BlockContext, BlockExecInput, BlockInfo, EpochInfo, execute_block_inputs,
     verify_epoch_preseal_with_diff,
 };
 use zkaleido::ZkVmEnv;
@@ -134,10 +134,13 @@ pub fn process_ol_stf_core(
         .expect("terminal checkpoint block must include an L1 update with manifests");
 
     // Execute all blocks in the batch and collect execution artifacts.
-    // Header equality checks inside execution bind manifests/preseal commitments via body_root.
+    // Field-level checks inside execution verify body_root, state_root, logs_root,
+    // parent_blkid, and preseal_state_root independently per block.
     let (logs, asm_manifests_hash, terminal_header) =
         execute_block_batch(&mut state, &blocks, &parent);
 
+    // Opt 4: Cache parent commitment — compute once and reuse for both
+    // l2_range and epoch_info instead of hashing the parent header twice.
     let start = parent.compute_block_commitment();
     let end = terminal_header.compute_block_commitment();
     let l2_range = L2BlockRange::new(start, end);
@@ -153,15 +156,11 @@ pub fn process_ol_stf_core(
 
     // Verify the DA witness by reconstructing epoch state from the diff.
     // Manifest processing and final state root are already proven correct by the
-    // first-pass header equality checks in `execute_block_batch`, so we only
-    // need to verify the preseal state root here (avoiding duplicate manifest
-    // proving in the zkVM guest).
+    // field-level checks in `execute_block_batch`, so we only need to verify the
+    // preseal state root here (avoiding duplicate manifest proving in the zkVM guest).
     let payload = decode_ol_da_payload_bytes(&da_state_diff_bytes)
         .expect("failed to decode OL DA payload bytes with strata_codec");
-    let epoch_info = EpochInfo::new(
-        BlockInfo::from_header(&terminal_header),
-        parent.compute_block_commitment(),
-    );
+    let epoch_info = EpochInfo::new(BlockInfo::from_header(terminal_header), start);
     let mut reconstructed_state = initial_state;
     verify_epoch_preseal_with_diff::<OLState, OLDaSchemeV1>(
         &mut reconstructed_state,
@@ -178,7 +177,7 @@ pub fn process_ol_stf_core(
     // sidecar data (the L1 verifier reconstructs this hash from sidecar fields and
     // checks it against the proof).
     let expected_terminal_header_complement =
-        TerminalHeaderComplement::from_full_header(&terminal_header);
+        TerminalHeaderComplement::from_full_header(terminal_header);
     let terminal_header_complement_hash = expected_terminal_header_complement.compute_hash();
 
     // Compute the hash of all accumulated OL logs for the checkpoint claim
@@ -206,6 +205,12 @@ pub fn process_ol_stf_core(
 /// Processes each block sequentially, applying state transitions to the provided state
 /// and accumulating logs and ASM manifest hashes along the way.
 ///
+/// Instead of calling `construct_block` (which clones block components and reconstructs
+/// the body), this function calls `execute_block_inputs` directly with borrowed references
+/// and verifies each header commitment field independently. This eliminates per-block
+/// cloning of tx_segment and manifest_container, body reconstruction allocation, and
+/// redundant parent blkid recomputation.
+///
 /// # Arguments
 ///
 /// * `state` - Mutable reference to the OL state to apply transitions to
@@ -217,17 +222,20 @@ pub fn process_ol_stf_core(
 /// A tuple containing:
 /// - `Vec<OLLog>`: All logs emitted during block execution
 /// - `FixedBytes<32>`: Hash of ASM manifests encountered in the batch
+/// - `&OLBlockHeader`: Reference to the terminal block's header
 ///
 /// # Panics
 ///
 /// Panics if:
 /// - Any block execution fails
-/// - The computed block header doesn't match the input block header
-fn execute_block_batch(
+/// - Any header commitment field (body_root, state_root, logs_root, parent_blkid) doesn't match
+///   between execution output and the input block header
+/// - The terminal block's preseal state root from execution doesn't match the body's value
+fn execute_block_batch<'a>(
     state: &mut OLState,
-    blocks: &[OLBlock],
-    initial_parent: &OLBlockHeader,
-) -> (Vec<OLLog>, FixedBytes<32>, OLBlockHeader) {
+    blocks: &'a [OLBlock],
+    initial_parent: &'a OLBlockHeader,
+) -> (Vec<OLLog>, FixedBytes<32>, &'a OLBlockHeader) {
     // Exactly one block per epoch must carry an L1 update (the terminal block).
     // The manifest hash is computed by overwriting a single `Option` in the loop
     // below, so multiple L1 updates would silently drop earlier hashes and zero
@@ -242,67 +250,121 @@ fn execute_block_batch(
         l1_update_count
     );
 
-    let mut parent = initial_parent.clone();
+    // Pre-allocate an empty tx segment outside the loop to avoid per-iteration allocation.
+    let empty_tx_segment =
+        OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
+
+    // Track the parent header reference and cached parent blkid across iterations.
+    // This avoids re-hashing the parent header every iteration (Opt 5).
+    let mut parent_header: &OLBlockHeader = initial_parent;
+    let mut parent_blkid = initial_parent.compute_blkid();
     let mut asm_manifests_hash: Option<FixedBytes<32>> = None;
     let mut logs = Vec::new();
 
     // Process each block in the batch sequentially, applying state transitions
     for block in blocks {
-        // Extract block metadata and create execution context
-        let info = BlockInfo::from_header(block.header());
-        let context = BlockContext::new(&info, Some(&parent));
+        // --- Structural verification (before execution) ---
 
-        // Extract the transaction segment from the block body.
-        // If the block has no transactions, use an empty segment.
-        let empty_tx_segment =
-            OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
-        let tx_segment = block
-            .body()
-            .tx_segment()
-            .unwrap_or(&empty_tx_segment)
-            .clone();
-
-        // Extract L1 update (ASM manifests) if present in the block.
-        // When present, compute the hash of all manifests in this update.
-        let manifest_container = block
-            .body()
-            .l1_update()
-            .map(|update| {
-                asm_manifests_hash = Some(compute_asm_manifests_hash(
-                    update.manifest_cont().manifests(),
-                ));
-                update.manifest_cont()
-            })
-            .cloned();
-
-        // Assemble block components for state transition execution
-        let components = BlockComponents::new(tx_segment, manifest_container);
-
-        // Execute the block's state transition function.
-        // This applies transactions, processes manifests, and updates state.
-        let output = construct_block(state, context, components).expect(
-            "block execution failed; all blocks in proof input must be valid and executable",
-        );
-
-        // Accumulate logs emitted during this block's execution
-        logs.extend_from_slice(output.outputs().logs());
-
-        // Verify that the computed block header matches the input block header.
-        // This ensures the block was executed correctly and deterministically.
+        // Verify parent chain linkage using cached parent blkid.
+        // This prevents block reordering or gaps, and is NOT checked by
+        // execute_block_inputs (parent_blkid doesn't flow into state computation).
         assert_eq!(
-            output.completed_block().header(),
-            block.header(),
-            "computed block header does not match input block header at slot {}",
+            *block.header().parent_blkid(),
+            parent_blkid,
+            "parent block ID mismatch at slot {}",
             block.header().slot()
         );
 
-        // Update parent reference for the next iteration
-        parent = output.completed_block().header().clone();
+        // Verify body_root: hash the input body directly and compare against
+        // the header's body_root field. This binds the body contents (including
+        // any preseal_state_root in the L1 update) to the header.
+        assert_eq!(
+            block.body().compute_hash_commitment(),
+            *block.header().body_root(),
+            "body root mismatch at slot {}",
+            block.header().slot()
+        );
+
+        // Verify terminal flag consistency between body and header.
+        assert_eq!(
+            block.body().is_body_terminal(),
+            block.header().is_terminal(),
+            "terminal flag mismatch at slot {}",
+            block.header().slot()
+        );
+
+        // --- Execute the block's state transition ---
+
+        // Create execution context from block header metadata.
+        // Slot/epoch continuity is validated by process_block_start inside
+        // execute_block_inputs (checks slot == parent.slot + 1 and epoch
+        // consistency with parent's terminal flag).
+        let info = BlockInfo::from_header(block.header());
+        let context = BlockContext::new(&info, Some(parent_header));
+
+        // Borrow block components directly — no cloning needed.
+        // execute_block_inputs only requires references via BlockExecInput.
+        let tx_seg_ref = block.body().tx_segment().unwrap_or(&empty_tx_segment);
+        let mf_ref = block.body().l1_update().map(|u| u.manifest_cont());
+        let exec_input = BlockExecInput::new(tx_seg_ref, mf_ref);
+
+        let exec_outputs = execute_block_inputs(state, context, exec_input).expect(
+            "block execution failed; all blocks in proof input must be valid and executable",
+        );
+
+        // --- Verify execution outputs match header commitments ---
+
+        // Verify state_root: the post-execution state root must match the header's.
+        assert_eq!(
+            *exec_outputs.header_post_state_root(),
+            *block.header().state_root(),
+            "state root mismatch at slot {}",
+            block.header().slot()
+        );
+
+        // Verify logs_root: the logs produced by execution must hash to the header's value.
+        assert_eq!(
+            exec_outputs.compute_block_logs_root(),
+            *block.header().logs_root(),
+            "logs root mismatch at slot {}",
+            block.header().slot()
+        );
+
+        // For terminal blocks, cross-check the preseal state root.
+        // The body's preseal_state_root is a sequencer-provided value committed via body_root.
+        // Execution independently computes the preseal root from the pre-manifest state.
+        // These must match — otherwise a malicious sequencer could embed an incorrect
+        // preseal_state_root in the body, and the DA witness verification would be unsound.
+        if let Some(l1_update) = block.body().l1_update() {
+            let exec_preseal = exec_outputs
+                .post_state_roots()
+                .preseal_state_root()
+                .expect("terminal block execution must produce a preseal state root");
+            assert_eq!(
+                exec_preseal,
+                l1_update.preseal_state_root(),
+                "preseal state root mismatch at terminal slot {}",
+                block.header().slot()
+            );
+
+            asm_manifests_hash = Some(compute_asm_manifests_hash(
+                l1_update.manifest_cont().manifests(),
+            ));
+        }
+
+        // Accumulate logs emitted during this block's execution.
+        logs.extend_from_slice(exec_outputs.logs());
+
+        // Cache parent info for the next iteration (Opt 5).
+        // The blkid is computed once here and reused in the next iteration's
+        // parent_blkid assertion, avoiding redundant re-hashing.
+        parent_blkid = block.header().compute_blkid();
+        parent_header = block.header();
     }
 
     // Guaranteed by the l1_update_count == 1 assertion above.
     let asm_manifests_hash =
         asm_manifests_hash.expect("exactly one L1 update per epoch is enforced above");
 
-    (logs, asm_manifests_hash, parent)
+    (logs, asm_manifests_hash, parent_header)
 }
