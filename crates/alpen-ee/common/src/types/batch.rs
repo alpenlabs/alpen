@@ -65,6 +65,33 @@ impl L1DaBlockRef {
     }
 }
 
+/// Formats `(txid, wtxid)` pairs as a compact comma-separated list for logs.
+///
+/// This is kept local to the module because it only supports [`L1DaBlockRef`]'s
+/// [`fmt::Display`] output.
+struct DisplayTxPairs<'a>(&'a [(Txid, Wtxid)]);
+
+impl fmt::Display for DisplayTxPairs<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[")?;
+
+        for (idx, (txid, wtxid)) in self.0.iter().enumerate() {
+            if idx > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{txid}/{wtxid}")?;
+        }
+
+        f.write_str("]")
+    }
+}
+
+impl fmt::Display for L1DaBlockRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} txns={}", self.block, DisplayTxPairs(&self.txns))
+    }
+}
+
 /// Batch lifecycle states
 #[derive(Debug, Clone)]
 pub enum BatchStatus {

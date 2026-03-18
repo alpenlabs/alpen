@@ -20,6 +20,23 @@ use tracing::*;
 /// Groups reveal txs by L1 block for [`L1DaBlockRef`] construction.
 type BlockMap = HashMap<(Buf32, L1Height), Vec<(Txid, Wtxid)>>;
 
+struct DisplayBlockRefs<'a>(&'a [L1DaBlockRef]);
+
+impl fmt::Display for DisplayBlockRefs<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[")?;
+
+        for (idx, block_ref) in self.0.iter().enumerate() {
+            if idx > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{block_ref}")?;
+        }
+
+        f.write_str("]")
+    }
+}
+
 /// [`BatchDaProvider`] that posts DA via chunked envelope inscription.
 pub struct ChunkedEnvelopeDaProvider {
     blob_provider: Arc<dyn DaBlobSource>,
@@ -50,36 +67,6 @@ impl ChunkedEnvelopeDaProvider {
             magic_bytes,
         }
     }
-}
-
-fn format_tx_pairs(tx_pairs: &[(Txid, Wtxid)]) -> Vec<String> {
-    tx_pairs
-        .iter()
-        .map(|(txid, wtxid)| format!("{txid}/{wtxid}"))
-        .collect()
-}
-
-fn format_reveal_refs(entry: &ChunkedEnvelopeEntry) -> Vec<String> {
-    entry
-        .reveals
-        .iter()
-        .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
-        .collect()
-}
-
-fn format_da_block_refs(block_refs: &[L1DaBlockRef]) -> Vec<String> {
-    block_refs
-        .iter()
-        .map(|block_ref| {
-            let reveal_refs = format_tx_pairs(&block_ref.txns);
-            format!(
-                "{}@{} txns={:?}",
-                block_ref.block.height(),
-                block_ref.block.blkid(),
-                reveal_refs
-            )
-        })
-        .collect()
 }
 
 #[async_trait]
@@ -121,24 +108,24 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             bail!("envelope entry {envelope_idx} missing from DB for batch {batch_id:?}");
         };
 
-        let reveal_refs = format_reveal_refs(&entry);
         // Keep shared correlation fields on the span so status logs stay concise.
         let check_da_status_span = info_span!(
             "alpen_ee_check_da_status",
             ?batch_id,
-            envelope_idx,
-            commit_txid = %entry.commit_txid,
-            ?reveal_refs,
+            %envelope_idx,
+            %entry,
         );
 
         async {
-            debug!(status = ?entry.status, "checking chunked envelope status");
+            debug!(status = %entry.status, "checking chunked envelope status");
 
             match entry.status {
                 ChunkedEnvelopeStatus::Finalized => {
                     let block_refs = self.build_da_block_refs(&entry).await?;
-                    let da_block_refs = format_da_block_refs(&block_refs);
-                    info!(da_block_refs = ?da_block_refs, "batch DA finalized on L1");
+                    info!(
+                        da_block_refs = %DisplayBlockRefs(&block_refs),
+                        "batch DA finalized on L1"
+                    );
                     Ok(DaStatus::Ready(block_refs))
                 }
                 ChunkedEnvelopeStatus::Unsigned
