@@ -24,7 +24,8 @@ pub(crate) struct CheckpointInfo {
     pub(crate) ol_state_diff_len: usize,
     pub(crate) ol_logs_len: usize,
     pub(crate) proof_len: usize,
-    pub(crate) status: String,
+    pub(crate) signing_status: String,
+    pub(crate) confirmation_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) intent_index: Option<u64>,
 }
@@ -112,12 +113,13 @@ impl Formattable for CheckpointInfo {
             ),
             porcelain_field("checkpoint.sidecar.ol_logs_len", self.ol_logs_len),
             porcelain_field("checkpoint.proof_len", self.proof_len),
-            porcelain_field("checkpoint.status", &self.status),
+            porcelain_field("checkpoint.signing_status", &self.signing_status),
+            porcelain_field("checkpoint.confirmation_status", &self.confirmation_status),
         ];
 
         if let Some(intent_index) = self.intent_index {
             output.push(porcelain_field(
-                "checkpoint.status.intent_index",
+                "checkpoint.signing_status.intent_index",
                 intent_index,
             ));
         }

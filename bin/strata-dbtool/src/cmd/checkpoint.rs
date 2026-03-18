@@ -2,12 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use argh::FromArgs;
 use strata_asm_logs::CheckpointTipUpdate;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::{
-    traits::{DatabaseBackend, L1Database, OLCheckpointDatabase},
-    types::{OLCheckpointEntry, OLCheckpointStatus},
-};
-use strata_identifiers::{Epoch, L1Height};
+use strata_db_types::traits::{DatabaseBackend, L1Database, OLCheckpointDatabase};
+use strata_identifiers::{Epoch, L1Height, Slot};
 
 use crate::{
     cli::OutputFormat,
@@ -17,6 +15,11 @@ use crate::{
         output,
     },
 };
+
+pub(crate) struct OLCheckpointAtEpoch {
+    pub(crate) payload: CheckpointPayload,
+    pub(crate) intent_index: Option<u64>,
+}
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-checkpoint")]
@@ -112,15 +115,44 @@ fn collect_checkpoint_epochs_in_l1_logs(
 pub(crate) fn get_checkpoint_at_epoch(
     db: &impl DatabaseBackend,
     epoch: Epoch,
-) -> Result<Option<OLCheckpointEntry>, DisplayedError> {
+) -> Result<Option<OLCheckpointAtEpoch>, DisplayedError> {
     // OL checkpoints are created from epoch 1
     if epoch == 0 {
         return Ok(None);
     }
 
-    db.ol_checkpoint_db()
-        .get_checkpoint(epoch)
-        .internal_error(format!("Failed to get OL checkpoint at epoch {epoch}"))
+    let commitments = db
+        .ol_checkpoint_db()
+        .get_epoch_commitments_at(epoch)
+        .internal_error(format!(
+            "Failed to get OL checkpoint commitments at epoch {epoch}"
+        ))?;
+
+    let Some(commitment) = commitments.first().copied() else {
+        return Ok(None);
+    };
+
+    let Some(payload) = db
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint payload at epoch {epoch}"
+        ))?
+    else {
+        return Ok(None);
+    };
+
+    let intent_index = db
+        .ol_checkpoint_db()
+        .get_checkpoint_signing_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint signing entry at epoch {epoch}"
+        ))?;
+
+    Ok(Some(OLCheckpointAtEpoch {
+        payload,
+        intent_index,
+    }))
 }
 
 /// Get the range of checkpoint epochs (1 to latest).
@@ -129,10 +161,44 @@ pub(crate) fn get_checkpoint_at_epoch(
 pub(crate) fn get_checkpoint_epoch_range(
     db: &impl DatabaseBackend,
 ) -> Result<Option<(Epoch, Epoch)>, DisplayedError> {
+    get_last_ol_checkpoint_epoch(db)
+        .map(|opt| opt.and_then(|last_epoch| (last_epoch >= 1).then_some((1, last_epoch))))
+}
+
+/// Get last written OL checkpoint payload epoch number.
+pub(crate) fn get_last_ol_checkpoint_epoch(
+    db: &impl DatabaseBackend,
+) -> Result<Option<Epoch>, DisplayedError> {
     db.ol_checkpoint_db()
-        .get_last_checkpoint_epoch()
+        .get_last_checkpoint_payload_epoch()
         .internal_error("Failed to get last OL checkpoint epoch")
-        .map(|opt| opt.and_then(|last| (last >= 1).then_some((1, last))))
+        .map(|commitment| commitment.map(|commitment| commitment.epoch()))
+}
+
+/// Gets the last checkpointed OL slot from checkpoint payload tip data.
+pub(crate) fn get_latest_checkpoint_last_slot(
+    db: &impl DatabaseBackend,
+) -> Result<Slot, DisplayedError> {
+    let Some(latest_epoch_commitment) = db
+        .ol_checkpoint_db()
+        .get_last_checkpoint_payload_epoch()
+        .internal_error("Failed to get last checkpoint epoch")?
+    else {
+        return Ok(0);
+    };
+
+    let checkpoint_payload = db
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_entry(latest_epoch_commitment)
+        .internal_error("Failed to get OL checkpoint payload")?
+        .ok_or_else(|| {
+            DisplayedError::InternalError(
+                "Last checkpoint epoch exists but checkpoint payload is missing".to_string(),
+                Box::new(latest_epoch_commitment),
+            )
+        })?;
+
+    Ok(checkpoint_payload.new_tip().l2_commitment().slot())
 }
 
 /// Get checkpoint details by epoch.
@@ -141,18 +207,19 @@ pub(crate) fn get_checkpoint(
     args: GetCheckpointArgs,
 ) -> Result<(), DisplayedError> {
     let checkpoint_epoch = args.checkpoint_epoch;
-    let entry = get_checkpoint_at_epoch(db, checkpoint_epoch)?.ok_or_else(|| {
+    let checkpoint = get_checkpoint_at_epoch(db, checkpoint_epoch)?.ok_or_else(|| {
         DisplayedError::UserError(
             "No checkpoint found at epoch".to_string(),
             Box::new(checkpoint_epoch),
         )
     })?;
 
-    let tip = entry.checkpoint.new_tip();
-    let (status, intent_index) = match &entry.status {
-        OLCheckpointStatus::Unsigned => ("Unsigned".to_string(), None),
-        OLCheckpointStatus::Signed(idx) => ("Signed".to_string(), Some(*idx)),
+    let tip = checkpoint.payload.new_tip();
+    let (signing_status, intent_index) = match checkpoint.intent_index {
+        None => ("Unsigned".to_string(), None),
+        Some(idx) => ("Signed".to_string(), Some(idx)),
     };
+    let confirmation_status = "N/A".to_string();
 
     // Create the output data structure
     let checkpoint_info = CheckpointInfo {
@@ -161,10 +228,11 @@ pub(crate) fn get_checkpoint(
         tip_l1_height: tip.l1_height(),
         tip_ol_slot: tip.l2_commitment().slot(),
         tip_ol_blkid: *tip.l2_commitment().blkid(),
-        ol_state_diff_len: entry.checkpoint.sidecar().ol_state_diff().len(),
-        ol_logs_len: entry.checkpoint.sidecar().ol_logs().len(),
-        proof_len: entry.checkpoint.proof().len(),
-        status,
+        ol_state_diff_len: checkpoint.payload.sidecar().ol_state_diff().len(),
+        ol_logs_len: checkpoint.payload.sidecar().ol_logs().len(),
+        proof_len: checkpoint.payload.proof().len(),
+        signing_status,
+        confirmation_status,
         intent_index,
     };
 
@@ -210,10 +278,10 @@ pub(crate) fn get_checkpoints_summary(
     let mut checkpoints_found_in_db = 0u64;
     if let Some((start_epoch, end_epoch)) = get_checkpoint_epoch_range(db)? {
         for epoch in start_epoch..=end_epoch {
-            let Some(entry) = get_checkpoint_at_epoch(db, epoch)? else {
+            let Some(checkpoint) = get_checkpoint_at_epoch(db, epoch)? else {
                 continue;
             };
-            if entry.checkpoint.new_tip().l1_height() >= start_height {
+            if checkpoint.payload.new_tip().l1_height() >= start_height {
                 checkpoints_found_in_db += 1;
             }
         }
@@ -254,7 +322,7 @@ pub(crate) fn get_epoch_summary(
 
     let epoch_commitments = db
         .ol_checkpoint_db()
-        .get_epoch_commitments_at(u64::from(epoch))
+        .get_epoch_commitments_at(epoch)
         .internal_error(format!(
             "Failed to get OL epoch commitments for epoch {epoch}"
         ))?;

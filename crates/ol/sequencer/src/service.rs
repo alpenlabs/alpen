@@ -13,14 +13,12 @@ use async_trait::async_trait;
 use serde::Serialize;
 use ssz::Encode;
 use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
-use strata_db_types::{
-    errors::DbError,
-    types::{OLCheckpointEntry, OLCheckpointStatus},
-};
+use strata_db_types::errors::DbError;
 use strata_identifiers::Epoch;
 use strata_ol_block_assembly::BlockAssemblyError;
 use strata_ol_chain_types_new::OLBlock;
@@ -113,17 +111,22 @@ pub trait SequencerContext: Send + Sync + 'static {
     async fn load_checkpoint(
         &self,
         epoch: Epoch,
-    ) -> Result<Option<OLCheckpointEntry>, SequencerContextError>;
+    ) -> Result<Option<CheckpointPayload>, SequencerContextError>;
+
+    async fn load_checkpoint_signing_intent(
+        &self,
+        epoch: Epoch,
+    ) -> Result<Option<u64>, SequencerContextError>;
 
     async fn submit_checkpoint_intent(
         &self,
         intent: PayloadIntent,
     ) -> Result<Option<u64>, SequencerContextError>;
 
-    async fn persist_checkpoint(
+    async fn persist_checkpoint_signing_intent(
         &self,
         epoch: Epoch,
-        entry: OLCheckpointEntry,
+        intent_idx: u64,
     ) -> Result<(), SequencerContextError>;
 }
 
@@ -386,16 +389,19 @@ async fn handle_checkpoint_duty<C: SequencerContext>(
     duty_id: Buf32,
 ) -> Result<(), SequencerDutyError> {
     let epoch = duty.epoch();
-    let Some(mut entry) = context.load_checkpoint(epoch).await? else {
+    let Some(checkpoint) = context.load_checkpoint(epoch).await? else {
         return Err(SequencerDutyError::MissingCheckpoint { epoch });
     };
 
-    if entry.status != OLCheckpointStatus::Unsigned {
+    if context
+        .load_checkpoint_signing_intent(epoch)
+        .await?
+        .is_some()
+    {
         debug!(?duty_id, %epoch, "checkpoint already signed, skipping");
         return Ok(());
     }
 
-    let checkpoint = duty.checkpoint();
     let codec_payload = CodecSsz::new(checkpoint.clone());
     let encoded = encode_to_vec(&codec_payload)
         .map_err(|e| SequencerDutyError::CheckpointEncode(e.to_string()))?;
@@ -410,8 +416,9 @@ async fn handle_checkpoint_duty<C: SequencerContext>(
         .await?
         .ok_or(SequencerDutyError::ResolveCheckpointIntentIndex { epoch })?;
 
-    entry.status = OLCheckpointStatus::Signed(intent_idx);
-    context.persist_checkpoint(epoch, entry).await?;
+    context
+        .persist_checkpoint_signing_intent(epoch, intent_idx)
+        .await?;
 
     info!(
         ?duty_id,
@@ -497,7 +504,14 @@ mod tests {
         async fn load_checkpoint(
             &self,
             _epoch: Epoch,
-        ) -> Result<Option<OLCheckpointEntry>, SequencerContextError> {
+        ) -> Result<Option<CheckpointPayload>, SequencerContextError> {
+            Ok(None)
+        }
+
+        async fn load_checkpoint_signing_intent(
+            &self,
+            _epoch: Epoch,
+        ) -> Result<Option<u64>, SequencerContextError> {
             Ok(None)
         }
 
@@ -508,10 +522,10 @@ mod tests {
             Ok(None)
         }
 
-        async fn persist_checkpoint(
+        async fn persist_checkpoint_signing_intent(
             &self,
             _epoch: Epoch,
-            _entry: OLCheckpointEntry,
+            _intent_idx: u64,
         ) -> Result<(), SequencerContextError> {
             Ok(())
         }

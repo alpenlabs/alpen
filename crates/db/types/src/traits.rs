@@ -7,6 +7,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_asm_common::{AsmManifest, AuxData};
 use strata_checkpoint_types::EpochSummary;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{ClientState, ClientUpdateOutput};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId, Slot,
@@ -31,8 +32,8 @@ use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
-        AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1TxEntry,
-        MempoolTxData, OLCheckpointEntry,
+        AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
     },
     DbResult, RawMmrId,
 };
@@ -290,10 +291,10 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>>;
 
     /// Gets all commitments for an epoch. This makes no guarantees about ordering.
-    fn get_epoch_commitments_at(&self, epoch: u64) -> DbResult<Vec<EpochCommitment>>;
+    fn get_epoch_commitments_at(&self, epoch: Epoch) -> DbResult<Vec<EpochCommitment>>;
 
     /// Gets the index of the last epoch that we have a summary for, if any.
-    fn get_last_summarized_epoch(&self) -> DbResult<Option<u64>>;
+    fn get_last_summarized_epoch(&self) -> DbResult<Option<Epoch>>;
 
     /// Delete a specific epoch summary by epoch commitment.
     ///
@@ -303,30 +304,68 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Delete epoch summaries from the specified epoch onwards (inclusive).
     ///
     /// This method deletes all epoch summaries with epoch index >= start_epoch.
-    /// Returns a vector of deleted epoch indices.
-    fn del_epoch_summaries_from_epoch(&self, start_epoch: u64) -> DbResult<Vec<u64>>;
+    /// Returns a vector of deleted epoch commitments.
+    fn del_epoch_summaries_from_epoch(&self, start_epoch: Epoch) -> DbResult<Vec<EpochCommitment>>;
 
-    /// Store an [`OLCheckpointEntry`] by epoch.
-    fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> DbResult<()>;
+    /// Store an OL checkpoint payload entry by epoch commitment.
+    fn put_checkpoint_payload_entry(
+        &self,
+        epoch: EpochCommitment,
+        payload: CheckpointPayload,
+    ) -> DbResult<()>;
 
-    /// Get an [`OLCheckpointEntry`] by epoch.
-    fn get_checkpoint(&self, epoch: Epoch) -> DbResult<Option<OLCheckpointEntry>>;
+    /// Get an OL checkpoint payload entry by epoch commitment.
+    fn get_checkpoint_payload_entry(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<CheckpointPayload>>;
 
-    /// Get last written checkpoint epoch.
-    fn get_last_checkpoint_epoch(&self) -> DbResult<Option<Epoch>>;
+    /// Get last written checkpoint payload commitment.
+    fn get_last_checkpoint_payload_epoch(&self) -> DbResult<Option<EpochCommitment>>;
+
+    /// Delete a checkpoint payload entry by epoch commitment.
+    ///
+    /// Returns true if it existed and was deleted.
+    /// If present, the signing entry for the same commitment is also deleted.
+    fn del_checkpoint_payload_entry(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete checkpoint payload entries from the specified epoch onwards (inclusive).
+    ///
+    /// Returns a vector of deleted epoch commitments.
+    /// Signing entries for deleted payload commitments are also deleted.
+    fn del_checkpoint_payload_entries_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
+
+    /// Store an OL checkpoint signing entry by epoch.
+    fn put_checkpoint_signing_entry(
+        &self,
+        epoch: EpochCommitment,
+        payload_intent_idx: L1PayloadIntentIndex,
+    ) -> DbResult<()>;
+
+    /// Get an OL checkpoint signing entry by epoch.
+    fn get_checkpoint_signing_entry(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<L1PayloadIntentIndex>>;
+
+    /// Delete an OL checkpoint signing entry by epoch.
+    ///
+    /// Returns true if it existed and was deleted.
+    fn del_checkpoint_signing_entry(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete checkpoint signing entries from the specified epoch onwards (inclusive).
+    ///
+    /// Returns a vector of deleted epoch commitments.
+    fn del_checkpoint_signing_entries_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
 
     /// Get the next checkpoint epoch that is unsigned.
     fn get_next_unsigned_checkpoint_epoch(&self) -> DbResult<Option<Epoch>>;
-
-    /// Delete a checkpoint by epoch.
-    ///
-    /// Returns true if it existed and was deleted.
-    fn del_checkpoint(&self, epoch: Epoch) -> DbResult<bool>;
-
-    /// Delete checkpoints from the specified epoch onwards (inclusive).
-    ///
-    /// Returns a vector of deleted epochs.
-    fn del_checkpoints_from_epoch(&self, start_epoch: Epoch) -> DbResult<Vec<Epoch>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the

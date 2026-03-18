@@ -11,7 +11,6 @@ use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
-use strata_db_types::types::OLCheckpointStatus;
 use strata_identifiers::{Epoch, OLBlockId};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;
@@ -98,21 +97,39 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         // sequencer predicate. The checkpoint payload is submitted without an
         // explicit signature.
         let db = self.storage.ol_checkpoint();
-        let Some(mut entry) = db.get_checkpoint_async(epoch).await.map_err(db_error)? else {
+        let Some(commitment) = db
+            .get_canonical_epoch_commitment_at_async(epoch)
+            .await
+            .map_err(db_error)?
+        else {
             return Err(not_found_error(format!(
                 "checkpoint {epoch} not found in db"
             )));
         };
+        let Some(checkpoint_payload) = db
+            .get_checkpoint_payload_entry_async(commitment)
+            .await
+            .map_err(db_error)?
+        else {
+            return Err(not_found_error(format!(
+                "checkpoint {epoch} payload not found in db"
+            )));
+        };
         // Assumes that checkpoint db contains only proven checkpoints
-        if entry.status == OLCheckpointStatus::Unsigned {
-            let codec_payload = CodecSsz::new(entry.checkpoint.clone());
+        if db
+            .get_checkpoint_signing_entry_async(commitment)
+            .await
+            .map_err(db_error)?
+            .is_none()
+        {
+            let codec_payload = CodecSsz::new(checkpoint_payload.clone());
             let encoded = encode_to_vec(&codec_payload)
                 .map_err(|e| internal_error(format!("failed to encode checkpoint: {e}")))?;
 
-            let payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
-            let sighash = hash::raw(&entry.checkpoint.as_ssz_bytes());
+            let l1_payload = L1Payload::new(vec![encoded], OL_STF_CHECKPOINT_TX_TAG.clone());
+            let sighash = hash::raw(&checkpoint_payload.as_ssz_bytes());
 
-            let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, payload);
+            let payload_intent = PayloadIntent::new(PayloadDest::L1, sighash, l1_payload);
 
             let intent_idx = self
                 .envelope_handle
@@ -121,8 +138,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
                 .map_err(|e| internal_error(e.to_string()))?
                 .ok_or_else(|| internal_error("failed to resolve checkpoint intent index"))?;
 
-            entry.status = OLCheckpointStatus::Signed(intent_idx);
-            db.put_checkpoint_async(epoch, entry)
+            db.put_checkpoint_signing_entry_async(commitment, intent_idx)
                 .await
                 .map_err(db_error)?;
         } else {

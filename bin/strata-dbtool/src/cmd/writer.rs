@@ -1,9 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::{
-    traits::{DatabaseBackend, L1WriterDatabase},
-    types::OLCheckpointStatus,
-};
+use strata_db_types::traits::{DatabaseBackend, L1WriterDatabase};
 use strata_primitives::buf::Buf32;
 
 use super::checkpoint::{get_checkpoint_at_epoch, get_checkpoint_epoch_range};
@@ -61,22 +58,19 @@ pub(crate) fn get_writer_summary(
 
             // Iterate through all checkpoint epochs
             for epoch in start_epoch..=end_epoch {
-                if let Some(checkpoint_entry) = get_checkpoint_at_epoch(db, epoch)? {
-                    match checkpoint_entry.status {
-                        OLCheckpointStatus::Unsigned => {
+                if let Some(checkpoint) = get_checkpoint_at_epoch(db, epoch)? {
+                    if let Some(intent_idx) = checkpoint.intent_index {
+                        if writer_db
+                            .get_intent_by_idx(intent_idx)
+                            .internal_error("Failed to get intent entry by index")?
+                            .is_some()
+                        {
+                            with_entries += 1;
+                        } else {
                             without_entries += 1;
                         }
-                        OLCheckpointStatus::Signed(intent_idx) => {
-                            if writer_db
-                                .get_intent_by_idx(intent_idx)
-                                .internal_error("Failed to get intent entry by index")?
-                                .is_some()
-                            {
-                                with_entries += 1;
-                            } else {
-                                without_entries += 1;
-                            }
-                        }
+                    } else {
+                        without_entries += 1;
                     }
                 }
             }

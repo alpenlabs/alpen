@@ -11,7 +11,6 @@ use bitcoin::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
-use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::OLTxId;
 use strata_l1_txfmt::MagicBytes;
@@ -371,7 +370,9 @@ impl From<CheckpointEntry> for Checkpoint {
 }
 
 /// Status of the commmitment
-#[deprecated(note = "use `OLCheckpointStatus` for OL/EE-decoupled checkpoint signing status")]
+#[deprecated(
+    note = "use `OLCheckpointEntry::signing_status` for OL/EE-decoupled checkpoint signing status"
+)]
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
 pub enum CheckpointProvingStatus {
     /// Proof has not been created for this checkpoint
@@ -380,7 +381,9 @@ pub enum CheckpointProvingStatus {
     ProofReady,
 }
 
-#[deprecated(note = "use `OLCheckpointStatus` for OL/EE-decoupled checkpoint confirmation flow")]
+#[deprecated(
+    note = "use `OLCheckpointEntry::confirmation_status` for OL/EE-decoupled checkpoint confirmation flow"
+)]
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize)]
 pub enum CheckpointConfStatus {
     /// Pending to be posted on L1
@@ -419,35 +422,6 @@ impl MempoolTxData {
 
 /// Index into the L1 payload intent store.
 pub type L1PayloadIntentIndex = u64;
-
-/// Entry for an OL checkpoint.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
-pub struct OLCheckpointEntry {
-    /// The checkpoint payload to be posted to L1.
-    pub checkpoint: CheckpointPayload,
-
-    /// Signing status.
-    pub status: OLCheckpointStatus,
-}
-
-impl OLCheckpointEntry {
-    pub fn new(checkpoint: CheckpointPayload, status: OLCheckpointStatus) -> Self {
-        Self { checkpoint, status }
-    }
-
-    pub fn new_unsigned(checkpoint: CheckpointPayload) -> Self {
-        Self::new(checkpoint, OLCheckpointStatus::Unsigned)
-    }
-}
-
-/// Signing status of an OL checkpoint.
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Serialize)]
-pub enum OLCheckpointStatus {
-    /// Not signed yet.
-    Unsigned,
-    /// Signed and stored as L1PayloadIntent with given index.
-    Signed(L1PayloadIntentIndex),
-}
 
 /// A chunked envelope entry representing a commit tx funding N reveal txs.
 ///
@@ -673,5 +647,13 @@ mod tests {
             entry.to_string(),
             "ChunkedEnvelopeEntry(status=published, chunk_count=2, commit_txid=010101..010101, reveals=[020202..020202/030303..030303])"
         );
+    }
+
+    #[test]
+    fn l1_payload_intent_index_borsh_roundtrip() {
+        let idx: L1PayloadIntentIndex = 99;
+        let bytes = borsh::to_vec(&idx).unwrap();
+        let decoded: L1PayloadIntentIndex = borsh::from_slice(&bytes).unwrap();
+        assert_eq!(decoded, idx);
     }
 }

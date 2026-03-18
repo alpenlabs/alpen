@@ -4,9 +4,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
 };
-use strata_db_types::types::OLCheckpointEntry;
-use strata_identifiers::Epoch;
-use strata_primitives::epoch::EpochCommitment;
+use strata_identifiers::{Epoch, EpochCommitment};
 use strata_service::ServiceState;
 use tracing::{debug, info};
 
@@ -19,7 +17,6 @@ pub(crate) struct OLCheckpointServiceState<C: CheckpointWorkerContext> {
     ctx: C,
     initialized: bool,
     last_processed_epoch: Option<Epoch>,
-    last_processed_epoch_index: Option<u64>,
 }
 
 impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
@@ -29,7 +26,6 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
             ctx,
             initialized: false,
             last_processed_epoch: None,
-            last_processed_epoch_index: None,
         }
     }
 
@@ -58,7 +54,10 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         };
 
         // Determine starting epoch index (last processed + 1, or 1 if none, skip genesis epoch)
-        let start_epoch_index = self.last_processed_epoch_index.map(|e| e + 1).unwrap_or(1);
+        let start_epoch_index = self
+            .last_processed_epoch
+            .map(|e| e.saturating_add(1))
+            .unwrap_or(1);
 
         // Process all epochs from start to target (inclusive)
         for epoch_index in start_epoch_index..=target_epoch_index {
@@ -83,12 +82,12 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
     ///
     /// Returns error if the epoch index cannot be processed (missing data).
     /// Checkpoints must be built sequentially, so caller should stop on error.
-    fn process_epoch(&mut self, epoch_index: u64) -> anyhow::Result<()> {
+    fn process_epoch(&mut self, epoch_number: Epoch) -> anyhow::Result<()> {
         // Get canonical commitment for this epoch index - must exist to proceed
         let commitment = self
             .ctx
-            .get_canonical_epoch_commitment_at(epoch_index)?
-            .ok_or(CheckpointNotReady::EpochCommitment(epoch_index))?;
+            .get_canonical_epoch_commitment_at(epoch_number)?
+            .ok_or(CheckpointNotReady::EpochCommitment(epoch_number))?;
 
         // Get summary - must exist to proceed
         let summary = self
@@ -99,15 +98,13 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
         let epoch = summary.epoch();
 
         // Skip if already checkpointed
-        if self.ctx.get_checkpoint(epoch)?.is_some() {
+        if self.ctx.get_checkpoint_payload(commitment)?.is_some() {
             self.last_processed_epoch = Some(epoch);
-            self.last_processed_epoch_index = Some(epoch_index);
             return Ok(());
         }
 
         let payload = build_checkpoint_payload(commitment, &summary, &self.ctx)?;
-        let entry = OLCheckpointEntry::new_unsigned(payload);
-        self.ctx.put_checkpoint(epoch, entry)?;
+        self.ctx.put_checkpoint_payload(commitment, payload)?;
 
         info!(
             component = "ol_checkpoint",
@@ -118,13 +115,13 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
             "stored OL checkpoint entry"
         );
         self.last_processed_epoch = Some(epoch);
-        self.last_processed_epoch_index = Some(epoch_index);
 
         Ok(())
     }
 
     fn init_cursor_from_db(&mut self) {
-        let Ok(Some(last_checkpoint_epoch)) = self.ctx.get_last_checkpoint_epoch() else {
+        let Ok(Some(last_checkpoint_commitment)) = self.ctx.get_last_checkpoint_payload_epoch()
+        else {
             return;
         };
 
@@ -141,9 +138,8 @@ impl<C: CheckpointWorkerContext> OLCheckpointServiceState<C> {
                 continue;
             };
 
-            if summary.epoch() == last_checkpoint_epoch {
-                self.last_processed_epoch = Some(last_checkpoint_epoch);
-                self.last_processed_epoch_index = Some(epoch_index);
+            if summary.get_epoch_commitment() == last_checkpoint_commitment {
+                self.last_processed_epoch = Some(last_checkpoint_commitment.epoch());
                 break;
             }
         }
@@ -189,7 +185,6 @@ mod tests {
         test_utils::{checkpoint_sidecar_strategy, ol_logs_strategy, state_diff_strategy},
     };
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::types::OLCheckpointEntry;
     use strata_identifiers::{
         Buf64, Epoch, OLBlockCommitment,
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
@@ -229,13 +224,13 @@ mod tests {
     }
 
     impl CheckpointWorkerContext for TestCheckpointContext {
-        fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<u64>> {
+        fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<Epoch>> {
             self.inner.get_last_summarized_epoch()
         }
 
         fn get_canonical_epoch_commitment_at(
             &self,
-            index: u64,
+            index: Epoch,
         ) -> anyhow::Result<Option<EpochCommitment>> {
             self.inner.get_canonical_epoch_commitment_at(index)
         }
@@ -247,16 +242,23 @@ mod tests {
             self.inner.get_epoch_summary(commitment)
         }
 
-        fn get_checkpoint(&self, epoch: Epoch) -> anyhow::Result<Option<OLCheckpointEntry>> {
-            self.inner.get_checkpoint(epoch)
+        fn get_checkpoint_payload(
+            &self,
+            commitment: EpochCommitment,
+        ) -> anyhow::Result<Option<CheckpointPayload>> {
+            self.inner.get_checkpoint_payload(commitment)
         }
 
-        fn get_last_checkpoint_epoch(&self) -> anyhow::Result<Option<Epoch>> {
-            self.inner.get_last_checkpoint_epoch()
+        fn get_last_checkpoint_payload_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {
+            self.inner.get_last_checkpoint_payload_epoch()
         }
 
-        fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> anyhow::Result<()> {
-            self.inner.put_checkpoint(epoch, entry)
+        fn put_checkpoint_payload(
+            &self,
+            commitment: EpochCommitment,
+            payload: CheckpointPayload,
+        ) -> anyhow::Result<()> {
+            self.inner.put_checkpoint_payload(commitment, payload)
         }
 
         fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
@@ -288,7 +290,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn init_cursor_from_db_uses_last_checkpoint_epoch(
+        fn init_cursor_from_db_uses_last_checkpoint_payload_epoch(
             len in 1usize..=5,
             terminals in prop::collection::vec(ol_block_commitment_strategy(), 1..=5),
             l1s in prop::collection::vec(l1_block_commitment_strategy(), 1..=5),
@@ -336,10 +338,7 @@ mod tests {
                 let payload = CheckpointPayload::new(tip, sidecars[i].clone(), Vec::new())
                     .expect("payload");
                 checkpoint_mgr
-                    .put_checkpoint_blocking(
-                        summary.epoch(),
-                        super::OLCheckpointEntry::new_unsigned(payload),
-                    )
+                    .put_checkpoint_payload_entry_blocking(summary.get_epoch_commitment(), payload)
                     .expect("put checkpoint");
             }
 
@@ -348,7 +347,6 @@ mod tests {
             state.initialize();
 
             assert_eq!(state.last_processed_epoch(), Some(last_checkpoint as Epoch));
-            assert_eq!(state.last_processed_epoch_index, Some(last_checkpoint as u64));
         }
     }
 
@@ -417,15 +415,20 @@ mod tests {
                 .expect("build checkpoint");
 
             let stored = checkpoint_mgr
-                .get_checkpoint_blocking(epoch)
+                .get_checkpoint_payload_entry_blocking(commitment)
                 .expect("get checkpoint")
                 .expect("checkpoint should be stored");
-            let sidecar_terminal_subset = stored.checkpoint.sidecar().terminal_header_complement();
+            let sidecar_terminal_subset = stored.sidecar().terminal_header_complement();
+            let stored_tip = stored.new_tip();
 
+            prop_assert_eq!(stored_tip.epoch, epoch);
+            prop_assert_eq!(stored_tip.l1_height(), new_l1.height());
+            prop_assert_eq!(*stored_tip.l2_commitment(), terminal);
             prop_assert_eq!(sidecar_terminal_subset.timestamp(), terminal_header.timestamp());
             prop_assert_eq!(*sidecar_terminal_subset.parent_blkid(), *terminal_header.parent_blkid());
             prop_assert_eq!(*sidecar_terminal_subset.body_root(), *terminal_header.body_root());
             prop_assert_eq!(*sidecar_terminal_subset.logs_root(), *terminal_header.logs_root());
+            prop_assert!(stored.proof().is_empty());
         }
     }
 }

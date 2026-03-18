@@ -1,14 +1,13 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{
-    BlockStatus, DatabaseBackend, OLBlockDatabase, OLCheckpointDatabase,
-};
+use strata_db_types::traits::{BlockStatus, DatabaseBackend, OLBlockDatabase};
 use strata_identifiers::{Epoch, OLBlockId, Slot};
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::l1::L1BlockId;
 
 use crate::{
     cli::OutputFormat,
+    cmd::checkpoint::get_last_ol_checkpoint_epoch,
     output::{
         ol::{OLBlockInfo, OLSummaryInfo},
         output,
@@ -174,6 +173,21 @@ pub(crate) fn get_canonical_ol_block_at_slot(
     })
 }
 
+pub(crate) fn get_ol_block_slot_and_epoch(
+    db: &impl DatabaseBackend,
+    block_id: OLBlockId,
+) -> Result<Option<(Slot, Epoch)>, DisplayedError> {
+    let Some(block) = db
+        .ol_block_db()
+        .get_block_data(block_id)
+        .internal_error("Failed to read OL block data")?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((block.header().slot(), block.header().epoch())))
+}
+
 fn get_ol_block_data(
     db: &impl DatabaseBackend,
     block_id: OLBlockId,
@@ -181,12 +195,4 @@ fn get_ol_block_data(
     db.ol_block_db()
         .get_block_data(block_id)
         .internal_error("Failed to read OL block data")
-}
-
-fn get_last_ol_checkpoint_epoch(
-    db: &impl DatabaseBackend,
-) -> Result<Option<Epoch>, DisplayedError> {
-    db.ol_checkpoint_db()
-        .get_last_checkpoint_epoch()
-        .internal_error("Failed to get last OL checkpoint epoch")
 }

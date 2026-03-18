@@ -209,7 +209,7 @@ fn verify_previous_epoch_summary_for_tip(storage: &NodeStorage, tip_block: &OLBl
     let previous_epoch = tip_epoch - 1;
     let previous_epoch_commitment = storage
         .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(previous_epoch as u64)
+        .get_canonical_epoch_commitment_at_blocking(previous_epoch)
         .context("startup: failed to query epoch commitment for previous epoch")?
         .ok_or_else(|| anyhow!("startup: missing epoch summary for previous epoch"))?;
 

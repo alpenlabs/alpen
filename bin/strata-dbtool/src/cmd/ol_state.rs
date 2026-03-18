@@ -3,10 +3,13 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{
     BlockStatus, DatabaseBackend, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
 };
-use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment, OLBlockId, Slot};
+use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_ledger_types::IStateAccessor;
 
-use super::client_state::get_declared_final_epoch;
+use super::{
+    checkpoint::get_latest_checkpoint_last_slot, client_state::get_declared_final_epoch,
+    ol::get_ol_block_slot_and_epoch,
+};
 use crate::{
     cli::OutputFormat,
     output::{ol_state::OLStateInfo, output},
@@ -220,11 +223,12 @@ pub(crate) fn revert_ol_state(
     let mut checkpoints_to_delete = Vec::new();
     let mut epoch_summaries_to_delete = Vec::new();
 
-    if let Some(last_epoch) = db
+    if let Some(latest_epoch_commitment) = db
         .ol_checkpoint_db()
-        .get_last_checkpoint_epoch()
+        .get_last_checkpoint_payload_epoch()
         .internal_error("Failed to get last checkpoint epoch")?
     {
+        let last_epoch = latest_epoch_commitment.epoch();
         for epoch in first_epoch_to_clean..=last_epoch {
             checkpoints_to_delete.push(epoch);
             epoch_summaries_to_delete.push(epoch);
@@ -233,11 +237,15 @@ pub(crate) fn revert_ol_state(
         if !dry_run {
             let _ = db
                 .ol_checkpoint_db()
-                .del_checkpoints_from_epoch(first_epoch_to_clean)
-                .internal_error("Failed to delete OL checkpoints")?;
+                .del_checkpoint_payload_entries_from_epoch(first_epoch_to_clean)
+                .internal_error("Failed to delete OL checkpoint payloads")?;
             let _ = db
                 .ol_checkpoint_db()
-                .del_epoch_summaries_from_epoch(u64::from(first_epoch_to_clean))
+                .del_checkpoint_signing_entries_from_epoch(first_epoch_to_clean)
+                .internal_error("Failed to delete OL checkpoint signing entries")?;
+            let _ = db
+                .ol_checkpoint_db()
+                .del_epoch_summaries_from_epoch(first_epoch_to_clean)
                 .internal_error("Failed to delete OL epoch summaries")?;
         }
     }
@@ -267,42 +275,4 @@ pub(crate) fn revert_ol_state(
     }
 
     Ok(())
-}
-
-fn get_ol_block_slot_and_epoch(
-    db: &impl DatabaseBackend,
-    block_id: OLBlockId,
-) -> Result<Option<(Slot, Epoch)>, DisplayedError> {
-    let Some(block) = db
-        .ol_block_db()
-        .get_block_data(block_id)
-        .internal_error("Failed to read OL block data")?
-    else {
-        return Ok(None);
-    };
-
-    Ok(Some((block.header().slot(), block.header().epoch())))
-}
-
-fn get_latest_checkpoint_last_slot(db: &impl DatabaseBackend) -> Result<Slot, DisplayedError> {
-    let Some(last_epoch) = db
-        .ol_checkpoint_db()
-        .get_last_checkpoint_epoch()
-        .internal_error("Failed to get last checkpoint epoch")?
-    else {
-        return Ok(0);
-    };
-
-    let checkpoint = db
-        .ol_checkpoint_db()
-        .get_checkpoint(last_epoch)
-        .internal_error("Failed to get OL checkpoint")?
-        .ok_or_else(|| {
-            DisplayedError::InternalError(
-                "Last checkpoint epoch exists but checkpoint entry is missing".to_string(),
-                Box::new(last_epoch),
-            )
-        })?;
-
-    Ok(checkpoint.checkpoint.new_tip().l2_commitment().slot())
 }

@@ -157,7 +157,7 @@ async fn process_fc_message(
                 // Get prev epoch summary
                 let prev_epoch_num = cur_state.cur_epoch().saturating_sub(1);
                 let prev_epoch = ckpt_db
-                    .get_canonical_epoch_commitment_at_async(prev_epoch_num as u64)
+                    .get_canonical_epoch_commitment_at_async(prev_epoch_num)
                     .await?
                     .ok_or(anyhow!(
                         "expected epoch commitment for previous epoch {} not in db",

@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strata_btcio::writer::EnvelopeHandle;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_csm_types::PayloadIntent;
-use strata_db_types::types::OLCheckpointEntry;
 use strata_identifiers::Epoch;
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_ol_chain_types_new::OLBlock;
@@ -168,10 +168,41 @@ impl SequencerContext for NodeSequencerContext {
     async fn load_checkpoint(
         &self,
         epoch: Epoch,
-    ) -> Result<Option<OLCheckpointEntry>, SequencerContextError> {
+    ) -> Result<Option<CheckpointPayload>, SequencerContextError> {
+        let Some(commitment) = self
+            .storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(epoch)
+            .await
+            .map_err(SequencerContextError::Db)?
+        else {
+            return Ok(None);
+        };
+
         self.storage
             .ol_checkpoint()
-            .get_checkpoint_async(epoch)
+            .get_checkpoint_payload_entry_async(commitment)
+            .await
+            .map_err(SequencerContextError::Db)
+    }
+
+    async fn load_checkpoint_signing_intent(
+        &self,
+        epoch: Epoch,
+    ) -> Result<Option<u64>, SequencerContextError> {
+        let Some(commitment) = self
+            .storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(epoch)
+            .await
+            .map_err(SequencerContextError::Db)?
+        else {
+            return Ok(None);
+        };
+
+        self.storage
+            .ol_checkpoint()
+            .get_checkpoint_signing_entry_async(commitment)
             .await
             .map_err(SequencerContextError::Db)
     }
@@ -186,14 +217,26 @@ impl SequencerContext for NodeSequencerContext {
             .map_err(|source| SequencerContextError::CheckpointIntentSubmission { source })
     }
 
-    async fn persist_checkpoint(
+    async fn persist_checkpoint_signing_intent(
         &self,
         epoch: Epoch,
-        entry: OLCheckpointEntry,
+        intent_idx: u64,
     ) -> Result<(), SequencerContextError> {
+        let Some(commitment) = self
+            .storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(epoch)
+            .await
+            .map_err(SequencerContextError::Db)?
+        else {
+            return Err(SequencerContextError::Db(
+                strata_db_types::DbError::InvalidArgument,
+            ));
+        };
+
         self.storage
             .ol_checkpoint()
-            .put_checkpoint_async(epoch, entry)
+            .put_checkpoint_signing_entry_async(commitment, intent_idx)
             .await
             .map_err(SequencerContextError::Db)
     }
