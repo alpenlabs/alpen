@@ -20,23 +20,6 @@ use tracing::*;
 /// Groups reveal txs by L1 block for [`L1DaBlockRef`] construction.
 type BlockMap = HashMap<(Buf32, L1Height), Vec<(Txid, Wtxid)>>;
 
-struct DisplayBlockRefs<'a>(&'a [L1DaBlockRef]);
-
-impl fmt::Display for DisplayBlockRefs<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("[")?;
-
-        for (idx, block_ref) in self.0.iter().enumerate() {
-            if idx > 0 {
-                f.write_str(", ")?;
-            }
-            write!(f, "{block_ref}")?;
-        }
-
-        f.write_str("]")
-    }
-}
-
 /// [`BatchDaProvider`] that posts DA via chunked envelope inscription.
 pub struct ChunkedEnvelopeDaProvider {
     blob_provider: Arc<dyn DaBlobSource>,
@@ -122,10 +105,12 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             match entry.status {
                 ChunkedEnvelopeStatus::Finalized => {
                     let block_refs = self.build_da_block_refs(&entry).await?;
-                    info!(
-                        da_block_refs = %DisplayBlockRefs(&block_refs),
-                        "batch DA finalized on L1"
-                    );
+                    let da_block_refs = block_refs
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    info!(%da_block_refs, "batch DA finalized on L1");
                     Ok(DaStatus::Ready(block_refs))
                 }
                 ChunkedEnvelopeStatus::Unsigned
