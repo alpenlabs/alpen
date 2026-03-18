@@ -122,7 +122,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let genesis_ol_blkid = *genesis_artifacts.commitment.blkid();
 
     // Build checkpoint config.
-    let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate);
+    let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
     let genesis_l1_height = genesis_l1_view.blk.height();
 
     let checkpoint = CheckpointInitConfig {

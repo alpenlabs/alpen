@@ -1,6 +1,6 @@
 //! Checkpoint predicate resolution based on enabled features and CLI overrides.
 
-use std::str::FromStr;
+use std::{error, fmt, str::FromStr};
 
 use strata_predicate::PredicateKey;
 
@@ -13,16 +13,30 @@ pub(crate) enum CheckpointPredicateOverride {
     Sp1Groth16,
 }
 
+/// Error returned when parsing a [`CheckpointPredicateOverride`] from a CLI string.
+#[derive(Debug)]
+pub(crate) struct ParseCheckpointPredicateError(String);
+
+impl fmt::Display for ParseCheckpointPredicateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "invalid checkpoint predicate type '{}', expected 'always-accept' or 'sp1-groth16'",
+            self.0
+        )
+    }
+}
+
+impl error::Error for ParseCheckpointPredicateError {}
+
 impl FromStr for CheckpointPredicateOverride {
-    type Err = String;
+    type Err = ParseCheckpointPredicateError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "always-accept" => Ok(Self::AlwaysAccept),
             "sp1-groth16" => Ok(Self::Sp1Groth16),
-            _ => Err(format!(
-                "invalid checkpoint predicate type '{s}', expected 'always-accept' or 'sp1-groth16'"
-            )),
+            _ => Err(ParseCheckpointPredicateError(s.to_owned())),
         }
     }
 }
@@ -34,26 +48,26 @@ impl FromStr for CheckpointPredicateOverride {
 /// Otherwise falls back to the feature-gated default.
 pub(crate) fn resolve_checkpoint_predicate(
     override_val: Option<CheckpointPredicateOverride>,
-) -> PredicateKey {
+) -> anyhow::Result<PredicateKey> {
     match override_val {
-        Some(CheckpointPredicateOverride::AlwaysAccept) => PredicateKey::always_accept(),
+        Some(CheckpointPredicateOverride::AlwaysAccept) => Ok(PredicateKey::always_accept()),
         Some(CheckpointPredicateOverride::Sp1Groth16) => resolve_sp1_groth16(),
-        None => resolve_default(),
+        None => Ok(resolve_default()),
     }
 }
 
 /// Resolves the SP1 Groth16 predicate key.
 ///
-/// Panics if the `sp1-builder` feature is not enabled.
-fn resolve_sp1_groth16() -> PredicateKey {
+/// Returns an error if the `sp1-builder` feature is not enabled.
+fn resolve_sp1_groth16() -> anyhow::Result<PredicateKey> {
     #[cfg(feature = "sp1-builder")]
     {
-        build_sp1_predicate()
+        Ok(build_sp1_predicate())
     }
 
     #[cfg(not(feature = "sp1-builder"))]
     {
-        panic!(
+        anyhow::bail!(
             "--checkpoint-predicate sp1-groth16 requires the binary to be built with \
              -F sp1-builder"
         );
