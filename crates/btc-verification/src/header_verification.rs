@@ -131,6 +131,51 @@ impl HeaderVerificationState {
         }
     }
 
+    /// Creates a header verification state from its raw components.
+    pub fn from_parts(
+        params: BtcParams,
+        last_verified_block: L1BlockCommitment,
+        next_block_target: u32,
+        epoch_start_timestamp: u32,
+        block_timestamp_history: TimestampStore,
+        total_accumulated_pow: BtcWork,
+    ) -> Self {
+        Self {
+            params,
+            last_verified_block,
+            next_block_target,
+            epoch_start_timestamp,
+            block_timestamp_history,
+            total_accumulated_pow,
+        }
+    }
+
+    /// Consumes the verifier state and returns its raw components.
+    pub fn into_parts(
+        self,
+    ) -> (
+        BtcParams,
+        L1BlockCommitment,
+        u32,
+        u32,
+        TimestampStore,
+        BtcWork,
+    ) {
+        (
+            self.params,
+            self.last_verified_block,
+            self.next_block_target,
+            self.epoch_start_timestamp,
+            self.block_timestamp_history,
+            self.total_accumulated_pow,
+        )
+    }
+
+    /// Gets the Bitcoin network parameters used by this verifier state.
+    pub fn params(&self) -> &BtcParams {
+        &self.params
+    }
+
     /// Calculates the next difficulty target based on the current header.
     ///
     /// If this is a difficulty adjustment block (height + 1 is multiple of adjustment interval),

@@ -43,6 +43,34 @@ impl TimestampStore {
         }
     }
 
+    /// Creates a timestamp store from its raw ring-buffer parts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `head` is outside the ring-buffer range.
+    pub fn from_parts(buffer: [u32; TIMESTAMPS_FOR_MEDIAN], head: usize) -> Self {
+        assert!(
+            head < TIMESTAMPS_FOR_MEDIAN,
+            "timestamp store head must be within the ring buffer"
+        );
+        Self { buffer, head }
+    }
+
+    /// Returns the raw ring-buffer contents.
+    pub fn buffer(&self) -> &[u32; TIMESTAMPS_FOR_MEDIAN] {
+        &self.buffer
+    }
+
+    /// Returns the next insertion index within the ring buffer.
+    pub fn head(&self) -> usize {
+        self.head
+    }
+
+    /// Consumes the timestamp store and returns its raw ring-buffer parts.
+    pub fn into_parts(self) -> ([u32; TIMESTAMPS_FOR_MEDIAN], usize) {
+        (self.buffer, self.head)
+    }
+
     /// Inserts a new timestamp into the buffer, overwriting the oldest timestamp.
     /// After insertion, the `head` is advanced in a circular manner.
     pub fn insert(&mut self, timestamp: u32) {
