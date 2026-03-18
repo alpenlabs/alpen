@@ -8,6 +8,8 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize, de};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use ssz_derive::{Decode, Encode};
 use strata_identifiers::Buf32;
 use strata_l1_txfmt::TagData;
 
@@ -37,6 +39,39 @@ pub enum PayloadDest {
     L1 = 0,
 }
 
+impl SszEncodeTrait for PayloadDest {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        1
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        buf.push((*self).into());
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for PayloadDest {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        1
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let tag = u8::from_ssz_bytes(bytes)?;
+        Self::try_from(tag).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
+    }
+}
+
 /// Manual `Arbitrary` impl so that we always generate L1 DA if we add future
 /// ones that would work in totally different ways.
 impl<'a> Arbitrary<'a> for PayloadDest {
@@ -59,6 +94,8 @@ impl<'a> Arbitrary<'a> for PayloadDest {
     BorshSerialize,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct BlobSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -100,6 +137,8 @@ impl BlobSpec {
     BorshSerialize,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct PayloadSpec {
     /// Target settlement layer we're expecting the DA on.
@@ -131,6 +170,14 @@ impl PayloadSpec {
 pub struct L1Payload {
     data: Vec<Vec<u8>>,
     tag: TagData,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
+struct L1PayloadSsz {
+    data: Vec<Vec<u8>>,
+    subproto_id: u8,
+    tx_type: u8,
+    aux_data: Vec<u8>,
 }
 
 impl L1Payload {
@@ -179,6 +226,48 @@ impl BorshDeserialize for L1Payload {
         })?;
 
         Ok(Self { data, tag })
+    }
+}
+
+impl SszEncodeTrait for L1Payload {
+    fn is_ssz_fixed_len() -> bool {
+        <L1PayloadSsz as SszEncodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        L1PayloadSsz {
+            data: self.data.clone(),
+            subproto_id: self.tag.subproto_id(),
+            tx_type: self.tag.tx_type(),
+            aux_data: self.tag.aux_data().to_vec(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        L1PayloadSsz {
+            data: self.data.clone(),
+            subproto_id: self.tag.subproto_id(),
+            tx_type: self.tag.tx_type(),
+            aux_data: self.tag.aux_data().to_vec(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for L1Payload {
+    fn is_ssz_fixed_len() -> bool {
+        <L1PayloadSsz as SszDecodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = L1PayloadSsz::from_ssz_bytes(bytes)?;
+        let tag = TagData::new(decoded.subproto_id, decoded.tx_type, decoded.aux_data)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        Ok(Self {
+            data: decoded.data,
+            tag,
+        })
     }
 }
 
@@ -248,7 +337,9 @@ impl<'a> arbitrary::Arbitrary<'a> for L1Payload {
 /// about it.
 ///
 /// These are never stored on-chain.
-#[derive(Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Clone, Debug, Eq, PartialEq, Arbitrary, BorshSerialize, BorshDeserialize, Encode, Decode,
+)]
 // TODO: rename this to L1PayloadIntent and remove the dest field
 pub struct PayloadIntent {
     /// The destination for this payload.

@@ -18,6 +18,7 @@ use bitcoin::{
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
@@ -25,10 +26,60 @@ use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
 use crate::ParseError;
 
 const HASH_SIZE: usize = 32;
+const BITCOIN_OUTPOINT_LEN: usize = 36;
+const BITCOIN_TXID_LEN: usize = 32;
+const BITCOIN_XONLY_PUBLIC_KEY_LEN: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct BitcoinOutPoint(pub OutPoint);
+
+impl SszEncodeTrait for BitcoinOutPoint {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_OUTPOINT_LEN
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.0.txid.to_byte_array());
+        buf.extend_from_slice(&self.0.vout.to_le_bytes());
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinOutPoint {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_OUTPOINT_LEN
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        if bytes.len() != <Self as SszDecodeTrait>::ssz_fixed_len() {
+            return Err(DecodeError::InvalidByteLength {
+                len: bytes.len(),
+                expected: <Self as SszDecodeTrait>::ssz_fixed_len(),
+            });
+        }
+
+        let txid = Txid::from_slice(&bytes[..BITCOIN_TXID_LEN])
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        let vout = u32::from_le_bytes(
+            bytes[BITCOIN_TXID_LEN..<Self as SszDecodeTrait>::ssz_fixed_len()]
+                .try_into()
+                .expect("slice length is checked above"),
+        );
+        Ok(Self(OutPoint { txid, vout }))
+    }
+}
 
 impl From<OutPoint> for BitcoinOutPoint {
     fn from(value: OutPoint) -> Self {
@@ -274,6 +325,39 @@ impl BitcoinAmount {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
 
+impl SszEncodeTrait for BitcoinTxid {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_TXID_LEN
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.0.to_byte_array());
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinTxid {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_TXID_LEN
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let serialized = <[u8; BITCOIN_TXID_LEN]>::from_ssz_bytes(bytes)?;
+        Ok(Self(Txid::from_byte_array(serialized)))
+    }
+}
+
 impl From<Txid> for BitcoinTxid {
     fn from(value: Txid) -> Self {
         Self(value)
@@ -353,6 +437,48 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxOut(TxOut);
 
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+struct BitcoinTxOutSsz {
+    value: u64,
+    script_pubkey: Vec<u8>,
+}
+
+impl SszEncodeTrait for BitcoinTxOut {
+    fn is_ssz_fixed_len() -> bool {
+        <BitcoinTxOutSsz as SszEncodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        BitcoinTxOutSsz {
+            value: self.0.value.to_sat(),
+            script_pubkey: self.0.script_pubkey.to_bytes(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        BitcoinTxOutSsz {
+            value: self.0.value.to_sat(),
+            script_pubkey: self.0.script_pubkey.to_bytes(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinTxOut {
+    fn is_ssz_fixed_len() -> bool {
+        <BitcoinTxOutSsz as SszDecodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = BitcoinTxOutSsz::from_ssz_bytes(bytes)?;
+        Ok(Self(TxOut {
+            value: Amount::from_sat(decoded.value),
+            script_pubkey: ScriptBuf::from(decoded.script_pubkey),
+        }))
+    }
+}
+
 impl BitcoinTxOut {
     pub fn inner(&self) -> &TxOut {
         &self.0
@@ -423,7 +549,17 @@ impl<'a> Arbitrary<'a> for BitcoinTxOut {
 
 /// A wrapper around [`Buf32`] for XOnly Schnorr taproot pubkeys.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct BitcoinXOnlyPublicKey(Buf32);
 
@@ -499,10 +635,36 @@ impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
     }
 }
 
+impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32, BITCOIN_XONLY_PUBLIC_KEY_LEN);
+
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct RawBitcoinTx(Vec<u8>);
+
+impl SszEncodeTrait for RawBitcoinTx {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.0.ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.0.ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for RawBitcoinTx {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Vec::<u8>::from_ssz_bytes(bytes).map(Self)
+    }
+}
 
 impl RawBitcoinTx {
     /// Creates a new `RawBitcoinTx` from a raw byte vector.
@@ -594,6 +756,30 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinScriptBuf(ScriptBuf);
+
+impl SszEncodeTrait for BitcoinScriptBuf {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.0.to_bytes().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.0.to_bytes().ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinScriptBuf {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Vec::<u8>::from_ssz_bytes(bytes).map(|bytes| Self(ScriptBuf::from(bytes)))
+    }
+}
 
 impl BitcoinScriptBuf {
     pub fn inner(&self) -> &ScriptBuf {

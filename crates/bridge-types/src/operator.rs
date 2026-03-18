@@ -1,6 +1,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 
 /// The ID of an operator.
 ///
@@ -26,6 +27,8 @@ const NO_SELECTION_SENTINEL: u32 = u32::MAX;
     Serialize,
     Deserialize,
     Arbitrary,
+    Encode,
+    Decode,
 )]
 pub struct OperatorSelection(u32);
 

@@ -3,6 +3,7 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz_derive::{Decode, Encode};
 use strata_identifiers::{
     Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment, L2BlockId, Slot,
 };
@@ -22,6 +23,8 @@ use strata_identifiers::{
     BorshSerialize,
     Deserialize,
     Serialize,
+    Encode,
+    Decode,
 )]
 pub struct EpochSummary {
     /// The epoch number.
@@ -126,7 +129,17 @@ impl EpochSummary {
 /// Contains metadata describing a batch checkpoint, including the L1 and L2 height ranges
 /// it covers and the final L2 block ID in that range.
 #[derive(
-    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Arbitrary,
+    BorshDeserialize,
+    BorshSerialize,
+    Deserialize,
+    Serialize,
+    Encode,
+    Decode,
 )]
 pub struct BatchInfo {
     /// Checkpoint epoch

@@ -10,6 +10,8 @@ use std::{
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{de::Error, Deserialize, Serialize};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use ssz_derive::{Decode, Encode};
 
 use super::ThresholdSignatureError;
 use crate::keys::compressed::CompressedPublicKey;
@@ -35,6 +37,12 @@ pub struct ThresholdConfig {
     keys: Vec<CompressedPublicKey>,
     /// Minimum number of signatures required (always >= 1).
     threshold: NonZero<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+struct ThresholdConfigSsz {
+    keys: Vec<CompressedPublicKey>,
+    threshold: u8,
 }
 
 /// [`Deserialize`] is implemented manually to route through [`Self::try_new`].
@@ -88,6 +96,42 @@ impl<'a> Arbitrary<'a> for ThresholdConfig {
         let threshold = NonZero::new(threshold_u8).expect("threshold is always >= 1");
 
         Self::try_new(keys, threshold).map_err(|_| arbitrary::Error::IncorrectFormat)
+    }
+}
+
+impl SszEncodeTrait for ThresholdConfig {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigSsz as SszEncodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        ThresholdConfigSsz {
+            keys: self.keys.clone(),
+            threshold: self.threshold.get(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        ThresholdConfigSsz {
+            keys: self.keys.clone(),
+            threshold: self.threshold.get(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for ThresholdConfig {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigSsz as SszDecodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = ThresholdConfigSsz::from_ssz_bytes(bytes)?;
+        let threshold = NonZero::new(decoded.threshold)
+            .ok_or_else(|| DecodeError::BytesInvalid("threshold must be non-zero".into()))?;
+        Self::try_new(decoded.keys, threshold)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))
     }
 }
 
@@ -219,6 +263,13 @@ pub struct ThresholdConfigUpdate {
     new_threshold: NonZero<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+struct ThresholdConfigUpdateSsz {
+    add_members: Vec<CompressedPublicKey>,
+    remove_members: Vec<CompressedPublicKey>,
+    new_threshold: u8,
+}
+
 impl ThresholdConfigUpdate {
     /// Creates a new threshold configuration update.
     pub fn new(
@@ -274,6 +325,47 @@ impl<'a> Arbitrary<'a> for ThresholdConfigUpdate {
             remove_members,
             new_threshold,
         })
+    }
+}
+
+impl SszEncodeTrait for ThresholdConfigUpdate {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigUpdateSsz as SszEncodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        ThresholdConfigUpdateSsz {
+            add_members: self.add_members.clone(),
+            remove_members: self.remove_members.clone(),
+            new_threshold: self.new_threshold.get(),
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        ThresholdConfigUpdateSsz {
+            add_members: self.add_members.clone(),
+            remove_members: self.remove_members.clone(),
+            new_threshold: self.new_threshold.get(),
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for ThresholdConfigUpdate {
+    fn is_ssz_fixed_len() -> bool {
+        <ThresholdConfigUpdateSsz as SszDecodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = ThresholdConfigUpdateSsz::from_ssz_bytes(bytes)?;
+        let new_threshold = NonZero::new(decoded.new_threshold)
+            .ok_or_else(|| DecodeError::BytesInvalid("threshold must be non-zero".into()))?;
+        Ok(Self::new(
+            decoded.add_members,
+            decoded.remove_members,
+            new_threshold,
+        ))
     }
 }
 

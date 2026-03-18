@@ -13966,7 +13966,6 @@ dependencies = [
 name = "strata-asm-logs"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
@@ -14293,6 +14292,8 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-identifiers",
  "strata-primitives",
 ]
@@ -14461,6 +14462,8 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-crypto",
  "strata-identifiers",
  "zkaleido",
@@ -14661,6 +14664,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "ssz",
+ "ssz_derive",
  "strata-identifiers",
  "strata-test-utils",
  "thiserror 2.0.18",

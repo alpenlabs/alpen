@@ -2,6 +2,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
+use ssz_derive::{Decode, Encode};
 use strata_identifiers::SubjectId;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
 
@@ -21,6 +23,59 @@ pub struct WithdrawalIntent {
 
     /// User's operator selection for withdrawal assignment.
     selected_operator: OperatorSelection,
+}
+
+#[derive(Clone, Debug, Encode, Decode)]
+struct WithdrawalIntentSsz {
+    amt: BitcoinAmount,
+    destination: Vec<u8>,
+    withdrawal_txid: Buf32,
+    selected_operator: OperatorSelection,
+}
+
+impl SszEncodeTrait for WithdrawalIntent {
+    fn is_ssz_fixed_len() -> bool {
+        <WithdrawalIntentSsz as SszEncodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        WithdrawalIntentSsz {
+            amt: self.amt,
+            destination: self.destination.to_bytes(),
+            withdrawal_txid: self.withdrawal_txid,
+            selected_operator: self.selected_operator,
+        }
+        .ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        WithdrawalIntentSsz {
+            amt: self.amt,
+            destination: self.destination.to_bytes(),
+            withdrawal_txid: self.withdrawal_txid,
+            selected_operator: self.selected_operator,
+        }
+        .ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for WithdrawalIntent {
+    fn is_ssz_fixed_len() -> bool {
+        <WithdrawalIntentSsz as SszDecodeTrait>::is_ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let decoded = WithdrawalIntentSsz::from_ssz_bytes(bytes)?;
+        let destination = Descriptor::from_bytes(&decoded.destination)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+
+        Ok(Self {
+            amt: decoded.amt,
+            destination,
+            withdrawal_txid: decoded.withdrawal_txid,
+            selected_operator: decoded.selected_operator,
+        })
+    }
 }
 
 impl WithdrawalIntent {
@@ -60,7 +115,18 @@ impl WithdrawalIntent {
 }
 
 /// Set of withdrawals that are assigned to a deposit bridge utxo.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    BorshDeserialize,
+    BorshSerialize,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
 pub struct WithdrawalBatch {
     /// A series of [WithdrawalIntent]'s who sum does not exceed withdrawal denomination.
     intents: Vec<WithdrawalIntent>,
@@ -86,7 +152,7 @@ impl WithdrawalBatch {
 }
 
 /// Describes a deposit data to be processed by an EE.
-#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Encode, Decode)]
 pub struct DepositIntent {
     /// Quantity in the L1 asset, for Bitcoin this is sats.
     amt: BitcoinAmount,
