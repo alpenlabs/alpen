@@ -2,7 +2,8 @@ use std::fmt;
 
 use int_enum::IntEnum;
 use strata_acct_types::{AccountId, MessageEntry, TxEffects};
-use strata_identifiers::{Buf32, Slot};
+use strata_identifiers::{Buf32, OLTxId, Slot};
+use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::ssz_generated::ssz::{proofs::*, transaction::*};
 
@@ -33,6 +34,10 @@ impl OLTransaction {
 
     pub fn type_id(&self) -> TxTypeId {
         self.payload().type_id()
+    }
+
+    pub fn compute_txid(&self) -> OLTxId {
+        self.data().compute_txid()
     }
 }
 
@@ -182,6 +187,12 @@ impl OLTransactionData {
 
     pub fn effects(&self) -> &TxEffects {
         &self.effects
+    }
+
+    /// Computes the txid.
+    pub fn compute_txid(&self) -> OLTxId {
+        let txid_raw = <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self);
+        OLTxId::from(Buf32::from(txid_raw.0))
     }
 }
 
