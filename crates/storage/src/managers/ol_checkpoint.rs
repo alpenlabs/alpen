@@ -4,7 +4,11 @@ use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::CheckpointPayload;
-use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex, DbResult};
+use strata_db_types::{
+    traits::OLCheckpointDatabase,
+    types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry},
+    DbResult,
+};
 use strata_identifiers::{Epoch, EpochCommitment};
 use threadpool::ThreadPool;
 
@@ -278,6 +282,82 @@ impl OLCheckpointManager {
     ) -> DbResult<Vec<EpochCommitment>> {
         self.ops
             .del_checkpoint_signing_entries_from_epoch_blocking(start_epoch)
+    }
+
+    /// Stores an OL checkpoint L1 observation entry by epoch commitment.
+    pub async fn put_checkpoint_l1_observation_entry_async(
+        &self,
+        epoch: EpochCommitment,
+        l1_observation: OLCheckpointL1ObservationEntry,
+    ) -> DbResult<()> {
+        self.ops
+            .put_checkpoint_l1_observation_entry_async(epoch, l1_observation)
+            .await
+    }
+
+    /// Stores an OL checkpoint L1 observation entry by epoch commitment.
+    pub fn put_checkpoint_l1_observation_entry_blocking(
+        &self,
+        epoch: EpochCommitment,
+        l1_observation: OLCheckpointL1ObservationEntry,
+    ) -> DbResult<()> {
+        self.ops
+            .put_checkpoint_l1_observation_entry_blocking(epoch, l1_observation)
+    }
+
+    /// Retrieves an OL checkpoint L1 observation entry by epoch commitment.
+    pub async fn get_checkpoint_l1_observation_entry_async(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<OLCheckpointL1ObservationEntry>> {
+        self.ops
+            .get_checkpoint_l1_observation_entry_async(epoch)
+            .await
+    }
+
+    /// Retrieves an OL checkpoint L1 observation entry by epoch commitment.
+    pub fn get_checkpoint_l1_observation_entry_blocking(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<OLCheckpointL1ObservationEntry>> {
+        self.ops.get_checkpoint_l1_observation_entry_blocking(epoch)
+    }
+
+    /// Deletes an OL checkpoint L1 observation entry by epoch commitment.
+    pub async fn del_checkpoint_l1_observation_entry_async(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<bool> {
+        self.ops
+            .del_checkpoint_l1_observation_entry_async(epoch)
+            .await
+    }
+
+    /// Deletes an OL checkpoint L1 observation entry by epoch commitment.
+    pub fn del_checkpoint_l1_observation_entry_blocking(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<bool> {
+        self.ops.del_checkpoint_l1_observation_entry_blocking(epoch)
+    }
+
+    /// Deletes OL checkpoint L1 observation entries from the specified epoch onwards.
+    pub async fn del_checkpoint_l1_observation_entries_from_epoch_async(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .del_checkpoint_l1_observation_entries_from_epoch_async(start_epoch)
+            .await
+    }
+
+    /// Deletes OL checkpoint L1 observation entries from the specified epoch onwards.
+    pub fn del_checkpoint_l1_observation_entries_from_epoch_blocking(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .del_checkpoint_l1_observation_entries_from_epoch_blocking(start_epoch)
     }
 
     /// Gets the next unsigned checkpoint epoch.

@@ -1,7 +1,12 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{test_utils::create_test_checkpoint_payload, CheckpointPayload};
-use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex};
-use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
+use strata_db_types::{
+    traits::OLCheckpointDatabase,
+    types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry},
+};
+use strata_identifiers::{
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
+};
 use strata_test_utils::ArbitraryGenerator;
 
 fn checkpoint_epoch_commitment(payload: &CheckpointPayload) -> EpochCommitment {
@@ -13,6 +18,11 @@ fn checkpoint_epoch_commitment(payload: &CheckpointPayload) -> EpochCommitment {
 
 fn payload_for_epoch(epoch: u32) -> CheckpointPayload {
     create_test_checkpoint_payload(epoch)
+}
+
+fn l1_observation_entry(height: u32) -> OLCheckpointL1ObservationEntry {
+    let blkid = L1BlockId::from(Buf32::from([height as u8; 32]));
+    OLCheckpointL1ObservationEntry::new(L1BlockCommitment::new(height, blkid))
 }
 
 pub fn test_get_nonexistent_checkpoint_payload_entry(db: &impl OLCheckpointDatabase) {
@@ -320,6 +330,107 @@ pub fn test_del_checkpoint_signing_entries_from_epoch(db: &impl OLCheckpointData
     }
 }
 
+pub fn test_put_checkpoint_l1_observation_entry_allows_missing_payload(
+    db: &impl OLCheckpointDatabase,
+) {
+    let payload = payload_for_epoch(13);
+    let key = checkpoint_epoch_commitment(&payload);
+
+    let expected_observation = l1_observation_entry(100);
+    db.put_checkpoint_l1_observation_entry(key, expected_observation)
+        .expect("put l1 observation without payload");
+
+    let observed = db
+        .get_checkpoint_l1_observation_entry(key)
+        .expect("get l1 observation")
+        .expect("l1 observation should exist");
+    assert_eq!(observed, expected_observation);
+}
+
+pub fn test_checkpoint_l1_observation_entry_roundtrip(db: &impl OLCheckpointDatabase) {
+    let payload = payload_for_epoch(14);
+    let key = checkpoint_epoch_commitment(&payload);
+
+    db.put_checkpoint_payload_entry(key, payload)
+        .expect("put payload");
+    let expected_observation = l1_observation_entry(123);
+    db.put_checkpoint_l1_observation_entry(key, expected_observation)
+        .expect("put l1 observation");
+
+    let observed = db
+        .get_checkpoint_l1_observation_entry(key)
+        .expect("get l1 observation")
+        .expect("l1 observation should exist");
+    assert_eq!(observed, expected_observation);
+
+    let deleted = db
+        .del_checkpoint_l1_observation_entry(key)
+        .expect("delete l1 observation");
+    assert!(deleted);
+
+    assert!(db
+        .get_checkpoint_l1_observation_entry(key)
+        .expect("get l1 observation after delete")
+        .is_none());
+}
+
+pub fn test_del_checkpoint_payload_entry_deletes_l1_observation_entry(
+    db: &impl OLCheckpointDatabase,
+) {
+    let payload = payload_for_epoch(15);
+    let key = checkpoint_epoch_commitment(&payload);
+
+    db.put_checkpoint_payload_entry(key, payload)
+        .expect("put payload");
+    db.put_checkpoint_l1_observation_entry(key, l1_observation_entry(200))
+        .expect("put l1 observation");
+
+    db.del_checkpoint_payload_entry(key)
+        .expect("delete payload should succeed");
+
+    assert!(db
+        .get_checkpoint_l1_observation_entry(key)
+        .expect("get l1 observation after payload delete")
+        .is_none());
+}
+
+pub fn test_del_checkpoint_l1_observation_entries_from_epoch(db: &impl OLCheckpointDatabase) {
+    for epoch in 0u32..4 {
+        let payload = payload_for_epoch(epoch);
+        let key = checkpoint_epoch_commitment(&payload);
+        db.put_checkpoint_payload_entry(key, payload)
+            .expect("put payload");
+        db.put_checkpoint_l1_observation_entry(key, l1_observation_entry(100 + epoch))
+            .expect("put l1 observation");
+    }
+
+    let deleted = db
+        .del_checkpoint_l1_observation_entries_from_epoch(Epoch::from(2u32))
+        .expect("delete l1 observation entries from epoch");
+    let expected: Vec<EpochCommitment> = (2u32..4)
+        .map(|e| checkpoint_epoch_commitment(&payload_for_epoch(e)))
+        .collect();
+    assert_eq!(deleted, expected);
+
+    for epoch in 0u32..2 {
+        let payload = payload_for_epoch(epoch);
+        let key = checkpoint_epoch_commitment(&payload);
+        assert!(db
+            .get_checkpoint_l1_observation_entry(key)
+            .expect("get retained l1 observation")
+            .is_some());
+    }
+
+    for epoch in 2u32..4 {
+        let payload = payload_for_epoch(epoch);
+        let key = checkpoint_epoch_commitment(&payload);
+        assert!(db
+            .get_checkpoint_l1_observation_entry(key)
+            .expect("get deleted l1 observation")
+            .is_none());
+    }
+}
+
 pub fn test_get_next_unsigned_checkpoint_epoch_all_signed_returns_none(
     db: &impl OLCheckpointDatabase,
 ) {
@@ -528,6 +639,26 @@ pub fn proptest_signing_entry_roundtrip(
     assert!(stored.is_none());
 }
 
+pub fn proptest_l1_observation_entry_roundtrip(
+    db: &impl OLCheckpointDatabase,
+    checkpoint: CheckpointPayload,
+    observed_height: u32,
+) {
+    let key = checkpoint_epoch_commitment(&checkpoint);
+    let observation = l1_observation_entry(observed_height);
+
+    db.put_checkpoint_payload_entry(key, checkpoint)
+        .expect("test: put payload");
+    db.put_checkpoint_l1_observation_entry(key, observation)
+        .expect("test: put l1 observation");
+
+    let stored = db
+        .get_checkpoint_l1_observation_entry(key)
+        .expect("test: get l1 observation")
+        .expect("l1 observation entry should exist");
+    assert_eq!(stored, observation);
+}
+
 #[macro_export]
 macro_rules! ol_checkpoint_db_tests {
     ($setup_expr:expr) => {
@@ -624,6 +755,30 @@ macro_rules! ol_checkpoint_db_tests {
         }
 
         #[test]
+        fn test_put_checkpoint_l1_observation_entry_allows_missing_payload() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_put_checkpoint_l1_observation_entry_allows_missing_payload(&db);
+        }
+
+        #[test]
+        fn test_checkpoint_l1_observation_entry_roundtrip() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_checkpoint_l1_observation_entry_roundtrip(&db);
+        }
+
+        #[test]
+        fn test_del_checkpoint_payload_entry_deletes_l1_observation_entry() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_del_checkpoint_payload_entry_deletes_l1_observation_entry(&db);
+        }
+
+        #[test]
+        fn test_del_checkpoint_l1_observation_entries_from_epoch() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_del_checkpoint_l1_observation_entries_from_epoch(&db);
+        }
+
+        #[test]
         fn test_get_next_unsigned_checkpoint_epoch_all_signed_returns_none() {
             let db = $setup_expr;
             $crate::ol_checkpoint_tests::test_get_next_unsigned_checkpoint_epoch_all_signed_returns_none(&db);
@@ -694,6 +849,15 @@ macro_rules! ol_checkpoint_db_tests {
             ) {
                 let db = $setup_expr;
                 $crate::ol_checkpoint_tests::proptest_signing_entry_roundtrip(&db, checkpoint, intent_index);
+            }
+
+            #[test]
+            fn proptest_l1_observation_entry_roundtrip(
+                checkpoint in checkpoint_test_utils::checkpoint_payload_strategy(),
+                observed_height in proptest::prelude::any::<u32>()
+            ) {
+                let db = $setup_expr;
+                $crate::ol_checkpoint_tests::proptest_l1_observation_entry_roundtrip(&db, checkpoint, observed_height);
             }
         }
     };
