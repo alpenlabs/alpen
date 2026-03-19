@@ -44,11 +44,16 @@ strata-dbtool get-syncinfo [OPTIONS]
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
+- `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive finalized checkpoint epoch
 
 **Example:**
 ```bash
-strata-dbtool get-syncinfo
+strata-dbtool get-syncinfo --l1-reorg-safe-depth 6
 ```
+
+**Notes:**
+- `top_level_state.prev_epoch.status` is derived from OL checkpoint DB at read time.
+- `top_level_state.finalized_epoch` is derived from OL checkpoint DB using `--l1-reorg-safe-depth`.
 
 ### `get-client-state-update`
 Shows client state update information for a given L1 block.
@@ -230,15 +235,17 @@ strata-dbtool get-checkpoint <checkpoint_epoch> [OPTIONS]
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
+- `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive checkpoint status
 
 **Example:**
 ```bash
-strata-dbtool get-checkpoint 5
+strata-dbtool get-checkpoint 5 --l1-reorg-safe-depth 6
 ```
 
 **Notes:**
-- Checkpoint status is reported from OL checkpoint DB as `Unsigned` or `Signed`.
-- For `Signed`, output includes `checkpoint.status.intent_index`.
+- Checkpoint status is reported as canonical `checkpoint.status`:
+  `Unsigned`, `Signed`, `Confirmed`, or `Finalized`.
+- For `Signed`, output includes `checkpoint.intent_index`.
 
 ### `get-epoch-summary`
 Shows detailed information about a specific OL epoch summary.
@@ -270,11 +277,15 @@ strata-dbtool get-ol-state <block_id> [OPTIONS]
 
 **Options:**
 - `-o, --output-format <format>` - Output format (default: porcelain)
+- `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive finalized checkpoint epoch
 
 **Example:**
 ```bash
-strata-dbtool get-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool get-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
+
+**Notes:**
+- `top_level_state.finalized_epoch` is derived from OL checkpoint DB using `--l1-reorg-safe-depth`.
 
 ### `revert-ol-state`
 Reverts the OL state to a specific block ID.
@@ -310,22 +321,23 @@ strata-dbtool revert-ol-state <block_id> [OPTIONS]
 - `-f, --force` - Force execution (without this flag, only a dry run is performed)
 - `-d, --delete-blocks` - Delete blocks after target block (not just mark as unchecked)
 - `-c, --revert-checkpointed-blocks` - Allow reverting blocks inside checkpointed epoch
+- `--l1-reorg-safe-depth <depth>` - L1 reorg-safe depth used to derive finalized checkpoint epoch for revert safety checks
 
 **Examples:**
 
 Dry run (default behavior - shows what would be affected):
 ```bash
-strata-dbtool revert-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool revert-ol-state 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 Actually execute the revert:
 ```bash
-strata-dbtool revert-ol-state --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool revert-ol-state --force 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 Execute revert with block deletion:
 ```bash
-strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b
+strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
 ## Output Formats

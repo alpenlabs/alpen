@@ -59,7 +59,7 @@ pub(crate) fn get_writer_summary(
             // Iterate through all checkpoint epochs
             for epoch in start_epoch..=end_epoch {
                 if let Some(checkpoint) = get_checkpoint_at_epoch(db, epoch)? {
-                    if let Some(intent_idx) = checkpoint.intent_index {
+                    if let Some(intent_idx) = checkpoint.signing {
                         if writer_db
                             .get_intent_by_idx(intent_idx)
                             .internal_error("Failed to get intent entry by index")?

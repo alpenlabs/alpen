@@ -22,6 +22,8 @@ pub(crate) struct SyncInfo<'a> {
     pub(crate) current_slot: Slot,
     pub(crate) previous_block: &'a OLBlockCommitment,
     pub(crate) previous_epoch: &'a EpochCommitment,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) previous_epoch_status: Option<String>,
     pub(crate) finalized_epoch: &'a EpochCommitment,
     pub(crate) safe_block: &'a L1BlockCommitment,
 }
@@ -81,6 +83,12 @@ impl<'a> Formattable for SyncInfo<'a> {
             "top_level_state.prev_epoch.last_block_id",
             format!("{:?}", self.previous_epoch.last_blkid()),
         ));
+        if let Some(previous_epoch_status) = &self.previous_epoch_status {
+            output.push(porcelain_field(
+                "top_level_state.prev_epoch.status",
+                previous_epoch_status,
+            ));
+        }
 
         // Finalized epoch information
         output.push(porcelain_field(
@@ -168,6 +176,7 @@ mod tests {
             current_slot: 175,
             previous_block: &previous_block,
             previous_epoch: &previous_epoch,
+            previous_epoch_status: None,
             finalized_epoch: &finalized_epoch,
             safe_block: &safe_block,
         };
@@ -220,6 +229,7 @@ mod tests {
             current_slot: 175,
             previous_block: &previous_block,
             previous_epoch: &previous_epoch,
+            previous_epoch_status: None,
             finalized_epoch: &finalized_epoch,
             safe_block: &safe_block,
         };
@@ -280,6 +290,7 @@ mod tests {
             current_slot: 175,
             previous_block: &previous_block,
             previous_epoch: &previous_epoch,
+            previous_epoch_status: None,
             finalized_epoch: &finalized_epoch,
             safe_block: &safe_block,
         };

@@ -7,7 +7,7 @@ use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_ledger_types::IStateAccessor;
 
 use super::{
-    checkpoint::get_latest_checkpoint_last_slot, client_state::get_declared_final_epoch,
+    checkpoint::{get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch},
     ol::get_ol_block_slot_and_epoch,
 };
 use crate::{
@@ -27,6 +27,10 @@ pub(crate) struct GetOLStateArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
+
+    /// L1 reorg-safe depth used to derive finalized checkpoint epoch
+    #[argh(option)]
+    pub(crate) l1_reorg_safe_depth: u32,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -48,6 +52,10 @@ pub(crate) struct RevertOLStateArgs {
     /// force execution (without this flag, only a dry run is performed)
     #[argh(switch, short = 'f')]
     pub(crate) force: bool,
+
+    /// L1 reorg-safe depth used to derive finalized checkpoint epoch for safety checks
+    #[argh(option)]
+    pub(crate) l1_reorg_safe_depth: u32,
 }
 
 /// Get OL state at specified block.
@@ -84,7 +92,8 @@ pub(crate) fn get_ol_state(
     // OL state currently exposes ASM-recorded epoch for previous-epoch view.
     let recorded_epoch = top_level_state.asm_recorded_epoch();
     // Finalized epoch should come from client-state declared final epoch (L1-confirmed).
-    let finalized_epoch = get_declared_final_epoch(db)?.unwrap_or_else(EpochCommitment::null);
+    let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
+        .unwrap_or_else(EpochCommitment::null);
     let l1_safe_block_height = top_level_state.last_l1_height();
     let ol_state_info = OLStateInfo {
         block_id: &block_id,
@@ -144,7 +153,8 @@ pub(crate) fn revert_ol_state(
         return Ok(());
     }
 
-    let finalized_epoch = get_declared_final_epoch(db)?.unwrap_or_else(EpochCommitment::null);
+    let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
+        .unwrap_or_else(EpochCommitment::null);
     let finalized_slot = finalized_epoch.last_slot();
     if target_slot < finalized_slot {
         return Err(DisplayedError::UserError(
