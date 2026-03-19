@@ -14,8 +14,7 @@ use strata_service::ServiceState;
 use tracing::warn;
 
 use crate::{
-    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, error::BlockAssemblyError,
-    types::FullBlockTemplate,
+    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, da_tracker::EpochDaTracker, error::BlockAssemblyError, types::FullBlockTemplate
 };
 
 /// A cached template with its creation time for TTL expiration.
@@ -172,6 +171,7 @@ pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy
     ctx: Arc<BlockAssemblyContext<M, S>>,
     epoch_sealing_policy: E,
     state: BlockAssemblyState,
+    epoch_da_tracker: EpochDaTracker,
 }
 
 impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceState<M, E, S> {

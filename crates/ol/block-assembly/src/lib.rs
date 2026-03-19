@@ -4,6 +4,7 @@ mod block_assembly;
 mod builder;
 mod command;
 mod context;
+mod da_tracker;
 mod epoch_sealing;
 mod error;
 mod handle;

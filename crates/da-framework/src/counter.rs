@@ -8,7 +8,7 @@ use crate::{
 /// Describes scheme for a counter value and the quantity that it can change by.
 pub trait CounterScheme {
     /// The base value we're updating.
-    type Base;
+    type Base: Clone;
 
     /// The increment type.
     type Incr: Clone + Default + Codec;
@@ -134,6 +134,7 @@ impl<S: CounterScheme> CompoundMember for DaCounter<S> {
 }
 
 /// Builder for [`DaCounter`].
+#[derive(Clone)]
 pub struct DaCounterBuilder<S: CounterScheme> {
     original: S::Base,
     new: S::Base,

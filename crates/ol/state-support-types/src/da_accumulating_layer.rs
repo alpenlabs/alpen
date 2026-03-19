@@ -194,8 +194,8 @@ struct NewAccountRecord {
 }
 
 /// Per-epoch accumulator of DA writes before encoding.
-#[derive(Default)]
-struct EpochDaAccumulator {
+#[derive(Default, Clone)]
+pub struct EpochDaAccumulator {
     /// Slot counter builder for the epoch.
     slot_builder: Option<DaCounterBuilder<CtrU64ByU16>>,
 
