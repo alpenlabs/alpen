@@ -11,9 +11,9 @@ use strata_ee_acct_types::{
 use strata_ee_chain_types::ChunkTransition;
 use strata_snark_acct_runtime::{PrivateInput, UpdateBuilder as GenericUpdateBuilder};
 use strata_snark_acct_types::{
-    LedgerRefs, MessageEntry, OutputMessage, OutputTransfer, SnarkAccountState,
-    UpdateOperationData, UpdateOutputs,
+    LedgerRefs, OutputMessage, OutputTransfer, SnarkAccountState, UpdateOperationData, UpdateOutputs,
 };
+use strata_acct_types::MessageEntry;
 
 use crate::{
     builder_errors::{BuilderError, BuilderResult},

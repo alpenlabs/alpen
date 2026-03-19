@@ -274,11 +274,10 @@ macro_rules! exec_block_storage_tests {
 
 #[cfg(feature = "test-utils")]
 pub mod exec_block_storage_test_fns {
-    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
     use strata_ee_acct_types::EeAccountState;
     use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
     use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-    use strata_snark_acct_types::MessageEntry;
 
     use super::*;
     use crate::ExecBlockRecord;

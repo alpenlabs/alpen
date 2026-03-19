@@ -6,20 +6,13 @@ MAX_SATISFIER_LEN = 2 << 20
 ### Max length of a proof satisfier.
 MAX_SATISFIER_COUNT = 255
 
-### Max number of proof 
+### Max number of proof
 MAX_ACC_PROOF_COUNT = 4096
-
-### Claim that an entry exists in a linear accumulator at some index
-class AccumulatorClaim(Container):
-    ### Index in the accumulator
-    idx: uint64
-
-    ### Hash of the entry
-    entry_hash: Bytes32
 
 ### A list of claims into some accumulator.
 class ClaimList(Container):
-    claims: List[AccumulatorClaim, MAX_ACC_PROOF_COUNT]
+    #~# external_kind: container
+    claims: List[strata_acct_types.AccumulatorClaim, MAX_ACC_PROOF_COUNT]
 
 ### A list of raw merkle proofs into accumulators.
 class RawMerkleProofList(Container):

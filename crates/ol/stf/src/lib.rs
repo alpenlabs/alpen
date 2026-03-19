@@ -13,6 +13,7 @@ mod context;
 mod errors;
 mod manifest_processing;
 mod output;
+mod proof_verification;
 mod transaction_processing;
 mod verification;
 
@@ -28,8 +29,9 @@ pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecCo
 pub use errors::{ErrorKind, ExecError, ExecResult};
 pub use manifest_processing::process_block_manifests;
 pub use output::*;
+pub use proof_verification::TxProofVerifierImpl;
 pub use transaction_processing::{
-    check_snark_account_seq_no, check_tx_attachment, get_account_state, get_snark_account_seq_no,
+    check_snark_account_seq_no, check_tx_constraints, get_account_state, get_snark_account_seq_no,
     process_block_tx_segment, process_single_tx,
 };
 pub use verification::*;

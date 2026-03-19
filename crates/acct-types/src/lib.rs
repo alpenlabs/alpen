@@ -6,6 +6,7 @@ pub use strata_codec;
 #[doc(hidden)]
 pub use tree_hash;
 
+mod accumulators;
 mod constants;
 mod effects;
 mod errors;
@@ -33,7 +34,7 @@ pub use mmr::{
     CompactMmr64, CompactMmr64Ref, MerkleProof, MerkleProofRef, Mmr64, Mmr64Ref, RawMerkleProof,
     RawMerkleProofRef, StrataHasher,
 };
-pub use ssz_generated::ssz::{self as ssz, effects::*, messages::*, state::*};
+pub use ssz_generated::ssz::{self as ssz, accumulators::*, effects::*, messages::*, state::*};
 pub use state::*;
 pub use strata_btc_types::BitcoinAmount;
 pub use strata_identifiers::{

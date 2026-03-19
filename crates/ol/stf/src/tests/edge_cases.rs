@@ -1,22 +1,17 @@
 //! Tests for edge cases in value transfers
 
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
+use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
 use strata_ol_state_types::OLState;
-use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, OutputTransfer, ProofState, SnarkAccountUpdate,
-    SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
-};
 
 use crate::{
     BRIDGE_GATEWAY_ACCT_ID,
     errors::ExecError,
     test_utils::{
         SnarkUpdateBuilder, TEST_RECIPIENT_ID, create_empty_account, create_test_genesis_state,
-        execute_tx_in_block, get_test_proof, get_test_recipient_account_id,
-        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
-        test_account_id,
+        create_unchecked_snark_update, execute_tx_in_block, get_test_proof,
+        get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
+        setup_genesis_with_snark_account, test_account_id,
     },
 };
 
@@ -312,32 +307,20 @@ fn test_snark_update_max_bitcoin_supply() {
     create_empty_account(&mut state, recipient_id);
 
     // Try multiple transfers that would exceed total Bitcoin supply
-    let transfer1 = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(max_bitcoin_sats));
-    let transfer2 = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(1)); // Even 1 sat more exceeds balance
+    let mut effects = TxEffects::default();
+    effects.push_transfer(recipient_id, max_bitcoin_sats);
+    effects.push_transfer(recipient_id, 1); // Even 1 sat more exceeds balance
 
-    let update_outputs = UpdateOutputs::new(vec![transfer1, transfer2], vec![]);
-
-    let seq_no = 0u64;
-    let new_proof_state = ProofState::new(get_test_state_root(2), 0);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![],
-        LedgerRefs::new_empty(),
-        update_outputs,
-        vec![],
+    let invalid_tx = create_unchecked_snark_update(
+        snark_id,
+        0, // seq_no
+        get_test_state_root(2),
+        0, // new_msg_idx
+        effects,
     );
 
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
-
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     // Should fail due to insufficient balance
     assert!(result.is_err(), "Update exceeding balance should fail");

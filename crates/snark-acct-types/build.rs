@@ -9,7 +9,6 @@ fn main() {
     let entry_points = [
         "outputs.ssz",
         "state.ssz",
-        "accumulators.ssz",
         "messages.ssz",
         "update.ssz",
         "proof_interface.ssz",

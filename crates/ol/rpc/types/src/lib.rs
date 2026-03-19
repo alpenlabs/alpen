@@ -24,6 +24,6 @@ pub use duty::*;
 pub use provider::{AccountExtraData, OLRpcProvider};
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use txn::{
-    RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionAttachment, RpcTransactionPayload,
+    RpcGenericAccountMessage, RpcOLTransaction, RpcTxConstraints, RpcTransactionPayload,
     RpcTxConversionError,
 };

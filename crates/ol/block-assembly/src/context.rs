@@ -16,9 +16,8 @@ use strata_ledger_types::{
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
 use strata_ol_state_types::{IStateBatchApplicable, StateProvider};
-use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefProofs, MessageEntry, MessageEntryProof, MmrEntryProof,
-};
+use strata_acct_types::{AccumulatorClaim, MessageEntry, RawMerkleProof};
+use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
@@ -85,7 +84,7 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
         messages: &[MessageEntry],
         start_idx: u64,
         at_leaf_count: u64,
-    ) -> BlockAssemblyResult<Vec<MessageEntryProof>>;
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
 
     /// Validates claims and generates L1 header reference proofs.
     fn generate_l1_header_proofs<T: IStateAccessor>(
@@ -243,7 +242,7 @@ where
         messages: &[MessageEntry],
         start_idx: u64,
         at_leaf_count: u64,
-    ) -> BlockAssemblyResult<Vec<MessageEntryProof>> {
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>> {
         if messages.is_empty() {
             return Ok(Vec::new());
         }
@@ -279,14 +278,10 @@ where
             });
         }
 
-        // Build MessageEntryProof for each message
-        let inbox_proofs = messages
-            .iter()
-            .zip(merkle_proofs)
-            .map(|(message, merkle_proof)| {
-                let raw_proof = merkle_proof.inner.clone();
-                MessageEntryProof::new(message.clone(), raw_proof)
-            })
+        // Return raw merkle proofs
+        let inbox_proofs = merkle_proofs
+            .into_iter()
+            .map(|merkle_proof| merkle_proof.inner.clone())
             .collect();
 
         Ok(inbox_proofs)
@@ -327,10 +322,9 @@ where
                 other => BlockAssemblyError::Db(other),
             })?;
 
-        let l1_header_proofs = indices_and_hashes
+        let l1_header_proofs = merkle_proofs
             .into_iter()
-            .zip(merkle_proofs)
-            .map(|((_, entry_hash), merkle_proof)| MmrEntryProof::new(entry_hash, merkle_proof))
+            .map(|merkle_proof| merkle_proof.inner.clone())
             .collect();
         Ok(LedgerRefProofs::new(l1_header_proofs))
     }
@@ -341,7 +335,7 @@ mod tests {
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
     use strata_ledger_types::IStateAccessor;
-    use strata_snark_acct_types::AccumulatorClaim;
+    use strata_acct_types::AccumulatorClaim;
 
     use super::*;
     use crate::test_utils::{
@@ -374,9 +368,8 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_header(manifest_hash);
 
-        // Collect claims and hashes before creating context
+        // Collect claims before creating context
         let claims = asm_mmr.claims(0);
-        let expected_hash = asm_mmr.hashes()[0];
         let mut state = create_test_genesis_state();
         state.append_manifest(manifest.height(), manifest);
 
@@ -387,7 +380,6 @@ mod tests {
         assert!(result.is_ok(), "Should succeed with valid claim");
         let proofs = result.unwrap();
         assert_eq!(proofs.l1_headers_proofs().len(), 1);
-        assert_eq!(proofs.l1_headers_proofs()[0].entry_hash(), expected_hash);
     }
 
     #[test]
@@ -565,8 +557,6 @@ mod tests {
         );
         let proofs = result.unwrap();
         assert_eq!(proofs.len(), 2);
-        assert_eq!(proofs[0].entry(), &entries[0]);
-        assert_eq!(proofs[1].entry(), &entries[1]);
     }
 
     #[test]
@@ -612,8 +602,6 @@ mod tests {
         );
         let proofs = result.unwrap();
         assert_eq!(proofs.len(), 2);
-        assert_eq!(proofs[0].entry(), &entries[2]);
-        assert_eq!(proofs[1].entry(), &entries[3]);
     }
 
     #[test]

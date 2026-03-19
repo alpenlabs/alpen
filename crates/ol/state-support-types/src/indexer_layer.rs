@@ -7,7 +7,7 @@
 use std::fmt;
 
 use strata_acct_types::{
-    AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64,
+    AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, MessageEntry, Mmr64,
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
@@ -16,7 +16,7 @@ use strata_ledger_types::{
     ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{MessageEntry, Seqno};
+use strata_snark_acct_types::Seqno;
 
 use crate::index_types::*;
 

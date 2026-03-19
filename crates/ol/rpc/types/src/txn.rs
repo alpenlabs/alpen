@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ssz::Decode;
 use strata_acct_types::AccountId;
-use strata_ol_chain_types_new::TransactionAttachment;
+use strata_ol_chain_types_new::TxConstraints;
 use strata_ol_mempool::OLMempoolTransaction;
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{SnarkAccountUpdate, UpdateOperationData};
@@ -18,12 +18,12 @@ pub struct RpcOLTransaction {
     payload: RpcTransactionPayload,
 
     /// The attachments.
-    attachments: RpcTransactionAttachment,
+    attachments: RpcTxConstraints,
 }
 
 impl RpcOLTransaction {
     /// Creates a new [`RpcOLTransaction`].
-    pub fn new(payload: RpcTransactionPayload, attachments: RpcTransactionAttachment) -> Self {
+    pub fn new(payload: RpcTransactionPayload, attachments: RpcTxConstraints) -> Self {
         Self {
             payload,
             attachments,
@@ -36,7 +36,7 @@ impl RpcOLTransaction {
     }
 
     /// Returns the attachments.
-    pub fn attachments(&self) -> &RpcTransactionAttachment {
+    pub fn attachments(&self) -> &RpcTxConstraints {
         &self.attachments
     }
 }
@@ -84,7 +84,7 @@ impl RpcGenericAccountMessage {
 /// Transaction extra: slot constraints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcTransactionAttachment {
+pub struct RpcTxConstraints {
     /// Minimum slot.
     min_slot: Option<u64>,
 
@@ -92,8 +92,8 @@ pub struct RpcTransactionAttachment {
     max_slot: Option<u64>,
 }
 
-impl RpcTransactionAttachment {
-    /// Creates a new [`RpcTransactionAttachment`].
+impl RpcTxConstraints {
+    /// Creates a new [`RpcTxConstraints`].
     pub fn new(min_slot: Option<u64>, max_slot: Option<u64>) -> Self {
         Self { min_slot, max_slot }
     }
@@ -109,8 +109,8 @@ impl RpcTransactionAttachment {
     }
 }
 
-impl From<TransactionAttachment> for RpcTransactionAttachment {
-    fn from(extra: TransactionAttachment) -> Self {
+impl From<TxConstraints> for RpcTxConstraints {
+    fn from(extra: TxConstraints) -> Self {
         Self {
             min_slot: extra.min_slot(),
             max_slot: extra.max_slot(),
@@ -118,9 +118,9 @@ impl From<TransactionAttachment> for RpcTransactionAttachment {
     }
 }
 
-impl From<RpcTransactionAttachment> for TransactionAttachment {
-    fn from(rpc: RpcTransactionAttachment) -> Self {
-        TransactionAttachment::new(rpc.min_slot, rpc.max_slot)
+impl From<RpcTxConstraints> for TxConstraints {
+    fn from(rpc: RpcTxConstraints) -> Self {
+        TxConstraints::new(rpc.min_slot, rpc.max_slot)
     }
 }
 
@@ -140,12 +140,13 @@ impl TryFrom<RpcOLTransaction> for OLMempoolTransaction {
     type Error = RpcTxConversionError;
 
     fn try_from(rpc_tx: RpcOLTransaction) -> Result<Self, Self::Error> {
-        let attachment: TransactionAttachment = rpc_tx.attachments.into();
+        let constraints: TxConstraints = rpc_tx.attachments.into();
 
         match rpc_tx.payload {
             RpcTransactionPayload::GenericAccountMessage(gam) => {
                 let target = AccountId::new(gam.target.0);
-                OLMempoolTransaction::new_generic_account_message(target, gam.payload.0, attachment)
+                OLMempoolTransaction::new_generic_account_message(target, gam.payload.0)
+                    .map(|tx| tx.with_constraints(constraints))
                     .map_err(RpcTxConversionError::InvalidGenericMessage)
             }
             RpcTransactionPayload::SnarkAccountUpdate(sau) => {
@@ -158,11 +159,8 @@ impl TryFrom<RpcOLTransaction> for OLMempoolTransaction {
 
                 let base_update = SnarkAccountUpdate::new(operation, sau.update_proof().0.clone());
 
-                Ok(OLMempoolTransaction::new_snark_account_update(
-                    target,
-                    base_update,
-                    attachment,
-                ))
+                Ok(OLMempoolTransaction::new_snark_account_update(target, base_update)
+                    .with_constraints(constraints))
             }
         }
     }

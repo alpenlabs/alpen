@@ -1,8 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use eyre::eyre;
+use strata_acct_types::MessageEntry;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_snark_acct_types::MessageEntry;
 use tracing::warn;
 
 /// Inbox messages within some range of blocks and the next expected inbox message idx of the last

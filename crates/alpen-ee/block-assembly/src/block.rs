@@ -2,11 +2,10 @@ use std::num::NonZero;
 
 use alpen_ee_common::{EnginePayload, ExecBlockPayload, PayloadBuilderEngine};
 use eyre::Context;
-use strata_acct_types::{AccountId, Hash};
+use strata_acct_types::{AccountId, Hash, MessageEntry};
 use strata_ee_acct_runtime::apply_input_messages;
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
-use strata_snark_acct_types::MessageEntry;
 
 use crate::{package::build_block_package, payload::build_exec_payload};
 

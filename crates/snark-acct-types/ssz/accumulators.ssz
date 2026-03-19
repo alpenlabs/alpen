@@ -1,10 +1,1 @@
 import strata_acct_types
-
-### Claim that an entry exists in a linear accumulator at some index
-# TODO remove?
-class AccumulatorClaim(Container):
-    ### Index in the accumulator
-    idx: uint64
-
-    ### Hash of the entry
-    entry_hash: Bytes32

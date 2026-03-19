@@ -2,8 +2,9 @@
 
 use strata_acct_types::{MessageEntry, RawMerkleProof};
 
-use crate::ssz_generated::ssz::{
-    accumulators::*, outputs::UpdateOutputs, state::ProofState, update::*,
+use crate::{
+    AccumulatorClaim,
+    ssz_generated::ssz::{outputs::UpdateOutputs, state::ProofState, update::*},
 };
 
 impl UpdateStateData {

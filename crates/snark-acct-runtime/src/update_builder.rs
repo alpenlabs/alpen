@@ -8,11 +8,9 @@
 //! submitting to the OL).
 
 use ssz::Encode;
+use strata_acct_types::MessageEntry;
 use strata_codec::encode_to_vec;
-use strata_snark_acct_types::{
-    LedgerRefs, MessageEntry, ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData,
-    UpdateOutputs,
-};
+use strata_snark_acct_types::*;
 
 use crate::{
     IInnerState, InputMessage, UpdateLedgerInfo,

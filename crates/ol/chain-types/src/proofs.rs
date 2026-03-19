@@ -1,21 +1,19 @@
 //! Proof-related types for OL chain.
 
-use strata_acct_types::RawMerkleProof;
-use strata_identifiers::Buf32;
+use strata_acct_types::{AccumulatorClaim, RawMerkleProof};
 
 use crate::ssz_generated::ssz::proofs::*;
 
-impl AccumulatorClaim {
-    pub fn idx(&self) -> u64 {
-        self.idx
-    }
-
-    pub fn entry_hash(&self) -> Buf32 {
-        self.entry_hash.0.into()
-    }
-}
-
 impl ClaimList {
+    /// Creates a new claim list from the given claims.
+    ///
+    /// Returns `None` if the number of claims exceeds the SSZ list maximum.
+    pub fn new(claims: Vec<AccumulatorClaim>) -> Option<Self> {
+        Some(Self {
+            claims: claims.try_into().ok()?,
+        })
+    }
+
     pub fn claims(&self) -> &[AccumulatorClaim] {
         &self.claims
     }
@@ -84,12 +82,6 @@ mod tests {
                 proofs: proofs.into(),
             }
         })
-    }
-
-    mod accumulator_claim {
-        use super::*;
-
-        ssz_proptest!(AccumulatorClaim, accumulator_claim_strategy());
     }
 
     mod claim_list {

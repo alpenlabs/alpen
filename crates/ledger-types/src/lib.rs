@@ -30,6 +30,7 @@
 
 mod account;
 mod coin;
+mod proofs;
 mod state_accessor;
 
 pub use account::{
@@ -38,6 +39,7 @@ pub use account::{
     ISnarkAccountStateConstructible, ISnarkAccountStateMut, NewAccountData,
 };
 pub use coin::Coin;
+pub use proofs::*;
 pub use state_accessor::{
     IStateAccessor, asm_manifest_mmr_index_for_height, asm_manifests_mmr_start_height,
 };

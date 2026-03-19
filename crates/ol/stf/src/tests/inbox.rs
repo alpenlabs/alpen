@@ -1,15 +1,10 @@
 //! Tests for inbox operations including message insertion, processing, and validation
 
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload, RawMerkleProof};
+use strata_acct_types::{AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{GamTxPayload, TransactionPayload};
 use strata_ol_state_types::OLState;
-use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, OutputTransfer, ProofState,
-    SnarkAccountUpdate, SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData,
-    UpdateOutputs,
-};
 
 use crate::{
     BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID,
@@ -17,8 +12,8 @@ use crate::{
     test_utils::{
         InboxMmrTracker, SnarkUpdateBuilder, create_empty_account, create_test_genesis_state,
         execute_tx_in_block, get_snark_state_expect, get_test_recipient_account_id,
-        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
-        test_account_id,
+        get_test_snark_account_id, get_test_state_root, make_simple_tx,
+        setup_genesis_with_snark_account, test_account_id,
     },
 };
 
@@ -32,12 +27,11 @@ fn test_snark_inbox_message_insertion() {
 
     // Send a message to snark account via GAM(Generic Account Message) tx (from sequencer,
     // value=0)
-    let msg_data = vec![1u8, 2, 3, 4, 5];
 
     // Create GAM transaction
     let gam_tx_payload =
-        GamTxPayload::new(snark_id, msg_data.clone()).expect("Should create GAM payload");
-    let gam_tx = TransactionPayload::GenericAccountMessage(gam_tx_payload);
+        GamTxPayload::new(snark_id).expect("Should create GAM payload");
+    let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(gam_tx_payload));
 
     // Execute transaction
     let (slot, epoch) = (1, 0);
@@ -89,20 +83,20 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     let mut inbox_tracker = InboxMmrTracker::new();
 
     // Step 1: Send a message to snark account inbox
-    let msg_data = vec![1u8, 2, 3, 4];
-    let gam_tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id, msg_data.clone()).expect("Should create GAM payload"),
-    );
+    let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
+    ));
     let (slot, epoch) = (1, 0);
     let blk1 = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
     let header = blk1.header();
 
-    // Track the message in parallel MMR (must match exactly what was inserted)
+    // Track the message in parallel MMR (must match exactly what the STF inserted:
+    // GAM produces an empty MsgPayload with 0 value and no data)
     let gam_msg_entry = MessageEntry::new(
         SEQUENCER_ACCT_ID,
         epoch, // epoch when message was added
-        MsgPayload::new(BitcoinAmount::from_sat(0), msg_data),
+        MsgPayload::new_empty(),
     );
 
     let gam_proof = inbox_tracker.add_message(&gam_msg_entry);
@@ -123,35 +117,12 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     assert_eq!(snark_state.next_inbox_msg_idx(), 0);
 
     // Step 3: Create update that indicates that the GAM message was processed.
-    // Just to have something in the outputs, include a transfer.
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            recipient_id,
-            BitcoinAmount::from_sat(10_000_000),
-        )],
-        vec![],
-    );
-
-    // After processing 1 message starting at index 0, next_msg_read_idx should be 1
-    let new_proof_state = ProofState::new(get_test_state_root(2), 1);
-    let operation_data = UpdateOperationData::new(
-        0, // seq_no
-        new_proof_state,
-        vec![gam_msg_entry], // processed_messages
-        LedgerRefs::new_empty(),
-        outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(
-        vec![gam_proof], // inbox_proofs
-        LedgerRefProofs::new(vec![]),
-    );
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let update_tx = TransactionPayload::SnarkAccountUpdate(
-        strata_ol_chain_types_new::SnarkAccountUpdateTxPayload::new(snark_id, update_container),
-    );
+    // Use SnarkUpdateBuilder to construct the transaction.
+    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+        .with_processed_msgs(vec![gam_msg_entry])
+        .with_inbox_proofs(vec![gam_proof])
+        .with_transfer(recipient_id, 10_000_000)
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 4: Execute the update
     let (slot, epoch) = (2, 0);
@@ -203,30 +174,17 @@ fn test_snark_update_invalid_message_index() {
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
 
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            recipient_id,
-            BitcoinAmount::from_sat(10_000_000),
-        )],
-        vec![],
-    );
-
     // Create proof state claiming to have processed 5 messages (but inbox is empty)
-    let new_proof_state = ProofState::new(get_test_state_root(2), 5); // Claim we're at idx 5
-    let operation_data = UpdateOperationData::new(
-        0, // the first update, seq_no = 0
-        new_proof_state,
-        vec![], // No messages processed
-        LedgerRefs::new_empty(),
-        outputs,
-        vec![],
-    );
+    // Use SnarkUpdateBuilder but manually set a wrong msg index via create_unchecked
+    let mut effects = strata_acct_types::TxEffects::default();
+    effects.push_transfer(recipient_id, 10_000_000);
 
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let invalid_tx = TransactionPayload::SnarkAccountUpdate(
-        strata_ol_chain_types_new::SnarkAccountUpdateTxPayload::new(snark_id, update_container),
+    let invalid_tx = crate::test_utils::create_unchecked_snark_update(
+        snark_id,
+        0, // the first update, seq_no = 0
+        get_test_state_root(2),
+        5, // Claim we're at idx 5 (but inbox is empty)
+        effects,
     );
 
     let (slot, epoch) = (1, 0);
@@ -254,10 +212,9 @@ fn test_snark_update_invalid_message_proof() {
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Step 1: Send a gam message to snark's inbox
-    let msg_data = vec![1u8, 2, 3, 4];
-    let gam_tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id, msg_data.clone()).expect("Should create GAM payload"),
-    );
+    let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
+    ));
     let (slot, epoch) = (1, 0);
     let blk = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
@@ -277,40 +234,23 @@ fn test_snark_update_invalid_message_proof() {
     );
 
     // Step 2: Create update with INVALID proof for the gam message (index 0)
-    // First create msg entry
+    // First create msg entry (deliberately using wrong source to keep it invalid)
     let deposit_msg = MessageEntry::new(
         BRIDGE_GATEWAY_ACCT_ID,
         0,
-        MsgPayload::new(BitcoinAmount::from(0), msg_data),
+        MsgPayload::new_empty(),
     );
 
     // Create an invalid proof with bogus cohashes
     let invalid_raw_proof = RawMerkleProof {
         cohashes: vec![FixedBytes::<32>::from([0xff; 32])].into(),
     };
-    let invalid_msg_proof = MessageEntryProof::new(deposit_msg.clone(), invalid_raw_proof);
 
-    // Create update
-    let outputs = UpdateOutputs::new(vec![], vec![]);
-
-    let new_msg_idx = 1;
-    let new_proof_state = ProofState::new(get_test_state_root(2), new_msg_idx);
-    let operation_data = UpdateOperationData::new(
-        0,
-        new_proof_state,
-        vec![deposit_msg],
-        LedgerRefs::new_empty(),
-        outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs =
-        UpdateAccumulatorProofs::new(vec![invalid_msg_proof], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let invalid_tx = TransactionPayload::SnarkAccountUpdate(
-        strata_ol_chain_types_new::SnarkAccountUpdateTxPayload::new(snark_id, update_container),
-    );
+    // Use SnarkUpdateBuilder with the invalid proof
+    let invalid_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+        .with_processed_msgs(vec![deposit_msg])
+        .with_inbox_proofs(vec![invalid_raw_proof])
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute and expect failure
     let (slot, epoch) = (2, 0);
@@ -341,10 +281,9 @@ fn test_snark_update_skip_message_out_of_order() {
     create_empty_account(&mut state, recipient_id);
 
     // Step 1: Send TWO messages to inbox
-    let msg1_data = vec![1u8, 2, 3, 4];
-    let gam_tx1 = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id, msg1_data.clone()).expect("Should create GAM payload"),
-    );
+    let gam_tx1 = make_simple_tx(TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
+    ));
     let (slot, epoch) = (1, 0);
     let blk = execute_tx_in_block(
         &mut state,
@@ -356,10 +295,9 @@ fn test_snark_update_skip_message_out_of_order() {
     .expect("GAM 1 should succeed");
     let header = blk.header();
 
-    let msg2_data = vec![5u8, 6, 7, 8];
-    let gam_tx2 = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id, msg2_data.clone()).expect("Should create GAM payload"),
-    );
+    let gam_tx2 = make_simple_tx(TransactionPayload::GenericAccountMessage(
+        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
+    ));
     let blk = execute_tx_in_block(&mut state, header, gam_tx2, slot + 1, epoch)
         .expect("GAM 2 should succeed");
     let header = blk.header();
@@ -371,38 +309,16 @@ fn test_snark_update_skip_message_out_of_order() {
 
     // Step 2: Try to process only the SECOND message (skipping first)
     // This should fail because messages must be processed in order starting from index 0
-    let msg2_entry = MessageEntry::new(
-        SEQUENCER_ACCT_ID,
+    // Use create_unchecked to set a wrong next_msg_idx (claiming we jumped to 2)
+    let mut effects = strata_acct_types::TxEffects::default();
+    effects.push_transfer(recipient_id, 10_000_000);
+
+    let invalid_tx = crate::test_utils::create_unchecked_snark_update(
+        snark_id,
         0,
-        MsgPayload::new(BitcoinAmount::from_sat(0), msg2_data),
-    );
-
-    // The proof would be for index 1, but we're at index 0
-    // This will fail the message index check, not the proof check
-    let outputs = UpdateOutputs::new(
-        vec![OutputTransfer::new(
-            recipient_id,
-            BitcoinAmount::from_sat(10_000_000),
-        )],
-        vec![],
-    );
-
-    // Claiming to process 1 message but jumping to index 2 (skipping first GAM)
-    let new_proof_state = ProofState::new(get_test_state_root(2), 2); // Skip to index 2
-    let operation_data = UpdateOperationData::new(
-        0,
-        new_proof_state,
-        vec![msg2_entry], // Only 1 message processed
-        LedgerRefs::new_empty(),
-        outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let invalid_tx = TransactionPayload::SnarkAccountUpdate(
-        strata_ol_chain_types_new::SnarkAccountUpdateTxPayload::new(snark_id, update_container),
+        get_test_state_root(2),
+        2, // Skip to index 2 (skipping first GAM)
+        effects,
     );
 
     // Step 3: Execute and expect failure
@@ -413,8 +329,8 @@ fn test_snark_update_skip_message_out_of_order() {
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidMsgIndex { expected, got, .. }) => {
             assert_eq!(
-                expected, 1,
-                "Should expect index 1 (current 0 + 1 message processed)"
+                expected, 0,
+                "Should expect index 0 (current 0 + 0 messages processed)"
             );
             assert_eq!(got, 2, "But got index 2 (skipped from 0 to 2)");
         }

@@ -1,23 +1,18 @@
 //! Unit tests for the OL STF implementation.
 
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
-use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_codec::{VarVec, encode_to_vec};
+use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
 use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
-use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::*;
-use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_state_support_types::{IndexerState, WriteTrackingState};
 use strata_ol_state_types::{IStateBatchApplicable, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 
 use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, BasicExecContext, BlockContext, ExecOutputBuffer, TxExecContext,
-    assembly::{BlockComponents, BlockExecOutputs, CompletedBlock},
+    assembly::{BlockComponents, CompletedBlock},
     context::BlockInfo,
     errors::ExecError,
-    process_block_start, process_block_tx_segment, process_epoch_initial,
     test_utils::*,
     verification::*,
 };
@@ -31,39 +26,6 @@ fn genesis_block_components() -> BlockComponents {
         vec![],
     );
     BlockComponents::new_manifests(vec![dummy_manifest])
-}
-
-fn build_withdrawal_spam_tx(
-    state: &OLState,
-    snark_id: AccountId,
-    num_messages: usize,
-    state_root_variant: u8,
-    proof_variant: u8,
-) -> TransactionPayload {
-    let (_, snark_state) = get_snark_state_expect(state, snark_id);
-    let withdrawal_msg_data =
-        WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, b"bc1q-log-cap".to_vec(), u32::MAX)
-            .expect("valid withdrawal msg data");
-    let encoded_withdrawal_body =
-        encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
-    let withdrawal_msg =
-        OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("valid withdrawal");
-    let withdrawal_payload_data = withdrawal_msg.to_vec();
-
-    let mut builder = SnarkUpdateBuilder::from_snark_state(snark_state.clone());
-    for _ in 0..num_messages {
-        builder = builder.with_output_message(
-            BRIDGE_GATEWAY_ACCT_ID,
-            100_000_000,
-            withdrawal_payload_data.clone(),
-        );
-    }
-
-    builder.build(
-        snark_id,
-        get_test_state_root(state_root_variant),
-        get_test_proof(proof_variant),
-    )
 }
 
 fn setup_terminal_genesis_with_snark_account(
@@ -187,12 +149,8 @@ fn test_genesis_with_initial_transactions() {
 
     // Create some test transactions for genesis
     let target = test_account_id(1);
-    let msg = b"Hello from genesis".to_vec();
-    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
-
     let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target, msg_varvec.into_inner())
-            .expect("GamTxPayload creation should succeed"),
+        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
     );
 
     // Create genesis components with both transactions and manifest (to make it terminal)
@@ -203,11 +161,8 @@ fn test_genesis_with_initial_transactions() {
         vec![],
     );
     let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![OLTransaction::new(
-            tx.clone(),
-            TransactionAttachment::default(),
-        )])
-        .expect("tx segment should be within limits"),
+        OLTxSegment::new(vec![make_simple_tx(tx.clone())])
+            .expect("tx segment should be within limits"),
         Some(
             OLL1ManifestContainer::new(vec![dummy_manifest])
                 .expect("single manifest should succeed"),
@@ -708,11 +663,8 @@ fn test_verify_block_with_transactions() {
 
     // Create a transaction
     let target = test_account_id(1);
-    let msg = b"Test message".to_vec();
-    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
     let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target, msg_varvec.into_inner())
-            .expect("GamTxPayload creation should succeed"),
+        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
     );
 
     // Assemble genesis with transaction and manifest (terminal)
@@ -723,11 +675,7 @@ fn test_verify_block_with_transactions() {
         vec![],
     );
     let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![OLTransaction::new(
-            tx,
-            TransactionAttachment::default(),
-        )])
-        .expect("tx segment should be within limits"),
+        OLTxSegment::new(vec![make_simple_tx(tx)]).expect("tx segment should be within limits"),
         Some(
             OLL1ManifestContainer::new(vec![dummy_manifest])
                 .expect("single manifest should succeed"),
@@ -1035,11 +983,8 @@ fn test_verify_rejects_mismatched_logs_root() {
 
     // Create a block with a transaction (which will generate logs)
     let target = test_account_id(1);
-    let msg = b"Test message".to_vec();
-    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
     let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target, msg_varvec.into_inner())
-            .expect("GamTxPayload creation should succeed"),
+        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
     );
 
     // Create genesis with transaction and manifest (terminal)
@@ -1050,11 +995,7 @@ fn test_verify_rejects_mismatched_logs_root() {
         vec![],
     );
     let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![OLTransaction::new(
-            tx,
-            TransactionAttachment::default(),
-        )])
-        .expect("tx segment should be within limits"),
+        OLTxSegment::new(vec![make_simple_tx(tx)]).expect("tx segment should be within limits"),
         Some(
             OLL1ManifestContainer::new(vec![dummy_manifest])
                 .expect("single manifest should succeed"),
@@ -1111,11 +1052,8 @@ fn test_verify_rejects_mismatched_body_root() {
 
     // Assemble a block with a transaction
     let target = test_account_id(1);
-    let msg = b"Test message".to_vec();
-    let msg_varvec: VarVec<u8> = VarVec::from_vec(msg).expect("varvec: message too long");
     let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target, msg_varvec.into_inner())
-            .expect("GamTxPayload creation should succeed"),
+        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
     );
 
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -1312,111 +1250,5 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
     assert_eq!(
         state.compute_state_root().unwrap(),
         verify_base.compute_state_root().unwrap()
-    );
-}
-
-#[test]
-fn test_execute_and_verify_accepts_log_count_at_max() {
-    let mut state = create_test_genesis_state();
-    let snark_id = get_test_snark_account_id();
-    let genesis = setup_terminal_genesis_with_snark_account(&mut state, snark_id, 500_000_000_000);
-    let mut verify_state = state.clone();
-
-    let tx = build_withdrawal_spam_tx(&state, snark_id, MAX_LOGS_PER_BLOCK as usize, 21, 21);
-    let block_info = BlockInfo::new(1_001_000, 1, 1);
-    let output = execute_block_with_outputs(
-        &mut state,
-        &block_info,
-        Some(genesis.header()),
-        BlockComponents::new_txs(vec![tx]),
-    )
-    .expect("execution at max log count should succeed");
-
-    assert_eq!(
-        output.outputs().logs().len(),
-        MAX_LOGS_PER_BLOCK as usize,
-        "execution should emit exactly MAX_LOGS_PER_BLOCK logs"
-    );
-
-    assert_verification_succeeds(
-        &mut verify_state,
-        output.completed_block().header(),
-        Some(genesis.header().clone()),
-        output.completed_block().body(),
-    );
-}
-
-#[test]
-fn test_verify_block_rejects_over_cap_logs() {
-    let mut base_state = create_test_genesis_state();
-    let snark_id = get_test_snark_account_id();
-    let genesis =
-        setup_terminal_genesis_with_snark_account(&mut base_state, snark_id, 500_000_000_000);
-    let tx = build_withdrawal_spam_tx(
-        &base_state,
-        snark_id,
-        MAX_LOGS_PER_BLOCK as usize + 1,
-        22,
-        22,
-    );
-    let tx_segment = OLTxSegment::new(vec![OLTransaction::new(
-        tx,
-        TransactionAttachment::default(),
-    )])
-    .expect("tx segment should be valid");
-
-    // Replay tx execution first (which may already fail on emit-time overflow),
-    // then forge an over-cap log set into the expected block outputs.
-    //
-    // The verifier must reject over-cap logs regardless of whether rejection
-    // happens during replay emission or at the explicit boundary backstop.
-    let mut state_for_header = base_state.clone();
-    let block_info = BlockInfo::new(1_001_000, 1, 1);
-    let block_context = BlockContext::new(&block_info, Some(genesis.header()));
-    if block_context.is_epoch_initial() {
-        let epoch_context = block_context.get_epoch_initial_context();
-        process_epoch_initial(&mut state_for_header, &epoch_context).expect("epoch initial");
-    }
-    process_block_start(&mut state_for_header, &block_context).expect("block start");
-    let output_buffer = ExecOutputBuffer::new_empty();
-    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
-    let tx_ctx = TxExecContext::new(&basic_ctx, Some(genesis.header()));
-    let _ = process_block_tx_segment(&mut state_for_header, &tx_segment, &tx_ctx);
-
-    let mut logs = output_buffer.into_logs();
-    while logs.len() <= MAX_LOGS_PER_BLOCK as usize {
-        logs.push(OLLog::new(AccountSerial::from(logs.len() as u32), vec![]));
-    }
-    assert_eq!(logs.len(), MAX_LOGS_PER_BLOCK as usize + 1);
-
-    let state_root = state_for_header.compute_state_root().expect("state root");
-    let exec_outputs = BlockExecOutputs::new(BlockPostStateCommitments::Common(state_root), logs);
-    let logs_root = exec_outputs.compute_block_logs_root();
-    let body = OLBlockBody::new(tx_segment, None);
-    let header = OLBlockHeader::new(
-        block_info.timestamp(),
-        BlockFlags::zero(),
-        block_info.slot(),
-        block_info.epoch(),
-        genesis.header().compute_blkid(),
-        body.compute_hash_commitment(),
-        state_root,
-        logs_root,
-    );
-
-    let mut verify_state = base_state.clone();
-    assert_verification_fails_with(
-        &mut verify_state,
-        &header,
-        Some(genesis.header().clone()),
-        &body,
-        |e| {
-            matches!(
-                e,
-                ExecError::LogsOverflow { count, max }
-                    if *count == MAX_LOGS_PER_BLOCK as usize + 1
-                    && *max == MAX_LOGS_PER_BLOCK as usize
-            )
-        },
     );
 }

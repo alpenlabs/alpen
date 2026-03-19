@@ -1,11 +1,10 @@
 //! Shared test utilities for ol_chain_tracker tests.
 
 use alpen_ee_common::{ExecBlockRecord, OLBlockData, OLChainStatus};
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
 use strata_identifiers::{Buf32, EpochCommitment, OLBlockCommitment, OLBlockId};
-use strata_snark_acct_types::MessageEntry;
 
 /// Helper to create a block commitment with a given slot.
 /// The slot is encoded into the blkid for uniqueness.

@@ -16,8 +16,7 @@ use strata_identifiers::{
 };
 use strata_ol_rpc_api::OLClientRpcClient;
 use strata_ol_rpc_types::{
-    OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
-    RpcTransactionPayload,
+    OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
 use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData, UpdateStateData};
 use tracing::info;
@@ -261,7 +260,7 @@ impl SequencerOLClient for RpcOLClient {
 
         let tx = RpcOLTransaction::new(
             RpcTransactionPayload::SnarkAccountUpdate(rpc_update),
-            RpcTransactionAttachment::new(None, None),
+            RpcTxConstraints::new(None, None),
         );
 
         let txid = retry_with_backoff_async(

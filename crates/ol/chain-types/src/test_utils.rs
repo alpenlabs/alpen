@@ -7,7 +7,7 @@
 
 use proptest::prelude::*;
 use strata_acct_types::{
-    AccountId, AccountSerial, BitcoinAmount, MessageEntry, MsgPayload, TxEffects,
+    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, MessageEntry, MsgPayload, TxEffects,
 };
 use strata_identifiers::{
     Epoch, Slot,

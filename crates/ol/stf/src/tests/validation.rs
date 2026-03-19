@@ -1,7 +1,7 @@
 //! Tests for basic validation errors like sequence numbers, balance checks, and recipient
 //! validation
 
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
+use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_state_types::OLState;
 
@@ -28,17 +28,14 @@ fn test_snark_update_invalid_sequence_number() {
     create_empty_account(&mut state, recipient_id);
 
     // Try to submit update with wrong sequence number (should be 0, but we use 5)
-    let transfer = strata_snark_acct_types::OutputTransfer::new(
-        recipient_id,
-        BitcoinAmount::from_sat(10_000_000),
-    );
-    let outputs = strata_snark_acct_types::UpdateOutputs::new(vec![transfer], vec![]);
+    let mut effects = TxEffects::default();
+    effects.push_transfer(recipient_id, 10_000_000);
     let invalid_tx = create_unchecked_snark_update(
         snark_id,
         5, // wrong seq_no (should be 0)
         get_test_state_root(2),
         0, // new_msg_idx
-        outputs,
+        effects,
     );
 
     // Execute and expect failure

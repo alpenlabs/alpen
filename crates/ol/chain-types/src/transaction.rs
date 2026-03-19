@@ -120,6 +120,14 @@ impl GamTxPayload {
 }
 
 impl SauTxPayload {
+    /// Creates a new snark account update transaction payload.
+    pub fn new(target: AccountId, operation_data: SauTxOperationData) -> Self {
+        Self {
+            target,
+            operation_data,
+        }
+    }
+
     pub fn target(&self) -> &AccountId {
         &self.target
     }
@@ -130,6 +138,19 @@ impl SauTxPayload {
 }
 
 impl SauTxOperationData {
+    /// Creates a new operation data.
+    pub fn new(
+        update_data: SauTxUpdateData,
+        messages: Vec<MessageEntry>,
+        ledger_refs: SauTxLedgerRefs,
+    ) -> Self {
+        Self {
+            update_data,
+            messages: messages.into(),
+            ledger_refs,
+        }
+    }
+
     pub fn update(&self) -> &SauTxUpdateData {
         &self.update_data
     }
@@ -144,6 +165,20 @@ impl SauTxOperationData {
 }
 
 impl SauTxLedgerRefs {
+    /// Creates empty ledger refs.
+    pub fn new_empty() -> Self {
+        Self {
+            asm_history_proofs: ssz_types::Optional::None,
+        }
+    }
+
+    /// Creates ledger refs with the given claim list.
+    pub fn new_with_claims(claims: ClaimList) -> Self {
+        Self {
+            asm_history_proofs: ssz_types::Optional::Some(claims),
+        }
+    }
+
     pub fn asm_history_proofs(&self) -> Option<&ClaimList> {
         match self.asm_history_proofs.as_ref() {
             ssz_types::Optional::None => None,
@@ -153,6 +188,15 @@ impl SauTxLedgerRefs {
 }
 
 impl SauTxUpdateData {
+    /// Creates a new update data.
+    pub fn new(seq_no: u64, proof_state: SauTxProofState, extra_data: Vec<u8>) -> Self {
+        Self {
+            seq_no,
+            proof_state,
+            extra_data: extra_data.into(),
+        }
+    }
+
     pub fn seq_no(&self) -> u64 {
         self.seq_no
     }
@@ -167,6 +211,14 @@ impl SauTxUpdateData {
 }
 
 impl SauTxProofState {
+    /// Creates a new proof state.
+    pub fn new(new_next_msg_idx: u64, inner_state_root: Buf32) -> Self {
+        Self {
+            new_next_msg_idx,
+            inner_state_root: inner_state_root.0.into(),
+        }
+    }
+
     pub fn new_next_msg_idx(&self) -> u64 {
         self.new_next_msg_idx
     }
@@ -177,6 +229,21 @@ impl SauTxProofState {
 }
 
 impl OLTransactionData {
+    /// Creates a new transaction data with the given payload and effects, and default constraints.
+    pub fn new(payload: TransactionPayload, effects: TxEffects) -> Self {
+        Self {
+            payload,
+            constraints: TxConstraints::default(),
+            effects,
+        }
+    }
+
+    /// Sets the constraints on this transaction data, consuming and returning self.
+    pub fn with_constraints(mut self, constraints: TxConstraints) -> Self {
+        self.constraints = constraints;
+        self
+    }
+
     pub fn payload(&self) -> &TransactionPayload {
         &self.payload
     }
@@ -197,6 +264,25 @@ impl OLTransactionData {
 }
 
 impl TxProofs {
+    /// Creates an empty TxProofs with no satisfiers or accumulator proofs.
+    pub fn new_empty() -> Self {
+        Self {
+            predicate_satisfiers: ssz_types::Optional::None,
+            accumulator_proofs: ssz_types::Optional::None,
+        }
+    }
+
+    /// Creates TxProofs with the given satisfiers and accumulator proofs.
+    pub fn new(
+        predicate_satisfiers: Option<ProofSatisfierList>,
+        accumulator_proofs: Option<RawMerkleProofList>,
+    ) -> Self {
+        Self {
+            predicate_satisfiers: predicate_satisfiers.into(),
+            accumulator_proofs: accumulator_proofs.into(),
+        }
+    }
+
     pub fn predicate_satisfiers(&self) -> Option<&ProofSatisfierList> {
         match &self.predicate_satisfiers {
             ssz_types::Optional::Some(s) => Some(s),

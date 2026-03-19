@@ -12,7 +12,8 @@ use strata_ledger_types::{
     NewAccountData,
 };
 use strata_predicate::PredicateKeyBuf;
-use strata_snark_acct_types::{MessageEntry, Seqno};
+use strata_acct_types::MessageEntry;
+use strata_snark_acct_types::Seqno;
 
 use super::{
     AccountDiff, AccountInit, AccountTypeInit, DaProofState, GlobalStateDiff, LedgerDiff,

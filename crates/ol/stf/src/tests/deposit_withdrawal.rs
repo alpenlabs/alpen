@@ -1,28 +1,25 @@
 //! Deposit-withdraw tests for end-to-end workflows
 
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+use strata_acct_types::{BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
 use strata_asm_logs::DepositLog;
 use strata_bridge_types::DepositDescriptor;
 use strata_identifiers::{Buf32, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
+use strata_ol_chain_types_new::TransactionPayload;
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, MessageEntry, OutputMessage, ProofState, SnarkAccountUpdate,
-    SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
-};
 
 use crate::{
     BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL,
     assembly::BlockComponents,
     context::BlockInfo,
     test_utils::{
-        InboxMmrTracker, create_test_genesis_state, execute_block_with_outputs,
-        get_test_snark_account_id, get_test_state_root, test_l1_block_id,
+        InboxMmrTracker, SnarkUpdateBuilder, create_test_genesis_state,
+        execute_block_with_outputs, get_test_snark_account_id, get_test_state_root,
+        test_l1_block_id,
     },
 };
 
@@ -147,63 +144,32 @@ fn test_snark_account_deposit_and_withdrawal() {
     // Convert to bytes for the MsgPayload
     let withdrawal_payload_data = withdrawal_msg.to_vec();
 
-    // Create the withdrawal message payload (sent to bridge gateway)
-    let withdrawal_payload = MsgPayload::new(
-        BitcoinAmount::from_sat(withdrawal_amount),
-        withdrawal_payload_data,
-    );
+    // Build the snark update using SnarkUpdateBuilder
+    let snark_state_ref = state
+        .get_account_state(snark_account_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
 
-    // Create the output message to the bridge gateway account
-    let bridge_gateway_id = BRIDGE_GATEWAY_ACCT_ID;
-    let output_message = OutputMessage::new(bridge_gateway_id, withdrawal_payload);
-
-    // Create the update outputs with the withdrawal message
-    let update_outputs = UpdateOutputs::new(vec![], vec![output_message]);
-
-    // Create the snark account update operation data
-    let seq_no = 0u64; // This is the first update.
-    let new_state_root = get_test_state_root(2); // New state after update
-
-    let account_after_genesis = state.get_account_state(snark_account_id).unwrap().unwrap();
-    let snark_state_after_genesis = account_after_genesis.as_snark_account().unwrap();
-
-    // The processed message must match the one we tracked above
-    let processed_deposit_msg = deposit_msg_in_inbox.clone();
-
-    // After processing 1 message, next_msg_read_idx advances by 1
-    let new_proof_state = ProofState::new(new_state_root, nxt_inbox_idx_after_gen + 1);
-
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state.clone(),
-        vec![processed_deposit_msg], // Processed deposit message
-        LedgerRefs::new_empty(),     // No ledger references
-        update_outputs,
-        vec![], // No extra data
-    );
-
-    // Create the snark account update
-    let base_update = SnarkAccountUpdate::new(
-        operation_data,
-        vec![0u8; 32], // Dummy proof for testing
-    );
-
-    // Create accumulator proofs with the deposit message proof
-    let accumulator_proofs = UpdateAccumulatorProofs::new(
-        vec![deposit_msg_proof], // Include the inbox proof for the deposit message
-        LedgerRefProofs::new(vec![]), // No ledger ref proofs
-    );
-
-    // Create the update container
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-
-    // Create the snark account update transaction
-    let sau_tx_payload = SnarkAccountUpdateTxPayload::new(snark_account_id, update_container);
-    let sau_tx = TransactionPayload::SnarkAccountUpdate(sau_tx_payload);
+    let sau_tx = SnarkUpdateBuilder::from_snark_state(snark_state_ref)
+        .with_processed_msgs(vec![deposit_msg_in_inbox])
+        .with_inbox_proofs(vec![deposit_msg_proof])
+        .with_output_message(
+            BRIDGE_GATEWAY_ACCT_ID,
+            withdrawal_amount,
+            withdrawal_payload_data,
+        )
+        .build(
+            snark_account_id,
+            get_test_state_root(2),
+            vec![0u8; 32], // Dummy proof for testing
+        );
 
     // Create block 1 with the withdrawal transaction
     let block1_info = BlockInfo::new(1001000, 1, 1);
-    let block1_components = BlockComponents::new_txs(vec![sau_tx]);
+    let block1_components = BlockComponents::new_txs_from_ol_transactions(vec![sau_tx]);
     let block1_output = execute_block_with_outputs(
         &mut state,
         &block1_info,

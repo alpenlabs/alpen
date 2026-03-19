@@ -1,5 +1,4 @@
-use strata_acct_types::{AccountId, BitcoinAmount};
-use strata_snark_acct_types::MessageEntry;
+use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
 
 use crate::traits::IAcctMsg;
 

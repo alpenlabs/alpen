@@ -7,11 +7,10 @@ use alpen_ee_common::{
 };
 use alpen_ee_exec_chain::ExecChainHandle;
 use eyre::Context;
-use strata_acct_types::Hash;
+use strata_acct_types::{Hash, MessageEntry};
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_snark_acct_types::MessageEntry;
 use thiserror::Error;
 use tracing::{debug, error, warn};
 

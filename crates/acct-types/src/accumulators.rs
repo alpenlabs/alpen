@@ -1,8 +1,8 @@
 //! Types relating to accumulators and making proofs against them.
 
-use strata_acct_types::Hash;
+use strata_identifiers::Hash;
 
-use crate::ssz_generated::ssz::accumulators::AccumulatorClaim;
+use crate::AccumulatorClaim;
 
 impl AccumulatorClaim {
     /// Creates a new accumulator claim.
@@ -23,6 +23,6 @@ impl AccumulatorClaim {
         self.entry_hash
             .as_ref()
             .try_into()
-            .expect("snark-acct-types: FixedBytes<32> is always 32 bytes")
+            .expect("acct-types: FixedBytes<32> is always 32 bytes")
     }
 }

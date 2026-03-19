@@ -1124,7 +1124,6 @@ dependencies = [
  "strata-msg-fmt",
  "strata-ol-msg-types",
  "strata-snark-acct-runtime",
- "strata-snark-acct-types",
  "tracing",
 ]
 
@@ -1212,7 +1211,6 @@ dependencies = [
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
- "strata-snark-acct-types",
  "strata-storage",
  "strata-storage-common",
  "thiserror 2.0.18",
@@ -15101,6 +15099,7 @@ dependencies = [
  "strata-identifiers",
  "strata-predicate",
  "strata-snark-acct-types",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -15913,7 +15912,6 @@ dependencies = [
  "strata-acct-types",
  "strata-identifiers",
  "strata-ledger-types",
- "strata-merkle",
  "strata-snark-acct-types",
 ]
 

@@ -1,6 +1,5 @@
 import strata_acct_types
 
-import accumulators
 import messages
 import outputs
 import state
@@ -16,7 +15,8 @@ MAX_EXTRA_DATA_BYTES = 1024
 
 ### Describes references to entries in accumulators available in the ledger.
 class LedgerRefs(Container):
-    l1_header_refs: List[accumulators.AccumulatorClaim, MAX_TYPE_LEDGER_REFS]
+    #~# external_kind: container
+    l1_header_refs: List[strata_acct_types.AccumulatorClaim, MAX_TYPE_LEDGER_REFS]
 
 class LedgerRefProofs(Container):
     ### Proofs for each entry in LedgerRefs.

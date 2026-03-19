@@ -5,7 +5,7 @@
 
 use rkyv::rancor::Error as RkyvError;
 use ssz::Encode;
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload, SubjectId};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{
     ArchivedEePrivateInput, ChunkInput, EePrivateInput, EeSnarkAccountProgram, EeVerificationInput,
@@ -21,8 +21,8 @@ use strata_snark_acct_runtime::{
     PrivateInput as SnarkPrivateInput, ProgramResult, SnarkAccountProgram,
 };
 use strata_snark_acct_types::{
-    MessageEntry, ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData,
-    UpdateOutputs, UpdateProofPubParams,
+    ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData, UpdateOutputs,
+    UpdateProofPubParams,
 };
 
 /// Serializes an [`EePrivateInput`] and a [`SnarkPrivateInput`] with rkyv, then

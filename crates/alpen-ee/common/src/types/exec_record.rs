@@ -1,8 +1,7 @@
-use strata_acct_types::Hash;
+use strata_acct_types::{Hash, MessageEntry};
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::OLBlockCommitment;
-use strata_snark_acct_types::MessageEntry;
 
 use crate::BlockNumHash;
 

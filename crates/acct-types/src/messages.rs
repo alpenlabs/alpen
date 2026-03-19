@@ -13,6 +13,16 @@ impl SentMessage {
         Self { dest, payload }
     }
 
+    /// Creates a new instance with empty data and some value.
+    pub fn new_dataless(dest: AccountId, value: BitcoinAmount) -> Self {
+        Self::new(dest, MsgPayload::new_dataless(value))
+    }
+
+    /// Creates a new instance with empty data and 0 value.
+    pub fn new_empty(dest: AccountId) -> Self {
+        Self::new_dataless(dest, BitcoinAmount::zero())
+    }
+
     pub fn dest(&self) -> AccountId {
         self.dest
     }
@@ -25,6 +35,13 @@ impl SentMessage {
 impl SentTransfer {
     pub fn new(dest: AccountId, value: BitcoinAmount) -> Self {
         Self { dest, value }
+    }
+
+    /// Creates a new instance with 0 value.
+    ///
+    /// This shouldn't normally happen but it's a convenience.
+    pub fn zero(dest: AccountId) -> Self {
+        Self::new(dest, BitcoinAmount::zero())
     }
 
     pub fn dest(&self) -> AccountId {
@@ -41,6 +58,16 @@ impl ReceivedMessage {
         Self { source, payload }
     }
 
+    /// Creates a new instance with empty data and some value.
+    pub fn new_dataless(dest: AccountId, value: BitcoinAmount) -> Self {
+        Self::new(dest, MsgPayload::new_dataless(value))
+    }
+
+    /// Creates a new instance with empty data and 0 value.
+    pub fn new_empty(dest: AccountId) -> Self {
+        Self::new_dataless(dest, BitcoinAmount::zero())
+    }
+
     pub fn source(&self) -> AccountId {
         self.source
     }
@@ -54,8 +81,24 @@ impl MsgPayload {
     pub fn new(value: BitcoinAmount, data: Vec<u8>) -> Self {
         Self {
             value,
+            // FIXME size limits
             data: data.into(),
         }
+    }
+
+    /// Creates a new instance with empty data and some value.
+    pub fn new_dataless(value: BitcoinAmount) -> Self {
+        Self::new(value, Vec::new())
+    }
+
+    /// Creates a new instance with some data and 0 value.
+    pub fn new_valueless(data: Vec<u8>) -> Self {
+        Self::new(BitcoinAmount::zero(), data)
+    }
+
+    /// Creates a new instance with empty data and 0 value.
+    pub fn new_empty() -> Self {
+        Self::new_dataless(BitcoinAmount::zero())
     }
 
     pub fn value(&self) -> BitcoinAmount {
@@ -64,6 +107,11 @@ impl MsgPayload {
 
     pub fn data(&self) -> &[u8] {
         &self.data
+    }
+
+    /// Wraps the payload into a [`SentMessage`] to some dest account.
+    pub fn into_sent(self, dest: AccountId) -> SentMessage {
+        SentMessage::new(dest, self)
     }
 }
 

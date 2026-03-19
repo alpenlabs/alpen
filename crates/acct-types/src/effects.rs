@@ -1,6 +1,6 @@
 //! Transaction effects.
 
-use crate::{SentMessage, SentTransfer, TxEffects};
+use crate::{AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects};
 
 impl TxEffects {
     /// Attempts to add a transfer.
@@ -16,6 +16,14 @@ impl TxEffects {
         }
     }
 
+    /// Adds a transfer to the given destination with the specified satoshi amount.
+    ///
+    /// Constructs a [`SentTransfer`] internally and appends it.  Returns false
+    /// if the transfer list is full.
+    pub fn push_transfer(&mut self, dest: AccountId, sats: u64) -> bool {
+        self.add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(sats)))
+    }
+
     /// Returns an iterator over the transfers.
     pub fn transfers_iter(&self) -> impl Iterator<Item = &SentTransfer> {
         match &self.transfers {
@@ -24,7 +32,7 @@ impl TxEffects {
         }
     }
 
-    /// Attempts to add a transfer.
+    /// Attempts to add a message.
     ///
     /// Returns false if full.
     pub fn add_message(&mut self, msg: SentMessage) -> bool {
@@ -35,6 +43,15 @@ impl TxEffects {
                 true
             }
         }
+    }
+
+    /// Adds a message to the given destination with the specified value and data.
+    ///
+    /// Constructs a [`SentMessage`] (with [`MsgPayload`]) internally and appends
+    /// it.  Returns false if the message list is full.
+    pub fn push_message(&mut self, dest: AccountId, sats: u64, data: Vec<u8>) -> bool {
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(sats), data);
+        self.add_message(SentMessage::new(dest, payload))
     }
 
     /// Returns an iterator over the messages.

@@ -1,18 +1,16 @@
 //! Block transactional processing.
 
 use strata_acct_types::{
-    AccountId, AccountTypeId, AcctError, BitcoinAmount, MsgPayload, SentMessage, SentTransfer,
+    AccountId, AcctError, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
 };
-use strata_codec::{CodecError, encode_to_vec};
 use strata_ledger_types::{
     IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
 };
 use strata_ol_chain_types_new::{
-    OLLog, OLTransaction, OLTxSegment, SnarkAccountUpdateLogData, TransactionAttachment,
-    TransactionPayload,
+    OLTransaction, OLTxSegment, SauTxPayload, TxConstraints, TxProofs, TransactionPayload,
 };
 use strata_snark_acct_sys as snark_sys;
-use strata_snark_acct_types::{LedgerInterface, Seqno, SnarkAccountUpdateContainer};
+use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 
 use crate::{
     account_processing,
@@ -20,6 +18,7 @@ use crate::{
     context::{BasicExecContext, BlockContext, TxExecContext},
     errors::{ExecError, ExecResult},
     output::OutputCtx,
+    proof_verification::TxProofVerifierImpl,
 };
 
 /// Process a block's transaction segment.
@@ -46,14 +45,14 @@ pub fn process_single_tx<S: IStateAccessor>(
     tx: &OLTransaction,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    // 1. Check the transaction's attachments.
-    check_tx_attachment(tx.attachment(), state)?;
+    // 1. Check the transaction's constraints.
+    check_tx_constraints(tx.constraints(), state)?;
 
     // 2. Depending on its payload type, we handle it different ways.
     match tx.payload() {
         TransactionPayload::GenericAccountMessage(gam) => {
             // Construct the message we want to send and then hand it off.
-            let mp = MsgPayload::new(BitcoinAmount::from(0), gam.payload().to_vec());
+            let mp = MsgPayload::new(BitcoinAmount::from(0), vec![]);
             account_processing::process_message(
                 state,
                 SEQUENCER_ACCT_ID,
@@ -63,167 +62,173 @@ pub fn process_single_tx<S: IStateAccessor>(
             )?;
         }
 
-        TransactionPayload::SnarkAccountUpdate(update) => {
-            let target = *update.target();
+        TransactionPayload::SnarkAccountUpdate(sau_payload) => {
+            let target = *sau_payload.target();
+            let effects = tx.data().effects();
+            let tx_proofs = tx.proofs();
 
-            process_update_tx(state, target, update.update_container(), context)?;
+            process_update_tx(state, target, sau_payload, effects, tx_proofs, context)?;
         }
     }
 
     Ok(())
-}
-
-/// Container to accumulate effects of an account interaction we'll play out
-/// later.
-#[derive(Clone, Debug)]
-struct AcctInteractionBuffer {
-    messages: Vec<SentMessage>,
-    transfers: Vec<SentTransfer>,
-}
-
-impl AcctInteractionBuffer {
-    fn new_empty() -> Self {
-        Self {
-            messages: Vec::new(),
-            transfers: Vec::new(),
-        }
-    }
-
-    fn add_sent_message(&mut self, sent_msg: SentMessage) {
-        self.messages.push(sent_msg);
-    }
-
-    fn add_sent_transfer(&mut self, sent_xfer: SentTransfer) {
-        self.transfers.push(sent_xfer);
-    }
-
-    fn send_message_to(&mut self, dest: AccountId, payload: MsgPayload) {
-        self.add_sent_message(SentMessage::new(dest, payload));
-    }
-
-    fn send_transfer_to(&mut self, dest: AccountId, amount: BitcoinAmount) {
-        self.add_sent_transfer(SentTransfer::new(dest, amount));
-    }
-}
-
-impl LedgerInterface for AcctInteractionBuffer {
-    type Error = ExecError;
-
-    fn send_transfer(&mut self, dest: AccountId, value: BitcoinAmount) -> Result<(), Self::Error> {
-        self.send_transfer_to(dest, value);
-        Ok(())
-    }
-
-    fn send_message(&mut self, dest: AccountId, payload: MsgPayload) -> Result<(), Self::Error> {
-        self.send_message_to(dest, payload);
-        Ok(())
-    }
 }
 
 fn process_update_tx<S: IStateAccessor>(
     state: &mut S,
     target: AccountId,
-    update: &SnarkAccountUpdateContainer,
+    sau_payload: &SauTxPayload,
+    effects: &TxEffects,
+    tx_proofs: &TxProofs,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    // Step 1: Read account state outside closure for verification
+    // Step 1: Read account state for verification.
     let account_state = state
         .get_account_state(target)?
         .ok_or(ExecError::UnknownAccount(target))?;
-    let acc_serial = account_state.serial();
     let snark_acct_state = account_state
         .as_snark_account()
         .map_err(|_| ExecError::IncorrectTxTargetType)?;
     let cur_balance = account_state.balance();
 
-    // Step 2: Verify the update (needs state.asm_manifests_mmr())
-    snark_sys::verify_update_correctness(state, target, snark_acct_state, update, cur_balance)?;
+    // Step 2: Build SnarkAccountUpdateData from the new tx types.
+    let op = sau_payload.operation();
+    let upd = op.update();
+    let proof_state = ProofState::new(
+        upd.proof_state().inner_state_root(),
+        upd.proof_state().new_next_msg_idx(),
+    );
+    let ledger_refs = convert_sau_ledger_refs(op.ledger_refs());
+    let processed_messages: Vec<_> = op.messages_iter().cloned().collect();
 
-    let operation = update.operation();
+    let update_data = snark_sys::SnarkAccountUpdateData::new(
+        Seqno::from(upd.seq_no()),
+        proof_state,
+        processed_messages,
+        ledger_refs,
+        effects.clone(),
+        upd.extra_data().to_vec(),
+    );
 
-    // Step 3: Mutate and collect effects (inside closure)
+    // Step 3: Verify the update (all checks delegated to snark-acct-sys).
+    let mut verifier = TxProofVerifierImpl::new(tx_proofs);
+    snark_sys::verify_update_correctness(
+        state,
+        target,
+        snark_acct_state,
+        &update_data,
+        cur_balance,
+        &mut verifier,
+    )?;
+
+    // Step 4: Mutate account state and collect effects.
     let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
-        // Deduct balance for all outputs first
-        let total_sent = operation
-            .outputs()
-            .compute_total_value()
+        // Deduct balance for all effects first.
+        let total_sent = compute_effects_total_value(effects)
             .ok_or(ExecError::Acct(AcctError::BitcoinAmountOverflow))?;
         let coin = astate
             .take_balance(total_sent)
             .map_err(|_| ExecError::InsufficientAccountBalance(target, total_sent))?;
-        coin.safely_consume_unchecked(); // TODO: better usage?
+        coin.safely_consume_unchecked();
 
-        // Now get snark account state and update proof state
+        // Update proof state.
         let snrk_acct_state = astate
             .as_snark_account_mut()
             .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
-        let new_seqno = operation
+        let new_seqno = upd
             .seq_no()
             .checked_add(1)
             .ok_or(ExecError::MaxSeqNumberReached { account_id: target })?;
         snrk_acct_state.update_inner_state(
-            operation.new_proof_state().inner_state(),
-            operation.new_proof_state().next_inbox_msg_idx(),
+            upd.proof_state().inner_state_root(),
+            upd.proof_state().new_next_msg_idx(),
             new_seqno.into(),
-            operation.extra_data(),
+            upd.extra_data(),
         )?;
 
-        // Collect effects using snark-acct-sys
-        let mut fx_buf = AcctInteractionBuffer::new_empty();
-        snark_sys::apply_update_outputs(&mut fx_buf, update)?;
-
-        Ok(fx_buf)
+        Ok(())
     })??;
 
-    // Step 4: Apply effects
-    apply_interactions(state, target, fx_buf, context.basic_context())?;
+    // Step 5: Apply effects.
+    apply_tx_effects(state, target, effects, context.basic_context())?;
 
     Ok(())
 }
 
-fn apply_interactions<S: IStateAccessor>(
+/// Converts `SauTxLedgerRefs` (new chain type) to `LedgerRefs` (snark-acct-types).
+fn convert_sau_ledger_refs(
+    sau_refs: &strata_ol_chain_types_new::SauTxLedgerRefs,
+) -> LedgerRefs {
+    match sau_refs.asm_history_proofs() {
+        Some(claim_list) => {
+            let claims: Vec<strata_acct_types::AccumulatorClaim> = claim_list
+                .claims()
+                .iter()
+                .map(|c| {
+                    let hash: [u8; 32] = c.entry_hash().into();
+                    strata_acct_types::AccumulatorClaim::new(c.idx(), hash)
+                })
+                .collect();
+            LedgerRefs::new(claims)
+        }
+        None => LedgerRefs::new_empty(),
+    }
+}
+
+/// Computes the total value of all transfers and messages in effects.
+fn compute_effects_total_value(effects: &TxEffects) -> Option<BitcoinAmount> {
+    let mut total: u64 = 0;
+
+    for t in effects.transfers_iter() {
+        total = total.checked_add(t.value().into())?;
+    }
+
+    for m in effects.messages_iter() {
+        total = total.checked_add(m.payload().value().into())?;
+    }
+
+    Some(BitcoinAmount::from_sat(total))
+}
+
+/// Applies the effects of a transaction (transfers and messages) to account state.
+fn apply_tx_effects<S: IStateAccessor>(
     state: &mut S,
     source: AccountId,
-    fx_buf: AcctInteractionBuffer,
+    effects: &TxEffects,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
-    // Process transfers: pure value transfers with no message data
-    for t in fx_buf.transfers {
-        account_processing::process_transfer(state, source, t.dest, t.value, context)?;
+    for t in effects.transfers_iter() {
+        account_processing::process_transfer(state, source, t.dest(), t.value(), context)?;
     }
 
-    // Process messages: carry both value and data
-    for m in fx_buf.messages {
-        account_processing::process_message(state, source, m.dest, m.payload, context)?;
+    for m in effects.messages_iter() {
+        account_processing::process_message(
+            state,
+            source,
+            m.dest(),
+            m.payload().clone(),
+            context,
+        )?;
     }
 
     Ok(())
 }
 
-/// Checks that a transaction's slot bounds are valid for the current slot in state.
-///
-/// Returns:
-/// - `Ok(())` if transaction is valid for current slot
-/// - `Err(TransactionExpired)` if `max_slot` is set and `current_slot > max_slot`
-/// - `Err(TransactionNotMature)` if `min_slot` is set and `current_slot < min_slot`
-///
-/// This can be used by mempool for early rejection and by block assembly/STF for validation.
-pub(crate) fn check_slot_bounds<S: IStateAccessor>(
-    attachment: &TransactionAttachment,
+/// Checks that a tx's constraints are valid for the current slot in state.
+pub fn check_tx_constraints<S: IStateAccessor>(
+    constraints: &TxConstraints,
     state: &S,
 ) -> ExecResult<()> {
     let current_slot = state.cur_slot();
 
-    // Check min_slot (transaction not yet valid)
-    if let Some(min_slot) = attachment.min_slot()
+    if let Some(min_slot) = constraints.min_slot()
         && current_slot < min_slot
     {
         return Err(ExecError::TransactionNotMature(min_slot, current_slot));
     }
 
-    // Check max_slot (transaction expired)
-    if let Some(max_slot) = attachment.max_slot()
+    if let Some(max_slot) = constraints.max_slot()
         && current_slot > max_slot
     {
         return Err(ExecError::TransactionExpired(max_slot, current_slot));
@@ -249,11 +254,6 @@ pub fn check_snark_account_seq_no(
 }
 
 /// Gets an account state, returning an error if it doesn't exist.
-///
-/// Returns Ok(account_state) if account exists.
-/// Returns Err(UnknownAccount) if account doesn't exist.
-///
-/// This helper is used by mempool and block assembly for account existence validation.
 pub fn get_account_state<S: IStateAccessor>(
     state: &S,
     account: AccountId,
@@ -264,32 +264,17 @@ pub fn get_account_state<S: IStateAccessor>(
 }
 
 /// Gets the current sequence number for a Snark account.
-///
-/// Returns Ok(seq_no) if account exists and is a Snark account.
-/// Returns Err if account doesn't exist or is not a Snark account.
-///
-/// This helper is used by mempool and block assembly for sequence number validation.
 pub fn get_snark_account_seq_no<S: IStateAccessor>(
     state: &S,
     account: AccountId,
 ) -> ExecResult<u64> {
     let account_state = get_account_state(state, account)?;
 
-    if account_state.ty() != AccountTypeId::Snark {
+    if account_state.ty() != strata_acct_types::AccountTypeId::Snark {
         return Err(ExecError::IncorrectTxTargetType);
     }
 
     let snark_state = account_state.as_snark_account()?;
 
     Ok(*snark_state.seqno().inner())
-}
-
-/// Checks that a tx is valid based on conditions in its attachments.
-///
-/// This DOES NOT perform any other validation on the tx.
-pub fn check_tx_attachment<S: IStateAccessor>(
-    attachment: &TransactionAttachment,
-    state: &S,
-) -> ExecResult<()> {
-    check_slot_bounds(attachment, state)
 }

@@ -17,7 +17,7 @@ use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     AccountExtraData, OLBlockOrTag, OLRpcProvider, RpcGenericAccountMessage, RpcOLTransaction,
-    RpcSnarkAccountUpdate, RpcTransactionAttachment, RpcTransactionPayload,
+    RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
@@ -235,7 +235,7 @@ fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
     let gam = RpcGenericAccountMessage::new(HexBytes32::from(*target.inner()), HexBytes(payload));
     RpcOLTransaction::new(
         RpcTransactionPayload::GenericAccountMessage(gam),
-        RpcTransactionAttachment::new(None, None),
+        RpcTxConstraints::new(None, None),
     )
 }
 
@@ -661,7 +661,7 @@ async fn submit_transaction_invalid_snark_update_returns_invalid_params() {
             HexBytes(vec![0xDE, 0xAD]),
             HexBytes(vec![]),
         )),
-        RpcTransactionAttachment::new(None, None),
+        RpcTxConstraints::new(None, None),
     );
 
     let result = rpc.submit_transaction(bad_tx).await;

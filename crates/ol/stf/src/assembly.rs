@@ -1,5 +1,6 @@
 //! Block assembly flows.
 
+use strata_acct_types::TxEffects;
 use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessor;
@@ -196,11 +197,29 @@ impl BlockComponents {
         }
     }
 
+    /// Create block components from full OLTransaction objects.
+    pub fn new_txs_from_ol_transactions(txs: Vec<OLTransaction>) -> Self {
+        Self {
+            tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
+            manifest_container: None,
+        }
+    }
+
     /// Create block components with the given transaction payloads.
+    ///
+    /// Each payload gets default constraints, empty effects, and empty proofs.
     pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
         let txs = payloads
             .into_iter()
-            .map(|p| OLTransaction::new(p, TransactionAttachment::default()))
+            .map(|p| {
+                let data = OLTransactionData {
+                    payload: p,
+                    constraints: TxConstraints::default(),
+                    effects: TxEffects::default(),
+                };
+                let proofs = TxProofs::new_empty();
+                OLTransaction::new(data, proofs)
+            })
             .collect();
         Self {
             tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),

@@ -23,18 +23,15 @@ use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLTxSegment, SignedOLBlockHeader, TransactionAttachment,
-    test_utils as ol_test_utils,
+    OLBlock, OLBlockBody, OLTxSegment, SignedOLBlockHeader, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefs, MessageEntry, OutputMessage, ProofState, UpdateOperationData,
-    UpdateOutputs,
-};
+use strata_acct_types::{AccumulatorClaim, MessageEntry};
+use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
 use threadpool::ThreadPool;
@@ -361,20 +358,18 @@ impl MempoolSnarkTxBuilder {
 
     /// Builds the mempool transaction.
     pub(crate) fn build(self) -> OLMempoolTransaction {
+        // Use a random inner state from proptest
         let mut runner = TestRunner::default();
-        let attachment = TransactionAttachment::new(None, None);
-
-        let full_payload = ol_test_utils::snark_account_update_tx_payload_strategy()
+        let sau_payload = ol_test_utils::sau_tx_payload_strategy()
             .new_tree(&mut runner)
             .unwrap()
             .current();
 
-        let inner_state = full_payload
-            .update_container
-            .base_update
-            .operation
-            .new_proof_state()
-            .inner_state();
+        let inner_state = sau_payload
+            .operation()
+            .update()
+            .proof_state()
+            .inner_state_root();
         let new_proof_state = ProofState::new(inner_state, self.new_msg_idx);
 
         let claims: Vec<AccumulatorClaim> = self.l1_claims.clone().into_iter().collect();
@@ -407,18 +402,12 @@ impl MempoolSnarkTxBuilder {
             self.processed_messages,
             ledger_refs,
             outputs,
-            full_payload
-                .update_container
-                .base_update
-                .operation
-                .extra_data()
-                .to_vec(),
+            vec![],
         );
 
-        let mut update = full_payload.update_container.base_update;
-        update.operation = operation;
+        let update = SnarkAccountUpdate::new(operation, vec![0u8; 32]);
 
-        OLMempoolTransaction::new_snark_account_update(self.account_id, update, attachment)
+        OLMempoolTransaction::new_snark_account_update(self.account_id, update)
     }
 }
 
