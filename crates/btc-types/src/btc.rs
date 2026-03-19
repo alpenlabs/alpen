@@ -806,7 +806,8 @@ impl<'a> Arbitrary<'a> for BitcoinScriptBuf {
 mod tests {
 
     use bitcoin::{
-        Amount, ScriptBuf, Transaction, TxOut,
+        Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
+        hashes::Hash,
         opcodes::{self},
         script::Builder,
     };
@@ -818,7 +819,8 @@ mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::{
-        BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid, BitcoinXOnlyPublicKey,
+        BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
+        BitcoinXOnlyPublicKey,
         BorshDeserialize, BorshSerialize, RawBitcoinTx,
     };
 
@@ -872,6 +874,47 @@ mod tests {
             deserialized_txid, txid,
             "original and deserialized txid must be the same"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn bitcoin_outpoint_ssz_roundtrip(txid_bytes in any::<[u8; 32]>(), vout in any::<u32>()) {
+            let outpoint = BitcoinOutPoint(OutPoint {
+                txid: Txid::from_byte_array(txid_bytes),
+                vout,
+            });
+
+            let encoded = outpoint.as_ssz_bytes();
+            let decoded = BitcoinOutPoint::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, outpoint);
+        }
+
+        #[test]
+        fn bitcoin_txid_ssz_roundtrip(txid_bytes in any::<[u8; 32]>()) {
+            let txid = BitcoinTxid::from(Txid::from_byte_array(txid_bytes));
+
+            let encoded = txid.as_ssz_bytes();
+            let decoded = BitcoinTxid::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, txid);
+        }
+
+        #[test]
+        fn bitcoin_txout_ssz_roundtrip(
+            value in any::<u64>(),
+            script_pubkey in prop::collection::vec(any::<u8>(), 0..100),
+        ) {
+            let tx_out = BitcoinTxOut(TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::from_bytes(script_pubkey),
+            });
+
+            let encoded = tx_out.as_ssz_bytes();
+            let decoded = BitcoinTxOut::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, tx_out);
+        }
     }
 
     #[test]

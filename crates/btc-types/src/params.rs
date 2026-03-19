@@ -174,6 +174,7 @@ impl AsRef<Params> for BtcParams {
 #[cfg(test)]
 mod tests {
     use bitcoin::Network;
+    use ssz::{Decode, Encode};
 
     use super::*;
 
@@ -198,6 +199,24 @@ mod tests {
             let json_data = serde_json::to_string(&params).unwrap();
             let serde_result: BtcParams = serde_json::from_str(&json_data).unwrap();
             assert_eq!(params, serde_result);
+        }
+    }
+
+    #[test]
+    fn test_all_networks_ssz_roundtrip() {
+        let networks = [
+            Network::Bitcoin,
+            Network::Testnet,
+            Network::Signet,
+            Network::Regtest,
+        ];
+
+        for network in networks {
+            let params = BtcParams::from(Params::from(network));
+            let encoded = params.as_ssz_bytes();
+            let decoded = BtcParams::from_ssz_bytes(&encoded).unwrap();
+
+            assert_eq!(params, decoded);
         }
     }
 }
