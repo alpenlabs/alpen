@@ -5,6 +5,7 @@ use std::{fmt::Display, marker::PhantomData};
 use ssz::Encode;
 use strata_crypto::hash::raw;
 use strata_identifiers::OLBlockId;
+use strata_ledger_types::{IAccountStateMut, IStateAccessor};
 use strata_ol_chain_types::verify_sequencer_signature;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::StateProvider;
@@ -12,9 +13,11 @@ use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
 
 use crate::{
-    BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider,
+    BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate,
+    MempoolProvider,
     block_assembly::generate_block_template_inner,
     command::BlockasmCommand,
+    da_tracker::AccumulatedDaData,
     error::BlockAssemblyError,
     state::BlockasmServiceState,
     types::{BlockCompletionData, BlockGenerationConfig},
@@ -50,6 +53,7 @@ where
     S: StateProvider + Send + Sync + 'static,
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
+    <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
@@ -99,6 +103,7 @@ async fn generate_block_template<
 where
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
+    <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     // Check if we already have a pending template for this parent block ID
     if let Ok(template) = state
@@ -108,16 +113,42 @@ where
         return Ok(template);
     }
 
-    // Generate new template (stub for now - will be implemented in block_assembly.rs)
+    let parent_blkid = config.parent_block_id();
+    let parent_block = state
+        .context()
+        .fetch_ol_block(parent_blkid)
+        .await?
+        .ok_or(BlockAssemblyError::BlockNotFound(parent_blkid))?;
+
+    let parent_header = parent_block.header();
+
+    // If parent is terminal, we can just start afresh.
+    let parent_da = if parent_header.is_terminal() {
+        AccumulatedDaData::new_empty(parent_header.epoch() + 1)
+    } else {
+        // Resolve parent's accumulated DA: check tracker first, rebuild if missing.
+        match state
+            .epoch_da_tracker_mut()
+            .get_accumulated_da(parent_blkid)
+        {
+            Some(da) => da.clone(),
+            None => {
+                // TODO: rebuild by re-executing epoch blocks
+                AccumulatedDaData::new_empty(0)
+            }
+        }
+    };
+
     let result = generate_block_template_inner(
         state.context(),
         state.epoch_sealing_policy(),
         state.sequencer_config(),
         config,
+        parent_da,
     )
     .await?;
 
-    let (full_template, failed_txs) = result.into_parts();
+    let (full_template, failed_txs, accumulated_da) = result.into_parts();
 
     // Report failed transactions back to mempool
     if !failed_txs.is_empty() {
@@ -125,6 +156,11 @@ where
     }
 
     let template_id = full_template.get_blockid();
+
+    // Store accumulated DA for the new block, removing parent entry.
+    state
+        .epoch_da_tracker_mut()
+        .set_accumulated_da_and_remove_parent_entry(template_id, parent_blkid, accumulated_da);
 
     state
         .state_mut()

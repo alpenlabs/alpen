@@ -8,7 +8,7 @@ use std::{
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     BlockFlags, MAX_LOGS_PER_BLOCK, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update,
     OLTransaction, OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
@@ -17,7 +17,7 @@ use strata_ol_mempool::{
     MempoolTxInvalidReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction,
     OLMempoolTxPayload,
 };
-use strata_ol_state_support_types::WriteTrackingState;
+use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator, WriteTrackingState};
 use strata_ol_state_types::WriteBatch;
 use strata_ol_stf::{
     BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, BlockPostStateCommitments,
@@ -31,6 +31,7 @@ use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
     MempoolProvider,
     context::BlockAssemblyAnchorContext,
+    da_tracker::AccumulatedDaData,
     error::BlockAssemblyError,
     types::{BlockGenerationConfig, BlockTemplateResult, FailedMempoolTx, FullBlockTemplate},
 };
@@ -43,6 +44,8 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
     failed_txs: Vec<FailedMempoolTx>,
     /// Accumulated write batch after processing all transactions.
     accumulated_batch: WriteBatch<S::AccountState>,
+    /// DA accumulator state after processing all transactions.
+    accumulated_da: EpochDaAccumulator,
 }
 
 /// Maps an [`ExecError`] to a [`MempoolTxInvalidReason`].
@@ -109,6 +112,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::ResponseChannelClosed
         | BlockAssemblyError::UnknownTemplateId(_)
         | BlockAssemblyError::TimestampTooEarly(_)
+        | BlockAssemblyError::BlockNotFound(_)
         | BlockAssemblyError::CannotBuildGenesis => MempoolTxInvalidReason::Failed,
     }
 }
@@ -123,6 +127,8 @@ pub(crate) struct ConstructBlockOutput<S> {
     // Used by tests to chain blocks without re-executing through STF.
     #[cfg_attr(not(test), expect(dead_code, reason = "only used by tests"))]
     pub(crate) post_state: S,
+    /// Accumulated DA data for the constructed block.
+    pub(crate) accumulated_da: AccumulatedDaData,
 }
 
 /// Generate a block template from the given configuration.
@@ -139,11 +145,13 @@ pub(crate) async fn generate_block_template_inner<C, E>(
     epoch_sealing_policy: &E,
     sequencer_config: &SequencerConfig,
     block_generation_config: BlockGenerationConfig,
+    parent_da: AccumulatedDaData,
 ) -> BlockAssemblyResult<BlockTemplateResult>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator + MempoolProvider,
     C::State: BlockAssemblyStateAccess,
     E: EpochSealingPolicy,
+    <<C::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let max_txs_per_block = sequencer_config.max_txs_per_block;
 
@@ -179,6 +187,7 @@ where
         block_slot,
         block_epoch,
         mempool_txs,
+        parent_da,
     )
     .await?;
 
@@ -192,7 +201,11 @@ where
         MempoolProvider::report_invalid_transactions(ctx, &output.failed_txs).await?;
     }
 
-    Ok(BlockTemplateResult::new(output.template, output.failed_txs))
+    Ok(BlockTemplateResult::new(
+        output.template,
+        output.failed_txs,
+        output.accumulated_da,
+    ))
 }
 /// Calculates the next slot and epoch based on parent commitment and state.
 ///
@@ -233,10 +246,12 @@ async fn construct_block<C, E>(
     block_slot: Slot,
     block_epoch: Epoch,
     mempool_txs: Vec<(OLTxId, OLMempoolTransaction)>,
+    parent_da: AccumulatedDaData,
 ) -> BlockAssemblyResult<ConstructBlockOutput<C::State>>
 where
     C: BlockAssemblyAnchorContext + AccumulatorProofGenerator,
     E: EpochSealingPolicy,
+    <<C::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     // Extract parent commitment from config.
     // Null parent means genesis - but genesis is built via `init_ol_genesis`, not block assembly.
@@ -265,11 +280,15 @@ where
     // Phase 1: Execute block initialization (epoch initial + block start).
     let accumulated_batch = execute_block_initialization(parent_state.as_ref(), &block_context);
 
+    // Decompose parent DA into accumulator and accumulated logs.
+    let (parent_da_accum, mut accum_logs) = parent_da.into_parts();
+
     // Phase 2: Process each transaction against accumulated state using AccumulatorProofGenerator.
     let ProcessTransactionsOutput {
         successful_txs,
         failed_txs,
         accumulated_batch,
+        accumulated_da: final_accumulator,
     } = process_transactions(
         ctx,
         &block_context,
@@ -277,8 +296,10 @@ where
         parent_state.as_ref(),
         accumulated_batch,
         mempool_txs,
+        parent_da_accum,
     );
 
+    // TODO: Also use signal from process_transactions to decide if sealing should be done
     // Phase 3: Detect terminal blocks and fetch L1 manifests if needed.
     debug!(%block_slot, "Calling should seal_epoch");
     let manifest_container = if epoch_sealing_policy.should_seal_epoch(block_slot) {
@@ -295,15 +316,20 @@ where
         &block_context,
         &parent_state,
         accumulated_batch,
-        output_buffer,
+        output_buffer.clone(),
         successful_txs,
         manifest_container,
     )?;
+
+    // Append this block's logs to the accumulated logs.
+    accum_logs.extend_from_slice(&output_buffer.into_logs());
+    let accumulated_da = AccumulatedDaData::new(block_epoch, final_accumulator, accum_logs);
 
     Ok(ConstructBlockOutput {
         template,
         failed_txs,
         post_state,
+        accumulated_da,
     })
 }
 
@@ -375,10 +401,12 @@ fn process_transactions<P, S>(
     parent_state: &S,
     accumulated_batch: WriteBatch<S::AccountState>,
     mempool_txs: Vec<(OLTxId, OLMempoolTransaction)>,
+    accumulator: EpochDaAccumulator,
 ) -> ProcessTransactionsOutput<S>
 where
     P: AccumulatorProofGenerator,
     S: BlockAssemblyStateAccess,
+    <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
@@ -388,7 +416,10 @@ where
     // Create staging state once, reuse across transactions.
     // We work directly on this state and only clone for backup before each tx.
     // On success: backup is discarded. On failure: restore from backup.
-    let mut staging_state = WriteTrackingState::new(parent_state, accumulated_batch);
+    let mut staging_state = DaAccumulatingState::new_with_accumulator(
+        WriteTrackingState::new(parent_state, accumulated_batch),
+        accumulator,
+    );
 
     for (txid, mempool_tx) in mempool_txs {
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
@@ -402,8 +433,9 @@ where
             }
         };
 
-        // Step 2: Clone batch as backup before execution.
-        let backup_batch = staging_state.batch().clone();
+        // Step 2: Clone batch and accumulator as backup before execution.
+        let backup_batch = staging_state.inner().batch().clone();
+        let backup_accumulator = staging_state.accumulator().clone();
 
         // Step 3: Create per-tx output buffer and execute transaction.
         // Logs are only merged into main buffer on success; on failure they're discarded.
@@ -435,16 +467,25 @@ where
             Err(e) => {
                 // Failure: discard tx_buffer (logs) and restore state from backup
                 debug!(?txid, %e, "transaction execution failed during staging");
-                staging_state = WriteTrackingState::new(parent_state, backup_batch);
+                staging_state = DaAccumulatingState::new_with_accumulator(
+                    WriteTrackingState::new(parent_state, backup_batch),
+                    backup_accumulator,
+                );
                 failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
             }
         }
+        debug!(%txid, "successful tx execution in block assembly");
     }
+
+    let accumulated_da = staging_state.take_accumulator();
+    let inner_state = staging_state.into_inner();
+    let accumulated_batch = inner_state.into_batch();
 
     ProcessTransactionsOutput {
         successful_txs,
         failed_txs,
-        accumulated_batch: staging_state.into_batch(),
+        accumulated_batch,
+        accumulated_da,
     }
 }
 
@@ -486,13 +527,14 @@ where
         })?;
 
         let final_state_root = final_state.compute_state_root()?;
-        let post_roots = BlockPostStateCommitments::Terminal(preseal_state_root, final_state_root);
+        let post_commitment =
+            BlockPostStateCommitments::Terminal(preseal_state_root, final_state_root);
         let update = OLL1Update::new(preseal_state_root, mc);
-        (post_roots, Some(update))
+        (post_commitment, Some(update))
     } else {
         // Non-terminal block: no manifest processing needed
-        let post_roots = BlockPostStateCommitments::Common(preseal_state_root);
-        (post_roots, None)
+        let post_commitment = BlockPostStateCommitments::Common(preseal_state_root);
+        (post_commitment, None)
     };
 
     // Defense-in-depth: per-tx and manifest emission paths enforce the cap at
@@ -1173,6 +1215,7 @@ mod tests {
                 block_slot,
                 block_epoch,
                 vec![],
+                AccumulatedDaData::new_empty(block_epoch),
             )
             .await
             .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
@@ -1216,6 +1259,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await;
     }
@@ -1236,6 +1280,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await;
         assert!(
@@ -1269,6 +1314,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("block generation should succeed");
@@ -1310,6 +1356,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await;
         assert!(
@@ -1351,6 +1398,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1384,6 +1432,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await;
         assert!(
@@ -1438,6 +1487,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1469,8 +1519,12 @@ mod tests {
             MempoolTxInvalidReason::Invalid,
         )];
 
-        let result = BlockTemplateResult::new(template, failed_txs.clone());
-        let (out_template, out_failed) = result.into_parts();
+        let result = BlockTemplateResult::new(
+            template,
+            failed_txs.clone(),
+            AccumulatedDaData::new_empty(0),
+        );
+        let (out_template, out_failed, _da) = result.into_parts();
 
         assert_eq!(
             out_template.get_blockid(),
@@ -1534,6 +1588,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1603,6 +1658,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1682,6 +1738,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1743,6 +1800,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1825,6 +1883,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");
@@ -1889,6 +1948,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(0),
         )
         .await
         .expect("Block generation should succeed");

@@ -14,7 +14,8 @@ use strata_service::ServiceState;
 use tracing::warn;
 
 use crate::{
-    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, da_tracker::EpochDaTracker, error::BlockAssemblyError, types::FullBlockTemplate
+    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, da_tracker::EpochDaTracker,
+    error::BlockAssemblyError, types::FullBlockTemplate,
 };
 
 /// A cached template with its creation time for TTL expiration.
