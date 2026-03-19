@@ -30,46 +30,16 @@ use strata_l1_txfmt::TagData;
     TryFromPrimitive,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 #[borsh(use_discriminant = true)]
+#[ssz(enum_behaviour = "tag")]
 #[repr(u8)]
 pub enum PayloadDest {
     /// If we expect the DA to be on the L1 chain that we settle to. This is
     /// always the strongest DA layer we have access to.
     L1 = 0,
-}
-
-impl SszEncodeTrait for PayloadDest {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        1
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        buf.push((*self).into());
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        <Self as SszEncodeTrait>::ssz_fixed_len()
-    }
-}
-
-impl SszDecodeTrait for PayloadDest {
-    fn is_ssz_fixed_len() -> bool {
-        true
-    }
-
-    fn ssz_fixed_len() -> usize {
-        1
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let tag = u8::from_ssz_bytes(bytes)?;
-        Self::try_from(tag).map_err(|err| DecodeError::BytesInvalid(err.to_string()))
-    }
 }
 
 /// Manual `Arbitrary` impl so that we always generate L1 DA if we add future
