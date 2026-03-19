@@ -485,6 +485,17 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
         }
     }
 
+    /// Creates a new DA accumulating state with a pre-existing accumulator.
+    pub fn new_with_accumulator(inner: S, accumulator: EpochDaAccumulator) -> Self {
+        Self {
+            inner,
+            epoch_acc: accumulator,
+            pending_epoch_diffs: VecDeque::new(),
+            pending_epoch_blobs: VecDeque::new(),
+            pending_epoch_error: None,
+        }
+    }
+
     /// Returns a reference to the wrapped state accessor.
     pub fn inner(&self) -> &S {
         &self.inner
@@ -493,6 +504,21 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     /// Returns a mutable reference to the wrapped state accessor.
     pub fn inner_mut(&mut self) -> &mut S {
         &mut self.inner
+    }
+
+    /// Returns a reference to the current epoch accumulator.
+    pub fn accumulator(&self) -> &EpochDaAccumulator {
+        &self.epoch_acc
+    }
+
+    /// Takes the epoch accumulator, leaving a default in its place.
+    pub fn take_accumulator(&mut self) -> EpochDaAccumulator {
+        take(&mut self.epoch_acc)
+    }
+
+    /// Consumes self and returns the wrapped state accessor.
+    pub fn into_inner(self) -> S {
+        self.inner
     }
 
     /// Returns the next completed epoch DA blob, if any.

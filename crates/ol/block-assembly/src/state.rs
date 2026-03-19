@@ -204,6 +204,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
             ctx,
             epoch_sealing_policy,
             state: BlockAssemblyState::new(ttl),
+            epoch_da_tracker: EpochDaTracker::new_empty(),
         }
     }
 
@@ -225,6 +226,10 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
 
     pub(crate) fn state_mut(&mut self) -> &mut BlockAssemblyState {
         &mut self.state
+    }
+
+    pub(crate) fn epoch_da_tracker_mut(&mut self) -> &mut EpochDaTracker {
+        &mut self.epoch_da_tracker
     }
 }
 
