@@ -443,8 +443,7 @@ impl SszEncodeTrait for BitcoinTxOut {
     }
 
     fn ssz_append(&self, buf: &mut Vec<u8>) {
-        (self.0.value.to_sat(), self.0.script_pubkey.to_bytes())
-        .ssz_append(buf);
+        (self.0.value.to_sat(), self.0.script_pubkey.to_bytes()).ssz_append(buf);
     }
 
     fn ssz_bytes_len(&self) -> usize {
@@ -458,8 +457,7 @@ impl SszDecodeTrait for BitcoinTxOut {
     }
 
     fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let (value, script_pubkey): (u64, Vec<u8>) =
-            <(u64, Vec<u8>)>::from_ssz_bytes(bytes)?;
+        let (value, script_pubkey): (u64, Vec<u8>) = <(u64, Vec<u8>)>::from_ssz_bytes(bytes)?;
         Ok(Self(TxOut {
             value: Amount::from_sat(value),
             script_pubkey: ScriptBuf::from(script_pubkey),
@@ -628,7 +626,16 @@ impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32, BITCOIN_XONLY_PUBLIC
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Encode, Decode,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
 )]
 pub struct RawBitcoinTx(Vec<u8>);
 
@@ -820,8 +827,7 @@ mod tests {
 
     use super::{
         BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
-        BitcoinXOnlyPublicKey,
-        BorshDeserialize, BorshSerialize, RawBitcoinTx,
+        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, RawBitcoinTx,
     };
 
     #[test]

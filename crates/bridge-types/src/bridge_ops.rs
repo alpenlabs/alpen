@@ -37,7 +37,7 @@ impl SszEncodeTrait for WithdrawalIntent {
             self.withdrawal_txid,
             self.selected_operator,
         )
-        .ssz_append(buf);
+            .ssz_append(buf);
     }
 
     fn ssz_bytes_len(&self) -> usize {
@@ -47,7 +47,7 @@ impl SszEncodeTrait for WithdrawalIntent {
             self.withdrawal_txid,
             self.selected_operator,
         )
-        .ssz_bytes_len()
+            .ssz_bytes_len()
     }
 }
 
@@ -62,12 +62,7 @@ impl SszDecodeTrait for WithdrawalIntent {
             Vec<u8>,
             Buf32,
             OperatorSelection,
-        ) = <(
-            BitcoinAmount,
-            Vec<u8>,
-            Buf32,
-            OperatorSelection,
-        )>::from_ssz_bytes(bytes)?;
+        ) = <(BitcoinAmount, Vec<u8>, Buf32, OperatorSelection)>::from_ssz_bytes(bytes)?;
         let destination = Descriptor::from_bytes(&destination)
             .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
 
@@ -174,5 +169,69 @@ impl DepositIntent {
 
     pub const fn dest_ident(&self) -> &SubjectId {
         &self.dest_ident
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use ssz::{Decode, Encode};
+    use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
+
+    use super::WithdrawalIntent;
+    use crate::OperatorSelection;
+
+    fn descriptor_strategy() -> impl Strategy<Value = Descriptor> {
+        prop_oneof![
+            any::<[u8; 20]>().prop_map(|hash160| Descriptor::new_p2wpkh(&hash160)),
+            any::<[u8; 32]>().prop_map(|hash256| Descriptor::new_p2wsh(&hash256)),
+        ]
+    }
+
+    fn operator_selection_strategy() -> impl Strategy<Value = OperatorSelection> {
+        prop_oneof![
+            Just(OperatorSelection::any()),
+            any::<u32>()
+                .prop_filter("u32::MAX is reserved for the 'any' sentinel", |idx| *idx
+                    != u32::MAX)
+                .prop_map(OperatorSelection::specific),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn withdrawal_intent_ssz_roundtrip(
+            amt in any::<u64>(),
+            destination in descriptor_strategy(),
+            withdrawal_txid in any::<[u8; 32]>(),
+            selected_operator in operator_selection_strategy(),
+        ) {
+            let intent = WithdrawalIntent::new(
+                BitcoinAmount::from_sat(amt),
+                destination,
+                Buf32::from(withdrawal_txid),
+                selected_operator,
+            );
+
+            let encoded = intent.as_ssz_bytes();
+            let decoded = WithdrawalIntent::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, intent);
+        }
+    }
+
+    #[test]
+    fn withdrawal_intent_ssz_rejects_invalid_descriptor_bytes() {
+        let encoded = (
+            BitcoinAmount::from_sat(42),
+            vec![0xFFu8; 3],
+            Buf32::from([7u8; 32]),
+            OperatorSelection::any(),
+        )
+            .as_ssz_bytes();
+
+        let err = WithdrawalIntent::from_ssz_bytes(&encoded).unwrap_err();
+
+        assert!(matches!(err, ssz::DecodeError::BytesInvalid(_)));
     }
 }

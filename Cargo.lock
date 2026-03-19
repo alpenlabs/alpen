@@ -14291,6 +14291,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "borsh",
+ "proptest",
  "serde",
  "ssz",
  "ssz_derive",

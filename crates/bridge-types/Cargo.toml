@@ -17,6 +17,7 @@ ssz.workspace = true
 ssz_derive.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 
 [features]
 default = ["std"]
