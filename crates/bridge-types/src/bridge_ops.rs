@@ -25,63 +25,57 @@ pub struct WithdrawalIntent {
     selected_operator: OperatorSelection,
 }
 
-/// SSZ representation of a [WithdrawalIntent].
-#[derive(Clone, Debug, Encode, Decode)]
-struct WithdrawalIntentSsz {
-    /// Quantity of L1 asset, for Bitcoin this is sats.
-    amt: BitcoinAmount,
-
-    /// Destination [`Descriptor`] for the withdrawal
-    destination: Vec<u8>,
-
-    /// withdrawal request transaction id
-    withdrawal_txid: Buf32,
-
-    /// User's operator selection for withdrawal assignment.
-    selected_operator: OperatorSelection,
-}
-
 impl SszEncodeTrait for WithdrawalIntent {
     fn is_ssz_fixed_len() -> bool {
-        <WithdrawalIntentSsz as SszEncodeTrait>::is_ssz_fixed_len()
+        false
     }
 
     fn ssz_append(&self, buf: &mut Vec<u8>) {
-        WithdrawalIntentSsz {
-            amt: self.amt,
-            destination: self.destination.to_bytes(),
-            withdrawal_txid: self.withdrawal_txid,
-            selected_operator: self.selected_operator,
-        }
+        (
+            self.amt,
+            self.destination.to_bytes(),
+            self.withdrawal_txid,
+            self.selected_operator,
+        )
         .ssz_append(buf);
     }
 
     fn ssz_bytes_len(&self) -> usize {
-        WithdrawalIntentSsz {
-            amt: self.amt,
-            destination: self.destination.to_bytes(),
-            withdrawal_txid: self.withdrawal_txid,
-            selected_operator: self.selected_operator,
-        }
+        (
+            self.amt,
+            self.destination.to_bytes(),
+            self.withdrawal_txid,
+            self.selected_operator,
+        )
         .ssz_bytes_len()
     }
 }
 
 impl SszDecodeTrait for WithdrawalIntent {
     fn is_ssz_fixed_len() -> bool {
-        <WithdrawalIntentSsz as SszDecodeTrait>::is_ssz_fixed_len()
+        false
     }
 
     fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        let decoded = WithdrawalIntentSsz::from_ssz_bytes(bytes)?;
-        let destination = Descriptor::from_bytes(&decoded.destination)
+        let (amt, destination, withdrawal_txid, selected_operator): (
+            BitcoinAmount,
+            Vec<u8>,
+            Buf32,
+            OperatorSelection,
+        ) = <(
+            BitcoinAmount,
+            Vec<u8>,
+            Buf32,
+            OperatorSelection,
+        )>::from_ssz_bytes(bytes)?;
+        let destination = Descriptor::from_bytes(&destination)
             .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
 
         Ok(Self {
-            amt: decoded.amt,
+            amt,
             destination,
-            withdrawal_txid: decoded.withdrawal_txid,
-            selected_operator: decoded.selected_operator,
+            withdrawal_txid,
+            selected_operator,
         })
     }
 }
