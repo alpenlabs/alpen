@@ -2,7 +2,7 @@ use strata_acct_types::Hash;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
 /// Status of the OL chain including tip, confirmed and finalized epochs.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OLChainStatus {
     /// Tip block commitment.
     pub tip: OLBlockCommitment,
@@ -32,7 +32,7 @@ impl OLChainStatus {
 }
 
 /// Finalized OL block and its corresponding EE block hash.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OLFinalizedStatus {
     /// finalized ol block.
     pub ol_block: OLBlockCommitment,
