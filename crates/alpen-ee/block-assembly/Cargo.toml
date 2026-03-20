@@ -15,6 +15,7 @@ strata-codec.workspace = true
 strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
+strata-snark-acct-runtime.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-msg-types.workspace = true
 strata-snark-acct-runtime.workspace = true

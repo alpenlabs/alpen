@@ -35,7 +35,7 @@ impl MsgMeta {
     }
 }
 
-/// Represents a parsed message.
+/// Represents a parsed message with its metadata.
 #[derive(Clone, Debug)]
 pub struct InputMessage<M: IAcctMsg> {
     meta: MsgMeta,
@@ -80,6 +80,11 @@ impl<M: IAcctMsg> InputMessage<M> {
     /// Gets the decoded message, if parsing succeeded.
     pub fn message(&self) -> Option<&M> {
         self.decoded.as_ref()
+    }
+
+    /// Unwraps the wrapper into the decoded message, if parsing succeeded.
+    pub fn into_message(self) -> Option<M> {
+        self.decoded
     }
 
     /// Gets the message meta.
