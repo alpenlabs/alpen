@@ -141,6 +141,10 @@ pub fn execute_block_inputs<S: IStateAccessor>(
     let basic_ctx = BasicExecContext::new(*block_context.block_info(), &output);
     let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
     execute_block_tx_segment(state, block_exec_input.tx_segment(), &tx_ctx)?;
+    // Defense-in-depth: `emit_logs` enforces the cap at insertion time, and this
+    // keeps an explicit phase-boundary invariant check in case future paths
+    // bypass `emit_logs`.
+    output.verify_logs_within_block_limit()?;
 
     // 4. Compute the state root and remember it.
     let pre_manifest_state_root = state.compute_state_root()?;
@@ -153,6 +157,8 @@ pub fn execute_block_inputs<S: IStateAccessor>(
         // Terminal block, with manifests.
         let term_ctx = tx_ctx.basic_context();
         execute_block_manifests(state, manifest_container, term_ctx)?;
+        // Defense-in-depth boundary check after manifest processing.
+        output.verify_logs_within_block_limit()?;
 
         // Then finally extract the stuff.
         let final_state_root = state.compute_state_root()?;
@@ -163,6 +169,8 @@ pub fn execute_block_inputs<S: IStateAccessor>(
     };
 
     // Extract logs from the execution context and construct the final output.
+    // Final backstop before materializing outputs.
+    output.verify_logs_within_block_limit()?;
     let logs = output.into_logs();
     Ok(BlockExecOutputs::new(post_state_roots, logs))
 }

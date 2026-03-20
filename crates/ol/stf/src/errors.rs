@@ -84,6 +84,9 @@ pub enum ExecError {
     #[error("max sequence number reached for account {account_id}")]
     MaxSeqNumberReached { account_id: AccountId },
 
+    #[error("block logs exceeded limit (count {count}, max {max})")]
+    LogsOverflow { count: usize, max: usize },
+
     /// Various account errors.
     #[error("acct: {0}")]
     Acct(#[from] AcctError),

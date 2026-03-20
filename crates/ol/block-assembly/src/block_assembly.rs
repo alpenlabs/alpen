@@ -412,7 +412,9 @@ where
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Success: merge logs and keep state changes
-                output_buffer.emit_logs(tx_buffer.into_logs());
+                output_buffer
+                    .emit_logs(tx_buffer.into_logs())
+                    .expect("logs to be within bounds");
                 successful_txs.push(tx);
             }
             Err(e) => {
