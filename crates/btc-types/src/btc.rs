@@ -18,6 +18,7 @@ use bitcoin::{
 use bitcoin_bosd::Descriptor;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
 use ssz_derive::{Decode, Encode};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
@@ -25,10 +26,60 @@ use strata_identifiers::{Buf32, impl_ssz_transparent_wrapper};
 use crate::ParseError;
 
 const HASH_SIZE: usize = 32;
+const BITCOIN_OUTPOINT_LEN: usize = 36;
+const BITCOIN_TXID_LEN: usize = 32;
+const BITCOIN_XONLY_PUBLIC_KEY_LEN: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct BitcoinOutPoint(pub OutPoint);
+
+impl SszEncodeTrait for BitcoinOutPoint {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_OUTPOINT_LEN
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.0.txid.to_byte_array());
+        buf.extend_from_slice(&self.0.vout.to_le_bytes());
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinOutPoint {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_OUTPOINT_LEN
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        if bytes.len() != <Self as SszDecodeTrait>::ssz_fixed_len() {
+            return Err(DecodeError::InvalidByteLength {
+                len: bytes.len(),
+                expected: <Self as SszDecodeTrait>::ssz_fixed_len(),
+            });
+        }
+
+        let txid = Txid::from_slice(&bytes[..BITCOIN_TXID_LEN])
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        let vout = u32::from_le_bytes(
+            bytes[BITCOIN_TXID_LEN..<Self as SszDecodeTrait>::ssz_fixed_len()]
+                .try_into()
+                .expect("slice length is checked above"),
+        );
+        Ok(Self(OutPoint { txid, vout }))
+    }
+}
 
 impl From<OutPoint> for BitcoinOutPoint {
     fn from(value: OutPoint) -> Self {
@@ -274,6 +325,39 @@ impl BitcoinAmount {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxid(Txid);
 
+impl SszEncodeTrait for BitcoinTxid {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_TXID_LEN
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.0.to_byte_array());
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinTxid {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BITCOIN_TXID_LEN
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let serialized = <[u8; BITCOIN_TXID_LEN]>::from_ssz_bytes(bytes)?;
+        Ok(Self(Txid::from_byte_array(serialized)))
+    }
+}
+
 impl From<Txid> for BitcoinTxid {
     fn from(value: Txid) -> Self {
         Self(value)
@@ -353,6 +437,34 @@ impl<'a> Arbitrary<'a> for BitcoinTxid {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BitcoinTxOut(TxOut);
 
+impl SszEncodeTrait for BitcoinTxOut {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        (self.0.value.to_sat(), self.0.script_pubkey.to_bytes()).ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        (self.0.value.to_sat(), self.0.script_pubkey.to_bytes()).ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinTxOut {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let (value, script_pubkey): (u64, Vec<u8>) = <(u64, Vec<u8>)>::from_ssz_bytes(bytes)?;
+        Ok(Self(TxOut {
+            value: Amount::from_sat(value),
+            script_pubkey: ScriptBuf::from(script_pubkey),
+        }))
+    }
+}
+
 impl BitcoinTxOut {
     pub fn inner(&self) -> &TxOut {
         &self.0
@@ -423,7 +535,17 @@ impl<'a> Arbitrary<'a> for BitcoinTxOut {
 
 /// A wrapper around [`Buf32`] for XOnly Schnorr taproot pubkeys.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct BitcoinXOnlyPublicKey(Buf32);
 
@@ -499,15 +621,38 @@ impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
     }
 }
 
+impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32, BITCOIN_XONLY_PUBLIC_KEY_LEN);
+
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Encode,
+    Decode,
+)]
 pub struct RawBitcoinTx(Vec<u8>);
 
 impl RawBitcoinTx {
     /// Creates a new `RawBitcoinTx` from a raw byte vector.
     pub fn from_raw_bytes(bytes: Vec<u8>) -> Self {
         RawBitcoinTx(bytes)
+    }
+
+    /// Returns the raw serialized transaction bytes.
+    pub fn as_raw_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// Consumes the wrapper and returns the raw serialized transaction bytes.
+    pub fn into_raw_bytes(self) -> Vec<u8> {
+        self.0
     }
 }
 
@@ -595,6 +740,30 @@ impl<'a> arbitrary::Arbitrary<'a> for RawBitcoinTx {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitcoinScriptBuf(ScriptBuf);
 
+impl SszEncodeTrait for BitcoinScriptBuf {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.0.to_bytes().ssz_append(buf);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.0.to_bytes().ssz_bytes_len()
+    }
+}
+
+impl SszDecodeTrait for BitcoinScriptBuf {
+    fn is_ssz_fixed_len() -> bool {
+        false
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        Vec::<u8>::from_ssz_bytes(bytes).map(|bytes| Self(ScriptBuf::from(bytes)))
+    }
+}
+
 impl BitcoinScriptBuf {
     pub fn inner(&self) -> &ScriptBuf {
         &self.0
@@ -644,7 +813,8 @@ impl<'a> Arbitrary<'a> for BitcoinScriptBuf {
 mod tests {
 
     use bitcoin::{
-        Amount, ScriptBuf, Transaction, TxOut,
+        Amount, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
+        hashes::Hash,
         opcodes::{self},
         script::Builder,
     };
@@ -656,8 +826,8 @@ mod tests {
     use strata_test_utils_ssz::ssz_proptest;
 
     use super::{
-        BitcoinAmount, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid, BitcoinXOnlyPublicKey,
-        BorshDeserialize, BorshSerialize, RawBitcoinTx,
+        BitcoinAmount, BitcoinOutPoint, BitcoinScriptBuf, BitcoinTxOut, BitcoinTxid,
+        BitcoinXOnlyPublicKey, BorshDeserialize, BorshSerialize, RawBitcoinTx,
     };
 
     #[test]
@@ -710,6 +880,47 @@ mod tests {
             deserialized_txid, txid,
             "original and deserialized txid must be the same"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn bitcoin_outpoint_ssz_roundtrip(txid_bytes in any::<[u8; 32]>(), vout in any::<u32>()) {
+            let outpoint = BitcoinOutPoint(OutPoint {
+                txid: Txid::from_byte_array(txid_bytes),
+                vout,
+            });
+
+            let encoded = outpoint.as_ssz_bytes();
+            let decoded = BitcoinOutPoint::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, outpoint);
+        }
+
+        #[test]
+        fn bitcoin_txid_ssz_roundtrip(txid_bytes in any::<[u8; 32]>()) {
+            let txid = BitcoinTxid::from(Txid::from_byte_array(txid_bytes));
+
+            let encoded = txid.as_ssz_bytes();
+            let decoded = BitcoinTxid::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, txid);
+        }
+
+        #[test]
+        fn bitcoin_txout_ssz_roundtrip(
+            value in any::<u64>(),
+            script_pubkey in prop::collection::vec(any::<u8>(), 0..100),
+        ) {
+            let tx_out = BitcoinTxOut(TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::from_bytes(script_pubkey),
+            });
+
+            let encoded = tx_out.as_ssz_bytes();
+            let decoded = BitcoinTxOut::from_ssz_bytes(&encoded).unwrap();
+
+            prop_assert_eq!(decoded, tx_out);
+        }
     }
 
     #[test]

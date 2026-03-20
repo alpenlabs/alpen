@@ -13,6 +13,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use hex;
 use secp256k1::{Parity, PublicKey, SecretKey, XOnlyPublicKey, SECP256K1};
 use serde::{de::Error as DeError, Deserialize, Serialize};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
 use strata_identifiers::Buf32;
 
 /// Represents a secret key whose x-only public key has even parity.
@@ -57,6 +58,41 @@ impl From<EvenSecretKey> for SecretKey {
 /// so the resulting [`EvenPublicKey`] always yields even parity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EvenPublicKey(PublicKey);
+
+impl SszEncodeTrait for EvenPublicKey {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        32
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.0.x_only_public_key().0.serialize());
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for EvenPublicKey {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        32
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let serialized = <[u8; 32]>::from_ssz_bytes(bytes)?;
+        let x_only = XOnlyPublicKey::from_slice(&serialized)
+            .map_err(|err| DecodeError::BytesInvalid(err.to_string()))?;
+        Ok(PublicKey::from_x_only_public_key(x_only, Parity::Even).into())
+    }
+}
 
 impl Deref for EvenPublicKey {
     type Target = PublicKey;

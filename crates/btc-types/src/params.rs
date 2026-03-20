@@ -3,9 +3,61 @@ use std::io;
 use bitcoin::params::{MAINNET, Params};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
 
 #[derive(Debug, Clone)]
 pub struct BtcParams(Params);
+
+impl SszEncodeTrait for BtcParams {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        1
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        let network_index = match self.0.network {
+            bitcoin::Network::Bitcoin => 0u8,
+            bitcoin::Network::Testnet => 1u8,
+            bitcoin::Network::Signet => 2u8,
+            bitcoin::Network::Regtest => 3u8,
+            _ => panic!("unsupported bitcoin network"),
+        };
+        buf.push(network_index);
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        <Self as SszEncodeTrait>::ssz_fixed_len()
+    }
+}
+
+impl SszDecodeTrait for BtcParams {
+    fn is_ssz_fixed_len() -> bool {
+        true
+    }
+
+    fn ssz_fixed_len() -> usize {
+        1
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let network_index = u8::from_ssz_bytes(bytes)?;
+        let network = match network_index {
+            0 => bitcoin::Network::Bitcoin,
+            1 => bitcoin::Network::Testnet,
+            2 => bitcoin::Network::Signet,
+            3 => bitcoin::Network::Regtest,
+            _ => {
+                return Err(DecodeError::BytesInvalid(format!(
+                    "invalid bitcoin network index {network_index}"
+                )));
+            }
+        };
+        Ok(Self::from(Params::from(network)))
+    }
+}
 
 impl PartialEq for BtcParams {
     fn eq(&self, other: &Self) -> bool {
@@ -122,6 +174,7 @@ impl AsRef<Params> for BtcParams {
 #[cfg(test)]
 mod tests {
     use bitcoin::Network;
+    use ssz::{Decode, Encode};
 
     use super::*;
 
@@ -146,6 +199,24 @@ mod tests {
             let json_data = serde_json::to_string(&params).unwrap();
             let serde_result: BtcParams = serde_json::from_str(&json_data).unwrap();
             assert_eq!(params, serde_result);
+        }
+    }
+
+    #[test]
+    fn test_all_networks_ssz_roundtrip() {
+        let networks = [
+            Network::Bitcoin,
+            Network::Testnet,
+            Network::Signet,
+            Network::Regtest,
+        ];
+
+        for network in networks {
+            let params = BtcParams::from(Params::from(network));
+            let encoded = params.as_ssz_bytes();
+            let decoded = BtcParams::from_ssz_bytes(&encoded).unwrap();
+
+            assert_eq!(params, decoded);
         }
     }
 }

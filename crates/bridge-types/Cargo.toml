@@ -13,8 +13,11 @@ strata-primitives.workspace = true
 arbitrary.workspace = true
 borsh.workspace = true
 serde.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 
 [features]
 default = ["std"]
