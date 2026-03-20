@@ -34,7 +34,7 @@ pub use mmr::{
     CompactMmr64, CompactMmr64Ref, MerkleProof, MerkleProofRef, Mmr64, Mmr64Ref, RawMerkleProof,
     RawMerkleProofRef, StrataHasher,
 };
-pub use ssz_generated::ssz::{self as ssz, accumulators::*, effects::*, messages::*, state::*};
+pub use ssz_generated::ssz::{accumulators::*, effects::*, messages::*, state::*};
 pub use state::*;
 pub use strata_btc_types::BitcoinAmount;
 pub use strata_identifiers::{

@@ -17,17 +17,25 @@ pub struct RpcOLTransaction {
     /// The payload.
     payload: RpcTransactionPayload,
 
-    /// The attachments.
-    attachments: RpcTxConstraints,
+    /// The constrains.
+    constraints: RpcTxConstraints,
 }
 
 impl RpcOLTransaction {
     /// Creates a new [`RpcOLTransaction`].
-    pub fn new(payload: RpcTransactionPayload, attachments: RpcTxConstraints) -> Self {
+    pub fn new(payload: RpcTransactionPayload, constraints: RpcTxConstraints) -> Self {
         Self {
             payload,
-            attachments,
+            constraints,
         }
+    }
+
+    pub fn new_payload(payload: RpcTransactionPayload) -> Self {
+        Self::new(payload, RpcTxConstraints::default())
+    }
+
+    pub fn new_snark_acct_update(update: RpcSnarkAccountUpdate) -> Self {
+        Self::new_payload(RpcTransactionPayload::SnarkAccountUpdate(update))
     }
 
     /// Returns the payload.
@@ -36,8 +44,13 @@ impl RpcOLTransaction {
     }
 
     /// Returns the attachments.
-    pub fn attachments(&self) -> &RpcTxConstraints {
-        &self.attachments
+    pub fn constraints(&self) -> &RpcTxConstraints {
+        &self.constraints
+    }
+
+    /// Sets the constraints.
+    pub fn set_constraints(&mut self, constraints: RpcTxConstraints) {
+        self.constraints = constraints;
     }
 }
 
@@ -109,6 +122,15 @@ impl RpcTxConstraints {
     }
 }
 
+impl Default for RpcTxConstraints {
+    fn default() -> Self {
+        Self {
+            min_slot: Default::default(),
+            max_slot: Default::default(),
+        }
+    }
+}
+
 impl From<TxConstraints> for RpcTxConstraints {
     fn from(extra: TxConstraints) -> Self {
         Self {
@@ -140,7 +162,7 @@ impl TryFrom<RpcOLTransaction> for OLMempoolTransaction {
     type Error = RpcTxConversionError;
 
     fn try_from(rpc_tx: RpcOLTransaction) -> Result<Self, Self::Error> {
-        let constraints: TxConstraints = rpc_tx.attachments.into();
+        let constraints: TxConstraints = rpc_tx.constraints.into();
 
         match rpc_tx.payload {
             RpcTransactionPayload::GenericAccountMessage(gam) => {
@@ -159,8 +181,10 @@ impl TryFrom<RpcOLTransaction> for OLMempoolTransaction {
 
                 let base_update = SnarkAccountUpdate::new(operation, sau.update_proof().0.clone());
 
-                Ok(OLMempoolTransaction::new_snark_account_update(target, base_update)
-                    .with_constraints(constraints))
+                Ok(
+                    OLMempoolTransaction::new_snark_account_update(target, base_update)
+                        .with_constraints(constraints),
+                )
             }
         }
     }

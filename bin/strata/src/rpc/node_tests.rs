@@ -3,22 +3,13 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use strata_asm_common::AsmManifest;
 use strata_db_types::DbResult;
-use strata_identifiers::{
-    AccountId, Buf32, Buf64, Epoch, Hash, L1BlockCommitment, L1BlockId, L1Height, OLBlockId, OLTxId,
-};
-use strata_ledger_types::{
-    AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
-};
-use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
-};
+use strata_identifiers::*;
+use strata_ledger_types::*;
+use strata_ol_chain_types_new::*;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult, OLMempoolTransaction};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
-use strata_ol_rpc_types::{
-    AccountExtraData, OLBlockOrTag, OLRpcProvider, RpcGenericAccountMessage, RpcOLTransaction,
-    RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
-};
+use strata_ol_rpc_types::*;
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_primitives::{
@@ -233,10 +224,7 @@ fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
 
 fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
     let gam = RpcGenericAccountMessage::new(HexBytes32::from(*target.inner()), HexBytes(payload));
-    RpcOLTransaction::new(
-        RpcTransactionPayload::GenericAccountMessage(gam),
-        RpcTxConstraints::new(None, None),
-    )
+    RpcOLTransaction::new_payload(RpcTransactionPayload::GenericAccountMessage(gam))
 }
 
 // ── map_mempool_error_to_rpc ──
@@ -655,14 +643,11 @@ async fn submit_transaction_invalid_snark_update_returns_invalid_params() {
     ));
     let rpc = make_rpc(provider);
 
-    let bad_tx = RpcOLTransaction::new(
-        RpcTransactionPayload::SnarkAccountUpdate(RpcSnarkAccountUpdate::new(
-            HexBytes32::from(*account_id.inner()),
-            HexBytes(vec![0xDE, 0xAD]),
-            HexBytes(vec![]),
-        )),
-        RpcTxConstraints::new(None, None),
-    );
+    let bad_tx = RpcOLTransaction::new_snark_acct_update(RpcSnarkAccountUpdate::new(
+        HexBytes32::from(*account_id.inner()),
+        HexBytes(vec![0xDE, 0xAD]),
+        HexBytes(vec![]),
+    ));
 
     let result = rpc.submit_transaction(bad_tx).await;
     assert!(result.is_err());

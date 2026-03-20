@@ -182,9 +182,9 @@ pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
 mod tests {
     use rkyv::{rancor::Error as RkyvError, util::AlignedVec};
     use ssz_derive::{Decode, Encode};
-    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
+    use strata_acct_types::*;
     use strata_codec::impl_type_flat_struct;
-    use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateManifest, UpdateOutputs};
+    use strata_snark_acct_types::*;
 
     use super::*;
     use crate::{
