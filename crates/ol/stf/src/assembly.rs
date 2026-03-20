@@ -4,10 +4,7 @@ use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
-use strata_ol_chain_types_new::{
-    BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
-    OLTransaction, OLTxSegment, TransactionAttachment, TransactionPayload,
-};
+use strata_ol_chain_types_new::*;
 
 use crate::{
     chain_processing,
@@ -222,13 +219,10 @@ impl BlockComponents {
 
     /// Extracts block components from a signed block, handling absent tx segments.
     pub fn from_block(block: &OLBlock) -> Self {
-        let empty = OLTxSegment::new(vec![])
-            .expect("empty transaction segment construction is infallible");
+        let empty =
+            OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
         let tx_segment = block.body().tx_segment().unwrap_or(&empty).clone();
-        let manifest_container = block
-            .body()
-            .l1_update()
-            .map(|u| u.manifest_cont().clone());
+        let manifest_container = block.body().l1_update().map(|u| u.manifest_cont().clone());
         Self {
             tx_segment,
             manifest_container,

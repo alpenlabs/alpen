@@ -8,14 +8,19 @@ use std::{
 };
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_ledger_types::{IAccountStateMut, IStateAccessor};
+use strata_ol_state_types::StateProvider;
 use strata_params::{Params, RollupParams};
 use strata_service::ServiceState;
 use tracing::warn;
 
 use crate::{
-    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, da_tracker::EpochDaTracker,
-    error::BlockAssemblyError, types::FullBlockTemplate,
+    BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, MempoolProvider,
+    context::BlockAssemblyContext,
+    da_tracker::{AccumulatedDaData, EpochDaTracker, rebuild_accumulated_da_upto},
+    error::BlockAssemblyError,
+    types::FullBlockTemplate,
 };
 
 /// A cached template with its creation time for TTL expiration.
@@ -231,6 +236,47 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
 
     pub(crate) fn epoch_da_tracker_mut(&mut self) -> &mut EpochDaTracker {
         &mut self.epoch_da_tracker
+    }
+
+    pub(crate) fn epoch_da_tracker(&self) -> &EpochDaTracker {
+        &self.epoch_da_tracker
+    }
+}
+
+impl<M, E, S> BlockasmServiceState<M, E, S>
+where
+    M: MempoolProvider + Send + Sync + 'static,
+    E: EpochSealingPolicy,
+    S: StateProvider + Send + Sync + 'static,
+    S::State: BlockAssemblyStateAccess,
+    <S::State as IStateAccessor>::AccountStateMut: Clone,
+    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+        Clone,
+{
+    /// Resolves accumulated DA upto a block block: returns cached data,
+    /// rebuilds by re-executing epoch blocks, or creates fresh data if parent is terminal.
+    pub(crate) async fn fetch_accumulated_da_upto(
+        &self,
+        blkid: OLBlockCommitment,
+    ) -> Result<AccumulatedDaData, BlockAssemblyError> {
+        let parent_block = self
+            .context()
+            .fetch_ol_block(blkid.blkid)
+            .await?
+            .ok_or(BlockAssemblyError::BlockNotFound(blkid.blkid))?;
+
+        let parent_header = parent_block.header();
+
+        if parent_header.is_terminal() {
+            Ok(AccumulatedDaData::new_empty(parent_header.epoch() + 1))
+        } else {
+            match self.epoch_da_tracker().get_accumulated_da(blkid.blkid) {
+                Some(da) => Ok(da.clone()),
+                None => {
+                    rebuild_accumulated_da_upto(blkid, parent_header.epoch(), self.context()).await
+                }
+            }
+        }
     }
 }
 

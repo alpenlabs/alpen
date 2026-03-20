@@ -13,11 +13,9 @@ use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
 
 use crate::{
-    BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate,
-    MempoolProvider,
+    BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider,
     block_assembly::generate_block_template_inner,
     command::BlockasmCommand,
-    da_tracker::AccumulatedDaData,
     error::BlockAssemblyError,
     state::BlockasmServiceState,
     types::{BlockCompletionData, BlockGenerationConfig},
@@ -54,6 +52,9 @@ where
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
     <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
+    <S::State as IStateAccessor>::AccountStateMut: Clone,
+    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+        Clone,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
@@ -103,7 +104,11 @@ async fn generate_block_template<
 where
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
+    // FIXME: This looks ugly, should we have Clone bound for the associated types?
     <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
+    <S::State as IStateAccessor>::AccountStateMut: Clone,
+    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+        Clone,
 {
     // Check if we already have a pending template for this parent block ID
     if let Ok(template) = state
@@ -114,30 +119,9 @@ where
     }
 
     let parent_blkid = config.parent_block_id();
-    let parent_block = state
-        .context()
-        .fetch_ol_block(parent_blkid)
-        .await?
-        .ok_or(BlockAssemblyError::BlockNotFound(parent_blkid))?;
-
-    let parent_header = parent_block.header();
-
-    // If parent is terminal, we can just start afresh.
-    let parent_da = if parent_header.is_terminal() {
-        AccumulatedDaData::new_empty(parent_header.epoch() + 1)
-    } else {
-        // Resolve parent's accumulated DA: check tracker first, rebuild if missing.
-        match state
-            .epoch_da_tracker_mut()
-            .get_accumulated_da(parent_blkid)
-        {
-            Some(da) => da.clone(),
-            None => {
-                // TODO: rebuild by re-executing epoch blocks
-                AccumulatedDaData::new_empty(0)
-            }
-        }
-    };
+    let parent_da = state
+        .fetch_accumulated_da_upto(config.parent_block_commitment())
+        .await?;
 
     let result = generate_block_template_inner(
         state.context(),

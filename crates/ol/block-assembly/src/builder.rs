@@ -79,6 +79,9 @@ where
         S::State: BlockAssemblyStateAccess,
         <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
+        <S::State as IStateAccessor>::AccountStateMut: Clone,
+        <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+            Clone,
     {
         let genesis_l1_height = self.params.rollup().genesis_l1_view.height();
         let context = Arc::new(BlockAssemblyContext::new(
