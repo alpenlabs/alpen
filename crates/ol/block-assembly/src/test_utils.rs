@@ -305,6 +305,7 @@ pub(crate) struct MempoolSnarkTxBuilder {
     new_msg_idx: u64,
     l1_claims: Vec<AccumulatorClaim>,
     outputs: Vec<(AccountId, u64)>,
+    output_messages: Vec<OutputMessage>,
 }
 
 impl MempoolSnarkTxBuilder {
@@ -317,6 +318,7 @@ impl MempoolSnarkTxBuilder {
             new_msg_idx: 0,
             l1_claims: Vec::new(),
             outputs: Vec::new(),
+            output_messages: Vec::new(),
         }
     }
 
@@ -351,6 +353,12 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
+    /// Sets fully-formed output messages, including payload bytes.
+    pub(crate) fn with_output_messages(mut self, output_messages: Vec<OutputMessage>) -> Self {
+        self.output_messages = output_messages;
+        self
+    }
+
     /// Builds the mempool transaction.
     pub(crate) fn build(self) -> OLMempoolTransaction {
         let mut runner = TestRunner::default();
@@ -377,7 +385,9 @@ impl MempoolSnarkTxBuilder {
         };
 
         // Build outputs: empty by default, or explicit if with_outputs() was called
-        let outputs = if self.outputs.is_empty() {
+        let outputs = if !self.output_messages.is_empty() {
+            UpdateOutputs::new(vec![], self.output_messages)
+        } else if self.outputs.is_empty() {
             UpdateOutputs::new_empty()
         } else {
             let output_messages: Vec<OutputMessage> = self
