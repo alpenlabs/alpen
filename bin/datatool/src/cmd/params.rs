@@ -100,7 +100,7 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
             .parse()
             .map_err(|e| anyhow::anyhow!("Invalid magic bytes: {}", e))?
     } else {
-        "alpn".parse().expect("default magic bytes should be valid")
+        "ALPN".parse().expect("default magic bytes should be valid")
     };
 
     let config = ParamsConfig {
