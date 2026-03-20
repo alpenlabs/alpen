@@ -1,0 +1,10 @@
+sequencer_key = "/path/to/sequencer.key"
+rpc_url = "ws://127.0.0.1:9944"
+poll_interval = 1000
+
+[logging]
+# service_label = "prod"
+# otlp_url = "http://localhost:4317"
+# log_dir = "/var/log/strata-signer"
+# log_file_prefix = "signer"
+# json_format = true
