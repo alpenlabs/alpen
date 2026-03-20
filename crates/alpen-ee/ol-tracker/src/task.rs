@@ -212,6 +212,8 @@ where
     TStorage: Storage,
     TOLClient: OLClient,
 {
+    let mut state_changed = false;
+
     for epoch_op in epoch_operations {
         let OLEpochOperations {
             epoch: ol_epoch,
@@ -254,9 +256,11 @@ where
 
         // 4. update local state
         *state = next_state;
+        state_changed = true;
+    }
 
-        // 5. notify watchers
-        info!(%ol_epoch, "notifying watchers from ol tracker");
+    if state_changed {
+        info!("notifying watchers from ol tracker");
         ctx.notify_ol_status_update(state.get_ol_status());
         ctx.notify_consensus_update(state.get_consensus_heads());
     }
