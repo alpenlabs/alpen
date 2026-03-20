@@ -1,18 +1,65 @@
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+use strata_identifiers::{Epoch, EpochCommitment, OLBlockId, Slot};
 
-/// OL chain status with latest block, parent epoch, confirmed epoch and finalized epoch.
+/// RPC representation of the current OL tip block header.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcOLBlockInfo {
+    /// Block id.
+    pub blkid: OLBlockId,
+
+    /// Slot.
+    pub slot: Slot,
+
+    /// Epoch.
+    pub epoch: Epoch,
+
+    /// Whether the block is epoch terminal.
+    pub is_terminal: bool,
+}
+
+impl RpcOLBlockInfo {
+    /// Creates a new [`RpcOLBlockInfo`].
+    pub fn new(blkid: OLBlockId, slot: Slot, epoch: Epoch, is_terminal: bool) -> Self {
+        Self {
+            blkid,
+            slot,
+            epoch,
+            is_terminal,
+        }
+    }
+
+    /// Returns the block id.
+    pub fn blkid(&self) -> OLBlockId {
+        self.blkid
+    }
+
+    /// Returns the slot.
+    pub fn slot(&self) -> Slot {
+        self.slot
+    }
+
+    /// Returns the epoch.
+    pub fn epoch(&self) -> Epoch {
+        self.epoch
+    }
+
+    /// Returns whether the block is epoch terminal.
+    pub fn is_terminal(&self) -> bool {
+        self.is_terminal
+    }
+}
+
+/// OL chain status with tip block info, confirmed epoch and finalized epoch.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLChainStatus {
-    /// Latest block commitment.
-    pub latest: OLBlockCommitment,
-    /// Parent epoch commitment (the most recently completed epoch).
-    pub parent: EpochCommitment,
+    /// Tip block info.
+    pub tip: RpcOLBlockInfo,
+
     /// Confirmed epoch commitment.
-    ///
-    /// Currently set to the same value as `parent` for compatibility.
     pub confirmed: EpochCommitment,
+
     /// Finalized epoch commitment.
     pub finalized: EpochCommitment,
 }
@@ -20,27 +67,20 @@ pub struct RpcOLChainStatus {
 impl RpcOLChainStatus {
     /// Creates a new [`RpcOLChainStatus`].
     pub fn new(
-        latest: OLBlockCommitment,
-        parent: EpochCommitment,
+        tip: RpcOLBlockInfo,
         confirmed: EpochCommitment,
         finalized: EpochCommitment,
     ) -> Self {
         Self {
-            latest,
-            parent,
+            tip,
             confirmed,
             finalized,
         }
     }
 
-    /// Returns the latest block commitment.
-    pub fn latest(&self) -> &OLBlockCommitment {
-        &self.latest
-    }
-
-    /// Returns the parent epoch commitment.
-    pub fn parent(&self) -> &EpochCommitment {
-        &self.parent
+    /// Returns the tip block info.
+    pub fn tip(&self) -> &RpcOLBlockInfo {
+        &self.tip
     }
 
     /// Returns the confirmed epoch commitment.

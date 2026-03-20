@@ -16,16 +16,22 @@ pub struct ChainSyncStatus {
     /// The current chain tip.
     pub tip: L2BlockCommitment,
 
+    /// The current chain tip epoch.
+    pub tip_epoch: Epoch,
+
+    /// Whether the current chain tip is epoch terminal.
+    pub tip_is_terminal: bool,
+
     /// The previous epoch (ie. epoch most recently completed).
     pub prev_epoch: EpochCommitment,
 
-    /// The finalized epoch, ie what's buried enough on L1.
+    /// The finalized epoch commitment, ie what's buried enough on L1.
     pub finalized_epoch: EpochCommitment,
 
-    /// The confirmed epoch (ie. epoch most recently seen on L1).
+    /// The confirmed epoch commitment (ie. epoch most recently seen on L1).
     pub confirmed_epoch: EpochCommitment,
 
-    /// The last L1 block we've observed.
+    /// The last L1 block commitment we've observed.
     pub safe_l1: L1BlockCommitment,
 }
 
@@ -36,6 +42,14 @@ impl ChainSyncStatus {
 
     pub fn tip_blkid(&self) -> &L2BlockId {
         self.tip.blkid()
+    }
+
+    pub fn tip_epoch(&self) -> Epoch {
+        self.tip_epoch
+    }
+
+    pub fn tip_is_terminal(&self) -> bool {
+        self.tip_is_terminal
     }
 
     pub fn finalized_blkid(&self) -> &L2BlockId {
@@ -50,6 +64,8 @@ impl ChainSyncStatus {
 impl ChainSyncStatus {
     pub fn new(
         tip: L2BlockCommitment,
+        tip_epoch: Epoch,
+        tip_is_terminal: bool,
         prev_epoch: EpochCommitment,
         confirmed_epoch: EpochCommitment,
         finalized_epoch: EpochCommitment,
@@ -57,6 +73,8 @@ impl ChainSyncStatus {
     ) -> Self {
         Self {
             tip,
+            tip_epoch,
+            tip_is_terminal,
             prev_epoch,
             confirmed_epoch,
             finalized_epoch,

@@ -21,7 +21,7 @@ pub trait OLClientRpc {
         epoch: Epoch,
     ) -> RpcResult<RpcAccountEpochSummary>;
 
-    /// Get current chain status (latest, confirmed, finalized).
+    /// Get current chain status (tip, confirmed, finalized).
     #[method(name = "getChainStatus")]
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus>;
 

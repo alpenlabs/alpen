@@ -11,7 +11,9 @@ use strata_common::{
     },
     ws_client::{ManagedWsClient, WsClientConfig},
 };
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, L1Height, OLTxId};
+use strata_identifiers::{
+    AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLTxId,
+};
 use strata_ol_rpc_api::OLClientRpcClient;
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionAttachment,
@@ -106,7 +108,7 @@ impl OLClient for RpcOLClient {
                 let status = call_rpc!(self, chain_status())?;
 
                 Ok(OLChainStatus {
-                    latest: *status.latest(),
+                    tip: OLBlockCommitment::new(status.tip().slot(), status.tip().blkid()),
                     confirmed: *status.confirmed(),
                     finalized: *status.finalized(),
                 })

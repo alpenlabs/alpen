@@ -11,7 +11,7 @@ use strata_ol_mempool::OLMempoolTransaction;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
-    RpcBlockRangeEntry, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
+    RpcBlockRangeEntry, RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
     RpcUpdateInputData,
 };
 use strata_primitives::{HexBytes, HexBytes32};
@@ -163,12 +163,16 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?;
 
-        let latest = chain_sync_status.tip;
-        let parent = chain_sync_status.prev_epoch;
+        let tip = RpcOLBlockInfo::new(
+            *chain_sync_status.tip.blkid(),
+            chain_sync_status.tip.slot(),
+            chain_sync_status.tip_epoch,
+            chain_sync_status.tip_is_terminal,
+        );
         let confirmed = chain_sync_status.confirmed_epoch;
         let finalized = chain_sync_status.finalized_epoch;
 
-        Ok(RpcOLChainStatus::new(latest, parent, confirmed, finalized))
+        Ok(RpcOLChainStatus::new(tip, confirmed, finalized))
     }
 
     async fn get_blocks_summaries(

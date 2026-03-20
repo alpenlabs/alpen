@@ -13,6 +13,13 @@ class OLBlockCommitment(TypedDict):
     blkid: HexBytes32
 
 
+class OLBlockInfo(TypedDict):
+    blkid: HexBytes32
+    slot: int
+    epoch: int
+    is_terminal: bool
+
+
 class EpochCommitment(TypedDict):
     epoch: int
     last_slot: int
@@ -20,8 +27,7 @@ class EpochCommitment(TypedDict):
 
 
 class ChainSyncStatus(TypedDict):
-    latest: OLBlockCommitment
-    parent: EpochCommitment
+    tip: OLBlockInfo
     confirmed: EpochCommitment
     finalized: EpochCommitment
 

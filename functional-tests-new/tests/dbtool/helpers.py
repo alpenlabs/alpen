@@ -147,7 +147,7 @@ def wait_for_finalized_epoch_with_mining(
     )
 
 
-def wait_for_chain_epoch(
+def wait_for_completed_epoch(
     strata_service: Any,
     strata_rpc: Any,
     target_epoch: int,
@@ -155,19 +155,14 @@ def wait_for_chain_epoch(
     timeout: int = 120,
     error_with: str | None = None,
 ) -> dict[str, Any]:
-    """Wait until chain latest epoch reaches target epoch.
-
-    Checks ``parent`` (most recently completed epoch) since ``latest`` is an
-    ``OLBlockCommitment`` (slot + blkid) without an epoch field.
-    ``parent.epoch >= target_epoch - 1`` means the chain is in target_epoch.
-    """
+    """Wait until target epoch is completed (tip.epoch > target_epoch)."""
     return wait_until_with_value(
-        lambda: strata_service.get_sync_status(strata_rpc).get("parent"),
-        lambda parent: (
-            isinstance(parent, dict) and int(parent.get("epoch", -1)) >= target_epoch - 1
-        ),
+        lambda: strata_service.get_sync_status(strata_rpc).get("tip"),
+        lambda tip: isinstance(tip, dict)
+        and isinstance(tip.get("epoch"), int)
+        and tip["epoch"] > target_epoch,
         timeout=timeout,
-        error_with=error_with or f"Timed out waiting for chain epoch >= {target_epoch}",
+        error_with=error_with or f"Timed out waiting for epoch {target_epoch} to complete",
     )
 
 
@@ -517,7 +512,7 @@ def restart_sequencer_after_revert(
         error_with=error_with,
     )
     if target_epoch is not None:
-        wait_for_chain_epoch(
+        wait_for_completed_epoch(
             strata_service,
             rpc,
             target_epoch,
@@ -538,9 +533,9 @@ def verify_tip_resumed_with_new_blkid(
 ) -> dict[str, Any]:
     """Verify resumed tip moved forward and tip block id changed from pre-revert value."""
     resumed_sync = strata_service.get_sync_status(rpc)
-    latest = resumed_sync["latest"]
+    tip = resumed_sync["tip"]
     assert resumed_tip > old_tip_slot
-    assert latest["blkid"] != old_tip_blkid
+    assert tip["blkid"] != old_tip_blkid
     return resumed_sync
 
 
@@ -579,7 +574,7 @@ def restart_fullnode_after_revert(
         error_with=fn_error_with,
     )
     if target_epoch is not None:
-        wait_for_chain_epoch(
+        wait_for_completed_epoch(
             fn_service,
             fn_rpc,
             target_epoch,

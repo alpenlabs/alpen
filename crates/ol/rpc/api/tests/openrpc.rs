@@ -21,6 +21,21 @@ fn build_spec() -> serde_json::Value {
     serde_json::to_value(&project).expect("spec should serialize to JSON")
 }
 
+fn resolve_schema_ref<'a>(
+    spec: &'a serde_json::Value,
+    schema: &'a serde_json::Value,
+) -> &'a serde_json::Value {
+    if let Some(reference) = schema.get("$ref").and_then(|v| v.as_str()) {
+        let pointer = reference
+            .strip_prefix('#')
+            .expect("schema ref should start with '#'");
+        spec.pointer(pointer)
+            .unwrap_or_else(|| panic!("schema ref not found in spec: {reference}"))
+    } else {
+        schema
+    }
+}
+
 #[test]
 fn spec_contains_expected_methods() {
     let spec = build_spec();
@@ -208,6 +223,41 @@ fn non_optional_return_type_is_required() {
         result["schema"]["anyOf"].is_null(),
         "non-optional result schema should not use anyOf"
     );
+}
+
+#[test]
+fn chain_status_schema_has_expected_properties() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getChainStatus")
+        .expect("strata_getChainStatus should exist");
+
+    let result_schema = resolve_schema_ref(&spec, &method["result"]["schema"]);
+    let chain_status_props = result_schema["properties"]
+        .as_object()
+        .expect("RpcOLChainStatus schema should have properties");
+
+    for field in ["tip", "confirmed", "finalized"] {
+        assert!(
+            chain_status_props.contains_key(field),
+            "RpcOLChainStatus should include '{field}'"
+        );
+    }
+
+    let tip_schema = resolve_schema_ref(&spec, &chain_status_props["tip"]);
+    let tip_props = tip_schema["properties"]
+        .as_object()
+        .expect("RpcOLBlockInfo schema should have properties");
+
+    for field in ["blkid", "slot", "epoch", "is_terminal"] {
+        assert!(
+            tip_props.contains_key(field),
+            "RpcOLBlockInfo should include '{field}'"
+        );
+    }
 }
 
 #[test]

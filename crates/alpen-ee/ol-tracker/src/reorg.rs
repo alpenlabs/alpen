@@ -315,13 +315,13 @@ mod tests {
             // OL status:      confirmed=epoch 5, finalized=epoch 0
             // Expected:       DB rolled back to epoch 0, tracker state rebuilt
 
-            let chain = create_epochs(&[100, 101, 102, 103, 104, 105]);
+            let chain = create_epochs(&[100, 101, 102, 103, 104, 105, 106]);
             let fork_state = chain[0].clone();
 
             let mut mock_storage = MockStorage::new();
 
             let ol_status = OLChainStatus {
-                latest: make_block_commitment(60, 105),
+                tip: make_block_commitment(60, 106),
                 confirmed: make_epoch_commitment(5, 50, 105),
                 finalized: make_epoch_commitment(0, 0, 100),
             };
@@ -418,7 +418,7 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(80, 110),
+                    tip: make_block_commitment(80, 110),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
@@ -492,7 +492,7 @@ mod tests {
 
             mock_client.expect_chain_status().times(1).returning(|| {
                 Ok(OLChainStatus {
-                    latest: make_block_commitment(80, 118),
+                    tip: make_block_commitment(80, 118),
                     confirmed: make_epoch_commitment(4, 40, 114),
                     finalized: make_epoch_commitment(0, 0, 100),
                 })
