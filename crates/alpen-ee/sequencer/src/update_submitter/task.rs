@@ -17,6 +17,8 @@ use crate::update_submitter::update_builder::build_update_from_batch;
 const DEFAULT_UPDATE_CACHE_MAX_SIZE: usize = 64;
 /// Polling interval to process batches regardless of events.
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(60);
+/// Minimum wait before retrying the same submitted update while OL state is unchanged.
+const DEFAULT_RESUBMIT_BACKOFF: Duration = DEFAULT_POLL_INTERVAL;
 
 /// Cache for built updates, keyed by BatchId.
 /// Stores (batch_idx, update) to allow eviction based on sequence number.
@@ -50,6 +52,60 @@ impl UpdateCache {
     }
 }
 
+/// Tracks the head batch most recently submitted while waiting for OL state to advance.
+struct PendingSubmission {
+    /// Batch ID of the most recently submitted batch.
+    batch_id: BatchId,
+
+    /// Sequence number of the most recently submitted batch.
+    seq_no: u64,
+
+    /// Timestamp when the most recently submitted batch was submitted.
+    submitted_at: time::Instant,
+}
+
+/// Tracks the state of the update submitter.
+struct SubmitState {
+    /// Most recently submitted batch while waiting for OL state to advance.
+    pending: Option<PendingSubmission>,
+}
+
+impl SubmitState {
+    /// Creates a new submit state with no pending submission.
+    fn new() -> Self {
+        Self { pending: None }
+    }
+
+    /// Clears pending state once OL account sequence number changes.
+    fn clear_if_ol_advanced(&mut self, current_seq_no: u64) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.seq_no != current_seq_no)
+        {
+            self.pending = None;
+        }
+    }
+
+    /// Returns true when the same head batch was already submitted recently.
+    fn should_skip_resubmission(&self, batch_id: BatchId, seq_no: u64, now: time::Instant) -> bool {
+        self.pending.as_ref().is_some_and(|pending| {
+            pending.batch_id == batch_id
+                && pending.seq_no == seq_no
+                && now.duration_since(pending.submitted_at) < DEFAULT_RESUBMIT_BACKOFF
+        })
+    }
+
+    /// Records a new submission.
+    fn record_submission(&mut self, batch_id: BatchId, seq_no: u64, submitted_at: time::Instant) {
+        self.pending = Some(PendingSubmission {
+            batch_id,
+            seq_no,
+            submitted_at,
+        });
+    }
+}
+
 /// Main update submitter task.
 ///
 /// This task monitors for two triggers:
@@ -73,6 +129,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
     P: BatchProver,
 {
     let mut update_cache = UpdateCache::new();
+    let mut submit_state = SubmitState::new();
 
     // run a first pass on start without waiting for any events
     if let Err(e) = process_ready_batches(
@@ -81,6 +138,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
         exec_storage.as_ref(),
         prover.as_ref(),
         &mut update_cache,
+        &mut submit_state,
     )
     .await
     {
@@ -115,6 +173,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
             exec_storage.as_ref(),
             prover.as_ref(),
             &mut update_cache,
+            &mut submit_state,
         )
         .await
         {
@@ -134,6 +193,7 @@ async fn process_ready_batches(
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
     update_cache: &mut UpdateCache,
+    submit_state: &mut SubmitState,
 ) -> Result<()> {
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
@@ -146,6 +206,7 @@ async fn process_ready_batches(
 
     // Evict cache entries for batches that have been accepted
     update_cache.evict_accepted(next_sequence_no);
+    submit_state.clear_if_ol_advanced(next_sequence_no);
 
     let mut batch_idx = next_batch_idx;
 
@@ -177,8 +238,22 @@ async fn process_ready_batches(
         };
 
         let seq_no = update.operation().seq_no();
+        let now = time::Instant::now();
+
+        // Check if the same batch was already submitted recently
+        if submit_state.should_skip_resubmission(batch_id, seq_no, now) {
+            debug!(
+                %batch_idx,
+                ?batch_id,
+                %seq_no,
+                "Skipping resubmission while waiting for OL account state to advance"
+            );
+            break;
+        }
+
         let l1_ref_count = update.operation().ledger_refs().l1_header_refs().len();
         let txid = ol_client.submit_update(update).await?;
+        submit_state.record_submission(batch_id, seq_no, now);
 
         info!(
             component = "alpen_ee_update_submitter",
@@ -197,4 +272,216 @@ async fn process_ready_batches(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{
+        InMemoryStorage, MockBatchProver, MockExecBlockStorage, MockSequencerOLClient,
+        OLAccountStateView,
+    };
+    use mockall::Sequence;
+    use strata_identifiers::OLTxId;
+    use strata_snark_acct_types::{
+        LedgerRefs, ProofState, Seqno, UpdateOperationData, UpdateOutputs,
+    };
+    use tokio::time;
+
+    use super::*;
+    use crate::batch_lifecycle::test_utils::{
+        fill_storage, make_batch, test_hash, TestBatchStatus,
+    };
+
+    fn make_account_state(seq_no: u64) -> OLAccountStateView {
+        OLAccountStateView {
+            seq_no: Seqno::new(seq_no),
+            proof_state: ProofState::new(test_hash(99), 0),
+        }
+    }
+
+    fn make_cached_update(seq_no: u64) -> SnarkAccountUpdate {
+        let operation = UpdateOperationData::new(
+            seq_no,
+            ProofState::new(test_hash(42), 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            UpdateOutputs::new_empty(),
+            vec![],
+        );
+
+        SnarkAccountUpdate::new(operation, vec![0u8; 32])
+    }
+
+    #[tokio::test]
+    async fn submits_head_batch_once_while_ol_seq_no_is_unchanged() {
+        let storage = InMemoryStorage::new_empty();
+        let batches = fill_storage(&storage, &[TestBatchStatus::ProofReady]).await;
+        let batch = batches[1].clone();
+        let batch_id = batch.id();
+
+        let mut ol_client = MockSequencerOLClient::new();
+        ol_client
+            .expect_get_latest_account_state()
+            .times(2)
+            .returning(|| Ok(make_account_state(0)));
+        ol_client
+            .expect_submit_update()
+            .times(1)
+            .returning(|_| Ok(OLTxId::default()));
+
+        let exec_storage = MockExecBlockStorage::new();
+        let prover = MockBatchProver::new();
+        let mut update_cache = UpdateCache::new();
+        let mut submit_state = SubmitState::new();
+        update_cache.insert(batch_id, batch.idx(), make_cached_update(0));
+
+        process_ready_batches(
+            &ol_client,
+            &storage,
+            &exec_storage,
+            &prover,
+            &mut update_cache,
+            &mut submit_state,
+        )
+        .await
+        .unwrap();
+
+        process_ready_batches(
+            &ol_client,
+            &storage,
+            &exec_storage,
+            &prover,
+            &mut update_cache,
+            &mut submit_state,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn resubmits_after_backoff_if_ol_seq_no_is_still_unchanged() {
+        let storage = InMemoryStorage::new_empty();
+        let batches = fill_storage(&storage, &[TestBatchStatus::ProofReady]).await;
+        let batch = batches[1].clone();
+
+        let mut ol_client = MockSequencerOLClient::new();
+        ol_client
+            .expect_get_latest_account_state()
+            .times(2)
+            .returning(|| Ok(make_account_state(0)));
+        ol_client
+            .expect_submit_update()
+            .times(2)
+            .returning(|_| Ok(OLTxId::default()));
+
+        let exec_storage = MockExecBlockStorage::new();
+        let prover = MockBatchProver::new();
+        let mut update_cache = UpdateCache::new();
+        let mut submit_state = SubmitState::new();
+        update_cache.insert(batch.id(), batch.idx(), make_cached_update(0));
+
+        process_ready_batches(
+            &ol_client,
+            &storage,
+            &exec_storage,
+            &prover,
+            &mut update_cache,
+            &mut submit_state,
+        )
+        .await
+        .unwrap();
+
+        submit_state.pending.as_mut().unwrap().submitted_at =
+            time::Instant::now() - DEFAULT_RESUBMIT_BACKOFF;
+
+        process_ready_batches(
+            &ol_client,
+            &storage,
+            &exec_storage,
+            &prover,
+            &mut update_cache,
+            &mut submit_state,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn submits_next_batch_immediately_after_ol_seq_no_advances() {
+        let storage = InMemoryStorage::new_empty();
+        let batches = fill_storage(
+            &storage,
+            &[TestBatchStatus::ProofReady, TestBatchStatus::ProofReady],
+        )
+        .await;
+        let first_batch = batches[1].clone();
+        let second_batch = batches[2].clone();
+
+        let mut ol_client = MockSequencerOLClient::new();
+        let mut seq = Sequence::new();
+        ol_client
+            .expect_get_latest_account_state()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|| Ok(make_account_state(0)));
+        ol_client
+            .expect_get_latest_account_state()
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|| Ok(make_account_state(1)));
+
+        let mut submits = Sequence::new();
+        ol_client
+            .expect_submit_update()
+            .times(1)
+            .withf(|update| update.operation().seq_no() == 0)
+            .in_sequence(&mut submits)
+            .returning(|_| Ok(OLTxId::default()));
+        ol_client
+            .expect_submit_update()
+            .times(1)
+            .withf(|update| update.operation().seq_no() == 1)
+            .in_sequence(&mut submits)
+            .returning(|_| Ok(OLTxId::default()));
+
+        let exec_storage = MockExecBlockStorage::new();
+        let prover = MockBatchProver::new();
+        let mut update_cache = UpdateCache::new();
+        let mut submit_state = SubmitState::new();
+        update_cache.insert(first_batch.id(), first_batch.idx(), make_cached_update(0));
+        update_cache.insert(second_batch.id(), second_batch.idx(), make_cached_update(1));
+
+        process_ready_batches(
+            &ol_client,
+            &storage,
+            &exec_storage,
+            &prover,
+            &mut update_cache,
+            &mut submit_state,
+        )
+        .await
+        .unwrap();
+
+        process_ready_batches(
+            &ol_client,
+            &storage,
+            &exec_storage,
+            &prover,
+            &mut update_cache,
+            &mut submit_state,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[test]
+    fn clears_pending_submission_when_ol_seq_no_changes() {
+        let batch = make_batch(1, 1, 2);
+        let mut submit_state = SubmitState::new();
+        submit_state.record_submission(batch.id(), 0, time::Instant::now());
+
+        submit_state.clear_if_ol_advanced(1);
+
+        assert!(submit_state.pending.is_none());
+    }
 }
