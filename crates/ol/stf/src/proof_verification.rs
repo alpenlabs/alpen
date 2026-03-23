@@ -20,8 +20,8 @@ pub(crate) struct TxProofVerificationContext<'a> {
 
 impl<'a> TxProofVerificationContext<'a> {
     pub(crate) fn from_account_and_state<S: IStateAccessor>(
-        state: &S,
-        account: &S::AccountState,
+        state: &'a S,
+        account: &'a S::AccountState,
     ) -> Self {
         let asm_history_mmr = state.asm_manifests_mmr();
 
@@ -69,14 +69,14 @@ impl<'a> TxProofsTracker<'a> {
         acc_proofs.proofs().get(self.next_acc_proof_idx)
     }
 
-    fn inc_next_acc_proof(&mut self) {
+    fn inc_next_acc_proof(&mut self) -> Result<(), ProofVerifyError> {
         let cnt = self.acc_proofs_cnt();
         if self.next_acc_proof_idx == cnt {
-            // FIXME return error
-            panic!("ol/stf: overflow next acc proof idx");
+            return Err(ProofVerifyError::NoNextProof);
         }
 
         self.next_acc_proof_idx += 1;
+        Ok(())
     }
 
     fn is_acc_proofs_done(&self) -> bool {
@@ -97,14 +97,14 @@ impl<'a> TxProofsTracker<'a> {
             .map(|e| e.proof())
     }
 
-    fn inc_next_pred_proof(&mut self) {
+    fn inc_next_pred_proof(&mut self) -> Result<(), ProofVerifyError> {
         let cnt = self.pred_proofs_cnt();
         if self.next_pred_proof_idx == cnt {
-            // FIXME return error
-            panic!("ol/stf: overflow next pred proof idx");
+            return Err(ProofVerifyError::NoNextProof);
         }
 
         self.next_pred_proof_idx += 1;
+        Ok(())
     }
 
     fn is_pred_proofs_done(&self) -> bool {
@@ -156,7 +156,7 @@ impl<'a> TxProofVerifierImpl<'a> {
             return Err(ProofVerifyError::InvalidProof);
         }
 
-        self.proof_tracker.inc_next_acc_proof();
+        self.proof_tracker.inc_next_acc_proof()?;
         Ok(())
     }
 }
@@ -196,11 +196,85 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
             .verify_claim_witness(claim, witness)
             .map_err(|_| ProofVerifyError::InvalidProof)?;
 
-        self.proof_tracker.inc_next_pred_proof();
+        self.proof_tracker.inc_next_pred_proof()?;
         Ok(())
     }
 
     fn is_exhausted(&self) -> bool {
         self.proof_tracker.is_all_done()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::RawMerkleProof;
+    use strata_ol_chain_types_new::{
+        ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
+    };
+
+    use super::*;
+
+    fn make_acc_proofs(n: usize) -> TxProofs {
+        let proofs: Vec<RawMerkleProof> = (0..n).map(|_| RawMerkleProof::new_zero()).collect();
+        TxProofs::new(
+            None,
+            Some(RawMerkleProofList {
+                proofs: proofs.into(),
+            }),
+        )
+    }
+
+    fn make_pred_proofs(n: usize) -> TxProofs {
+        let proofs: Vec<ProofSatisfier> = (0..n)
+            .map(|i| ProofSatisfier {
+                proof: vec![i as u8].into(),
+            })
+            .collect();
+        TxProofs::new(
+            Some(ProofSatisfierList {
+                proofs: proofs.into(),
+            }),
+            None,
+        )
+    }
+
+    #[test]
+    fn test_acc_proof_bookkeeping() {
+        let tx_proofs = make_acc_proofs(2);
+        let mut tracker = TxProofsTracker::from_txproofs(&tx_proofs);
+
+        assert!(!tracker.is_acc_proofs_done());
+        assert!(tracker.next_acc_proof().is_some());
+
+        tracker.inc_next_acc_proof().expect("first inc should succeed");
+        assert!(!tracker.is_acc_proofs_done());
+
+        tracker.inc_next_acc_proof().expect("second inc should succeed");
+        assert!(tracker.is_acc_proofs_done());
+        assert!(tracker.next_acc_proof().is_none());
+
+        // Incrementing past the end returns NoNextProof.
+        let err = tracker.inc_next_acc_proof().unwrap_err();
+        assert!(matches!(err, ProofVerifyError::NoNextProof));
+    }
+
+    #[test]
+    fn test_pred_proof_bookkeeping() {
+        let tx_proofs = make_pred_proofs(2);
+        let mut tracker = TxProofsTracker::from_txproofs(&tx_proofs);
+
+        assert!(!tracker.is_pred_proofs_done());
+        assert!(tracker.next_pred_proof().is_some());
+
+        tracker.inc_next_pred_proof().expect("first inc should succeed");
+        assert!(!tracker.is_pred_proofs_done());
+
+        tracker.inc_next_pred_proof().expect("second inc should succeed");
+        assert!(tracker.is_pred_proofs_done());
+        assert!(tracker.next_pred_proof().is_none());
+
+        // Incrementing past the end returns NoNextProof.
+        let err = tracker.inc_next_pred_proof().unwrap_err();
+        assert!(matches!(err, ProofVerifyError::NoNextProof));
     }
 }

@@ -19,8 +19,11 @@ pub enum ProofVerifyError {
 
 /// Describes an opaque verifier that takes claim checks we want to make.
 ///
-/// This is expected to walk over the proof fields in a transaction.  This
-/// should also help us when signing txs.
+/// This is expected to walk over the proof fields in a transaction.
+///
+/// This will also help us when signing txs, as we can figure out the proofs
+/// that we need to generate by looking and recording the calls that get made
+/// and returning `Ok(())`.  This avoids more complex introspection into the tx.
 pub trait TxProofVerifier {
     /// Verifies an account-local inbox MMR proof.
     fn verify_inbox_mmr_proof_next(

@@ -18,7 +18,7 @@ use crate::{
     context::{BasicExecContext, BlockContext, TxExecContext},
     errors::{ExecError, ExecResult},
     output::OutputCtx,
-    proof_verification::TxProofVerifierImpl,
+    proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker},
 };
 
 /// Process a block's transaction segment.
@@ -111,7 +111,9 @@ fn process_update_tx<S: IStateAccessor>(
     );
 
     // Step 3: Verify the update (all checks delegated to snark-acct-sys).
-    let mut verifier = TxProofVerifierImpl::new(tx_proofs);
+    let state_ctx = TxProofVerificationContext::from_account_and_state(state, &account_state);
+    let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
+    let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
     snark_sys::verify_update_correctness(
         state,
         target,
