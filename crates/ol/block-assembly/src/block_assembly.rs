@@ -238,6 +238,7 @@ fn calculate_block_slot_and_epoch<S: IStateAccessor>(
 /// 4. Filters out invalid transactions (proof failures, execution failures)
 /// 5. Detects terminal blocks and fetches L1 manifests
 /// 6. Builds the complete block with only valid transactions
+#[expect(clippy::too_many_arguments, reason = "can't get around the args")]
 async fn construct_block<C, E>(
     ctx: &C,
     epoch_sealing_policy: &E,
@@ -323,7 +324,7 @@ where
 
     // Append this block's logs to the accumulated logs.
     accum_logs.extend_from_slice(&output_buffer.into_logs());
-    let accumulated_da = AccumulatedDaData::new(block_epoch, final_accumulator, accum_logs);
+    let accumulated_da = AccumulatedDaData::new(final_accumulator, accum_logs);
 
     Ok(ConstructBlockOutput {
         template,
@@ -389,10 +390,6 @@ fn execute_block_initialization<S: BlockAssemblyStateAccess>(
 #[tracing::instrument(
     skip_all,
     fields(component = "ol_block_assembly", tx_count = mempool_txs.len())
-)]
-#[tracing::instrument(
-    skip(proof_gen, output_buffer, parent_state, accumulated_batch, mempool_txs),
-    fields(component = "ol_block_assembly")
 )]
 fn process_transactions<P, S>(
     proof_gen: &P,
@@ -1214,7 +1211,7 @@ mod tests {
                 block_slot,
                 block_epoch,
                 vec![],
-                AccumulatedDaData::new_empty(block_epoch),
+                AccumulatedDaData::new_empty(),
             )
             .await
             .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
@@ -1258,7 +1255,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await;
     }
@@ -1279,7 +1276,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await;
         assert!(
@@ -1313,7 +1310,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("block generation should succeed");
@@ -1355,7 +1352,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await;
         assert!(
@@ -1397,7 +1394,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1431,7 +1428,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await;
         assert!(
@@ -1486,7 +1483,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1518,11 +1515,8 @@ mod tests {
             MempoolTxInvalidReason::Invalid,
         )];
 
-        let result = BlockTemplateResult::new(
-            template,
-            failed_txs.clone(),
-            AccumulatedDaData::new_empty(0),
-        );
+        let result =
+            BlockTemplateResult::new(template, failed_txs.clone(), AccumulatedDaData::new_empty());
         let (out_template, out_failed, _da) = result.into_parts();
 
         assert_eq!(
@@ -1587,7 +1581,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1657,7 +1651,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1737,7 +1731,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1799,7 +1793,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1882,7 +1876,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");
@@ -1947,7 +1941,7 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
-            AccumulatedDaData::new_empty(0),
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("Block generation should succeed");

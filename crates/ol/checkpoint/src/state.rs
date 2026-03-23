@@ -226,6 +226,14 @@ fn collect_epoch_blocks<C: CheckpointWorkerContext>(
             prev_terminal_slot,
         );
 
+        // Check if the same epoch is being traversed.
+        anyhow::ensure!(
+            block.header().epoch() == summary.epoch(),
+            "Obtained a block with different epoch, expected {}, obtained {}",
+            summary.epoch(),
+            block.header().epoch(),
+        );
+
         let parent_id = *block.header().parent_blkid();
         blocks.push(block);
 

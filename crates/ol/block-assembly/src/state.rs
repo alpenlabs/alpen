@@ -268,7 +268,7 @@ where
         let parent_header = parent_block.header();
 
         if parent_header.is_terminal() {
-            Ok(AccumulatedDaData::new_empty(parent_header.epoch() + 1))
+            Ok(AccumulatedDaData::new_empty())
         } else {
             match self.epoch_da_tracker().get_accumulated_da(blkid.blkid) {
                 Some(da) => Ok(da.clone()),

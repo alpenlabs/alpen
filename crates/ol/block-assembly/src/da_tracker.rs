@@ -5,6 +5,7 @@ use strata_ledger_types::{IAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_stf::execute_block_batch;
+use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use crate::{BlockAssemblyAnchorContext, BlockAssemblyError, BlockAssemblyStateAccess};
 
@@ -46,13 +47,12 @@ impl EpochDaTracker {
 
 /// Walks backward from `from_blkid` collecting blocks until a terminal block or genesis.
 ///
-/// Returns blocks in forward chronological order and the boundary header
-/// (the terminal/genesis block that precedes the epoch).
+/// Returns blocks in forward chronological order.
 async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
     target_id: OLBlockId,
     epoch: Epoch,
     ctx: &C,
-) -> Result<Vec<OLBlock>, BlockAssemblyError> {
+) -> Result<NonEmptyVec<OLBlock>, BlockAssemblyError> {
     let mut blocks = Vec::new();
     let mut cur_id = target_id;
 
@@ -79,6 +79,8 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
     }
 
     blocks.reverse();
+    let blocks = NonEmptyVec::try_from_vec(blocks)
+        .map_err(|_| BlockAssemblyError::Other("Empty epoch blocks".to_string()))?;
     Ok(blocks)
 }
 
@@ -95,29 +97,17 @@ where
     <<C::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
-    // toDO: make it return nonempty vec
     let epoch_blocks = collect_epoch_blocks_until(blkid.blkid, epoch, ctx).await?;
-    if epoch_blocks.is_empty() {
-        // TODO: better errors
-        Err(BlockAssemblyError::Other("Empty epoch blocks".to_string()))
-    } else {
-        let first_blk = epoch_blocks.first().unwrap();
-        let initial_state = fetch_pre_state(first_blk, ctx).await?;
+    let first_blk = epoch_blocks.ensured_first();
+    let initial_state = fetch_pre_state(first_blk, ctx).await?;
 
-        let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
-        let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, first_blk.header())
-            .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
+    let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
+    let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, first_blk.header())
+        .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
-        let epoch = epoch_blocks
-            .first()
-            .expect("epoch_blocks is non-empty")
-            .header()
-            .epoch();
+    let (accumulator, _) = da_state.into_parts();
 
-        let (accumulator, _) = da_state.into_parts();
-
-        Ok(AccumulatedDaData::new(epoch, accumulator, batch_logs))
-    }
+    Ok(AccumulatedDaData::new(accumulator, batch_logs))
 }
 
 /// Fetches the pre-state for `blk` by looking up the post-state of its parent.
@@ -142,24 +132,20 @@ async fn fetch_pre_state<C: BlockAssemblyAnchorContext>(
     Ok(ol_state)
 }
 
+/// Contains accumulated DA data for some epoch which includes state diff accumulator and OL logs.
 #[derive(Clone, Debug)]
 pub(crate) struct AccumulatedDaData {
-    epoch: Epoch,
     accumulator: EpochDaAccumulator,
     logs: Vec<OLLog>,
 }
 
 impl AccumulatedDaData {
-    pub(crate) fn new_empty(epoch: Epoch) -> Self {
-        Self::new(epoch, EpochDaAccumulator::default(), Vec::default())
+    pub(crate) fn new_empty() -> Self {
+        Self::new(EpochDaAccumulator::default(), Vec::default())
     }
 
-    pub(crate) fn new(epoch: Epoch, accumulator: EpochDaAccumulator, logs: Vec<OLLog>) -> Self {
-        Self {
-            epoch,
-            accumulator,
-            logs,
-        }
+    pub(crate) fn new(accumulator: EpochDaAccumulator, logs: Vec<OLLog>) -> Self {
+        Self { accumulator, logs }
     }
 
     pub(crate) fn into_parts(self) -> (EpochDaAccumulator, Vec<OLLog>) {

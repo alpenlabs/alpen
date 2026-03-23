@@ -15193,6 +15193,7 @@ dependencies = [
  "strata-ol-stf",
  "strata-params",
  "strata-predicate",
+ "strata-primitives",
  "strata-service",
  "strata-snark-acct-types",
  "strata-state",

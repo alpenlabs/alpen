@@ -22,6 +22,7 @@ strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
 strata-params.workspace = true
+strata-primitives.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-storage.workspace = true
