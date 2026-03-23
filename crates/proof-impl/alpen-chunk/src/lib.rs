@@ -3,7 +3,6 @@ use std::sync::Arc;
 use alloy_genesis::Genesis;
 use reth_chainspec::ChainSpec;
 use rkyv::rancor::Error as RkyvError;
-use ssz::Encode;
 use strata_ee_chunk_runtime::ArchivedPrivateInput;
 use strata_evm_ee::EvmExecutionEnvironment;
 use zkaleido::ZkVmEnv;
@@ -28,8 +27,5 @@ pub fn process_ee_chunk(zkvm: &impl ZkVmEnv) {
 
     strata_ee_chunk_runtime::verify_input(&ee, input).expect("chunk verification failed");
 
-    let tsn = input
-        .try_decode_chunk_transition()
-        .expect("failed to decode chunk transition");
-    zkvm.commit_buf(&tsn.as_ssz_bytes());
+    zkvm.commit_buf(input.chunk_transition_ssz());
 }
