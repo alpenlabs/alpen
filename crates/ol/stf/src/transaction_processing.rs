@@ -7,7 +7,7 @@ use strata_ledger_types::{
     IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
 };
 use strata_ol_chain_types_new::{
-    OLTransaction, OLTxSegment, SauTxPayload, TxConstraints, TxProofs, TransactionPayload,
+    OLTransaction, OLTxSegment, SauTxPayload, TransactionPayload, TxConstraints, TxProofs,
 };
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
@@ -159,9 +159,7 @@ fn process_update_tx<S: IStateAccessor>(
 }
 
 /// Converts `SauTxLedgerRefs` (new chain type) to `LedgerRefs` (snark-acct-types).
-fn convert_sau_ledger_refs(
-    sau_refs: &strata_ol_chain_types_new::SauTxLedgerRefs,
-) -> LedgerRefs {
+fn convert_sau_ledger_refs(sau_refs: &strata_ol_chain_types_new::SauTxLedgerRefs) -> LedgerRefs {
     match sau_refs.asm_history_proofs() {
         Some(claim_list) => {
             let claims: Vec<strata_acct_types::AccumulatorClaim> = claim_list
@@ -205,13 +203,7 @@ fn apply_tx_effects<S: IStateAccessor>(
     }
 
     for m in effects.messages_iter() {
-        account_processing::process_message(
-            state,
-            source,
-            m.dest(),
-            m.payload().clone(),
-            context,
-        )?;
+        account_processing::process_message(state, source, m.dest(), m.payload().clone(), context)?;
     }
 
     Ok(())
@@ -237,46 +229,4 @@ pub fn check_tx_constraints<S: IStateAccessor>(
     }
 
     Ok(())
-}
-
-/// Validates transaction sequence number using next-expected semantics.
-pub fn check_snark_account_seq_no(
-    account: AccountId,
-    tx_seq_no: u64,
-    expected_seq_no: u64,
-) -> ExecResult<()> {
-    if tx_seq_no != expected_seq_no {
-        return Err(ExecError::InvalidSequenceNumber(
-            account,
-            expected_seq_no,
-            tx_seq_no,
-        ));
-    }
-    Ok(())
-}
-
-/// Gets an account state, returning an error if it doesn't exist.
-pub fn get_account_state<S: IStateAccessor>(
-    state: &S,
-    account: AccountId,
-) -> ExecResult<&S::AccountState> {
-    state
-        .get_account_state(account)?
-        .ok_or(ExecError::UnknownAccount(account))
-}
-
-/// Gets the current sequence number for a Snark account.
-pub fn get_snark_account_seq_no<S: IStateAccessor>(
-    state: &S,
-    account: AccountId,
-) -> ExecResult<u64> {
-    let account_state = get_account_state(state, account)?;
-
-    if account_state.ty() != strata_acct_types::AccountTypeId::Snark {
-        return Err(ExecError::IncorrectTxTargetType);
-    }
-
-    let snark_state = account_state.as_snark_account()?;
-
-    Ok(*snark_state.seqno().inner())
 }

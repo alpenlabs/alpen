@@ -4,7 +4,7 @@ use std::{collections::HashMap, sync::Arc};
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
 use strata_ledger_types::{IAccountState, IStateAccessor};
-use strata_ol_stf::{ExecError, check_tx_constraints, get_account_state};
+use strata_ol_stf::{ExecError, ExecResult, check_tx_constraints};
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::Seqno;
 use tracing::error;
@@ -70,7 +70,6 @@ fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
     mempool_seq_no_range: Option<(u64, u64)>,
     state_accessor: &Arc<S>,
 ) -> OLMempoolResult<()> {
-
     if let Some((min_seq_no, max_seq_no)) = mempool_seq_no_range {
         // Has SnarkAccountUpdate transactions in mempool - validate against range
         check_seq_no_in_range(txid, tx_seq_no, min_seq_no, max_seq_no + 1)?;
@@ -170,6 +169,16 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
     }
 
     Ok(())
+}
+
+/// Gets an account state, returning an error if it doesn't exist.
+fn get_account_state<S: IStateAccessor>(
+    state: &S,
+    account: AccountId,
+) -> ExecResult<&S::AccountState> {
+    state
+        .get_account_state(account)?
+        .ok_or(ExecError::UnknownAccount(account))
 }
 
 #[cfg(test)]
@@ -302,9 +311,7 @@ mod tests {
         let base_update = create_test_snark_update();
         let tx_seq_no = base_update.operation().seq_no();
         let tx = OLMempoolTransaction::new_snark_account_update(target, base_update)
-            .with_constraints(
-                create_test_generic_tx_with_slots(Some(50), Some(150)).constraints,
-            );
+            .with_constraints(create_test_generic_tx_with_slots(Some(50), Some(150)).constraints);
 
         // Create state with snark account expecting the same seq_no as tx (next-expected semantics)
         let state_accessor = Arc::new(create_test_ol_state_with_snark_account(
@@ -326,9 +333,7 @@ mod tests {
         let tx_seq_no = base_update.operation().seq_no();
 
         let tx = OLMempoolTransaction::new_snark_account_update(target, base_update.clone())
-            .with_constraints(
-                create_test_generic_tx_with_slots(Some(50), Some(150)).constraints,
-            );
+            .with_constraints(create_test_generic_tx_with_slots(Some(50), Some(150)).constraints);
 
         // Test case 1: Transaction seq_no SMALLER than account seq_no (already used)
         // Account has seq_no = tx_seq_no + 1, transaction has seq_no = tx_seq_no
