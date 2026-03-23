@@ -28,7 +28,6 @@ pub(crate) struct BroadcasterState {
     /// Unfinalized [`L1TxEntry`]s which the broadcaster will check for.
     pub(crate) unfinalized_entries: Vec<IndexedEntry>,
 }
-
 impl BroadcasterState {
     /// Legacy task-path initializer. Service-path initialization uses IO context helpers.
     pub(crate) async fn initialize(ops: &Arc<BroadcastDbOps>) -> BroadcasterResult<Self> {
@@ -98,10 +97,6 @@ where
     C: BroadcasterIoContext,
 {
     /// Builds initial service state by scanning persisted broadcaster entries.
-    #[expect(
-        dead_code,
-        reason = "scaffolding not wired until later broadcaster service commits"
-    )]
     pub(crate) async fn try_new(io: C, config: BtcioParams) -> BroadcasterResult<Self> {
         let next_idx = io.get_next_tx_idx().await?;
         let unfinalized_entries = fetch_unfinalized_entries(&io, 0, next_idx).await?;
@@ -117,10 +112,6 @@ where
     }
 
     /// Handles one input event and then runs one processing pass over unfinalized entries.
-    #[expect(
-        dead_code,
-        reason = "scaffolding not wired until later broadcaster service commits"
-    )]
     pub(crate) async fn process_input(
         &mut self,
         input: TickMsg<BroadcasterInputMessage>,

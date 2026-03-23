@@ -10,23 +10,15 @@ use crate::broadcaster::{
 
 /// Broadcaster service status exposed via monitor.
 #[derive(Clone, Debug, Serialize)]
-#[expect(
-    dead_code,
-    reason = "scaffolding not wired until later broadcaster service commits"
-)]
-pub(crate) struct BroadcasterStatus {
+pub struct BroadcasterStatus {
     /// Number of currently tracked entries that still need processing/finalization checks.
-    pub(crate) unfinalized_count: usize,
+    pub unfinalized_count: usize,
     /// Next broadcast DB index expected to be discovered by a scan/update pass.
-    pub(crate) next_idx: u64,
+    pub next_idx: u64,
 }
 
 /// Broadcaster service implementation.
 #[derive(Debug)]
-#[expect(
-    dead_code,
-    reason = "scaffolding not wired until later broadcaster service commits"
-)]
 pub(crate) struct BroadcasterService<T>(PhantomData<T>);
 
 impl<C> Service for BroadcasterService<C>

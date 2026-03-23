@@ -76,10 +76,6 @@ pub(crate) struct BroadcasterIo<T> {
 
 impl<T> BroadcasterIo<T> {
     /// Creates a production IO adapter from RPC client and broadcast DB ops.
-    #[expect(
-        dead_code,
-        reason = "constructor used once builder switches to service path"
-    )]
     pub(crate) fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>) -> Self {
         Self { rpc_client, ops }
     }

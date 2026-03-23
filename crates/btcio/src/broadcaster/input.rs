@@ -2,15 +2,8 @@ use strata_db_types::types::L1TxEntry;
 
 /// Input messages consumed by the broadcaster service.
 #[derive(Debug)]
-pub(crate) enum BroadcasterInputMessage {
+pub enum BroadcasterInputMessage {
     /// Notify the service about a newly persisted entry.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "NotifyNewEntry is produced only after handle switchover"
-        )
-    )]
     NotifyNewEntry { idx: u64, txentry: L1TxEntry },
 }
 
