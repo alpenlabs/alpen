@@ -14,7 +14,7 @@ use strata_storage::NodeStorage;
 
 use crate::{
     AccumulatorProofGenerator, EpochSealingPolicy,
-    block_assembly::{construct_block, calculate_block_slot_and_epoch},
+    block_assembly::{calculate_block_slot_and_epoch, construct_block},
     context::BlockAssemblyAnchorContext,
     da_tracker::AccumulatedDaData,
     test_utils::{
@@ -165,11 +165,9 @@ async fn test_da_incremental_matches_replay() {
     let parent_header: &OLBlockHeader = parent_block.header();
 
     let owned_blocks: Vec<OLBlock> = blocks.into_iter().cloned().collect();
-    let mut replay_da_state =
-        DaAccumulatingState::new(Arc::unwrap_or_clone(genesis_state));
-    let replay_logs =
-        execute_block_batch(&mut replay_da_state, &owned_blocks, parent_header)
-            .expect("replay should succeed");
+    let mut replay_da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(genesis_state));
+    let replay_logs = execute_block_batch(&mut replay_da_state, &owned_blocks, parent_header)
+        .expect("replay should succeed");
 
     let (replay_acc, replay_inner) = replay_da_state.into_parts();
     let replay_blob = finalize_da_to_bytes(replay_acc, replay_inner);

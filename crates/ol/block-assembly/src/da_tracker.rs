@@ -151,4 +151,12 @@ impl AccumulatedDaData {
     pub(crate) fn into_parts(self) -> (EpochDaAccumulator, Vec<OLLog>) {
         (self.accumulator, self.logs)
     }
+
+    pub(crate) fn logs(&self) -> &[OLLog] {
+        &self.logs
+    }
+
+    pub(crate) fn append_logs(&mut self, new_logs: &[OLLog]) {
+        self.logs.extend_from_slice(new_logs);
+    }
 }

@@ -4,6 +4,8 @@ mod block_assembly;
 mod builder;
 mod command;
 mod context;
+#[cfg(test)]
+mod da_tests;
 mod da_tracker;
 mod epoch_sealing;
 mod error;
@@ -11,8 +13,6 @@ mod handle;
 mod mempool_provider;
 mod service;
 mod state;
-#[cfg(test)]
-mod da_tests;
 #[cfg(test)]
 mod test_utils;
 mod types;

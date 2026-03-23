@@ -177,9 +177,7 @@ impl BlockTemplateResult {
     }
 
     /// Consumes self and returns all components.
-    pub(crate) fn into_parts(
-        self,
-    ) -> (FullBlockTemplate, Vec<FailedMempoolTx>, AccumulatedDaData) {
+    pub(crate) fn into_parts(self) -> (FullBlockTemplate, Vec<FailedMempoolTx>, AccumulatedDaData) {
         (self.template, self.failed_txs, self.accumulated_da)
     }
 }

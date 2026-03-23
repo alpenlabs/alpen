@@ -329,6 +329,54 @@ impl EpochDaAccumulator {
         Ok(())
     }
 
+    /// Conservative upper-bound estimate of the encoded DA blob size.
+    ///
+    /// This is cheaper than finalizing + encoding, suitable for checking whether
+    /// adding more transactions would risk exceeding `OL_DA_DIFF_MAX_SIZE`.
+    /// Overestimates are acceptable; underestimates are not.
+    pub fn estimated_encoded_size(&self) -> usize {
+        // Global diff: 1 byte mask + up to 2 bytes slot counter.
+        let global_size = 3;
+
+        // New accounts list: 2-byte u16 length prefix + per-entry overhead.
+        // Per new account: 32 (AccountId) + 8 (balance) + 1 (type disc)
+        //   + if snark: 32 (state root) + 2 (vk len prefix) + vk bytes
+        // We don't know VK size here so use MAX_VK_BYTES as upper bound.
+        // In practice most VKs are much smaller, but this is a conservative estimate.
+        const NEW_ACCT_BASE: usize = 32 + 8 + 1;
+        const NEW_ACCT_SNARK_OVERHEAD: usize = 32 + 2;
+        let new_accounts_size: usize =
+            2 + self.new_account_records.len() * (NEW_ACCT_BASE + NEW_ACCT_SNARK_OVERHEAD);
+
+        // Account diffs list: 2-byte u16 length prefix + per-diff overhead.
+        // Per diff: 4 (serial u32) + 1 (compound mask) + balance + snark
+        //   balance: worst case signed varint = 10 bytes
+        //   snark: 1 (mask) + 2 (seqno) + 1 (proof state mask) + 32 (state root) + 10 (varint idx)
+        //        + inbox: 2 (count prefix) + per-message overhead
+        const DIFF_FIXED: usize = 4 + 1 + 10 + 1 + 2 + 1 + 32 + 10;
+        let mut account_diffs_size: usize = 2 + self.account_deltas.len() * DIFF_FIXED;
+
+        // Add inbox message sizes.
+        // Per message: 32 (source) + 4 (epoch) + 8 (value) + varint(data.len) + data
+        const MSG_FIXED: usize = 32 + 4 + 8 + 2; // 2 bytes varint is enough for 4096
+        for delta in self.account_deltas.values() {
+            if let Some(snark) = &delta.snark {
+                let inbox_count = snark.inbox.new_entries().len();
+                // 2-byte count prefix.
+                account_diffs_size += 2;
+                for entry in snark.inbox.new_entries() {
+                    account_diffs_size += MSG_FIXED + entry.payload.data().len();
+                }
+                // If no entries, no count prefix needed (compound mask handles it).
+                if inbox_count == 0 {
+                    account_diffs_size -= 2;
+                }
+            }
+        }
+
+        global_size + new_accounts_size + account_diffs_size
+    }
+
     /// Finalizes the epoch by building the state diff.
     fn finalize<S: IStateAccessor>(&mut self, state: &S) -> Result<StateDiff, DaAccumulationError> {
         let global_diff = self.build_global_diff()?;
