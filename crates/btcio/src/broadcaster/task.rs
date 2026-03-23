@@ -81,7 +81,7 @@ pub async fn broadcaster_task(
 }
 
 /// Processes unfinalized entries and returns entries idxs that are updated.
-async fn process_unfinalized_entries(
+pub(crate) async fn process_unfinalized_entries(
     unfinalized_entries: impl Iterator<Item = &IndexedEntry>,
     ops: Arc<BroadcastDbOps>,
     rpc_client: &(impl Broadcaster + Wallet),
@@ -121,7 +121,7 @@ async fn process_unfinalized_entries(
     fields(component = "btcio_broadcaster", %txid),
     name = "process_txentry"
 )]
-async fn process_entry(
+pub(crate) async fn process_entry(
     rpc_client: &(impl Broadcaster + Wallet),
     txentry: &L1TxEntry,
     txid: &Txid,
@@ -144,7 +144,7 @@ async fn process_entry(
     result
 }
 
-async fn check_tx_confirmations(
+pub(crate) async fn check_tx_confirmations(
     rpc_client: &impl Wallet,
     txentry: &L1TxEntry,
     txid: &Txid,
@@ -210,7 +210,7 @@ async fn check_tx_confirmations(
     .await
 }
 
-async fn publish_tx(
+pub(crate) async fn publish_tx(
     rpc_client: &impl Broadcaster,
     txentry: &L1TxEntry,
 ) -> BroadcasterResult<L1TxStatus> {
@@ -229,6 +229,10 @@ async fn publish_tx(
         match rpc_client.send_raw_transaction(&tx).await {
             Ok(_) => {
                 info!("successfully published tx");
+                Ok(L1TxStatus::Published)
+            }
+            Err(err @ ClientError::Server(-25, _)) => {
+                info!(?err, "tx already in mempool, treating as published");
                 Ok(L1TxStatus::Published)
             }
             Err(err)
@@ -351,6 +355,25 @@ mod test {
             res,
             Some(L1TxStatus::InvalidInputs),
             "Server(-22, ..) send_raw_transaction errors should mark tx invalid"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_unpublished_entry_server_minus25_marks_published() {
+        let e = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
+        let btcio_params = get_test_btcio_params();
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::AlreadyInMempool);
+        let cl = Arc::new(client);
+        let txid = Txid::from_slice([1; 32].as_slice()).unwrap();
+
+        let res = process_entry(cl.as_ref(), &e, &txid, &btcio_params)
+            .await
+            .unwrap();
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Server(-25, ..) send_raw_transaction should be treated as already published"
         );
     }
 

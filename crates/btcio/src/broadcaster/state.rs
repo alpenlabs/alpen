@@ -1,17 +1,28 @@
 use std::sync::Arc;
 
-use strata_btc_types::Buf32BitcoinExt;
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::indexed::Indexed;
+use strata_service::{ServiceState, TickMsg};
 use strata_storage::BroadcastDbOps;
 use tracing::*;
 
-use super::error::{BroadcasterError, BroadcasterResult};
+use super::{
+    error::{BroadcasterError, BroadcasterResult},
+    input::BroadcasterInputMessage,
+    io::BroadcasterIoContext,
+    processor::{
+        fetch_unfinalized_entries, load_unfinalized_entries_from_db, process_unfinalized_entries,
+        update_state,
+    },
+};
+use crate::BtcioParams;
 
+/// Transaction entry coupled with its broadcast DB index.
 pub(crate) type IndexedEntry = Indexed<L1TxEntry, u64>;
 
+/// In-memory broadcaster progress and pending-entry view.
 pub(crate) struct BroadcasterState {
-    /// Next index from which we should next read the [`L1TxEntry`] to check and process
+    /// Next index from which to read the next [`L1TxEntry`] to process.
     pub(crate) next_idx: u64,
 
     /// Unfinalized [`L1TxEntry`]s which the broadcaster will check for.
@@ -19,20 +30,20 @@ pub(crate) struct BroadcasterState {
 }
 
 impl BroadcasterState {
-    /// Initialize the `[BroadcasterState]` by looking at all [`L1TxEntry`]s in database
+    /// Legacy task-path initializer. Service-path initialization uses IO context helpers.
     pub(crate) async fn initialize(ops: &Arc<BroadcastDbOps>) -> BroadcasterResult<Self> {
         Self::initialize_from_idx(ops, 0).await
     }
 
-    /// Initialize the [`BroadcasterState`] by looking at [`L1TxEntry`]s in database starting from
-    /// given `start_idx`
+    /// Legacy task-path initializer. Service-path initialization uses IO context helpers.
     pub(crate) async fn initialize_from_idx(
         ops: &Arc<BroadcastDbOps>,
         start_idx: u64,
     ) -> BroadcasterResult<Self> {
         let next_idx = ops.get_next_tx_idx_async().await?;
 
-        let unfinalized_entries = filter_unfinalized_from_db(ops, start_idx, next_idx).await?;
+        let unfinalized_entries =
+            load_unfinalized_entries_from_db(ops, start_idx, next_idx).await?;
 
         Ok(Self {
             next_idx,
@@ -40,7 +51,7 @@ impl BroadcasterState {
         })
     }
 
-    /// Fetches entries from database based on the `next_idx` and updates the broadcaster state
+    /// Legacy task-path updater. Service-path updates use IO context helpers.
     pub(crate) async fn update(
         &mut self,
         updated_entries: impl Iterator<Item = IndexedEntry>,
@@ -54,12 +65,13 @@ impl BroadcasterState {
         let next_idx = ops.get_next_tx_idx_async().await?;
 
         if next_idx < self.next_idx {
-            return Err(BroadcasterError::Other(
-                "Inconsistent db idx and state idx".to_string(),
-            ));
+            return Err(BroadcasterError::InconsistentNextIdx {
+                expected: self.next_idx,
+                got: next_idx,
+            });
         }
         let new_unfinalized_entries =
-            filter_unfinalized_from_db(ops, self.next_idx, next_idx).await?;
+            load_unfinalized_entries_from_db(ops, self.next_idx, next_idx).await?;
 
         // Update state: include updated entries and new unfinalized entries
         self.unfinalized_entries = unfinalized_entries;
@@ -69,32 +81,117 @@ impl BroadcasterState {
     }
 }
 
-/// Returns unfinalized but valid [`L1TxEntry`]s from db starting from index `from` until `to`
-/// non-inclusive.
-async fn filter_unfinalized_from_db(
-    ops: &Arc<BroadcastDbOps>,
-    from: u64,
-    to: u64,
-) -> BroadcasterResult<Vec<IndexedEntry>> {
-    let mut unfinalized_entries = Vec::new();
-    for idx in from..to {
-        let Some(txentry) = ops.get_tx_entry_async(idx).await? else {
-            break;
-        };
+/// Stateful service context used by [`super::service::BroadcasterService`].
+///
+/// This binds pure broadcaster state to concrete IO and runtime config.
+pub(crate) struct BroadcasterServiceState<C> {
+    /// In-memory broadcaster cursor and unfinalized entry set.
+    pub(crate) inner: BroadcasterState,
+    /// Runtime broadcaster config (e.g. reorg-safe confirmation depth).
+    pub(crate) config: BtcioParams,
+    /// Concrete IO context used for DB reads/writes and RPC calls.
+    pub(crate) io: C,
+}
 
-        let status = &txentry.status;
-        let txid = ops.get_txid_async(idx).await?.map(|b| b.to_txid());
-        debug!(?idx, ?txid, ?status, "TxEntry");
+impl<C> BroadcasterServiceState<C>
+where
+    C: BroadcasterIoContext,
+{
+    /// Builds initial service state by scanning persisted broadcaster entries.
+    #[expect(
+        dead_code,
+        reason = "scaffolding not wired until later broadcaster service commits"
+    )]
+    pub(crate) async fn try_new(io: C, config: BtcioParams) -> BroadcasterResult<Self> {
+        let next_idx = io.get_next_tx_idx().await?;
+        let unfinalized_entries = fetch_unfinalized_entries(&io, 0, next_idx).await?;
 
-        if txentry.is_valid() && !txentry.is_finalized() {
-            unfinalized_entries.push(IndexedEntry::new(idx, txentry));
-        }
+        Ok(Self {
+            inner: BroadcasterState {
+                next_idx,
+                unfinalized_entries,
+            },
+            config,
+            io,
+        })
     }
-    Ok(unfinalized_entries)
+
+    /// Handles one input event and then runs one processing pass over unfinalized entries.
+    #[expect(
+        dead_code,
+        reason = "scaffolding not wired until later broadcaster service commits"
+    )]
+    pub(crate) async fn process_input(
+        &mut self,
+        input: TickMsg<BroadcasterInputMessage>,
+    ) -> BroadcasterResult<()> {
+        match input {
+            TickMsg::Tick => {}
+            TickMsg::Msg(BroadcasterInputMessage::NotifyNewEntry { idx, txentry }) => {
+                self.handle_notify_new_entry(idx, txentry).await?;
+            }
+        }
+
+        let updated_entries = process_unfinalized_entries(
+            self.inner.unfinalized_entries.iter(),
+            &self.io,
+            &self.config,
+        )
+        .await?;
+
+        for entry in updated_entries.iter() {
+            self.io
+                .put_tx_entry_by_idx(*entry.index(), entry.item().clone())
+                .await?;
+        }
+
+        update_state(&mut self.inner, updated_entries.into_iter(), &self.io).await?;
+
+        Ok(())
+    }
+
+    /// Inserts or replaces a tracked unfinalized entry by index.
+    pub(crate) async fn handle_notify_new_entry(
+        &mut self,
+        idx: u64,
+        txentry: L1TxEntry,
+    ) -> BroadcasterResult<()> {
+        let txid = txentry
+            .try_to_tx()
+            .map_err(|e| BroadcasterError::Other(e.to_string()))?
+            .compute_txid();
+        info!(%idx, %txid, "received txentry");
+
+        let state = &mut self.inner;
+        if let Some(existing) = state
+            .unfinalized_entries
+            .iter_mut()
+            .find(|entry| *entry.index() == idx)
+        {
+            *existing = IndexedEntry::new(idx, txentry);
+        } else {
+            state
+                .unfinalized_entries
+                .push(IndexedEntry::new(idx, txentry));
+        }
+
+        Ok(())
+    }
+}
+
+impl<C> ServiceState for BroadcasterServiceState<C>
+where
+    C: BroadcasterIoContext,
+{
+    fn name(&self) -> &str {
+        "l1_broadcaster"
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
     use strata_primitives::buf::Buf32;
@@ -111,51 +208,35 @@ mod test {
     }
 
     async fn populate_broadcast_db(ops: Arc<BroadcastDbOps>) -> Vec<(u64, L1TxEntry)> {
-        // Make some insertions
-        let e1 = gen_l1_tx_entry_with_status(L1TxStatus::Unpublished);
-        let i1 = ops
-            .put_tx_entry_async([1; 32].into(), e1.clone())
-            .await
-            .unwrap();
+        // Make deterministic insertions keyed by [1;32]...[5;32].
+        let entries = [
+            gen_l1_tx_entry_with_status(L1TxStatus::Unpublished),
+            gen_l1_tx_entry_with_status(L1TxStatus::Confirmed {
+                confirmations: 1,
+                block_hash: Buf32::zero(),
+                block_height: 100,
+            }),
+            gen_l1_tx_entry_with_status(L1TxStatus::Finalized {
+                confirmations: 1,
+                block_hash: Buf32::zero(),
+                block_height: 100,
+            }),
+            gen_l1_tx_entry_with_status(L1TxStatus::Published),
+            gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs),
+        ];
 
-        let e2 = gen_l1_tx_entry_with_status(L1TxStatus::Confirmed {
-            confirmations: 1,
-            block_hash: Buf32::zero(),
-            block_height: 100,
-        });
-        let i2 = ops
-            .put_tx_entry_async([2; 32].into(), e2.clone())
-            .await
-            .unwrap();
+        let mut inserted = Vec::with_capacity(entries.len());
+        for (offset, entry) in entries.into_iter().enumerate() {
+            let key = [(offset + 1) as u8; 32];
+            let idx = ops
+                .put_tx_entry_async(key.into(), entry.clone())
+                .await
+                .unwrap()
+                .expect("entry index should exist");
+            inserted.push((idx, entry));
+        }
 
-        let e3 = gen_l1_tx_entry_with_status(L1TxStatus::Finalized {
-            confirmations: 1,
-            block_hash: Buf32::zero(),
-            block_height: 100,
-        });
-        let i3 = ops
-            .put_tx_entry_async([3; 32].into(), e3.clone())
-            .await
-            .unwrap();
-
-        let e4 = gen_l1_tx_entry_with_status(L1TxStatus::Published);
-        let i4 = ops
-            .put_tx_entry_async([4; 32].into(), e4.clone())
-            .await
-            .unwrap();
-
-        let e5 = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
-        let i5 = ops
-            .put_tx_entry_async([5; 32].into(), e5.clone())
-            .await
-            .unwrap();
-        vec![
-            (i1.unwrap(), e1),
-            (i2.unwrap(), e2),
-            (i3.unwrap(), e3),
-            (i4.unwrap(), e4),
-            (i5.unwrap(), e5),
-        ]
+        inserted
     }
 
     #[tokio::test]
@@ -218,7 +299,6 @@ mod test {
             .await
             .unwrap();
         // Compute next state
-        //
         state
             .update(unfinalized_entries.into_iter(), &ops)
             .await

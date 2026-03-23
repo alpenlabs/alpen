@@ -6,11 +6,14 @@ pub enum BroadcasterError {
     #[error("db: {0}")]
     Db(#[from] DbError),
 
-    #[error("client: {0}")]
-    Client(#[from] anyhow::Error),
+    #[error("rpc: {0}")]
+    Rpc(#[from] anyhow::Error),
 
     #[error("expected tx not found in db. Idx {0}")]
     TxNotFound(u64),
+
+    #[error("inconsistent next idx (expected {expected}, got {got})")]
+    InconsistentNextIdx { expected: u64, got: u64 },
 
     #[error("{0}")]
     Other(String),
