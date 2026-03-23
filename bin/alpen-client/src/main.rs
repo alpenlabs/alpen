@@ -60,8 +60,9 @@ use strata_btcio::{
 };
 #[cfg(feature = "sequencer")]
 use strata_config::btcio::WriterConfig;
-use strata_identifiers::{CredRule, EpochCommitment, OLBlockId};
+use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
+use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
@@ -136,7 +137,7 @@ fn main() {
 
             let config = Arc::new(AlpenEeConfig::new(
                 params,
-                CredRule::Unchecked,
+                PredicateKey::always_accept(),
                 ol_client_url,
                 ext.sequencer_http.clone(),
                 ext.db_retry_count,

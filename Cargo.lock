@@ -1098,6 +1098,7 @@ dependencies = [
  "strata-l1-txfmt",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
+ "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-types",
  "threadpool",
@@ -1166,7 +1167,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
  "strata-acct-types",
- "strata-identifiers",
+ "strata-predicate",
 ]
 
 [[package]]
@@ -14119,6 +14120,7 @@ dependencies = [
  "strata-asm-txs-checkpoint-v0",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-params",
  "strata-predicate",
  "strata-primitives",
  "thiserror 2.0.18",
@@ -14151,7 +14153,7 @@ dependencies = [
  "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-v0",
  "strata-l1-txfmt",
- "strata-primitives",
+ "strata-params",
 ]
 
 [[package]]
@@ -14295,8 +14297,10 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
+ "strata-codec",
  "strata-identifiers",
  "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -14467,6 +14471,7 @@ dependencies = [
  "ssz_derive",
  "strata-crypto",
  "strata-identifiers",
+ "strata-params",
  "zkaleido",
 ]
 
@@ -15039,20 +15044,18 @@ dependencies = [
  "const-hex",
  "hex",
  "int-enum",
+ "paste",
  "proptest",
  "schemars 1.2.0",
  "serde",
  "serde_json",
  "ssz",
- "ssz_codegen",
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
  "strata-test-utils-ssz",
- "thiserror 2.0.18",
  "tree_hash 0.14.0",
- "tree_hash_derive 0.14.0",
  "zeroize",
 ]
 

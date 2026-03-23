@@ -6,9 +6,8 @@
 
 use arbitrary::Arbitrary;
 use strata_codec::VarVec;
+use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use thiserror::Error;
-
-use crate::{AccountSerial, SubjectIdBytes, acct::SubjectIdBytesError};
 
 /// Maximum value encodable in 12-bit serial format (4,095).
 const MAX_SERIAL_12_BITS: u32 = (1 << 12) - 1;
@@ -200,8 +199,8 @@ pub enum DepositDescriptorError {
     ReservedSerialLengthBits(u8),
 
     /// Subject bytes exceed the maximum allowed length.
-    #[error("invalid subject: {0}")]
-    InvalidSubjec(#[from] SubjectIdBytesError),
+    #[error("subject bytes too long: {0}")]
+    SubjectTooLong(usize),
 
     /// Serial value exceeds the maximum encodable range.
     #[error("serial {0} exceeds maximum encodable value {1}")]
@@ -309,7 +308,9 @@ impl DepositDescriptor {
         // Remaining bytes form the subject
         let subject_start = 1 + serial_len;
         let subject_bytes = bytes[subject_start..].to_vec();
-        let dest_subject = SubjectIdBytes::try_new(subject_bytes)?;
+        let len = subject_bytes.len();
+        let dest_subject = SubjectIdBytes::try_new(subject_bytes)
+            .ok_or(DepositDescriptorError::SubjectTooLong(len))?;
 
         Ok(Self {
             dest_acct_serial,
@@ -333,9 +334,9 @@ mod tests {
     use std::iter::repeat_n;
 
     use proptest::prelude::*;
+    use strata_identifiers::SUBJ_ID_LEN;
 
     use super::*;
-    use crate::SUBJ_ID_LEN;
 
     fn subject_bytes() -> impl Strategy<Value = SubjectIdBytes> {
         prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)
@@ -424,8 +425,9 @@ mod tests {
     #[test]
     fn decode_rejects_subject_too_long() {
         let mut bytes = vec![0b0000_0000_u8, 0x00];
-        bytes.extend(repeat_n(0u8, SUBJ_ID_LEN + 1));
+        let long_subject_len = SUBJ_ID_LEN + 1;
+        bytes.extend(repeat_n(0u8, long_subject_len));
         let err = DepositDescriptor::decode_from_slice(&bytes).unwrap_err();
-        assert!(matches!(err, DepositDescriptorError::InvalidSubjec(_)));
+        assert!(matches!(err, DepositDescriptorError::SubjectTooLong(_)));
     }
 }

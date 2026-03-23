@@ -1,5 +1,4 @@
-use strata_db_types::{LeafPos, NodePos};
-use strata_identifiers::RawMmrId;
+use strata_db_types::{LeafPos, NodePos, RawMmrId};
 use strata_primitives::buf::Buf32;
 
 use crate::define_table_with_seek_key_codec;

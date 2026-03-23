@@ -1,7 +1,7 @@
 use std::{
     fmt::{self, Debug, Display},
     io::{self, Read, Write},
-    mem, ops,
+    ops,
 };
 
 use arbitrary::{Arbitrary, Unstructured};
@@ -28,7 +28,6 @@ use crate::ParseError;
 const HASH_SIZE: usize = 32;
 const BITCOIN_OUTPOINT_LEN: usize = 36;
 const BITCOIN_TXID_LEN: usize = 32;
-const BITCOIN_XONLY_PUBLIC_KEY_LEN: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -164,9 +163,6 @@ impl<'a> Arbitrary<'a> for BitcoinOutPoint {
 )]
 pub struct BitcoinAmount(u64);
 
-/// Size of u64 in bytes
-const BITCOIN_AMOUNT_LEN: usize = mem::size_of::<u64>();
-
 impl Display for BitcoinAmount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -227,7 +223,7 @@ impl Codec for BitcoinAmount {
     }
 }
 
-impl_ssz_transparent_wrapper!(BitcoinAmount, u64, BITCOIN_AMOUNT_LEN);
+impl_ssz_transparent_wrapper!(BitcoinAmount, u64);
 
 impl BitcoinAmount {
     // The zero amount.
@@ -621,7 +617,7 @@ impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
     }
 }
 
-impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32, BITCOIN_XONLY_PUBLIC_KEY_LEN);
+impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32);
 
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].

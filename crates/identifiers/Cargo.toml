@@ -7,27 +7,23 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-ssz.workspace = true
-ssz_derive.workspace = true
-ssz_primitives.workspace = true
-ssz_types = { workspace = true, features = ["serde"] }
-strata-codec.workspace = true
-tree_hash.workspace = true
-tree_hash_derive.workspace = true
+ssz = { workspace = true, optional = true }
+ssz_derive = { workspace = true, optional = true }
+ssz_primitives = { workspace = true, optional = true }
+ssz_types = { workspace = true, features = ["serde"], optional = true }
+strata-codec = { workspace = true, optional = true }
+tree_hash = { workspace = true, optional = true }
 
-arbitrary.workspace = true
-borsh.workspace = true
+arbitrary = { workspace = true, optional = true }
+borsh = { workspace = true, optional = true }
 const-hex = "1.14"
 hex.workspace = true
 int-enum.workspace = true
+paste = { workspace = true, optional = true }
 proptest = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
-serde.workspace = true
-thiserror.workspace = true
-zeroize.workspace = true
-
-[build-dependencies]
-ssz_codegen.workspace = true
+serde = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
 
 [dev-dependencies]
 strata-test-utils-ssz.workspace = true
@@ -37,5 +33,19 @@ proptest.workspace = true
 serde_json.workspace = true
 
 [features]
+default = ["arbitrary", "borsh", "codec", "serde", "ssz", "zeroize"]
+ssz = [
+  "dep:ssz",
+  "dep:ssz_derive",
+  "dep:ssz_primitives",
+  "dep:ssz_types",
+  "dep:tree_hash",
+  "dep:paste",
+]
+zeroize = ["dep:zeroize"]
+arbitrary = ["dep:arbitrary"]
+borsh = ["dep:borsh"]
+codec = ["dep:strata-codec"]
 jsonschema = ["dep:schemars"]
-test-utils = ["dep:proptest"]
+serde = ["dep:serde"]
+test-utils = ["dep:proptest", "arbitrary"]

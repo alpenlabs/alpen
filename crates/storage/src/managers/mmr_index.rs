@@ -4,9 +4,9 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use strata_db_types::{
     num_leaves_to_mmr_size, traits::MmrIndexDatabase, DbError, DbResult, LeafPos, MmrBatchWrite,
-    MmrNodePos, MmrNodeTable, NodePos, NodeTable,
+    MmrId, MmrNodePos, MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
-use strata_identifiers::{Hash, MmrId, RawMmrId};
+use strata_identifiers::Hash;
 use strata_merkle::{MerkleHasher, MerkleProofB32 as MerkleProof, Sha256Hasher};
 use threadpool::ThreadPool;
 use tokio::task::spawn_blocking;

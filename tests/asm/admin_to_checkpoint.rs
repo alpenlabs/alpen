@@ -18,8 +18,8 @@ use harness::{
 };
 use integration_tests::harness;
 use strata_asm_txs_admin::actions::updates::predicate::ProofType;
+use strata_params::CredRule;
 use strata_predicate::PredicateKey;
-use strata_primitives::block_credential::CredRule;
 
 // ============================================================================
 // Sequencer Key → Checkpoint Cred Rule

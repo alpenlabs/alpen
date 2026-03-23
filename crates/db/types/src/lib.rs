@@ -14,6 +14,6 @@ pub type DbResult<T> = anyhow::Result<T, errors::DbError>;
 
 pub use errors::DbError;
 pub use mmr_index::{
-    num_leaves_to_mmr_size, BatchWrite, LeafPos, MmrBatchWrite, MmrIndexPrecondition, MmrNodePos,
-    MmrNodeTable, NodePos, NodeTable,
+    num_leaves_to_mmr_size, BatchWrite, LeafPos, MmrBatchWrite, MmrId, MmrIndexPrecondition,
+    MmrNodePos, MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
