@@ -1,6 +1,6 @@
 use ssz::Encode as _;
 use strata_acct_types::{
-    AccountId, AcctError, AcctResult, BitcoinAmount, MessageEntry, Mmr64, tree_hash::TreeHash,
+    AccountId, AcctError, AcctResult, BitcoinAmount, MessageEntry, tree_hash::TreeHash,
 };
 use strata_identifiers::L1Height;
 use strata_ledger_types::{
@@ -27,12 +27,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     verify_message_index(target, snark_state, update)?;
 
     // 3. Verify ledger references using the proof verifier.
-    verify_ledger_refs(
-        target,
-        state_accessor,
-        proof_verifier,
-        update.ledger_refs(),
-    )?;
+    verify_ledger_refs(target, state_accessor, proof_verifier, update.ledger_refs())?;
 
     // 4. Verify inbox mmr proofs.
     verify_inbox_mmr_proofs(
@@ -102,7 +97,6 @@ fn verify_ledger_refs(
     proof_verifier: &mut impl TxProofVerifier,
     ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
-    let asm_manifest_mmr: &Mmr64 = state_accessor.asm_manifests_mmr();
     let manifest_refs = ledger_refs.l1_header_refs();
 
     for manifest_ref in manifest_refs {
@@ -125,7 +119,7 @@ fn verify_ledger_refs(
 
         let claim = AccumulatorClaim::new(mmr_idx, manifest_ref.entry_hash());
         proof_verifier
-            .verify_next_mmr_proof(asm_manifest_mmr, &claim)
+            .verify_asm_history_mmr_proof_next(&claim)
             .map_err(|_| AcctError::InvalidLedgerReference {
                 account_id: target,
                 ref_idx: manifest_ref.idx(),
@@ -143,7 +137,6 @@ fn verify_inbox_mmr_proofs(
     proof_verifier: &mut impl TxProofVerifier,
     processed_msgs: &[MessageEntry],
 ) -> AcctResult<()> {
-    let inbox_mmr = state.inbox_mmr();
     let mut cur_index = state.next_inbox_msg_idx();
 
     for msg in processed_msgs {
@@ -151,7 +144,7 @@ fn verify_inbox_mmr_proofs(
         let claim = AccumulatorClaim::new(cur_index, msg_hash);
 
         proof_verifier
-            .verify_next_mmr_proof(inbox_mmr, &claim)
+            .verify_inbox_mmr_proof_next(&claim)
             .map_err(|_| AcctError::InvalidMessageProof {
                 account_id: target,
                 msg_idx: cur_index,
@@ -186,8 +179,8 @@ fn verify_effects_safe<S: IStateAccessor>(
         }
     }
 
-    let total_sent = compute_effects_total_value(effects)
-        .ok_or(AcctError::BitcoinAmountOverflow)?;
+    let total_sent =
+        compute_effects_total_value(effects).ok_or(AcctError::BitcoinAmountOverflow)?;
 
     // Check if there is sufficient balance.
     if total_sent > cur_balance {
@@ -222,9 +215,8 @@ pub(crate) fn verify_update_proof(
     update: &SnarkAccountUpdateData,
     verifier: &mut impl TxProofVerifier,
 ) -> AcctResult<()> {
-    let vk = snark_state.update_vk();
     let claim: Vec<u8> = compute_update_claim(snark_state, update);
-    let is_valid = verifier.verify_next_predicate_satisfier(vk, &claim).is_ok();
+    let is_valid = verifier.verify_local_predicate_next(&claim).is_ok();
 
     if !is_valid {
         return Err(AcctError::InvalidUpdateProof { account_id: target });

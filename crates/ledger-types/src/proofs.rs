@@ -1,7 +1,6 @@
 //! Types for manipulating proof steps.
 
-use strata_acct_types::{AccumulatorClaim, Mmr64};
-use strata_predicate::PredicateKey;
+use strata_acct_types::AccumulatorClaim;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,6 +10,11 @@ pub enum ProofVerifyError {
 
     #[error("invalid proof")]
     InvalidProof,
+
+    /// This would be use if we tried to check an account input mmr in a context
+    /// where that doesn't exit.
+    #[error("proof impossible in this context")]
+    InvalidContext,
 }
 
 /// Describes an opaque verifier that takes claim checks we want to make.
@@ -18,20 +22,21 @@ pub enum ProofVerifyError {
 /// This is expected to walk over the proof fields in a transaction.  This
 /// should also help us when signing txs.
 pub trait TxProofVerifier {
-    /// Verifies the next MMR proof with the root and claim.
-    fn verify_next_mmr_proof(
+    /// Verifies an account-local inbox MMR proof.
+    fn verify_inbox_mmr_proof_next(
         &mut self,
-        root: &Mmr64,
         claim: &AccumulatorClaim,
     ) -> Result<(), ProofVerifyError>;
 
-    /// Verifies the next predicate proof against a provided key and claim.
-    fn verify_next_predicate_satisfier(
+    /// Verifies an ASM history MMR proof.
+    fn verify_asm_history_mmr_proof_next(
         &mut self,
-        key: &PredicateKey,
-        claim: &[u8],
+        claim: &AccumulatorClaim,
     ) -> Result<(), ProofVerifyError>;
 
-    /// Returns true if all proofs have been fully exhausted.
+    /// Verifies the next predicate proof against the account-local predicate and claim.
+    fn verify_local_predicate_next(&mut self, claim: &[u8]) -> Result<(), ProofVerifyError>;
+
+    /// Returns true if all proofs available to verify have been fully exhausted.
     fn is_exhausted(&self) -> bool;
 }

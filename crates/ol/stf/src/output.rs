@@ -2,6 +2,8 @@
 
 use std::{cell::RefCell, iter};
 
+use strata_acct_types::AccountSerial;
+use strata_codec::{Codec, encode_to_vec};
 use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
 
 use crate::errors::{ExecError, ExecResult};
@@ -64,9 +66,15 @@ pub trait OutputCtx {
     /// Records some logs. Returns an error if the block log cap would be exceeded.
     fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) -> ExecResult<()>;
 
-    /// Records a single log. Returns an error if the block log cap would be exceeded.
+    /// Records a single log.  Returns an error if the block log cap would be exceeded.
     fn emit_log(&self, log: OLLog) -> ExecResult<()> {
         self.emit_logs(iter::once(log))
+    }
+
+    /// Records a typed log.  Returns an error if the block log cap would be exceeded.
+    fn emit_typed_log(&self, source: AccountSerial, body: &impl Codec) -> ExecResult<()> {
+        let encoded_body = encode_to_vec(body)?;
+        self.emit_log(OLLog::new(source, encoded_body))
     }
 }
 
