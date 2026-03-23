@@ -1,3 +1,5 @@
+//! EE account update proof implementation wrapping `ee-acct-runtime` with zkaleido proof IO.
+
 use std::sync::Arc;
 
 use alloy_genesis::Genesis;
