@@ -511,9 +511,9 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
         &self.epoch_acc
     }
 
-    /// Takes the epoch accumulator, leaving a default in its place.
-    pub fn take_accumulator(&mut self) -> EpochDaAccumulator {
-        take(&mut self.epoch_acc)
+    /// Consumes self and returns accumulator and state.
+    pub fn into_parts(self) -> (EpochDaAccumulator, S) {
+        (self.epoch_acc, self.inner)
     }
 
     /// Consumes self and returns the wrapped state accessor.

@@ -110,9 +110,7 @@ where
 
         let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
         let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, start_blk.header())
-            .map_err(|e| {
-            BlockAssemblyError::Other(format!("epoch block replay failed: {e}"))
-        })?;
+            .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
         let epoch = epoch_blocks
             .first()
@@ -120,7 +118,7 @@ where
             .header()
             .epoch();
 
-        let accumulator = da_state.take_accumulator();
+        let (accumulator, _) = da_state.into_parts();
 
         Ok(AccumulatedDaData::new(epoch, accumulator, batch_logs))
     }

@@ -477,8 +477,7 @@ where
         debug!(%txid, "successful tx execution in block assembly");
     }
 
-    let accumulated_da = staging_state.take_accumulator();
-    let inner_state = staging_state.into_inner();
+    let (accumulated_da, inner_state) = staging_state.into_parts();
     let accumulated_batch = inner_state.into_batch();
 
     ProcessTransactionsOutput {
