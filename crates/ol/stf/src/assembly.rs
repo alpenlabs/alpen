@@ -375,6 +375,7 @@ pub fn execute_block_batch<S: IStateAccessor>(
 
     for block in blocks {
         let logs = verify_block(state, block.header(), Some(&parent), block.body())?;
+        parent = block.header().clone();
         batch_logs.push(logs);
     }
 

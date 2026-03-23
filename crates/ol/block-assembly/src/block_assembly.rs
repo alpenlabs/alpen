@@ -218,7 +218,7 @@ where
 /// # Panics
 /// Panics if `parent_commitment` is null. Genesis blocks must be created via
 /// `init_ol_genesis`, not through block assembly.
-fn calculate_block_slot_and_epoch<S: IStateAccessor>(
+pub(crate) fn calculate_block_slot_and_epoch<S: IStateAccessor>(
     parent_commitment: &OLBlockCommitment,
     parent_state: &S,
 ) -> (Slot, Epoch) {
@@ -239,7 +239,7 @@ fn calculate_block_slot_and_epoch<S: IStateAccessor>(
 /// 5. Detects terminal blocks and fetches L1 manifests
 /// 6. Builds the complete block with only valid transactions
 #[expect(clippy::too_many_arguments, reason = "can't get around the args")]
-async fn construct_block<C, E>(
+pub(crate) async fn construct_block<C, E>(
     ctx: &C,
     epoch_sealing_policy: &E,
     config: &BlockGenerationConfig,
@@ -278,11 +278,13 @@ where
     // Create output buffer to collect logs from all transaction executions.
     let output_buffer = ExecOutputBuffer::new_empty();
 
-    // Phase 1: Execute block initialization (epoch initial + block start).
-    let accumulated_batch = execute_block_initialization(parent_state.as_ref(), &block_context);
-
     // Decompose parent DA into accumulator and accumulated logs.
     let (parent_da_accum, mut accum_logs) = parent_da.into_parts();
+
+    // Phase 1: Execute block initialization (epoch initial + block start).
+    // Runs through DaAccumulatingState so slot changes are captured in the DA accumulator.
+    let (accumulated_batch, init_accumulator) =
+        execute_block_initialization(parent_state.as_ref(), &block_context, parent_da_accum);
 
     // Phase 2: Process each transaction against accumulated state using AccumulatorProofGenerator.
     let ProcessTransactionsOutput {
@@ -297,7 +299,7 @@ where
         parent_state.as_ref(),
         accumulated_batch,
         mempool_txs,
-        parent_da_accum,
+        init_accumulator,
     );
 
     // TODO: Also use signal from process_transactions to decide if sealing should be done
@@ -361,29 +363,35 @@ async fn fetch_asm_manifests_for_terminal_block<
 
 /// Executes block initialization (epoch initial + block start) on a fresh write batch.
 ///
-/// Returns the accumulated write batch containing initialization changes.
+/// Runs through `DaAccumulatingState` so that slot/epoch mutations are captured
+/// in the DA accumulator. Returns the accumulated write batch and the updated accumulator.
 fn execute_block_initialization<S: BlockAssemblyStateAccess>(
     parent_state: &S,
     block_context: &BlockContext<'_>,
-) -> WriteBatch<S::AccountState> {
-    let mut accumulated_batch = WriteBatch::new_from_state(parent_state);
-
-    let mut init_state = WriteTrackingState::new(parent_state, accumulated_batch.clone());
+    accumulator: EpochDaAccumulator,
+) -> (WriteBatch<S::AccountState>, EpochDaAccumulator)
+where
+    <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
+{
+    let accumulated_batch = WriteBatch::new_from_state(parent_state);
+    let write_state = WriteTrackingState::new(parent_state, accumulated_batch);
+    let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
 
     // Process block start for every block (sets cur_slot, etc.)
     // Per spec: process_slot_start runs before process_epoch_initial.
-    process_block_start(&mut init_state, block_context)
+    process_block_start(&mut da_state, block_context)
         .expect("block start processing should not fail");
 
     // Process epoch initial if this is the first block of the epoch.
     if block_context.is_epoch_initial() {
         let init_ctx = block_context.get_epoch_initial_context();
-        process_epoch_initial(&mut init_state, &init_ctx)
+        process_epoch_initial(&mut da_state, &init_ctx)
             .expect("epoch initial processing should not fail");
     }
 
-    accumulated_batch = init_state.into_batch();
-    accumulated_batch
+    let (accumulator, write_state) = da_state.into_parts();
+    let accumulated_batch = write_state.into_batch();
+    (accumulated_batch, accumulator)
 }
 
 /// Processes transactions with per-tx staging, filtering out failed ones.
@@ -1241,6 +1249,7 @@ mod tests {
 
         current_commitment
     }
+
 
     #[tokio::test(flavor = "multi_thread")]
     #[should_panic(expected = "generate_block_template_inner called with null parent")]

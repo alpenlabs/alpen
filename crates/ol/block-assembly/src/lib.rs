@@ -12,6 +12,8 @@ mod mempool_provider;
 mod service;
 mod state;
 #[cfg(test)]
+mod da_tests;
+#[cfg(test)]
 mod test_utils;
 mod types;
 
