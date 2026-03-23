@@ -1,0 +1,186 @@
+# Builds new-architecture Docker images on merge to main (or manual dispatch)
+# and pushes to the shared ECR account.
+#
+# Old architecture images (strata-client, strata-sequencer-client, alpen-reth)
+# remain in the current account via the existing cd.yml workflow.
+#
+# This is the CI half of the pipeline — it does NOT update Helm values or trigger deployments.
+
+name: CI — Build and Push Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Only trigger when source code or Dockerfiles change
+      - "bin/**"
+      - "crates/**"
+      - "docker/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  pull_request: # TODO: remove before merging — temporary trigger for testing
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-build.yml"
+  workflow_dispatch:
+    inputs:
+      programs:
+        description: "Comma-separated list of programs to build (leave empty for all)"
+        required: false
+        type: string
+      ref:
+        description: "Git ref to build from (default: current branch)"
+        required: false
+        type: string
+
+env:
+  COMMIT: ${{ github.sha }}
+  AWS_REGION: us-east-1
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+# Cancel in-progress runs for the same branch (except main — let those finish)
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine which programs to build
+  # ---------------------------------------------------------------------------
+  prepare:
+    name: Prepare build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      short_tag: ${{ steps.tag.outputs.short_tag }}
+    steps:
+      - name: Compute image tag
+        id: tag
+        run: |
+          SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
+          SHORT_TAG="${SHORT_TAG:0:7}"
+          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set build matrix
+        id: set-matrix
+        run: |
+          # New architecture images only — pushed to shared ECR account
+          ALL='["strata","alpen-client"]'
+
+          INPUT="${{ inputs.programs }}"
+          if [ -z "$INPUT" ]; then
+            echo "matrix={\"program\":${ALL}}" >> "$GITHUB_OUTPUT"
+          else
+            # Convert comma-separated input to JSON array
+            JSON=$(echo "$INPUT" | jq -Rc 'split(",") | map(gsub("\\s"; ""))')
+            echo "matrix={\"program\":${JSON}}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build and push each program in parallel
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: "Build ${{ matrix.program }}"
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    env:
+      SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Free up disk space
+        uses: ./.github/actions/cleanup
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      # Authenticate to the shared ECR account
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v4
+        with:
+          role-to-assume: ${{ secrets.SHARED_ECR_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
+        with:
+          mask-password: "true"
+
+      # --- Build, scan, push --------------------------------------------------
+      - name: Build Docker image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          PROGRAM: ${{ matrix.program }}
+        run: |
+          DOCKERFILE_PATH="docker/${PROGRAM}/Dockerfile"
+          ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
+
+          docker buildx build \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --load \
+            -t "${FULL_IMAGE}" \
+            -f "${DOCKERFILE_PATH}" .
+
+          echo "full_image=${FULL_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
+        continue-on-error: true
+        with:
+          image-ref: ${{ steps.build.outputs.full_image }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ steps.build.outputs.full_image }}"
+          echo "Successfully pushed: ${{ steps.build.outputs.full_image }}"
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  summary:
+    name: Build Summary
+    needs: [prepare, build-and-push]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report results
+        env:
+          SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+        run: |
+          echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image Tag** | \`${SHORT_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Ref** | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Build Status" >> "$GITHUB_STEP_SUMMARY"
+          echo "Overall: **${{ needs.build-and-push.result }}**" >> "$GITHUB_STEP_SUMMARY"
