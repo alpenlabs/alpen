@@ -1,5 +1,6 @@
 //! Service state for OL checkpoint builder.
 
+use anyhow::anyhow;
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
@@ -9,7 +10,7 @@ use strata_identifiers::{Epoch, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_stf::execute_block_batch;
-use strata_primitives::epoch::EpochCommitment;
+use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec};
 use strata_service::ServiceState;
 use tracing::{debug, info};
 
@@ -204,7 +205,7 @@ fn assert_terminal_commitment_matches(
 fn collect_epoch_blocks<C: CheckpointWorkerContext>(
     summary: &EpochSummary,
     ctx: &C,
-) -> anyhow::Result<Vec<OLBlock>> {
+) -> anyhow::Result<NonEmptyVec<OLBlock>> {
     let terminal_blkid = summary.terminal().blkid();
     let prev_terminal_blkid = summary.prev_terminal().blkid();
     let prev_terminal_slot = summary.prev_terminal().slot();
@@ -236,6 +237,8 @@ fn collect_epoch_blocks<C: CheckpointWorkerContext>(
     }
 
     blocks.reverse();
+    let blocks =
+        NonEmptyVec::try_from_vec(blocks).map_err(|_| anyhow!("Non-empty epoch blocks"))?;
     Ok(blocks)
 }
 
@@ -251,7 +254,6 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
 ) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeader)> {
     let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
-    anyhow::ensure!(!epoch_blocks.is_empty(), "epoch has no blocks");
 
     let prev_terminal = summary.prev_terminal();
     let prev_terminal_header = ctx
@@ -266,22 +268,10 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 
     let mut da_state = DaAccumulatingState::new(ol_state);
 
-    let batch_outputs = execute_block_batch(&mut da_state, &epoch_blocks, &prev_terminal_header)
+    let logs = execute_block_batch(&mut da_state, &epoch_blocks, &prev_terminal_header)
         .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
 
-    // Collect logs from all block outputs.
-    let logs: Vec<OLLog> = batch_outputs
-        .iter()
-        .flat_map(|o| o.outputs().logs())
-        .cloned()
-        .collect();
-
-    let terminal_header = batch_outputs
-        .last()
-        .expect("batch_outputs is non-empty")
-        .completed_block()
-        .header()
-        .clone();
+    let terminal_header = epoch_blocks.ensured_last().header().clone();
 
     // Extract the DA blob from the accumulating layer.
     let da_bytes = da_state

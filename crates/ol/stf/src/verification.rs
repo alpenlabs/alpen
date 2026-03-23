@@ -145,17 +145,17 @@ impl<'b> BlockExecInput<'b> {
 pub fn verify_block<S: IStateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
-    parent_header: Option<OLBlockHeader>,
+    parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
-) -> ExecResult<()> {
+) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
-    verify_header_continuity(header, parent_header.as_ref())?;
+    verify_header_continuity(header, parent_header)?;
     verify_block_structure(header, body)?;
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
     // 1. If it's the first block of the epoch, call process_epoch_initial.
     let block_info = BlockInfo::from_header(header);
-    let block_context = BlockContext::new(&block_info, parent_header.as_ref());
+    let block_context = BlockContext::new(&block_info, parent_header);
     if block_context.is_epoch_initial() {
         let epoch_context = block_context.get_epoch_initial_context();
         chain_processing::process_epoch_initial(state, &epoch_context)?;
@@ -169,7 +169,7 @@ pub fn verify_block<S: IStateAccessor>(
     // 3. Call process_block_tx_segment for every block as usual.
     let output_buffer = ExecOutputBuffer::new_empty();
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
-    let tx_ctx = TxExecContext::new(&basic_ctx, parent_header.as_ref());
+    let tx_ctx = TxExecContext::new(&basic_ctx, parent_header);
     if let Some(tx_segment) = body.tx_segment() {
         transaction_processing::process_block_tx_segment(state, tx_segment, &tx_ctx)?;
     }
@@ -218,12 +218,13 @@ pub fn verify_block<S: IStateAccessor>(
     output_buffer.verify_logs_within_block_limit()?;
 
     // 6. Check the logs root.
-    let computed_logs_root = compute_logs_root(&output_buffer.into_logs());
+    let logs = output_buffer.into_logs();
+    let computed_logs_root = compute_logs_root(&logs);
     if computed_logs_root != exp.logs_root {
         return Err(ExecError::ChainIntegrity);
     }
 
-    Ok(())
+    Ok(logs)
 }
 
 /// Checks that headers are properly continuous and that their fields are

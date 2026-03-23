@@ -109,16 +109,10 @@ where
         let initial_state = fetch_ol_state(start_blk, ctx).await?;
 
         let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
-        let batch_outputs = execute_block_batch(&mut da_state, &epoch_blocks, start_blk.header())
+        let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, start_blk.header())
             .map_err(|e| {
             BlockAssemblyError::Other(format!("epoch block replay failed: {e}"))
         })?;
-
-        let logs: Vec<OLLog> = batch_outputs
-            .iter()
-            .flat_map(|o| o.outputs().logs())
-            .cloned()
-            .collect();
 
         let epoch = epoch_blocks
             .first()
@@ -128,7 +122,7 @@ where
 
         let accumulator = da_state.take_accumulator();
 
-        Ok(AccumulatedDaData::new(epoch, accumulator, logs))
+        Ok(AccumulatedDaData::new(epoch, accumulator, batch_logs))
     }
 }
 

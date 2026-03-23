@@ -14,6 +14,7 @@ use crate::{
     output::{ExecOutputBuffer, OutputCtx},
     transaction_processing,
     verification::{BlockExecInput, BlockPostStateCommitments},
+    verify_block,
 };
 
 /// Block execution outputs.
@@ -368,27 +369,14 @@ pub fn execute_block_batch<S: IStateAccessor>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
-) -> ExecResult<Vec<ConstructBlockOutput>> {
+) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
-    let mut outputs = Vec::with_capacity(blocks.len());
+    let mut batch_logs = Vec::with_capacity(blocks.len());
 
     for block in blocks {
-        let info = BlockInfo::from_header(block.header());
-        let context = BlockContext::new(&info, Some(&parent));
-        let components = BlockComponents::from_block(block);
-
-        let output = construct_block(state, context, components)?;
-
-        assert_eq!(
-            output.completed_block().header(),
-            block.header(),
-            "computed block header does not match input block header at slot {}",
-            block.header().slot()
-        );
-
-        parent = output.completed_block().header().clone();
-        outputs.push(output);
+        let logs = verify_block(state, block.header(), Some(&parent), block.body())?;
+        batch_logs.push(logs);
     }
 
-    Ok(outputs)
+    Ok(batch_logs.concat())
 }

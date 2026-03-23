@@ -263,7 +263,7 @@ impl ChainWorkerServiceState {
         verify_block(
             &mut indexer_state,
             block.header(),
-            parent_header.cloned(),
+            parent_header,
             block.body(),
         )?;
 
