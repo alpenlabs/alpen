@@ -15619,6 +15619,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-alpen-acct"
+version = "0.1.0"
+dependencies = [
+ "alloy-genesis",
+ "reth-chainspec",
+ "rkyv",
+ "ssz",
+ "strata-ee-acct-runtime",
+ "strata-evm-ee",
+ "strata-predicate",
+ "strata-snark-acct-runtime",
+ "strata-snark-acct-types",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20)",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
+name = "strata-proofimpl-alpen-chunk"
+version = "0.1.0"
+dependencies = [
+ "alloy-genesis",
+ "reth-chainspec",
+ "rkyv",
+ "ssz",
+ "strata-ee-chain-types",
+ "strata-ee-chunk-runtime",
+ "strata-evm-ee",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20)",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15943,6 +15975,8 @@ dependencies = [
  "sha2",
  "sp1-helper",
  "sp1-sdk",
+ "sp1-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]

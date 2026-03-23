@@ -13,6 +13,7 @@ cfg_if! {
         use sha2::{Digest, Sha256};
         use sp1_helper::{build_program_with_args, BuildArgs};
         use sp1_sdk::{HashableKey, ProverClient, SP1VerifyingKey};
+        use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
     }
 }
 
@@ -20,15 +21,28 @@ cfg_if! {
 const EVM_EE_STF: &str = "guest-evm-ee-stf";
 const CHECKPOINT: &str = "guest-checkpoint";
 const CHECKPOINT_NEW: &str = "guest-checkpoint-new";
+const ALPEN_CHUNK: &str = "guest-alpen-chunk";
+const ALPEN_ACCT: &str = "guest-alpen-acct";
 
 /// Returns a map of program dependencies.
+///
+/// The account proof guest depends on the chunk proof guest's VK hash
+/// to construct the chunk predicate key.
 fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
-    HashMap::new()
+    let mut deps = HashMap::new();
+    deps.insert(ALPEN_ACCT, vec![ALPEN_CHUNK]);
+    deps
 }
 
 fn main() {
     // List of guest programs to build
-    let guest_programs = [EVM_EE_STF, CHECKPOINT, CHECKPOINT_NEW];
+    let guest_programs = [
+        EVM_EE_STF,
+        CHECKPOINT,
+        CHECKPOINT_NEW,
+        ALPEN_CHUNK,
+        ALPEN_ACCT,
+    ];
 
     // HashSet to keep track of programs that have been built
     let mut built_programs = HashSet::new();
@@ -123,6 +137,16 @@ fn build_program_with_dependencies(
                 let elf_name_id = format!("{elf_name}_ID");
                 vks_content.push_str(&format!(
                     "pub const {elf_name_id}: &[u32; 8] = &{vk_hash:?};\n"
+                ));
+
+                // Also embed the full Groth16 verifying key condition bytes so
+                // dependent guest programs can construct a PredicateKey at
+                // compile time without pulling in heavy SP1 SDK dependencies.
+                let condition = compute_groth16_condition(vk_hash);
+                let condition_name =
+                    format!("{}_VK_CONDITION", dep.to_uppercase().replace("-", "_"));
+                vks_content.push_str(&format!(
+                    "pub const {condition_name}: &[u8] = &{condition:?};\n"
                 ));
             }
         }
@@ -273,6 +297,31 @@ fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String) {
         [0u32; 8],
         "0x0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
     )
+}
+
+/// Computes the full Groth16 verifying key condition bytes for the given
+/// program VK hash. These bytes are the serialized `Groth16VerifyingKey`
+/// that merges the SP1 circuit VK with the program-specific VK hash,
+/// suitable for use as the condition in a `PredicateKey::Sp1Groth16`.
+#[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
+fn compute_groth16_condition(vk_hash: &[u32; 8]) -> Vec<u8> {
+    let vk_hash_bytes: [u8; 32] = vk_hash
+        .iter()
+        .flat_map(|v| v.to_be_bytes())
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("VK hash must be 32 bytes");
+
+    let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_hash_bytes)
+        .expect("Failed to load SP1 Groth16 verifier");
+
+    sp1_verifier.vk.to_uncompressed_bytes()
+}
+
+/// Returns empty condition bytes in debug/mock builds.
+#[cfg(debug_assertions)]
+fn compute_groth16_condition(_vk_hash: &[u32; 8]) -> Vec<u8> {
+    Vec::new()
 }
 
 /// Copies the compiled ELF file of the specified program to its cache directory.

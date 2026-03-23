@@ -1,0 +1,19 @@
+[package]
+name = "strata-proofimpl-alpen-chunk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+strata-ee-chain-types.workspace = true
+strata-ee-chunk-runtime.workspace = true
+strata-evm-ee.workspace = true
+
+alloy-genesis.workspace = true
+reth-chainspec.workspace = true
+rkyv.workspace = true
+ssz.workspace = true
+zkaleido.workspace = true
+zkaleido-native-adapter.workspace = true
+
+[lints]
+workspace = true
