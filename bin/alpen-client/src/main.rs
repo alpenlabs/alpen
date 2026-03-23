@@ -12,7 +12,9 @@ mod ol_client;
 mod payload_builder;
 mod rpc_client;
 
-use std::{env, process, sync::Arc};
+#[cfg(feature = "sequencer")]
+use std::future::Future;
+use std::{env, process, sync::Arc, thread, time::Duration};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{
@@ -55,7 +57,7 @@ use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
-    broadcaster::create_broadcaster_task, writer::chunked_envelope::create_chunked_envelope_task,
+    broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
     BtcioParams,
 };
 #[cfg(feature = "sequencer")]
@@ -66,14 +68,21 @@ use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info};
+
 #[cfg(feature = "sequencer")]
-use {
-    crate::{
+mod sequencer_imports {
+    pub(super) use alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
+    pub(super) use strata_tasks::TaskManager;
+    pub(super) use tokio::{runtime::Handle, sync::oneshot};
+
+    pub(super) use crate::{
         header_summary::RethHeaderSummaryProvider, noop_prover::NoopProver,
         payload_builder::AlpenRethPayloadEngine,
-    },
-    alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider},
-};
+    };
+}
+
+#[cfg(feature = "sequencer")]
+use sequencer_imports::*;
 
 use crate::{
     dummy_ol_client::DummyOLClient,
@@ -86,6 +95,53 @@ use crate::{
 /// Environment variable for overriding the default EE block time.
 #[cfg(feature = "sequencer")]
 const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
+
+/// Maps btcio monitor completion into the runtime exit result.
+#[cfg(feature = "sequencer")]
+fn map_btcio_monitor_completion(
+    monitor_result: Result<Option<String>, oneshot::error::RecvError>,
+) -> eyre::Result<()> {
+    match monitor_result {
+        Ok(Some(err)) => {
+            error!(target: "alpen-client", %err, "btcio task manager reported critical failure");
+            Err(eyre::eyre!("btcio task manager failed: {err}"))
+        }
+        Ok(None) => {
+            error!(target: "alpen-client", "btcio task manager exited before node shutdown");
+            Err(eyre::eyre!(
+                "btcio task manager exited before node shutdown"
+            ))
+        }
+        Err(_) => {
+            error!(target: "alpen-client", "btcio task manager monitor channel closed unexpectedly");
+            Err(eyre::eyre!("btcio task manager monitor channel closed"))
+        }
+    }
+}
+
+/// Waits for sequencer termination while coordinating btcio task-manager shutdown.
+///
+/// Behavior is unchanged from the previous inline `tokio::select!`: if the node exits first,
+/// btcio is signaled to stop and drained; if btcio monitor resolves first, that result becomes
+/// the process error.
+#[cfg(feature = "sequencer")]
+async fn await_sequencer_shutdown_with_btcio(
+    node_exit_future: impl Future<Output = eyre::Result<()>>,
+    btcio_shutdown: &strata_tasks::ShutdownSignal,
+    btcio_monitor_rx: &mut oneshot::Receiver<Option<String>>,
+) -> eyre::Result<()> {
+    tokio::select! {
+        node_result = node_exit_future => {
+            btcio_shutdown.send();
+            let _ = btcio_monitor_rx.await;
+            node_result
+        }
+        monitor_result = &mut *btcio_monitor_rx => {
+            btcio_shutdown.send();
+            map_btcio_monitor_completion(monitor_result)
+        }
+    }
+}
 
 fn main() {
     sigsegv_handler::install();
@@ -367,6 +423,11 @@ fn main() {
                 .spawn_critical("gossip_task", gossip_task);
 
             #[cfg(feature = "sequencer")]
+            let mut btcio_shutdown_signal = None;
+            #[cfg(feature = "sequencer")]
+            let mut btcio_monitor_rx = None;
+
+            #[cfg(feature = "sequencer")]
             if ext.sequencer {
                 // sequencer specific tasks
 
@@ -442,13 +503,37 @@ fn main() {
                 let broadcast_ops = Arc::new(dbs.broadcast_ops(db_pool.clone()));
                 let envelope_ops = Arc::new(dbs.chunked_envelope_ops(db_pool));
 
-                // Create broadcaster and chunked envelope tasks.
+                // Launch broadcaster service and create chunked envelope task.
                 let broadcast_poll_interval = 5_000;
-                let (broadcast_handle, broadcaster_task) = create_broadcaster_task(
-                    btc_client.clone(),
-                    broadcast_ops.clone(),
-                    btcio_params,
-                    broadcast_poll_interval,
+                let btcio_task_manager = TaskManager::new(Handle::current());
+                let btcio_executor = btcio_task_manager.create_executor();
+                let btcio_shutdown = btcio_task_manager.get_shutdown_signal();
+                let (monitor_tx, monitor_rx) = oneshot::channel::<Option<String>>();
+
+                thread::Builder::new()
+                    .name("btcio-task-manager-monitor".to_string())
+                    .spawn(move || {
+                        let monitor_err = btcio_task_manager
+                            .monitor(Some(Duration::from_secs(5)))
+                            .err()
+                            .map(|e| e.to_string());
+                        let _ = monitor_tx.send(monitor_err);
+                    })
+                    .map_err(|e| eyre::eyre!("failed to spawn btcio monitor thread: {e}"))?;
+
+                btcio_shutdown_signal = Some(btcio_shutdown);
+                btcio_monitor_rx = Some(monitor_rx);
+
+                let broadcast_handle = Arc::new(
+                    BroadcasterBuilder::new(
+                        btc_client.clone(),
+                        broadcast_ops.clone(),
+                        btcio_params,
+                    )
+                    .with_broadcast_poll_interval_ms(broadcast_poll_interval)
+                    .launch(&btcio_executor)
+                    .await
+                    .map_err(|e| eyre::eyre!("starting broadcaster service: {e}"))?,
                 );
 
                 let writer_config = Arc::new(WriterConfig::default());
@@ -481,8 +566,6 @@ fn main() {
                 ));
 
                 // Spawn btcio tasks.
-                node.task_executor
-                    .spawn_critical("l1_broadcaster", broadcaster_task);
                 node.task_executor
                     .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
 
@@ -541,7 +624,30 @@ fn main() {
                 // TODO: post update to OL
             }
 
-            handle.node_exit_future.await
+            #[cfg(feature = "sequencer")]
+            {
+                if ext.sequencer {
+                    let btcio_shutdown = btcio_shutdown_signal
+                        .take()
+                        .expect("sequencer must initialize btcio shutdown signal");
+                    let mut btcio_monitor_rx = btcio_monitor_rx
+                        .take()
+                        .expect("sequencer must initialize btcio monitor receiver");
+
+                    await_sequencer_shutdown_with_btcio(
+                        handle.node_exit_future,
+                        &btcio_shutdown,
+                        &mut btcio_monitor_rx,
+                    )
+                    .await
+                } else {
+                    handle.node_exit_future.await
+                }
+            }
+            #[cfg(not(feature = "sequencer"))]
+            {
+                handle.node_exit_future.await
+            }
         },
     ) {
         eprintln!("Error: {err:?}");
@@ -743,4 +849,67 @@ async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     #[cfg(feature = "sequencer")]
     ensure_batch_genesis(config, storage).await?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "sequencer"))]
+mod tests {
+    use std::{thread, time::Duration};
+
+    use strata_tasks::TaskManager;
+    use tokio::{runtime::Handle, sync::oneshot, time::sleep};
+
+    use super::await_sequencer_shutdown_with_btcio;
+
+    #[tokio::test]
+    async fn node_shutdown_drains_btcio_task_manager() {
+        let task_manager = TaskManager::new(Handle::current());
+        let executor = task_manager.create_executor();
+        let btcio_shutdown = task_manager.get_shutdown_signal();
+        let (monitor_tx, mut monitor_rx) = oneshot::channel::<Option<String>>();
+
+        // Emulate a long-running btcio worker that should stop after shutdown.
+        executor.spawn_critical("btcio-shutdown-test-worker", |shutdown| loop {
+            if shutdown.should_shutdown() {
+                break Ok(());
+            }
+            thread::sleep(Duration::from_millis(10));
+        });
+
+        let monitor_thread = thread::spawn(move || {
+            let monitor_err = task_manager
+                .monitor(Some(Duration::from_secs(1)))
+                .err()
+                .map(|e| e.to_string());
+            let _ = monitor_tx.send(monitor_err);
+        });
+
+        let result =
+            await_sequencer_shutdown_with_btcio(async { Ok(()) }, &btcio_shutdown, &mut monitor_rx)
+                .await;
+        assert!(result.is_ok(), "node shutdown path should succeed");
+
+        monitor_thread.join().expect("monitor thread should join");
+    }
+
+    #[tokio::test]
+    async fn btcio_monitor_failure_is_propagated() {
+        let task_manager = TaskManager::new(Handle::current());
+        let btcio_shutdown = task_manager.get_shutdown_signal();
+        let (monitor_tx, mut monitor_rx) = oneshot::channel::<Option<String>>();
+        monitor_tx
+            .send(Some("boom".to_string()))
+            .expect("send monitor failure");
+
+        let result = await_sequencer_shutdown_with_btcio(
+            async {
+                sleep(Duration::from_secs(10)).await;
+                Ok(())
+            },
+            &btcio_shutdown,
+            &mut monitor_rx,
+        )
+        .await;
+
+        let _err = result.expect_err("monitor failure should surface as error");
+    }
 }

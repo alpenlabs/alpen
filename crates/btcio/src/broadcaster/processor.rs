@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use bitcoin::Txid;
 use strata_db_types::types::{L1TxEntry, L1TxStatus};
-use strata_storage::BroadcastDbOps;
 use tracing::*;
 
 use super::{
@@ -218,32 +215,6 @@ where
     let mut unfinalized_entries = Vec::new();
     for idx in from..to {
         let Some(txentry) = io.get_tx_entry(idx).await? else {
-            break;
-        };
-
-        if !txentry.is_valid() {
-            error!(%idx, status = ?txentry.status, "invalid broadcaster entry in DB; skipping");
-            continue;
-        }
-
-        if txentry.is_finalized() {
-            continue;
-        }
-
-        unfinalized_entries.push(IndexedEntry::new(idx, txentry));
-    }
-    Ok(unfinalized_entries)
-}
-
-/// Legacy task-path DB helper retained for compatibility while task.rs remains in use.
-pub(super) async fn load_unfinalized_entries_from_db(
-    ops: &Arc<BroadcastDbOps>,
-    from: u64,
-    to: u64,
-) -> BroadcasterResult<Vec<IndexedEntry>> {
-    let mut unfinalized_entries = Vec::new();
-    for idx in from..to {
-        let Some(txentry) = ops.get_tx_entry_async(idx).await? else {
             break;
         };
 

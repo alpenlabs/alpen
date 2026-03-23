@@ -1,4 +1,5 @@
 use strata_db_types::errors::DbError;
+use strata_primitives::buf::Buf32;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -9,7 +10,10 @@ pub enum BroadcasterError {
     #[error("rpc: {0}")]
     Rpc(#[from] anyhow::Error),
 
-    #[error("expected tx not found in db. Idx {0}")]
+    #[error("missing transaction entry index for txid {0}")]
+    MissingEntryIndex(Buf32),
+
+    #[error("transaction not found in db at index {0}")]
     TxNotFound(u64),
 
     #[error("inconsistent next idx (expected {expected}, got {got})")]

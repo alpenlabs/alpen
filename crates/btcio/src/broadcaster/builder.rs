@@ -5,17 +5,15 @@ use std::{
 };
 
 use bitcoind_async_client::traits::{Broadcaster, Wallet};
-use strata_service::{ServiceBuilder, ServiceMonitor, TickingInput, TokioMpscInput};
+use strata_service::{ServiceBuilder, TickingInput, TokioMpscInput};
 use strata_storage::BroadcastDbOps;
 use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;
 
 use crate::{
     broadcaster::{
-        input::BroadcasterInputMessage,
-        io::BroadcasterIo,
-        service::{BroadcasterService, BroadcasterStatus},
-        state::BroadcasterServiceState,
+        handle::L1BroadcastHandle, input::BroadcasterInputMessage, io::BroadcasterIo,
+        service::BroadcasterService, state::BroadcasterServiceState,
     },
     BtcioParams,
 };
@@ -63,15 +61,8 @@ where
         self
     }
 
-    /// Launches the broadcaster service and returns command sender, DB ops handle, and monitor.
-    pub async fn launch(
-        self,
-        executor: &TaskExecutor,
-    ) -> anyhow::Result<(
-        mpsc::Sender<BroadcasterInputMessage>,
-        Arc<BroadcastDbOps>,
-        ServiceMonitor<BroadcasterStatus>,
-    )> {
+    /// Launches the broadcaster service and returns a broadcaster handle.
+    pub async fn launch(self, executor: &TaskExecutor) -> anyhow::Result<L1BroadcastHandle> {
         let io = BroadcasterIo::new(self.rpc_client, self.ops.clone());
         let state = BroadcasterServiceState::try_new(io, self.config).await?;
 
@@ -86,7 +77,6 @@ where
             .with_input(input)
             .launch_async("l1_broadcaster", executor)
             .await?;
-
-        Ok((command_tx, self.ops, monitor))
+        Ok(L1BroadcastHandle::new(command_tx, self.ops, Some(monitor)))
     }
 }

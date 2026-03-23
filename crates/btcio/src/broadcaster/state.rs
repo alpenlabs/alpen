@@ -1,19 +1,13 @@
-use std::sync::Arc;
-
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::indexed::Indexed;
 use strata_service::{ServiceState, TickMsg};
-use strata_storage::BroadcastDbOps;
 use tracing::*;
 
 use super::{
     error::{BroadcasterError, BroadcasterResult},
     input::BroadcasterInputMessage,
     io::BroadcasterIoContext,
-    processor::{
-        fetch_unfinalized_entries, load_unfinalized_entries_from_db, process_unfinalized_entries,
-        update_state,
-    },
+    processor::{fetch_unfinalized_entries, process_unfinalized_entries, update_state},
 };
 use crate::BtcioParams;
 
@@ -28,55 +22,13 @@ pub(crate) struct BroadcasterState {
     /// Unfinalized [`L1TxEntry`]s which the broadcaster will check for.
     pub(crate) unfinalized_entries: Vec<IndexedEntry>,
 }
+
 impl BroadcasterState {
-    /// Legacy task-path initializer. Service-path initialization uses IO context helpers.
-    pub(crate) async fn initialize(ops: &Arc<BroadcastDbOps>) -> BroadcasterResult<Self> {
-        Self::initialize_from_idx(ops, 0).await
-    }
-
-    /// Legacy task-path initializer. Service-path initialization uses IO context helpers.
-    pub(crate) async fn initialize_from_idx(
-        ops: &Arc<BroadcastDbOps>,
-        start_idx: u64,
-    ) -> BroadcasterResult<Self> {
-        let next_idx = ops.get_next_tx_idx_async().await?;
-
-        let unfinalized_entries =
-            load_unfinalized_entries_from_db(ops, start_idx, next_idx).await?;
-
-        Ok(Self {
+    fn new(next_idx: u64, unfinalized_entries: Vec<IndexedEntry>) -> Self {
+        Self {
             next_idx,
             unfinalized_entries,
-        })
-    }
-
-    /// Legacy task-path updater. Service-path updates use IO context helpers.
-    pub(crate) async fn update(
-        &mut self,
-        updated_entries: impl Iterator<Item = IndexedEntry>,
-        ops: &Arc<BroadcastDbOps>,
-    ) -> BroadcasterResult<()> {
-        // Filter out finalized and invalid entries so that we don't have to process them again.
-        let unfinalized_entries: Vec<_> = updated_entries
-            .filter(|entry| !entry.item().is_finalized() && entry.item().is_valid())
-            .collect();
-
-        let next_idx = ops.get_next_tx_idx_async().await?;
-
-        if next_idx < self.next_idx {
-            return Err(BroadcasterError::InconsistentNextIdx {
-                expected: self.next_idx,
-                got: next_idx,
-            });
         }
-        let new_unfinalized_entries =
-            load_unfinalized_entries_from_db(ops, self.next_idx, next_idx).await?;
-
-        // Update state: include updated entries and new unfinalized entries
-        self.unfinalized_entries = unfinalized_entries;
-        self.unfinalized_entries.extend(new_unfinalized_entries);
-        self.next_idx = next_idx;
-        Ok(())
     }
 }
 
@@ -102,10 +54,7 @@ where
         let unfinalized_entries = fetch_unfinalized_entries(&io, 0, next_idx).await?;
 
         Ok(Self {
-            inner: BroadcasterState {
-                next_idx,
-                unfinalized_entries,
-            },
+            inner: BroadcasterState::new(next_idx, unfinalized_entries),
             config,
             io,
         })
@@ -123,6 +72,10 @@ where
             }
         }
 
+        self.process_unfinalized_entries().await
+    }
+
+    async fn process_unfinalized_entries(&mut self) -> BroadcasterResult<()> {
         let updated_entries = process_unfinalized_entries(
             self.inner.unfinalized_entries.iter(),
             &self.io,
@@ -136,9 +89,7 @@ where
                 .await?;
         }
 
-        update_state(&mut self.inner, updated_entries.into_iter(), &self.io).await?;
-
-        Ok(())
+        update_state(&mut self.inner, updated_entries.into_iter(), &self.io).await
     }
 
     /// Inserts or replaces a tracked unfinalized entry by index.
@@ -185,17 +136,36 @@ mod test {
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
+    use strata_l1_txfmt::MagicBytes;
     use strata_primitives::buf::Buf32;
-    use strata_storage::ops::l1tx_broadcast::Context;
+    use strata_storage::{ops::l1tx_broadcast::Context, BroadcastDbOps};
 
     use super::*;
-    use crate::test_utils::gen_l1_tx_entry_with_status;
+    use crate::{
+        broadcaster::io::BroadcasterIo,
+        test_utils::{gen_l1_tx_entry_with_status, TestBitcoinClient},
+    };
 
     fn get_ops() -> Arc<BroadcastDbOps> {
         let pool = threadpool::Builder::new().num_threads(2).build();
         let db = get_test_sled_backend().broadcast_db();
         let ops = Context::new(db).into_ops(pool);
         Arc::new(ops)
+    }
+
+    fn get_test_btcio_params() -> BtcioParams {
+        BtcioParams::new(
+            6,                         // l1_reorg_safe_depth
+            MagicBytes::new(*b"ALPN"), // magic_bytes
+            0,                         // genesis_l1_height
+        )
+    }
+
+    fn make_io(
+        ops: Arc<BroadcastDbOps>,
+        client: TestBitcoinClient,
+    ) -> BroadcasterIo<TestBitcoinClient> {
+        BroadcasterIo::new(Arc::new(client), ops)
     }
 
     async fn populate_broadcast_db(ops: Arc<BroadcastDbOps>) -> Vec<(u64, L1TxEntry)> {
@@ -232,75 +202,75 @@ mod test {
 
     #[tokio::test]
     async fn test_initialize() {
-        // Insert entries to db
         let ops = get_ops();
 
         let pop = populate_broadcast_db(ops.clone()).await;
         let [(i1, _e1), (i2, _e2), (i3, _e3), (i4, _e4), (i5, _e5)] = pop.as_slice() else {
             panic!("Invalid initialization");
         };
-        // Now initialize state
-        let state = BroadcasterState::initialize(&ops).await.unwrap();
+
+        let io = make_io(ops, TestBitcoinClient::new(0));
+        let service_state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
+            .await
+            .unwrap();
+        let state = &service_state.inner;
 
         assert_eq!(state.next_idx, i5 + 1);
 
-        // state should contain all except reorged, invalid or  finalized entries
-        let unfin_entries = state.unfinalized_entries;
-        assert!(unfin_entries.iter().any(|e| e.index() == i1));
-        assert!(unfin_entries.iter().any(|e| e.index() == i2));
-        assert!(unfin_entries.iter().any(|e| e.index() == i4));
+        assert!(state.unfinalized_entries.iter().any(|e| e.index() == i1));
+        assert!(state.unfinalized_entries.iter().any(|e| e.index() == i2));
+        assert!(state.unfinalized_entries.iter().any(|e| e.index() == i4));
 
-        assert!(!unfin_entries.iter().any(|e| e.index() == i3));
-        assert!(!unfin_entries.iter().any(|e| e.index() == i5));
+        assert!(!state.unfinalized_entries.iter().any(|e| e.index() == i3));
+        assert!(!state.unfinalized_entries.iter().any(|e| e.index() == i5));
     }
 
     #[tokio::test]
     async fn test_next_state() {
-        // Insert entries to db
         let ops = get_ops();
 
         let entries = populate_broadcast_db(ops.clone()).await;
         assert_eq!(entries.len(), 5, "test: broadcast db init invalid");
-        // Now initialize state
-        let mut state = BroadcasterState::initialize(&ops).await.unwrap();
 
-        // Check for valid unfinalized entries in state.
+        let io = make_io(ops.clone(), TestBitcoinClient::new(0));
+        let mut service_state = BroadcasterServiceState::try_new(io, get_test_btcio_params())
+            .await
+            .unwrap();
+
         assert_eq!(
-            state.unfinalized_entries.len(),
+            service_state.inner.unfinalized_entries.len(),
             3,
             "Total 5 but should omit 2, one finalized and one invalid"
         );
 
-        // Get unfinalized entries where one entry is modified, another is removed
-        let mut unfinalized_entries = state.unfinalized_entries.clone();
+        let mut updated_entries = service_state.inner.unfinalized_entries.clone();
         let entry = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
-        unfinalized_entries.push(IndexedEntry::new(0, entry));
+        updated_entries.push(IndexedEntry::new(0, entry));
 
-        // Insert two more items to db, one invalid and one published. Note the new idxs than used
-        // in populate db.
         let e = gen_l1_tx_entry_with_status(L1TxStatus::InvalidInputs);
         let _ = ops
             .put_tx_entry_async([7; 32].into(), e.clone())
             .await
             .unwrap();
 
-        let e1 = gen_l1_tx_entry_with_status(L1TxStatus::Published); // this should be in new state
+        let e1 = gen_l1_tx_entry_with_status(L1TxStatus::Published);
         let idx1 = ops
             .put_tx_entry_async([8; 32].into(), e1.clone())
             .await
             .unwrap();
-        // Compute next state
-        state
-            .update(unfinalized_entries.into_iter(), &ops)
-            .await
-            .unwrap();
+        let io_ref = &service_state.io;
+        update_state(
+            &mut service_state.inner,
+            updated_entries.into_iter(),
+            io_ref,
+        )
+        .await
+        .unwrap();
 
-        assert_eq!(state.next_idx, idx1.unwrap() + 1);
-        // Original 5, 3 added, 2 invalid, 1 finalized. Ignores finalized and invalid
-        assert_eq!(state.unfinalized_entries.len(), 4);
+        assert_eq!(service_state.inner.next_idx, idx1.unwrap() + 1);
+        assert_eq!(service_state.inner.unfinalized_entries.len(), 4);
 
-        // Check no invalid and finalized entries in state
-        let unf_entries = state.unfinalized_entries;
+        let unf_entries = service_state.inner.unfinalized_entries;
         assert!(!unf_entries.iter().any(|e| e.item().is_finalized()));
         assert!(unf_entries.iter().all(|e| e.item().is_valid()));
     }

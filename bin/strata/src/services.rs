@@ -26,7 +26,7 @@ mod sequencer_services {
 
     use anyhow::{Result, anyhow};
     use strata_btcio::{
-        broadcaster::{L1BroadcastHandle, spawn_broadcaster_task},
+        broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
         writer::{EnvelopeHandle, start_envelope_task},
     };
     use strata_config::EpochSealingConfig;
@@ -52,7 +52,7 @@ mod sequencer_services {
             return Ok(None);
         }
 
-        let broadcast_handle = Arc::new(start_broadcaster(nodectx));
+        let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
         let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), sequencer_sk)?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
@@ -73,18 +73,21 @@ mod sequencer_services {
     /// Starts the L1 broadcaster task.
     ///
     /// Manages L1 transaction broadcasting and tracks confirmation status.
-    fn start_broadcaster(nodectx: &NodeContext) -> L1BroadcastHandle {
+    fn start_broadcaster(nodectx: &NodeContext) -> Result<L1BroadcastHandle> {
         let broadcast_db = nodectx.storage().db().broadcast_db();
         let broadcast_ctx = l1tx_broadcast::Context::new(broadcast_db);
         let broadcast_ops = Arc::new(broadcast_ctx.into_ops(nodectx.storage().pool().clone()));
 
-        spawn_broadcaster_task(
-            nodectx.executor(),
-            nodectx.bitcoin_client().clone(),
-            broadcast_ops,
-            super::rollup_to_btcio_params(nodectx.params().rollup()),
-            nodectx.config().btcio.broadcaster.poll_interval_ms,
-        )
+        nodectx.task_manager().handle().block_on(async {
+            BroadcasterBuilder::new(
+                nodectx.bitcoin_client().clone(),
+                broadcast_ops,
+                super::rollup_to_btcio_params(nodectx.params().rollup()),
+            )
+            .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
+            .launch(nodectx.executor())
+            .await
+        })
     }
 
     /// Starts the L1 writer/envelope task.

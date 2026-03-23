@@ -1,12 +1,13 @@
 mod builder;
-pub mod error;
+mod error;
 mod handle;
 mod input;
 mod io;
 mod processor;
 mod service;
 mod state;
-pub mod task;
 
 pub use builder::BroadcasterBuilder;
-pub use handle::{create_broadcaster_task, spawn_broadcaster_task, L1BroadcastHandle};
+pub use error::BroadcasterError;
+pub use handle::L1BroadcastHandle;
+pub use service::BroadcasterStatus;
