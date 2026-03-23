@@ -28,7 +28,6 @@ use crate::ParseError;
 const HASH_SIZE: usize = 32;
 const BITCOIN_OUTPOINT_LEN: usize = 36;
 const BITCOIN_TXID_LEN: usize = 32;
-const BITCOIN_XONLY_PUBLIC_KEY_LEN: usize = 32;
 
 /// L1 output reference.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -618,7 +617,7 @@ impl TryFrom<BitcoinXOnlyPublicKey> for Descriptor {
     }
 }
 
-impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32, BITCOIN_XONLY_PUBLIC_KEY_LEN);
+impl_ssz_transparent_wrapper!(BitcoinXOnlyPublicKey, Buf32);
 
 /// Represents a raw, byte-encoded Bitcoin transaction with custom [`Arbitrary`] support.
 /// Provides conversions (via [`TryFrom`]) to and from [`Transaction`].
