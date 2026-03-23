@@ -49,12 +49,12 @@ impl EpochDaTracker {
 /// Returns blocks in forward chronological order and the boundary header
 /// (the terminal/genesis block that precedes the epoch).
 async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
-    from_id: OLBlockId,
+    target_id: OLBlockId,
     epoch: Epoch,
     ctx: &C,
 ) -> Result<Vec<OLBlock>, BlockAssemblyError> {
     let mut blocks = Vec::new();
-    let mut cur_id = from_id;
+    let mut cur_id = target_id;
 
     loop {
         let block = ctx
@@ -62,29 +62,24 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
             .await?
             .ok_or(BlockAssemblyError::BlockNotFound(cur_id))?;
 
+        // Check if the same epoch is being traversed through, else we are done.
+        if block.header().epoch() != epoch {
+            break;
+        }
+        // If the block is terminal, we are done.
+        if block.header().is_terminal() || block.header().is_genesis_slot() {
+            break;
+        }
+
         let parent_id = *block.header().parent_blkid();
 
-        // Fetch parent to check if it's the epoch boundary.
-        let parent_block = ctx
-            .fetch_ol_block(parent_id)
-            .await?
-            .ok_or(BlockAssemblyError::BlockNotFound(parent_id))?;
-
-        if parent_block.header().is_terminal() || parent_block.header().is_genesis_slot() {
-            blocks.reverse();
-            return Ok(blocks);
-        }
-
-        // Check if the same epoch is being traversed through
-        if parent_block.header().epoch() != epoch {
-            return Err(BlockAssemblyError::Other(
-                "Previous epoch without encountering terminal block".to_string(),
-            ));
-        }
-
+        // Insert block and update current block to be the parent block
         blocks.push(block);
         cur_id = parent_id;
     }
+
+    blocks.reverse();
+    Ok(blocks)
 }
 
 /// Rebuilds accumulated DA for `target_blkid` by replaying all epoch blocks
@@ -100,16 +95,17 @@ where
     <<C::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
+    // toDO: make it return nonempty vec
     let epoch_blocks = collect_epoch_blocks_until(blkid.blkid, epoch, ctx).await?;
     if epoch_blocks.is_empty() {
         // TODO: better errors
         Err(BlockAssemblyError::Other("Empty epoch blocks".to_string()))
     } else {
-        let start_blk = epoch_blocks.first().unwrap();
-        let initial_state = fetch_ol_state(start_blk, ctx).await?;
+        let first_blk = epoch_blocks.first().unwrap();
+        let initial_state = fetch_pre_state(first_blk, ctx).await?;
 
         let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
-        let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, start_blk.header())
+        let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, first_blk.header())
             .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
         let epoch = epoch_blocks
@@ -124,15 +120,25 @@ where
     }
 }
 
-async fn fetch_ol_state<C: BlockAssemblyAnchorContext>(
+/// Fetches the pre-state for `blk` by looking up the post-state of its parent.
+async fn fetch_pre_state<C: BlockAssemblyAnchorContext>(
     blk: &OLBlock,
     ctx: &C,
 ) -> Result<Arc<C::State>, BlockAssemblyError> {
-    let blkid = blk.header().compute_block_commitment();
-    // TODO: the context should not return 'Arc'ed state, should return just the state.
-    let ol_state = ctx.fetch_state_for_tip(blkid).await?.ok_or_else(|| {
-        BlockAssemblyError::Other(format!("missing OL state at epoch boundary {blkid}"))
-    })?;
+    let parent_id = *blk.header().parent_blkid();
+    let parent_blk = ctx
+        .fetch_ol_block(parent_id)
+        .await?
+        .ok_or(BlockAssemblyError::BlockNotFound(parent_id))?;
+    let parent_commitment = parent_blk.header().compute_block_commitment();
+    let ol_state = ctx
+        .fetch_state_for_tip(parent_commitment)
+        .await?
+        .ok_or_else(|| {
+            BlockAssemblyError::Other(format!(
+                "missing OL state at epoch boundary {parent_commitment}"
+            ))
+        })?;
     Ok(ol_state)
 }
 
