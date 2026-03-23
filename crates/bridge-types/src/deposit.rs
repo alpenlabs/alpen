@@ -6,9 +6,8 @@
 
 use arbitrary::Arbitrary;
 use strata_codec::VarVec;
+use strata_identifiers::{AccountSerial, SubjectIdBytes, SubjectIdBytesError};
 use thiserror::Error;
-
-use crate::{AccountSerial, SubjectIdBytes, acct::SubjectIdBytesError};
 
 /// Maximum value encodable in 12-bit serial format (4,095).
 const MAX_SERIAL_12_BITS: u32 = (1 << 12) - 1;
@@ -333,9 +332,9 @@ mod tests {
     use std::iter::repeat_n;
 
     use proptest::prelude::*;
+    use strata_identifiers::SUBJ_ID_LEN;
 
     use super::*;
-    use crate::SUBJ_ID_LEN;
 
     fn subject_bytes() -> impl Strategy<Value = SubjectIdBytes> {
         prop::collection::vec(any::<u8>(), 0..=SUBJ_ID_LEN)

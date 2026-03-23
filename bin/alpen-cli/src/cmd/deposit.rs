@@ -19,8 +19,9 @@ use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
+use strata_bridge_types::DepositDescriptor;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_identifiers::{AccountSerial, DepositDescriptor, SubjectIdBytes};
+use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_primitives::crypto::even_kp;
 

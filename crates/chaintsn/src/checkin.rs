@@ -5,8 +5,7 @@ use strata_asm_logs::{
     constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
     CheckpointUpdate, DepositLog,
 };
-use strata_bridge_types::DepositIntent;
-use strata_identifiers::DepositDescriptor;
+use strata_bridge_types::{DepositDescriptor, DepositIntent};
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment, L1Height};

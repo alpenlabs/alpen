@@ -14297,8 +14297,10 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
+ "strata-codec",
  "strata-identifiers",
  "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
