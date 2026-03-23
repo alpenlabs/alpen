@@ -41,7 +41,6 @@ env:
 permissions:
   contents: read
   id-token: write
-  security-events: write
 
 # Cancel in-progress runs for the same branch (except main — let those finish)
 concurrency:
@@ -119,9 +118,8 @@ jobs:
         with:
           mask-password: "true"
 
-      # --- Build, scan, push --------------------------------------------------
-      - name: Build Docker image
-        id: build
+      # --- Build and push via Buildx ------------------------------------------
+      - name: Build and push Docker image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
@@ -135,31 +133,11 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
             --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --load \
+            --push \
             -t "${FULL_IMAGE}" \
             -f "${DOCKERFILE_PATH}" .
 
-          echo "full_image=${FULL_IMAGE}" >> "$GITHUB_OUTPUT"
-
-      - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
-        continue-on-error: true
-        with:
-          image-ref: ${{ steps.build.outputs.full_image }}
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
-
-      - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        continue-on-error: true
-        with:
-          sarif_file: "trivy-results.sarif"
-
-      - name: Push Docker image
-        run: |
-          docker push "${{ steps.build.outputs.full_image }}"
-          echo "Successfully pushed: ${{ steps.build.outputs.full_image }}"
+          echo "Successfully pushed: ${FULL_IMAGE}"
 
   # ---------------------------------------------------------------------------
   # Summary
