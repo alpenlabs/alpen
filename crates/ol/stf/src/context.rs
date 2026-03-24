@@ -8,8 +8,6 @@
 //! ensuring that we don't box ourselves into a design corner where we can't do
 //! DA-based state reconstruction.
 
-use std::cell::RefCell;
-
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{Epoch, OLBlockHeader, OLLog, Slot};
 

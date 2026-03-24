@@ -1,6 +1,6 @@
 //! ASM manifest processing.
 
-use strata_acct_types::{AccountId, MsgPayload};
+use strata_acct_types::MsgPayload;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog,
@@ -47,7 +47,7 @@ pub fn process_block_manifests<S: IStateAccessor>(
         process_asm_manifest(state, real_height, mf, context)?;
     }
 
-    if let Some((last_height, last_mf)) = last {
+    if let Some((_last_height, _last_mf)) = last {
         // TODO this is where we would update the header, if we want to keep
         // that as defined in the spec
     }
@@ -78,7 +78,7 @@ fn process_asm_manifest<S: IStateAccessor>(
 fn process_asm_log<S: IStateAccessor>(
     state: &mut S,
     log: &AsmLogEntry,
-    real_height: L1Height,
+    _real_height: L1Height,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Try to parse the log as an SPS-52 message.
@@ -156,7 +156,7 @@ fn process_deposit_log<S: IStateAccessor>(
 fn process_checkpoint_tip_update<S: IStateAccessor>(
     state: &mut S,
     data: &CheckpointTipUpdate,
-    context: &BasicExecContext<'_>,
+    _context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     let tip = data.tip();
     let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());

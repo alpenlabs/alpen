@@ -1,6 +1,5 @@
 use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_codec::CodecError;
-use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::{Epoch, Slot};
 use thiserror::Error;
 

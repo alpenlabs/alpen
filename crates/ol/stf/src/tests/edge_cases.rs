@@ -2,18 +2,8 @@
 
 use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_state_types::OLState;
 
-use crate::{
-    BRIDGE_GATEWAY_ACCT_ID,
-    errors::ExecError,
-    test_utils::{
-        SnarkUpdateBuilder, TEST_RECIPIENT_ID, create_empty_account, create_test_genesis_state,
-        create_unchecked_snark_update, execute_tx_in_block, get_test_proof,
-        get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
-        setup_genesis_with_snark_account, test_account_id,
-    },
-};
+use crate::{BRIDGE_GATEWAY_ACCT_ID, errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_zero_value_transfer() {

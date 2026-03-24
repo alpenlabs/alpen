@@ -1,7 +1,5 @@
 //! Strata orchestration layer block execution and validation library.
 
-#![allow(unused, reason = "in development")]
-
 use strata_acct_types as _;
 use strata_ol_state_types as _;
 
@@ -31,6 +29,6 @@ pub use manifest_processing::process_block_manifests;
 pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;
 pub use transaction_processing::{
-    check_tx_constraints, process_block_tx_segment, process_single_tx,
+    check_tx_constraints, process_block_tx_segment, process_single_tx, verify_effects_safe,
 };
 pub use verification::*;

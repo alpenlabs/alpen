@@ -4,18 +4,8 @@ use ssz_primitives::FixedBytes;
 use strata_acct_types::{AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{GamTxPayload, TransactionPayload};
-use strata_ol_state_types::OLState;
 
-use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID,
-    errors::ExecError,
-    test_utils::{
-        InboxMmrTracker, SnarkUpdateBuilder, create_empty_account, create_test_genesis_state,
-        execute_tx_in_block, get_snark_state_expect, get_test_recipient_account_id,
-        get_test_snark_account_id, get_test_state_root, make_simple_tx,
-        setup_genesis_with_snark_account, test_account_id,
-    },
-};
+use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_inbox_message_insertion() {
@@ -29,8 +19,7 @@ fn test_snark_inbox_message_insertion() {
     // value=0)
 
     // Create GAM transaction
-    let gam_tx_payload =
-        GamTxPayload::new(snark_id).expect("Should create GAM payload");
+    let gam_tx_payload = GamTxPayload::new(snark_id).expect("Should create GAM payload");
     let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(gam_tx_payload));
 
     // Execute transaction
@@ -235,11 +224,7 @@ fn test_snark_update_invalid_message_proof() {
 
     // Step 2: Create update with INVALID proof for the gam message (index 0)
     // First create msg entry (deliberately using wrong source to keep it invalid)
-    let deposit_msg = MessageEntry::new(
-        BRIDGE_GATEWAY_ACCT_ID,
-        0,
-        MsgPayload::new_empty(),
-    );
+    let deposit_msg = MessageEntry::new(BRIDGE_GATEWAY_ACCT_ID, 0, MsgPayload::new_empty());
 
     // Create an invalid proof with bogus cohashes
     let invalid_raw_proof = RawMerkleProof {

@@ -1,23 +1,16 @@
 //! Block transactional processing.
 
-use strata_acct_types::{
-    AccountId, AcctError, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
-};
-use strata_ledger_types::{
-    IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut, IStateAccessor,
-};
-use strata_ol_chain_types_new::{
-    OLTransaction, OLTxSegment, SauTxPayload, TransactionPayload, TxConstraints, TxProofs,
-};
+use strata_acct_types::*;
+use strata_ledger_types::*;
+use strata_ol_chain_types_new::*;
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 
 use crate::{
     account_processing,
     constants::SEQUENCER_ACCT_ID,
-    context::{BasicExecContext, BlockContext, TxExecContext},
+    context::{BasicExecContext, TxExecContext},
     errors::{ExecError, ExecResult},
-    output::OutputCtx,
     proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker},
 };
 
@@ -82,16 +75,17 @@ fn process_update_tx<S: IStateAccessor>(
     tx_proofs: &TxProofs,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    // Step 1: Read account state for verification.
+    // 1. Read account state and verify effects are safe to apply.
     let account_state = state
         .get_account_state(target)?
         .ok_or(ExecError::UnknownAccount(target))?;
     let snark_acct_state = account_state
         .as_snark_account()
         .map_err(|_| ExecError::IncorrectTxTargetType)?;
-    let cur_balance = account_state.balance();
 
-    // Step 2: Build SnarkAccountUpdateData from the new tx types.
+    verify_effects_safe(effects, state, account_state)?;
+
+    // 2. Build SnarkAccountUpdateData from the new tx types.
     let op = sau_payload.operation();
     let upd = op.update();
     let proof_state = ProofState::new(
@@ -110,7 +104,7 @@ fn process_update_tx<S: IStateAccessor>(
         upd.extra_data().to_vec(),
     );
 
-    // Step 3: Verify the update (all checks delegated to snark-acct-sys).
+    // 3. Verify the update by calling out to the snark account library.
     let state_ctx = TxProofVerificationContext::from_account_and_state(state, &account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
     let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
@@ -119,30 +113,30 @@ fn process_update_tx<S: IStateAccessor>(
         target,
         snark_acct_state,
         &update_data,
-        cur_balance,
         &mut verifier,
     )?;
 
-    // Step 4: Mutate account state and collect effects.
-    let fx_buf = state.update_account(target, |astate| -> ExecResult<_> {
+    // 4. Actually take balance and write new account inner state.
+    state.update_account(target, |astate| -> ExecResult<_> {
+        // SAFETY: These panics are checked ahead of time so can never get hit.
+
         // Deduct balance for all effects first.
-        let total_sent = compute_effects_total_value(effects)
-            .ok_or(ExecError::Acct(AcctError::BitcoinAmountOverflow))?;
+        let total_sent = effects.get_total_value_sent().unwrap();
         let coin = astate
             .take_balance(total_sent)
-            .map_err(|_| ExecError::InsufficientAccountBalance(target, total_sent))?;
-        coin.safely_consume_unchecked();
+            .expect("ol/stf: account changed balance");
+        coin.safely_consume_unchecked(); // maybe we'll use this in the future
 
-        // Update proof state.
-        let snrk_acct_state = astate
+        // Extract the snark account state so we can modify it.
+        let acct_tstate = astate
             .as_snark_account_mut()
-            .map_err(|_| ExecError::IncorrectTxTargetType)?;
+            .expect("ol/stf: account changed type");
 
         let new_seqno = upd
             .seq_no()
             .checked_add(1)
             .ok_or(ExecError::MaxSeqNumberReached { account_id: target })?;
-        snrk_acct_state.update_inner_state(
+        acct_tstate.update_inner_state(
             upd.proof_state().inner_state_root(),
             upd.proof_state().new_next_msg_idx(),
             new_seqno.into(),
@@ -159,15 +153,15 @@ fn process_update_tx<S: IStateAccessor>(
 }
 
 /// Converts `SauTxLedgerRefs` (new chain type) to `LedgerRefs` (snark-acct-types).
-fn convert_sau_ledger_refs(sau_refs: &strata_ol_chain_types_new::SauTxLedgerRefs) -> LedgerRefs {
+fn convert_sau_ledger_refs(sau_refs: &SauTxLedgerRefs) -> LedgerRefs {
     match sau_refs.asm_history_proofs() {
         Some(claim_list) => {
-            let claims: Vec<strata_acct_types::AccumulatorClaim> = claim_list
+            let claims: Vec<AccumulatorClaim> = claim_list
                 .claims()
                 .iter()
                 .map(|c| {
                     let hash: [u8; 32] = c.entry_hash().into();
-                    strata_acct_types::AccumulatorClaim::new(c.idx(), hash)
+                    AccumulatorClaim::new(c.idx(), hash)
                 })
                 .collect();
             LedgerRefs::new(claims)

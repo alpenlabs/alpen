@@ -1,22 +1,13 @@
 //! Tests for ledger references (referencing ASM manifests)
 
-use strata_acct_types::{AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash};
+use strata_acct_types::{
+    AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash,
+};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, WtxidsRoot};
 use strata_ledger_types::{IAccountState, IStateAccessor};
-use strata_ol_state_types::OLState;
 
-use crate::{
-    assembly::BlockComponents,
-    context::BlockInfo,
-    errors::ExecError,
-    test_utils::{
-        ManifestMmrTracker, SnarkUpdateBuilder, create_empty_account, create_test_genesis_state,
-        execute_block_with_outputs, execute_tx_in_block, get_test_recipient_account_id,
-        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
-        test_l1_block_id,
-    },
-};
+use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_with_valid_ledger_reference() {

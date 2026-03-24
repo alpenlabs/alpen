@@ -7,20 +7,13 @@ use strata_bridge_types::DepositDescriptor;
 use strata_identifiers::{Buf32, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
-use strata_ol_chain_types_new::TransactionPayload;
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-use strata_ol_state_types::{OLSnarkAccountState, OLState};
+use strata_ol_state_types::OLSnarkAccountState;
 use strata_predicate::PredicateKey;
 
 use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL,
-    assembly::BlockComponents,
-    context::BlockInfo,
-    test_utils::{
-        InboxMmrTracker, SnarkUpdateBuilder, create_test_genesis_state,
-        execute_block_with_outputs, get_test_snark_account_id, get_test_state_root,
-        test_l1_block_id,
-    },
+    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, assembly::BlockComponents,
+    context::BlockInfo, test_utils::*,
 };
 
 #[test]
@@ -178,7 +171,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     )
     .expect("Block 1 should execute");
 
-    let block1 = block1_output.completed_block();
+    let _block1 = block1_output.completed_block();
 
     // Verify the withdrawal was processed
     let account_after_withdrawal = state

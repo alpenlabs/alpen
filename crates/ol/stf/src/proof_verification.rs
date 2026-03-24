@@ -1,17 +1,17 @@
 //! Transaction proof verification implementation.
+#![expect(missing_debug_implementations, reason = "opaque hash types")]
 
-use strata_acct_types::{AccumulatorClaim, Mmr64, RawMerkleProof, StrataHasher};
+use strata_acct_types::{AccumulatorClaim, Mmr64, RawMerkleProof};
 use strata_ledger_types::{
     AccountTypeStateRef, IAccountState, ISnarkAccountState, IStateAccessor, ProofVerifyError,
     TxProofVerifier,
 };
-use strata_merkle::{MerkleProof, Mmr64B32};
+use strata_merkle::Mmr64B32;
 use strata_ol_chain_types_new::{ProofSatisfierList, RawMerkleProofList, TxProofs};
 use strata_predicate::PredicateKey;
 
 /// Context for accumulators/keys we verify proofs against when verifying a
 /// proof.
-#[derive(Debug)]
 pub(crate) struct TxProofVerificationContext<'a> {
     asm_history_mmr: &'a Mmr64,
     local_inbox_mmr: Option<&'a Mmr64B32>,
@@ -118,7 +118,6 @@ impl<'a> TxProofsTracker<'a> {
 
 /// Concrete implementation of [`TxProofVerifier`] that walks over the proof
 /// fields in a transaction.
-#[expect(missing_debug_implementations, reason = "contains opaque borrow types that don't implement Debug")]
 pub struct TxProofVerifierImpl<'a> {
     state_ctx: TxProofVerificationContext<'a>,
     proof_tracker: TxProofsTracker<'a>,
@@ -246,10 +245,14 @@ mod tests {
         assert!(!tracker.is_acc_proofs_done());
         assert!(tracker.next_acc_proof().is_some());
 
-        tracker.inc_next_acc_proof().expect("first inc should succeed");
+        tracker
+            .inc_next_acc_proof()
+            .expect("first inc should succeed");
         assert!(!tracker.is_acc_proofs_done());
 
-        tracker.inc_next_acc_proof().expect("second inc should succeed");
+        tracker
+            .inc_next_acc_proof()
+            .expect("second inc should succeed");
         assert!(tracker.is_acc_proofs_done());
         assert!(tracker.next_acc_proof().is_none());
 
@@ -266,10 +269,14 @@ mod tests {
         assert!(!tracker.is_pred_proofs_done());
         assert!(tracker.next_pred_proof().is_some());
 
-        tracker.inc_next_pred_proof().expect("first inc should succeed");
+        tracker
+            .inc_next_pred_proof()
+            .expect("first inc should succeed");
         assert!(!tracker.is_pred_proofs_done());
 
-        tracker.inc_next_pred_proof().expect("second inc should succeed");
+        tracker
+            .inc_next_pred_proof()
+            .expect("second inc should succeed");
         assert!(tracker.is_pred_proofs_done());
         assert!(tracker.next_pred_proof().is_none());
 

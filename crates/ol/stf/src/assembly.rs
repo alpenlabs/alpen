@@ -12,7 +12,7 @@ use crate::{
     context::{BasicExecContext, BlockContext, BlockInfo, TxExecContext},
     errors::ExecResult,
     manifest_processing,
-    output::{ExecOutputBuffer, OutputCtx},
+    output::ExecOutputBuffer,
     transaction_processing,
     verification::{BlockExecInput, BlockPostStateCommitments},
     verify_block,

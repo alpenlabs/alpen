@@ -311,7 +311,7 @@ fn test_process_chain_with_multiple_epochs() {
     // with 3 blocks per epoch (epochs 0, 1, 2, 3 = 12 blocks total)
     let mut state = create_test_genesis_state();
     const BLOCKS_PER_EPOCH: u64 = 3;
-    const TARGET_EPOCH: u32 = 3;
+    const _TARGET_EPOCH: u32 = 3;
     const TOTAL_BLOCKS: usize = 12; // 4 epochs * 3 blocks each
 
     let mut blocks = Vec::new();
@@ -352,7 +352,7 @@ fn test_process_chain_with_multiple_epochs() {
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
-                (state.last_l1_height() + 1), // Next L1 height after state's last seen
+                state.last_l1_height() + 1, // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
@@ -615,7 +615,7 @@ fn test_multi_block_chain_verification() {
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
-                (state.last_l1_height() + 1), // Next L1 height after state's last seen
+                state.last_l1_height() + 1, // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
