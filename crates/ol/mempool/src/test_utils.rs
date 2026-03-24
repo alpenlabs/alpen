@@ -321,11 +321,8 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
 
     let update = SnarkAccountUpdate::new(operation, vec![]);
 
-    OLMempoolTransaction::new_snark_account_update(
-        create_test_account_id_with(account_id),
-        update,
-    )
-    .with_constraints(constraints)
+    OLMempoolTransaction::new_snark_account_update(create_test_account_id_with(account_id), update)
+        .with_constraints(constraints)
 }
 
 /// Set up a genesis state in the database for the given tip.

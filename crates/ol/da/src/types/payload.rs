@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, marker::PhantomData};
 
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
 use strata_codec::{Codec, CodecError, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
@@ -12,7 +12,6 @@ use strata_ledger_types::{
     NewAccountData,
 };
 use strata_predicate::PredicateKeyBuf;
-use strata_acct_types::MessageEntry;
 use strata_snark_acct_types::Seqno;
 
 use super::{

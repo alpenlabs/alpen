@@ -1,8 +1,7 @@
-use strata_acct_types::{AcctResult, Hash, Mmr64, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{AcctResult, Hash, MessageEntry, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_predicate::PredicateKey;
-use strata_acct_types::MessageEntry;
 use strata_snark_acct_types::Seqno;
 
 use crate::ssz_generated::ssz::state::{OLSnarkAccountState, ProofState};

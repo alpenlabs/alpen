@@ -6,8 +6,8 @@ use std::mem;
 
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload, RawMerkleProof,
-    SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
+    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
+    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{
@@ -21,7 +21,6 @@ use strata_ol_chain_types_new::*;
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
-use strata_acct_types::AccumulatorClaim;
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub fn create_test_genesis_state() -> OLState {
@@ -210,12 +209,11 @@ pub fn build_chain_with_transactions(
                 vec![],
             );
             let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(gam_target)
-                    .expect("GamTxPayload creation should succeed"),
+                GamTxPayload::new(gam_target).expect("GamTxPayload creation should succeed"),
             );
             BlockComponents::new(
                 OLTxSegment::new(vec![make_simple_tx(tx)])
-                .expect("tx segment should be within limits"),
+                    .expect("tx segment should be within limits"),
                 Some(
                     OLL1ManifestContainer::new(vec![dummy_manifest])
                         .expect("single manifest should succeed"),
@@ -225,8 +223,7 @@ pub fn build_chain_with_transactions(
             // GAM to snark account: populates the snark's inbox for later processing
             let msg_data = format!("inbox msg at slot {i}").into_bytes();
             let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(snark_id)
-                    .expect("GamTxPayload creation should succeed"),
+                GamTxPayload::new(snark_id).expect("GamTxPayload creation should succeed"),
             );
 
             let msg_entry = MessageEntry::new(
@@ -254,8 +251,7 @@ pub fn build_chain_with_transactions(
         } else if i % 4 == 2 {
             // GAM to regular target account
             let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(gam_target)
-                    .expect("GamTxPayload creation should succeed"),
+                GamTxPayload::new(gam_target).expect("GamTxPayload creation should succeed"),
             );
             BlockComponents::new_txs(vec![tx])
         } else {
@@ -595,7 +591,8 @@ pub fn create_empty_account(state: &mut OLState, account_id: AccountId) -> Accou
         .expect("Should create empty account")
 }
 
-/// Helper to make a simple OLTransaction from a payload (default constraints, empty effects/proofs).
+/// Helper to make a simple OLTransaction from a payload (default constraints, empty
+/// effects/proofs).
 pub fn make_simple_tx(payload: TransactionPayload) -> OLTransaction {
     OLTransaction::new(
         OLTransactionData {
@@ -691,12 +688,7 @@ impl SnarkUpdateBuilder {
     }
 
     /// Build the full OLTransaction with the resulting state root.
-    pub fn build(
-        self,
-        acct_id: AccountId,
-        new_state_root: Hash,
-        proof: Vec<u8>,
-    ) -> OLTransaction {
+    pub fn build(self, acct_id: AccountId, new_state_root: Hash, proof: Vec<u8>) -> OLTransaction {
         // Calculate new message index based on messages processed
         let new_msg_idx = self.old_msg_idx + self.processed_messages.len() as u64;
 
@@ -715,8 +707,8 @@ impl SnarkUpdateBuilder {
         let ledger_refs = if self.ledger_ref_claims.is_empty() {
             SauTxLedgerRefs::new_empty()
         } else {
-            let claim_list = ClaimList::new(self.ledger_ref_claims)
-                .expect("test: too many ledger ref claims");
+            let claim_list =
+                ClaimList::new(self.ledger_ref_claims).expect("test: too many ledger ref claims");
             SauTxLedgerRefs::new_with_claims(claim_list)
         };
 

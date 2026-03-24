@@ -6,7 +6,9 @@ use std::{
 };
 
 use async_trait::async_trait;
-use strata_acct_types::{AccountId, tree_hash::TreeHash};
+use strata_acct_types::{
+    AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof, tree_hash::TreeHash,
+};
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
@@ -16,7 +18,6 @@ use strata_ledger_types::{
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
 use strata_ol_state_types::{IStateBatchApplicable, StateProvider};
-use strata_acct_types::{AccumulatorClaim, MessageEntry, RawMerkleProof};
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 
@@ -332,10 +333,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use strata_acct_types::AccumulatorClaim;
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
     use strata_ledger_types::IStateAccessor;
-    use strata_acct_types::AccumulatorClaim;
 
     use super::*;
     use crate::test_utils::{

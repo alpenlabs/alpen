@@ -178,10 +178,7 @@ impl OLMempoolTransaction {
     }
 
     /// Create a new mempool transaction with a snark account update.
-    pub fn new_snark_account_update(
-        target: AccountId,
-        base_update: SnarkAccountUpdate,
-    ) -> Self {
+    pub fn new_snark_account_update(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
         Self {
             payload: OLMempoolTxPayload::new_snark_account_update(target, base_update),
             constraints: TxConstraints::default(),
@@ -571,12 +568,11 @@ impl OLMempoolRejectCounts {
 
 #[cfg(test)]
 mod tests {
-    use proptest::{prelude::*, strategy::ValueTree, test_runner::TestRunner};
     use ::ssz::{Decode, Encode};
-    use strata_acct_types::AccountId;
+    use proptest::{prelude::*, strategy::ValueTree, test_runner::TestRunner};
+    use strata_acct_types::{AccountId, *};
     use strata_identifiers::Buf32;
     use strata_ol_chain_types_new::test_utils;
-    use strata_acct_types::*;
     use strata_snark_acct_types::*;
 
     use super::*;
@@ -585,9 +581,8 @@ mod tests {
     };
 
     fn output_transfer_strategy() -> impl Strategy<Value = OutputTransfer> {
-        (any::<[u8; 32]>().prop_map(AccountId::from), any::<u64>()).prop_map(|(dest, value)| {
-            OutputTransfer::new(dest, BitcoinAmount::from_sat(value))
-        })
+        (any::<[u8; 32]>().prop_map(AccountId::from), any::<u64>())
+            .prop_map(|(dest, value)| OutputTransfer::new(dest, BitcoinAmount::from_sat(value)))
     }
 
     fn output_message_strategy() -> impl Strategy<Value = OutputMessage> {

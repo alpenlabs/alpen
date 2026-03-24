@@ -8,7 +8,9 @@ use std::{
 
 use async_trait::async_trait;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, tree_hash::TreeHash};
+use strata_acct_types::{
+    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload, tree_hash::TreeHash,
+};
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
 use strata_asm_manifest_types::AsmManifest;
 use strata_btc_verification::HeaderVerificationState;
@@ -30,7 +32,6 @@ use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
 use strata_predicate::PredicateKey;
-use strata_acct_types::{AccumulatorClaim, MessageEntry};
 use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, OLStateManager, create_node_storage};

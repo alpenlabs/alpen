@@ -848,11 +848,11 @@ mod tests {
     use crate::{
         DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
         test_utils::{
-            create_test_account_id_with, create_test_constraints_with_slots,
-            create_test_block_commitment, create_test_context, create_test_generic_tx_with_size,
-            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
-            create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
-            create_test_tx_with_id,
+            create_test_account_id_with, create_test_block_commitment,
+            create_test_constraints_with_slots, create_test_context,
+            create_test_generic_tx_with_size, create_test_ol_state_for_tip,
+            create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
+            create_test_state_provider, create_test_tx_with_id,
         },
         types::OLMempoolConfig,
     };
@@ -972,29 +972,20 @@ mod tests {
         // Add three GAM transactions
         // They should get different priorities due to insertion order
         let account1 = create_test_account_id_with(200);
-        let gam1 = OLMempoolTransaction::new_generic_account_message(
-            account1,
-            vec![1, 2, 3],
-        )
-        .unwrap();
+        let gam1 =
+            OLMempoolTransaction::new_generic_account_message(account1, vec![1, 2, 3]).unwrap();
         let gam1_target = gam1.target();
         state.add_transaction(gam1).await.unwrap();
 
         let account2 = create_test_account_id_with(201);
-        let gam2 = OLMempoolTransaction::new_generic_account_message(
-            account2,
-            vec![4, 5, 6],
-        )
-        .unwrap();
+        let gam2 =
+            OLMempoolTransaction::new_generic_account_message(account2, vec![4, 5, 6]).unwrap();
         let gam2_target = gam2.target();
         state.add_transaction(gam2).await.unwrap();
 
         let account3 = create_test_account_id_with(202);
-        let gam3 = OLMempoolTransaction::new_generic_account_message(
-            account3,
-            vec![7, 8, 9],
-        )
-        .unwrap();
+        let gam3 =
+            OLMempoolTransaction::new_generic_account_message(account3, vec![7, 8, 9]).unwrap();
         let gam3_target = gam3.target();
         state.add_transaction(gam3).await.unwrap();
 
