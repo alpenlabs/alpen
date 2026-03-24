@@ -1,17 +1,13 @@
 use ssz::Encode as _;
 use strata_acct_types::{AccountId, AcctError, AcctResult, MessageEntry};
-use strata_identifiers::L1Height;
-use strata_ledger_types::{
-    ISnarkAccountState, IStateAccessor, TxProofVerifier, asm_manifest_mmr_index_for_height,
-};
+use strata_ledger_types::{ISnarkAccountState, TxProofVerifier};
 use strata_snark_acct_types::*;
 
 use crate::update::{SnarkAccountUpdateData, effects_to_update_outputs};
 
 /// Verifies an account update is correct with respect to the current state of
 /// snark account, including checking account balances.
-pub fn verify_update_correctness<S: IStateAccessor>(
-    state_accessor: &S,
+pub fn verify_update_correctness(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdateData,
@@ -24,7 +20,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     verify_message_index(target, snark_state, update)?;
 
     // 3. Verify ledger references using the proof verifier.
-    verify_ledger_refs(target, state_accessor, proof_verifier, update.ledger_refs())?;
+    verify_ledger_refs(target, proof_verifier, update.ledger_refs())?;
 
     // 4. Verify inbox mmr proofs.
     verify_inbox_mmr_proofs(
@@ -87,36 +83,17 @@ pub fn verify_message_index(
 /// an [`AccumulatorClaim`], and delegates verification to the proof verifier.
 fn verify_ledger_refs(
     target: AccountId,
-    state_accessor: &impl IStateAccessor,
     proof_verifier: &mut impl TxProofVerifier,
     ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
-    let manifest_refs = ledger_refs.l1_header_refs();
+    let manifest_claims = ledger_refs.l1_header_refs();
 
-    for manifest_ref in manifest_refs {
-        let l1_height: L1Height =
-            manifest_ref
-                .idx()
-                .try_into()
-                .map_err(|_| AcctError::InvalidLedgerReference {
-                    account_id: target,
-                    ref_idx: manifest_ref.idx(),
-                })?;
-
-        let mmr_idx =
-            asm_manifest_mmr_index_for_height(state_accessor, l1_height).ok_or_else(|| {
-                AcctError::InvalidLedgerReference {
-                    account_id: target,
-                    ref_idx: manifest_ref.idx(),
-                }
-            })?;
-
-        let claim = AccumulatorClaim::new(mmr_idx, manifest_ref.entry_hash());
+    for claim in manifest_claims {
         proof_verifier
-            .verify_asm_history_mmr_proof_next(&claim)
+            .verify_asm_history_mmr_proof_next(claim)
             .map_err(|_| AcctError::InvalidLedgerReference {
                 account_id: target,
-                ref_idx: manifest_ref.idx(),
+                ref_idx: claim.idx(),
             })?;
     }
 

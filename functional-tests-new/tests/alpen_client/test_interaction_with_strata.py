@@ -79,7 +79,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
 
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:
                     raise AssertionError(
-                        f"No new update(nth={new_updates_count + 1}) received"
+                        f"No new update (nth={new_updates_count + 1}) received"
                         f" within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
                     )
 

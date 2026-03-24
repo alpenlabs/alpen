@@ -7,6 +7,7 @@ use alpen_ee_common::{
     SequencerOLClient,
 };
 use eyre::{eyre, Result};
+use strata_identifiers::L1Height;
 use strata_snark_acct_types::SnarkAccountUpdate;
 use tokio::{sync::watch, time};
 use tracing::{debug, error, info, warn};
@@ -66,6 +67,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
     prover: Arc<P>,
     mut batch_ready_rx: watch::Receiver<Option<BatchId>>,
     mut ol_status_rx: watch::Receiver<OLFinalizedStatus>,
+    genesis_l1_height: L1Height,
 ) where
     C: SequencerOLClient,
     S: BatchStorage,
@@ -81,6 +83,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
         exec_storage.as_ref(),
         prover.as_ref(),
         &mut update_cache,
+        genesis_l1_height,
     )
     .await
     {
@@ -115,6 +118,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
             exec_storage.as_ref(),
             prover.as_ref(),
             &mut update_cache,
+            genesis_l1_height,
         )
         .await
         {
@@ -134,6 +138,7 @@ async fn process_ready_batches(
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
     update_cache: &mut UpdateCache,
+    genesis_l1_height: L1Height,
 ) -> Result<()> {
     // Get latest account state from OL to determine next expected seq_no
     let account_state = ol_client.get_latest_account_state().await?;
@@ -169,9 +174,16 @@ async fn process_ready_batches(
         let update = if let Some(cached) = update_cache.get(&batch_id) {
             cached.clone()
         } else {
-            let update =
-                build_update_from_batch(&batch, &da, &proof, ol_client, exec_storage, prover)
-                    .await?;
+            let update = build_update_from_batch(
+                &batch,
+                &da,
+                &proof,
+                ol_client,
+                exec_storage,
+                prover,
+                genesis_l1_height,
+            )
+            .await?;
             update_cache.insert(batch_id, batch_idx, update.clone());
             update
         };

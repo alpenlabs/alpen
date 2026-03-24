@@ -108,13 +108,7 @@ fn process_update_tx<S: IStateAccessor>(
     let state_ctx = TxProofVerificationContext::from_account_and_state(state, account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
     let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
-    snark_sys::verify_update_correctness(
-        state,
-        target,
-        snark_acct_state,
-        &update_data,
-        &mut verifier,
-    )?;
+    snark_sys::verify_update_correctness(target, snark_acct_state, &update_data, &mut verifier)?;
 
     // 4. Actually take balance and write new account inner state.
     state.update_account(target, |astate| -> ExecResult<_> {

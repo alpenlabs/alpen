@@ -276,16 +276,12 @@ impl<'a> StorageAsmMmr<'a> {
         &self.indices
     }
 
-    /// Returns all claims as AccumulatorClaim objects with L1 block heights.
-    ///
-    /// The `genesis_l1_height` is used to compute the height from the MMR leaf
-    /// index: `height = mmr_leaf_index + genesis_l1_height + 1`.
-    pub(crate) fn claims(&self, genesis_l1_height: u64) -> Vec<AccumulatorClaim> {
-        let offset = genesis_l1_height + 1;
+    /// Returns all claims as AccumulatorClaim objects with MMR leaf indices.
+    pub(crate) fn claims(&self) -> Vec<AccumulatorClaim> {
         self.indices
             .iter()
             .zip(self.entries.iter())
-            .map(|(&idx, &hash)| AccumulatorClaim::new(idx + offset, hash))
+            .map(|(&idx, &hash)| AccumulatorClaim::new(idx, hash))
             .collect()
     }
 }
@@ -644,9 +640,9 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
 /// Default balance for test accounts (100 billion sats).
 pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
-/// Manifest commitment metadata for tests (L1 height + committed manifest hash).
+/// Manifest commitment metadata for tests (MMR leaf index + committed manifest hash).
 pub(crate) struct ManifestCommitment {
-    pub height: L1Height,
+    pub mmr_idx: u64,
     pub hash: Hash,
 }
 
@@ -730,9 +726,13 @@ impl TestEnvBuilder {
             test_manifests
                 .iter()
                 .enumerate()
-                .map(|(i, m)| ManifestCommitment {
-                    height: m.height(),
-                    hash: hashes[i],
+                .map(|(i, m)| {
+                    // Test genesis has last_l1_height=0, so mmr_offset=1
+                    let mmr_idx = m.height() as u64 - 1;
+                    ManifestCommitment {
+                        mmr_idx,
+                        hash: hashes[i],
+                    }
                 })
                 .collect()
         } else {

@@ -58,9 +58,8 @@ fn test_snark_update_with_valid_ledger_reference() {
     assert_eq!(manifest1_index, 0, "First manifest should be at index 0");
 
     // Step 2: Create a snark update that references the manifest
-    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
-    let manifest1_height = manifest1_index + 1;
-    let claim = AccumulatorClaim::new(manifest1_height, manifest1_hash.into_inner());
+    // AccumulatorClaim.idx is the MMR leaf index directly
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
     // Create update with ledger reference and a transfer using SnarkUpdateBuilder
     let snark_state = state
@@ -145,9 +144,8 @@ fn test_snark_update_with_invalid_ledger_reference() {
     let (manifest1_index, _valid_proof) = manifest_tracker.add_manifest(&manifest1);
 
     // Step 2: Create a snark update with INVALID ledger reference proof
-    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
-    let manifest1_height = manifest1_index + 1;
-    let claim = AccumulatorClaim::new(manifest1_height, manifest1_hash.into_inner());
+    // AccumulatorClaim.idx is the MMR leaf index directly
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
     // Create an invalid proof with wrong cohashes
     let invalid_proof = RawMerkleProof {
@@ -185,7 +183,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
     match result.unwrap_err() {
         ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
             assert_eq!(
-                ref_idx, manifest1_height,
+                ref_idx, manifest1_index,
                 "Should fail on the invalid reference"
             );
         }
@@ -234,8 +232,7 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     let (manifest1_index, manifest1_proof) = manifest_tracker.add_manifest(&manifest1);
 
     // Step 2: Create a reference claim with a proof that carries a wrong entry index.
-    let manifest1_height = manifest1_index + 1;
-    let claim = AccumulatorClaim::new(manifest1_height, manifest1_hash.into_inner());
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
     // Create a mismatched proof by using the valid cohashes but a wrong index
     // We reconstruct the proof with wrong index via RawMerkleProof (which strips the index)
@@ -279,7 +276,7 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
 
     match result {
         Err(ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. })) => {
-            assert_eq!(ref_idx, manifest1_height);
+            assert_eq!(ref_idx, manifest1_index);
         }
         Err(err) => panic!("Expected InvalidLedgerReference, got: {err:?}"),
         Ok(_) => panic!("Update with mismatched proof index should fail"),
