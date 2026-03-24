@@ -6,10 +6,12 @@ use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog,
     constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
 };
+use strata_codec::encode_to_vec;
 use strata_identifiers::{DepositDescriptor, EpochCommitment, L1Height};
 use strata_ledger_types::IStateAccessor;
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
 use strata_ol_chain_types_new::{OLL1ManifestContainer, OLL1Update};
+use strata_ol_msg_types::DepositMsgData;
 
 use crate::{
     account_processing,
@@ -132,10 +134,10 @@ fn process_deposit_log<S: IStateAccessor>(
         return Ok(());
     };
 
-    // Create the message payload containing the subject ID.
-    // TODO make better handling for this like we have for ASM logs
-    let subject_bytes: [u8; 32] = subject_id.into();
-    let msg_payload = MsgPayload::new(deposit.amount.into(), subject_bytes.to_vec());
+    // Create the message payload containing the deposit message data.
+    let deposit_msg = DepositMsgData::new(subject_id);
+    let deposit_data = encode_to_vec(&deposit_msg)?;
+    let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
 
     // Deliver the deposit message to the target account.
     // TODO need to tweak this a bit to deal with the changes to epoch contexts
