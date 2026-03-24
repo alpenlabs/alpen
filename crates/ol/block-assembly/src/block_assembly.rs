@@ -38,8 +38,11 @@ use crate::{
 
 /// Output from processing transactions during block assembly.
 struct ProcessTransactionsOutput<S: IStateAccessor> {
+    /// Transactions that passed validation and execution
     successful_txs: Vec<OLTransaction>,
+    /// Transactions that failed during block assembly.
     failed_txs: Vec<FailedMempoolTx>,
+    /// Accumulated write batch after processing all transactions.
     accumulated_batch: WriteBatch<S::AccountState>,
     accumulated_da: AccumulatedDaData,
     /// Whether the estimated checkpoint payload is approaching the L1 envelope limit.
@@ -464,20 +467,37 @@ where
         debug!(%txid, ?tx, "processing transaction");
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
-                // Success: account for new logs and merge into main buffer.
+                // Tx executed successfully. Before committing its side effects, check
+                // whether the checkpoint payload now exceeds the hard L1 envelope limit.
                 let tx_logs = tx_buffer.into_logs();
-                current_block_logs_size += logs_ssz_size(&tx_logs);
+                let tx_logs_size = logs_ssz_size(&tx_logs);
+                let estimated_payload = estimate_checkpoint_payload_size(
+                    staging_state.accumulator().estimated_encoded_size(),
+                    prior_epoch_logs_size + current_block_logs_size + tx_logs_size,
+                );
+
+                if estimated_payload >= MAX_CHECKPOINT_PAYLOAD_SIZE {
+                    // Hard limit breached — roll back this tx entirely.
+                    debug!(
+                        estimated_payload,
+                        MAX_CHECKPOINT_PAYLOAD_SIZE,
+                        "checkpoint payload exceeds L1 envelope limit, dropping tx"
+                    );
+                    staging_state = DaAccumulatingState::new_with_accumulator(
+                        WriteTrackingState::new(parent_state, backup_batch),
+                        backup_accumulator,
+                    );
+                    checkpoint_size_limit_reached = true;
+                    break;
+                }
+
+                // Commit: merge logs into main buffer, accept tx.
+                current_block_logs_size += tx_logs_size;
                 output_buffer.emit_logs(tx_logs);
                 successful_txs.push(tx);
 
-                // After each successful tx, check if the estimated checkpoint payload
-                // is approaching the L1 envelope limit. If so, signal the caller to
-                // seal the epoch — no point processing more transactions.
-                let estimated_payload = estimate_checkpoint_payload_size(
-                    staging_state.accumulator().estimated_encoded_size(),
-                    prior_epoch_logs_size + current_block_logs_size,
-                );
                 if estimated_payload >= CHECKPOINT_SEAL_THRESHOLD {
+                    // Soft threshold — include tx but stop accepting more.
                     debug!(
                         estimated_payload,
                         CHECKPOINT_SEAL_THRESHOLD,
@@ -488,7 +508,7 @@ where
                 }
             }
             Err(e) => {
-                // Failure: discard tx_buffer (logs) and restore state from backup
+                // Failure: discard tx_buffer (logs) and restore state from backup.
                 debug!(?txid, %e, "transaction execution failed during staging");
                 staging_state = DaAccumulatingState::new_with_accumulator(
                     WriteTrackingState::new(parent_state, backup_batch),

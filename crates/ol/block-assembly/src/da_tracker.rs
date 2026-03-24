@@ -45,7 +45,8 @@ impl EpochDaTracker {
     }
 }
 
-/// Walks backward from `from_blkid` collecting blocks until a terminal block or genesis.
+/// Walks backward from `from_blkid` collecting blocks until a terminal block or genesis. Errors
+/// out when epoch number is different from the input epoch number.
 ///
 /// Returns blocks in forward chronological order.
 async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(

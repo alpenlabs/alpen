@@ -253,8 +253,8 @@ where
     <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
-    /// Resolves accumulated DA upto a block block: returns cached data,
-    /// rebuilds by re-executing epoch blocks, or creates fresh data if parent is terminal.
+    /// Resolves accumulated DA upto a block: returns cached data, rebuilds by re-executing epoch
+    /// blocks, or creates fresh data if parent is terminal.
     pub(crate) async fn fetch_epoch_da_till_parent(
         &self,
         parent_blkid: OLBlockCommitment,
