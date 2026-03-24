@@ -61,24 +61,18 @@ impl Default for OLMempoolConfig {
 
 /// Snark account update payload for mempool (without accumulator proofs).
 ///
-/// This is similar to
-/// [`SnarkAccountUpdateTxPayload`](strata_ol_chain_types_new::SnarkAccountUpdateTxPayload)
-/// but stores only the [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) without
-/// the `accumulator_proofs` that are
-/// part of [`SnarkAccountUpdateContainer`](strata_snark_acct_types::SnarkAccountUpdateContainer).
-/// During block assembly, accumulator proofs are generated and this is converted to
-/// a full [`SnarkAccountUpdateTxPayload`](strata_ol_chain_types_new::SnarkAccountUpdateTxPayload)
-/// with a complete
-/// [`SnarkAccountUpdateContainer`](strata_snark_acct_types::SnarkAccountUpdateContainer).
+/// This type is legacy and the code that uses it should be reworked to use the
+/// new simplified tx format which doesn't embed the proofs in the snark account
+/// update data itself.
 #[derive(Clone, Debug, Encode, Decode, PartialEq, Eq)]
-pub struct OLMempoolSnarkAcctUpdateTxPayload {
+pub struct OLMempoolSauTxPayload {
     /// Target account for this transaction.
     pub target: AccountId,
     /// Base snark account update WITHOUT accumulator proofs.
     pub base_update: SnarkAccountUpdate,
 }
 
-impl OLMempoolSnarkAcctUpdateTxPayload {
+impl OLMempoolSauTxPayload {
     /// Create a new snark account update mempool payload.
     pub fn new(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
         Self {
@@ -112,7 +106,7 @@ pub enum OLMempoolTxPayload {
     GenericAccountMessage(GamTxPayload),
 
     /// Snark account update transaction WITHOUT accumulator proofs.
-    SnarkAccountUpdate(OLMempoolSnarkAcctUpdateTxPayload),
+    SnarkAccountUpdate(OLMempoolSauTxPayload),
 }
 
 impl OLMempoolTxPayload {
@@ -134,7 +128,7 @@ impl OLMempoolTxPayload {
 
     /// Create a new snark account update payload without accumulator proofs.
     pub fn new_snark_account_update(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
-        Self::SnarkAccountUpdate(OLMempoolSnarkAcctUpdateTxPayload::new(target, base_update))
+        Self::SnarkAccountUpdate(OLMempoolSauTxPayload::new(target, base_update))
     }
 }
 
@@ -601,8 +595,7 @@ mod tests {
     /// Proptest strategy for creating mempool snark account update payloads.
     ///
     /// Uses strategies from ol/chain-types to generate meaningful test data.
-    fn mempool_snark_update_tx_payload_strategy()
-    -> impl Strategy<Value = OLMempoolSnarkAcctUpdateTxPayload> {
+    fn mempool_snark_update_tx_payload_strategy() -> impl Strategy<Value = OLMempoolSauTxPayload> {
         (
             any::<[u8; 32]>(),                                                     // target
             any::<[u8; 32]>(), // proof_state inner_state
@@ -636,10 +629,7 @@ mod tests {
                         extra_data,
                     );
                     let base_update = SnarkAccountUpdate::new(operation, update_proof);
-                    OLMempoolSnarkAcctUpdateTxPayload::new(
-                        AccountId::from(target_bytes),
-                        base_update,
-                    )
+                    OLMempoolSauTxPayload::new(AccountId::from(target_bytes), base_update)
                 },
             )
     }

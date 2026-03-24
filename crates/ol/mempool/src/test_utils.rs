@@ -27,8 +27,8 @@ use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
 
 use crate::{
-    OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction, OLMempoolTxPayload,
-    state::MempoolContext, types::OLMempoolConfig,
+    OLMempoolSauTxPayload, OLMempoolTransaction, OLMempoolTxPayload, state::MempoolContext,
+    types::OLMempoolConfig,
 };
 
 /// Create a test account ID using proptest strategy.
@@ -112,7 +112,7 @@ pub(crate) fn create_test_block_commitment(slot: u64) -> OLBlockCommitment {
 
 /// Create a test snark account update payload.
 pub(crate) fn create_test_snark_payload() -> OLMempoolTxPayload {
-    OLMempoolTxPayload::SnarkAccountUpdate(OLMempoolSnarkAcctUpdateTxPayload {
+    OLMempoolTxPayload::SnarkAccountUpdate(OLMempoolSauTxPayload {
         target: create_test_account_id(),
         base_update: create_test_snark_update(),
     })
