@@ -6,7 +6,6 @@ import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
-from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +44,7 @@ class TestL1Connected(StrataNodeTest):
         check_height = tip_height - 2
         logger.info(f"Checking L1 header commitment at height {check_height}")
 
-        commitment = wait_until_with_value(
-            lambda: rpc.strata_getL1HeaderCommitment(check_height),
-            lambda v: v is not None,
-            timeout=30,
-            error_with=f"No L1 header commitment at height {check_height}",
-        )
+        commitment = strata.wait_for_l1_commitment(check_height, rpc=rpc, timeout=30)
 
         logger.info(f"L1 header commitment at {check_height}: {commitment}")
         return True

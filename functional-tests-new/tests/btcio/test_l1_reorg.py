@@ -6,7 +6,6 @@ import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
-from common.wait import wait_until_with_value
 from envconfigs.strata import StrataEnvConfig
 
 logger = logging.getLogger(__name__)
@@ -45,12 +44,7 @@ class TestL1Reorg(StrataNodeTest):
         logger.info(f"Will invalidate from height {invalidate_height}")
 
         # wait for strata to have processed the block at this height
-        pre_reorg_commitment = wait_until_with_value(
-            lambda: rpc.strata_getL1HeaderCommitment(invalidate_height),
-            lambda v: v is not None,
-            timeout=60,
-            error_with=f"Strata not caught up to height {invalidate_height}",
-        )
+        pre_reorg_commitment = strata.wait_for_l1_commitment(invalidate_height, rpc=rpc, timeout=60)
         logger.info(f"Pre-reorg commitment at {invalidate_height}: {pre_reorg_commitment}")
 
         # invalidate the block (and all descendants)
@@ -75,13 +69,11 @@ class TestL1Reorg(StrataNodeTest):
 
         # wait for strata to pick up the new chain; the commitment
         # at invalidate_height must differ from the pre-reorg value
-        post_reorg_commitment = wait_until_with_value(
-            lambda: rpc.strata_getL1HeaderCommitment(invalidate_height),
-            lambda v: v is not None and v != pre_reorg_commitment,
+        post_reorg_commitment = strata.wait_for_l1_commitment(
+            invalidate_height,
+            rpc=rpc,
             timeout=60,
-            error_with=(
-                f"Strata did not update commitment at height {invalidate_height} after reorg"
-            ),
+            differs_from=pre_reorg_commitment,
         )
         logger.info(f"Post-reorg commitment at {invalidate_height}: {post_reorg_commitment}")
 

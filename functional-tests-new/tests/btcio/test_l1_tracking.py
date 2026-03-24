@@ -6,7 +6,6 @@ import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
-from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +37,7 @@ class TestL1Tracking(StrataNodeTest):
         logger.info(f"Bitcoin tip before mining: {pre_tip}")
 
         # Wait for strata to have caught up to pre_tip
-        wait_until_with_value(
-            lambda: rpc.strata_getL1HeaderCommitment(pre_tip),
-            lambda v: v is not None,
-            timeout=60,
-            error_with=f"Strata not caught up to L1 height {pre_tip}",
-        )
+        strata.wait_for_l1_commitment(pre_tip, rpc=rpc, timeout=60)
 
         # Mine additional blocks
         addr = btc_rpc.proxy.getnewaddress()
@@ -55,12 +49,7 @@ class TestL1Tracking(StrataNodeTest):
             raise AssertionError(f"Expected tip {pre_tip + self.EXTRA_BLOCKS}, got {post_tip}")
 
         # Wait for strata to pick up the new blocks
-        commitment = wait_until_with_value(
-            lambda: rpc.strata_getL1HeaderCommitment(post_tip),
-            lambda v: v is not None,
-            timeout=60,
-            error_with=f"Strata did not track new L1 blocks up to height {post_tip}",
-        )
+        commitment = strata.wait_for_l1_commitment(post_tip, rpc=rpc, timeout=60)
         logger.info(f"L1 header commitment at new tip {post_tip}: {commitment}")
 
         # Verify intermediate heights also have commitments
