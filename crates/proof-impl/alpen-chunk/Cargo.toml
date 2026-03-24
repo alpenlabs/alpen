@@ -8,12 +8,22 @@ strata-ee-chain-types.workspace = true
 strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 
-alloy-genesis.workspace = true
 reth-chainspec.workspace = true
+rsp-primitives.workspace = true
 rkyv.workspace = true
 ssz.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true
+
+[dev-dependencies]
+strata-acct-types.workspace = true
+strata-codec.workspace = true
+strata-ee-acct-types.workspace = true
+
+reth-primitives-traits.workspace = true
+rsp-client-executor.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -2,16 +2,18 @@
 
 use std::sync::Arc;
 
-use alloy_genesis::Genesis;
 use reth_chainspec::ChainSpec;
 use rkyv::rancor::Error as RkyvError;
+use rsp_primitives::genesis::Genesis;
 use strata_ee_acct_runtime::ArchivedEePrivateInput;
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::ArchivedPrivateInput as ArchivedUpdatePrivateInput;
 use zkaleido::ZkVmEnv;
 
-pub mod program;
+mod program;
+
+pub use program::{EeAcctProgram, EeAcctProofInput};
 
 /// Guest entry point for EE account update proof generation.
 ///
@@ -24,7 +26,7 @@ pub mod program;
 /// guest binary, identifying the predicate used to verify chunk proofs.
 pub fn process_ee_acct_update(zkvm: &impl ZkVmEnv, chunk_predicate_key: &PredicateKey) {
     let genesis: Genesis = zkvm.read_serde();
-    let chain_spec: Arc<ChainSpec> = Arc::new(genesis.into());
+    let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().unwrap());
 
     let ee_buf = zkvm.read_buf();
     let ee_input: &ArchivedEePrivateInput =

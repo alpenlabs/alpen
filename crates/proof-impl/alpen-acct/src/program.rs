@@ -1,5 +1,5 @@
-use alloy_genesis::Genesis;
 use rkyv::rancor::Error as RkyvError;
+use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
 use strata_ee_acct_runtime::EePrivateInput;
 use strata_predicate::PredicateKey;
@@ -86,5 +86,75 @@ impl EeAcctProgram {
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         let host = self.native_host();
         <Self as ZkVmProgram>::execute(input, &host)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rsp_primitives::genesis::Genesis;
+    use ssz::Encode;
+    use strata_acct_types::BitcoinAmount;
+    use strata_codec::encode_to_vec;
+    use strata_ee_acct_runtime::EePrivateInput;
+    use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
+    use strata_identifiers::Hash;
+    use strata_predicate::PredicateKey;
+    use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
+    use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
+
+    use super::*;
+
+    /// Smoke test: constructs a minimal self-consistent input with zero chunks
+    /// and zero messages, and runs through the full native execution pipeline.
+    #[test]
+    fn test_native_acct_execution_zero_chunks() {
+        // Build a minimal EE account state.
+        let initial_blkid = Hash::zero();
+        let initial_state = EeAccountState::new(
+            initial_blkid,
+            BitcoinAmount::from_sat(0),
+            Vec::new(),
+            Vec::new(),
+        );
+        let state_root = initial_state.compute_state_root();
+
+        // Extra data: tip stays the same, nothing processed.
+        let extra_data = UpdateExtraData::new(initial_blkid, 0, 0);
+        let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
+
+        // With zero chunks and no state change, pre == post state root.
+        let pub_params = UpdateProofPubParams::new(
+            ProofState::new(state_root, 0),
+            ProofState::new(state_root, 0),
+            vec![],
+            LedgerRefs::new_empty(),
+            UpdateOutputs::new_empty(),
+            extra_data_bytes,
+        );
+
+        // Construct private inputs.
+        let update_private_input =
+            UpdatePrivateInput::new(pub_params, initial_state.as_ssz_bytes(), vec![]);
+        let ee_private_input = EePrivateInput::new(vec![], vec![], vec![]);
+
+        // Use Mainnet genesis (valid ChainSpec, not used with zero chunks).
+        let genesis = Genesis::Mainnet;
+        let predicate_key = PredicateKey::always_accept();
+
+        let proof_input = EeAcctProofInput {
+            genesis,
+            chunk_predicate_key: predicate_key.clone(),
+            ee_private_input,
+            update_private_input,
+        };
+
+        let program = EeAcctProgram::new(predicate_key);
+        let result = program
+            .execute(&proof_input)
+            .expect("native execution should succeed");
+
+        // Verify output pub params state roots match.
+        assert_eq!(result.cur_state().inner_state(), state_root);
+        assert_eq!(result.new_state().inner_state(), state_root);
     }
 }

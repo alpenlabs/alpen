@@ -2,14 +2,16 @@
 
 use std::sync::Arc;
 
-use alloy_genesis::Genesis;
 use reth_chainspec::ChainSpec;
 use rkyv::rancor::Error as RkyvError;
+use rsp_primitives::genesis::Genesis;
 use strata_ee_chunk_runtime::ArchivedPrivateInput;
 use strata_evm_ee::EvmExecutionEnvironment;
 use zkaleido::ZkVmEnv;
 
-pub mod program;
+mod program;
+
+pub use program::{EeChunkProgram, EeChunkProofInput};
 
 /// Guest entry point for EE chunk proof generation.
 ///
@@ -19,7 +21,7 @@ pub mod program;
 /// public output.
 pub fn process_ee_chunk(zkvm: &impl ZkVmEnv) {
     let genesis: Genesis = zkvm.read_serde();
-    let chain_spec: Arc<ChainSpec> = Arc::new(genesis.into());
+    let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().unwrap());
 
     let buf = zkvm.read_buf();
     let input: &ArchivedPrivateInput = rkyv::access::<ArchivedPrivateInput, RkyvError>(&buf)
