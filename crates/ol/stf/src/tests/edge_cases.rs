@@ -1,6 +1,6 @@
 //! Tests for edge cases in value transfers
 
-use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
+use strata_acct_types::{BitcoinAmount, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, errors::ExecError, test_utils::*};
@@ -93,14 +93,8 @@ fn test_snark_update_from_zero_balance_account() {
     assert!(result.is_err(), "Transfer from zero balance should fail");
 
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(1));
-            assert_eq!(available, BitcoinAmount::from_sat(0));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 
     // Verify sequence number did NOT increment due to failure
@@ -316,14 +310,8 @@ fn test_snark_update_max_bitcoin_supply() {
     assert!(result.is_err(), "Update exceeding balance should fail");
 
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(max_bitcoin_sats + 1));
-            assert_eq!(available, BitcoinAmount::from_sat(max_bitcoin_sats));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 
     // Verify no state change
@@ -435,11 +423,8 @@ fn test_snark_update_overflow_u64_boundary() {
     );
 
     assert!(
-        matches!(
-            result1,
-            Err(ExecError::Acct(AcctError::BitcoinAmountOverflow))
-        ),
-        "Sending more than bitcoin limits"
+        matches!(result1, Err(ExecError::AmountOverflow)),
+        "Sending more than bitcoin limits, got: {result1:?}"
     );
 
     // Verify no state change occurred
@@ -468,11 +453,8 @@ fn test_snark_update_overflow_u64_boundary() {
     let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx2, slot, epoch);
 
     assert!(
-        matches!(
-            result2,
-            Err(ExecError::Acct(AcctError::BitcoinAmountOverflow))
-        ),
-        "Sending more than bitcoin limits"
+        matches!(result2, Err(ExecError::AmountOverflow)),
+        "Sending more than bitcoin limits, got: {result2:?}"
     );
 
     // Verify recipients have no balance (no partial execution)

@@ -1,7 +1,7 @@
 //! Tests for basic validation errors like sequence numbers, balance checks, and recipient
 //! validation
 
-use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
+use strata_acct_types::{AcctError, TxEffects};
 use strata_ledger_types::{IAccountState, IStateAccessor};
 
 use crate::{errors::ExecError, test_utils::*};
@@ -76,14 +76,8 @@ fn test_snark_update_insufficient_balance() {
         "Update with insufficient balance should fail"
     );
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(100_000_000));
-            assert_eq!(available, BitcoinAmount::from_sat(50_000_000));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 }
 
@@ -117,9 +111,9 @@ fn test_snark_update_nonexistent_recipient() {
         "Update to non-existent account should fail"
     );
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::MissingExpectedAccount(id)) => {
+        ExecError::UnknownAccount(id) => {
             assert_eq!(id, nonexistent_id);
         }
-        err => panic!("Expected NonExistentAccount, got: {err:?}"),
+        err => panic!("Expected UnknownAccount, got: {err:?}"),
     }
 }

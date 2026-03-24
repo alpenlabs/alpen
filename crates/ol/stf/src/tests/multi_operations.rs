@@ -1,6 +1,6 @@
 //! Tests for multiple operations in a single update
 
-use strata_acct_types::{AcctError, BitcoinAmount};
+use strata_acct_types::BitcoinAmount;
 use strata_ledger_types::{IAccountState, IStateAccessor};
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
@@ -197,14 +197,8 @@ fn test_snark_update_partial_balance_multiple_outputs() {
 
     assert!(result.is_err(), "Update exceeding balance should fail");
     match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(110_000_000));
-            assert_eq!(available, BitcoinAmount::from_sat(100_000_000));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 
     // Verify no partial execution - all balances should be unchanged
