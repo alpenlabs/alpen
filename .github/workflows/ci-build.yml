@@ -4,8 +4,7 @@
 # Old architecture images (strata-client, strata-sequencer-client, alpen-reth)
 # remain in the current account via the existing cd.yml workflow.
 #
-# After a successful build, this workflow generates SP1 params and dispatches
-# a repository_dispatch event to the deployments repo to update Helm values.
+# Generate-params and CD dispatch are tracked separately (STR-2775).
 
 name: CI — Build and Push Images
 
@@ -141,82 +140,30 @@ jobs:
           echo "Successfully pushed: ${FULL_IMAGE}"
 
   # ---------------------------------------------------------------------------
-  # Generate SP1 params (verification key)
-  # ---------------------------------------------------------------------------
-  generate-params:
-    name: Generate SP1 params
-    needs: [prepare, build-and-push]
-    runs-on: ubuntu-latest
-    outputs:
-      checkpoint_predicate: ${{ steps.genparams.outputs.checkpoint_predicate }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-          persist-credentials: false
-
-      - name: Free up disk space
-        uses: ./.github/actions/cleanup
-
-      - name: Set up Clang
-        uses: egor-tensin/setup-clang@471a6f8ef1d449dba8e1a51780e7f943572a3f99 # v1
-        with:
-          version: latest
-          platform: x64
-
-      - name: Install SP1 Toolchain
-        run: |
-          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up
-          export PATH=~/.sp1/bin:$PATH
-          cargo prove --version
-
-      - name: Build strata-datatool and generate params
-        id: genparams
-        run: |
-          set -euo pipefail
-          cargo build --bin strata-datatool -F "sp1-builder" --release
-
-          PARAMS_OUTPUT=$(./target/release/strata-datatool genparams --elf-dir docker/prover-client/elfs/sp1)
-
-          # Extract checkpoint_predicate (Sp1Groth16:<hex> format used by new architecture)
-          CHECKPOINT_PREDICATE=$(echo "$PARAMS_OUTPUT" | jq -r '.checkpoint_predicate')
-          if [ -z "$CHECKPOINT_PREDICATE" ] || [ "$CHECKPOINT_PREDICATE" = "null" ]; then
-            echo "Error: Failed to extract checkpoint_predicate from params"
-            echo "Params output: $PARAMS_OUTPUT"
-            exit 1
-          fi
-
-          echo "checkpoint_predicate=${CHECKPOINT_PREDICATE}" >> "$GITHUB_OUTPUT"
-          echo "Checkpoint predicate (first 80 chars): ${CHECKPOINT_PREDICATE:0:80}..."
-
-  # ---------------------------------------------------------------------------
   # Dispatch CD to deployments repo
   # ---------------------------------------------------------------------------
   dispatch-cd:
     name: Dispatch CD to deployments
-    needs: [prepare, build-and-push, generate-params]
+    needs: [prepare, build-and-push]
     runs-on: ubuntu-latest
     steps:
       - name: Trigger deployments repo
         env:
           SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
-          CHECKPOINT_PREDICATE: ${{ needs.generate-params.outputs.checkpoint_predicate }}
+          DISPATCH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
         run: |
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
             https://api.github.com/repos/alpenlabs/deployments/dispatches \
             -d "$(jq -n \
               --arg tag "$SHORT_TAG" \
-              --arg cp "$CHECKPOINT_PREDICATE" \
-              --arg sha "${{ github.sha }}" \
-              --arg ref "${{ github.ref_name }}" \
+              --arg sha "${GITHUB_SHA}" \
+              --arg ref "${GITHUB_REF_NAME}" \
               '{
                 event_type: "new-arch-deploy",
                 client_payload: {
                   tag: $tag,
-                  checkpoint_predicate: $cp,
                   commit_sha: $sha,
                   ref: $ref
                 }
@@ -229,23 +176,26 @@ jobs:
   # ---------------------------------------------------------------------------
   summary:
     name: Build Summary
-    needs: [prepare, build-and-push, generate-params, dispatch-cd]
+    needs: [prepare, build-and-push, dispatch-cd]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Report results
         env:
           SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+          BUILD_RESULT: ${{ needs.build-and-push.result }}
+          CD_RESULT: ${{ needs.dispatch-cd.result }}
         run: |
-          echo "## Build Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|----------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Image Tag** | \`${SHORT_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Ref** | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **Params** | \`${{ needs.generate-params.result }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| **CD Dispatch** | \`${{ needs.dispatch-cd.result }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Build Status" >> "$GITHUB_STEP_SUMMARY"
-          echo "Overall: **${{ needs.build-and-push.result }}**" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## Build Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Commit** | \`${GITHUB_SHA}\` |"
+            echo "| **Image Tag** | \`${SHORT_TAG}\` |"
+            echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
+            echo "| **CD Dispatch** | \`${CD_RESULT}\` |"
+            echo ""
+            echo "### Build Status"
+            echo "Overall: **${BUILD_RESULT}**"
+          } >> "$GITHUB_STEP_SUMMARY"

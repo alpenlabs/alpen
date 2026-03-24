@@ -1,0 +1,156 @@
+# Generates SP1 verification key (checkpoint_predicate) when prover-related
+# code changes, and dispatches the result to the deployments repo.
+#
+# This is separated from ci-build.yml because the VK only changes when guest
+# program ELFs change — most merges to main don't affect it.
+#
+# Ref: STR-2775
+
+name: CI — Generate SP1 Params
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "provers/sp1/**"
+      - "crates/proof-impl/**"
+      - "crates/checkpoint-types/**"
+      - "crates/checkpoint-types-ssz/**"
+      - "crates/zkvm/**"
+      - "crates/asm/subprotocols/checkpoint/**"
+      - "docker/prover-client/elfs/**"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build from (default: current branch)"
+        required: false
+        type: string
+      dispatch_cd:
+        description: "Dispatch VK update to deployments repo"
+        required: false
+        type: boolean
+        default: true
+
+env:
+  AWS_REGION: us-east-1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-genparams-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Generate SP1 verification key
+  # ---------------------------------------------------------------------------
+  genparams:
+    name: Generate SP1 params
+    runs-on: ubuntu-latest
+    outputs:
+      checkpoint_predicate: ${{ steps.extract.outputs.checkpoint_predicate }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Free up disk space
+        uses: ./.github/actions/cleanup
+
+      - name: Set up Clang
+        uses: egor-tensin/setup-clang@471a6f8ef1d449dba8e1a51780e7f943572a3f99 # v1
+        with:
+          version: latest
+          platform: x64
+
+      - name: Install SP1 Toolchain
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up
+          export PATH=~/.sp1/bin:$PATH
+          cargo prove --version
+
+      - name: Build strata-datatool
+        run: |
+          cargo build --bin strata-datatool -F "sp1-builder" --release
+
+      - name: Generate params and extract VK
+        id: extract
+        run: |
+          set -euo pipefail
+
+          # TODO(STR-2775): Replace with --genesis-l1-view-file once fixture is committed
+          # For now, this step will fail until the genesis L1 view file is available.
+          PARAMS_OUTPUT=$(./target/release/strata-datatool genparams \
+            --elf-dir docker/prover-client/elfs/sp1)
+
+          CHECKPOINT_PREDICATE=$(echo "$PARAMS_OUTPUT" | jq -r '.checkpoint_predicate')
+          if [ -z "$CHECKPOINT_PREDICATE" ] || [ "$CHECKPOINT_PREDICATE" = "null" ]; then
+            echo "::error::Failed to extract checkpoint_predicate from params"
+            echo "Params output: $PARAMS_OUTPUT"
+            exit 1
+          fi
+
+          echo "checkpoint_predicate=${CHECKPOINT_PREDICATE}" >> "$GITHUB_OUTPUT"
+          echo "Checkpoint predicate (first 80 chars): ${CHECKPOINT_PREDICATE:0:80}..."
+
+  # ---------------------------------------------------------------------------
+  # Dispatch VK update to deployments repo
+  # ---------------------------------------------------------------------------
+  dispatch-vk:
+    name: Dispatch VK to deployments
+    needs: [genparams]
+    if: ${{ inputs.dispatch_cd != false }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deployments repo
+        env:
+          CHECKPOINT_PREDICATE: ${{ needs.genparams.outputs.checkpoint_predicate }}
+          DISPATCH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            https://api.github.com/repos/alpenlabs/deployments/dispatches \
+            -d "$(jq -n \
+              --arg cp "$CHECKPOINT_PREDICATE" \
+              --arg sha "${GITHUB_SHA}" \
+              --arg ref "${GITHUB_REF_NAME}" \
+              '{
+                event_type: "new-arch-vk-update",
+                client_payload: {
+                  checkpoint_predicate: $cp,
+                  commit_sha: $sha,
+                  ref: $ref
+                }
+              }')"
+
+          echo "Dispatched VK update to deployments repo"
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  summary:
+    name: Genparams Summary
+    needs: [genparams, dispatch-vk]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report results
+        env:
+          GENPARAMS_RESULT: ${{ needs.genparams.result }}
+          DISPATCH_RESULT: ${{ needs.dispatch-vk.result }}
+        run: |
+          {
+            echo "## SP1 Params Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Commit** | \`${GITHUB_SHA}\` |"
+            echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
+            echo "| **Genparams** | \`${GENPARAMS_RESULT}\` |"
+            echo "| **VK Dispatch** | \`${DISPATCH_RESULT}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
