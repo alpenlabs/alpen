@@ -2,6 +2,8 @@
 
 use ssz_types::VariableList;
 use strata_codec::{Codec, CodecError, Decoder, Encoder, Varint};
+use strata_identifiers::Buf32;
+use tree_hash::TreeHash;
 
 use crate::{
     AccountId, BitcoinAmount, SentTransfer,
@@ -171,6 +173,11 @@ impl MessageEntry {
     /// Gets the payload value.
     pub fn payload_value(&self) -> BitcoinAmount {
         self.payload().value()
+    }
+
+    /// Computes the commitment that we store in the MMR accumulator.
+    pub fn compute_msg_commitment(&self) -> Buf32 {
+        <Self as TreeHash>::tree_hash_root(self).0.into()
     }
 }
 

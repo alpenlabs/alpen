@@ -1,7 +1,5 @@
 use ssz::Encode as _;
-use strata_acct_types::{
-    AccountId, AcctError, AcctResult, BitcoinAmount, MessageEntry, tree_hash::TreeHash,
-};
+use strata_acct_types::{AccountId, AcctError, AcctResult, MessageEntry};
 use strata_identifiers::L1Height;
 use strata_ledger_types::{
     ISnarkAccountState, IStateAccessor, TxProofVerifier, asm_manifest_mmr_index_for_height,
@@ -17,7 +15,6 @@ pub fn verify_update_correctness<S: IStateAccessor>(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdateData,
-    cur_balance: BitcoinAmount,
     proof_verifier: &mut impl TxProofVerifier,
 ) -> AcctResult<()> {
     // 1. Check seq_no matches.
@@ -37,10 +34,7 @@ pub fn verify_update_correctness<S: IStateAccessor>(
         update.processed_messages(),
     )?;
 
-    // 5. Verify outputs can be applied safely.
-    verify_effects_safe(update, state_accessor, cur_balance)?;
-
-    // 6. Verify the proof.
+    // 5. Verify the proof.
     verify_update_proof(target, snark_state, update, proof_verifier)?;
 
     Ok(())
@@ -140,7 +134,7 @@ fn verify_inbox_mmr_proofs(
     let mut cur_index = state.next_inbox_msg_idx();
 
     for msg in processed_msgs {
-        let msg_hash = <MessageEntry as TreeHash>::tree_hash_root(msg).into_inner();
+        let msg_hash = msg.compute_msg_commitment();
         let claim = AccumulatorClaim::new(cur_index, msg_hash);
 
         proof_verifier
@@ -156,56 +150,6 @@ fn verify_inbox_mmr_proofs(
     }
 
     Ok(())
-}
-
-/// Verifies that the effects in the update are safe (recipients exist, balance sufficient).
-fn verify_effects_safe<S: IStateAccessor>(
-    update: &SnarkAccountUpdateData,
-    state_accessor: &S,
-    cur_balance: BitcoinAmount,
-) -> AcctResult<()> {
-    let effects = update.effects();
-
-    // Check if receivers exist (skip special/system accounts).
-    for t in effects.transfers_iter() {
-        if !t.dest().is_special() && !state_accessor.check_account_exists(t.dest())? {
-            return Err(AcctError::MissingExpectedAccount(t.dest()));
-        }
-    }
-
-    for m in effects.messages_iter() {
-        if !m.dest().is_special() && !state_accessor.check_account_exists(m.dest())? {
-            return Err(AcctError::MissingExpectedAccount(m.dest()));
-        }
-    }
-
-    let total_sent =
-        compute_effects_total_value(effects).ok_or(AcctError::BitcoinAmountOverflow)?;
-
-    // Check if there is sufficient balance.
-    if total_sent > cur_balance {
-        return Err(AcctError::InsufficientBalance {
-            requested: total_sent,
-            available: cur_balance,
-        });
-    }
-
-    Ok(())
-}
-
-/// Computes the total value of all transfers and messages in effects.
-fn compute_effects_total_value(effects: &strata_acct_types::TxEffects) -> Option<BitcoinAmount> {
-    let mut total: u64 = 0;
-
-    for t in effects.transfers_iter() {
-        total = total.checked_add(t.value().into())?;
-    }
-
-    for m in effects.messages_iter() {
-        total = total.checked_add(m.payload().value().into())?;
-    }
-
-    Some(BitcoinAmount::from_sat(total))
 }
 
 /// Verifies the update witness (proof and pub params) against the VK of the snark account.

@@ -17,6 +17,9 @@ pub enum ExecError {
     #[error("signature for {0} is invalid")]
     SignatureInvalid(&'static str),
 
+    #[error("amount overflow")]
+    AmountOverflow,
+
     /// Normal balance check fail.
     #[error("tried to underflow a balance")]
     BalanceUnderflow,

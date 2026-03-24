@@ -176,21 +176,6 @@ fn convert_sau_ledger_refs(sau_refs: &strata_ol_chain_types_new::SauTxLedgerRefs
     }
 }
 
-/// Computes the total value of all transfers and messages in effects.
-fn compute_effects_total_value(effects: &TxEffects) -> Option<BitcoinAmount> {
-    let mut total: u64 = 0;
-
-    for t in effects.transfers_iter() {
-        total = total.checked_add(t.value().into())?;
-    }
-
-    for m in effects.messages_iter() {
-        total = total.checked_add(m.payload().value().into())?;
-    }
-
-    Some(BitcoinAmount::from_sat(total))
-}
-
 /// Applies the effects of a transaction (transfers and messages) to account state.
 fn apply_tx_effects<S: IStateAccessor>(
     state: &mut S,
@@ -226,6 +211,42 @@ pub fn check_tx_constraints<S: IStateAccessor>(
         && current_slot > max_slot
     {
         return Err(ExecError::TransactionExpired(max_slot, current_slot));
+    }
+
+    Ok(())
+}
+
+/// Verifies if the [`TxEffects`] from a tx are "safe" to apply, given the current account
+/// state and some ledger context.
+///
+/// Specifically, it checks that all the destinations can receive the outputs
+/// and that we don't overdraw the account.
+pub fn verify_effects_safe<S: IStateAccessor>(
+    fx: &TxEffects,
+    state: &S,
+    acct: &S::AccountState,
+) -> ExecResult<()> {
+    let mut total_sent = BitcoinAmount::zero();
+
+    // We're actually making the same checks in both places, so we can chain the
+    // iterators like this.
+    let outp_iter = fx
+        .transfers_iter()
+        .map(|t| (t.dest(), t.value()))
+        .chain(fx.messages_iter().map(|m| (m.dest(), m.payload().value())));
+
+    for (dest, amt) in outp_iter {
+        if !dest.is_special() && !state.check_account_exists(dest)? {
+            return Err(ExecError::UnknownAccount(dest));
+        }
+
+        total_sent = total_sent
+            .checked_add(amt)
+            .ok_or(ExecError::AmountOverflow)?;
+    }
+
+    if total_sent > acct.balance() {
+        return Err(ExecError::BalanceUnderflow);
     }
 
     Ok(())
