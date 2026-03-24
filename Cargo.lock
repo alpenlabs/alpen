@@ -13855,6 +13855,7 @@ dependencies = [
  "strata-asm-params",
  "strata-asm-txs-checkpoint",
  "strata-asm-worker",
+ "strata-btc-types",
  "strata-btcio",
  "strata-chain-worker-new",
  "strata-codec",
