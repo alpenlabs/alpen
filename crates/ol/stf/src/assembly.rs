@@ -361,7 +361,7 @@ pub fn execute_and_complete_block<S: IStateAccessor>(
 }
 
 /// Executes a batch of blocks sequentially, verifying each produced header
-/// matches the input block's header.
+/// matches the input block's header. Returns the OL logs collected over the batch.
 ///
 /// Generic over `S: IStateAccessor` so callers can pass `OLState` directly
 /// or wrap it (e.g. `DaAccumulatingState<OLState>`) to intercept mutations.

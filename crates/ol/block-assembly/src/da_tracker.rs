@@ -62,13 +62,26 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
             .await?
             .ok_or(BlockAssemblyError::BlockNotFound(cur_id))?;
 
-        // Check if the same epoch is being traversed through, else we are done.
-        if block.header().epoch() != epoch {
+        if block.header().is_genesis_slot() {
+            // Genesis is the boundary for epoch 0 — we don't collect it, just stop.
             break;
         }
-        // If the block is terminal, we are done.
-        if block.header().is_terminal() || block.header().is_genesis_slot() {
+
+        if block.header().is_terminal() {
+            // Terminal block sealed the previous epoch; sanity check.
+            if block.header().epoch() != epoch - 1 {
+                return Err(BlockAssemblyError::Other(
+                    "invalid epoch for previous terminal block".to_string(),
+                ));
+            }
             break;
+        }
+
+        // Sanity check epoch number
+        if block.header().epoch() != epoch {
+            return Err(BlockAssemblyError::Other(
+                "invalid epoch for epochal block".to_string(),
+            ));
         }
 
         let parent_id = *block.header().parent_blkid();

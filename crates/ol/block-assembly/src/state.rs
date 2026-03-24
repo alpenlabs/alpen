@@ -255,26 +255,30 @@ where
 {
     /// Resolves accumulated DA upto a block block: returns cached data,
     /// rebuilds by re-executing epoch blocks, or creates fresh data if parent is terminal.
-    pub(crate) async fn fetch_accumulated_da_upto(
+    pub(crate) async fn fetch_epoch_da_till_parent(
         &self,
-        blkid: OLBlockCommitment,
+        parent_blkid: OLBlockCommitment,
     ) -> Result<AccumulatedDaData, BlockAssemblyError> {
-        let parent_block = self
+        let parent_blk = self
             .context()
-            .fetch_ol_block(blkid.blkid)
+            .fetch_ol_block(parent_blkid.blkid)
             .await?
-            .ok_or(BlockAssemblyError::BlockNotFound(blkid.blkid))?;
+            .ok_or(BlockAssemblyError::BlockNotFound(parent_blkid.blkid))?;
 
-        let parent_header = parent_block.header();
+        let parent_header = parent_blk.header();
 
+        // If parent block is terminal then we are in the new epoch and thus start afresh.
         if parent_header.is_terminal() {
             Ok(AccumulatedDaData::new_empty())
         } else {
-            match self.epoch_da_tracker().get_accumulated_da(blkid.blkid) {
+            // Parent is not terminal, so we try to fetch accumulated da for the epoch.
+            let cur_epoch = parent_header.epoch();
+            match self
+                .epoch_da_tracker()
+                .get_accumulated_da(parent_blkid.blkid)
+            {
                 Some(da) => Ok(da.clone()),
-                None => {
-                    rebuild_accumulated_da_upto(blkid, parent_header.epoch(), self.context()).await
-                }
+                None => rebuild_accumulated_da_upto(parent_blkid, cur_epoch, self.context()).await,
             }
         }
     }
