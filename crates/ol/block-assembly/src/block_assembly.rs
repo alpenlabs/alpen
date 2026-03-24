@@ -44,6 +44,7 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
     failed_txs: Vec<FailedMempoolTx>,
     /// Accumulated write batch after processing all transactions.
     accumulated_batch: WriteBatch<S::AccountState>,
+    /// Accumulated da data after processing all transactions.
     accumulated_da: AccumulatedDaData,
     /// Whether the estimated checkpoint payload is approaching the L1 envelope limit.
     checkpoint_size_limit_reached: bool,
@@ -426,8 +427,8 @@ where
     let mut failed_txs = Vec::new();
     let mut checkpoint_size_limit_reached = false;
 
-    // Precompute prior epoch logs SSZ size; track current block logs incrementally.
-    let prior_epoch_logs_size = logs_ssz_size(accumulated_da.logs());
+    // Precompute epoch prior logs SSZ size; track current block logs incrementally.
+    let epoch_prior_logs_size = logs_ssz_size(accumulated_da.logs());
     let mut current_block_logs_size: usize = 0;
 
     // Split out the accumulator for DaAccumulatingState; logs are preserved and
@@ -473,7 +474,7 @@ where
                 let tx_logs_size = logs_ssz_size(&tx_logs);
                 let estimated_payload = estimate_checkpoint_payload_size(
                     staging_state.accumulator().estimated_encoded_size(),
-                    prior_epoch_logs_size + current_block_logs_size + tx_logs_size,
+                    epoch_prior_logs_size + current_block_logs_size + tx_logs_size,
                 );
 
                 match checkpoint_size_verdict(estimated_payload) {

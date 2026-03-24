@@ -104,7 +104,7 @@ async fn generate_block_template<
 where
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
-    // FIXME: This looks ugly, should we have Clone bound for the associated types?
+    // FIXME(STR-2778): This looks ugly, should we have Clone bound for the associated types?
     <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
     <S::State as IStateAccessor>::AccountStateMut: Clone,
     <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
