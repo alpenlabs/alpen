@@ -14,12 +14,12 @@ use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
 use strata_ol_mempool::{
-    MempoolTxInvalidReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction,
-    OLMempoolTxPayload,
+    MempoolTxInvalidReason, OLMempoolSauTxPayload, OLMempoolTransaction, OLMempoolTxPayload,
 };
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::WriteBatch;
 use strata_ol_stf::*;
+use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -687,7 +687,7 @@ fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator, S: IStateAccessor>(
 fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
     state: &S,
-    mempool_payload: &OLMempoolSnarkAcctUpdateTxPayload,
+    mempool_payload: &OLMempoolSauTxPayload,
 ) -> BlockAssemblyResult<(TransactionPayload, TxProofs)> {
     let target = *mempool_payload.target();
     let base_update = mempool_payload.base_update();
