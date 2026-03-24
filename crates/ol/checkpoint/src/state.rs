@@ -1,16 +1,12 @@
 //! Service state for OL checkpoint builder.
 
-use anyhow::anyhow;
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
 };
 use strata_db_types::types::OLCheckpointEntry;
-use strata_identifiers::{Epoch, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
-use strata_ol_state_support_types::DaAccumulatingState;
-use strata_ol_stf::execute_block_batch;
-use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec};
+use strata_identifiers::Epoch;
+use strata_primitives::epoch::EpochCommitment;
 use strata_service::ServiceState;
 use tracing::{debug, info};
 
@@ -169,125 +165,17 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     let l2_commitment = *summary.terminal();
     let new_tip = CheckpointTip::new(summary.epoch(), l1_height, l2_commitment);
 
-    let (state_bytes, ol_logs, terminal_header) = replay_epoch_and_compute_da(summary, ctx)?;
-    assert_terminal_commitment_matches(&terminal_header, l2_commitment)?;
+    let (state_bytes, ol_logs) = ctx.fetch_da_for_epoch(summary)?;
 
+    let terminal_header = ctx
+        .get_block_header(summary.terminal())?
+        .ok_or_else(|| anyhow::anyhow!("missing terminal block for epoch summary {:?}", summary))?;
     let terminal_header_complement = TerminalHeaderComplement::from_full_header(&terminal_header);
 
     let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
     let proof = ctx.get_proof(&commitment)?;
 
     Ok(CheckpointPayload::new(new_tip, sidecar, proof)?)
-}
-
-fn assert_terminal_commitment_matches(
-    terminal_header: &OLBlockHeader,
-    expected_terminal: OLBlockCommitment,
-) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        terminal_header.slot() == expected_terminal.slot(),
-        "terminal header slot mismatch: expected {}, got {}",
-        expected_terminal.slot(),
-        terminal_header.slot()
-    );
-    anyhow::ensure!(
-        terminal_header.compute_blkid() == *expected_terminal.blkid(),
-        "terminal header block id mismatch: expected {:?}, got {:?}",
-        expected_terminal.blkid(),
-        terminal_header.compute_blkid()
-    );
-    Ok(())
-}
-
-/// Collects all blocks in an epoch by walking backwards from the terminal block.
-///
-/// Returns blocks in forward order (first block of epoch first, terminal last).
-fn collect_epoch_blocks<C: CheckpointWorkerContext>(
-    summary: &EpochSummary,
-    ctx: &C,
-) -> anyhow::Result<NonEmptyVec<OLBlock>> {
-    let terminal_blkid = summary.terminal().blkid();
-    let prev_terminal_blkid = summary.prev_terminal().blkid();
-    let prev_terminal_slot = summary.prev_terminal().slot();
-
-    let mut blocks = Vec::new();
-    let mut cur_id = *terminal_blkid;
-
-    loop {
-        let block = ctx
-            .get_block(&cur_id)?
-            .ok_or_else(|| anyhow::anyhow!("missing block {cur_id:?} while collecting epoch"))?;
-
-        anyhow::ensure!(
-            block.header().slot() > prev_terminal_slot,
-            "block at slot {} is at or below prev terminal slot {}; \
-             epoch chain is broken",
-            block.header().slot(),
-            prev_terminal_slot,
-        );
-
-        // Check if the same epoch is being traversed.
-        anyhow::ensure!(
-            block.header().epoch() == summary.epoch(),
-            "Obtained a block with different epoch, expected {}, obtained {}",
-            summary.epoch(),
-            block.header().epoch(),
-        );
-
-        let parent_id = *block.header().parent_blkid();
-        blocks.push(block);
-
-        if parent_id == *prev_terminal_blkid {
-            break;
-        }
-
-        cur_id = parent_id;
-    }
-
-    blocks.reverse();
-    let blocks =
-        NonEmptyVec::try_from_vec(blocks).map_err(|_| anyhow!("Non-empty epoch blocks"))?;
-    Ok(blocks)
-}
-
-/// Replays epoch blocks to produce DA state diff bytes, accumulated logs, and
-/// the terminal header.
-///
-/// Loads the OL state at the previous terminal block, wraps it in
-/// `DaAccumulatingState` to intercept mutations, then re-executes every block
-/// in the epoch. The DA blob is extracted from the accumulating layer and the
-/// logs are collected from each block's execution output.
-fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
-    summary: &EpochSummary,
-    ctx: &C,
-) -> anyhow::Result<(Vec<u8>, Vec<OLLog>, OLBlockHeader)> {
-    let epoch_blocks = collect_epoch_blocks(summary, ctx)?;
-
-    let prev_terminal = summary.prev_terminal();
-    let prev_terminal_header = ctx
-        .get_terminal_block_header(prev_terminal)?
-        .ok_or_else(|| {
-            anyhow::anyhow!("missing prev terminal block header for {:?}", prev_terminal)
-        })?;
-
-    let ol_state = ctx
-        .get_ol_state(prev_terminal)?
-        .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
-
-    let mut da_state = DaAccumulatingState::new(ol_state);
-
-    let logs = execute_block_batch(&mut da_state, &epoch_blocks, &prev_terminal_header)
-        .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
-
-    let terminal_header = epoch_blocks.ensured_last().header().clone();
-
-    // Extract the DA blob from the accumulating layer.
-    let da_bytes = da_state
-        .take_completed_epoch_da_blob()
-        .map_err(|e| anyhow::anyhow!("DA accumulation failed: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("no DA blob produced after epoch replay"))?;
-
-    Ok((da_bytes, logs, terminal_header))
 }
 
 #[cfg(test)]
@@ -297,20 +185,106 @@ mod tests {
     use proptest::prelude::*;
     use strata_checkpoint_types::EpochSummary;
     use strata_checkpoint_types_ssz::{
-        CheckpointPayload, CheckpointTip, test_utils::checkpoint_sidecar_strategy,
+        CheckpointPayload, CheckpointTip,
+        test_utils::{checkpoint_sidecar_strategy, ol_logs_strategy, state_diff_strategy},
     };
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::types::OLCheckpointEntry;
     use strata_identifiers::{
         Buf64, Epoch, OLBlockCommitment,
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
     };
     use strata_ol_chain_types_new::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLBlockId, OLLog, OLTxSegment,
+        SignedOLBlockHeader,
     };
+    use strata_ol_state_types::OLState;
+    use strata_primitives::epoch::EpochCommitment;
     use strata_storage::create_node_storage;
 
     use super::OLCheckpointServiceState;
-    use crate::context::CheckpointWorkerContextImpl;
+    use crate::context::{CheckpointWorkerContext, CheckpointWorkerContextImpl, StateDiffRaw};
+
+    /// Test context that delegates everything to the real impl but stubs out
+    /// `fetch_da_for_epoch` with provided DA data. This avoids needing a full
+    /// replay chain (prev terminal block, OL state, etc.) in structural tests.
+    struct TestCheckpointContext {
+        inner: CheckpointWorkerContextImpl,
+        stub_state_diff: StateDiffRaw,
+        stub_ol_logs: Vec<OLLog>,
+    }
+
+    impl TestCheckpointContext {
+        fn new(
+            storage: Arc<strata_storage::NodeStorage>,
+            stub_state_diff: StateDiffRaw,
+            stub_ol_logs: Vec<OLLog>,
+        ) -> Self {
+            Self {
+                inner: CheckpointWorkerContextImpl::new(storage),
+                stub_state_diff,
+                stub_ol_logs,
+            }
+        }
+    }
+
+    impl CheckpointWorkerContext for TestCheckpointContext {
+        fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<u64>> {
+            self.inner.get_last_summarized_epoch()
+        }
+
+        fn get_canonical_epoch_commitment_at(
+            &self,
+            index: u64,
+        ) -> anyhow::Result<Option<EpochCommitment>> {
+            self.inner.get_canonical_epoch_commitment_at(index)
+        }
+
+        fn get_epoch_summary(
+            &self,
+            commitment: EpochCommitment,
+        ) -> anyhow::Result<Option<EpochSummary>> {
+            self.inner.get_epoch_summary(commitment)
+        }
+
+        fn get_checkpoint(&self, epoch: Epoch) -> anyhow::Result<Option<OLCheckpointEntry>> {
+            self.inner.get_checkpoint(epoch)
+        }
+
+        fn get_last_checkpoint_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+            self.inner.get_last_checkpoint_epoch()
+        }
+
+        fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> anyhow::Result<()> {
+            self.inner.put_checkpoint(epoch, entry)
+        }
+
+        fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
+            self.inner.get_proof(epoch)
+        }
+
+        fn get_block_header(
+            &self,
+            blkid: &OLBlockCommitment,
+        ) -> anyhow::Result<Option<OLBlockHeader>> {
+            self.inner.get_block_header(blkid)
+        }
+
+        fn get_block(&self, id: &OLBlockId) -> anyhow::Result<Option<OLBlock>> {
+            self.inner.get_block(id)
+        }
+
+        fn get_ol_state(&self, commitment: &OLBlockCommitment) -> anyhow::Result<Option<OLState>> {
+            self.inner.get_ol_state(commitment)
+        }
+
+        fn fetch_da_for_epoch(
+            &self,
+            _summary: &EpochSummary,
+        ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)> {
+            Ok((self.stub_state_diff.clone(), self.stub_ol_logs.clone()))
+        }
+    }
 
     proptest! {
         #[test]
@@ -381,13 +355,15 @@ mod tests {
     proptest! {
         #[test]
         fn builds_checkpoint_from_epoch_summary(
-            terminal_slot in any::<u64>(),
+            prev_terminal in ol_block_commitment_strategy(),
+            slot_offset in 1..u64::MAX,
             body_root in buf32_strategy(),
             logs_root in buf32_strategy(),
-            prev_terminal in ol_block_commitment_strategy(),
             genesis_l1 in l1_block_commitment_strategy(),
             new_l1 in l1_block_commitment_strategy(),
             final_state in buf32_strategy(),
+            state_diff in state_diff_strategy(),
+            ol_logs in ol_logs_strategy(),
         ) {
             let backend = get_test_sled_backend();
             let storage = Arc::new(
@@ -397,6 +373,7 @@ mod tests {
             let ol_block_mgr = storage.ol_block();
 
             let epoch: Epoch = 1;
+            let terminal_slot = prev_terminal.slot().saturating_add(slot_offset);
             let terminal_header = OLBlockHeader::new(
                 1_700_000_000,
                 BlockFlags::zero(),
@@ -407,6 +384,7 @@ mod tests {
                 final_state,
                 logs_root,
             );
+
             let terminal_block = OLBlock::new(
                 SignedOLBlockHeader::new(terminal_header.clone(), Buf64::zero()),
                 OLBlockBody::new_common(
@@ -430,7 +408,7 @@ mod tests {
                 .insert_epoch_summary_blocking(summary)
                 .expect("insert summary");
 
-            let ctx = CheckpointWorkerContextImpl::new(Arc::clone(&storage));
+            let ctx = TestCheckpointContext::new(Arc::clone(&storage), state_diff, ol_logs);
             let mut state = OLCheckpointServiceState::new(ctx);
             state.initialize();
 
