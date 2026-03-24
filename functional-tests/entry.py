@@ -48,7 +48,7 @@ def disabled_tests() -> list[str]:
     Helper to disable some tests.
     Useful during debugging or when the test becomes flaky.
     """
-    return frozenset(["basic_load", KEEP_ALIVE_TEST_FILE])
+    return frozenset([KEEP_ALIVE_TEST_FILE])
 
 def load_keepalive_mock_test(env_name):
     # Read the test file as string.
