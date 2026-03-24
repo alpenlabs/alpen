@@ -66,14 +66,9 @@ impl TxEffects {
     /// overflowing.
     pub fn get_total_value_sent(&self) -> Option<BitcoinAmount> {
         // Absolutely beautiful iterator combinator chain.
-        //
-        // I really hope LLVM figures out that it can break early once the
-        // accumulator becomes `None`, although really this should be fine since
-        // this would never be seen in normal block execution.
         self.transfers_iter()
             .map(|t| t.value())
             .chain(self.messages_iter().map(|m| m.payload().value()))
-            .fold(Some(0u64), |a, e| a.and_then(|av| av.checked_add(*e)))
-            .map(BitcoinAmount::from_sat)
+            .try_fold(BitcoinAmount::zero(), |acc, e| acc.checked_add(e))
     }
 }

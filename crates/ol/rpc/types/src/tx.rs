@@ -95,7 +95,7 @@ impl RpcGenericAccountMessage {
 }
 
 /// Transaction extra: slot constraints.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcTxConstraints {
     /// Minimum slot.
@@ -119,15 +119,6 @@ impl RpcTxConstraints {
     /// Returns the maximum slot.
     pub fn max_slot(&self) -> Option<u64> {
         self.max_slot
-    }
-}
-
-impl Default for RpcTxConstraints {
-    fn default() -> Self {
-        Self {
-            min_slot: Default::default(),
-            max_slot: Default::default(),
-        }
     }
 }
 

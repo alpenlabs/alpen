@@ -105,7 +105,7 @@ fn process_update_tx<S: IStateAccessor>(
     );
 
     // 3. Verify the update by calling out to the snark account library.
-    let state_ctx = TxProofVerificationContext::from_account_and_state(state, &account_state);
+    let state_ctx = TxProofVerificationContext::from_account_and_state(state, account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
     let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
     snark_sys::verify_update_correctness(

@@ -1,5 +1,6 @@
 //! Proof-related types for OL chain.
 
+use ssz_types::VariableList;
 use strata_acct_types::{AccumulatorClaim, RawMerkleProof};
 
 use crate::ssz_generated::ssz::proofs::*;
@@ -10,7 +11,7 @@ impl ClaimList {
     /// Returns `None` if the number of claims exceeds the SSZ list maximum.
     pub fn new(claims: Vec<AccumulatorClaim>) -> Option<Self> {
         Some(Self {
-            claims: claims.try_into().ok()?,
+            claims: VariableList::new(claims).ok()?,
         })
     }
 
@@ -20,18 +21,53 @@ impl ClaimList {
 }
 
 impl RawMerkleProofList {
+    /// Constructs a new instance if the vec is in bounds.
+    pub fn from_vec(buf: Vec<RawMerkleProof>) -> Option<Self> {
+        VariableList::new(buf).ok().map(|proofs| Self { proofs })
+    }
+
+    /// Constructs from a vec, returning `None` if the vec is empty (or out of
+    /// bounds).
+    pub fn from_vec_nonempty(buf: Vec<RawMerkleProof>) -> Option<Self> {
+        if buf.is_empty() {
+            return None;
+        }
+        Self::from_vec(buf)
+    }
+
     pub fn proofs(&self) -> &[RawMerkleProof] {
         &self.proofs
     }
 }
 
 impl ProofSatisfier {
+    /// Constructs a new instance if the vec is in bounds.
+    pub fn from_vec(buf: Vec<u8>) -> Option<Self> {
+        VariableList::new(buf).ok().map(|proof| Self { proof })
+    }
+
     pub fn proof(&self) -> &[u8] {
         &self.proof
     }
 }
 
 impl ProofSatisfierList {
+    /// Constructs a new instance if the vec is in bounds.
+    pub fn from_proofs(buf: Vec<ProofSatisfier>) -> Option<Self> {
+        VariableList::new(buf).ok().map(|proofs| Self { proofs })
+    }
+
+    /// Wraps a single proof satisfier into a list.
+    ///
+    /// Returns `None` if the proof bytes are empty.
+    pub fn single(proof_bytes: Vec<u8>) -> Option<Self> {
+        if proof_bytes.is_empty() {
+            return None;
+        }
+        let satisfier = ProofSatisfier::from_vec(proof_bytes)?;
+        Self::from_proofs(vec![satisfier])
+    }
+
     pub fn proofs(&self) -> &[ProofSatisfier] {
         &self.proofs
     }

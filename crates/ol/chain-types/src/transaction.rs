@@ -172,11 +172,15 @@ impl SauTxLedgerRefs {
         }
     }
 
-    /// Creates ledger refs with the given claim list.
+    /// Creates ledger refs with the given ASM history claims.
     pub fn new_with_claims(claims: ClaimList) -> Self {
         Self {
             asm_history_proofs: ssz_types::Optional::Some(claims),
         }
+    }
+
+    pub fn set_asm_history_claims(&mut self, claims: ClaimList) {
+        self.asm_history_proofs = ssz_types::Optional::Some(claims);
     }
 
     pub fn asm_history_proofs(&self) -> Option<&ClaimList> {

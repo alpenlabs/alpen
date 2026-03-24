@@ -168,7 +168,7 @@ fn test_snark_update_invalid_message_index() {
     let mut effects = strata_acct_types::TxEffects::default();
     effects.push_transfer(recipient_id, 10_000_000);
 
-    let invalid_tx = crate::test_utils::create_unchecked_snark_update(
+    let invalid_tx = create_unchecked_snark_update(
         snark_id,
         0, // the first update, seq_no = 0
         get_test_state_root(2),
@@ -298,7 +298,7 @@ fn test_snark_update_skip_message_out_of_order() {
     let mut effects = strata_acct_types::TxEffects::default();
     effects.push_transfer(recipient_id, 10_000_000);
 
-    let invalid_tx = crate::test_utils::create_unchecked_snark_update(
+    let invalid_tx = create_unchecked_snark_update(
         snark_id,
         0,
         get_test_state_root(2),

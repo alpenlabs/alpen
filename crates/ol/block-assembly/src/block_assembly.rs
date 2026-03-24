@@ -110,6 +110,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::UnknownTemplateId(_)
         | BlockAssemblyError::TimestampTooEarly(_)
         | BlockAssemblyError::BlockNotFound(_)
+        | BlockAssemblyError::TooManyClaims
         | BlockAssemblyError::CannotBuildGenesis => MempoolTxInvalidReason::Failed,
     }
 }
@@ -712,22 +713,20 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
         proof_gen.generate_inbox_proofs_at(target, messages, start_idx, inbox_leaf_count)?;
 
     // Generate L1 header proofs using AccumulatorProofGenerator
-    let l1_header_refs = operation.ledger_refs().l1_header_refs();
-    let l1_header_proofs = proof_gen.generate_l1_header_proofs(l1_header_refs, state)?;
+    let asm_hist_refs = operation.ledger_refs().l1_header_refs();
+    let l1_header_proofs = proof_gen.generate_l1_header_proofs(asm_hist_refs, state)?;
 
     debug!(
         target = ?target,
-        l1_claim_heights = ?l1_header_refs.iter().map(|c| c.idx()).collect::<Vec<_>>(),
+        l1_claim_heights = ?asm_hist_refs.iter().map(|c| c.idx()).collect::<Vec<_>>(),
         manifests_mmr_entries = state.asm_manifests_mmr().num_entries(),
         "generated ledger reference proofs for snark update"
     );
 
     // Build the SauTxPayload from the mempool update data
     let proof_state = operation.new_proof_state();
-    let sau_proof_state = SauTxProofState::new(
-        proof_state.next_inbox_msg_idx(),
-        proof_state.inner_state().into(),
-    );
+    let sau_proof_state =
+        SauTxProofState::new(proof_state.next_inbox_msg_idx(), proof_state.inner_state());
     let sau_update_data = SauTxUpdateData::new(
         operation.seq_no(),
         sau_proof_state,
@@ -735,12 +734,11 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
     );
 
     // Build ledger refs from the L1 header claims
-    let sau_ledger_refs = if l1_header_refs.is_empty() {
+    let sau_ledger_refs = if asm_hist_refs.is_empty() {
         SauTxLedgerRefs::new_empty()
     } else {
-        SauTxLedgerRefs::new_with_claims(ClaimList {
-            claims: l1_header_refs.to_vec().into(),
-        })
+        let cl = ClaimList::new(asm_hist_refs.to_vec()).ok_or(BlockAssemblyError::TooManyClaims)?;
+        SauTxLedgerRefs::new_with_claims(cl)
     };
 
     let sau_operation_data =
@@ -751,29 +749,11 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
 
     // Build TxProofs: inbox proofs + l1 header proofs go into accumulator_proofs,
     // the update proof (predicate satisfier) comes from the base_update.
-    let mut all_acc_proofs = Vec::new();
-    all_acc_proofs.extend(inbox_proofs);
+    let mut all_acc_proofs = inbox_proofs;
     all_acc_proofs.extend(l1_header_proofs.l1_headers_proofs().to_vec());
 
-    let acc_proofs = if all_acc_proofs.is_empty() {
-        None
-    } else {
-        Some(RawMerkleProofList {
-            proofs: all_acc_proofs.into(),
-        })
-    };
-
-    let update_proof = base_update.update_proof();
-    let pred_satisfiers = if update_proof.is_empty() {
-        None
-    } else {
-        Some(ProofSatisfierList {
-            proofs: vec![ProofSatisfier {
-                proof: update_proof.to_vec().into(),
-            }]
-            .into(),
-        })
-    };
+    let acc_proofs = RawMerkleProofList::from_vec_nonempty(all_acc_proofs);
+    let pred_satisfiers = ProofSatisfierList::single(base_update.update_proof().to_vec());
 
     let tx_proofs = TxProofs::new(pred_satisfiers, acc_proofs);
 
