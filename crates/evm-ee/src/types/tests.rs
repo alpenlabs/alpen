@@ -217,6 +217,53 @@ fn test_evm_partial_state_codec_roundtrip() {
     assert_eq!(decoded.ancestor_headers(), partial_state.ancestor_headers());
 }
 
+/// Verifies that a codec-roundtripped EvmPartialState can still execute blocks.
+///
+/// The state_trie encoding uses `alloy_rlp::Encodable` for MptNode, which calls
+/// `reference_encode` on child nodes. Nodes encoding to >= 32 bytes are collapsed
+/// into hash digests, losing the resolved trie data needed for execution.
+#[test]
+fn test_evm_partial_state_codec_roundtrip_execution() {
+    use std::sync::Arc;
+
+    use reth_chainspec::ChainSpec;
+    use reth_primitives_traits::Block as _;
+    use strata_ee_acct_types::{ExecBlock, ExecPayload, ExecutionEnvironment};
+    use strata_ee_chain_types::ExecInputs;
+
+    use crate::EvmExecutionEnvironment;
+
+    let witness = load_witness_test_data();
+
+    // Build partial state and verify execution works on the original.
+    let partial_state = EvmPartialState::new(
+        witness.parent_state,
+        witness.bytecodes,
+        witness.ancestor_headers,
+    );
+
+    let header = witness.current_block.header().clone();
+    let body = EvmBlockBody::from_alloy_body(witness.current_block.body().clone());
+    let block = EvmBlock::new(EvmHeader::new(header.clone()), body);
+
+    let chain_spec: Arc<ChainSpec> = Arc::new((&witness.genesis).try_into().unwrap());
+    let ee = EvmExecutionEnvironment::new(chain_spec);
+    let payload = ExecPayload::new(&header, block.get_body());
+    let inputs = ExecInputs::new_empty();
+
+    // Original state executes fine.
+    ee.execute_block_body(&partial_state, &payload, &inputs)
+        .expect("execution on original state should succeed");
+
+    // Roundtrip through codec.
+    let encoded = encode_to_vec(&partial_state).expect("encode failed");
+    let decoded: EvmPartialState = decode_buf_exact(&encoded).expect("decode failed");
+
+    // Decoded state should also execute — this fails if trie nodes are lost.
+    ee.execute_block_body(&decoded, &payload, &inputs)
+        .expect("execution on codec-roundtripped state should succeed");
+}
+
 #[test]
 fn test_evm_write_batch_codec_roundtrip() {
     use reth_trie::HashedPostState;

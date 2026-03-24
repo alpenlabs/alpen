@@ -78,14 +78,23 @@ pub(crate) fn decode_bytes_with_length(
 
 /// Encodes EthereumState deterministically (sorts HashMap entries).
 ///
-/// Uses RLP encoding for MptNode (which is deterministic) and sorts the
-/// storage_tries HashMap by key to ensure deterministic iteration order.
+/// Uses bincode (serde) for MptNode serialization to preserve all resolved trie
+/// nodes. The previous RLP-based encoding was lossy: `alloy_rlp::Encodable` for
+/// MptNode collapses child nodes >= 32 bytes into hash digests via
+/// `reference_encode`, making the decoded state unusable for block execution.
+///
+/// Bincode is used here as an implementation detail because `MptNode` and
+/// `MptNodeData` are not publicly accessible from `rsp_mpt` (private module),
+/// preventing a custom recursive strata-codec encoding.
 pub(crate) fn encode_ethereum_state(
     state: &EthereumState,
     enc: &mut impl strata_codec::Encoder,
 ) -> Result<(), CodecError> {
-    // Encode state_trie using RLP (MptNode implements alloy_rlp::Encodable)
-    encode_rlp_with_length(&state.state_trie, enc)?;
+    // REVIEW: bincode is used because MptNode/MptNodeData are private in rsp_mpt,
+    // but our guidelines discourage bincode. Open to alternative lossless encodings.
+    let trie_bytes = bincode::serialize(&state.state_trie)
+        .map_err(|_| CodecError::MalformedField("state_trie bincode encode failed"))?;
+    encode_bytes_with_length(&trie_bytes, enc)?;
 
     // Sort storage_tries by key for deterministic encoding
     let sorted_storage: BTreeMap<_, _> = state.storage_tries.iter().collect();
@@ -93,8 +102,9 @@ pub(crate) fn encode_ethereum_state(
 
     for (address_hash, storage_trie) in sorted_storage {
         enc.write_buf(address_hash.as_slice())?;
-        // Encode each storage trie using RLP
-        encode_rlp_with_length(storage_trie, enc)?;
+        let storage_bytes = bincode::serialize(storage_trie)
+            .map_err(|_| CodecError::MalformedField("storage_trie bincode encode failed"))?;
+        encode_bytes_with_length(&storage_bytes, enc)?;
     }
 
     Ok(())
@@ -104,10 +114,9 @@ pub(crate) fn encode_ethereum_state(
 pub(crate) fn decode_ethereum_state(
     dec: &mut impl strata_codec::Decoder,
 ) -> Result<EthereumState, CodecError> {
-    // Decode state_trie using rlp (MptNode implements rlp::Decodable)
     let state_trie_bytes = decode_bytes_with_length(dec)?;
-    let state_trie = rlp::decode(&state_trie_bytes)
-        .map_err(|_| CodecError::MalformedField("state_trie RLP decode failed"))?;
+    let state_trie = bincode::deserialize(&state_trie_bytes)
+        .map_err(|_| CodecError::MalformedField("state_trie bincode decode failed"))?;
 
     // Decode storage_tries
     let storage_count = u32::decode(dec)? as usize;
@@ -119,14 +128,12 @@ pub(crate) fn decode_ethereum_state(
         dec.read_buf(&mut address_hash_bytes)?;
         let address_hash = B256::from(address_hash_bytes);
 
-        // Decode storage trie using rlp (MptNode implements rlp::Decodable)
         let storage_trie_bytes = decode_bytes_with_length(dec)?;
-        let storage_trie = rlp::decode(&storage_trie_bytes)
-            .map_err(|_| CodecError::MalformedField("storage_trie RLP decode failed"))?;
+        let storage_trie = bincode::deserialize(&storage_trie_bytes)
+            .map_err(|_| CodecError::MalformedField("storage_trie bincode decode failed"))?;
         storage_tries.insert(address_hash, storage_trie);
     }
 
-    // Construct EthereumState directly from public fields
     Ok(EthereumState {
         state_trie,
         storage_tries,

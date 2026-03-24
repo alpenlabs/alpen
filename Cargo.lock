@@ -14975,6 +14975,7 @@ dependencies = [
  "alloy-rlp",
  "alpen-reth-evm",
  "alpen-reth-primitives",
+ "bincode",
  "itertools 0.14.0",
  "reth-chainspec",
  "reth-consensus-common",
@@ -14986,7 +14987,6 @@ dependencies = [
  "reth-trie",
  "revm",
  "revm-primitives",
- "rlp",
  "rsp-client-executor",
  "rsp-mpt",
  "serde",
@@ -15622,9 +15622,9 @@ dependencies = [
 name = "strata-proofimpl-alpen-acct"
 version = "0.1.0"
 dependencies = [
- "alloy-genesis",
  "reth-chainspec",
  "rkyv",
+ "rsp-primitives",
  "ssz",
  "strata-ee-acct-runtime",
  "strata-evm-ee",
@@ -15639,10 +15639,17 @@ dependencies = [
 name = "strata-proofimpl-alpen-chunk"
 version = "0.1.0"
 dependencies = [
- "alloy-genesis",
  "reth-chainspec",
+ "reth-primitives-traits",
  "rkyv",
+ "rsp-client-executor",
+ "rsp-primitives",
+ "serde",
+ "serde_json",
  "ssz",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-ee-chunk-runtime",
  "strata-evm-ee",
