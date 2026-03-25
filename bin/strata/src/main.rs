@@ -71,8 +71,8 @@ fn main() -> Result<()> {
     #[cfg(feature = "sequencer")]
     let envelope_pubkey = if nodectx.config().client.is_sequencer {
         match &nodectx.params().rollup.cred_rule {
-            strata_identifiers::CredRule::SchnorrKey(key) => Some(key.0),
-            strata_identifiers::CredRule::Unchecked => None,
+            strata_params::CredRule::SchnorrKey(key) => Some(key.0),
+            strata_params::CredRule::Unchecked => None,
         }
     } else {
         None
