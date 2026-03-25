@@ -87,6 +87,7 @@ jobs:
     name: "Build ${{ matrix.program }}"
     needs: [prepare]
     runs-on: ubuntu-latest
+    environment: prod
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
@@ -108,8 +109,10 @@ jobs:
       # Authenticate to the shared ECR account
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v4
+        env:
+          ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
-          role-to-assume: ${{ secrets.SHARED_ECR_ROLE_ARN }}
+          role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -146,6 +149,7 @@ jobs:
     name: Dispatch CD to deployments
     needs: [prepare, build-and-push]
     runs-on: ubuntu-latest
+    environment: prod
     steps:
       - name: Trigger deployments repo
         env:
