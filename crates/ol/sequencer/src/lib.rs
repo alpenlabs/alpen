@@ -13,7 +13,7 @@ pub mod signing;
 mod types;
 
 pub use builder::SequencerBuilder;
-pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry};
+pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry, PayloadSigningDuty};
 pub use error::Error;
 pub use extraction::extract_duties;
 pub use service::{SequencerContext, SequencerContextError, SequencerServiceStatus};

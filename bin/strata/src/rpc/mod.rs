@@ -18,6 +18,8 @@ use strata_btcio::writer::EnvelopeHandle;
 use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
 use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
+use strata_consensus_logic::FcmServiceHandle;
+#[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
@@ -40,6 +42,8 @@ struct RpcDeps {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     mempool_handle: Arc<MempoolHandle>,
+    #[cfg(feature = "sequencer")]
+    fcm_handle: Arc<FcmServiceHandle>,
     #[cfg(feature = "sequencer")]
     seq_deps: Option<SeqRpcDeps>,
 }
@@ -94,6 +98,8 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
         mempool_handle: runctx.mempool_handle().clone(),
+        #[cfg(feature = "sequencer")]
+        fcm_handle: runctx.fcm_handle().clone(),
         #[cfg(feature = "sequencer")]
         seq_deps,
     };
@@ -166,9 +172,9 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     if let Some(sequencer_deps) = deps.seq_deps {
         let ol_seq_listener = OLSeqRpcServer::new(
             deps.storage.clone(),
-            deps.status_channel.clone(),
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
+            deps.fcm_handle.clone(),
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);
         module

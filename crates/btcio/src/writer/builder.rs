@@ -6,7 +6,7 @@ use bitcoin::{
     absolute::LockTime,
     blockdata::script,
     hashes::Hash,
-    key::{TapTweak, TweakedPublicKey, UntweakedKeypair},
+    key::UntweakedKeypair,
     secp256k1::{
         constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Message, XOnlyPublicKey, SECP256K1,
     },
@@ -27,6 +27,7 @@ use rand::{rngs::OsRng, RngCore};
 use strata_csm_types::L1Payload;
 use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
 use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
+use strata_primitives::buf::Buf32;
 use thiserror::Error;
 
 use super::context::WriterContext;
@@ -51,14 +52,14 @@ pub struct EnvelopeConfig {
     pub network: Network,
     /// Bitcoin fee rate, sats/vByte
     pub fee_rate: u64,
-    /// Optional keypair for the taproot envelope script.
+    /// Sequencer public key for the taproot envelope script (SPS-51).
     ///
-    /// When set, this keypair is used as the `<pubkey>` in `<pubkey> CHECKSIG` of the
-    /// envelope script. Per SPS-51, consumers can recognize this pubkey and treat the
-    /// taproot script-spend signature as transitively signing the envelope contents.
+    /// Used as the `<pubkey>` in `<pubkey> CHECKSIG` of the envelope script.
+    /// The ASM verifies the envelope was created by the authorized sequencer by
+    /// checking this pubkey against the sequencer predicate.
     ///
-    /// When `None`, a random keypair is generated per transaction (legacy behavior).
-    pub envelope_keypair: Option<UntweakedKeypair>,
+    /// `None` when the caller generates ephemeral keypairs (chunked envelope path).
+    pub envelope_pubkey: Option<XOnlyPublicKey>,
 }
 
 impl EnvelopeConfig {
@@ -68,6 +69,7 @@ impl EnvelopeConfig {
         network: Network,
         fee_rate: u64,
         reveal_amount: u64,
+        envelope_pubkey: Option<XOnlyPublicKey>,
     ) -> Self {
         Self {
             magic_bytes,
@@ -75,14 +77,8 @@ impl EnvelopeConfig {
             reveal_amount,
             fee_rate,
             network,
-            envelope_keypair: None,
+            envelope_pubkey,
         }
-    }
-
-    /// Sets the envelope keypair for SPS-51 authentication.
-    pub fn with_envelope_keypair(mut self, keypair: UntweakedKeypair) -> Self {
-        self.envelope_keypair = Some(keypair);
-        self
     }
 }
 
@@ -111,6 +107,24 @@ pub enum EnvelopeError {
     Other(#[from] anyhow::Error),
 }
 
+/// Intermediate data from building unsigned envelope transactions.
+///
+/// Held in memory by the watcher task. Lost on restart, which triggers a rebuild
+/// from `Unsigned` status.
+#[derive(Debug, Clone)]
+pub struct UnsignedEnvelope {
+    /// The unsigned commit transaction.
+    pub commit_tx: Transaction,
+    /// The unsigned reveal transaction (no witness yet).
+    pub reveal_tx: Transaction,
+    /// The taproot script-spend sighash that needs to be signed.
+    pub sighash: Buf32,
+    /// The reveal script used in the taproot leaf.
+    pub reveal_script: ScriptBuf,
+    /// The taproot spend info for constructing the witness.
+    pub taproot_spend_info: TaprootSpendInfo,
+}
+
 // This is hacky solution. As `btcio` has `transaction builder` that `tx-parser` depends on. But
 // Btcio depends on `tx-parser`. So this file is behind a feature flag 'test-utils' and on dev
 // dependencies on `tx-parser`, we include {btcio, feature="strata_test_utils"} , so cyclic
@@ -118,7 +132,7 @@ pub enum EnvelopeError {
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<(Transaction, Transaction)> {
+) -> anyhow::Result<UnsignedEnvelope> {
     let network = ctx.client.network().await?;
     let utxos = ctx
         .client
@@ -127,31 +141,33 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         .0;
 
     let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref()).await?;
-    let mut env_config = EnvelopeConfig::new(
+    let envelope_pubkey = ctx
+        .envelope_pubkey
+        .ok_or_else(|| anyhow::anyhow!("envelope_pubkey is required for envelope transactions"))?;
+    let env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
         network,
         fee_rate,
         BITCOIN_DUST_LIMIT,
+        Some(envelope_pubkey),
     );
-    if let Some(kp) = ctx.envelope_keypair {
-        env_config = env_config.with_envelope_keypair(kp);
-    }
     create_envelope_transactions(&env_config, payload, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
+/// Builds unsigned envelope transactions (commit + reveal) and computes the sighash.
+///
+/// Returns an [`UnsignedEnvelope`] containing the transactions and intermediate data
+/// needed to attach the signature later via [`attach_reveal_signature`].
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
     payload: &L1Payload,
     utxos: Vec<ListUnspentItem>,
-) -> Result<(Transaction, Transaction), EnvelopeError> {
-    // Use provided keypair or generate a random one
-    let key_pair = match &env_config.envelope_keypair {
-        Some(kp) => *kp,
-        None => generate_key_pair()?,
-    };
-    let public_key = XOnlyPublicKey::from_keypair(&key_pair).0;
+) -> Result<UnsignedEnvelope, EnvelopeError> {
+    let public_key = env_config
+        .envelope_pubkey
+        .ok_or_else(|| anyhow!("envelope_pubkey is required for single-envelope transactions"))?;
 
     let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
         .add_envelopes(payload.data())?
@@ -185,19 +201,19 @@ pub fn create_envelope_transactions(
     );
 
     // Build commit tx
-    let (unsigned_commit_tx, _) = build_commit_transaction(
+    let (commit_tx, _) = build_commit_transaction(
         utxos,
-        reveal_address.clone(),
+        reveal_address,
         env_config.sequencer_address.clone(),
         commit_value,
         env_config.fee_rate,
     )?;
 
-    let output_to_reveal = unsigned_commit_tx.output[0].clone();
+    let output_to_reveal = commit_tx.output[0].clone();
 
     // Build reveal tx
-    let mut reveal_tx = build_reveal_transaction(
-        unsigned_commit_tx.clone(),
+    let reveal_tx = build_reveal_transaction(
+        commit_tx.clone(),
         env_config.sequencer_address.clone(),
         env_config.reveal_amount,
         env_config.fee_rate,
@@ -208,24 +224,34 @@ pub fn create_envelope_transactions(
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
     )?;
 
-    // Sign reveal tx
-    sign_reveal_transaction(
-        &mut reveal_tx,
-        &output_to_reveal,
-        &reveal_script,
-        &taproot_spend_info,
-        &key_pair,
-    )?;
+    // Compute sighash for the reveal tx
+    let sighash = compute_reveal_sighash(&reveal_tx, &output_to_reveal, &reveal_script)?;
 
-    // Check if envelope is locked to the correct address
-    assert_correct_address(
-        &key_pair,
-        &taproot_spend_info,
-        &reveal_address,
-        env_config.network,
-    );
+    Ok(UnsignedEnvelope {
+        commit_tx,
+        reveal_tx,
+        sighash,
+        reveal_script,
+        taproot_spend_info,
+    })
+}
 
-    Ok((unsigned_commit_tx, reveal_tx))
+/// Computes the taproot script-spend sighash for the reveal transaction.
+fn compute_reveal_sighash(
+    reveal_tx: &Transaction,
+    output_to_reveal: &TxOut,
+    reveal_script: &ScriptBuf,
+) -> Result<Buf32, EnvelopeError> {
+    let mut sighash_cache = SighashCache::new(reveal_tx);
+    let signature_hash = sighash_cache
+        .taproot_script_spend_signature_hash(
+            0,
+            &Prevouts::All(&[output_to_reveal]),
+            TapLeafHash::from_script(reveal_script, LeafVersion::TapScript),
+            TapSighashType::Default,
+        )
+        .map_err(|e| anyhow!("failed to compute sighash: {e}"))?;
+    Ok(Buf32(*signature_hash.as_byte_array()))
 }
 
 pub(crate) fn get_size(
@@ -463,12 +489,6 @@ pub fn build_reveal_transaction(
     Ok(tx)
 }
 
-pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
-    let mut rand_bytes = [0; 32];
-    OsRng.fill_bytes(&mut rand_bytes);
-    Ok(UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?)
-}
-
 pub(crate) fn calculate_commit_output_value(
     recipient: &Address,
     reveal_value: u64,
@@ -500,6 +520,18 @@ pub(crate) fn calculate_commit_output_value(
         + reveal_value
 }
 
+/// Generates a random keypair for envelope construction.
+///
+/// Used by the chunked envelope path which creates per-reveal ephemeral keypairs.
+pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
+    let mut rand_bytes = [0; 32];
+    OsRng.fill_bytes(&mut rand_bytes);
+    Ok(UntweakedKeypair::from_seckey_slice(SECP256K1, &rand_bytes)?)
+}
+
+/// Signs and attaches a taproot script-spend witness to the reveal transaction.
+///
+/// Used by the chunked envelope path which signs in-process with ephemeral keypairs.
 pub(crate) fn sign_reveal_transaction(
     reveal_tx: &mut Transaction,
     output_to_reveal: &TxOut,
@@ -507,27 +539,34 @@ pub(crate) fn sign_reveal_transaction(
     taproot_spend_info: &TaprootSpendInfo,
     key_pair: &UntweakedKeypair,
 ) -> Result<(), anyhow::Error> {
-    let mut sighash_cache = SighashCache::new(reveal_tx);
-    let signature_hash = sighash_cache.taproot_script_spend_signature_hash(
-        0,
-        &Prevouts::All(&[output_to_reveal]),
-        TapLeafHash::from_script(reveal_script, LeafVersion::TapScript),
-        TapSighashType::Default,
-    )?;
+    let sighash = compute_reveal_sighash(reveal_tx, output_to_reveal, reveal_script)?;
 
     let mut randbytes = [0; 32];
     OsRng.fill_bytes(&mut randbytes);
-
-    let signature = SECP256K1.sign_schnorr_with_aux_rand(
-        &Message::from_digest_slice(signature_hash.as_byte_array())?,
+    let sig = SECP256K1.sign_schnorr_with_aux_rand(
+        &Message::from_digest_slice(&sighash.0)?,
         key_pair,
         &randbytes,
     );
 
-    let witness = sighash_cache
-        .witness_mut(0)
-        .ok_or(anyhow!("Could not access witness for input 0"))?;
-    witness.push(signature.as_ref());
+    attach_reveal_signature(reveal_tx, reveal_script, taproot_spend_info, sig.as_ref())
+}
+
+/// Attaches a pre-computed Schnorr signature to the reveal transaction witness.
+///
+/// The signature must be a valid BIP-340 Schnorr signature over the sighash
+/// returned by [`create_envelope_transactions`].
+pub fn attach_reveal_signature(
+    reveal_tx: &mut Transaction,
+    reveal_script: &script::ScriptBuf,
+    taproot_spend_info: &TaprootSpendInfo,
+    signature: &[u8; 64],
+) -> Result<(), anyhow::Error> {
+    let sig =
+        Signature::from_slice(signature).map_err(|e| anyhow!("invalid schnorr signature: {e}"))?;
+
+    let witness = &mut reveal_tx.input[0].witness;
+    witness.push(sig.as_ref());
     witness.push(reveal_script);
     witness.push(
         taproot_spend_info
@@ -537,23 +576,6 @@ pub(crate) fn sign_reveal_transaction(
     );
 
     Ok(())
-}
-
-fn assert_correct_address(
-    key_pair: &UntweakedKeypair,
-    taproot_spend_info: &TaprootSpendInfo,
-    commit_tx_address: &Address,
-    network: Network,
-) {
-    let recovery_key_pair = key_pair.tap_tweak(SECP256K1, taproot_spend_info.merkle_root());
-    let x_only_pub_key = recovery_key_pair.to_keypair().x_only_public_key().0;
-    assert_eq!(
-        Address::p2tr_tweaked(
-            TweakedPublicKey::dangerous_assume_tweaked(x_only_pub_key),
-            network,
-        ),
-        *commit_tx_address
-    );
 }
 
 #[cfg(test)]
@@ -774,45 +796,61 @@ mod tests {
         // Use 150 bytes to meet minimum envelope payload size of 126 bytes
         let payload = L1Payload::new(vec![vec![0u8; 150]], tag);
 
+        use bitcoin::secp256k1::{Secp256k1, SecretKey};
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let (pubkey, _) = sk.x_only_public_key(&secp);
         let env_config = EnvelopeConfig::new(
             MagicBytes::new(*b"ALPN"),
             ctx.sequencer_address.clone(),
             Network::Regtest,
             1000,
             546,
+            Some(pubkey),
         );
-        let (commit, reveal) =
+        let unsigned =
             super::create_envelope_transactions(&env_config, &payload, utxos.to_vec()).unwrap();
 
         // check outputs
-        assert_eq!(commit.output.len(), 2, "commit tx should have 2 outputs");
-
-        assert_eq!(reveal.output.len(), 2, "reveal tx should have 2 outputs");
+        assert_eq!(
+            unsigned.commit_tx.output.len(),
+            2,
+            "commit tx should have 2 outputs"
+        );
 
         assert_eq!(
-            commit.input[0].previous_output.txid, utxos[2].txid,
-            "utxo  should be chosen correctly"
+            unsigned.reveal_tx.output.len(),
+            2,
+            "reveal tx should have 2 outputs"
+        );
+
+        assert_eq!(
+            unsigned.commit_tx.input[0].previous_output.txid, utxos[2].txid,
+            "utxo should be chosen correctly"
         );
         assert_eq!(
-            commit.input[0].previous_output.vout, utxos[2].vout,
+            unsigned.commit_tx.input[0].previous_output.vout, utxos[2].vout,
             "utxo should be chosen correctly"
         );
 
         assert_eq!(
-            reveal.input[0].previous_output.txid,
-            commit.compute_txid(),
+            unsigned.reveal_tx.input[0].previous_output.txid,
+            unsigned.commit_tx.compute_txid(),
             "reveal should use commit as input"
         );
         assert_eq!(
-            reveal.input[0].previous_output.vout, 0,
+            unsigned.reveal_tx.input[0].previous_output.vout, 0,
             "reveal should use commit as input"
         );
 
         assert_eq!(
-            reveal.output[1].script_pubkey,
+            unsigned.reveal_tx.output[1].script_pubkey,
             ctx.sequencer_address.script_pubkey(),
             "reveal should pay to the correct address"
         );
+
+        // Sighash should be non-zero
+        assert_ne!(unsigned.sighash, Buf32::zero());
     }
 
     // TODO: make the tests more comprehensive

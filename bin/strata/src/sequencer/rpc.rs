@@ -9,17 +9,21 @@ use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;
+use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
+use strata_db_types::{
+    traits::DatabaseBackend,
+    types::L1BundleStatus,
+};
 use strata_identifiers::{Epoch, OLBlockId};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_types::RpcDuty;
 use strata_ol_sequencer::{BlockCompletionData, extract_duties};
-use strata_primitives::HexBytes64;
-use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
-use tracing::warn;
+use strata_primitives::{HexBytes64, buf::Buf64};
+use strata_storage::{NodeStorage, ops::writer::Context};
+use tracing::{info, warn};
 
 use crate::rpc::errors::{db_error, internal_error, not_found_error};
 
@@ -28,29 +32,29 @@ pub(crate) struct OLSeqRpcServer {
     /// Storage backend.
     storage: Arc<NodeStorage>,
 
-    /// Status channel.
-    status_channel: Arc<StatusChannel>,
-
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
 
     /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
+
+    /// Fork choice manager handle.
+    fcm_handle: Arc<FcmServiceHandle>,
 }
 
 impl OLSeqRpcServer {
     /// Creates a new [`OLSeqRpcServer`] instance.
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
+        fcm_handle: Arc<FcmServiceHandle>,
     ) -> Self {
         Self {
             storage,
-            status_channel,
             blockasm_handle,
             envelope_handle,
+            fcm_handle,
         }
     }
 }
@@ -59,12 +63,13 @@ impl OLSeqRpcServer {
 impl OLSequencerRpcServer for OLSeqRpcServer {
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>> {
         let Some(tip_blkid) = self
-            .status_channel
-            .get_ol_sync_status()
-            .map(|s| *s.tip_blkid())
+            .storage
+            .ol_block()
+            .get_canonical_tip_async()
+            .await
+            .map_err(db_error)?
+            .map(|c| *c.blkid())
         else {
-            // If there is no tip then there's definitely no checkpoint to sign, so return empty
-            // duties.
             return Ok(vec![]);
         };
         let duties = extract_duties(
@@ -84,11 +89,32 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         template_id: OLBlockId,
         completion: BlockCompletionData,
     ) -> RpcResult<OLBlockId> {
-        self.blockasm_handle
+        let block = self
+            .blockasm_handle
             .complete_block_template(template_id, completion)
             .await
             .map_err(|e| internal_error(e.to_string()))?;
-        Ok(template_id)
+
+        let blkid = block.header().compute_blkid();
+
+        self.storage
+            .ol_block()
+            .put_block_data_async(block)
+            .await
+            .map_err(db_error)?;
+
+        let submitted = self
+            .fcm_handle
+            .submit_chain_tip_msg_async(ForkChoiceMessage::NewBlock(blkid))
+            .await;
+        if !submitted {
+            return Err(internal_error(format!(
+                "failed to send block {blkid} to fcm"
+            )));
+        }
+
+        info!(%blkid, "block template completed, stored, and submitted to fcm");
+        Ok(blkid)
     }
 
     async fn complete_checkpoint_signature(&self, epoch: Epoch, _sig: HexBytes64) -> RpcResult<()> {
@@ -144,6 +170,32 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         } else {
             warn!(%epoch, "received submission for already submitted checkpoint, ignoring.");
         }
+        Ok(())
+    }
+
+    async fn complete_payload_signature(&self, payload_idx: u64, sig: HexBytes64) -> RpcResult<()> {
+        let writer_ops =
+            Context::new(self.storage.db().writer_db()).into_ops(self.storage.pool().clone());
+
+        let mut entry = writer_ops
+            .get_payload_entry_by_idx_async(payload_idx)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| not_found_error(format!("payload entry {payload_idx} not found")))?;
+
+        if !matches!(entry.status, L1BundleStatus::PendingPayloadSign(_)) {
+            return Err(internal_error(format!(
+                "payload {payload_idx} is not pending signature (status: {:?})",
+                entry.status
+            )));
+        }
+
+        entry.payload_signature = Some(Buf64(sig.0));
+        writer_ops
+            .put_payload_entry_async(payload_idx, entry)
+            .await
+            .map_err(db_error)?;
+
         Ok(())
     }
 }

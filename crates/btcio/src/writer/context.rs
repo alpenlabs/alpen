@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bitcoin::{key::UntweakedKeypair, secp256k1::SECP256K1, Address};
+use bitcoin::{secp256k1::XOnlyPublicKey, Address};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_config::btcio::WriterConfig;
 use strata_status::StatusChannel;
@@ -25,12 +25,13 @@ pub(crate) struct WriterContext<R: Reader + Signer + Wallet> {
     /// Channel for receiving latest states.
     pub status_channel: StatusChannel,
 
-    /// Optional sequencer keypair for SPS-51 envelope authentication.
+    /// Optional sequencer public key for SPS-51 envelope authentication.
     ///
-    /// When set, this keypair is used as the taproot key in envelope transactions,
+    /// When set, this pubkey is used as the taproot key in envelope transactions,
     /// allowing the ASM to verify the envelope was created by the sequencer by
-    /// checking the pubkey against the sequencer predicate.
-    pub envelope_keypair: Option<UntweakedKeypair>,
+    /// checking the pubkey against the sequencer predicate. The actual signing
+    /// is done externally by the strata-signer binary.
+    pub envelope_pubkey: Option<XOnlyPublicKey>,
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
@@ -47,18 +48,18 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
             sequencer_address,
             client,
             status_channel,
-            envelope_keypair: None,
+            envelope_pubkey: None,
         }
     }
 
-    /// Sets the sequencer keypair from raw secret key bytes.
+    /// Sets the sequencer public key from raw 32-byte x-only pubkey bytes.
     ///
-    /// The keypair will be used as the taproot key in envelope transactions
-    /// for SPS-51 authentication.
-    pub(crate) fn with_sequencer_sk(mut self, sk_bytes: &[u8; 32]) -> Self {
-        let keypair = UntweakedKeypair::from_seckey_slice(SECP256K1, sk_bytes)
-            .expect("valid secret key bytes");
-        self.envelope_keypair = Some(keypair);
+    /// The pubkey will be used as the taproot key in envelope transactions
+    /// for SPS-51 authentication. Signing is handled externally by the signer binary.
+    pub(crate) fn with_envelope_pubkey(mut self, pubkey_bytes: &[u8; 32]) -> Self {
+        let pubkey =
+            XOnlyPublicKey::from_slice(pubkey_bytes).expect("valid x-only public key bytes");
+        self.envelope_pubkey = Some(pubkey);
         self
     }
 }

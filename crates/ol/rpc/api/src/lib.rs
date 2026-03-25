@@ -120,4 +120,8 @@ pub trait OLSequencerRpc {
 
     #[method(name = "strataadmin_completeCheckpointSignature")]
     async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()>;
+
+    /// Complete payload envelope signing by submitting the reveal tx Schnorr signature.
+    #[method(name = "strataadmin_completePayloadSignature")]
+    async fn complete_payload_signature(&self, payload_idx: u64, sig: HexBytes64) -> RpcResult<()>;
 }

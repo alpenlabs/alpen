@@ -7,65 +7,100 @@ use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{
-    builder::{build_envelope_txs, EnvelopeError},
+    builder::{attach_reveal_signature, build_envelope_txs, EnvelopeError, UnsignedEnvelope},
     context::WriterContext,
 };
 use crate::broadcaster::L1BroadcastHandle;
 
-/// Create envelope transactions corresponding to a [`PayloadEntry`].
+/// Builds envelope transactions for a payload entry.
 ///
-/// This is used during one of the cases:
-/// 1. A new payload intent needs to be signed
-/// 2. A signed intent needs to be resigned because somehow its inputs were spent/missing
-/// 3. A confirmed block that includes the tx gets reorged
-pub(crate) async fn create_and_sign_payload_envelopes<R: Reader + Signer + Wallet>(
+/// Signs the commit tx with the Bitcoin wallet and returns the [`UnsignedEnvelope`]
+/// whose reveal tx requires a Schnorr signature from the external signer.
+///
+/// The commit tx is stored in the broadcast DB immediately. The reveal tx is returned
+/// unsigned — it will be completed by [`complete_reveal_and_broadcast`] once the signer
+/// provides the signature.
+pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
     payload_idx: u64,
     payloadentry: &BundledPayloadEntry,
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<WriterContext<R>>,
-) -> Result<(Buf32, Buf32), EnvelopeError> {
-    let create_and_sign_payload_span = debug_span!(
-        "btcio_payload_sign",
+) -> Result<(UnsignedEnvelope, Buf32), EnvelopeError> {
+    let span = debug_span!(
+        "btcio_payload_envelope",
         component = "btcio_writer_signer",
         payload_idx,
     );
 
     async {
-        trace!("Creating and signing payload envelopes");
-        let (commit, reveal) = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
+        trace!("Building payload envelope transactions");
+        let unsigned = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
-        let commit_txid = commit.compute_txid();
-        debug!(commit_txid = %commit_txid, "Signing commit transaction");
+        let commit_txid = unsigned.commit_tx.compute_txid();
+        debug!(commit_txid = %commit_txid, "Signing commit transaction with wallet");
         let signed_commit = ctx
             .client
-            .sign_raw_transaction_with_wallet(&commit, None)
+            .sign_raw_transaction_with_wallet(&unsigned.commit_tx, None)
             .await
             .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
             .tx;
         let cid: Buf32 = signed_commit.compute_txid().to_buf32();
-        let rid: Buf32 = reveal.compute_txid().to_buf32();
 
         let centry = L1TxEntry::from_tx(&signed_commit);
-        let rentry = L1TxEntry::from_tx(&reveal);
-
-        // These don't need to be atomic. It will be handled by writer task if it does not find both
-        // commit-reveal txs in db by triggering re-signing.
-        let _ = broadcast_handle
+        broadcast_handle
             .put_tx_entry(cid, centry)
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
-        let _ = broadcast_handle
+
+        info!(
+            commit_txid = %cid,
+            sighash = %unsigned.sighash,
+            "built envelope, commit stored — awaiting reveal signature"
+        );
+        Ok((unsigned, cid))
+    }
+    .instrument(span)
+    .await
+}
+
+/// Attaches the external signer's Schnorr signature to the reveal tx and stores it
+/// for broadcast.
+///
+/// Called by the watcher when it sees a `PendingPayloadSign` entry whose
+/// `payload_signature` has been filled by the signer RPC.
+pub(crate) async fn complete_reveal_and_broadcast(
+    payload_idx: u64,
+    unsigned: &UnsignedEnvelope,
+    signature: &[u8; 64],
+    broadcast_handle: &L1BroadcastHandle,
+) -> Result<Buf32, EnvelopeError> {
+    let span = debug_span!(
+        "btcio_payload_reveal",
+        component = "btcio_writer_signer",
+        payload_idx,
+    );
+
+    async {
+        let mut reveal_tx = unsigned.reveal_tx.clone();
+        attach_reveal_signature(
+            &mut reveal_tx,
+            &unsigned.reveal_script,
+            &unsigned.taproot_spend_info,
+            signature,
+        )
+        .map_err(EnvelopeError::Other)?;
+
+        let rid: Buf32 = reveal_tx.compute_txid().to_buf32();
+        let rentry = L1TxEntry::from_tx(&reveal_tx);
+        broadcast_handle
             .put_tx_entry(rid, rentry)
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
-        info!(
-            commit_txid = %cid,
-            reveal_txid = %rid,
-            "signed payload envelope transactions"
-        );
-        Ok((cid, rid))
+
+        info!(reveal_txid = %rid, "reveal tx signed and stored for broadcast");
+        Ok(rid)
     }
-    .instrument(create_and_sign_payload_span)
+    .instrument(span)
     .await
 }
 
@@ -82,7 +117,7 @@ mod test {
     };
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_create_and_sign_blob_envelopes() {
+    async fn test_create_payload_envelopes() {
         let iops = get_envelope_ops();
         let bcast_handle = get_broadcast_handle();
         let ctx = get_writer_context();
@@ -100,14 +135,15 @@ mod test {
             .await
             .unwrap();
 
-        let (cid, rid) = create_and_sign_payload_envelopes(0, &entry, bcast_handle.as_ref(), ctx)
+        let (unsigned, cid) = create_payload_envelopes(0, &entry, bcast_handle.as_ref(), ctx)
             .await
             .unwrap();
 
-        // Check if corresponding txs exist in db
-        let ctx = bcast_handle.get_tx_entry_by_id_async(cid).await.unwrap();
-        let rtx = bcast_handle.get_tx_entry_by_id_async(rid).await.unwrap();
-        assert!(ctx.is_some());
-        assert!(rtx.is_some());
+        // Commit tx should be stored in broadcast DB
+        let ctx_entry = bcast_handle.get_tx_entry_by_id_async(cid).await.unwrap();
+        assert!(ctx_entry.is_some());
+
+        // Sighash should be non-zero
+        assert_ne!(unsigned.sighash, Buf32::zero());
     }
 }

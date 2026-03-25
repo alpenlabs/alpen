@@ -2,12 +2,17 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use bitcoin::{
+    key::UntweakedKeypair,
+    secp256k1::{Message, SECP256K1, SecretKey},
+};
 use jsonrpsee::core::ClientError;
+use rand::{RngCore, rngs::OsRng};
 use strata_common::ws_client::ManagedWsClient;
 use strata_ol_rpc_api::OLSequencerRpcClient;
 use strata_ol_sequencer::{
-    BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty, sign_checkpoint,
-    sign_header,
+    BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty, PayloadSigningDuty,
+    sign_checkpoint, sign_header,
 };
 use strata_primitives::{HexBytes64, buf::Buf32};
 use thiserror::Error;
@@ -15,12 +20,16 @@ use tokio::{select, sync::mpsc, time};
 use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Error)]
+#[expect(clippy::enum_variant_names, reason = "pre-existing naming convention")]
 enum DutyExecError {
     #[error("failed completing block template: {0}")]
     CompleteTemplate(#[source] ClientError),
 
     #[error("failed submitting checkpoint signature: {0}")]
     CompleteCheckpoint(#[source] ClientError),
+
+    #[error("failed submitting payload signature: {0}")]
+    CompletePayload(#[source] ClientError),
 }
 
 /// Receives duties from the fetcher, deduplicates them, signs, and submits via RPC.
@@ -75,6 +84,7 @@ async fn handle_duty(
     let result = match duty {
         Duty::SignBlock(block_duty) => handle_sign_block(&rpc, block_duty, &sk).await,
         Duty::SignCheckpoint(cp_duty) => handle_sign_checkpoint(&rpc, cp_duty, &sk).await,
+        Duty::SignPayload(payload_duty) => handle_sign_payload(&rpc, payload_duty, &sk).await,
     };
 
     if let Err(err) = result {
@@ -121,5 +131,30 @@ async fn handle_sign_checkpoint(
         .map_err(DutyExecError::CompleteCheckpoint)?;
 
     info!(%epoch, "checkpoint signature submitted");
+    Ok(())
+}
+
+async fn handle_sign_payload(
+    rpc: &ManagedWsClient,
+    duty: PayloadSigningDuty,
+    sk: &Buf32,
+) -> Result<(), DutyExecError> {
+    let secret_key = SecretKey::from_slice(&sk.0).expect("valid secret key");
+    let keypair = UntweakedKeypair::from_secret_key(SECP256K1, &secret_key);
+
+    let msg = Message::from_digest_slice(duty.sighash.as_ref()).expect("sighash is valid 32 bytes");
+
+    let mut aux_rand = [0u8; 32];
+    OsRng.fill_bytes(&mut aux_rand);
+    let sig = SECP256K1.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);
+
+    let payload_idx = duty.payload_idx;
+    debug!(%payload_idx, "signed payload envelope sighash");
+
+    rpc.complete_payload_signature(payload_idx, HexBytes64(sig.serialize()))
+        .await
+        .map_err(DutyExecError::CompletePayload)?;
+
+    info!(%payload_idx, "payload signature submitted");
     Ok(())
 }

@@ -1,12 +1,13 @@
 use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_db_types::{traits::DatabaseBackend, types::L1BundleStatus};
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_primitives::OLBlockId;
-use strata_storage::NodeStorage;
+use strata_storage::{ops::writer::Context, NodeStorage};
 use tracing::debug;
 
-use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error};
+use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error, PayloadSigningDuty};
 
-/// Extract sequencer duties
+/// Extract sequencer duties.
 pub async fn extract_duties(
     blockasm: &BlockasmHandle,
     tip_blkid: OLBlockId,
@@ -37,6 +38,11 @@ pub async fn extract_duties(
             .map(CheckpointSigningDuty::new)
             .map(Duty::SignCheckpoint),
     );
+
+    // Payload signing duties
+    let pending_payloads = get_pending_payload_duties(node_storage).await?;
+    duties.extend(pending_payloads.into_iter().map(Duty::SignPayload));
+
     Ok(duties)
 }
 
@@ -68,4 +74,32 @@ async fn get_earliest_unsigned_checkpoint(
         .get_checkpoint_payload_entry_async(commitment)
         .await
         .map_err(Into::into)
+}
+
+/// Gets payload entries pending an external signature.
+async fn get_pending_payload_duties(
+    node_storage: &NodeStorage,
+) -> Result<Vec<PayloadSigningDuty>, Error> {
+    let writer_ops =
+        Context::new(node_storage.db().writer_db()).into_ops(node_storage.pool().clone());
+
+    let mut idx = writer_ops.get_next_payload_idx_async().await?;
+    let mut duties = vec![];
+
+    while idx > 0 {
+        idx -= 1;
+        let Some(entry) = writer_ops.get_payload_entry_by_idx_async(idx).await? else {
+            break;
+        };
+        if entry.status == L1BundleStatus::Finalized {
+            break;
+        }
+        if let L1BundleStatus::PendingPayloadSign(sighash) = entry.status {
+            if entry.payload_signature.is_none() {
+                duties.push(PayloadSigningDuty::new(idx, sighash));
+            }
+        }
+    }
+
+    Ok(duties)
 }

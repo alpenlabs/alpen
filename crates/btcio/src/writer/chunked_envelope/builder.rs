@@ -309,6 +309,7 @@ mod tests {
             Network::Regtest,
             1000,
             546,
+            None,
         )
     }
 

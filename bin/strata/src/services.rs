@@ -46,14 +46,14 @@ mod sequencer_services {
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
         mempool_handle: Arc<MempoolHandle>,
-        sequencer_sk: Option<[u8; 32]>,
+        envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
         }
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
-        let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), sequencer_sk)?;
+        let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), envelope_pubkey)?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
         Ok(Some(SequencerServiceHandles::new(
@@ -96,7 +96,7 @@ mod sequencer_services {
     fn start_writer(
         nodectx: &NodeContext,
         broadcast_handle: Arc<L1BroadcastHandle>,
-        sequencer_sk: Option<[u8; 32]>,
+        envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<Arc<EnvelopeHandle>> {
         let sequencer_address = nodectx
             .task_manager()
@@ -115,7 +115,7 @@ mod sequencer_services {
             nodectx.status_channel().as_ref().clone(),
             nodectx.storage().pool().clone(),
             broadcast_handle,
-            sequencer_sk,
+            envelope_pubkey,
         )
     }
 
@@ -197,7 +197,7 @@ pub(crate) type OptionalProofNotify = Option<Arc<strata_ol_checkpoint::ProofNoti
 /// wake the checkpoint worker immediately after storing a proof.
 pub(crate) fn start_strata_services(
     nodectx: NodeContext,
-    sequencer_sk: Option<[u8; 32]>,
+    envelope_pubkey: Option<[u8; 32]>,
 ) -> Result<(RunContext, OptionalProofNotify)> {
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
@@ -251,7 +251,7 @@ pub(crate) fn start_strata_services(
     let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
 
     let sequencer_handles =
-        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), sequencer_sk)?;
+        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;
 
     let fcm_ctx =
         FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());
