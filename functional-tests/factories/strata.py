@@ -5,6 +5,7 @@ Creates Strata sequencer and fullnode instances.
 
 import contextlib
 from pathlib import Path
+from typing import NamedTuple
 
 import flexitest
 
@@ -24,6 +25,13 @@ from common.datatool import (
     generate_rollup_params,
 )
 from common.services import StrataProps, StrataService
+
+
+class CreateNodeResult(NamedTuple):
+    """Result of creating a Strata node."""
+
+    service: StrataService
+    sequencer_key_path: Path | None
 
 
 class StrataFactory(flexitest.Factory):
@@ -50,7 +58,7 @@ class StrataFactory(flexitest.Factory):
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
         **kwargs,
-    ) -> StrataService:
+    ) -> CreateNodeResult:
         """
         Create a Strata node.
 
@@ -137,8 +145,6 @@ class StrataFactory(flexitest.Factory):
                     "--sequencer",
                     "--sequencer-config",
                     str(sequencer_config_path),
-                    "--sequencer-key",
-                    str(params_data.sequencer_key_path),
                 ]
             )
 
@@ -177,4 +183,5 @@ class StrataFactory(flexitest.Factory):
                 svc.stop()
             raise RuntimeError(f"Failed to start strata service ({mode}): {e}") from e
 
-        return svc
+        seq_key_path = params_data.sequencer_key_path if is_sequencer else None
+        return CreateNodeResult(svc, seq_key_path)

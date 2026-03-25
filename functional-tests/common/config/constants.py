@@ -66,6 +66,7 @@ class ServiceType(str, Enum):
     Strata = "strata"
     AlpenSequencer = "alpen_sequencer"
     AlpenFullNode = "alpen_fullnode"
+    StrataSigner = "strata_signer"
 
     def __str__(self) -> str:
         """Allow direct use in f-strings and format operations."""

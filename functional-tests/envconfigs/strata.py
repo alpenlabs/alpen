@@ -8,6 +8,7 @@ import flexitest
 from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
 from common.config.params import GenesisAccountData, GenesisL1View, OLParams
 from factories.bitcoin import BitcoinFactory
+from factories.signer import SignerFactory
 from factories.strata import StrataFactory
 
 
@@ -62,6 +63,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
     def _get_services(self, ectx: flexitest.EnvContext):
         btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
         strata_factory = cast(StrataFactory, ectx.get_factory(ServiceType.Strata))
+        signer_factory = cast(SignerFactory, ectx.get_factory(ServiceType.StrataSigner))
 
         # Start Bitcoin
         bitcoind = btc_factory.create_regtest()
@@ -91,7 +93,8 @@ class StrataEnvConfig(flexitest.EnvConfig):
         if self.genesis_accounts is not None:
             ol_params = OLParams(accounts=self.genesis_accounts).with_genesis_l1(genesis_l1)
 
-        strata = strata_factory.create_node(
+        # Start Strata sequencer
+        strata, sequencer_key_path = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=True,
@@ -100,8 +103,18 @@ class StrataEnvConfig(flexitest.EnvConfig):
         )
         strata.wait_for_ready(timeout=30)
 
+        # Start strata-signer for the sequencer (connects to strata's WS RPC)
+        assert sequencer_key_path is not None
+        signer = signer_factory.create_signer(
+            sequencer_key_path,
+            strata.props["rpc_host"],
+            strata.props["rpc_port"],
+        )
+        signer.wait_for_ready(timeout=10)
+
         services = {
             ServiceType.Bitcoin: bitcoind,
             ServiceType.Strata: strata,
+            ServiceType.StrataSigner: signer,
         }
         return services

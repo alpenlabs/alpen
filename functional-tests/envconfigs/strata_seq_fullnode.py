@@ -7,6 +7,7 @@ import flexitest
 from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
 from common.config.params import GenesisL1View
 from factories.bitcoin import BitcoinFactory
+from factories.signer import SignerFactory
 from factories.strata import StrataFactory
 
 STRATA_FULLNODE_SERVICE_NAME = "strata_fullnode"
@@ -38,6 +39,7 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
     ):
         btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
         strata_factory = cast(StrataFactory, ectx.get_factory(ServiceType.Strata))
+        signer_factory = cast(SignerFactory, ectx.get_factory(ServiceType.StrataSigner))
 
         bitcoind = btc_factory.create_regtest()
         bitcoind.wait_for_ready(timeout=10)
@@ -56,7 +58,7 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
         )
 
         genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
-        sequencer = strata_factory.create_node(
+        sequencer, sequencer_key_path = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=True,
@@ -64,7 +66,16 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
         )
         sequencer.wait_for_ready(timeout=20)
 
-        fullnode = strata_factory.create_node(
+        # Start strata-signer for the sequencer only
+        assert sequencer_key_path is not None
+        signer = signer_factory.create_signer(
+            sequencer_key_path,
+            sequencer.props["rpc_host"],
+            sequencer.props["rpc_port"],
+        )
+        signer.wait_for_ready(timeout=10)
+
+        fullnode, _ = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=False,
@@ -75,5 +86,6 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
         return {
             ServiceType.Bitcoin: bitcoind,
             ServiceType.Strata: sequencer,
+            ServiceType.StrataSigner: signer,
             STRATA_FULLNODE_SERVICE_NAME: fullnode,
         }

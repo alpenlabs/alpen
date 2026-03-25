@@ -35,6 +35,7 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
     def main(self, ctx):
         logger.info("Starting delete-blocks revert test (with override)")
         seq_service = self.get_service(ServiceType.Strata)
+        signer_service = self.get_service(ServiceType.StrataSigner)
         btc_service = self.get_service(ServiceType.Bitcoin)
         setup = setup_revert_ol_state_test(seq_service, btc_service)
         seq_rpc = setup["rpc"]
@@ -51,6 +52,7 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
             old_live_tip_blkid,
         )
 
+        signer_service.stop()
         seq_service.stop()
 
         datadir = seq_service.props["datadir"]
@@ -78,6 +80,7 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
         seq_rpc, resumed_slot = restart_sequencer_after_revert(
             seq_service,
             old_live_tip_slot,
+            signer_service=signer_service,
             error_with="Sequencer did not resume block production after -d revert",
         )
         resumed_sync = verify_tip_resumed_with_new_blkid(

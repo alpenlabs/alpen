@@ -33,6 +33,7 @@ from envconfigs.strata import StrataEnvConfig
 # Import factories
 from factories.alpen_client import AlpenClientFactory
 from factories.bitcoin import BitcoinFactory
+from factories.signer import SignerFactory
 from factories.strata import StrataFactory
 
 
@@ -262,6 +263,7 @@ def main(argv: list[str]) -> int:
         ServiceType.AlpenClient: AlpenClientFactory(range(30303, 30503)),
         ServiceType.Bitcoin: BitcoinFactory(range(18443, 18543)),
         ServiceType.Strata: StrataFactory(range(19443, 19543)),
+        ServiceType.StrataSigner: SignerFactory(range(19543, 19553)),
     }
 
     # Define global environments

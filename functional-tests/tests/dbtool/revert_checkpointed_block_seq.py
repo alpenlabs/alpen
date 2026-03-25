@@ -33,6 +33,7 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
     def main(self, ctx):
         logger.info("Starting sequencer checkpointed-block revert test")
         seq_service = self.get_service(ServiceType.Strata)
+        signer_service = self.get_service(ServiceType.StrataSigner)
         btc_service = self.get_service(ServiceType.Bitcoin)
         setup = setup_revert_ol_state_test(seq_service, btc_service)
         seq_rpc = setup["rpc"]
@@ -44,6 +45,7 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
         old_live_tip = live_sync["tip"]["slot"]
         old_live_blkid = live_sync["tip"]["blkid"]
         logger.info("Pre-revert live tip: slot=%s blkid=%s", old_live_tip, old_live_blkid)
+        signer_service.stop()
         seq_service.stop()
 
         datadir = seq_service.props["datadir"]
@@ -83,6 +85,7 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
         seq_rpc, resumed_tip = restart_sequencer_after_revert(
             seq_service,
             old_live_tip,
+            signer_service=signer_service,
             target_epoch=post_restart_target_epoch,
             error_with="Sequencer did not resume after checkpointed revert",
         )
