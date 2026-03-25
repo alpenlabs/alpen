@@ -10,6 +10,8 @@ mod noop_prover;
 mod ol_client;
 #[cfg(feature = "sequencer")]
 mod payload_builder;
+#[cfg(feature = "sequencer")]
+mod prover;
 mod rpc_client;
 
 use std::{env, process, sync::Arc};
@@ -205,7 +207,7 @@ fn main() {
             };
             let ol_client = Arc::new(ol_client);
 
-            // TODO: real prover interface
+            // TODO: replace NoopProver with PaasBatchProver once guest programs lands (#1522).
             #[cfg(feature = "sequencer")]
             let batch_prover = Arc::new(NoopProver);
 

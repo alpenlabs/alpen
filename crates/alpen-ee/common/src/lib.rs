@@ -42,6 +42,7 @@ pub use types::{
     ol_account_epoch_summary::OLEpochSummary,
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},
+    proof_task::{EeProofTask, EeProofVariant},
     prover::{Proof, ProofId},
 };
 pub use utils::{

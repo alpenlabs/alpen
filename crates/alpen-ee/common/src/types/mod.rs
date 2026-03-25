@@ -8,4 +8,5 @@ pub(crate) mod exec_record;
 pub(crate) mod ol_account_epoch_summary;
 pub(crate) mod ol_chain_status;
 pub(crate) mod payload_builder;
+pub(crate) mod proof_task;
 pub(crate) mod prover;

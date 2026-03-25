@@ -8,6 +8,7 @@ workspace = true
 
 [features]
 default = []
+paas = ["dep:strata-paas"]
 test-utils = ["dep:mockall"]
 
 [dependencies]
@@ -30,6 +31,7 @@ bincode.workspace = true
 bitcoin.workspace = true
 eyre.workspace = true
 mockall = { workspace = true, optional = true }
+strata-paas = { workspace = true, optional = true }
 reth-ethereum-engine-primitives.workspace = true
 reth-ethereum-primitives.workspace = true
 reth-node-builder.workspace = true

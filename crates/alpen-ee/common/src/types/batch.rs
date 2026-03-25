@@ -1,6 +1,7 @@
 use std::{fmt, iter};
 
 use bitcoin::{Txid, Wtxid};
+use serde::{Deserialize, Serialize};
 use strata_acct_types::Hash;
 use strata_codec::Codec;
 use strata_identifiers::L1BlockCommitment;
@@ -8,7 +9,7 @@ use strata_identifiers::L1BlockCommitment;
 use crate::{BlockNumHash, ProofId};
 
 /// Unique, deterministic identifier for a batch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Codec)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Codec, Serialize, Deserialize)]
 pub struct BatchId {
     prev_block: Hash,
     last_block: Hash,

@@ -20,6 +20,9 @@ sequencer = [
   "dep:reth-payload-builder",
   "dep:strata-btcio",
   "dep:strata-config",
+  "dep:sled",
+  "dep:strata-paas",
+  "dep:zkaleido-native-adapter",
 ]
 
 [[bin]]
@@ -28,7 +31,7 @@ path = "src/main.rs"
 
 [dependencies]
 alpen-chainspec.workspace = true
-alpen-ee-common.workspace = true
+alpen-ee-common = { workspace = true, features = ["paas"] }
 alpen-ee-config.workspace = true
 alpen-ee-da = { workspace = true, optional = true }
 alpen-ee-database.workspace = true
@@ -45,6 +48,8 @@ strata-acct-types.workspace = true
 strata-btcio = { workspace = true, optional = true }
 strata-common = { workspace = true, features = ["async"] }
 strata-config = { workspace = true, optional = true }
+strata-paas = { workspace = true, optional = true }
+zkaleido-native-adapter = { workspace = true, optional = true }
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
@@ -54,10 +59,12 @@ strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
 
+anyhow.workspace = true
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
+borsh.workspace = true
 clap.workspace = true
 eyre.workspace = true
 jsonrpsee = { workspace = true, features = ["http-client", "server", "macros"] }
@@ -73,6 +80,8 @@ reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
+sled = { workspace = true, optional = true }
+serde_json.workspace = true
 ssz.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
