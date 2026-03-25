@@ -2,13 +2,17 @@
 
 use strata_acct_types::{AccountId, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
-// TODO(STR-2439): Depends on ASM log type refactor.
-use strata_asm_manifest_types::{DEPOSIT_INTENT_ASM_LOG_TYPE_ID, DepositIntentLogData};
+use strata_asm_logs::{
+    CheckpointTipUpdate, DepositLog,
+    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
+};
+use strata_bridge_types::DepositDescriptor;
+use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::IStateAccessor;
 use strata_msg_fmt::{Msg, MsgRef, TypeId};
 use strata_ol_chain_types_new::{OLL1ManifestContainer, OLL1Update};
+use strata_ol_msg_types::DepositMsgData;
 
 use crate::{
     account_processing,
@@ -85,13 +89,11 @@ fn process_asm_log<S: IStateAccessor>(
 
     // Match on the type ID to determine how to process the log.
     match msg.ty() {
-        // TODO(STR-2439): Depends on ASM log type refactor.
-        DEPOSIT_INTENT_ASM_LOG_TYPE_ID => {
-            // Parse the deposit intent data, skip if it fails to parse.
-            let Ok(data) = log.try_into_log::<DepositIntentLogData>() else {
+        DEPOSIT_LOG_TYPE_ID => {
+            let Ok(deposit) = log.try_into_log::<DepositLog>() else {
                 return Ok(());
             };
-            process_deposit_intent_log(state, &data, context)?;
+            process_deposit_log(state, &deposit, context)?;
         }
 
         CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
@@ -110,13 +112,22 @@ fn process_asm_log<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_deposit_intent_log<S: IStateAccessor>(
+fn process_deposit_log<S: IStateAccessor>(
     state: &mut S,
-    data: &DepositIntentLogData,
+    deposit: &DepositLog,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
+    // Parse the raw destination bytes into account serial + subject.
+    let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
+        // Malformed destination descriptor, skip this deposit.
+        return Ok(());
+    };
+
+    let acct_serial = *descriptor.dest_acct_serial();
+    let subject_id = descriptor.dest_subject().to_subject_id();
+
     // Convert the account serial to account ID.
-    let Some(dest_id) = state.find_account_id_by_serial(data.dest_acct_serial())? else {
+    let Some(dest_id) = state.find_account_id_by_serial(acct_serial)? else {
         // Account serial not found, skip this deposit.
         //
         // TODO make this actually do something more sophisticated to make loss
@@ -124,15 +135,12 @@ fn process_deposit_intent_log<S: IStateAccessor>(
         return Ok(());
     };
 
-    // Create the message payload containing the subject ID.
-    // TODO make better handling for this like we have for ASM logs
-    let mut msg_data = Vec::new();
-    let subject_bytes: [u8; 32] = data.dest_subject().into();
-    msg_data.extend_from_slice(&subject_bytes);
+    // Create the message payload containing the deposit message data.
+    let deposit_msg = DepositMsgData::new(subject_id);
+    let deposit_data = encode_to_vec(&deposit_msg)?;
+    let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
 
-    let msg_payload = MsgPayload::new(data.amt().into(), msg_data);
-
-    // Deliver the deposit message to the target account
+    // Deliver the deposit message to the target account.
     // TODO need to tweak this a bit to deal with the changes to epoch contexts
     account_processing::process_message(
         state,
