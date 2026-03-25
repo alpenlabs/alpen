@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor};
-use strata_ol_chain_types_new::{OLBlock, OLLog};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_stf::execute_block_batch;
 use strata_primitives::nonempty_vec::NonEmptyVec;
@@ -45,6 +45,12 @@ impl EpochDaTracker {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct EpochBlocks {
+    pub(crate) blocks: NonEmptyVec<OLBlock>,
+    pub(crate) epoch_parent: OLBlockHeader,
+}
+
 /// Walks backward from `from_blkid` collecting blocks until a terminal block or genesis. Errors
 /// out when epoch number is different from the input epoch number.
 ///
@@ -53,11 +59,11 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
     target_id: OLBlockId,
     epoch: Epoch,
     ctx: &C,
-) -> Result<NonEmptyVec<OLBlock>, BlockAssemblyError> {
+) -> Result<EpochBlocks, BlockAssemblyError> {
     let mut blocks = Vec::new();
     let mut cur_id = target_id;
 
-    loop {
+    let epoch_parent = loop {
         let block = ctx
             .fetch_ol_block(cur_id)
             .await?
@@ -65,7 +71,7 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
 
         if block.header().is_genesis_slot() {
             // Genesis is the boundary for epoch 0 — we don't collect it, just stop.
-            break;
+            break block.header().clone();
         }
 
         if block.header().is_terminal() {
@@ -75,7 +81,7 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
                     "invalid epoch for previous terminal block".to_string(),
                 ));
             }
-            break;
+            break block.header().clone();
         }
 
         // Sanity check epoch number
@@ -90,12 +96,18 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
         // Insert block and update current block to be the parent block
         blocks.push(block);
         cur_id = parent_id;
-    }
+    };
 
     blocks.reverse();
+
     let blocks = NonEmptyVec::try_from_vec(blocks)
         .map_err(|_| BlockAssemblyError::Other("Empty epoch blocks".to_string()))?;
-    Ok(blocks)
+
+    let epoch_blocks = EpochBlocks {
+        blocks,
+        epoch_parent,
+    };
+    Ok(epoch_blocks)
 }
 
 /// Rebuilds accumulated DA for `target_blkid` by replaying all epoch blocks
@@ -112,37 +124,30 @@ where
         Clone,
 {
     let epoch_blocks = collect_epoch_blocks_until(blkid.blkid, epoch, ctx).await?;
-    let first_blk = epoch_blocks.ensured_first();
-    let initial_state = fetch_pre_state(first_blk, ctx).await?;
+    let initial_state = fetch_state(&epoch_blocks.epoch_parent, ctx).await?;
 
     let mut da_state = DaAccumulatingState::new(Arc::unwrap_or_clone(initial_state));
-    let batch_logs = execute_block_batch(&mut da_state, &epoch_blocks, first_blk.header())
-        .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
+    let batch_logs = execute_block_batch(
+        &mut da_state,
+        &epoch_blocks.blocks,
+        &epoch_blocks.epoch_parent,
+    )
+    .map_err(|e| BlockAssemblyError::Other(format!("epoch block replay failed: {e}")))?;
 
     let (accumulator, _) = da_state.into_parts();
 
     Ok(AccumulatedDaData::new(accumulator, batch_logs))
 }
 
-/// Fetches the pre-state for `blk` by looking up the post-state of its parent.
-async fn fetch_pre_state<C: BlockAssemblyAnchorContext>(
-    blk: &OLBlock,
+/// Fetches the state for `blk_header`.
+async fn fetch_state<C: BlockAssemblyAnchorContext>(
+    blk_header: &OLBlockHeader,
     ctx: &C,
 ) -> Result<Arc<C::State>, BlockAssemblyError> {
-    let parent_id = *blk.header().parent_blkid();
-    let parent_blk = ctx
-        .fetch_ol_block(parent_id)
-        .await?
-        .ok_or(BlockAssemblyError::BlockNotFound(parent_id))?;
-    let parent_commitment = parent_blk.header().compute_block_commitment();
-    let ol_state = ctx
-        .fetch_state_for_tip(parent_commitment)
-        .await?
-        .ok_or_else(|| {
-            BlockAssemblyError::Other(format!(
-                "missing OL state at epoch boundary {parent_commitment}"
-            ))
-        })?;
+    let blkid = blk_header.compute_block_commitment();
+    let ol_state = ctx.fetch_state_for_tip(blkid).await?.ok_or_else(|| {
+        BlockAssemblyError::Other(format!("missing OL state at epoch boundary {blkid}"))
+    })?;
     Ok(ol_state)
 }
 
