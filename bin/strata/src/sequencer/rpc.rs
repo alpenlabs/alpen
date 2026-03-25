@@ -117,6 +117,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         Ok(blkid)
     }
 
+    // TODO(STR-2803): move checkpoint intent submission into the node and remove this RPC method.
     async fn complete_checkpoint_signature(&self, epoch: Epoch, _sig: HexBytes64) -> RpcResult<()> {
         // NOTE: The signature parameter is ignored. With the SPS-51 envelope trick,
         // authentication is handled by the envelope's taproot pubkey matching the
