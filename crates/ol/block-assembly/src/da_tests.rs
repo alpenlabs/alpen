@@ -16,7 +16,7 @@ use crate::{
     AccumulatorProofGenerator, EpochSealingPolicy,
     block_assembly::{calculate_block_slot_and_epoch, construct_block},
     context::BlockAssemblyAnchorContext,
-    da_tracker::AccumulatedDaData,
+    da_tracker::{AccumulatedDaData, rebuild_accumulated_da_upto},
     test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, StorageInboxMmr, TestEnvBuilder,
         create_test_block_assembly_context, generate_message_entries,
@@ -400,5 +400,55 @@ async fn test_da_rollback_on_failed_tx() {
     assert_eq!(
         blob_both, blob_valid,
         "DA with rolled-back failed tx must match DA with only valid tx"
+    );
+}
+
+/// `rebuild_accumulated_da_upto` must produce the same DA as incremental accumulation.
+///
+/// This exercises the `collect_epoch_blocks_until` -> `execute_block_batch` path,
+/// which previously had a bug where the first epoch block's header was passed as the
+/// parent header instead of the actual epoch boundary block's header.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_rebuild_da_matches_incremental() {
+    let env = TestEnvBuilder::new()
+        .with_parent_slot(0)
+        .with_asm_manifests(&[1, 2, 3])
+        .build()
+        .await;
+
+    let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+
+    // Build blocks 1..5, threading DA incrementally.
+    let (final_commitment, incremental_da, artifacts) = build_blocks_with_da_and_artifacts(
+        env.parent_commitment,
+        5,
+        &ctx,
+        env.storage.as_ref(),
+        &env.epoch_sealing_policy,
+    )
+    .await;
+
+    let (_, last_post_state) = artifacts.last().unwrap();
+
+    // Finalize incremental accumulator.
+    let (incremental_acc, incremental_logs) = incremental_da.into_parts();
+    let incremental_blob = finalize_da_to_bytes(incremental_acc, last_post_state.clone());
+
+    // Rebuild DA from scratch using the production code path.
+    let epoch = artifacts[0].0.header().epoch();
+    let rebuilt_da = rebuild_accumulated_da_upto(final_commitment, epoch, &ctx)
+        .await
+        .expect("rebuild_accumulated_da_upto should succeed");
+
+    let (rebuilt_acc, rebuilt_logs) = rebuilt_da.into_parts();
+    let rebuilt_blob = finalize_da_to_bytes(rebuilt_acc, last_post_state.clone());
+
+    assert_eq!(
+        incremental_blob, rebuilt_blob,
+        "Rebuilt DA blob must match incrementally accumulated DA blob"
+    );
+    assert_eq!(
+        incremental_logs, rebuilt_logs,
+        "Rebuilt logs must match incrementally accumulated logs"
     );
 }
