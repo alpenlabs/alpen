@@ -75,6 +75,6 @@ COPY functional-tests-new/factories ./factories
 COPY functional-tests-new/tests ./tests
 
 ENV RUST_BACKTRACE=1
-ENV RUST_LOG="debug,sled=warn,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
+ENV RUST_LOG="debug,sled=warn,hyper=warn,h2=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
 
 ENTRYPOINT ["uv", "run", "entry.py"]

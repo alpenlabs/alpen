@@ -116,7 +116,7 @@ jobs:
       - name: Run functional tests
         id: funcTestsRun
         env:
-          RUST_LOG: "debug,sled=warn,hyper=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
+          RUST_LOG: "debug,sled=warn,hyper=warn,h2=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"
           NO_COLOR: "1"
           RUST_BACKTRACE: "1"
           LOG_LEVEL: "info"
