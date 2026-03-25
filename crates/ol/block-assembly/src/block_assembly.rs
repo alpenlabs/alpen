@@ -5,12 +5,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use strata_checkpoint_types_ssz::validation::{
+    CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict,
+};
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
-    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
+    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update,
     OLTransaction, OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
 };
 use strata_ol_mempool::{
@@ -427,9 +430,8 @@ where
     let mut failed_txs = Vec::new();
     let mut checkpoint_size_limit_reached = false;
 
-    // Precompute epoch prior logs SSZ size; track current block logs incrementally.
-    let epoch_prior_logs_size = logs_ssz_size(accumulated_da.logs());
-    let mut current_block_logs_size: usize = 0;
+    // Track log metrics incrementally for checkpoint size estimation.
+    let mut log_metrics = LogMetrics::from_logs(accumulated_da.logs());
 
     // Split out the accumulator for DaAccumulatingState; logs are preserved and
     // reassembled at the end.
@@ -469,20 +471,21 @@ where
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Tx executed successfully. Before committing side effects, check
-                // the estimated checkpoint payload against L1 envelope limits.
+                // the estimated checkpoint size against component and envelope limits.
                 let tx_logs = tx_buffer.into_logs();
-                let tx_logs_size = logs_ssz_size(&tx_logs);
-                let estimated_payload = estimate_checkpoint_payload_size(
-                    staging_state.accumulator().estimated_encoded_size(),
-                    epoch_prior_logs_size + current_block_logs_size + tx_logs_size,
-                );
 
-                match checkpoint_size_verdict(estimated_payload) {
+                let mut tentative = log_metrics;
+                tentative.add_logs(&tx_logs);
+                let da_diff_size =
+                    staging_state.accumulator().estimated_encoded_size();
+                let verdict = checkpoint_size_verdict(da_diff_size, &tentative);
+
+                match verdict {
                     CheckpointSizeVerdict::HardLimitExceeded => {
                         debug!(
-                            estimated_payload,
-                            MAX_CHECKPOINT_PAYLOAD_SIZE,
-                            "checkpoint payload exceeds L1 envelope limit, dropping tx"
+                            da_diff_size,
+                            ?tentative,
+                            "checkpoint size limit exceeded, dropping tx"
                         );
                         staging_state = DaAccumulatingState::new_with_accumulator(
                             WriteTrackingState::new(parent_state, backup_batch),
@@ -493,9 +496,9 @@ where
                     }
                     CheckpointSizeVerdict::SoftLimitReached => {
                         debug!(
-                            estimated_payload,
-                            CHECKPOINT_SEAL_THRESHOLD,
-                            "checkpoint payload approaching L1 envelope limit"
+                            da_diff_size,
+                            ?tentative,
+                            "checkpoint size approaching limit, sealing epoch"
                         );
                         if output_buffer.emit_logs(tx_logs).is_err() {
                             debug!(?txid, "block log cap exceeded, rolling back tx");
@@ -518,7 +521,7 @@ where
                             );
                             break;
                         }
-                        current_block_logs_size += tx_logs_size;
+                        log_metrics = tentative;
                         successful_txs.push(tx);
                     }
                 }
@@ -739,76 +742,6 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
     // Create transaction payload
     let tx_payload = SnarkAccountUpdateTxPayload::new(target, update_container);
     Ok(TransactionPayload::SnarkAccountUpdate(tx_payload))
-}
-
-// ---------------------------------------------------------------------------
-// Checkpoint payload size estimation
-// ---------------------------------------------------------------------------
-//
-// The checkpoint payload is posted as a single L1 envelope (no chunking).
-// We estimate its SSZ-encoded size from the variable parts using exact layout
-// arithmetic so `process_transactions` can signal epoch sealing before the
-// payload exceeds the L1 envelope limit.
-//
-// CheckpointPayload SSZ layout:
-//   PAYLOAD_FIXED (60)  = CheckpointTip(52) + sidecar_offset(4) + proof_offset(4)
-//   SIDECAR_FIXED (112) = state_diff_offset(4) + logs_offset(4) + TerminalHeaderComplement(104)
-//   + ol_state_diff bytes (estimated via EpochDaAccumulator::estimated_encoded_size)
-//   + ol_logs bytes       (exact: per-log 12 + payload.len(), plus 4-byte list offsets – but list
-//     offsets are already counted in the per-log 12 because SSZ variable-size list elements each
-//     get a 4-byte offset *in the list*, and each OLLog itself has 4 fixed + 4 offset + payload)
-//   + proof bytes         (worst case MAX_PROOF_LEN = 4 KiB)
-//   + CodecSsz varint     (≤5 bytes)
-
-/// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
-const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
-
-/// Fixed overhead in the `CheckpointPayload` SSZ encoding.
-const CHECKPOINT_FIXED_OVERHEAD: usize = {
-    const PAYLOAD_FIXED: usize = 60; // CheckpointTip(52) + 2 offsets(8)
-    const SIDECAR_FIXED: usize = 112; // 2 offsets(8) + TerminalHeaderComplement(104)
-    const PROOF_BUDGET: usize = 4096; // MAX_PROOF_LEN
-    const CODEC_OVERHEAD: usize = 5; // CodecSsz varint
-    PAYLOAD_FIXED + SIDECAR_FIXED + PROOF_BUDGET + CODEC_OVERHEAD
-};
-
-/// Seal at 90% of the envelope limit — leaves headroom for the terminal block's
-/// manifest processing (which grows the DA diff) and estimation slack.
-const CHECKPOINT_SEAL_THRESHOLD: usize = MAX_CHECKPOINT_PAYLOAD_SIZE * 9 / 10;
-
-/// Decision after checking the estimated checkpoint payload size against limits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CheckpointSizeVerdict {
-    /// Under the soft threshold.
-    WithinLimits,
-    /// At or above the soft threshold but below the hard limit.
-    SoftLimitReached,
-    /// At or above the hard L1 envelope limit.
-    HardLimitExceeded,
-}
-
-fn checkpoint_size_verdict(estimated_payload: usize) -> CheckpointSizeVerdict {
-    if estimated_payload >= MAX_CHECKPOINT_PAYLOAD_SIZE {
-        CheckpointSizeVerdict::HardLimitExceeded
-    } else if estimated_payload >= CHECKPOINT_SEAL_THRESHOLD {
-        CheckpointSizeVerdict::SoftLimitReached
-    } else {
-        CheckpointSizeVerdict::WithinLimits
-    }
-}
-
-/// SSZ-encoded size of an `ol_logs` list. Each [`OLLog`]:
-///   4 bytes list element offset + 4 bytes `account_serial` + 4 bytes payload offset + payload.
-fn logs_ssz_size(logs: &[OLLog]) -> usize {
-    logs.iter().map(|log| 12 + log.payload().len()).sum()
-}
-
-/// Estimates the full `CheckpointPayload` SSZ-encoded size.
-///
-/// `da_diff_size` comes from [`EpochDaAccumulator::estimated_encoded_size`] (conservative).
-/// `epoch_logs_ssz_size` comes from [`logs_ssz_size`] (exact).
-fn estimate_checkpoint_payload_size(da_diff_size: usize, epoch_logs_ssz_size: usize) -> usize {
-    CHECKPOINT_FIXED_OVERHEAD + da_diff_size + epoch_logs_ssz_size
 }
 
 #[cfg(test)]
@@ -2319,95 +2252,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_checkpoint_size_verdict_accept() {
-        assert_eq!(
-            checkpoint_size_verdict(0),
-            CheckpointSizeVerdict::WithinLimits,
-        );
-        assert_eq!(
-            checkpoint_size_verdict(CHECKPOINT_SEAL_THRESHOLD - 1),
-            CheckpointSizeVerdict::WithinLimits,
-        );
-    }
-
-    #[test]
-    fn test_build_block_template_terminal_accepts_at_cap() {
-        let parent_state = Arc::new(create_test_genesis_state());
-        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
-        let output_buffer = ExecOutputBuffer::new_empty();
-        // Overflow rejection is enforced at emit time and covered in STF output
-        // tests. This block-assembly test covers the terminal happy-path
-        // boundary at exactly MAX_LOGS_PER_BLOCK.
-        output_buffer
-            .emit_logs(
-                (0..MAX_LOGS_PER_BLOCK).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])),
-            )
-            .expect("filling exactly up to cap should succeed");
-
-        let parent_header = create_test_parent_header();
-        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
-        let block_context = BlockContext::new(&block_info, Some(&parent_header));
-
-        let parent_commitment =
-            OLBlockCommitment::new(parent_header.slot(), parent_header.compute_blkid());
-        let config = BlockGenerationConfig::new(parent_commitment);
-        let manifest_container =
-            OLL1ManifestContainer::new(vec![]).expect("empty manifest container should be valid");
-
-        let _ = build_block_template(
-            &config,
-            &block_context,
-            &parent_state,
-            accumulated_batch,
-            output_buffer,
-            vec![],
-            Some(manifest_container),
-        )
-        .expect("terminal block template at cap should succeed");
-    }
-
-    #[test]
-    fn test_checkpoint_size_verdict_accept_and_seal() {
-        assert_eq!(
-            checkpoint_size_verdict(CHECKPOINT_SEAL_THRESHOLD),
-            CheckpointSizeVerdict::SoftLimitReached,
-        );
-        assert_eq!(
-            checkpoint_size_verdict(MAX_CHECKPOINT_PAYLOAD_SIZE - 1),
-            CheckpointSizeVerdict::SoftLimitReached,
-        );
-    }
-
-    #[test]
-    fn test_checkpoint_size_verdict_reject() {
-        assert_eq!(
-            checkpoint_size_verdict(MAX_CHECKPOINT_PAYLOAD_SIZE),
-            CheckpointSizeVerdict::HardLimitExceeded,
-        );
-        assert_eq!(
-            checkpoint_size_verdict(MAX_CHECKPOINT_PAYLOAD_SIZE + 100_000),
-            CheckpointSizeVerdict::HardLimitExceeded,
-        );
-    }
-
-    #[test]
-    fn test_estimate_checkpoint_payload_size() {
-        // With zero variable parts, should equal fixed overhead.
-        assert_eq!(
-            estimate_checkpoint_payload_size(0, 0),
-            CHECKPOINT_FIXED_OVERHEAD,
-        );
-        // Variable parts add linearly.
-        assert_eq!(
-            estimate_checkpoint_payload_size(1000, 500),
-            CHECKPOINT_FIXED_OVERHEAD + 1500,
-        );
-    }
-
-    #[test]
-    fn test_checkpoint_thresholds_are_consistent() {
-        const { assert!(CHECKPOINT_SEAL_THRESHOLD < MAX_CHECKPOINT_PAYLOAD_SIZE) };
-        const { assert!(CHECKPOINT_FIXED_OVERHEAD < CHECKPOINT_SEAL_THRESHOLD) };
-    }
 }

@@ -10,8 +10,8 @@ use tree_hash::{Sha256Hasher, TreeHash};
 
 use crate::{
     CheckpointPayload, CheckpointPayloadError, CheckpointSidecar, CheckpointTip,
-    MAX_LOG_PAYLOAD_BYTES, MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, MAX_TOTAL_LOG_PAYLOAD_BYTES,
-    OL_DA_DIFF_MAX_SIZE, TerminalHeaderComplement,
+    MAX_OL_LOGS_PER_CHECKPOINT, MAX_PROOF_LEN, OL_DA_DIFF_MAX_SIZE, TerminalHeaderComplement,
+    validation::validate_checkpoint_components,
 };
 
 impl CheckpointTip {
@@ -98,16 +98,18 @@ impl CheckpointSidecar {
         ol_logs: Vec<OLLog>,
         terminal_header_complement: TerminalHeaderComplement,
     ) -> Result<Self, CheckpointPayloadError> {
-        let state_diff_len = ol_state_diff.len() as u64;
+        let total_log_payload: usize = ol_logs.iter().map(|l| l.payload().len()).sum();
+        validate_checkpoint_components(ol_state_diff.len(), ol_logs.len(), total_log_payload)?;
 
+        // SSZ VariableList construction — these should not fail after the
+        // validate_checkpoint_components check above, but kept for defense in depth.
+        let state_diff_len = ol_state_diff.len() as u64;
         let ol_state_diff = VariableList::new(ol_state_diff).map_err(|_| {
             CheckpointPayloadError::StateDiffTooLarge {
                 provided: state_diff_len,
                 max: OL_DA_DIFF_MAX_SIZE,
             }
         })?;
-
-        validate_ol_logs_payloads(&ol_logs)?;
 
         let ol_logs_len = ol_logs.len() as u64;
         let ol_logs =
@@ -137,32 +139,6 @@ impl CheckpointSidecar {
     pub fn terminal_header_complement(&self) -> &TerminalHeaderComplement {
         &self.terminal_header_complement
     }
-}
-
-fn validate_ol_logs_payloads(ol_logs: &[OLLog]) -> Result<(), CheckpointPayloadError> {
-    let mut total_payload = 0u64;
-    for log in ol_logs {
-        let payload_len = log.payload().len() as u64;
-        if payload_len > MAX_LOG_PAYLOAD_BYTES as u64 {
-            return Err(CheckpointPayloadError::OLLogPayloadTooLarge {
-                provided: payload_len,
-                max: MAX_LOG_PAYLOAD_BYTES as u64,
-            });
-        }
-        total_payload = total_payload.checked_add(payload_len).ok_or(
-            CheckpointPayloadError::OLLogsTotalPayloadTooLarge {
-                provided: u64::MAX,
-                max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
-            },
-        )?;
-        if total_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES as u64 {
-            return Err(CheckpointPayloadError::OLLogsTotalPayloadTooLarge {
-                provided: total_payload,
-                max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
-            });
-        }
-    }
-    Ok(())
 }
 
 impl CheckpointPayload {
@@ -204,6 +180,8 @@ mod tests {
     use strata_identifiers::{AccountSerial, Buf32, OLBlockId};
     use strata_ol_chain_types_new::OLLog;
 
+    use crate::MAX_TOTAL_LOG_PAYLOAD_BYTES;
+
     use super::*;
 
     fn default_terminal_header_complement() -> TerminalHeaderComplement {
@@ -211,26 +189,13 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_sidecar_rejects_oversize_log_payload() {
-        let log = OLLog::new(AccountSerial::one(), vec![0u8; MAX_LOG_PAYLOAD_BYTES + 1]);
-        let result =
-            CheckpointSidecar::new(vec![], vec![log], default_terminal_header_complement());
-
-        assert!(matches!(
-            result,
-            Err(CheckpointPayloadError::OLLogPayloadTooLarge { .. })
-        ));
-    }
-
-    #[test]
     fn test_checkpoint_sidecar_rejects_total_log_payload() {
-        let mut logs = Vec::new();
-        for _ in 0..(MAX_TOTAL_LOG_PAYLOAD_BYTES / MAX_LOG_PAYLOAD_BYTES + 1) {
-            logs.push(OLLog::new(
-                AccountSerial::one(),
-                vec![0u8; MAX_LOG_PAYLOAD_BYTES],
-            ));
-        }
+        // Each log has 500 bytes payload; enough logs to exceed 16 KiB total.
+        let payload_per_log = 500;
+        let num_logs = MAX_TOTAL_LOG_PAYLOAD_BYTES / payload_per_log + 1;
+        let logs: Vec<_> = (0..num_logs)
+            .map(|_| OLLog::new(AccountSerial::one(), vec![0u8; payload_per_log]))
+            .collect();
 
         let result = CheckpointSidecar::new(vec![], logs, default_terminal_header_complement());
 

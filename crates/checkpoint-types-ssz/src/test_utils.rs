@@ -11,7 +11,7 @@ use strata_identifiers::{
 
 use crate::{
     CheckpointClaim, CheckpointPayload, CheckpointSidecar, CheckpointTip, L2BlockRange,
-    MAX_LOG_PAYLOAD_BYTES, TerminalHeaderComplement,
+    TerminalHeaderComplement,
 };
 
 /// Creates a minimal [`CheckpointPayload`] for the given epoch using validated constructors.
@@ -54,7 +54,7 @@ pub fn ol_logs_strategy() -> impl Strategy<Value = Vec<crate::OLLog>> {
     prop::collection::vec(
         (
             any::<u32>().prop_map(AccountSerial::from),
-            prop::collection::vec(any::<u8>(), 0..=MAX_LOG_PAYLOAD_BYTES),
+            prop::collection::vec(any::<u8>(), 0..=512),
         )
             .prop_map(|(account_serial, payload)| crate::OLLog::new(account_serial, payload)),
         0..10,
