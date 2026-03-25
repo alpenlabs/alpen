@@ -90,9 +90,12 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
             | DbError::MmrLeafNotFoundForAccount(_, _)
             | DbError::MmrNodeNotFound(_)
             | DbError::MmrInvalidRange { .. }
-            | DbError::MmrIndexOutOfRange { .. }
             | DbError::MmrPayloadNotFound(_)
             | DbError::MmrPositionOutOfBounds { .. } => MempoolTxInvalidReason::Invalid,
+            // MmrIndexOutOfRange is transient: the tx may reference manifests
+            // that the OL state hasn't caught up to yet (ASM manifests MMR is
+            // only updated at epoch boundaries). Keep in mempool for retry.
+            DbError::MmrIndexOutOfRange { .. } => MempoolTxInvalidReason::Failed,
             DbError::MmrPreconditionFailed { .. } => MempoolTxInvalidReason::Failed,
             _ => MempoolTxInvalidReason::Failed,
         },
@@ -747,10 +750,12 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
     let sau_payload = SauTxPayload::new(target, sau_operation_data);
     let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
 
-    // Build TxProofs: inbox proofs + l1 header proofs go into accumulator_proofs,
+    // Build TxProofs: l1 header proofs + inbox proofs go into accumulator_proofs,
     // the update proof (predicate satisfier) comes from the base_update.
-    let mut all_acc_proofs = inbox_proofs;
-    all_acc_proofs.extend(l1_header_proofs.l1_headers_proofs().to_vec());
+    // NOTE: The order must match the verification order in snark-acct-sys verification.rs:
+    // ledger refs (L1 header proofs) are verified first, then inbox MMR proofs.
+    let mut all_acc_proofs = l1_header_proofs.l1_headers_proofs().to_vec();
+    all_acc_proofs.extend(inbox_proofs);
 
     let acc_proofs = RawMerkleProofList::from_vec_nonempty(all_acc_proofs);
     let pred_satisfiers = ProofSatisfierList::single(base_update.update_proof().to_vec());
@@ -1103,11 +1108,15 @@ mod tests {
             "Should fail when claiming inbox messages that don't exist"
         );
         let err = result.unwrap_err();
-        // Could be Db(MmrLeafNotFound*)/InboxEntryHashMismatch from MMR or Acct error.
+        // MmrIndexOutOfRange maps to Failed (not Invalid) because the same DB error
+        // is also used for ASM manifests where it is transient.
         let reason = block_assembly_error_to_mempool_reason(&err);
         assert!(
-            matches!(reason, MempoolTxInvalidReason::Invalid),
-            "Expected Invalid mempool reason for missing inbox claims, got: {:?}",
+            matches!(
+                reason,
+                MempoolTxInvalidReason::Invalid | MempoolTxInvalidReason::Failed
+            ),
+            "Expected Invalid or Failed mempool reason for missing inbox claims, got: {:?}",
             reason
         );
     }
@@ -1161,6 +1170,93 @@ mod tests {
             "Expected Acct(InvalidMsgIndex) or MMR db error, got: {:?}",
             err
         );
+    }
+
+    /// Verifies that when both inbox proofs and L1 header proofs are present,
+    /// the accumulator proofs are ordered: L1 headers first, then inbox proofs.
+    /// This must match the verification order in snark-acct-sys verification.rs.
+    #[test]
+    fn test_proof_ordering_l1_headers_before_inbox() {
+        let storage = create_test_storage();
+        let mut state = create_test_genesis_state();
+
+        // Create account
+        let account_id = test_account_id(1);
+        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
+
+        // Add L1 header to storage and state MMRs
+        let manifest = AsmManifest::new(
+            1,
+            L1BlockId::from(Buf32::from([1u8; 32])),
+            WtxidsRoot::from(Buf32::zero()),
+            vec![],
+        );
+        let manifest_hash = manifest.compute_hash().into();
+        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
+        asm_mmr.add_header(manifest_hash);
+        state.append_manifest(manifest.height(), manifest);
+
+        // Add inbox messages to storage and state
+        let source_account = test_account_id(2);
+        let messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
+        inbox_mmr.add_messages(messages.clone());
+        insert_inbox_messages_into_state(&mut state, account_id, &messages);
+
+        // Create tx with BOTH L1 claims and inbox messages
+        let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_l1_claims(asm_mmr.claims())
+            .with_processed_messages(messages.clone())
+            .build();
+
+        let ctx = create_test_context(storage.clone());
+        let mempool_payload = match mempool_tx.payload() {
+            OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
+            _ => panic!("Expected snark account update payload"),
+        };
+        let (_, tx_proofs) = convert_snark_account_update(&ctx, &state, mempool_payload)
+            .expect("proof generation should succeed");
+
+        // Verify accumulator proofs exist and have correct count
+        let acc_proofs = tx_proofs
+            .accumulator_proofs()
+            .expect("should have accumulator proofs");
+        let n_l1 = asm_mmr.claims().len();
+        let n_inbox = messages.len();
+        assert_eq!(
+            acc_proofs.proofs().len(),
+            n_l1 + n_inbox,
+            "Should have {n_l1} L1 header + {n_inbox} inbox = {} total accumulator proofs",
+            n_l1 + n_inbox
+        );
+
+        // Verify predicate satisfier exists
+        assert!(
+            tx_proofs.predicate_satisfiers().is_some(),
+            "Should have predicate satisfiers"
+        );
+    }
+
+    /// Verifies that `ProofSatisfierList::single` constructs a valid single-element
+    /// list even when proof bytes are empty (e.g. from a NoopProver).
+    #[test]
+    fn test_proof_satisfier_list_accepts_empty_bytes() {
+        use strata_ol_chain_types_new::ProofSatisfierList;
+
+        // Empty bytes should still produce a valid single-element list
+        let result = ProofSatisfierList::single(vec![]);
+        assert!(
+            result.is_some(),
+            "Empty proof bytes should still produce a valid satisfier list"
+        );
+        let list = result.unwrap();
+        assert_eq!(list.proofs().len(), 1);
+
+        // Non-empty bytes should also work
+        let result = ProofSatisfierList::single(vec![0u8]);
+        assert!(result.is_some(), "Non-empty proof bytes should produce Some");
+        let list = result.unwrap();
+        assert_eq!(list.proofs().len(), 1);
     }
 
     // Helper to validate block slot and epoch

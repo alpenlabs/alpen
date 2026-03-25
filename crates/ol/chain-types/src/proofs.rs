@@ -58,12 +58,7 @@ impl ProofSatisfierList {
     }
 
     /// Wraps a single proof satisfier into a list.
-    ///
-    /// Returns `None` if the proof bytes are empty.
     pub fn single(proof_bytes: Vec<u8>) -> Option<Self> {
-        if proof_bytes.is_empty() {
-            return None;
-        }
         let satisfier = ProofSatisfier::from_vec(proof_bytes)?;
         Self::from_proofs(vec![satisfier])
     }
