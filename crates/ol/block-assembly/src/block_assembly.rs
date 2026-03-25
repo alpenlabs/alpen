@@ -1254,7 +1254,10 @@ mod tests {
 
         // Non-empty bytes should also work
         let result = ProofSatisfierList::single(vec![0u8]);
-        assert!(result.is_some(), "Non-empty proof bytes should produce Some");
+        assert!(
+            result.is_some(),
+            "Non-empty proof bytes should produce Some"
+        );
         let list = result.unwrap();
         assert_eq!(list.proofs().len(), 1);
     }
