@@ -213,6 +213,10 @@ pub fn verify_block<S: IStateAccessor>(
         }
     }
 
+    // Defense-in-depth: replay execution already enforces emit-time bounds, and
+    // this explicit boundary check preserves a verifier-side invariant backstop.
+    output_buffer.verify_logs_within_block_limit()?;
+
     // 6. Check the logs root.
     let computed_logs_root = compute_logs_root(&output_buffer.into_logs());
     if computed_logs_root != exp.logs_root {
@@ -349,6 +353,7 @@ pub fn verify_epoch_with_diff<S: IStateAccessor, D: DaScheme<S>>(
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
     let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
     manifest_processing::process_block_manifests(state, manifests, &term_ctx)?;
+    output.verify_logs_within_block_limit()?;
 
     // 4. Verify the final state root.
     let final_state_root = state.compute_state_root()?;

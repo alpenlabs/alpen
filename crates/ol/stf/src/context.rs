@@ -13,7 +13,10 @@ use std::cell::RefCell;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{Epoch, OLBlockHeader, OLLog, Slot};
 
-use crate::output::{ExecOutputBuffer, OutputCtx};
+use crate::{
+    errors::ExecResult,
+    output::{ExecOutputBuffer, OutputCtx},
+};
 
 /// Simple information about a single block.
 ///
@@ -227,8 +230,8 @@ impl<'b> BasicExecContext<'b> {
 }
 
 impl<'b> OutputCtx for BasicExecContext<'b> {
-    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
-        self.output_buffer.emit_logs(logs);
+    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) -> ExecResult<()> {
+        self.output_buffer.emit_logs(logs)
     }
 }
 
@@ -261,7 +264,7 @@ impl<'b> TxExecContext<'b> {
 }
 
 impl<'b> OutputCtx for TxExecContext<'b> {
-    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) {
-        self.basic_context.emit_logs(logs);
+    fn emit_logs(&self, logs: impl IntoIterator<Item = OLLog>) -> ExecResult<()> {
+        self.basic_context.emit_logs(logs)
     }
 }

@@ -10,8 +10,8 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
-    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTransaction,
-    OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
+    BlockFlags, MAX_LOGS_PER_BLOCK, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update,
+    OLTransaction, OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
 };
 use strata_ol_mempool::{
     MempoolTxInvalidReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction,
@@ -25,7 +25,7 @@ use strata_ol_stf::{
     process_epoch_initial, process_single_tx,
 };
 use strata_snark_acct_types::{SnarkAccountUpdateContainer, UpdateAccumulatorProofs};
-use tracing::{debug, error};
+use tracing::{debug, error, trace, warn};
 
 use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
@@ -60,7 +60,8 @@ fn stf_exec_error_to_mempool_reason(err: &ExecError) -> MempoolTxInvalidReason {
         | ExecError::UnknownAccount(_)
         | ExecError::IncorrectTxTargetType
         | ExecError::Codec(_)
-        | ExecError::Acct(_) => MempoolTxInvalidReason::Invalid,
+        | ExecError::Acct(_)
+        | ExecError::LogsOverflow { .. } => MempoolTxInvalidReason::Invalid,
 
         // May succeed in future blocks
         ExecError::TransactionNotMature(_, _)
@@ -381,6 +382,8 @@ where
 {
     let mut successful_txs = Vec::new();
     let mut failed_txs = Vec::new();
+    let max_logs =
+        usize::try_from(MAX_LOGS_PER_BLOCK).expect("MAX_LOGS_PER_BLOCK must fit in usize");
 
     // Create staging state once, reuse across transactions.
     // We work directly on this state and only clone for backup before each tx.
@@ -411,9 +414,23 @@ where
         debug!(%txid, ?tx, "processing transaction");
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
-                // Success: merge logs and keep state changes
-                output_buffer.emit_logs(tx_buffer.into_logs());
+                // Check if this tx's logs fit in the remaining block budget.
+                let current_logs = output_buffer.log_count();
+                let tx_logs = tx_buffer.log_count();
+                if current_logs.saturating_add(tx_logs) > max_logs {
+                    debug!(
+                        ?txid,
+                        current_logs, tx_logs, max_logs, "skipping tx: block log cap reached"
+                    );
+                    staging_state = WriteTrackingState::new(parent_state, backup_batch);
+                    break;
+                }
+
+                output_buffer
+                    .emit_logs(tx_buffer.into_logs())
+                    .expect("log cap pre-checked");
                 successful_txs.push(tx);
+                trace!(%txid, "successful tx execution in block assembly");
             }
             Err(e) => {
                 // Failure: discard tx_buffer (logs) and restore state from backup
@@ -422,7 +439,6 @@ where
                 failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
             }
         }
-        debug!(%txid, "successful tx execution in block assembly");
     }
 
     ProcessTransactionsOutput {
@@ -478,6 +494,13 @@ where
         let post_roots = BlockPostStateCommitments::Common(preseal_state_root);
         (post_roots, None)
     };
+
+    // Defense-in-depth: per-tx and manifest emission paths enforce the cap at
+    // emit time, and this preserves an explicit terminal assembly invariant
+    // check before finalizing the template.
+    output_buffer
+        .verify_logs_within_block_limit()
+        .map_err(BlockAssemblyError::BlockConstruction)?;
 
     // Extract logs for computing logs root
     let logs = output_buffer.into_logs();
@@ -616,12 +639,16 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::AcctError;
+    use strata_acct_types::{AccountSerial, AcctError, BitcoinAmount, MsgPayload};
     use strata_asm_manifest_types::AsmManifest;
+    use strata_codec::encode_to_vec;
     use strata_identifiers::{Buf32, Buf64, L1BlockId, L1Height, OLBlockId, WtxidsRoot};
-    use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
+    use strata_msg_fmt::{Msg, OwnedMsg};
+    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLBlock, OLLog, SignedOLBlockHeader};
+    use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
     use strata_ol_state_types::OLState;
-    use strata_snark_acct_types::AccumulatorClaim;
+    use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
+    use strata_snark_acct_types::{AccumulatorClaim, OutputMessage};
     use strata_storage::NodeStorage;
 
     use super::*;
@@ -1880,5 +1907,262 @@ mod tests {
             2,
             "Block should contain both txs (tx2 sees tx1's balance transfer)"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_oversized_log_tx_reported_invalid_and_removed_from_mempool() {
+        let account_id = test_account_id(1);
+        let mut env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account_id, 500_000_000_000)
+            .build()
+            .await;
+        env.sequencer_config.max_txs_per_block = 2;
+
+        let withdrawal_msg_data = WithdrawalMsgData::new(
+            DEFAULT_OPERATOR_FEE,
+            b"bc1qlogcapoverflow".to_vec(),
+            u32::MAX,
+        )
+        .expect("valid withdrawal data");
+        let encoded_withdrawal_body =
+            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
+        let withdrawal_msg =
+            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
+        let withdrawal_payload_data = withdrawal_msg.to_vec();
+
+        let output_messages = (0..(MAX_LOGS_PER_BLOCK as usize + 1))
+            .map(|_| {
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            })
+            .collect();
+
+        let overflow_tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_output_messages(output_messages)
+            .build();
+        let overflow_txid = overflow_tx.compute_txid();
+
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        mempool.add_transaction(overflow_txid, overflow_tx);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("block generation should succeed");
+
+        let (template, failed_txs) = result.into_parts();
+        let tx_count = template
+            .body()
+            .tx_segment()
+            .map(|segment| segment.txs().len())
+            .unwrap_or(0);
+        assert_eq!(tx_count, 0, "overflow tx should not be included");
+        assert!(
+            failed_txs.contains(&(overflow_txid, MempoolTxInvalidReason::Invalid)),
+            "oversized tx should be reported invalid to mempool"
+        );
+
+        let remaining = mempool.get_transactions(10).await.expect("mempool read");
+        assert!(
+            remaining.is_empty(),
+            "oversized tx should be removed from mempool"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_block_full_log_overflow_tx_not_reported_invalid_and_kept_in_mempool() {
+        let account_id = test_account_id(8);
+        let mut env = TestEnvBuilder::new()
+            .with_parent_slot(0)
+            .with_asm_manifests(&[1, 2, 3])
+            .with_account(account_id, 1_000_000_000_000)
+            .build()
+            .await;
+        env.sequencer_config.max_txs_per_block = 2;
+
+        let withdrawal_msg_data =
+            WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, b"bc1qlogcapfull".to_vec(), u32::MAX)
+                .expect("valid withdrawal data");
+        let encoded_withdrawal_body =
+            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
+        let withdrawal_msg =
+            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
+        let withdrawal_payload_data = withdrawal_msg.to_vec();
+
+        let full_block_messages = (0..(MAX_LOGS_PER_BLOCK as usize))
+            .map(|_| {
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            })
+            .collect();
+        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_output_messages(full_block_messages)
+            .build();
+        let tx_fill_id = tx_fill.compute_txid();
+
+        let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_output_messages(vec![{
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            }])
+            .build();
+        let tx_overflow_id = tx_overflow.compute_txid();
+
+        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        mempool.add_transaction(tx_fill_id, tx_fill);
+        mempool.add_transaction(tx_overflow_id, tx_overflow);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment);
+        let result = generate_block_template_inner(
+            &ctx,
+            &env.epoch_sealing_policy,
+            &env.sequencer_config,
+            config,
+        )
+        .await
+        .expect("block generation should succeed");
+
+        let (template, failed_txs) = result.into_parts();
+        let txs = template
+            .body()
+            .tx_segment()
+            .expect("tx segment should exist")
+            .txs();
+        assert_eq!(txs.len(), 1, "only first tx should be included");
+        assert!(
+            failed_txs.is_empty(),
+            "block-full overflow tx should not be reported invalid"
+        );
+
+        let remaining = mempool.get_transactions(10).await.expect("mempool read");
+        assert_eq!(
+            remaining.len(),
+            2,
+            "included txs are not auto-removed in this mock"
+        );
+        assert_eq!(
+            remaining[1].0, tx_overflow_id,
+            "block-full overflow tx should remain in mempool"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_process_transactions_soft_breaks_when_log_cap_already_reached() {
+        let account_id = test_account_id(7);
+        let storage = create_test_storage();
+        let mut parent_state = create_test_genesis_state();
+        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+
+        let (ctx, _mempool) = create_test_block_assembly_context(storage);
+        let parent_header = create_test_parent_header();
+        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
+
+        let withdrawal_msg_data = WithdrawalMsgData::new(
+            DEFAULT_OPERATOR_FEE,
+            b"bc1qlogcapreached".to_vec(),
+            u32::MAX,
+        )
+        .expect("valid withdrawal data");
+        let encoded_withdrawal_body =
+            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
+        let withdrawal_msg =
+            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
+        let withdrawal_payload_data = withdrawal_msg.to_vec();
+
+        let tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_output_messages(vec![{
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            }])
+            .build();
+        let txid = tx.compute_txid();
+
+        // Pre-fill the block output buffer to exactly the cap so the next tx that emits logs
+        // hits the soft-break branch without being marked invalid.
+        let output_buffer = ExecOutputBuffer::new_empty();
+        output_buffer
+            .emit_logs(
+                (0..MAX_LOGS_PER_BLOCK).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])),
+            )
+            .expect("pre-filling up to the cap should succeed");
+
+        let out = process_transactions(
+            &ctx,
+            &block_context,
+            &output_buffer,
+            &parent_state,
+            accumulated_batch,
+            vec![(txid, tx)],
+        );
+
+        assert!(
+            out.failed_txs.is_empty(),
+            "soft-break overflow should not mark tx invalid"
+        );
+        assert!(
+            out.successful_txs.is_empty(),
+            "overflowing tx should not be included"
+        );
+    }
+
+    #[test]
+    fn test_build_block_template_terminal_accepts_at_cap() {
+        let parent_state = Arc::new(create_test_genesis_state());
+        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
+        let output_buffer = ExecOutputBuffer::new_empty();
+        // Overflow rejection is enforced at emit time and covered in STF output
+        // tests. This block-assembly test covers the terminal happy-path
+        // boundary at exactly MAX_LOGS_PER_BLOCK.
+        output_buffer
+            .emit_logs(
+                (0..MAX_LOGS_PER_BLOCK).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])),
+            )
+            .expect("filling exactly up to cap should succeed");
+
+        let parent_header = create_test_parent_header();
+        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+
+        let parent_commitment =
+            OLBlockCommitment::new(parent_header.slot(), parent_header.compute_blkid());
+        let config = BlockGenerationConfig::new(parent_commitment);
+        let manifest_container =
+            OLL1ManifestContainer::new(vec![]).expect("empty manifest container should be valid");
+
+        let _ = build_block_template(
+            &config,
+            &block_context,
+            &parent_state,
+            accumulated_batch,
+            output_buffer,
+            vec![],
+            Some(manifest_container),
+        )
+        .expect("terminal block template at cap should succeed");
     }
 }

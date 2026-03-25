@@ -35,10 +35,7 @@ pub use block_flags::*;
 pub use log_payloads::*;
 // Re-export generated SSZ types with their canonical names
 pub use ssz_generated::ssz::{
-    block::{
-        OLBlock, OLBlockBody, OLBlockHeader, OLBlockHeaderRef, OLBlockRef, OLL1ManifestContainer,
-        OLL1Update, OLTxSegment, SignedOLBlockHeader, SignedOLBlockHeaderRef,
-    },
+    block::*,
     log::{OLLog, OLLogRef},
     transaction::{
         GamTxPayload, GamTxPayloadRef, OLTransaction, OLTransactionRef,
