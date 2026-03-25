@@ -60,6 +60,12 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
     epoch: Epoch,
     ctx: &C,
 ) -> Result<EpochBlocks, BlockAssemblyError> {
+    if epoch == 0 {
+        return Err(BlockAssemblyError::Other(
+            "epoch 0 has no collectable blocks (genesis only)".to_string(),
+        ));
+    }
+
     let mut blocks = Vec::new();
     let mut cur_id = target_id;
 
@@ -69,31 +75,20 @@ async fn collect_epoch_blocks_until<C: BlockAssemblyAnchorContext>(
             .await?
             .ok_or(BlockAssemblyError::BlockNotFound(cur_id))?;
 
-        if block.header().is_genesis_slot() {
-            // Genesis is the boundary for epoch 0 — we don't collect it, just stop.
-            break block.header().clone();
-        }
-
-        if block.header().is_terminal() {
-            // Terminal block sealed the previous epoch; sanity check.
-            if block.header().epoch() != epoch - 1 {
-                return Err(BlockAssemblyError::Other(
-                    "invalid epoch for previous terminal block".to_string(),
-                ));
+        // Block doesn't belong to our epoch — must be the boundary.
+        if block.header().epoch() != epoch {
+            if !block.header().is_terminal() || block.header().epoch() != epoch - 1 {
+                return Err(BlockAssemblyError::Other(format!(
+                    "expected terminal of epoch {}, got epoch {} (terminal={})",
+                    epoch - 1,
+                    block.header().epoch(),
+                    block.header().is_terminal()
+                )));
             }
             break block.header().clone();
         }
 
-        // Sanity check epoch number
-        if block.header().epoch() != epoch {
-            return Err(BlockAssemblyError::Other(
-                "invalid epoch for epochal block".to_string(),
-            ));
-        }
-
         let parent_id = *block.header().parent_blkid();
-
-        // Insert block and update current block to be the parent block
         blocks.push(block);
         cur_id = parent_id;
     };
