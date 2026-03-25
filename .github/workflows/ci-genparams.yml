@@ -82,9 +82,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # TODO(STR-2775): Replace with --genesis-l1-view-file once fixture is committed
-          # For now, this step will fail until the genesis L1 view file is available.
           PARAMS_OUTPUT=$(./target/release/strata-datatool genparams \
+            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json \
             --elf-dir docker/prover-client/elfs/sp1)
 
           CHECKPOINT_PREDICATE=$(echo "$PARAMS_OUTPUT" | jq -r '.checkpoint_predicate')
