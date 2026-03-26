@@ -39,7 +39,9 @@ impl OLTrackerState {
     pub fn get_consensus_heads(&self) -> ConsensusHeads {
         ConsensusHeads {
             confirmed: self.confirmed.last_exec_blkid(),
+            confirmed_epoch: self.confirmed.ol_epoch(),
             finalized: self.finalized.last_exec_blkid(),
+            finalized_epoch: self.finalized.ol_epoch(),
         }
     }
 
@@ -246,45 +248,70 @@ mod tests {
     }
 
     mod build_tracker_state_tests {
+        use std::sync::Arc;
+
+        use alpen_ee_common::{ConsensusHeads, MockOLClient};
         use strata_acct_types::Hash;
+        use strata_identifiers::{Epoch, Slot};
+        use tokio::sync::watch;
 
         use super::*;
+        use crate::ctx::OLTrackerCtx;
 
         #[tokio::test]
         async fn test_builds_state_successfully() {
             // Scenario: Build tracker state with valid chain
-            // Local chain: [100, 101, 102, 103, 104, 105] (epochs 0-5)
-            // Best state:  epoch 5 (terminal block 105)
-            // OL status:   latest=epoch 5, confirmed=epoch 4, finalized=epoch 2
-            // Expected:    State built with confirmed=epoch 4, finalized=epoch 2
+            // Local chain: epochs 0-5, terminal block IDs [100..105]
+            // OL status:   tip=epoch 5, confirmed=epoch 4, finalized=epoch 2
+            // Expected:    confirmed=epoch 4, finalized=epoch 2
 
-            let chain = create_epochs(&[100, 101, 102, 103, 104, 105]);
-            let best_state = chain[5].clone();
+            // Each entry is the leading byte of the 32-byte terminal block ID for
+            // that epoch.  Slots are derived inside `create_epochs` as epoch * 10.
+            const BLOCK_ID_BYTES: [u8; 6] = [100, 101, 102, 103, 104, 105];
+            const NUM_EPOCHS: usize = BLOCK_ID_BYTES.len();
+            const FINALIZED_EPOCH: Epoch = 2;
+            const FINALIZED_SLOT: Slot = 20;
+            const CONFIRMED_EPOCH: Epoch = 4;
+            const CONFIRMED_SLOT: Slot = 40;
+            const TIP_EPOCH_IDX: usize = NUM_EPOCHS - 1;
+            const TIP_SLOT: Slot = 50;
+
+            let chain = create_epochs(&BLOCK_ID_BYTES);
+            let best_state = chain[TIP_EPOCH_IDX].clone();
 
             let mut mock_storage = MockStorage::new();
             setup_mock_storage_with_chain(&mut mock_storage, chain);
 
             let ol_status = OLChainStatus {
-                tip: make_block_commitment(50, 105),
-                confirmed: make_epoch_commitment(4, 40, 104),
-                finalized: make_epoch_commitment(2, 20, 102),
+                tip: make_block_commitment(TIP_SLOT, BLOCK_ID_BYTES[TIP_EPOCH_IDX]),
+                confirmed: make_epoch_commitment(
+                    CONFIRMED_EPOCH,
+                    CONFIRMED_SLOT,
+                    BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize],
+                ),
+                finalized: make_epoch_commitment(
+                    FINALIZED_EPOCH,
+                    FINALIZED_SLOT,
+                    BLOCK_ID_BYTES[FINALIZED_EPOCH as usize],
+                ),
             };
 
             let result = build_tracker_state(best_state, &ol_status, &mock_storage)
                 .await
                 .unwrap();
 
-            assert_eq!(result.best_ol_epoch().epoch(), 4);
+            assert_eq!(result.best_ol_epoch().epoch(), CONFIRMED_EPOCH);
 
-            // Verify consensus heads were set correctly
             let consensus = result.get_consensus_heads();
             let mut expected_confirmed = [0u8; 32];
-            expected_confirmed[0] = 104;
+            expected_confirmed[0] = BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize];
             let mut expected_finalized = [0u8; 32];
-            expected_finalized[0] = 102;
+            expected_finalized[0] = BLOCK_ID_BYTES[FINALIZED_EPOCH as usize];
 
             assert_eq!(consensus.confirmed, Hash::from(expected_confirmed));
+            assert_eq!(consensus.confirmed_epoch, CONFIRMED_EPOCH);
             assert_eq!(consensus.finalized, Hash::from(expected_finalized));
+            assert_eq!(consensus.finalized_epoch, FINALIZED_EPOCH);
         }
 
         #[tokio::test]
@@ -386,6 +413,69 @@ mod tests {
             assert!(matches!(error, OLTrackerError::BuildStateFailed(_)));
             assert!(error.to_string().contains("confirmed state"));
             assert!(error.to_string().contains("disk error"));
+        }
+
+        #[tokio::test]
+        async fn test_consensus_watcher_receives_epochs() {
+            // Verify that epoch numbers propagate through the watch channel,
+            // not just through direct get_consensus_heads() calls.
+
+            const BLOCK_ID_BYTES: [u8; 4] = [100, 101, 102, 103];
+            const CONFIRMED_EPOCH: Epoch = 2;
+            const CONFIRMED_SLOT: Slot = 20;
+            const FINALIZED_EPOCH: Epoch = 1;
+            const FINALIZED_SLOT: Slot = 10;
+            const TIP_SLOT: Slot = 30;
+            const TIP_EPOCH_IDX: usize = 3;
+
+            let chain = create_epochs(&BLOCK_ID_BYTES);
+            let best_state = chain[TIP_EPOCH_IDX].clone();
+
+            let mut mock_storage = MockStorage::new();
+            setup_mock_storage_with_chain(&mut mock_storage, chain);
+
+            let ol_status = OLChainStatus {
+                tip: make_block_commitment(TIP_SLOT, BLOCK_ID_BYTES[TIP_EPOCH_IDX]),
+                confirmed: make_epoch_commitment(
+                    CONFIRMED_EPOCH,
+                    CONFIRMED_SLOT,
+                    BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize],
+                ),
+                finalized: make_epoch_commitment(
+                    FINALIZED_EPOCH,
+                    FINALIZED_SLOT,
+                    BLOCK_ID_BYTES[FINALIZED_EPOCH as usize],
+                ),
+            };
+
+            let tracker_state = build_tracker_state(best_state, &ol_status, &mock_storage)
+                .await
+                .unwrap();
+
+            let initial = ConsensusHeads {
+                confirmed: Hash::zero(),
+                confirmed_epoch: 0,
+                finalized: Hash::zero(),
+                finalized_epoch: 0,
+            };
+            let (consensus_tx, consensus_rx) = watch::channel(initial);
+            let (ol_status_tx, _) = watch::channel(tracker_state.get_ol_status());
+
+            let ctx = OLTrackerCtx {
+                storage: Arc::new(mock_storage),
+                ol_client: Arc::new(MockOLClient::new()),
+                genesis_epoch: 0,
+                ol_status_tx,
+                consensus_tx,
+                max_epochs_fetch: 10,
+                poll_wait_ms: 100,
+            };
+
+            ctx.notify_consensus_update(tracker_state.get_consensus_heads());
+
+            let received = consensus_rx.borrow().clone();
+            assert_eq!(received.confirmed_epoch, CONFIRMED_EPOCH);
+            assert_eq!(received.finalized_epoch, FINALIZED_EPOCH);
         }
     }
 }
