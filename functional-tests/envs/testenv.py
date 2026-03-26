@@ -514,7 +514,6 @@ class HubNetworkEnvConfig(flexitest.EnvConfig):
         return BasicLiveEnv(svcs, bridge_pk, rollup_cfg, params)
 
 
-
 # TODO: Maybe, we need to make it dynamic to enhance any EnvConfig with load testing capabilities.
 class LoadEnvConfig(BasicEnvConfig):
     _load_cfgs: list[LoadConfigBuilder] = []

@@ -49,21 +49,21 @@ pub enum SequencerContextError {
     #[error("db: {0}")]
     Db(#[from] DbError),
 
-    #[error("duty extraction failed at tip {tip_blkid}")]
+    #[error("duty extraction failed at tip {tip_blkid}({source})")]
     DutyExtraction {
         tip_blkid: OLBlockId,
         #[source]
         source: SequencerError,
     },
 
-    #[error("template completion failed for template {template_id}")]
+    #[error("template completion failed for template {template_id}({source})")]
     TemplateCompletion {
         template_id: OLBlockId,
         #[source]
         source: BlockAssemblyError,
     },
 
-    #[error("template generation failed at tip {tip_blkid}")]
+    #[error("template generation failed at tip {tip_blkid}({source})")]
     TemplateGeneration {
         tip_blkid: OLBlockId,
         #[source]
@@ -73,7 +73,7 @@ pub enum SequencerContextError {
     #[error("failed to send block {blkid} to fcm")]
     FcmChannelClosed { blkid: OLBlockId },
 
-    #[error("checkpoint intent submission failed")]
+    #[error("checkpoint intent submission failed({source})")]
     CheckpointIntentSubmission {
         #[source]
         source: anyhow::Error,

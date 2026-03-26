@@ -332,7 +332,7 @@ pub fn assert_verification_succeeds<S: IStateAccessor>(
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
 ) {
-    let result = verify_block(state, header, parent_header, body);
+    let result = verify_block(state, header, parent_header.as_ref(), body);
     assert!(
         result.is_ok(),
         "Block verification failed when it should have succeeded: {:?}",
@@ -348,7 +348,7 @@ pub fn assert_verification_fails_with(
     body: &strata_ol_chain_types_new::OLBlockBody,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
-    let result = verify_block(state, header, parent_header, body);
+    let result = verify_block(state, header, parent_header.as_ref(), body);
     assert!(
         result.is_err(),
         "Block verification succeeded when it should have failed"

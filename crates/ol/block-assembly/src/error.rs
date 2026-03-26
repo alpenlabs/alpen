@@ -65,6 +65,10 @@ pub enum BlockAssemblyError {
     #[error("no pending template found for id: {0}")]
     UnknownTemplateId(OLBlockId),
 
+    /// Block not found in db.
+    #[error("block not found in db: {0}")]
+    BlockNotFound(OLBlockId),
+
     /// No mapping found in parent block ID -> template ID cache.
     #[error("no pending template found for parent id: {0}")]
     NoPendingTemplateForParent(OLBlockId),

@@ -4,6 +4,9 @@ mod block_assembly;
 mod builder;
 mod command;
 mod context;
+#[cfg(test)]
+mod da_tests;
+mod da_tracker;
 mod epoch_sealing;
 mod error;
 mod handle;

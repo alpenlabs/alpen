@@ -29,8 +29,16 @@ impl<T> NonEmptyVec<T> {
         false
     }
 
-    pub fn first(&self) -> &T {
+    /// Non-empty vec version of `first` method to keep compatibility with `Vec`'s `first`.
+    pub fn ensured_first(&self) -> &T {
         &self.0[0]
+    }
+
+    /// Non-empty vec version of `last` method to keep compatibility with `Vec`'s `last`.
+    pub fn ensured_last(&self) -> &T {
+        self.0
+            .last()
+            .expect("last(): non-empty vec should have at least an element")
     }
 
     pub fn push(&mut self, x: T) {

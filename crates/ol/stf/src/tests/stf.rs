@@ -1247,7 +1247,7 @@ fn test_verify_block_through_write_tracking_stack() {
         verify_block(
             &mut indexer,
             block1.header(),
-            Some(genesis.header().clone()),
+            Some(genesis.header()),
             block1.body(),
         )
         .expect("Block 1 verification through write-tracking stack should succeed");
@@ -1287,7 +1287,7 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
         let tracking = WriteTrackingState::new_from_state(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
-        verify_block(&mut indexer, block.header(), parent_header, block.body()).unwrap_or_else(
+        verify_block(&mut indexer, block.header(), parent_header.as_ref(), block.body()).unwrap_or_else(
             |e| {
                 panic!(
                     "Block {} (slot {}, terminal={}) verification through write-tracking stack failed: {:?}",

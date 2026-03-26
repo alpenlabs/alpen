@@ -4,19 +4,17 @@ use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
-use strata_ol_chain_types_new::{
-    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLLog,
-    OLTransaction, OLTxSegment, TransactionAttachment, TransactionPayload,
-};
+use strata_ol_chain_types_new::*;
 
 use crate::{
     chain_processing,
-    context::{BasicExecContext, BlockContext, TxExecContext},
+    context::{BasicExecContext, BlockContext, BlockInfo, TxExecContext},
     errors::ExecResult,
     manifest_processing,
     output::{ExecOutputBuffer, OutputCtx},
     transaction_processing,
     verification::{BlockExecInput, BlockPostStateCommitments},
+    verify_block,
 };
 
 /// Block execution outputs.
@@ -220,6 +218,18 @@ impl BlockComponents {
         }
     }
 
+    /// Extracts block components from a signed block, handling absent tx segments.
+    pub fn from_block(block: &OLBlock) -> Self {
+        let empty =
+            OLTxSegment::new(vec![]).expect("empty transaction segment construction is infallible");
+        let tx_segment = block.body().tx_segment().unwrap_or(&empty).clone();
+        let manifest_container = block.body().l1_update().map(|u| u.manifest_cont().clone());
+        Self {
+            tx_segment,
+            manifest_container,
+        }
+    }
+
     pub fn tx_segment(&self) -> &OLTxSegment {
         &self.tx_segment
     }
@@ -348,4 +358,26 @@ pub fn execute_and_complete_block<S: IStateAccessor>(
 ) -> ExecResult<CompletedBlock> {
     let construct_output = construct_block(state, block_context, block_components)?;
     Ok(construct_output.completed_block)
+}
+
+/// Executes a batch of blocks sequentially, verifying each produced header
+/// matches the input block's header. Returns the OL logs collected over the batch.
+///
+/// Generic over `S: IStateAccessor` so callers can pass `OLState` directly
+/// or wrap it (e.g. `DaAccumulatingState<OLState>`) to intercept mutations.
+pub fn execute_block_batch<S: IStateAccessor>(
+    state: &mut S,
+    blocks: &[OLBlock],
+    initial_parent: &OLBlockHeader,
+) -> ExecResult<Vec<OLLog>> {
+    let mut parent = initial_parent.clone();
+    let mut batch_logs = Vec::with_capacity(blocks.len());
+
+    for block in blocks {
+        let logs = verify_block(state, block.header(), Some(&parent), block.body())?;
+        parent = block.header().clone();
+        batch_logs.push(logs);
+    }
+
+    Ok(batch_logs.concat())
 }

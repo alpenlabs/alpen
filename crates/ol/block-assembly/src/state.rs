@@ -8,13 +8,18 @@ use std::{
 };
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_ledger_types::{IAccountStateMut, IStateAccessor};
+use strata_ol_state_types::StateProvider;
 use strata_params::{Params, RollupParams};
 use strata_service::ServiceState;
 use tracing::warn;
 
 use crate::{
-    EpochSealingPolicy, MempoolProvider, context::BlockAssemblyContext, error::BlockAssemblyError,
+    BlockAssemblyAnchorContext, BlockAssemblyStateAccess, EpochSealingPolicy, MempoolProvider,
+    context::BlockAssemblyContext,
+    da_tracker::{AccumulatedDaData, EpochDaTracker, rebuild_accumulated_da_upto},
+    error::BlockAssemblyError,
     types::FullBlockTemplate,
 };
 
@@ -172,6 +177,7 @@ pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy
     ctx: Arc<BlockAssemblyContext<M, S>>,
     epoch_sealing_policy: E,
     state: BlockAssemblyState,
+    epoch_da_tracker: EpochDaTracker,
 }
 
 impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceState<M, E, S> {
@@ -204,6 +210,7 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
             ctx,
             epoch_sealing_policy,
             state: BlockAssemblyState::new(ttl),
+            epoch_da_tracker: EpochDaTracker::new_empty(),
         }
     }
 
@@ -225,6 +232,55 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
 
     pub(crate) fn state_mut(&mut self) -> &mut BlockAssemblyState {
         &mut self.state
+    }
+
+    pub(crate) fn epoch_da_tracker(&self) -> &EpochDaTracker {
+        &self.epoch_da_tracker
+    }
+
+    pub(crate) fn epoch_da_tracker_mut(&mut self) -> &mut EpochDaTracker {
+        &mut self.epoch_da_tracker
+    }
+}
+
+impl<M, E, S> BlockasmServiceState<M, E, S>
+where
+    M: MempoolProvider + Send + Sync + 'static,
+    E: EpochSealingPolicy,
+    S: StateProvider + Send + Sync + 'static,
+    S::State: BlockAssemblyStateAccess,
+    <S::State as IStateAccessor>::AccountStateMut: Clone,
+    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+        Clone,
+{
+    /// Resolves accumulated DA upto a block: returns cached data, rebuilds by re-executing epoch
+    /// blocks, or creates fresh data if parent is terminal.
+    pub(crate) async fn fetch_epoch_da_until_parent(
+        &self,
+        parent_blkid: OLBlockCommitment,
+    ) -> Result<AccumulatedDaData, BlockAssemblyError> {
+        let parent_blk = self
+            .context()
+            .fetch_ol_block(parent_blkid.blkid)
+            .await?
+            .ok_or(BlockAssemblyError::BlockNotFound(parent_blkid.blkid))?;
+
+        let parent_header = parent_blk.header();
+
+        // If parent block is terminal then we are in the new epoch and thus start afresh.
+        if parent_header.is_terminal() {
+            Ok(AccumulatedDaData::new_empty())
+        } else {
+            // Parent is not terminal, so we try to fetch accumulated da for the epoch.
+            let cur_epoch = parent_header.epoch();
+            match self
+                .epoch_da_tracker()
+                .get_accumulated_da(parent_blkid.blkid)
+            {
+                Some(da) => Ok(da.clone()),
+                None => rebuild_accumulated_da_upto(parent_blkid, cur_epoch, self.context()).await,
+            }
+        }
     }
 }
 

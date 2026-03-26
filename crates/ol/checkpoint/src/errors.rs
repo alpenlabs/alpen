@@ -1,6 +1,5 @@
 //! Error types for OL checkpoint builder.
 
-use strata_identifiers::OLBlockCommitment;
 use strata_primitives::epoch::EpochCommitment;
 use thiserror::Error;
 
@@ -14,8 +13,4 @@ pub(crate) enum CheckpointNotReady {
     /// Missing epoch summary for the given commitment.
     #[error("missing summary for epoch commitment {0:?}")]
     EpochSummary(EpochCommitment),
-
-    /// Missing terminal block header for the expected terminal commitment.
-    #[error("missing terminal block header for commitment {0:?}")]
-    TerminalBlock(OLBlockCommitment),
 }
