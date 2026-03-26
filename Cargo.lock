@@ -1076,6 +1076,7 @@ dependencies = [
  "alpen-ee-exec-chain",
  "alpen-ee-genesis",
  "alpen-ee-ol-tracker",
+ "alpen-ee-rpc-server",
  "alpen-ee-sequencer",
  "alpen-reth-evm",
  "alpen-reth-exex",
@@ -1305,6 +1306,19 @@ dependencies = [
  "alloy-primitives",
  "alpen-ee-rpc-types",
  "jsonrpsee",
+]
+
+[[package]]
+name = "alpen-ee-rpc-server"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-common",
+ "alpen-ee-rpc-api",
+ "async-trait",
+ "jsonrpsee",
+ "strata-acct-types",
+ "tokio",
 ]
 
 [[package]]
