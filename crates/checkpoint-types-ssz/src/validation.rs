@@ -351,4 +351,16 @@ mod tests {
     fn thresholds_are_consistent() {
         const { assert!(CHECKPOINT_FIXED_OVERHEAD < MAX_CHECKPOINT_PAYLOAD_SIZE) };
     }
+
+    // Pin protocol constants so accidental changes break the build.
+    #[test]
+    fn pinned_constants() {
+        const { assert!(OL_DA_DIFF_MAX_SIZE == 1 << 18) }; // 256 KiB
+        const { assert!(MAX_OL_LOGS_PER_CHECKPOINT == 1 << 14) }; // 16,384
+        const { assert!(MAX_TOTAL_LOG_PAYLOAD_BYTES == 16 * 1024) }; // 16 KiB
+        const { assert!(MAX_CHECKPOINT_PAYLOAD_SIZE == 395_000) };
+        const { assert!(CHECKPOINT_FIXED_OVERHEAD == 4273) };
+        const { assert!(SOFT_LIMIT_RATIO_NUM == 9) };
+        const { assert!(SOFT_LIMIT_RATIO_DEN == 10) };
+    }
 }
