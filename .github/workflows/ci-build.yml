@@ -40,7 +40,6 @@ env:
 
 permissions:
   contents: read
-  id-token: write
 
 # Cancel in-progress runs for the same branch (except main — let those finish)
 concurrency:
@@ -89,6 +88,9 @@ jobs:
     needs: [prepare]
     runs-on: ubuntu-latest
     environment: prod
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
