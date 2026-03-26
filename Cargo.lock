@@ -1076,6 +1076,7 @@ dependencies = [
  "alpen-ee-exec-chain",
  "alpen-ee-genesis",
  "alpen-ee-ol-tracker",
+ "alpen-ee-rpc-api",
  "alpen-ee-sequencer",
  "alpen-reth-evm",
  "alpen-reth-exex",

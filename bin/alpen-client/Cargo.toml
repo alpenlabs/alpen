@@ -36,6 +36,7 @@ alpen-ee-engine.workspace = true
 alpen-ee-exec-chain = { workspace = true, optional = true }
 alpen-ee-genesis.workspace = true
 alpen-ee-ol-tracker.workspace = true
+alpen-ee-rpc-api.workspace = true
 alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
