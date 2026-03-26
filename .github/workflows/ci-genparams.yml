@@ -104,6 +104,7 @@ jobs:
     needs: [genparams]
     if: ${{ inputs.dispatch_cd != false }}
     runs-on: ubuntu-latest
+    environment: prod
     steps:
       - name: Trigger deployments repo
         env:

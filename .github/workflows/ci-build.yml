@@ -67,11 +67,12 @@ jobs:
 
       - name: Set build matrix
         id: set-matrix
+        env:
+          INPUT: ${{ inputs.programs }}
         run: |
           # New architecture images only — pushed to shared ECR account
           ALL='["strata","alpen-client"]'
 
-          INPUT="${{ inputs.programs }}"
           if [ -z "$INPUT" ]; then
             echo "matrix={\"program\":${ALL}}" >> "$GITHUB_OUTPUT"
           else
