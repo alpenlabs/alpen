@@ -1,0 +1,15 @@
+[package]
+edition = "2021"
+name = "alpen-ee-rpc-api"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["serde"] }
+jsonrpsee = { workspace = true, features = ["server", "macros"] }
+serde.workspace = true
+
+[features]
+client = ["jsonrpsee/client"]
