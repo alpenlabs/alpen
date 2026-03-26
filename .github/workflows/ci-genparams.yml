@@ -20,6 +20,10 @@ on:
       - "crates/asm/subprotocols/checkpoint/**"
       - "docker/prover-client/elfs/**"
       - "rust-toolchain.toml"
+  pull_request: # TODO: remove before merging — temporary trigger for testing
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-genparams.yml"
   workflow_dispatch:
     inputs:
       ref:
