@@ -9,8 +9,8 @@ strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 
 reth-chainspec.workspace = true
-rsp-primitives.workspace = true
 rkyv.workspace = true
+rsp-primitives.workspace = true
 ssz.workspace = true
 zkaleido.workspace = true
 zkaleido-native-adapter.workspace = true

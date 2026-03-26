@@ -17,6 +17,14 @@ cfg_if! {
     }
 }
 
+/// Per-program VK hash representations needed during build.
+struct VkHashes {
+    /// Poseidon/BabyBear hash, used as the ELF program ID in guest `vks.rs`.
+    hash_u32: [u32; 8],
+    /// BN254 program ID (`bytes32_raw()`), required by `SP1Groth16Verifier::load`.
+    program_id: [u8; 32],
+}
+
 // Guest program names
 const EVM_EE_STF: &str = "guest-evm-ee-stf";
 const CHECKPOINT: &str = "guest-checkpoint";
@@ -53,8 +61,7 @@ fn main() {
     // HashMap to store results: mapping from elf_name to (elf_contents, vk_hash_u32, vk_hash_str)
     let mut results = HashMap::new();
 
-    // HashMap to store vk hashes of programs
-    let mut vk_hashes = HashMap::new();
+    let mut vk_hashes: HashMap<String, VkHashes> = HashMap::new();
 
     // Build each guest program along with its dependencies
     for program in &guest_programs {
@@ -116,7 +123,7 @@ fn build_program_with_dependencies(
     dependencies: &HashMap<&str, Vec<&str>>,
     built_programs: &mut HashSet<String>,
     results: &mut HashMap<String, ([u32; 8], String)>,
-    vk_hashes: &mut HashMap<String, [u32; 8]>,
+    vk_hashes: &mut HashMap<String, VkHashes>,
 ) {
     // If the program has already been built, return early
     if built_programs.contains(program) {
@@ -132,17 +139,18 @@ fn build_program_with_dependencies(
         // After dependencies are built, write vks.rs for the current program
         let mut vks_content = String::new();
         for dep in deps {
-            if let Some(vk_hash) = vk_hashes.get(*dep) {
+            if let Some(vk) = vk_hashes.get(*dep) {
                 let elf_name = format!("{}_ELF", dep.to_uppercase().replace("-", "_"));
                 let elf_name_id = format!("{elf_name}_ID");
+                let hash_u32 = vk.hash_u32;
                 vks_content.push_str(&format!(
-                    "pub const {elf_name_id}: &[u32; 8] = &{vk_hash:?};\n"
+                    "pub const {elf_name_id}: &[u32; 8] = &{hash_u32:?};\n"
                 ));
 
                 // Also embed the full Groth16 verifying key condition bytes so
                 // dependent guest programs can construct a PredicateKey at
                 // compile time without pulling in heavy SP1 SDK dependencies.
-                let condition = compute_groth16_condition(vk_hash);
+                let condition = compute_groth16_condition(&vk.program_id);
                 let condition_name =
                     format!("{}_VK_CONDITION", dep.to_uppercase().replace("-", "_"));
                 vks_content.push_str(&format!(
@@ -159,12 +167,17 @@ fn build_program_with_dependencies(
         }
     }
 
-    // Build the program and generate ELF contents and VK hash
-    let (vk_hash_u32, vk_hash_str) = generate_elf_contents_and_vk_hash(program);
+    // Build the program and generate ELF contents and VK hashes
+    let (vk_hash_u32, vk_hash_str, program_id) = generate_elf_contents_and_vk_hash(program);
 
-    // Store the results
     results.insert(program.to_string(), (vk_hash_u32, vk_hash_str));
-    vk_hashes.insert(program.to_string(), vk_hash_u32);
+    vk_hashes.insert(
+        program.to_string(),
+        VkHashes {
+            hash_u32: vk_hash_u32,
+            program_id,
+        },
+    );
     built_programs.insert(program.to_string());
 }
 
@@ -229,9 +242,12 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
     }
 }
 
-/// Generates the ELF contents and VK hash for a given program.
+/// Generates the ELF contents and VK hashes for a given program.
+///
+/// Returns `(hash_u32, bytes32_hex, program_id)` where `program_id` is the
+/// BN254-based bytes needed by `SP1Groth16Verifier::load`.
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
-fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String) {
+fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String, [u8; 32]) {
     // Check if the Clippy linter is enabled by examining the "RUSTC_WORKSPACE_WRAPPER" environment
     // variable. If it contains "clippy-driver", Clippy is active; in that case, return mock ELF
     // contents and VK hash.
@@ -284,35 +300,29 @@ fn generate_elf_contents_and_vk_hash(program: &str) -> ([u32; 8], String) {
     // Now, ensure cache validity
     let vk = ensure_cache_validity(program)
         .expect("Failed to ensure cache validity after building program");
-    (vk.hash_u32(), vk.bytes32())
+    (vk.hash_u32(), vk.bytes32(), vk.bytes32_raw())
 }
 
 #[cfg(debug_assertions)]
-fn generate_elf_contents_and_vk_hash(_program: &str) -> ([u32; 8], String) {
+fn generate_elf_contents_and_vk_hash(_program: &str) -> ([u32; 8], String, [u8; 32]) {
     get_mock_elf_contents_and_vk_hash()
 }
 
-fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String) {
+fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String, [u8; 32]) {
     (
         [0u32; 8],
         "0x0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        [0u8; 32],
     )
 }
 
 /// Computes the full Groth16 verifying key condition bytes for the given
-/// program VK hash. These bytes are the serialized `Groth16VerifyingKey`
-/// that merges the SP1 circuit VK with the program-specific VK hash,
+/// BN254 program ID. These bytes are the serialized `Groth16VerifyingKey`
+/// that merges the SP1 circuit VK with the program-specific ID,
 /// suitable for use as the condition in a `PredicateKey::Sp1Groth16`.
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
-fn compute_groth16_condition(vk_hash: &[u32; 8]) -> Vec<u8> {
-    let vk_hash_bytes: [u8; 32] = vk_hash
-        .iter()
-        .flat_map(|v| v.to_be_bytes())
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("VK hash must be 32 bytes");
-
-    let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_hash_bytes)
+fn compute_groth16_condition(program_id: &[u8; 32]) -> Vec<u8> {
+    let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, *program_id)
         .expect("Failed to load SP1 Groth16 verifier");
 
     sp1_verifier.vk.to_uncompressed_bytes()
@@ -320,7 +330,7 @@ fn compute_groth16_condition(vk_hash: &[u32; 8]) -> Vec<u8> {
 
 /// Returns empty condition bytes in debug/mock builds.
 #[cfg(debug_assertions)]
-fn compute_groth16_condition(_vk_hash: &[u32; 8]) -> Vec<u8> {
+fn compute_groth16_condition(_program_id: &[u8; 32]) -> Vec<u8> {
     Vec::new()
 }
 

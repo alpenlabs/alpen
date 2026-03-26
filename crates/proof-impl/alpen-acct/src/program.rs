@@ -43,7 +43,7 @@ impl ZkVmProgram for EeAcctProgram {
     }
 
     fn proof_type() -> ProofType {
-        ProofType::Compressed
+        ProofType::Groth16
     }
 
     fn prepare_input<'a, B>(input: &'a Self::Input) -> ZkVmInputResult<B::Input>
