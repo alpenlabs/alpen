@@ -3,7 +3,7 @@ Strata service wrapper with Strata-specific health checks.
 """
 
 import logging
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from common.rpc import JsonRpcClient
 from common.rpc_types.strata import *
@@ -91,6 +91,36 @@ class StrataService(RpcService):
 
         wait_until(lambda: rpc.call(method) is not None, error_with=err, timeout=timeout)
         return rpc
+
+    def wait_for_account_genesis_epoch_commitment(
+        self,
+        account_id: int,
+        rpc: JsonRpcClient | None = None,
+        timeout: int = 20,
+        poll_interval: float = 0.5,
+    ) -> Any:
+        """
+        Wait until an account's genesis epoch commitment is available.
+
+        Args:
+            account_id: Account identifier to query.
+            rpc: Optional RPC client. If None, creates a new one.
+            timeout: Maximum time to wait in seconds.
+            poll_interval: How often to poll.
+
+        Returns:
+            The genesis epoch commitment returned by the RPC once available.
+        """
+        if rpc is None:
+            rpc = self.create_rpc()
+
+        return wait_until_with_value(
+            lambda: rpc.strata_getAccountGenesisEpochCommitment(account_id),
+            lambda commitment: commitment is not None,
+            error_with=f"Timed out waiting for account {account_id} genesis commitment",
+            timeout=timeout,
+            step=poll_interval,
+        )
 
     def get_sync_status(self, rpc: JsonRpcClient | None = None) -> ChainSyncStatus:
         """
