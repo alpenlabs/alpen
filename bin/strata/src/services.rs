@@ -15,7 +15,7 @@ use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 
 use crate::{
-    context::check_and_init_genesis,
+    context::ensure_genesis,
     helpers::rollup_to_btcio_params,
     run_context::{RunContext, ServiceHandles},
 };
@@ -213,7 +213,7 @@ pub(crate) fn start_strata_services(
     // Check and do genesis if not yet. This should be done after asm/csm/btcio and before mempool
     // because genesis requires asm to be working and mempool and other services expect genesis to
     // have happened.
-    check_and_init_genesis(nodectx.storage().as_ref(), nodectx.ol_params())?;
+    ensure_genesis(nodectx.storage().as_ref(), nodectx.ol_params())?;
 
     // Start mempool service
     let mempool_handle = Arc::new(start_mempool(&nodectx)?);

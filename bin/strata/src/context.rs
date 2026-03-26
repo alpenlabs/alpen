@@ -363,10 +363,15 @@ fn init_status_channel(
     Ok(StatusChannel::new(cur_state, cur_block, l1_status, None, None).into())
 }
 
-pub(crate) fn check_and_init_genesis(
-    storage: &NodeStorage,
-    ol_params: &OLParams,
-) -> Result<(L1BlockCommitment, ClientState), InitError> {
+/// Ensures CL and OL genesis.
+pub(crate) fn ensure_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
+    ensure_ol_genesis(storage, ol_params)?;
+    ensure_cl_genesis(storage, ol_params)
+}
+
+/// Ensure client state genesis
+fn ensure_cl_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
+    // Check for client state genesis
     let csman = storage.client_state();
     let recent_state = csman
         .fetch_most_recent_state()
@@ -374,18 +379,30 @@ pub(crate) fn check_and_init_genesis(
 
     match recent_state {
         None => {
-            // Initialize OL genesis block and state
-            init_ol_genesis(ol_params, storage)
-                .map_err(|e| InitError::StorageCreation(e.to_string()))?;
-
             // Create and insert init client state into db.
             let init_state = ClientState::default();
             let l1blk = ol_params.last_l1_block;
             let update = ClientUpdateOutput::new_state(init_state.clone());
             csman.put_update_blocking(&l1blk, update.clone())?;
-            Ok((l1blk, init_state))
+            Ok(())
         }
-        Some(recent_state) => Ok(recent_state),
+        Some(_) => Ok(()),
+    }
+}
+
+/// Ensure OL genesis
+fn ensure_ol_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
+    match storage.ol_block().get_canonical_block_at_blocking(0)? {
+        None => {
+            // Initialize OL genesis block and state
+            init_ol_genesis(ol_params, storage)
+                .map_err(|e| InitError::StorageCreation(e.to_string()))?;
+            Ok(())
+        }
+        Some(_) => {
+            // Do nothing, genesis block exists
+            Ok(())
+        }
     }
 }
 

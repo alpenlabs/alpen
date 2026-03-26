@@ -24,6 +24,8 @@ pub(crate) fn init_ol_genesis(
     } = build_genesis_artifacts(ol_params)?;
     let genesis_blkid = *commitment.blkid();
 
+    // NOTE: all of the following db operations SHOULD be atomic
+
     // Insert creation epoch 0 for all genesis accounts.
     ol_state.ledger.accounts.iter().try_for_each(|entry| {
         info!(%entry.id, "inserting account info");
