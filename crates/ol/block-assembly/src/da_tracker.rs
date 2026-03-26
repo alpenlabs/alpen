@@ -146,7 +146,7 @@ async fn fetch_state<C: BlockAssemblyAnchorContext>(
     Ok(ol_state)
 }
 
-/// Contains accumulated DA data for some epoch which includes state diff accumulator and OL logs.
+/// An 'append-only' container of state diff and OL logs accumulated DA data for some epoch.
 #[derive(Clone, Debug)]
 pub(crate) struct AccumulatedDaData {
     accumulator: EpochDaAccumulator,

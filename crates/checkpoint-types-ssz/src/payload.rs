@@ -180,9 +180,8 @@ mod tests {
     use strata_identifiers::{AccountSerial, Buf32, OLBlockId};
     use strata_ol_chain_types_new::OLLog;
 
-    use crate::MAX_TOTAL_LOG_PAYLOAD_BYTES;
-
     use super::*;
+    use crate::MAX_TOTAL_LOG_PAYLOAD_BYTES;
 
     fn default_terminal_header_complement() -> TerminalHeaderComplement {
         TerminalHeaderComplement::new(0, OLBlockId::null(), Buf32::zero(), Buf32::zero())

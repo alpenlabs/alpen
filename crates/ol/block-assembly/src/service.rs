@@ -120,7 +120,7 @@ where
 
     let parent_blkid = config.parent_block_id();
     let parent_da = state
-        .fetch_epoch_da_till_parent(config.parent_block_commitment())
+        .fetch_epoch_da_until_parent(config.parent_block_commitment())
         .await?;
 
     let result = generate_block_template_inner(

@@ -13,8 +13,8 @@ use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
 use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
-    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update,
-    OLTransaction, OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
+    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTransaction,
+    OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
 };
 use strata_ol_mempool::{
     MempoolTxInvalidReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction,
@@ -476,8 +476,7 @@ where
 
                 let mut tentative = log_metrics;
                 tentative.add_logs(&tx_logs);
-                let da_diff_size =
-                    staging_state.accumulator().estimated_encoded_size();
+                let da_diff_size = staging_state.accumulator().estimated_encoded_size();
                 let verdict = checkpoint_size_verdict(da_diff_size, &tentative);
 
                 match verdict {

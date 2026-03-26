@@ -223,8 +223,7 @@ mod tests {
 
     #[test]
     fn validate_components_rejects_too_many_logs() {
-        let result =
-            validate_checkpoint_components(0, MAX_OL_LOGS_PER_CHECKPOINT as usize + 1, 0);
+        let result = validate_checkpoint_components(0, MAX_OL_LOGS_PER_CHECKPOINT as usize + 1, 0);
         assert!(matches!(
             result,
             Err(CheckpointPayloadError::OLLogsTooLarge { .. })

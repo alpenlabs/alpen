@@ -234,12 +234,12 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
         &mut self.state
     }
 
-    pub(crate) fn epoch_da_tracker_mut(&mut self) -> &mut EpochDaTracker {
-        &mut self.epoch_da_tracker
-    }
-
     pub(crate) fn epoch_da_tracker(&self) -> &EpochDaTracker {
         &self.epoch_da_tracker
+    }
+
+    pub(crate) fn epoch_da_tracker_mut(&mut self) -> &mut EpochDaTracker {
+        &mut self.epoch_da_tracker
     }
 }
 
@@ -255,7 +255,7 @@ where
 {
     /// Resolves accumulated DA upto a block: returns cached data, rebuilds by re-executing epoch
     /// blocks, or creates fresh data if parent is terminal.
-    pub(crate) async fn fetch_epoch_da_till_parent(
+    pub(crate) async fn fetch_epoch_da_until_parent(
         &self,
         parent_blkid: OLBlockCommitment,
     ) -> Result<AccumulatedDaData, BlockAssemblyError> {
