@@ -223,9 +223,7 @@ class StrataService(RpcService):
         def predicate(v):
             if v is None:
                 return False
-            if differs_from is not None and v == differs_from:
-                return False
-            return True
+            return differs_from is None or v != differs_from
 
         return wait_until_with_value(
             lambda: rpc.strata_getL1HeaderCommitment(height),
