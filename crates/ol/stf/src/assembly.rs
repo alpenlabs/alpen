@@ -207,15 +207,20 @@ impl BlockComponents {
 
     /// Create block components with the given transaction payloads.
     ///
-    /// Each payload gets default constraints, empty effects, and empty proofs.
+    /// Each payload gets default constraints and empty proofs. GAM payloads
+    /// automatically get a zero-value message effect matching their target.
     pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
         let txs = payloads
             .into_iter()
             .map(|p| {
+                let mut effects = TxEffects::default();
+                if let TransactionPayload::GenericAccountMessage(ref gam) = p {
+                    effects.push_message(*gam.target(), 0, vec![]);
+                }
                 let data = OLTransactionData {
                     payload: p,
                     constraints: TxConstraints::default(),
-                    effects: TxEffects::default(),
+                    effects,
                 };
                 let proofs = TxProofs::new_empty();
                 OLTransaction::new(data, proofs)

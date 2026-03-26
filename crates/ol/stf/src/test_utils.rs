@@ -208,11 +208,8 @@ pub fn build_chain_with_transactions(
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
             );
-            let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(gam_target).expect("GamTxPayload creation should succeed"),
-            );
             BlockComponents::new(
-                OLTxSegment::new(vec![make_simple_tx(tx)])
+                OLTxSegment::new(vec![make_gam_tx(gam_target)])
                     .expect("tx segment should be within limits"),
                 Some(
                     OLL1ManifestContainer::new(vec![dummy_manifest])
@@ -222,20 +219,21 @@ pub fn build_chain_with_transactions(
         } else if i % 4 == 1 {
             // GAM to snark account: populates the snark's inbox for later processing
             let msg_data = format!("inbox msg at slot {i}").into_bytes();
-            let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(snark_id).expect("GamTxPayload creation should succeed"),
-            );
 
             let msg_entry = MessageEntry::new(
                 crate::SEQUENCER_ACCT_ID,
                 epoch,
-                MsgPayload::new(BitcoinAmount::from_sat(0), msg_data),
+                MsgPayload::new(BitcoinAmount::from_sat(0), msg_data.clone()),
             );
             let proof = inbox_tracker.add_message(&msg_entry);
             pending_msgs.push(msg_entry);
             pending_proofs.push(proof);
 
-            BlockComponents::new_txs(vec![tx])
+            let gam_tx = OLTransaction::new(
+                OLTransactionData::new_gam(snark_id, msg_data),
+                TxProofs::new_empty(),
+            );
+            BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
         } else if i % 4 == 3 && !pending_msgs.is_empty() {
             // Complex SnarkAccountUpdate: processes inbox messages with valid MMR proofs
             // and transfers funds to the recipient account
@@ -250,10 +248,11 @@ pub fn build_chain_with_transactions(
             BlockComponents::new_txs_from_ol_transactions(vec![tx])
         } else if i % 4 == 2 {
             // GAM to regular target account
-            let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(gam_target).expect("GamTxPayload creation should succeed"),
+            let gam_tx = OLTransaction::new(
+                OLTransactionData::new_gam(gam_target, vec![]),
+                TxProofs::new_empty(),
             );
-            BlockComponents::new_txs(vec![tx])
+            BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
         } else {
             BlockComponents::new_empty()
         };
@@ -591,17 +590,9 @@ pub fn create_empty_account(state: &mut OLState, account_id: AccountId) -> Accou
         .expect("Should create empty account")
 }
 
-/// Helper to make a simple OLTransaction from a payload (default constraints, empty
-/// effects/proofs).
-pub fn make_simple_tx(payload: TransactionPayload) -> OLTransaction {
-    OLTransaction::new(
-        OLTransactionData {
-            payload,
-            constraints: TxConstraints::default(),
-            effects: TxEffects::default(),
-        },
-        TxProofs::new_empty(),
-    )
+/// Helper to make a GAM transaction targeting the given account with empty payload data.
+pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
+    OLTransaction::new(OLTransactionData::new_gam(dest, vec![]), TxProofs::new_empty())
 }
 
 /// Helper to execute a transaction in a non-genesis block.

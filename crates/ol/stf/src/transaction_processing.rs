@@ -22,8 +22,8 @@ pub fn process_block_tx_segment<S: IStateAccessor>(
     tx_seg: &OLTxSegment,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
-    for tx in tx_seg.txs() {
-        process_single_tx(state, tx, context)?;
+    for (i, tx) in tx_seg.txs().iter().enumerate() {
+        process_single_tx(state, tx, context).map_err(|e| e.with_tx(tx.compute_txid(), i))?
     }
 
     Ok(())
@@ -43,16 +43,8 @@ pub fn process_single_tx<S: IStateAccessor>(
 
     // 2. Depending on its payload type, we handle it different ways.
     match tx.payload() {
-        TransactionPayload::GenericAccountMessage(gam) => {
-            // Construct the message we want to send and then hand it off.
-            let mp = MsgPayload::new(BitcoinAmount::from(0), vec![]);
-            account_processing::process_message(
-                state,
-                SEQUENCER_ACCT_ID,
-                *gam.target(),
-                mp,
-                context.basic_context(),
-            )?;
+        TransactionPayload::GenericAccountMessage(gam_payload) => {
+            process_gam_tx(state, gam_payload, tx.data().effects(), context)?;
         }
 
         TransactionPayload::SnarkAccountUpdate(sau_payload) => {
@@ -63,6 +55,45 @@ pub fn process_single_tx<S: IStateAccessor>(
             process_update_tx(state, target, sau_payload, effects, tx_proofs, context)?;
         }
     }
+
+    Ok(())
+}
+
+fn process_gam_tx<S: IStateAccessor>(
+    state: &mut S,
+    gam: &GamTxPayload,
+    fx: &TxEffects,
+    context: &TxExecContext<'_>,
+) -> ExecResult<()> {
+    // Check that we're not sending any value via transfers.
+    if fx.transfers_iter().count() != 0 {
+        return Err(ExecError::TxStructureCheckFailed("nonzero transfers"));
+    }
+
+    // Extract the message we want to send.
+    let mut msgs_iter = fx.messages_iter();
+    let msg = match (msgs_iter.next(), msgs_iter.next()) {
+        (Some(m), None) if m.payload().value().is_zero() => m,
+        _ => {
+            return Err(ExecError::TxStructureCheckFailed(
+                "multiple messages or nonzero value",
+            ));
+        }
+    };
+
+    // This is weird, it should make more sense when accounts have senders.
+    if msg.dest() != *gam.target() {
+        return Err(ExecError::TxStructureCheckFailed("mismatched target"));
+    }
+
+    // Hand off the message we want to send.
+    account_processing::process_message(
+        state,
+        SEQUENCER_ACCT_ID,
+        *gam.target(),
+        msg.payload().clone(),
+        context.basic_context(),
+    )?;
 
     Ok(())
 }

@@ -3,7 +3,6 @@
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{GamTxPayload, TransactionPayload};
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
 
@@ -19,8 +18,7 @@ fn test_snark_inbox_message_insertion() {
     // value=0)
 
     // Create GAM transaction
-    let gam_tx_payload = GamTxPayload::new(snark_id).expect("Should create GAM payload");
-    let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(gam_tx_payload));
+    let gam_tx = make_gam_tx(snark_id);
 
     // Execute transaction
     let (slot, epoch) = (1, 0);
@@ -72,9 +70,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     let mut inbox_tracker = InboxMmrTracker::new();
 
     // Step 1: Send a message to snark account inbox
-    let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
-    ));
+    let gam_tx = make_gam_tx(snark_id);
     let (slot, epoch) = (1, 0);
     let blk1 = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
@@ -183,7 +179,7 @@ fn test_snark_update_invalid_message_index() {
         result.is_err(),
         "Update with wrong message index should fail"
     );
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidMsgIndex { expected, got, .. }) => {
             assert_eq!(expected, 0); // Should stay at 0
             assert_eq!(got, 5); // But claimed 5
@@ -201,9 +197,7 @@ fn test_snark_update_invalid_message_proof() {
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Step 1: Send a gam message to snark's inbox
-    let gam_tx = make_simple_tx(TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
-    ));
+    let gam_tx = make_gam_tx(snark_id);
     let (slot, epoch) = (1, 0);
     let blk = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
@@ -245,7 +239,7 @@ fn test_snark_update_invalid_message_proof() {
         result.is_err(),
         "Update with invalid message proof should fail"
     );
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidMessageProof { msg_idx, .. }) => {
             assert_eq!(msg_idx, 0, "Should fail on message index 0");
         }
@@ -266,9 +260,7 @@ fn test_snark_update_skip_message_out_of_order() {
     create_empty_account(&mut state, recipient_id);
 
     // Step 1: Send TWO messages to inbox
-    let gam_tx1 = make_simple_tx(TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
-    ));
+    let gam_tx1 = make_gam_tx(snark_id);
     let (slot, epoch) = (1, 0);
     let blk = execute_tx_in_block(
         &mut state,
@@ -280,9 +272,7 @@ fn test_snark_update_skip_message_out_of_order() {
     .expect("GAM 1 should succeed");
     let header = blk.header();
 
-    let gam_tx2 = make_simple_tx(TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(snark_id).expect("Should create GAM payload"),
-    ));
+    let gam_tx2 = make_gam_tx(snark_id);
     let blk = execute_tx_in_block(&mut state, header, gam_tx2, slot + 1, epoch)
         .expect("GAM 2 should succeed");
     let header = blk.header();
@@ -311,7 +301,7 @@ fn test_snark_update_skip_message_out_of_order() {
     let result = execute_tx_in_block(&mut state, header, invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update skipping messages should fail");
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidMsgIndex { expected, got, .. }) => {
             assert_eq!(
                 expected, 0,

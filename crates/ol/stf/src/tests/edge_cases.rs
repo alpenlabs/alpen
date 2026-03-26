@@ -92,7 +92,7 @@ fn test_snark_update_from_zero_balance_account() {
     // Should fail due to insufficient balance
     assert!(result.is_err(), "Transfer from zero balance should fail");
 
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::BalanceUnderflow => {}
         err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
@@ -309,7 +309,7 @@ fn test_snark_update_max_bitcoin_supply() {
     // Should fail due to insufficient balance
     assert!(result.is_err(), "Update exceeding balance should fail");
 
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::BalanceUnderflow => {}
         err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
@@ -417,15 +417,13 @@ fn test_snark_update_overflow_u64_boundary() {
     let result1 = execute_tx_in_block(&mut state, genesis_block.header(), tx1, slot, epoch);
 
     // Should fail due to insufficient balance
-    assert!(
-        result1.is_err(),
-        "Update with total exceeding available balance should fail"
-    );
-
-    assert!(
-        matches!(result1, Err(ExecError::AmountOverflow)),
-        "Sending more than bitcoin limits, got: {result1:?}"
-    );
+    match result1 {
+        Err(e) => assert!(
+            matches!(e.into_base(), ExecError::AmountOverflow),
+            "Expected AmountOverflow"
+        ),
+        Ok(_) => panic!("Update with total exceeding available balance should fail"),
+    }
 
     // Verify no state change occurred
     let acct_state = state.get_account_state(snark_id).unwrap().unwrap();
@@ -452,10 +450,13 @@ fn test_snark_update_overflow_u64_boundary() {
 
     let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx2, slot, epoch);
 
-    assert!(
-        matches!(result2, Err(ExecError::AmountOverflow)),
-        "Sending more than bitcoin limits, got: {result2:?}"
-    );
+    match result2 {
+        Err(e) => assert!(
+            matches!(e.into_base(), ExecError::AmountOverflow),
+            "Expected AmountOverflow"
+        ),
+        Ok(_) => panic!("Sending more than bitcoin limits should fail"),
+    }
 
     // Verify recipients have no balance (no partial execution)
     let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();

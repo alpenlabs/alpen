@@ -34,7 +34,7 @@ fn test_snark_update_invalid_sequence_number() {
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update with wrong sequence should fail");
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidUpdateSequence { expected, got, .. }) => {
             assert_eq!(expected, 0);
             assert_eq!(got, 5);
@@ -75,7 +75,7 @@ fn test_snark_update_insufficient_balance() {
         result.is_err(),
         "Update with insufficient balance should fail"
     );
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::BalanceUnderflow => {}
         err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
@@ -110,7 +110,7 @@ fn test_snark_update_nonexistent_recipient() {
         result.is_err(),
         "Update to non-existent account should fail"
     );
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::UnknownAccount(id) => {
             assert_eq!(id, nonexistent_id);
         }

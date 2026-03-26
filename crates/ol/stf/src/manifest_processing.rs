@@ -10,8 +10,8 @@ use strata_bridge_types::DepositDescriptor;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::IStateAccessor;
-use strata_msg_fmt::{Msg, MsgRef, TypeId};
-use strata_ol_chain_types_new::{OLL1ManifestContainer, OLL1Update};
+use strata_msg_fmt::Msg;
+use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_msg_types::DepositMsgData;
 
 use crate::{

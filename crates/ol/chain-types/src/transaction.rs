@@ -242,6 +242,19 @@ impl OLTransactionData {
         }
     }
 
+    /// Creates a GAM transaction data targeting the given account with a zero-value message
+    /// containing the provided payload data.
+    pub fn new_gam(dest: AccountId, data: Vec<u8>) -> Self {
+        let payload = TransactionPayload::GenericAccountMessage(GamTxPayload { target: dest });
+        let mut effects = TxEffects::default();
+        effects.push_message(dest, 0, data);
+        Self {
+            payload,
+            constraints: TxConstraints::default(),
+            effects,
+        }
+    }
+
     /// Sets the constraints on this transaction data, consuming and returning self.
     pub fn with_constraints(mut self, constraints: TxConstraints) -> Self {
         self.constraints = constraints;

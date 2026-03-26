@@ -180,7 +180,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
         "Update with invalid ledger reference should fail"
     );
 
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
             assert_eq!(
                 ref_idx, manifest1_index,
@@ -275,10 +275,12 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     );
 
     match result {
-        Err(ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. })) => {
-            assert_eq!(ref_idx, manifest1_index);
-        }
-        Err(err) => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
+                assert_eq!(ref_idx, manifest1_index);
+            }
+            err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+        },
         Ok(_) => panic!("Update with mismatched proof index should fail"),
     }
 }

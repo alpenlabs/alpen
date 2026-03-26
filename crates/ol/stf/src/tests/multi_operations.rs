@@ -196,7 +196,7 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     assert!(result.is_err(), "Update exceeding balance should fail");
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::BalanceUnderflow => {}
         err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }

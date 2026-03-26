@@ -1,12 +1,12 @@
 //! Unit tests for the OL STF implementation.
 
-use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
 use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
 use strata_ol_chain_types_new::*;
 use strata_ol_state_support_types::{IndexerState, WriteTrackingState};
-use strata_ol_state_types::{IStateBatchApplicable, OLSnarkAccountState, OLState};
+use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 
 use crate::{
@@ -28,6 +28,7 @@ fn genesis_block_components() -> BlockComponents {
     BlockComponents::new_manifests(vec![dummy_manifest])
 }
 
+#[expect(dead_code, reason = "didn't want to remove this")]
 fn setup_terminal_genesis_with_snark_account(
     state: &mut OLState,
     snark_id: AccountId,
@@ -149,9 +150,7 @@ fn test_genesis_with_initial_transactions() {
 
     // Create some test transactions for genesis
     let target = test_account_id(1);
-    let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
-    );
+    let gam_tx = make_gam_tx(target);
 
     // Create genesis components with both transactions and manifest (to make it terminal)
     let dummy_manifest = AsmManifest::new(
@@ -161,8 +160,7 @@ fn test_genesis_with_initial_transactions() {
         vec![],
     );
     let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![make_simple_tx(tx.clone())])
-            .expect("tx segment should be within limits"),
+        OLTxSegment::new(vec![gam_tx.clone()]).expect("tx segment should be within limits"),
         Some(
             OLL1ManifestContainer::new(vec![dummy_manifest])
                 .expect("single manifest should succeed"),
@@ -663,9 +661,7 @@ fn test_verify_block_with_transactions() {
 
     // Create a transaction
     let target = test_account_id(1);
-    let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
-    );
+    let gam_tx = make_gam_tx(target);
 
     // Assemble genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
@@ -675,7 +671,7 @@ fn test_verify_block_with_transactions() {
         vec![],
     );
     let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![make_simple_tx(tx)]).expect("tx segment should be within limits"),
+        OLTxSegment::new(vec![gam_tx]).expect("tx segment should be within limits"),
         Some(
             OLL1ManifestContainer::new(vec![dummy_manifest])
                 .expect("single manifest should succeed"),
@@ -983,9 +979,7 @@ fn test_verify_rejects_mismatched_logs_root() {
 
     // Create a block with a transaction (which will generate logs)
     let target = test_account_id(1);
-    let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
-    );
+    let gam_tx = make_gam_tx(target);
 
     // Create genesis with transaction and manifest (terminal)
     let dummy_manifest = AsmManifest::new(
@@ -995,7 +989,7 @@ fn test_verify_rejects_mismatched_logs_root() {
         vec![],
     );
     let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![make_simple_tx(tx)]).expect("tx segment should be within limits"),
+        OLTxSegment::new(vec![gam_tx]).expect("tx segment should be within limits"),
         Some(
             OLL1ManifestContainer::new(vec![dummy_manifest])
                 .expect("single manifest should succeed"),
@@ -1052,16 +1046,13 @@ fn test_verify_rejects_mismatched_body_root() {
 
     // Assemble a block with a transaction
     let target = test_account_id(1);
-    let tx = TransactionPayload::GenericAccountMessage(
-        GamTxPayload::new(target).expect("GamTxPayload creation should succeed"),
-    );
 
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
         &mut state,
         &genesis_info,
         None,
-        BlockComponents::new_txs(vec![tx]),
+        BlockComponents::new_txs_from_ol_transactions(vec![make_gam_tx(target)]),
     )
     .expect("Genesis assembly should succeed");
 
