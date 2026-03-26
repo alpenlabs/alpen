@@ -3,7 +3,7 @@
 use strata_acct_types::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
-use strata_snark_acct_sys as snark_sys;
+use strata_snark_acct_sys::{self as snark_sys, SnarkAccountUpdateData};
 use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 
 use crate::{
@@ -42,9 +42,10 @@ pub fn process_single_tx<S: IStateAccessor>(
     check_tx_constraints(tx.constraints(), state)?;
 
     // 2. Depending on its payload type, we handle it different ways.
-    match tx.payload() {
+    let sender_acct = match tx.payload() {
         TransactionPayload::GenericAccountMessage(gam_payload) => {
-            process_gam_tx(state, gam_payload, tx.data().effects(), context)?;
+            verify_gam_tx(gam_payload, tx.data().effects())?;
+            SEQUENCER_ACCT_ID
         }
 
         TransactionPayload::SnarkAccountUpdate(sau_payload) => {
@@ -52,25 +53,31 @@ pub fn process_single_tx<S: IStateAccessor>(
             let effects = tx.data().effects();
             let tx_proofs = tx.proofs();
 
-            process_update_tx(state, target, sau_payload, effects, tx_proofs, context)?;
+            // Call out to verify the update.
+            process_update_tx(state, sau_payload, effects, tx_proofs)?;
+
+            target
         }
-    }
+    };
+
+    // 3. Apply effects.
+    apply_tx_effects(
+        state,
+        sender_acct,
+        tx.data().effects(),
+        context.basic_context(),
+    )?;
 
     Ok(())
 }
 
-fn process_gam_tx<S: IStateAccessor>(
-    state: &mut S,
-    gam: &GamTxPayload,
-    fx: &TxEffects,
-    context: &TxExecContext<'_>,
-) -> ExecResult<()> {
-    // Check that we're not sending any value via transfers.
+fn verify_gam_tx(gam: &GamTxPayload, fx: &TxEffects) -> ExecResult<()> {
+    // 1. Check that we're not sending any value via transfers.
     if fx.transfers_iter().count() != 0 {
         return Err(ExecError::TxStructureCheckFailed("nonzero transfers"));
     }
 
-    // Extract the message we want to send.
+    // 2. Extract the message we want to send.
     let mut msgs_iter = fx.messages_iter();
     let msg = match (msgs_iter.next(), msgs_iter.next()) {
         (Some(m), None) if m.payload().value().is_zero() => m,
@@ -86,71 +93,33 @@ fn process_gam_tx<S: IStateAccessor>(
         return Err(ExecError::TxStructureCheckFailed("mismatched target"));
     }
 
-    // Hand off the message we want to send.
-    account_processing::process_message(
-        state,
-        SEQUENCER_ACCT_ID,
-        *gam.target(),
-        msg.payload().clone(),
-        context.basic_context(),
-    )?;
-
     Ok(())
 }
 
 fn process_update_tx<S: IStateAccessor>(
     state: &mut S,
-    target: AccountId,
     sau_payload: &SauTxPayload,
     effects: &TxEffects,
     tx_proofs: &TxProofs,
-    context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Read account state and verify effects are safe to apply.
+    let target = *sau_payload.target();
     let account_state = state
         .get_account_state(target)?
         .ok_or(ExecError::UnknownAccount(target))?;
-    let snark_acct_state = account_state
-        .as_snark_account()
-        .map_err(|_| ExecError::IncorrectTxTargetType)?;
 
     verify_effects_safe(effects, state, account_state)?;
 
-    // 2. Build SnarkAccountUpdateData from the new tx types.
-    let op = sau_payload.operation();
-    let upd = op.update();
-    let proof_state = ProofState::new(
-        upd.proof_state().inner_state_root(),
-        upd.proof_state().new_next_msg_idx(),
-    );
-    let ledger_refs = convert_sau_ledger_refs(op.ledger_refs());
-    let processed_messages: Vec<_> = op.messages_iter().cloned().collect();
-
-    let update_data = snark_sys::SnarkAccountUpdateData::new(
-        Seqno::from(upd.seq_no()),
-        proof_state,
-        processed_messages,
-        ledger_refs,
-        effects.clone(),
-        upd.extra_data().to_vec(),
-    );
-
-    // 3. Verify the update by calling out to the snark account library.
+    // 2. Verify the update by calling out to the snark account library.
     let state_ctx = TxProofVerificationContext::from_account_and_state(state, account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
     let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
-    snark_sys::verify_update_correctness(target, snark_acct_state, &update_data, &mut verifier)?;
+    verify_snark_acct_update(account_state, sau_payload, effects, &mut verifier)?;
 
-    // 4. Actually take balance and write new account inner state.
+    // 3. Actually take balance and write new account inner state.
+    let upd = sau_payload.operation().update();
     state.update_account(target, |astate| -> ExecResult<_> {
         // SAFETY: These panics are checked ahead of time so can never get hit.
-
-        // Deduct balance for all effects first.
-        let total_sent = effects.get_total_value_sent().unwrap();
-        let coin = astate
-            .take_balance(total_sent)
-            .expect("ol/stf: account changed balance");
-        coin.safely_consume_unchecked(); // maybe we'll use this in the future
 
         // Extract the snark account state so we can modify it.
         let acct_tstate = astate
@@ -171,10 +140,55 @@ fn process_update_tx<S: IStateAccessor>(
         Ok(())
     })??;
 
-    // Step 5: Apply effects.
-    apply_tx_effects(state, target, effects, context.basic_context())?;
+    Ok(())
+}
+
+fn verify_snark_acct_update(
+    account_state: &impl IAccountState,
+    sau_payload: &SauTxPayload,
+    effects: &TxEffects,
+    proof_verifier: &mut impl TxProofVerifier,
+) -> ExecResult<()> {
+    // 1. Extract snark account specific state.
+    let snark_acct_state = account_state
+        .as_snark_account()
+        .map_err(|_| ExecError::IncorrectTxTargetType)?;
+
+    // 2. Assemble the internal snark account update data.
+    let update_data = build_snark_acct_update_data(sau_payload, effects);
+
+    // 3. Actually call out to the verifier logic.
+    snark_sys::verify_update_correctness(
+        *sau_payload.target(),
+        snark_acct_state,
+        &update_data,
+        proof_verifier,
+    )?;
 
     Ok(())
+}
+
+fn build_snark_acct_update_data(
+    sau_payload: &SauTxPayload,
+    effects: &TxEffects,
+) -> SnarkAccountUpdateData {
+    let op = sau_payload.operation();
+    let upd = op.update();
+    let proof_state = ProofState::new(
+        upd.proof_state().inner_state_root(),
+        upd.proof_state().new_next_msg_idx(),
+    );
+    let ledger_refs = convert_sau_ledger_refs(op.ledger_refs());
+    let processed_messages: Vec<_> = op.messages_iter().cloned().collect();
+
+    SnarkAccountUpdateData::new(
+        Seqno::from(upd.seq_no()),
+        proof_state,
+        processed_messages,
+        ledger_refs,
+        effects.clone(),
+        upd.extra_data().to_vec(),
+    )
 }
 
 /// Converts `SauTxLedgerRefs` (new chain type) to `LedgerRefs` (snark-acct-types).
@@ -202,6 +216,24 @@ fn apply_tx_effects<S: IStateAccessor>(
     effects: &TxEffects,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
+    let total_sent = effects
+        .get_total_value_sent()
+        .ok_or(ExecError::AmountOverflow)?;
+
+    // 1. Subtract funds from account if not the magic sequencer account.
+    //
+    // In practice, right now, this shouldn't matter beacuse we never use this
+    // account ID unless it's a GAM tx, which we separately check only sends 0
+    // value.
+    if source != SEQUENCER_ACCT_ID && !total_sent.is_zero() {
+        state.update_account(source, |astate| {
+            let coin = astate.take_balance(total_sent).map_err(ExecError::Acct)?;
+            coin.safely_consume_unchecked(); // take from this later
+            ExecResult::Ok(())
+        })??;
+    }
+
+    // 2. Send funds out.
     for t in effects.transfers_iter() {
         account_processing::process_transfer(state, source, t.dest(), t.value(), context)?;
     }
