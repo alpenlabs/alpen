@@ -78,8 +78,7 @@ fn dimension_verdict(value: usize, hard_limit: usize) -> CheckpointSizeVerdict {
 
 /// Computes the overall checkpoint size verdict by checking every dimension.
 ///
-/// `state_diff_size` is the estimated DA diff size (from
-/// [`EpochDaAccumulator::estimated_encoded_size`]).
+/// `state_diff_size` is the estimated DA diff size.
 pub fn checkpoint_size_verdict(
     state_diff_size: usize,
     log_metrics: &LogMetrics,

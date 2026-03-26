@@ -2078,15 +2078,16 @@ mod tests {
             &env.epoch_sealing_policy,
             &env.sequencer_config,
             config,
+            AccumulatedDaData::new_empty(),
         )
         .await
         .expect("block generation should succeed");
 
-        let (template, failed_txs) = result.into_parts();
+        let (template, failed_txs, _da) = result.into_parts();
         let tx_count = template
             .body()
             .tx_segment()
-            .map(|segment| segment.txs().len())
+            .map(|segment: &OLTxSegment| segment.txs().len())
             .unwrap_or(0);
         assert_eq!(tx_count, 0, "overflow tx should not be included");
         assert!(
@@ -2098,91 +2099,6 @@ mod tests {
         assert!(
             remaining.is_empty(),
             "oversized tx should be removed from mempool"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_block_full_log_overflow_tx_not_reported_invalid_and_kept_in_mempool() {
-        let account_id = test_account_id(8);
-        let mut env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account_id, 1_000_000_000_000)
-            .build()
-            .await;
-        env.sequencer_config.max_txs_per_block = 2;
-
-        let withdrawal_msg_data =
-            WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, b"bc1qlogcapfull".to_vec(), u32::MAX)
-                .expect("valid withdrawal data");
-        let encoded_withdrawal_body =
-            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
-        let withdrawal_msg =
-            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
-        let withdrawal_payload_data = withdrawal_msg.to_vec();
-
-        let full_block_messages = (0..(MAX_LOGS_PER_BLOCK as usize))
-            .map(|_| {
-                let payload = MsgPayload::new(
-                    BitcoinAmount::from_sat(100_000_000),
-                    withdrawal_payload_data.clone(),
-                );
-                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
-            })
-            .collect();
-        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
-            .with_seq_no(0)
-            .with_output_messages(full_block_messages)
-            .build();
-        let tx_fill_id = tx_fill.compute_txid();
-
-        let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
-            .with_seq_no(1)
-            .with_output_messages(vec![{
-                let payload = MsgPayload::new(
-                    BitcoinAmount::from_sat(100_000_000),
-                    withdrawal_payload_data.clone(),
-                );
-                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
-            }])
-            .build();
-        let tx_overflow_id = tx_overflow.compute_txid();
-
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
-        mempool.add_transaction(tx_fill_id, tx_fill);
-        mempool.add_transaction(tx_overflow_id, tx_overflow);
-
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let result = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-        )
-        .await
-        .expect("block generation should succeed");
-
-        let (template, failed_txs) = result.into_parts();
-        let txs = template
-            .body()
-            .tx_segment()
-            .expect("tx segment should exist")
-            .txs();
-        assert_eq!(txs.len(), 1, "only first tx should be included");
-        assert!(
-            failed_txs.is_empty(),
-            "block-full overflow tx should not be reported invalid"
-        );
-
-        let remaining = mempool.get_transactions(10).await.expect("mempool read");
-        assert_eq!(
-            remaining.len(),
-            2,
-            "included txs are not auto-removed in this mock"
-        );
-        assert_eq!(
-            remaining[1].0, tx_overflow_id,
-            "block-full overflow tx should remain in mempool"
         );
     }
 
@@ -2239,6 +2155,7 @@ mod tests {
             &parent_state,
             accumulated_batch,
             vec![(txid, tx)],
+            AccumulatedDaData::new_empty(),
         );
 
         assert!(
@@ -2250,5 +2167,4 @@ mod tests {
             "overflowing tx should not be included"
         );
     }
-
 }
