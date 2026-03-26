@@ -43,9 +43,9 @@ def get_account_balance(rpc, account_id_hex: str) -> int:
     to get the balance, since getSnarkAccountState does not include balance.
     """
     status = rpc.strata_getChainStatus()
-    latest_slot = status["latest"]["slot"]
+    tip_slot = status["tip"]["slot"]
 
-    summaries = rpc.strata_getBlocksSummaries(account_id_hex, latest_slot, latest_slot)
+    summaries = rpc.strata_getBlocksSummaries(account_id_hex, tip_slot, tip_slot)
     if not summaries:
         return 0
 

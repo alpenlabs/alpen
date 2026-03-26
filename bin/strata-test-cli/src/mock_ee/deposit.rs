@@ -8,7 +8,8 @@ use bdk_wallet::{
     TxOrdering,
 };
 use strata_asm_logs::DepositLog;
-use strata_identifiers::{AccountSerial, DepositDescriptor, SubjectIdBytes};
+use strata_bridge_types::DepositDescriptor;
+use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
 
 use crate::{
@@ -39,7 +40,7 @@ pub(crate) fn create_mock_deposit_tx(
     let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
         SubjectIdBytes::try_new(vec![0u8; 32])
-            .map_err(|e| Error::TxBuilder(format!("failed to create subject bytes: {e}")))?,
+            .ok_or_else(|| Error::TxBuilder("failed to create subject bytes".to_string()))?,
     )
     .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
 
@@ -77,7 +78,7 @@ pub(crate) fn build_mock_deposit_op_return(
     let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
         SubjectIdBytes::try_new(vec![0u8; 32])
-            .map_err(|e| Error::TxBuilder(format!("failed to create subject bytes: {e}")))?,
+            .ok_or_else(|| Error::TxBuilder("failed to create subject bytes".to_string()))?,
     )
     .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
 
@@ -135,8 +136,6 @@ fn build_and_sign_tx(
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::DepositDescriptor;
-
     use super::*;
 
     #[test]
