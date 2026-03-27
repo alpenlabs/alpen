@@ -28,3 +28,16 @@ class SentTransfer(Container):
 class ReceivedMessage(Container):
     source: strata_identifiers.AccountId
     payload: MsgPayload
+
+### A recorded message in an account's inbox accumulator.
+###
+### This is what snark accounts operate on.
+class MessageEntry(Container):
+    ### Source account ID of the message.
+    source: strata_identifiers.AccountId
+
+    ### The epoch that the message was included.
+    incl_epoch: uint32
+
+    ### Message payload
+    payload: MsgPayload

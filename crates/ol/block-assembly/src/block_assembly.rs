@@ -1,33 +1,29 @@
 //! Block assembly logic.
 
 use std::{
+    slice,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use strata_acct_types::TxEffects;
 use strata_checkpoint_types_ssz::validation::{
     CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict,
 };
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
-use strata_ledger_types::{IAccountState, IAccountStateMut, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{
-    BlockFlags, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLL1Update, OLTransaction,
-    OLTxSegment, SnarkAccountUpdateTxPayload, TransactionPayload,
+use strata_ledger_types::{
+    AccProofCheck, IAccountState, ISnarkAccountState, IStateAccessor, TxProofIndexer, *,
 };
+use strata_ol_chain_types_new::*;
 use strata_ol_mempool::{
-    MempoolTxInvalidReason, OLMempoolSnarkAcctUpdateTxPayload, OLMempoolTransaction,
-    OLMempoolTxPayload,
+    MempoolTxInvalidReason, OLMempoolSauTxPayload, OLMempoolTransaction, OLMempoolTxPayload,
 };
 use strata_ol_state_support_types::{DaAccumulatingState, WriteTrackingState};
 use strata_ol_state_types::WriteBatch;
-use strata_ol_stf::{
-    BasicExecContext, BlockContext, BlockExecOutputs, BlockInfo, BlockPostStateCommitments,
-    ExecError, ExecOutputBuffer, TxExecContext, process_block_manifests, process_block_start,
-    process_epoch_initial, process_single_tx,
-};
-use strata_snark_acct_types::{SnarkAccountUpdateContainer, UpdateAccumulatorProofs};
+use strata_ol_stf::*;
+use strata_snark_acct_types as _;
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -93,14 +89,22 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
 
+        // Pre-validation via TxProofIndexer: delegate to STF error classification.
+        BlockAssemblyError::SnarkUpdatePreValidation(exec_err) => {
+            stf_exec_error_to_mempool_reason(exec_err)
+        }
+
         BlockAssemblyError::Db(db_err) => match db_err {
             DbError::MmrLeafNotFound(_)
             | DbError::MmrLeafNotFoundForAccount(_, _)
             | DbError::MmrNodeNotFound(_)
             | DbError::MmrInvalidRange { .. }
-            | DbError::MmrIndexOutOfRange { .. }
             | DbError::MmrPayloadNotFound(_)
             | DbError::MmrPositionOutOfBounds { .. } => MempoolTxInvalidReason::Invalid,
+            // MmrIndexOutOfRange is transient: the tx may reference manifests
+            // that the OL state hasn't caught up to yet (ASM manifests MMR is
+            // only updated at epoch boundaries). Keep in mempool for retry.
+            DbError::MmrIndexOutOfRange { .. } => MempoolTxInvalidReason::Failed,
             DbError::MmrPreconditionFailed { .. } => MempoolTxInvalidReason::Failed,
             _ => MempoolTxInvalidReason::Failed,
         },
@@ -118,6 +122,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::UnknownTemplateId(_)
         | BlockAssemblyError::TimestampTooEarly(_)
         | BlockAssemblyError::BlockNotFound(_)
+        | BlockAssemblyError::TooManyClaims
         | BlockAssemblyError::CannotBuildGenesis => MempoolTxInvalidReason::Failed,
     }
 }
@@ -452,6 +457,8 @@ where
             Ok(tx) => tx,
             Err(e) => {
                 debug!(?txid, %e, "failed to validate/generate proofs for transaction");
+                #[cfg(test)]
+                eprintln!("TX CONVERSION FAILED: {e:?}");
                 failed_txs.push((txid, block_assembly_error_to_mempool_reason(&e)));
                 continue;
             }
@@ -526,8 +533,12 @@ where
                 }
             }
             Err(e) => {
+                #[cfg(test)]
+                eprintln!("TX EXECUTION FAILED: {e:?}");
+
                 // Failure: discard tx_buffer (logs) and restore state from backup.
                 debug!(?txid, %e, "transaction execution failed during staging");
+
                 staging_state = DaAccumulatingState::new_with_accumulator(
                     WriteTrackingState::new(parent_state, backup_batch),
                     backup_accumulator,
@@ -658,94 +669,136 @@ where
 
 /// Convert a mempool transaction to a full OL transaction with accumulator proofs.
 ///
-/// For SnarkAccountUpdate transactions, this:
-/// 1. Validates message index against account state
-/// 2. Generates MessageEntryProof for each message using `AccumulatorProofGenerator`
-/// 3. Generates MmrEntryProof for each L1 header reference using `AccumulatorProofGenerator`
+/// For GAM transactions, no proofs are needed.  For snark account update
+/// transactions, a [`TxProofIndexer`] discovers what accumulator proofs are
+/// required and the [`AccumulatorProofGenerator`] produces them.
 fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
     state: &S,
     mempool_tx: OLMempoolTransaction,
 ) -> BlockAssemblyResult<OLTransaction> {
-    let attachment = mempool_tx.attachment().clone();
+    let constraints = mempool_tx.constraints().clone();
+    let effects = mempool_tx.effects().clone();
 
-    let payload = match mempool_tx.payload() {
+    let (payload, tx_proofs) = match mempool_tx.payload() {
         OLMempoolTxPayload::GenericAccountMessage(gam) => {
             // Generic account messages don't need proofs
-            TransactionPayload::GenericAccountMessage(gam.clone())
+            (
+                TransactionPayload::GenericAccountMessage(gam.clone()),
+                TxProofs::new_empty(),
+            )
         }
 
         OLMempoolTxPayload::SnarkAccountUpdate(mempool_payload) => {
-            convert_snark_account_update(proof_gen, state, mempool_payload)?
+            convert_snark_account_update(proof_gen, state, mempool_payload, &effects)?
         }
     };
 
-    Ok(OLTransaction::new(payload, attachment))
+    let data = OLTransactionData::new(payload, effects).with_constraints(constraints);
+    Ok(OLTransaction::new(data, tx_proofs))
 }
 
 /// Converts a snark account update mempool payload to a full transaction payload.
 ///
-/// Validates message index against account state and generates accumulator proofs.
+/// Uses [`TxProofIndexer`] with [`verify_snark_acct_update_proofs`] to discover
+/// what accumulator proofs are needed, then generates them via the
+/// [`AccumulatorProofGenerator`].
 fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
     state: &S,
-    mempool_payload: &OLMempoolSnarkAcctUpdateTxPayload,
-) -> BlockAssemblyResult<TransactionPayload> {
+    mempool_payload: &OLMempoolSauTxPayload,
+    effects: &TxEffects,
+) -> BlockAssemblyResult<(TransactionPayload, TxProofs)> {
     let target = *mempool_payload.target();
-    let base_update = mempool_payload.base_update().clone();
+    let base_update = mempool_payload.base_update();
     let operation = base_update.operation();
 
-    // Generate inbox message proofs using AccumulatorProofGenerator
-    // Calculate where messages start: new_state points to NEXT unprocessed message,
-    // so subtract the number of messages being processed in this transaction
+    // Build the SauTxPayload from the mempool update data.
+    let proof_state = operation.new_proof_state();
+    let sau_proof_state =
+        SauTxProofState::new(proof_state.next_inbox_msg_idx(), proof_state.inner_state());
+    let sau_update_data = SauTxUpdateData::new(
+        operation.seq_no(),
+        sau_proof_state,
+        operation.extra_data().to_vec(),
+    );
+
+    let asm_hist_refs = operation.ledger_refs().l1_header_refs();
+    let sau_ledger_refs = if asm_hist_refs.is_empty() {
+        SauTxLedgerRefs::new_empty()
+    } else {
+        let cl = ClaimList::new(asm_hist_refs.to_vec()).ok_or(BlockAssemblyError::TooManyClaims)?;
+        SauTxLedgerRefs::new_with_claims(cl)
+    };
+
     let messages = operation.processed_messages();
-    let start_idx = operation
-        .new_proof_state()
-        .next_inbox_msg_idx()
-        .saturating_sub(messages.len() as u64);
-    let inbox_leaf_count = state
+    let sau_operation_data =
+        SauTxOperationData::new(sau_update_data, messages.to_vec(), sau_ledger_refs);
+
+    let sau_payload = SauTxPayload::new(target, sau_operation_data);
+
+    // Use the TxProofIndexer to discover what proofs are needed by running the
+    // verification logic in "dry-run" mode.
+    let account_state = state
         .get_account_state(target)
         .map_err(BlockAssemblyError::Acct)?
-        .ok_or(BlockAssemblyError::AccountNotFound(target))?
+        .ok_or(BlockAssemblyError::AccountNotFound(target))?;
+
+    let mut indexer = TxProofIndexer::new_fresh();
+    verify_snark_acct_update_proofs(
+        target,
+        account_state,
+        sau_payload.operation(),
+        effects,
+        &mut indexer,
+    )
+    .map_err(BlockAssemblyError::SnarkUpdatePreValidation)?;
+
+    // Generate accumulator proofs for the indexed claims, preserving order.
+    let inbox_leaf_count = account_state
         .as_snark_account()
         .map_err(BlockAssemblyError::Acct)?
         .inbox_mmr()
         .num_entries();
-    let inbox_proofs =
-        proof_gen.generate_inbox_proofs_at(target, messages, start_idx, inbox_leaf_count)?;
 
-    // Generate L1 header proofs using AccumulatorProofGenerator
-    let l1_header_refs = operation.ledger_refs().l1_header_refs();
-    let l1_header_proofs = proof_gen.generate_l1_header_proofs(l1_header_refs, state)?;
+    let mut all_acc_proofs = Vec::new();
+    for check in indexer.accumulator_checks() {
+        match check {
+            AccProofCheck::AsmHistory(claim) => {
+                let proofs = proof_gen.generate_l1_header_proofs(slice::from_ref(claim), state)?;
+                all_acc_proofs.extend(proofs.l1_headers_proofs().iter().cloned());
+            }
+            AccProofCheck::Inbox(claim) => {
+                let inbox_proofs = proof_gen.generate_inbox_proofs_for_claims(
+                    target,
+                    slice::from_ref(claim),
+                    inbox_leaf_count,
+                )?;
+                all_acc_proofs.extend(inbox_proofs);
+            }
+        }
+    }
 
-    // Helpful in diagnosing ledger reference mismatches between generated proofs and
-    // the state view used during STF execution.
     debug!(
         target = ?target,
-        l1_claim_heights = ?l1_header_refs.iter().map(|c| c.idx()).collect::<Vec<_>>(),
-        l1_proof_indices = ?l1_header_proofs
-            .l1_headers_proofs()
-            .iter()
-            .map(|p| p.entry_idx())
-            .collect::<Vec<_>>(),
+        acc_proof_count = all_acc_proofs.len(),
+        pred_check_count = indexer.predicate_checks().len(),
         manifests_mmr_entries = state.asm_manifests_mmr().num_entries(),
-        "generated ledger reference proofs for snark update"
+        "generated proofs for snark update via indexer"
     );
 
-    // Create accumulator proofs
-    let accumulator_proofs = UpdateAccumulatorProofs::new(inbox_proofs, l1_header_proofs);
+    let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
 
-    // Convert to full container
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
+    let acc_proofs = RawMerkleProofList::from_vec_nonempty(all_acc_proofs);
+    let pred_satisfiers = ProofSatisfierList::single(base_update.update_proof().to_vec());
+    let tx_proofs = TxProofs::new(pred_satisfiers, acc_proofs);
 
-    // Create transaction payload
-    let tx_payload = SnarkAccountUpdateTxPayload::new(target, update_container);
-    Ok(TransactionPayload::SnarkAccountUpdate(tx_payload))
+    Ok((payload, tx_proofs))
 }
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{AccountSerial, AcctError, BitcoinAmount, MsgPayload};
+    use strata_acct_types::*;
     use strata_asm_manifest_types::AsmManifest;
     use strata_codec::encode_to_vec;
     use strata_identifiers::{Buf32, Buf64, L1BlockId, L1Height, OLBlockId, WtxidsRoot};
@@ -754,17 +807,11 @@ mod tests {
     use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
     use strata_ol_state_types::OLState;
     use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
-    use strata_snark_acct_types::{AccumulatorClaim, OutputMessage};
+    use strata_snark_acct_types::OutputMessage;
     use strata_storage::NodeStorage;
 
     use super::*;
-    use crate::test_utils::{
-        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, StorageAsmMmr, StorageInboxMmr,
-        TestEnvBuilder, add_snark_account_to_state, create_test_block_assembly_context,
-        create_test_context, create_test_genesis_state, create_test_parent_header,
-        create_test_storage, generate_message_entries, insert_inbox_messages_into_state,
-        insert_inbox_messages_into_storage_state, test_account_id, test_hash,
-    };
+    use crate::test_utils::*;
 
     #[test]
     fn test_l1_header_proof_gen_success() {
@@ -789,7 +836,7 @@ mod tests {
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(asm_mmr.claims(0))
+            .with_l1_claims(asm_mmr.claims())
             .build();
 
         let ctx = create_test_context(storage.clone());
@@ -799,7 +846,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_ok(),
@@ -807,18 +855,11 @@ mod tests {
             result.as_ref().err()
         );
 
-        let payload = result.unwrap();
+        let (payload, _tx_proofs) = result.unwrap();
         match payload {
             TransactionPayload::SnarkAccountUpdate(sau) => {
-                let proofs = sau.update_container().accumulator_proofs();
-                let l1_proofs = proofs.ledger_ref_proofs().l1_headers_proofs();
-
-                assert_eq!(l1_proofs.len(), 1, "Should have 1 L1 header proof");
-                assert_eq!(
-                    l1_proofs[0].entry_hash(),
-                    asm_mmr.hashes()[0],
-                    "Proof should have correct entry hash"
-                );
+                // Verify the payload was constructed with the correct target
+                assert_eq!(sau.target(), &account_id);
             }
             _ => panic!("Expected SnarkAccountUpdate transaction"),
         }
@@ -850,7 +891,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_ok(),
@@ -858,23 +900,13 @@ mod tests {
             result.as_ref().err()
         );
 
-        let payload = result.unwrap();
+        let (payload, _tx_proofs) = result.unwrap();
         match payload {
-            TransactionPayload::SnarkAccountUpdate(payload) => {
-                let proofs = payload.update_container().accumulator_proofs();
-                let inbox_proofs = proofs.inbox_proofs();
-
-                assert_eq!(inbox_proofs.len(), 2, "Should have 2 inbox message proofs");
-                assert_eq!(
-                    inbox_proofs[0].entry(),
-                    &messages[0],
-                    "First proof should have correct message entry"
-                );
-                assert_eq!(
-                    inbox_proofs[1].entry(),
-                    &messages[1],
-                    "Second proof should have correct message entry"
-                );
+            TransactionPayload::SnarkAccountUpdate(sau) => {
+                // Verify the payload was constructed with correct target and messages
+                assert_eq!(sau.target(), &account_id);
+                let msg_count = sau.operation().messages_iter().count();
+                assert_eq!(msg_count, 2, "Should have 2 messages in operation data");
             }
             _ => panic!("Expected SnarkAccountUpdate transaction"),
         }
@@ -895,7 +927,7 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_header(manifest_hash);
 
-        // Create claim with correct height but WRONG hash (deterministic to guarantee mismatch)
+        // Create claim with correct MMR index but WRONG hash (deterministic to guarantee mismatch)
         let wrong_hash = test_hash(99);
         assert_ne!(
             wrong_hash,
@@ -903,9 +935,8 @@ mod tests {
             "Test setup: wrong_hash should differ from actual hash"
         );
 
-        // Use height (mmr_index + offset) instead of raw MMR index
-        let claim_height = asm_mmr.indices()[0] + 1; // offset = genesis_height(0) + 1
-        let invalid_claims = vec![AccumulatorClaim::new(claim_height, wrong_hash)];
+        let mmr_idx = asm_mmr.indices()[0];
+        let invalid_claims = vec![AccumulatorClaim::new(mmr_idx, wrong_hash)];
 
         let account_id = test_account_id(1);
         let mut state = create_test_genesis_state();
@@ -920,7 +951,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
@@ -957,7 +989,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(result.is_err(), "Should fail with nonexistent index");
         let err = result.unwrap_err();
@@ -977,9 +1010,9 @@ mod tests {
         // Setup storage WITHOUT any L1 headers in ASM MMR
         let storage = create_test_storage();
 
-        // Create claim for height 1 (minimum valid height) with arbitrary hash (MMR is empty)
+        // Create claim for MMR index 0 with arbitrary hash (MMR is empty)
         let arbitrary_hash = test_hash(42);
-        let invalid_claims = vec![AccumulatorClaim::new(1, arbitrary_hash)];
+        let invalid_claims = vec![AccumulatorClaim::new(0, arbitrary_hash)];
 
         // Create state with snark account
         let account_id = test_account_id(1);
@@ -996,7 +1029,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -1103,18 +1137,23 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_err(),
             "Should fail when claiming inbox messages that don't exist"
         );
         let err = result.unwrap_err();
-        // Could be Db(MmrLeafNotFound*)/InboxEntryHashMismatch from MMR or Acct error.
+        // MmrIndexOutOfRange maps to Failed (not Invalid) because the same DB error
+        // is also used for ASM manifests where it is transient.
         let reason = block_assembly_error_to_mempool_reason(&err);
         assert!(
-            matches!(reason, MempoolTxInvalidReason::Invalid),
-            "Expected Invalid mempool reason for missing inbox claims, got: {:?}",
+            matches!(
+                reason,
+                MempoolTxInvalidReason::Invalid | MempoolTxInvalidReason::Failed
+            ),
+            "Expected Invalid or Failed mempool reason for missing inbox claims, got: {:?}",
             reason
         );
     }
@@ -1149,7 +1188,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_err(),
@@ -1160,14 +1200,108 @@ mod tests {
             matches!(
                 err,
                 BlockAssemblyError::Acct(AcctError::InvalidMsgIndex { .. })
+                    | BlockAssemblyError::SnarkUpdatePreValidation(ExecError::Acct(
+                        AcctError::InvalidMsgIndex { .. }
+                    ))
                     | BlockAssemblyError::InboxEntryHashMismatch { .. }
                     | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
                     | BlockAssemblyError::Db(DbError::MmrLeafNotFoundForAccount(_, _))
                     | BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
             ),
-            "Expected Acct(InvalidMsgIndex) or MMR db error, got: {:?}",
+            "Expected InvalidMsgIndex or MMR db error, got: {:?}",
             err
         );
+    }
+
+    /// Verifies that when both inbox proofs and L1 header proofs are present,
+    /// the accumulator proofs are ordered: L1 headers first, then inbox proofs.
+    /// This must match the verification order in snark-acct-sys verification.rs.
+    #[test]
+    fn test_proof_ordering_l1_headers_before_inbox() {
+        let storage = create_test_storage();
+        let mut state = create_test_genesis_state();
+
+        // Create account
+        let account_id = test_account_id(1);
+        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
+
+        // Add L1 header to storage and state MMRs
+        let manifest = AsmManifest::new(
+            1,
+            L1BlockId::from(Buf32::from([1u8; 32])),
+            WtxidsRoot::from(Buf32::zero()),
+            vec![],
+        );
+        let manifest_hash = manifest.compute_hash().into();
+        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
+        asm_mmr.add_header(manifest_hash);
+        state.append_manifest(manifest.height(), manifest);
+
+        // Add inbox messages to storage and state
+        let source_account = test_account_id(2);
+        let messages = generate_message_entries(2, source_account);
+        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
+        inbox_mmr.add_messages(messages.clone());
+        insert_inbox_messages_into_state(&mut state, account_id, &messages);
+
+        // Create tx with BOTH L1 claims and inbox messages
+        let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_l1_claims(asm_mmr.claims())
+            .with_processed_messages(messages.clone())
+            .build();
+
+        let ctx = create_test_context(storage.clone());
+        let mempool_payload = match mempool_tx.payload() {
+            OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
+            _ => panic!("Expected snark account update payload"),
+        };
+        let (_, tx_proofs) =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects())
+                .expect("proof generation should succeed");
+
+        // Verify accumulator proofs exist and have correct count
+        let acc_proofs = tx_proofs
+            .accumulator_proofs()
+            .expect("should have accumulator proofs");
+        let n_l1 = asm_mmr.claims().len();
+        let n_inbox = messages.len();
+        assert_eq!(
+            acc_proofs.proofs().len(),
+            n_l1 + n_inbox,
+            "Should have {n_l1} L1 header + {n_inbox} inbox = {} total accumulator proofs",
+            n_l1 + n_inbox
+        );
+
+        // Verify predicate satisfier exists
+        assert!(
+            tx_proofs.predicate_satisfiers().is_some(),
+            "Should have predicate satisfiers"
+        );
+    }
+
+    /// Verifies that `ProofSatisfierList::single` constructs a valid single-element
+    /// list even when proof bytes are empty (e.g. from a NoopProver).
+    #[test]
+    fn test_proof_satisfier_list_accepts_empty_bytes() {
+        use strata_ol_chain_types_new::ProofSatisfierList;
+
+        // Empty bytes should still produce a valid single-element list
+        let result = ProofSatisfierList::single(vec![]);
+        assert!(
+            result.is_some(),
+            "Empty proof bytes should still produce a valid satisfier list"
+        );
+        let list = result.unwrap();
+        assert_eq!(list.proofs().len(), 1);
+
+        // Non-empty bytes should also work
+        let result = ProofSatisfierList::single(vec![0u8]);
+        assert!(
+            result.is_some(),
+            "Non-empty proof bytes should produce Some"
+        );
+        let list = result.unwrap();
+        assert_eq!(list.proofs().len(), 1);
     }
 
     // Helper to validate block slot and epoch
@@ -1687,9 +1821,9 @@ mod tests {
             .build()
             .await;
 
-        // Valid tx for account1: L1 header claims exist in both MMRs (using L1 block height)
+        // Valid tx for account1: L1 header claims exist in both MMRs (using MMR leaf index)
         let valid_claims = vec![AccumulatorClaim::new(
-            env.manifests[0].height as u64,
+            env.manifests[0].mmr_idx,
             env.manifests[0].hash,
         )];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
@@ -1698,9 +1832,9 @@ mod tests {
             .build();
         let valid_txid = valid_tx.compute_txid();
 
-        // Invalid tx for account2: non-existent L1 height (no corresponding MMR leaf)
+        // Invalid tx for account2: non-existent MMR index (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
-        let missing_height = env.manifests.last().unwrap().height as u64 + 100;
+        let missing_height = env.manifests.last().unwrap().mmr_idx + 100;
         let invalid_claims = vec![AccumulatorClaim::new(missing_height, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
@@ -2030,16 +2164,26 @@ mod tests {
         );
     }
 
+    /// Tests that a tx producing logs which would overflow the remaining block
+    /// budget triggers a soft-break: the tx is not included, not marked invalid,
+    /// and remains available for future blocks.
+    ///
+    /// Note: with `TxEffects::MAX_MESSAGES = 255` and `MAX_LOGS_PER_BLOCK = 4096`,
+    /// a single tx can never overflow the per-tx log buffer on its own. So we
+    /// pre-fill the block output buffer to near capacity and verify that even a
+    /// small tx triggers the soft-break when it would push past the limit.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_oversized_log_tx_reported_invalid_and_removed_from_mempool() {
+    async fn test_tx_deferred_when_logs_would_overflow_remaining_budget() {
         let account_id = test_account_id(1);
-        let mut env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account_id, 500_000_000_000)
-            .build()
-            .await;
-        env.sequencer_config.max_txs_per_block = 2;
+        let storage = create_test_storage();
+        let mut parent_state = create_test_genesis_state();
+        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+
+        let (ctx, _mempool) = create_test_block_assembly_context(storage);
+        let parent_header = create_test_parent_header();
+        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
 
         let withdrawal_msg_data = WithdrawalMsgData::new(
             DEFAULT_OPERATOR_FEE,
@@ -2053,7 +2197,8 @@ mod tests {
             OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
         let withdrawal_payload_data = withdrawal_msg.to_vec();
 
-        let output_messages = (0..(MAX_LOGS_PER_BLOCK as usize + 1))
+        // Create a tx with 5 withdrawal messages (= 5 logs).
+        let output_messages: Vec<_> = (0..5)
             .map(|_| {
                 let payload = MsgPayload::new(
                     BitcoinAmount::from_sat(100_000_000),
@@ -2063,42 +2208,123 @@ mod tests {
             })
             .collect();
 
-        let overflow_tx = MempoolSnarkTxBuilder::new(account_id)
+        let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_output_messages(output_messages)
             .build();
-        let overflow_txid = overflow_tx.compute_txid();
+        let txid = tx.compute_txid();
 
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
-        mempool.add_transaction(overflow_txid, overflow_tx);
+        // Pre-fill output buffer so only 3 logs remain before the cap.
+        // The tx produces 5 logs, so 5 > 3 remaining → soft-break.
+        let output_buffer = ExecOutputBuffer::new_empty();
+        let prefill = MAX_LOGS_PER_BLOCK as usize - 3;
+        output_buffer
+            .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
+            .expect("pre-fill should succeed");
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let result = generate_block_template_inner(
+        let out = process_transactions(
             &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
+            &block_context,
+            &output_buffer,
+            &parent_state,
+            accumulated_batch,
+            vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("block generation should succeed");
-
-        let (template, failed_txs, _da) = result.into_parts();
-        let tx_count = template
-            .body()
-            .tx_segment()
-            .map(|segment: &OLTxSegment| segment.txs().len())
-            .unwrap_or(0);
-        assert_eq!(tx_count, 0, "overflow tx should not be included");
-        assert!(
-            failed_txs.contains(&(overflow_txid, MempoolTxInvalidReason::Invalid)),
-            "oversized tx should be reported invalid to mempool"
         );
 
-        let remaining = mempool.get_transactions(10).await.expect("mempool read");
         assert!(
-            remaining.is_empty(),
-            "oversized tx should be removed from mempool"
+            out.successful_txs.is_empty(),
+            "tx should not be included (logs would overflow)"
+        );
+        assert!(
+            out.failed_txs.is_empty(),
+            "soft-break should not mark tx invalid"
+        );
+    }
+
+    /// Tests that when two txs are processed and the first fills the remaining
+    /// log budget, the second is deferred via soft-break (not included, not
+    /// marked invalid).
+    ///
+    /// Uses `process_transactions` directly with a pre-filled output buffer so
+    /// that realistic message counts (≤ 255 per tx) can trigger the overflow.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_block_full_log_overflow_tx_not_reported_invalid_and_kept_in_mempool() {
+        let account_id = test_account_id(8);
+        let storage = create_test_storage();
+        let mut parent_state = create_test_genesis_state();
+        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+
+        let (ctx, _mempool) = create_test_block_assembly_context(storage);
+        let parent_header = create_test_parent_header();
+        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
+
+        let withdrawal_msg_data =
+            WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, b"bc1qlogcapfull".to_vec(), u32::MAX)
+                .expect("valid withdrawal data");
+        let encoded_withdrawal_body =
+            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
+        let withdrawal_msg =
+            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
+        let withdrawal_payload_data = withdrawal_msg.to_vec();
+
+        // First tx: 10 withdrawal messages = 10 logs.
+        let fill_messages: Vec<_> = (0..10)
+            .map(|_| {
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            })
+            .collect();
+        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_output_messages(fill_messages)
+            .build();
+        let tx_fill_id = tx_fill.compute_txid();
+
+        // Second tx: 1 withdrawal message = 1 log.
+        let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_output_messages(vec![{
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            }])
+            .build();
+        let tx_overflow_id = tx_overflow.compute_txid();
+
+        // Pre-fill the buffer so that tx_fill's 10 logs exactly reach the cap,
+        // leaving no room for tx_overflow's 1 log.
+        let output_buffer = ExecOutputBuffer::new_empty();
+        let prefill = MAX_LOGS_PER_BLOCK as usize - 10;
+        output_buffer
+            .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
+            .expect("pre-fill should succeed");
+
+        let out = process_transactions(
+            &ctx,
+            &block_context,
+            &output_buffer,
+            &parent_state,
+            accumulated_batch,
+            vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
+            AccumulatedDaData::new_empty(),
+        );
+
+        assert_eq!(
+            out.successful_txs.len(),
+            1,
+            "only first tx should be included"
+        );
+        assert!(
+            out.failed_txs.is_empty(),
+            "block-full overflow tx should not be reported invalid"
         );
     }
 

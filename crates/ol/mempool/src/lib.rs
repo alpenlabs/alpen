@@ -19,11 +19,6 @@ pub use command::MempoolCommand;
 pub use error::OLMempoolError;
 pub use handle::MempoolHandle;
 pub use service::MempoolServiceStatus;
-pub use types::{
-    DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
-    DEFAULT_MAX_TX_COUNT, DEFAULT_MAX_TX_SIZE, MempoolOrderingKey, MempoolTxInvalidReason,
-    OLMempoolConfig, OLMempoolRejectCounts, OLMempoolRejectReason,
-    OLMempoolSnarkAcctUpdateTxPayload, OLMempoolStats, OLMempoolTransaction, OLMempoolTxPayload,
-};
+pub use types::*;
 
 pub type OLMempoolResult<T> = Result<T, OLMempoolError>;

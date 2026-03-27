@@ -1,56 +1,37 @@
 use ssz::Encode as _;
-use strata_acct_types::{
-    AccountId, AcctError, AcctResult, BitcoinAmount, Mmr64, StrataHasher, tree_hash::TreeHash,
-};
-use strata_identifiers::L1Height;
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor, asm_manifest_mmr_index_for_height};
-use strata_merkle::MerkleProof;
-use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, ProofState, SnarkAccountUpdate,
-    SnarkAccountUpdateContainer, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
-};
+use strata_acct_types::{AccountId, AcctError, AcctResult, MessageEntry};
+use strata_ledger_types::{ISnarkAccountState, TxProofVerifier};
+use strata_snark_acct_types::*;
+
+use crate::update::{SnarkAccountUpdateData, effects_to_update_outputs};
 
 /// Verifies an account update is correct with respect to the current state of
 /// snark account, including checking account balances.
-pub fn verify_update_correctness<S: IStateAccessor>(
-    state_accessor: &S,
+pub fn verify_update_correctness(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdateContainer,
-    cur_balance: BitcoinAmount,
+    update: &SnarkAccountUpdateData,
+    proof_verifier: &mut impl TxProofVerifier,
 ) -> AcctResult<()> {
-    let operation = update.base_update().operation();
+    // 1. Check seq_no matches.
+    verify_seq_no(target, snark_state, update.seq_no())?;
 
-    // 1. Check seq_no matches
-    verify_seq_no(target, snark_state, operation)?;
+    // 2. Check message / proof entries and indices line up.
+    verify_message_index(target, snark_state, update)?;
 
-    // 2. Check message / proof entries and indices line up
-    verify_message_index(target, snark_state, operation)?;
+    // 3. Verify ledger references using the proof verifier.
+    verify_ledger_refs(target, proof_verifier, update.ledger_refs())?;
 
-    let accum_proofs = update.accumulator_proofs();
-
-    // 3. Verify ledger references using the provided state accessor
-    verify_ledger_refs(
-        target,
-        state_accessor,
-        accum_proofs.ledger_ref_proofs(),
-        update.operation().ledger_refs(),
-    )?;
-
-    // 4. Verify inbox mmr proofs
+    // 4. Verify inbox mmr proofs.
     verify_inbox_mmr_proofs(
         target,
         snark_state,
-        accum_proofs.inbox_proofs(),
-        update.operation().processed_messages(),
+        proof_verifier,
+        update.processed_messages(),
     )?;
 
-    // 5. Verify outputs can be applied safely
-    let outputs = operation.outputs();
-    verify_update_outputs_safe(outputs, state_accessor, cur_balance)?;
-
-    // 6. Verify the proof
-    verify_update_proof(target, snark_state, update.base_update())?;
+    // 5. Verify the proof.
+    verify_update_proof(target, snark_state, update, proof_verifier)?;
 
     Ok(())
 }
@@ -59,14 +40,14 @@ pub fn verify_update_correctness<S: IStateAccessor>(
 pub fn verify_seq_no(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    operation: &UpdateOperationData,
+    tx_seq_no: Seqno,
 ) -> AcctResult<()> {
     let expected_seq = snark_state.seqno();
-    if operation.seq_no() != *expected_seq.inner() {
+    if *tx_seq_no.inner() != *expected_seq.inner() {
         return Err(AcctError::InvalidUpdateSequence {
             account_id: target,
             expected: *expected_seq.inner(),
-            got: operation.seq_no(),
+            got: *tx_seq_no.inner(),
         });
     }
     Ok(())
@@ -76,13 +57,14 @@ pub fn verify_seq_no(
 pub fn verify_message_index(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    operation: &UpdateOperationData,
+    update: &SnarkAccountUpdateData,
 ) -> AcctResult<()> {
     let expected_idx = snark_state
         .next_inbox_msg_idx()
-        .checked_add(operation.processed_messages().len() as u64)
+        .checked_add(update.processed_messages().len() as u64)
         .ok_or(AcctError::MsgIndexOverflow { account_id: target })?;
-    let claimed_idx = operation.new_proof_state().next_inbox_msg_idx();
+
+    let claimed_idx = update.new_proof_state().next_inbox_msg_idx();
 
     if expected_idx != claimed_idx {
         return Err(AcctError::InvalidMsgIndex {
@@ -91,174 +73,71 @@ pub fn verify_message_index(
             got: claimed_idx,
         });
     }
+
     Ok(())
 }
 
-/// Verifies the ledger ref proofs against the provided asm mmr for an account.
+/// Verifies the ledger ref proofs against the ASM manifest MMR using the proof verifier.
 ///
-/// The operation carries manifest commitment references keyed by L1 height
-/// (`AccumulatorClaim.idx`). The verifier resolves those heights into ASM
-/// manifest MMR indices from canonical state view for proof verification.
+/// For each ledger reference, resolves the L1 height to an MMR index, constructs
+/// an [`AccumulatorClaim`], and delegates verification to the proof verifier.
 fn verify_ledger_refs(
     target: AccountId,
-    state_accessor: &impl IStateAccessor,
-    ledger_ref_proofs: &LedgerRefProofs,
+    proof_verifier: &mut impl TxProofVerifier,
     ledger_refs: &LedgerRefs,
 ) -> AcctResult<()> {
-    let asm_manifest_mmr: &Mmr64 = state_accessor.asm_manifests_mmr();
-    let generic_mmr = asm_manifest_mmr.to_generic();
-    let manifest_refs = ledger_refs.l1_header_refs();
-    let manifest_ref_proofs = ledger_ref_proofs.l1_headers_proofs();
+    let manifest_claims = ledger_refs.l1_header_refs();
 
-    // Claims and proofs must line up one-to-one.
-    if manifest_refs.len() != manifest_ref_proofs.len() {
-        return Err(AcctError::InvalidLedgerRefProofsCount { account_id: target });
-    }
-
-    for (manifest_ref, manifest_ref_proof) in manifest_refs.iter().zip(manifest_ref_proofs) {
-        let l1_height: L1Height =
-            manifest_ref
-                .idx()
-                .try_into()
-                .map_err(|_| AcctError::InvalidLedgerReference {
-                    account_id: target,
-                    ref_idx: manifest_ref.idx(),
-                })?;
-        let mmr_idx =
-            asm_manifest_mmr_index_for_height(state_accessor, l1_height).ok_or_else(|| {
-                AcctError::InvalidLedgerReference {
-                    account_id: target,
-                    ref_idx: manifest_ref.idx(),
-                }
+    for claim in manifest_claims {
+        proof_verifier
+            .verify_asm_history_mmr_proof_next(claim)
+            .map_err(|_| AcctError::InvalidLedgerReference {
+                account_id: target,
+                ref_idx: claim.idx(),
             })?;
-        if manifest_ref_proof.entry_idx() != mmr_idx {
-            return Err(AcctError::InvalidLedgerReference {
-                account_id: target,
-                ref_idx: manifest_ref.idx(),
-            });
-        }
-        if manifest_ref_proof.entry_hash() != manifest_ref.entry_hash() {
-            return Err(AcctError::InvalidLedgerReference {
-                account_id: target,
-                ref_idx: manifest_ref.idx(),
-            });
-        }
-        let is_valid = verify_mmr_entry(
-            mmr_idx,
-            manifest_ref.entry_hash().into(),
-            manifest_ref_proof.proof().cohashes(),
-            |proof, leaf_hash| generic_mmr.verify::<StrataHasher>(proof, leaf_hash),
-        );
-        if !is_valid {
-            return Err(AcctError::InvalidLedgerReference {
-                account_id: target,
-                ref_idx: manifest_ref.idx(),
-            });
-        }
     }
+
     Ok(())
 }
 
-/// Verifies the processed messages proofs against the provided account state's inbox
-/// mmr.
-pub(crate) fn verify_inbox_mmr_proofs(
+/// Verifies the processed messages proofs against the account's inbox MMR
+/// using the proof verifier.
+fn verify_inbox_mmr_proofs(
     target: AccountId,
     state: &impl ISnarkAccountState,
-    msg_proofs: &[MessageEntryProof],
+    proof_verifier: &mut impl TxProofVerifier,
     processed_msgs: &[MessageEntry],
 ) -> AcctResult<()> {
-    let generic_mmr = state.inbox_mmr().to_generic();
     let mut cur_index = state.next_inbox_msg_idx();
 
-    if msg_proofs.len() != processed_msgs.len() {
-        return Err(AcctError::InvalidMsgProofsCount { account_id: target });
-    }
+    for msg in processed_msgs {
+        let msg_hash = msg.compute_msg_commitment();
+        let claim = AccumulatorClaim::new(cur_index, msg_hash);
 
-    for (msg, msg_proof) in processed_msgs.iter().zip(msg_proofs) {
-        let msg_hash = <MessageEntry as TreeHash>::tree_hash_root(msg).into_inner();
-        let is_valid = verify_mmr_entry(
-            cur_index,
-            msg_hash,
-            msg_proof.raw_proof().cohashes(),
-            |proof, leaf_hash| generic_mmr.verify::<StrataHasher>(proof, leaf_hash),
-        );
-
-        if !is_valid {
-            return Err(AcctError::InvalidMessageProof {
+        proof_verifier
+            .verify_inbox_mmr_proof_next(&claim)
+            .map_err(|_| AcctError::InvalidMessageProof {
                 account_id: target,
                 msg_idx: cur_index,
-            });
-        }
+            })?;
 
         cur_index = cur_index
             .checked_add(1)
             .ok_or(AcctError::MsgIndexOverflow { account_id: target })?;
     }
+
     Ok(())
 }
 
-/// Verifies a single MMR inclusion proof against an expected leaf hash.
-fn verify_mmr_entry<F>(
-    entry_idx: u64,
-    entry_hash: [u8; 32],
-    cohashes: Vec<[u8; 32]>,
-    verify: F,
-) -> bool
-where
-    F: FnOnce(&MerkleProof<[u8; 32]>, &[u8; 32]) -> bool,
-{
-    let proof = MerkleProof::from_cohashes(cohashes, entry_idx);
-    verify(&proof, &entry_hash)
-}
-
-/// Verifies that the outputs in the update are valid i.e. checks balances and that the receipents
-/// exist.
-fn verify_update_outputs_safe<S: IStateAccessor>(
-    outputs: &UpdateOutputs,
-    state_accessor: &S,
-    cur_balance: BitcoinAmount,
-) -> AcctResult<()> {
-    let transfers = outputs.transfers();
-    let messages = outputs.messages();
-
-    // Check if receivers exist (skip special/system accounts)
-    for t in transfers {
-        if !t.dest().is_special() && !state_accessor.check_account_exists(t.dest())? {
-            return Err(AcctError::MissingExpectedAccount(t.dest()));
-        }
-    }
-
-    for m in messages {
-        if !m.dest().is_special() && !state_accessor.check_account_exists(m.dest())? {
-            return Err(AcctError::MissingExpectedAccount(m.dest()));
-        }
-    }
-
-    let total_sent = outputs
-        .compute_total_value()
-        .ok_or(AcctError::BitcoinAmountOverflow)?;
-
-    // Check if there is sufficient balance.
-    if total_sent > cur_balance {
-        return Err(AcctError::InsufficientBalance {
-            requested: total_sent,
-            available: cur_balance,
-        });
-    }
-    Ok(())
-}
-
-/// Verifies the update witness(proof and pub params) against the VK of the snark account.
+/// Verifies the update witness (proof and pub params) against the VK of the snark account.
 pub(crate) fn verify_update_proof(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
-    update: &SnarkAccountUpdate,
+    update: &SnarkAccountUpdateData,
+    verifier: &mut impl TxProofVerifier,
 ) -> AcctResult<()> {
-    let vk = snark_state.update_vk();
-    let claim: Vec<u8> = compute_update_claim(snark_state, update.operation());
-    let is_valid = vk
-        .verify_claim_witness(&claim, update.update_proof())
-        .is_ok();
+    let claim: Vec<u8> = compute_update_claim(snark_state, update);
+    let is_valid = verifier.verify_local_predicate_next(&claim).is_ok();
 
     if !is_valid {
         return Err(AcctError::InvalidUpdateProof { account_id: target });
@@ -268,22 +147,26 @@ pub(crate) fn verify_update_proof(
 }
 
 /// Computes the verifiable claim to be verified against a VK.
+///
+/// Converts [`TxEffects`] to [`UpdateOutputs`] for proof parameter construction.
 fn compute_update_claim(
     snark_state: &impl ISnarkAccountState,
-    operation: &UpdateOperationData,
+    update: &SnarkAccountUpdateData,
 ) -> Vec<u8> {
-    // Use new state, processed messages, old state, refs and outputs to compute claim
     let cur_state = ProofState::new(
         snark_state.inner_state_root(),
         snark_state.next_inbox_msg_idx(),
     );
+
+    let outputs = effects_to_update_outputs(update.effects());
+
     let pub_params = UpdateProofPubParams::new(
         cur_state,
-        operation.new_proof_state(),
-        operation.processed_messages().to_vec(),
-        operation.ledger_refs().clone(),
-        operation.outputs().clone(),
-        operation.extra_data().to_vec(),
+        update.new_proof_state().clone(),
+        update.processed_messages().to_vec(),
+        update.ledger_refs().clone(),
+        outputs,
+        update.extra_data().to_vec(),
     );
     pub_params.as_ssz_bytes()
 }

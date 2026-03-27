@@ -26,6 +26,8 @@ pub use epoch_sealing::{EpochSealingPolicy, FixedSlotSealing};
 pub use error::BlockAssemblyError;
 pub use handle::BlockasmHandle;
 pub use mempool_provider::{MempoolProvider, MempoolProviderImpl};
+#[cfg(test)]
+use strata_codec as _;
 pub use types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate, FullBlockTemplate};
 
 /// Result type for block assembly operations.

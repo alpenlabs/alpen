@@ -1,29 +1,31 @@
 use std::fmt;
 
 use int_enum::IntEnum;
-use strata_acct_types::AccountId;
-use strata_identifiers::Slot;
-use strata_snark_acct_types::SnarkAccountUpdateContainer;
+use strata_acct_types::{AccountId, MessageEntry, TxEffects};
+use strata_identifiers::{Buf32, OLTxId, Slot};
+use tree_hash::{Sha256Hasher, TreeHash};
 
-use crate::ssz_generated::ssz::transaction::{
-    GamTxPayload, OLTransaction, SnarkAccountUpdateTxPayload, TransactionAttachment,
-    TransactionPayload,
-};
+use crate::ssz_generated::ssz::{proofs::*, transaction::*};
 
 impl OLTransaction {
-    pub fn new(payload: TransactionPayload, attachment: TransactionAttachment) -> Self {
-        Self {
-            payload,
-            attachment,
-        }
+    pub fn new(data: OLTransactionData, proofs: TxProofs) -> Self {
+        Self { data, proofs }
     }
 
-    pub fn attachment(&self) -> &TransactionAttachment {
-        &self.attachment
+    pub fn data(&self) -> &OLTransactionData {
+        &self.data
+    }
+
+    pub fn proofs(&self) -> &TxProofs {
+        &self.proofs
+    }
+
+    pub fn constraints(&self) -> &TxConstraints {
+        &self.data.constraints
     }
 
     pub fn payload(&self) -> &TransactionPayload {
-        &self.payload
+        &self.data.payload
     }
 
     pub fn target(&self) -> Option<AccountId> {
@@ -33,13 +35,17 @@ impl OLTransaction {
     pub fn type_id(&self) -> TxTypeId {
         self.payload().type_id()
     }
+
+    pub fn compute_txid(&self) -> OLTxId {
+        self.data().compute_txid()
+    }
 }
 
 impl TransactionPayload {
     pub fn target(&self) -> Option<AccountId> {
         match self {
-            TransactionPayload::GenericAccountMessage(msg) => Some(*msg.target()),
-            TransactionPayload::SnarkAccountUpdate(update) => Some(*update.target()),
+            TransactionPayload::GenericAccountMessage(msg) => Some(msg.target),
+            TransactionPayload::SnarkAccountUpdate(update) => Some(update.target),
         }
     }
 
@@ -51,7 +57,7 @@ impl TransactionPayload {
     }
 }
 
-impl TransactionAttachment {
+impl TxConstraints {
     pub fn new(min_slot: Option<Slot>, max_slot: Option<Slot>) -> Self {
         Self {
             min_slot: min_slot.into(),
@@ -104,27 +110,21 @@ impl fmt::Display for TxTypeId {
 }
 
 impl GamTxPayload {
-    pub fn new(target: AccountId, payload: Vec<u8>) -> Result<Self, &'static str> {
-        Ok(Self {
-            target,
-            payload: payload.into(),
-        })
+    pub fn new(target: AccountId) -> Result<Self, &'static str> {
+        Ok(Self { target })
     }
 
     pub fn target(&self) -> &AccountId {
         &self.target
     }
-
-    pub fn payload(&self) -> &[u8] {
-        self.payload.as_ref()
-    }
 }
 
-impl SnarkAccountUpdateTxPayload {
-    pub fn new(target: AccountId, update_container: SnarkAccountUpdateContainer) -> Self {
+impl SauTxPayload {
+    /// Creates a new snark account update transaction payload.
+    pub fn new(target: AccountId, operation_data: SauTxOperationData) -> Self {
         Self {
             target,
-            update_container,
+            operation_data,
         }
     }
 
@@ -132,8 +132,186 @@ impl SnarkAccountUpdateTxPayload {
         &self.target
     }
 
-    pub fn update_container(&self) -> &SnarkAccountUpdateContainer {
-        &self.update_container
+    pub fn operation(&self) -> &SauTxOperationData {
+        &self.operation_data
+    }
+}
+
+impl SauTxOperationData {
+    /// Creates a new operation data.
+    pub fn new(
+        update_data: SauTxUpdateData,
+        messages: Vec<MessageEntry>,
+        ledger_refs: SauTxLedgerRefs,
+    ) -> Self {
+        Self {
+            update_data,
+            messages: messages.into(),
+            ledger_refs,
+        }
+    }
+
+    pub fn update(&self) -> &SauTxUpdateData {
+        &self.update_data
+    }
+
+    pub fn messages_iter(&self) -> impl Iterator<Item = &MessageEntry> {
+        self.messages.iter()
+    }
+
+    pub fn ledger_refs(&self) -> &SauTxLedgerRefs {
+        &self.ledger_refs
+    }
+}
+
+impl SauTxLedgerRefs {
+    /// Creates empty ledger refs.
+    pub fn new_empty() -> Self {
+        Self {
+            asm_history_proofs: ssz_types::Optional::None,
+        }
+    }
+
+    /// Creates ledger refs with the given ASM history claims.
+    pub fn new_with_claims(claims: ClaimList) -> Self {
+        Self {
+            asm_history_proofs: ssz_types::Optional::Some(claims),
+        }
+    }
+
+    pub fn set_asm_history_claims(&mut self, claims: ClaimList) {
+        self.asm_history_proofs = ssz_types::Optional::Some(claims);
+    }
+
+    pub fn asm_history_proofs(&self) -> Option<&ClaimList> {
+        match self.asm_history_proofs.as_ref() {
+            ssz_types::Optional::None => None,
+            ssz_types::Optional::Some(l) => Some(l),
+        }
+    }
+}
+
+impl SauTxUpdateData {
+    /// Creates a new update data.
+    pub fn new(seq_no: u64, proof_state: SauTxProofState, extra_data: Vec<u8>) -> Self {
+        Self {
+            seq_no,
+            proof_state,
+            extra_data: extra_data.into(),
+        }
+    }
+
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
+    }
+
+    pub fn proof_state(&self) -> &SauTxProofState {
+        &self.proof_state
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+}
+
+impl SauTxProofState {
+    /// Creates a new proof state.
+    pub fn new(new_next_msg_idx: u64, inner_state_root: Buf32) -> Self {
+        Self {
+            new_next_msg_idx,
+            inner_state_root: inner_state_root.0.into(),
+        }
+    }
+
+    pub fn new_next_msg_idx(&self) -> u64 {
+        self.new_next_msg_idx
+    }
+
+    pub fn inner_state_root(&self) -> Buf32 {
+        self.inner_state_root.0.into()
+    }
+}
+
+impl OLTransactionData {
+    /// Creates a new transaction data with the given payload and effects, and default constraints.
+    pub fn new(payload: TransactionPayload, effects: TxEffects) -> Self {
+        Self {
+            payload,
+            constraints: TxConstraints::default(),
+            effects,
+        }
+    }
+
+    /// Creates a GAM transaction data targeting the given account with a zero-value message
+    /// containing the provided payload data.
+    pub fn new_gam(dest: AccountId, data: Vec<u8>) -> Self {
+        let payload = TransactionPayload::GenericAccountMessage(GamTxPayload { target: dest });
+        let mut effects = TxEffects::default();
+        effects.push_message(dest, 0, data);
+        Self {
+            payload,
+            constraints: TxConstraints::default(),
+            effects,
+        }
+    }
+
+    /// Sets the constraints on this transaction data, consuming and returning self.
+    pub fn with_constraints(mut self, constraints: TxConstraints) -> Self {
+        self.constraints = constraints;
+        self
+    }
+
+    pub fn payload(&self) -> &TransactionPayload {
+        &self.payload
+    }
+
+    pub fn constraints(&self) -> &TxConstraints {
+        &self.constraints
+    }
+
+    pub fn effects(&self) -> &TxEffects {
+        &self.effects
+    }
+
+    /// Computes the txid.
+    pub fn compute_txid(&self) -> OLTxId {
+        let txid_raw = <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self);
+        OLTxId::from(Buf32::from(txid_raw.0))
+    }
+}
+
+impl TxProofs {
+    /// Creates an empty TxProofs with no satisfiers or accumulator proofs.
+    pub fn new_empty() -> Self {
+        Self {
+            predicate_satisfiers: ssz_types::Optional::None,
+            accumulator_proofs: ssz_types::Optional::None,
+        }
+    }
+
+    /// Creates TxProofs with the given satisfiers and accumulator proofs.
+    pub fn new(
+        predicate_satisfiers: Option<ProofSatisfierList>,
+        accumulator_proofs: Option<RawMerkleProofList>,
+    ) -> Self {
+        Self {
+            predicate_satisfiers: predicate_satisfiers.into(),
+            accumulator_proofs: accumulator_proofs.into(),
+        }
+    }
+
+    pub fn predicate_satisfiers(&self) -> Option<&ProofSatisfierList> {
+        match &self.predicate_satisfiers {
+            ssz_types::Optional::Some(s) => Some(s),
+            ssz_types::Optional::None => None,
+        }
+    }
+
+    pub fn accumulator_proofs(&self) -> Option<&RawMerkleProofList> {
+        match &self.accumulator_proofs {
+            ssz_types::Optional::Some(p) => Some(p),
+            ssz_types::Optional::None => None,
+        }
     }
 }
 
@@ -141,34 +319,29 @@ impl SnarkAccountUpdateTxPayload {
 mod tests {
     use ssz::{Decode, Encode};
     use strata_acct_types::AccountId;
-    use strata_snark_acct_types::{
-        LedgerRefProofs, LedgerRefs, ProofState, UpdateAccumulatorProofs, UpdateInputData,
-        UpdateOperationData, UpdateOutputs, UpdateStateData,
-    };
     use strata_test_utils_ssz::ssz_proptest;
 
     use crate::{
-        GamTxPayload, OLTransaction, SnarkAccountUpdateTxPayload, TransactionAttachment,
-        TransactionPayload,
         test_utils::{
             gam_tx_payload_strategy, ol_transaction_strategy, transaction_attachment_strategy,
             transaction_payload_strategy,
         },
+        *,
     };
 
-    mod transaction_attachment {
+    mod tx_constraints {
         use super::*;
 
-        ssz_proptest!(TransactionAttachment, transaction_attachment_strategy());
+        ssz_proptest!(TxConstraints, transaction_attachment_strategy());
 
         #[test]
         fn test_none_values() {
-            let attachment = TransactionAttachment {
+            let attachment = TxConstraints {
                 min_slot: ssz_types::Optional::None,
                 max_slot: ssz_types::Optional::None,
             };
             let encoded = attachment.as_ssz_bytes();
-            let decoded = TransactionAttachment::from_ssz_bytes(&encoded).unwrap();
+            let decoded = TxConstraints::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(attachment, decoded);
         }
     }
@@ -179,21 +352,9 @@ mod tests {
         ssz_proptest!(GamTxPayload, gam_tx_payload_strategy());
 
         #[test]
-        fn test_empty_payload() {
+        fn test_roundtrip() {
             let msg = GamTxPayload {
                 target: AccountId::from([0u8; 32]),
-                payload: vec![].into(),
-            };
-            let encoded = msg.as_ssz_bytes();
-            let decoded = GamTxPayload::from_ssz_bytes(&encoded).unwrap();
-            assert_eq!(msg, decoded);
-        }
-
-        #[test]
-        fn test_with_payload() {
-            let msg = GamTxPayload {
-                target: AccountId::from([1u8; 32]),
-                payload: vec![1, 2, 3, 4, 5].into(),
             };
             let encoded = msg.as_ssz_bytes();
             let decoded = GamTxPayload::from_ssz_bytes(&encoded).unwrap();
@@ -210,7 +371,6 @@ mod tests {
         fn test_gam_tx_payload_variant() {
             let payload = TransactionPayload::GenericAccountMessage(GamTxPayload {
                 target: AccountId::from([0u8; 32]),
-                payload: vec![1, 2, 3].into(),
             });
             let encoded = payload.as_ssz_bytes();
             let decoded = TransactionPayload::from_ssz_bytes(&encoded).unwrap();
@@ -219,36 +379,21 @@ mod tests {
 
         #[test]
         fn test_snark_account_update_tx_payload_variant() {
-            let payload = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload {
+            let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload {
                 target: AccountId::from([0u8; 32]),
-                update_container: strata_snark_acct_types::SnarkAccountUpdateContainer {
-                    base_update: strata_snark_acct_types::SnarkAccountUpdate {
-                        operation: UpdateOperationData {
-                            input: UpdateInputData {
-                                seq_no: 1,
-                                messages: vec![].into(),
-                                update_state: UpdateStateData {
-                                    proof_state: ProofState {
-                                        inner_state: [0u8; 32].into(),
-                                        next_inbox_msg_idx: 0,
-                                    },
-                                    extra_data: vec![].into(),
-                                },
-                            },
-                            ledger_refs: LedgerRefs {
-                                l1_header_refs: vec![].into(),
-                            },
-                            outputs: UpdateOutputs {
-                                transfers: vec![].into(),
-                                messages: vec![].into(),
-                            },
+                operation_data: SauTxOperationData {
+                    update_data: SauTxUpdateData {
+                        seq_no: 1,
+                        proof_state: SauTxProofState {
+                            new_next_msg_idx: 0,
+                            inner_state_root: [0u8; 32].into(),
                         },
-                        update_proof: vec![].into(),
+                        extra_data: vec![].into(),
                     },
-                    accumulator_proofs: UpdateAccumulatorProofs::new(
-                        vec![],
-                        LedgerRefProofs::new(vec![]),
-                    ),
+                    messages: vec![].into(),
+                    ledger_refs: SauTxLedgerRefs {
+                        asm_history_proofs: ssz_types::Optional::None,
+                    },
                 },
             });
             let encoded = payload.as_ssz_bytes();
@@ -258,6 +403,8 @@ mod tests {
     }
 
     mod ol_transaction {
+        use strata_acct_types::TxEffects;
+
         use super::*;
 
         ssz_proptest!(OLTransaction, ol_transaction_strategy());
@@ -265,13 +412,16 @@ mod tests {
         #[test]
         fn test_generic_message() {
             let tx = OLTransaction {
-                payload: TransactionPayload::GenericAccountMessage(GamTxPayload {
-                    target: AccountId::from([0u8; 32]),
-                    payload: vec![].into(),
-                }),
-                attachment: TransactionAttachment {
-                    min_slot: ssz_types::Optional::None,
-                    max_slot: ssz_types::Optional::None,
+                data: OLTransactionData {
+                    payload: TransactionPayload::GenericAccountMessage(GamTxPayload {
+                        target: AccountId::from([0u8; 32]),
+                    }),
+                    constraints: TxConstraints::default(),
+                    effects: TxEffects::default(),
+                },
+                proofs: TxProofs {
+                    predicate_satisfiers: ssz_types::Optional::None,
+                    accumulator_proofs: ssz_types::Optional::None,
                 },
             };
             let encoded = tx.as_ssz_bytes();
@@ -282,41 +432,33 @@ mod tests {
         #[test]
         fn test_snark_account_update() {
             let tx = OLTransaction {
-                payload: TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload {
-                    target: AccountId::from([1u8; 32]),
-                    update_container: strata_snark_acct_types::SnarkAccountUpdateContainer {
-                        base_update: strata_snark_acct_types::SnarkAccountUpdate {
-                            operation: UpdateOperationData {
-                                input: UpdateInputData {
-                                    seq_no: 42,
-                                    messages: vec![].into(),
-                                    update_state: UpdateStateData {
-                                        proof_state: ProofState {
-                                            inner_state: [5u8; 32].into(),
-                                            next_inbox_msg_idx: 10,
-                                        },
-                                        extra_data: vec![].into(),
-                                    },
+                data: OLTransactionData {
+                    payload: TransactionPayload::SnarkAccountUpdate(SauTxPayload {
+                        target: AccountId::from([1u8; 32]),
+                        operation_data: SauTxOperationData {
+                            update_data: SauTxUpdateData {
+                                seq_no: 42,
+                                proof_state: SauTxProofState {
+                                    new_next_msg_idx: 10,
+                                    inner_state_root: [5u8; 32].into(),
                                 },
-                                ledger_refs: LedgerRefs {
-                                    l1_header_refs: vec![].into(),
-                                },
-                                outputs: UpdateOutputs {
-                                    transfers: vec![].into(),
-                                    messages: vec![].into(),
-                                },
+                                extra_data: vec![].into(),
                             },
-                            update_proof: vec![].into(),
+                            messages: vec![].into(),
+                            ledger_refs: SauTxLedgerRefs {
+                                asm_history_proofs: ssz_types::Optional::None,
+                            },
                         },
-                        accumulator_proofs: UpdateAccumulatorProofs::new(
-                            vec![],
-                            LedgerRefProofs::new(vec![]),
-                        ),
+                    }),
+                    constraints: TxConstraints {
+                        min_slot: ssz_types::Optional::Some(100),
+                        max_slot: ssz_types::Optional::Some(200),
                     },
-                }),
-                attachment: TransactionAttachment {
-                    min_slot: ssz_types::Optional::Some(100),
-                    max_slot: ssz_types::Optional::Some(200),
+                    effects: TxEffects::default(),
+                },
+                proofs: TxProofs {
+                    predicate_satisfiers: ssz_types::Optional::None,
+                    accumulator_proofs: ssz_types::Optional::None,
                 },
             };
             let encoded = tx.as_ssz_bytes();

@@ -1,24 +1,9 @@
 //! Tests for edge cases in value transfers
 
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
+use strata_acct_types::{BitcoinAmount, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
-use strata_ol_state_types::OLState;
-use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, OutputTransfer, ProofState, SnarkAccountUpdate,
-    SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
-};
 
-use crate::{
-    BRIDGE_GATEWAY_ACCT_ID,
-    errors::ExecError,
-    test_utils::{
-        SnarkUpdateBuilder, TEST_RECIPIENT_ID, create_empty_account, create_test_genesis_state,
-        execute_tx_in_block, get_test_proof, get_test_recipient_account_id,
-        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
-        test_account_id,
-    },
-};
+use crate::{BRIDGE_GATEWAY_ACCT_ID, errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_zero_value_transfer() {
@@ -107,15 +92,9 @@ fn test_snark_update_from_zero_balance_account() {
     // Should fail due to insufficient balance
     assert!(result.is_err(), "Transfer from zero balance should fail");
 
-    match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(1));
-            assert_eq!(available, BitcoinAmount::from_sat(0));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+    match result.unwrap_err().into_base() {
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 
     // Verify sequence number did NOT increment due to failure
@@ -312,45 +291,27 @@ fn test_snark_update_max_bitcoin_supply() {
     create_empty_account(&mut state, recipient_id);
 
     // Try multiple transfers that would exceed total Bitcoin supply
-    let transfer1 = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(max_bitcoin_sats));
-    let transfer2 = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(1)); // Even 1 sat more exceeds balance
+    let mut effects = TxEffects::default();
+    effects.push_transfer(recipient_id, max_bitcoin_sats);
+    effects.push_transfer(recipient_id, 1); // Even 1 sat more exceeds balance
 
-    let update_outputs = UpdateOutputs::new(vec![transfer1, transfer2], vec![]);
-
-    let seq_no = 0u64;
-    let new_proof_state = ProofState::new(get_test_state_root(2), 0);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![],
-        LedgerRefs::new_empty(),
-        update_outputs,
-        vec![],
+    let invalid_tx = create_unchecked_snark_update(
+        snark_id,
+        0, // seq_no
+        get_test_state_root(2),
+        0, // new_msg_idx
+        effects,
     );
 
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
-
     let (slot, epoch) = (1, 0);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     // Should fail due to insufficient balance
     assert!(result.is_err(), "Update exceeding balance should fail");
 
-    match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(max_bitcoin_sats + 1));
-            assert_eq!(available, BitcoinAmount::from_sat(max_bitcoin_sats));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+    match result.unwrap_err().into_base() {
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 
     // Verify no state change
@@ -456,18 +417,13 @@ fn test_snark_update_overflow_u64_boundary() {
     let result1 = execute_tx_in_block(&mut state, genesis_block.header(), tx1, slot, epoch);
 
     // Should fail due to insufficient balance
-    assert!(
-        result1.is_err(),
-        "Update with total exceeding available balance should fail"
-    );
-
-    assert!(
-        matches!(
-            result1,
-            Err(ExecError::Acct(AcctError::BitcoinAmountOverflow))
+    match result1 {
+        Err(e) => assert!(
+            matches!(e.into_base(), ExecError::AmountOverflow),
+            "Expected AmountOverflow"
         ),
-        "Sending more than bitcoin limits"
-    );
+        Ok(_) => panic!("Update with total exceeding available balance should fail"),
+    }
 
     // Verify no state change occurred
     let acct_state = state.get_account_state(snark_id).unwrap().unwrap();
@@ -494,13 +450,13 @@ fn test_snark_update_overflow_u64_boundary() {
 
     let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx2, slot, epoch);
 
-    assert!(
-        matches!(
-            result2,
-            Err(ExecError::Acct(AcctError::BitcoinAmountOverflow))
+    match result2 {
+        Err(e) => assert!(
+            matches!(e.into_base(), ExecError::AmountOverflow),
+            "Expected AmountOverflow"
         ),
-        "Sending more than bitcoin limits"
-    );
+        Ok(_) => panic!("Sending more than bitcoin limits should fail"),
+    }
 
     // Verify recipients have no balance (no partial execution)
     let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();

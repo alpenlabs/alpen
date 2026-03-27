@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 # This is empirical and is used to allow alpen to create and submit DA and get it confirmed.
 # TODO: might need to more intelligently calculate this
-EXPECT_UPDATE_WITHIN_EPOCH = 20
+EXPECT_UPDATE_WITHIN_EPOCH = 10
 CHECK_N_UPDATES = 3  # How many updates from alpen to check in strata
+NUM_INIT_BLOCKS = 5
 
 
 @flexitest.register
@@ -42,6 +43,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
             timeout=20,
         )
         alpen_seq.wait_for_block(5, timeout=60)
+        logger.info("generated initial blocks")
 
         # Get alpen account summary at epoch 0 which should be none
         acct_summary: AccountEpochSummary = strata_rpc.strata_getAccountEpochSummary(
@@ -61,7 +63,9 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                 error_with=f"Expected epoch {next_epoch} not found",
                 timeout=60,
             )
-            new_epochs_since_last = range(next_epoch, status["tip"]["epoch"])
+
+            new_epochs_since_last = list(range(next_epoch, status["tip"]["epoch"]))
+            logger.info(f"new epochs since last: {new_epochs_since_last}")
 
             # Check for new updates in one of the new epochs
             for ep in new_epochs_since_last:
@@ -72,14 +76,14 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                 if acct_summary["update_input"] is not None:
                     logger.info(
                         f"Received update input {new_updates_count + 1}. "
-                        f"Alpen is submitting updates to strata. {acct_summary}"
+                        f"Alpen is submitting updates to Strata. {acct_summary}"
                     )
                     last_new_update_at = ep
                     new_updates_count += 1
 
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:
                     raise AssertionError(
-                        f"No new update(nth={new_updates_count + 1}) received"
+                        f"No new update (nth={new_updates_count + 1}) received"
                         f" within {EXPECT_UPDATE_WITHIN_EPOCH} epochs"
                     )
 

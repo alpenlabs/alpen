@@ -6,19 +6,17 @@ use std::{
 };
 
 use async_trait::async_trait;
-use strata_acct_types::{AccountId, tree_hash::TreeHash};
+use strata_acct_types::{
+    AccountId, AccumulatorClaim, MessageEntry, RawMerkleProof, tree_hash::TreeHash,
+};
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ledger_types::{
-    IAccountStateConstructible, IAccountStateMut, IStateAccessor, asm_manifests_mmr_start_height,
-};
+use strata_ledger_types::{IAccountStateConstructible, IAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
 use strata_ol_state_types::{IStateBatchApplicable, StateProvider};
-use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefProofs, MessageEntry, MessageEntryProof, MmrEntryProof,
-};
+use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 
 use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
@@ -85,7 +83,15 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
         messages: &[MessageEntry],
         start_idx: u64,
         at_leaf_count: u64,
-    ) -> BlockAssemblyResult<Vec<MessageEntryProof>>;
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
+
+    /// Generates inbox MMR proofs for the given accumulator claims.
+    fn generate_inbox_proofs_for_claims(
+        &self,
+        target: AccountId,
+        claims: &[AccumulatorClaim],
+        at_leaf_count: u64,
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
 
     /// Validates claims and generates L1 header reference proofs.
     fn generate_l1_header_proofs<T: IStateAccessor>(
@@ -131,16 +137,6 @@ impl<M, S> BlockAssemblyContext<M, S> {
             state_provider,
             _genesis_l1_height: genesis_l1_height,
         }
-    }
-
-    /// Converts an L1 block height to an MMR leaf index using the given start height.
-    fn height_to_mmr_index(&self, height: u64, mmr_start_height: u64) -> BlockAssemblyResult<u64> {
-        let offset = mmr_start_height;
-        height.checked_sub(offset).ok_or_else(|| {
-            BlockAssemblyError::Other(format!(
-                "L1 height {height} is before MMR start offset {offset}"
-            ))
-        })
     }
 }
 
@@ -243,7 +239,7 @@ where
         messages: &[MessageEntry],
         start_idx: u64,
         at_leaf_count: u64,
-    ) -> BlockAssemblyResult<Vec<MessageEntryProof>> {
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>> {
         if messages.is_empty() {
             return Ok(Vec::new());
         }
@@ -279,17 +275,54 @@ where
             });
         }
 
-        // Build MessageEntryProof for each message
-        let inbox_proofs = messages
-            .iter()
-            .zip(merkle_proofs)
-            .map(|(message, merkle_proof)| {
-                let raw_proof = merkle_proof.inner.clone();
-                MessageEntryProof::new(message.clone(), raw_proof)
-            })
+        // Return raw merkle proofs
+        let inbox_proofs = merkle_proofs
+            .into_iter()
+            .map(|merkle_proof| merkle_proof.inner.clone())
             .collect();
 
         Ok(inbox_proofs)
+    }
+
+    fn generate_inbox_proofs_for_claims(
+        &self,
+        target: AccountId,
+        claims: &[AccumulatorClaim],
+        at_leaf_count: u64,
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>> {
+        if claims.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mmr_handle = self
+            .storage
+            .mmr_index()
+            .as_ref()
+            .get_handle(MmrId::SnarkMsgInbox(target));
+
+        let indices_and_hashes: Vec<_> = claims
+            .iter()
+            .map(|claim| (claim.idx(), claim.entry_hash()))
+            .collect();
+
+        let merkle_proofs = mmr_handle
+            .generate_proofs_for_indices(&indices_and_hashes, at_leaf_count)
+            .map_err(|err| match err {
+                DbError::MmrLeafHashMismatch { idx, expected, got } => {
+                    BlockAssemblyError::InboxEntryHashMismatch {
+                        idx,
+                        account_id: target,
+                        expected,
+                        actual: got,
+                    }
+                }
+                other => BlockAssemblyError::Db(other),
+            })?;
+
+        Ok(merkle_proofs
+            .into_iter()
+            .map(|merkle_proof| merkle_proof.inner.clone())
+            .collect())
     }
 
     fn generate_l1_header_proofs<T: IStateAccessor>(
@@ -303,16 +336,13 @@ where
 
         let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
         let at_leaf_count = state.asm_manifests_mmr().num_entries();
-        let mmr_start_height = asm_manifests_mmr_start_height(state)
-            .ok_or_else(|| BlockAssemblyError::Other("invalid manifests MMR start height".into()))?
-            as u64;
-        let indices_and_hashes = l1_header_refs
+
+        // Claims already carry MMR leaf indices (not L1 heights), so use them
+        // directly for proof generation.
+        let indices_and_hashes: Vec<_> = l1_header_refs
             .iter()
-            .map(|claim| {
-                let mmr_idx = self.height_to_mmr_index(claim.idx(), mmr_start_height)?;
-                Ok((mmr_idx, claim.entry_hash()))
-            })
-            .collect::<BlockAssemblyResult<Vec<_>>>()?;
+            .map(|claim| (claim.idx(), claim.entry_hash()))
+            .collect();
 
         let merkle_proofs = mmr_handle
             .generate_proofs_for_indices(&indices_and_hashes, at_leaf_count)
@@ -327,10 +357,9 @@ where
                 other => BlockAssemblyError::Db(other),
             })?;
 
-        let l1_header_proofs = indices_and_hashes
+        let l1_header_proofs = merkle_proofs
             .into_iter()
-            .zip(merkle_proofs)
-            .map(|((_, entry_hash), merkle_proof)| MmrEntryProof::new(entry_hash, merkle_proof))
+            .map(|merkle_proof| merkle_proof.inner.clone())
             .collect();
         Ok(LedgerRefProofs::new(l1_header_proofs))
     }
@@ -338,10 +367,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use strata_acct_types::AccumulatorClaim;
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
     use strata_ledger_types::IStateAccessor;
-    use strata_snark_acct_types::AccumulatorClaim;
 
     use super::*;
     use crate::test_utils::{
@@ -374,9 +403,8 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_header(manifest_hash);
 
-        // Collect claims and hashes before creating context
-        let claims = asm_mmr.claims(0);
-        let expected_hash = asm_mmr.hashes()[0];
+        // Collect claims before creating context
+        let claims = asm_mmr.claims();
         let mut state = create_test_genesis_state();
         state.append_manifest(manifest.height(), manifest);
 
@@ -387,7 +415,6 @@ mod tests {
         assert!(result.is_ok(), "Should succeed with valid claim");
         let proofs = result.unwrap();
         assert_eq!(proofs.l1_headers_proofs().len(), 1);
-        assert_eq!(proofs.l1_headers_proofs()[0].entry_hash(), expected_hash);
     }
 
     #[test]
@@ -407,7 +434,7 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_headers(manifest_hashes.iter().copied());
 
-        let claims = asm_mmr.claims(0);
+        let claims = asm_mmr.claims();
         let mut state = create_test_genesis_state();
         for manifest in manifests {
             state.append_manifest(manifest.height(), manifest);
@@ -432,10 +459,10 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_header(manifest_hash);
 
-        // Create claim with correct height but wrong hash
-        let claim_height = asm_mmr.indices()[0] + 1; // height = mmr_idx + offset(1)
+        // Create claim with correct MMR index but wrong hash
+        let mmr_idx = asm_mmr.indices()[0];
         let wrong_hash = test_hash(99);
-        let claim = AccumulatorClaim::new(claim_height, wrong_hash);
+        let claim = AccumulatorClaim::new(mmr_idx, wrong_hash);
         let expected_hash = asm_mmr.hashes()[0];
         let mut state = create_test_genesis_state();
         state.append_manifest(manifest.height(), manifest);
@@ -473,9 +500,9 @@ mod tests {
         let mut asm_mmr = StorageAsmMmr::new(&storage);
         asm_mmr.add_header(manifest_hash);
 
-        // Create claim with non-existent height (height 999 → MMR index 998, doesn't exist)
-        let nonexistent_height = 999u64;
-        let claim = AccumulatorClaim::new(nonexistent_height, asm_mmr.hashes()[0]);
+        // Create claim with non-existent MMR index (999 doesn't exist, MMR has 1 entry)
+        let nonexistent_idx = 999u64;
+        let claim = AccumulatorClaim::new(nonexistent_idx, asm_mmr.hashes()[0]);
         let mut state = create_test_genesis_state();
         state.append_manifest(manifest.height(), manifest);
 
@@ -485,12 +512,11 @@ mod tests {
 
         assert!(result.is_err(), "Should fail with missing index");
         let err = result.unwrap_err();
-        let expected_mmr_idx = nonexistent_height - 1; // offset = genesis_height(0) + 1
         assert!(
             matches!(
                 &err,
                 BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { requested, cur })
-                    if *requested == expected_mmr_idx && *cur == 1
+                    if *requested == nonexistent_idx && *cur == 1
             ),
             "Expected Db(MmrIndexOutOfRange) error, got: {:?}",
             err
@@ -500,8 +526,8 @@ mod tests {
     #[test]
     fn test_l1_header_claim_empty_mmr() {
         let storage = create_test_storage();
-        // height=1 is the minimum valid height (offset = genesis_height(0) + 1)
-        let claim = AccumulatorClaim::new(1, test_hash(42));
+        // MMR index 0 is valid but the MMR is empty
+        let claim = AccumulatorClaim::new(0, test_hash(42));
         let state = create_test_genesis_state();
         let ctx = create_test_context(storage);
 
@@ -565,8 +591,6 @@ mod tests {
         );
         let proofs = result.unwrap();
         assert_eq!(proofs.len(), 2);
-        assert_eq!(proofs[0].entry(), &entries[0]);
-        assert_eq!(proofs[1].entry(), &entries[1]);
     }
 
     #[test]
@@ -612,8 +636,6 @@ mod tests {
         );
         let proofs = result.unwrap();
         assert_eq!(proofs.len(), 2);
-        assert_eq!(proofs[0].entry(), &entries[2]);
-        assert_eq!(proofs[1].entry(), &entries[3]);
     }
 
     #[test]

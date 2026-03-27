@@ -4,15 +4,15 @@
 //! inputs, allowing the consumer to query available inputs and accept
 //! validated [`ChunkTransition`]s.
 
-use strata_acct_types::Hash;
+use strata_acct_types::{Hash, MessageEntry};
 use strata_ee_acct_types::{
     EeAccountState, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
 };
 use strata_ee_chain_types::ChunkTransition;
 use strata_snark_acct_runtime::{PrivateInput, UpdateBuilder as GenericUpdateBuilder};
 use strata_snark_acct_types::{
-    LedgerRefs, MessageEntry, OutputMessage, OutputTransfer, SnarkAccountState,
-    UpdateOperationData, UpdateOutputs,
+    LedgerRefs, OutputMessage, OutputTransfer, SnarkAccountState, UpdateOperationData,
+    UpdateOutputs,
 };
 
 use crate::{

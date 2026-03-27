@@ -11,8 +11,9 @@
 //! [`SnarkAccountProgramVerification`] for the verification path), allowing
 //! different account types to reuse the same processing logic.
 
+use strata_acct_types::MessageEntry;
 use strata_codec::decode_buf_exact;
-use strata_snark_acct_types::{MessageEntry, UpdateManifest};
+use strata_snark_acct_types::UpdateManifest;
 
 use crate::{
     ArchivedCoinput, ArchivedPrivateInput, IInnerState, InputMessage, UpdateLedgerInfo,
@@ -181,11 +182,9 @@ pub fn apply_update_unconditionally<P: SnarkAccountProgram>(
 mod tests {
     use rkyv::{rancor::Error as RkyvError, util::AlignedVec};
     use ssz_derive::{Decode, Encode};
-    use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+    use strata_acct_types::*;
     use strata_codec::impl_type_flat_struct;
-    use strata_snark_acct_types::{
-        LedgerRefs, MessageEntry, ProofState, UpdateManifest, UpdateOutputs,
-    };
+    use strata_snark_acct_types::*;
 
     use super::*;
     use crate::{

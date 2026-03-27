@@ -23,6 +23,7 @@ pub(super) async fn build_update_from_batch(
     ol_client: &impl SequencerOLClient,
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
+    genesis_l1_height: L1Height,
 ) -> Result<SnarkAccountUpdate> {
     // Get all blocks in the batch
     let blocks = try_join_all(batch.blocks_iter().map(|hash| {
@@ -47,7 +48,13 @@ pub(super) async fn build_update_from_batch(
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
     let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
-    let update_operation = build_update_operation(seq_no, da_refs, &l1_header_commitments, blocks)?;
+    let update_operation = build_update_operation(
+        seq_no,
+        da_refs,
+        &l1_header_commitments,
+        blocks,
+        genesis_l1_height,
+    )?;
 
     // Should we re-check that proof is valid ?
 
@@ -85,6 +92,7 @@ fn build_update_operation(
     da_refs: &[L1DaBlockRef],
     l1_header_commitments: &HashMap<L1Height, Hash>,
     blocks: Vec<ExecBlockRecord>,
+    genesis_l1_height: L1Height,
 ) -> Result<UpdateOperationData> {
     // 1. Get info from final block
     let (inner_state, new_tip_blkid, next_inbox_msg_idx) = {
@@ -128,8 +136,11 @@ fn build_update_operation(
     let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs as u32, 0);
     let extra_data_buf = encode_to_vec(&extra_data)?;
 
-    // 4. Build ledger refs from DA block references (idx = L1 block height) and canonical L1 header
-    //    commitments fetched from OL.
+    // 4. Build ledger refs from DA block references. The claim idx must be the MMR leaf index (not
+    //    the raw L1 height), since the OL STF verifier uses it directly as the position in the ASM
+    //    manifests MMR. The offset is `genesis_l1_height + 1` (the first manifest is for the block
+    //    after genesis).
+    let mmr_offset = genesis_l1_height as u64 + 1;
     let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
@@ -138,10 +149,13 @@ fn build_update_operation(
                 .get(&height)
                 .copied()
                 .ok_or_else(|| eyre!("missing L1 header commitment for L1 height {height}"))?;
-            Ok(AccumulatorClaim::new(height as u64, *hash.as_ref()))
+            let mmr_idx = (height as u64).checked_sub(mmr_offset).ok_or_else(|| {
+                eyre!("L1 height {height} is before MMR start offset {mmr_offset}")
+            })?;
+            Ok(AccumulatorClaim::new(mmr_idx, *hash.as_ref()))
         })
         .collect::<Result<Vec<_>>>()?;
-    // Canonicalize by height before dedup: multiple DA txns may land in the same L1 block.
+    // Canonicalize by MMR index before dedup: multiple DA txns may land in the same L1 block.
     l1_header_refs.sort_by_key(|c| c.idx());
     l1_header_refs.dedup_by_key(|c| c.idx());
     let ledger_refs = LedgerRefs::new(l1_header_refs);

@@ -1,23 +1,9 @@
 //! Tests for multiple operations in a single update
 
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount, MsgPayload};
+use strata_acct_types::BitcoinAmount;
 use strata_ledger_types::{IAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
-use strata_ol_state_types::OLState;
-use strata_snark_acct_types::{
-    LedgerRefProofs, LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate,
-    SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
-};
 
-use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID,
-    errors::ExecError,
-    test_utils::{
-        SnarkUpdateBuilder, create_empty_account, create_test_genesis_state, execute_tx_in_block,
-        get_test_proof, get_test_recipient_account_id, get_test_snark_account_id,
-        get_test_state_root, setup_genesis_with_snark_account, test_account_id,
-    },
-};
+use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_multiple_transfers() {
@@ -96,39 +82,20 @@ fn test_snark_update_multiple_output_messages() {
     // Setup: genesis with snark account
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
-    // Create multiple output messages
-    let msg1_payload = MsgPayload::new(BitcoinAmount::from_sat(10_000_000), vec![1, 2, 3]);
-    let msg2_payload = MsgPayload::new(BitcoinAmount::from_sat(5_000_000), vec![4, 5, 6]);
-    let msg3_payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![7, 8, 9]);
-
-    let output_message1 = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg1_payload);
-    let output_message2 = OutputMessage::new(SEQUENCER_ACCT_ID, msg2_payload);
-    let output_message3 = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg3_payload);
-
-    // Create update with multiple messages
-    let update_outputs = UpdateOutputs::new(
-        vec![],
-        vec![output_message1, output_message2, output_message3],
-    );
-
-    let seq_no = 0u64;
-    let new_proof_state = ProofState::new(get_test_state_root(2), 0);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![],
-        LedgerRefs::new_empty(),
-        update_outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
+    // Create update with multiple output messages using SnarkUpdateBuilder
+    let tx = SnarkUpdateBuilder::from_snark_state(
+        state
+            .get_account_state(snark_id)
+            .unwrap()
+            .unwrap()
+            .as_snark_account()
+            .unwrap()
+            .clone(),
+    )
+    .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 10_000_000, vec![1, 2, 3])
+    .with_output_message(SEQUENCER_ACCT_ID, 5_000_000, vec![4, 5, 6])
+    .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 0, vec![7, 8, 9])
+    .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 0);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -159,31 +126,19 @@ fn test_snark_update_transfers_and_messages_combined() {
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
 
-    // Create update with both transfers and messages
-    let transfer = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(25_000_000));
-    let msg_payload = MsgPayload::new(BitcoinAmount::from_sat(15_000_000), vec![42, 43, 44]);
-    let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
-
-    let update_outputs = UpdateOutputs::new(vec![transfer], vec![output_message]);
-
-    let seq_no = 0u64;
-    let new_proof_state = ProofState::new(get_test_state_root(2), 0);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![],
-        LedgerRefs::new_empty(),
-        update_outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
+    // Create update with both transfers and messages using SnarkUpdateBuilder
+    let tx = SnarkUpdateBuilder::from_snark_state(
+        state
+            .get_account_state(snark_id)
+            .unwrap()
+            .unwrap()
+            .as_snark_account()
+            .unwrap()
+            .clone(),
+    )
+    .with_transfer(recipient_id, 25_000_000)
+    .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 15_000_000, vec![42, 43, 44])
+    .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 0);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -241,15 +196,9 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     assert!(result.is_err(), "Update exceeding balance should fail");
-    match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(110_000_000));
-            assert_eq!(available, BitcoinAmount::from_sat(100_000_000));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+    match result.unwrap_err().into_base() {
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 
     // Verify no partial execution - all balances should be unchanged

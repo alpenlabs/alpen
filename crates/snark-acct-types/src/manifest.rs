@@ -1,6 +1,8 @@
 //! Update history types extracted from L1.
 
-use crate::{MessageEntry, ProofState};
+use strata_acct_types::MessageEntry;
+
+use crate::ProofState;
 
 /// Description of a snark account update extracted from L1.
 ///

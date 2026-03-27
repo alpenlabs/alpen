@@ -21,7 +21,7 @@ use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
     types::{
         MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-        OLMempoolTransaction,
+        OLMempoolTransaction, OLMempoolTxPayload,
     },
     validation::validate_transaction,
 };
@@ -598,60 +598,6 @@ impl<P: StateProvider> MempoolServiceState<P> {
         Ok(())
     }
 
-    /// Extracts transaction IDs grouped by account from a block.
-    ///
-    /// Returns HashMap where keys are accounts with included transactions
-    /// and values are the transaction IDs for that account.
-    ///
-    /// Converts block transactions to mempool format (without accumulator proofs).
-    fn extract_account_txs_from_block(block: &OLBlock) -> HashMap<AccountId, Vec<OLTxId>> {
-        let mut by_account: HashMap<AccountId, Vec<OLTxId>> = HashMap::new();
-
-        if let Some(tx_segment) = block.body().tx_segment() {
-            for tx in tx_segment.txs() {
-                // Convert to mempool transaction (removes accumulator proofs)
-                if let Ok(mempool_tx) = Self::convert_block_tx_to_mempool_tx(tx) {
-                    let account = mempool_tx.target();
-                    let txid = mempool_tx.compute_txid();
-                    by_account.entry(account).or_default().push(txid);
-                }
-            }
-        }
-
-        by_account
-    }
-
-    /// Converts a block transaction to a mempool transaction by removing accumulator proofs.
-    ///
-    /// For [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions, this
-    /// extracts only the base_update without accumulator_proofs. For
-    /// [`GenericAccountMessage`](crate::types::OLMempoolTxPayload::GenericAccountMessage)
-    /// transactions, this is a direct conversion.
-    fn convert_block_tx_to_mempool_tx(
-        block_tx: &OLTransaction,
-    ) -> Result<OLMempoolTransaction, OLMempoolError> {
-        let attachment = block_tx.attachment().clone();
-        match block_tx.payload() {
-            TransactionPayload::GenericAccountMessage(gam) => {
-                OLMempoolTransaction::new_generic_account_message(
-                    *gam.target(),
-                    gam.payload().to_vec(),
-                    attachment,
-                )
-                .map_err(|e| OLMempoolError::Serialization(e.to_string()))
-            }
-            TransactionPayload::SnarkAccountUpdate(snark_payload) => {
-                let target = *snark_payload.target();
-                let base_update = snark_payload.update_container().base_update().clone();
-                Ok(OLMempoolTransaction::new_snark_account_update(
-                    target,
-                    base_update,
-                    attachment,
-                ))
-            }
-        }
-    }
-
     /// Update stats when a transaction is added successfully.
     fn update_stats_on_add(&mut self, tx_size: usize) {
         self.stats.mempool_size += 1;
@@ -714,7 +660,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
             })?;
 
         // Step 2: Extract transaction IDs grouped by account
-        let txids_by_account = Self::extract_account_txs_from_block(&block);
+        let txids_by_account = extract_account_txs_from_block(&block);
 
         // Step 3: Remove included transactions from mempool (no cascade)
         let included_txids: Vec<OLTxId> = txids_by_account.values().flatten().copied().collect();
@@ -812,6 +758,98 @@ impl<P: StateProvider> ServiceState for MempoolServiceState<P> {
     }
 }
 
+/// Extracts transaction IDs grouped by account from a block.
+///
+/// Converts block transactions to mempool format (without accumulator proofs)
+/// and computes txids that match the original mempool entries.
+fn extract_account_txs_from_block(block: &OLBlock) -> HashMap<AccountId, Vec<OLTxId>> {
+    let mut by_account: HashMap<AccountId, Vec<OLTxId>> = HashMap::new();
+
+    if let Some(tx_segment) = block.body().tx_segment() {
+        for tx in tx_segment.txs() {
+            if let Ok(mempool_tx) = convert_block_tx_to_mempool_tx(tx) {
+                let account = mempool_tx.target();
+                let txid = mempool_tx.compute_txid();
+                by_account.entry(account).or_default().push(txid);
+            }
+        }
+    }
+
+    by_account
+}
+
+/// Converts a block transaction to a mempool transaction by removing proofs.
+///
+/// Preserves effects from the block transaction so the recomputed txid matches
+/// the original mempool entry.
+fn convert_block_tx_to_mempool_tx(
+    block_tx: &OLTransaction,
+) -> Result<OLMempoolTransaction, OLMempoolError> {
+    let constraints = block_tx.constraints().clone();
+    let effects = block_tx.data().effects().clone();
+
+    match block_tx.payload() {
+        TransactionPayload::GenericAccountMessage(gam) => {
+            let payload = OLMempoolTxPayload::new_generic_account_message(*gam.target(), vec![])
+                .map_err(|e| OLMempoolError::Serialization(e.to_string()))?;
+            Ok(OLMempoolTransaction {
+                payload,
+                constraints,
+                effects,
+            })
+        }
+        TransactionPayload::SnarkAccountUpdate(snark_payload) => {
+            let target = *snark_payload.target();
+            let operation = snark_payload.operation();
+            let update_data = operation.update();
+
+            let proof_state = strata_snark_acct_types::ProofState::new(
+                update_data.proof_state().inner_state_root(),
+                update_data.proof_state().new_next_msg_idx(),
+            );
+            let messages: Vec<_> = operation.messages_iter().cloned().collect();
+            let ledger_refs = strata_snark_acct_types::LedgerRefs::new(
+                operation
+                    .ledger_refs()
+                    .asm_history_proofs()
+                    .map(|c| c.claims.iter().cloned().collect())
+                    .unwrap_or_default(),
+            );
+
+            // Reconstruct UpdateOutputs from the block tx's effects so
+            // the SnarkAccountUpdate SSZ encoding matches the original.
+            let outputs = strata_snark_acct_sys::effects_to_update_outputs(&effects);
+
+            let snark_operation = strata_snark_acct_types::UpdateOperationData::new(
+                update_data.seq_no(),
+                proof_state,
+                messages,
+                ledger_refs,
+                outputs,
+                update_data.extra_data().to_vec(),
+            );
+
+            // Recover the update proof from TxProofs predicate satisfiers.
+            let update_proof = block_tx
+                .proofs()
+                .predicate_satisfiers()
+                .and_then(|ps| ps.proofs().first())
+                .map(|p| p.proof().to_vec())
+                .unwrap_or_default();
+
+            let base_update =
+                strata_snark_acct_types::SnarkAccountUpdate::new(snark_operation, update_proof);
+
+            let payload = OLMempoolTxPayload::new_snark_account_update(target, base_update);
+            Ok(OLMempoolTransaction {
+                payload,
+                constraints,
+                effects,
+            })
+        }
+    }
+}
+
 /// Returns true if a transaction reported as invalid should be removed from the mempool.
 fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
     matches!(reason, MempoolTxInvalidReason::Invalid)
@@ -826,11 +864,11 @@ mod tests {
     use crate::{
         DEFAULT_COMMAND_BUFFER_SIZE, DEFAULT_MAX_MEMPOOL_BYTES, DEFAULT_MAX_REORG_DEPTH,
         test_utils::{
-            create_test_account_id_with, create_test_attachment_with_slots,
-            create_test_block_commitment, create_test_context, create_test_generic_tx_with_size,
-            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
-            create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
-            create_test_tx_with_id,
+            create_test_account_id_with, create_test_block_commitment,
+            create_test_constraints_with_slots, create_test_context,
+            create_test_generic_tx_with_size, create_test_ol_state_for_tip,
+            create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
+            create_test_state_provider, create_test_tx_with_id,
         },
         types::OLMempoolConfig,
     };
@@ -950,32 +988,20 @@ mod tests {
         // Add three GAM transactions
         // They should get different priorities due to insertion order
         let account1 = create_test_account_id_with(200);
-        let gam1 = OLMempoolTransaction::new_generic_account_message(
-            account1,
-            vec![1, 2, 3],
-            create_test_attachment_with_slots(None, None),
-        )
-        .unwrap();
+        let gam1 =
+            OLMempoolTransaction::new_generic_account_message(account1, vec![1, 2, 3]).unwrap();
         let gam1_target = gam1.target();
         state.add_transaction(gam1).await.unwrap();
 
         let account2 = create_test_account_id_with(201);
-        let gam2 = OLMempoolTransaction::new_generic_account_message(
-            account2,
-            vec![4, 5, 6],
-            create_test_attachment_with_slots(None, None),
-        )
-        .unwrap();
+        let gam2 =
+            OLMempoolTransaction::new_generic_account_message(account2, vec![4, 5, 6]).unwrap();
         let gam2_target = gam2.target();
         state.add_transaction(gam2).await.unwrap();
 
         let account3 = create_test_account_id_with(202);
-        let gam3 = OLMempoolTransaction::new_generic_account_message(
-            account3,
-            vec![7, 8, 9],
-            create_test_attachment_with_slots(None, None),
-        )
-        .unwrap();
+        let gam3 =
+            OLMempoolTransaction::new_generic_account_message(account3, vec![7, 8, 9]).unwrap();
         let gam3_target = gam3.target();
         state.add_transaction(gam3).await.unwrap();
 
@@ -1602,9 +1628,9 @@ mod tests {
         let mut tx2 = create_test_snark_tx_with_seq_no(1, 2);
 
         // Set max_slot so tx1 expires at slot 110, others at 120
-        tx0.attachment.max_slot = Optional::Some(120);
-        tx1.attachment.max_slot = Optional::Some(110);
-        tx2.attachment.max_slot = Optional::Some(120);
+        tx0.constraints.max_slot = Optional::Some(120);
+        tx1.constraints.max_slot = Optional::Some(110);
+        tx2.constraints.max_slot = Optional::Some(120);
 
         let txid0 = state.add_transaction(tx0).await.unwrap();
         let txid1 = state.add_transaction(tx1).await.unwrap();
@@ -1732,7 +1758,7 @@ mod tests {
         let oversized_tx = create_test_generic_tx_with_size(
             account_200,
             max_tx_size + 100,
-            create_test_attachment_with_slots(None, None),
+            create_test_constraints_with_slots(None, None),
         );
 
         // Should be rejected due to size
@@ -1757,7 +1783,7 @@ mod tests {
         let valid_tx = create_test_generic_tx_with_size(
             account_200,
             100, // Small payload that should fit
-            create_test_attachment_with_slots(None, None),
+            create_test_constraints_with_slots(None, None),
         );
 
         let result = state.add_transaction(valid_tx).await;

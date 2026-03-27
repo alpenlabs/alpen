@@ -6,8 +6,8 @@ use std::mem;
 
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{
-    AccountId, BitcoinAmount, Hash, Mmr64, MsgPayload, RawMerkleProof, StrataHasher,
-    tree_hash::TreeHash,
+    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
+    RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{
@@ -17,18 +17,10 @@ use strata_ledger_types::{
     AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
 };
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
-use strata_ol_chain_types_new::{
-    GamTxPayload, OLBlockHeader, OLL1ManifestContainer, OLTransaction, OLTxSegment,
-    SnarkAccountUpdateTxPayload, TransactionAttachment, TransactionPayload,
-};
+use strata_ol_chain_types_new::*;
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefProofs, LedgerRefs, MessageEntry, MessageEntryProof, MmrEntryProof,
-    OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, SnarkAccountUpdateContainer,
-    UpdateAccumulatorProofs, UpdateOperationData, UpdateOutputs,
-};
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub fn create_test_genesis_state() -> OLState {
@@ -112,7 +104,7 @@ pub fn build_empty_chain(
         let components = if is_terminal {
             // Create a terminal block with a dummy manifest
             let dummy_manifest = AsmManifest::new(
-                (state.last_l1_height() + 1), // Next L1 height after state's last seen
+                state.last_l1_height() + 1, // Next L1 height after state's last seen
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
@@ -171,7 +163,6 @@ pub fn build_chain_with_transactions(
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> Vec<CompletedBlock> {
-    // TODO(STR-2349): Replace synthetic chain data with realistic test data
     let mut blocks = Vec::with_capacity(num_blocks);
 
     let gam_target = test_account_id(1);
@@ -185,7 +176,7 @@ pub fn build_chain_with_transactions(
 
     // Terminal genesis (with manifest) so epoch advances from 0 to 1
     let genesis_manifest = AsmManifest::new(
-        1, // Genesis manifest should be at height 1 when last_l1_height is 0
+        1,
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
@@ -199,7 +190,7 @@ pub fn build_chain_with_transactions(
     let mut state_root_counter: u8 = 2;
     let mut inbox_tracker = InboxMmrTracker::new();
     let mut pending_msgs: Vec<MessageEntry> = Vec::new();
-    let mut pending_proofs = Vec::new();
+    let mut pending_proofs: Vec<RawMerkleProof> = Vec::new();
 
     for i in 1..num_blocks {
         let slot = i as u64;
@@ -212,21 +203,14 @@ pub fn build_chain_with_transactions(
 
         let components = if is_terminal {
             let dummy_manifest = AsmManifest::new(
-                (state.last_l1_height() + 1), // Next L1 height after state's last seen
+                state.last_l1_height() + 1,
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
             );
-            let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(gam_target, format!("terminal block {i}").into_bytes())
-                    .expect("GamTxPayload creation should succeed"),
-            );
             BlockComponents::new(
-                OLTxSegment::new(vec![OLTransaction::new(
-                    tx,
-                    TransactionAttachment::default(),
-                )])
-                .expect("tx segment should be within limits"),
+                OLTxSegment::new(vec![make_gam_tx(gam_target)])
+                    .expect("tx segment should be within limits"),
                 Some(
                     OLL1ManifestContainer::new(vec![dummy_manifest])
                         .expect("single manifest should succeed"),
@@ -235,21 +219,21 @@ pub fn build_chain_with_transactions(
         } else if i % 4 == 1 {
             // GAM to snark account: populates the snark's inbox for later processing
             let msg_data = format!("inbox msg at slot {i}").into_bytes();
-            let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(snark_id, msg_data.clone())
-                    .expect("GamTxPayload creation should succeed"),
-            );
 
             let msg_entry = MessageEntry::new(
                 crate::SEQUENCER_ACCT_ID,
                 epoch,
-                MsgPayload::new(BitcoinAmount::from_sat(0), msg_data),
+                MsgPayload::new(BitcoinAmount::from_sat(0), msg_data.clone()),
             );
             let proof = inbox_tracker.add_message(&msg_entry);
             pending_msgs.push(msg_entry);
             pending_proofs.push(proof);
 
-            BlockComponents::new_txs(vec![tx])
+            let gam_tx = OLTransaction::new(
+                OLTransactionData::new_gam(snark_id, msg_data),
+                TxProofs::new_empty(),
+            );
+            BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
         } else if i % 4 == 3 && !pending_msgs.is_empty() {
             // Complex SnarkAccountUpdate: processes inbox messages with valid MMR proofs
             // and transfers funds to the recipient account
@@ -261,14 +245,14 @@ pub fn build_chain_with_transactions(
             let new_state_root = get_test_state_root(state_root_counter);
             state_root_counter = state_root_counter.wrapping_add(1);
             let tx = builder.build(snark_id, new_state_root, vec![0u8; 32]);
-            BlockComponents::new_txs(vec![tx])
+            BlockComponents::new_txs_from_ol_transactions(vec![tx])
         } else if i % 4 == 2 {
             // GAM to regular target account
-            let tx = TransactionPayload::GenericAccountMessage(
-                GamTxPayload::new(gam_target, format!("message at slot {i}").into_bytes())
-                    .expect("GamTxPayload creation should succeed"),
+            let gam_tx = OLTransaction::new(
+                OLTransactionData::new_gam(gam_target, vec![]),
+                TxProofs::new_empty(),
             );
-            BlockComponents::new_txs(vec![tx])
+            BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
         } else {
             BlockComponents::new_empty()
         };
@@ -363,7 +347,6 @@ pub fn tamper_parent_blkid(
     header: &OLBlockHeader,
     new_parent: strata_ol_chain_types_new::OLBlockId,
 ) -> OLBlockHeader {
-    // We need to create a new header with the modified parent
     OLBlockHeader::new(
         header.timestamp(),
         header.flags(),
@@ -474,7 +457,6 @@ pub fn get_test_proof(variant: u8) -> Vec<u8> {
 }
 
 /// Helper to track inbox MMR proofs in parallel with the actual STF inbox MMR.
-/// This allows generating valid MMR proofs for testing by maintaining proofs as leaves are added.
 #[derive(Debug)]
 pub struct InboxMmrTracker {
     mmr: Mmr64,
@@ -495,13 +477,10 @@ impl InboxMmrTracker {
         }
     }
 
-    /// Adds a message entry to the tracker and returns a proof for it.
-    /// Uses TreeHash for consistent hashing with insertion and verification.
-    pub fn add_message(&mut self, entry: &MessageEntry) -> MessageEntryProof {
-        // Compute hash using TreeHash, matching both insertion and verification
+    /// Adds a message entry to the tracker and returns a raw merkle proof for it.
+    pub fn add_message(&mut self, entry: &MessageEntry) -> RawMerkleProof {
         let hash = <MessageEntry as TreeHash>::tree_hash_root(entry);
 
-        // Add to MMR with proof tracking
         let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
             &mut self.mmr,
             hash.into_inner(),
@@ -512,16 +491,14 @@ impl InboxMmrTracker {
         self.proofs.push(proof.clone());
 
         // Convert MerkleProof to RawMerkleProof (strip the index)
-        let raw_proof = RawMerkleProof {
+        RawMerkleProof {
             cohashes: proof
                 .cohashes()
                 .iter()
                 .map(|h| FixedBytes::from(*h))
                 .collect::<Vec<_>>()
                 .into(),
-        };
-
-        MessageEntryProof::new(entry.clone(), raw_proof)
+        }
     }
 
     /// Returns the number of entries in the tracked MMR
@@ -551,16 +528,11 @@ impl ManifestMmrTracker {
         }
     }
 
-    /// Adds a manifest to the tracker and returns a proof for it.
-    /// Uses TreeHash for consistent hashing with the actual state MMR.
-    pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, MmrEntryProof) {
-        // Compute hash using TreeHash, matching the actual append_manifest implementation
+    /// Adds a manifest to the tracker and returns a RawMerkleProof for it.
+    pub fn add_manifest(&mut self, manifest: &AsmManifest) -> (u64, RawMerkleProof) {
         let hash = <AsmManifest as TreeHash>::tree_hash_root(manifest);
-
-        // Get the current index (before adding)
         let index = self.mmr.num_entries();
 
-        // Add to MMR with proof tracking
         let proof = Mmr::<StrataHasher>::add_leaf_updating_proof_list(
             &mut self.mmr,
             hash.into_inner(),
@@ -570,13 +542,16 @@ impl ManifestMmrTracker {
 
         self.proofs.push(proof.clone());
 
-        // Create MmrEntryProof for ledger references
-        let mmr_entry_proof = MmrEntryProof::new(
-            hash.into_inner(),
-            strata_acct_types::MerkleProof::from_cohashes(proof.cohashes().to_vec(), index),
-        );
+        let raw_proof = RawMerkleProof {
+            cohashes: proof
+                .cohashes()
+                .iter()
+                .map(|h| FixedBytes::from(*h))
+                .collect::<Vec<_>>()
+                .into(),
+        };
 
-        (index, mmr_entry_proof)
+        (index, raw_proof)
     }
 
     /// Returns the number of manifests in the tracked MMR
@@ -592,7 +567,6 @@ pub fn setup_genesis_with_snark_account(
     snark_id: AccountId,
     initial_balance: u64,
 ) -> CompletedBlock {
-    // Create snark account with initial balance directly
     let update_vk = PredicateKey::always_accept();
     let initial_state_root = get_test_state_root(1);
     let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
@@ -616,16 +590,26 @@ pub fn create_empty_account(state: &mut OLState, account_id: AccountId) -> Accou
         .expect("Should create empty account")
 }
 
-/// Helper to execute a transaction in a non-genesis block
+/// Helper to make a GAM transaction targeting the given account with empty payload data.
+pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
+    OLTransaction::new(
+        OLTransactionData::new_gam(dest, vec![]),
+        TxProofs::new_empty(),
+    )
+}
+
+/// Helper to execute a transaction in a non-genesis block.
+///
+/// Accepts an `OLTransaction` directly.
 pub fn execute_tx_in_block(
     state: &mut OLState,
     parent_header: &OLBlockHeader,
-    tx: TransactionPayload,
+    tx: OLTransaction,
     slot: Slot,
     epoch: Epoch,
 ) -> ExecResult<CompletedBlock> {
     let block_info = BlockInfo::new(1_001_000, slot, epoch);
-    let components = BlockComponents::new_txs(vec![tx]);
+    let components = BlockComponents::new_txs_from_ol_transactions(vec![tx]);
     execute_block(state, &block_info, Some(parent_header), components)
 }
 
@@ -640,9 +624,10 @@ pub struct SnarkUpdateBuilder {
 
     // Built up via with_* methods
     processed_messages: Vec<MessageEntry>,
-    inbox_inbox_proofs: Vec<MessageEntryProof>,
-    outputs: UpdateOutputs,
-    ledger_refs: LedgerRefs,
+    inbox_proofs: Vec<RawMerkleProof>,
+    effects: TxEffects,
+    ledger_ref_claims: Vec<AccumulatorClaim>,
+    ledger_ref_proofs: Vec<RawMerkleProof>,
 }
 
 impl SnarkUpdateBuilder {
@@ -652,9 +637,10 @@ impl SnarkUpdateBuilder {
             seq_no: *snark_state.seqno().inner(),
             old_msg_idx: snark_state.next_inbox_msg_idx(),
             processed_messages: vec![],
-            inbox_inbox_proofs: vec![],
-            outputs: UpdateOutputs::new(vec![], vec![]),
-            ledger_refs: LedgerRefs::new_empty(),
+            inbox_proofs: vec![],
+            effects: TxEffects::default(),
+            ledger_ref_claims: vec![],
+            ledger_ref_proofs: vec![],
         }
     }
 
@@ -665,73 +651,107 @@ impl SnarkUpdateBuilder {
     }
 
     /// Add inbox proofs for the processed messages
-    pub fn with_inbox_proofs(mut self, proofs: Vec<MessageEntryProof>) -> Self {
-        self.inbox_inbox_proofs = proofs;
+    pub fn with_inbox_proofs(mut self, proofs: Vec<RawMerkleProof>) -> Self {
+        self.inbox_proofs = proofs;
         self
     }
 
-    /// Set the outputs (transfers and messages)
-    pub fn with_outputs(mut self, outputs: UpdateOutputs) -> Self {
-        self.outputs = outputs;
-        self
-    }
-
-    /// Add a single transfer output
+    /// Add a single transfer effect
     pub fn with_transfer(mut self, dest: AccountId, amount: u64) -> Self {
-        let transfer = OutputTransfer::new(dest, BitcoinAmount::from_sat(amount));
-        self.outputs.transfers_mut().push(transfer);
+        self.effects
+            .add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(amount)));
         self
     }
 
-    /// Add a single message output
+    /// Add a single message effect
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
         let payload = MsgPayload::new(BitcoinAmount::from_sat(amount), data);
-        self.with_message_payload(dest, payload)
-    }
-
-    /// Set ledger references
-    pub fn with_ledger_refs(mut self, refs: LedgerRefs) -> Self {
-        self.ledger_refs = refs;
+        self.effects.add_message(SentMessage::new(dest, payload));
         self
     }
 
-    /// Build the transaction with the resulting state root
-    pub fn build(
-        self,
-        acct_id: AccountId,
-        new_state_root: Hash,
-        proof: Vec<u8>,
-    ) -> TransactionPayload {
+    /// Set ledger reference claims and proofs
+    pub fn with_ledger_refs(
+        mut self,
+        claims: Vec<AccumulatorClaim>,
+        proofs: Vec<RawMerkleProof>,
+    ) -> Self {
+        self.ledger_ref_claims = claims;
+        self.ledger_ref_proofs = proofs;
+        self
+    }
+
+    /// Build the full OLTransaction with the resulting state root.
+    pub fn build(self, acct_id: AccountId, new_state_root: Hash, proof: Vec<u8>) -> OLTransaction {
         // Calculate new message index based on messages processed
         let new_msg_idx = self.old_msg_idx + self.processed_messages.len() as u64;
 
-        let new_proof_state = ProofState::new(new_state_root, new_msg_idx);
-        let operation_data = UpdateOperationData::new(
-            self.seq_no,
-            new_proof_state,
-            self.processed_messages,
-            self.ledger_refs,
-            self.outputs,
-            vec![], // extra_data
-        );
+        // Build SauTxPayload
+        let proof_state = SauTxProofState {
+            new_next_msg_idx: new_msg_idx,
+            inner_state_root: <[u8; 32]>::from(new_state_root).into(),
+        };
+        let update_data = SauTxUpdateData {
+            seq_no: self.seq_no,
+            proof_state,
+            extra_data: vec![].into(),
+        };
 
-        let base_update = SnarkAccountUpdate::new(operation_data, proof);
+        // Build ledger refs
+        let ledger_refs = if self.ledger_ref_claims.is_empty() {
+            SauTxLedgerRefs::new_empty()
+        } else {
+            let claim_list =
+                ClaimList::new(self.ledger_ref_claims).expect("test: too many ledger ref claims");
+            SauTxLedgerRefs::new_with_claims(claim_list)
+        };
 
-        let ledger_ref_proofs = LedgerRefProofs::new(vec![]);
-        let accumulator_proofs =
-            UpdateAccumulatorProofs::new(self.inbox_inbox_proofs, ledger_ref_proofs);
+        let operation_data = SauTxOperationData {
+            update_data,
+            messages: self.processed_messages.into(),
+            ledger_refs,
+        };
 
-        let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-        let sau_tx_payload = SnarkAccountUpdateTxPayload::new(acct_id, update_container);
+        let sau_payload = SauTxPayload {
+            target: acct_id,
+            operation_data,
+        };
+        let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
 
-        TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
-    }
+        // Build TxProofs
+        let mut all_accumulator_proofs = Vec::new();
+        // Inbox proofs come first, then ledger ref proofs
+        all_accumulator_proofs.extend(self.inbox_proofs);
+        all_accumulator_proofs.extend(self.ledger_ref_proofs);
 
-    fn with_message_payload(mut self, dest: AccountId, payload: MsgPayload) -> SnarkUpdateBuilder {
-        let message = OutputMessage::new(dest, payload);
-        let msgs = self.outputs.messages_mut();
-        msgs.push(message);
-        self
+        let accumulator_proofs = if all_accumulator_proofs.is_empty() {
+            None
+        } else {
+            Some(RawMerkleProofList {
+                proofs: all_accumulator_proofs.into(),
+            })
+        };
+
+        let predicate_satisfiers = if proof.is_empty() {
+            None
+        } else {
+            Some(ProofSatisfierList {
+                proofs: vec![ProofSatisfier {
+                    proof: proof.into(),
+                }]
+                .into(),
+            })
+        };
+
+        let tx_proofs = TxProofs::new(predicate_satisfiers, accumulator_proofs);
+
+        let data = OLTransactionData {
+            payload,
+            constraints: TxConstraints::default(),
+            effects: self.effects,
+        };
+
+        OLTransaction::new(data, tx_proofs)
     }
 }
 
@@ -751,25 +771,46 @@ pub fn create_unchecked_snark_update(
     wrong_seq_no: u64,
     new_state_root: Hash,
     new_msg_idx: u64,
-    outputs: UpdateOutputs,
-) -> TransactionPayload {
-    let new_proof_state = ProofState::new(new_state_root, new_msg_idx);
-    let operation_data = UpdateOperationData::new(
-        wrong_seq_no,
-        new_proof_state,
-        vec![], // processed_messages
-        LedgerRefs::new_empty(),
-        outputs,
-        vec![], // extra_data
+    effects: TxEffects,
+) -> OLTransaction {
+    let proof_state = SauTxProofState {
+        new_next_msg_idx: new_msg_idx,
+        inner_state_root: <[u8; 32]>::from(new_state_root).into(),
+    };
+    let update_data = SauTxUpdateData {
+        seq_no: wrong_seq_no,
+        proof_state,
+        extra_data: vec![].into(),
+    };
+
+    let operation_data = SauTxOperationData {
+        update_data,
+        messages: vec![].into(),
+        ledger_refs: SauTxLedgerRefs::new_empty(),
+    };
+
+    let sau_payload = SauTxPayload {
+        target,
+        operation_data,
+    };
+    let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
+
+    let data = OLTransactionData {
+        payload,
+        constraints: TxConstraints::default(),
+        effects,
+    };
+
+    // Dummy proof
+    let tx_proofs = TxProofs::new(
+        Some(ProofSatisfierList {
+            proofs: vec![ProofSatisfier {
+                proof: vec![0u8; 32].into(),
+            }]
+            .into(),
+        }),
+        None,
     );
 
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]); // dummy proof
-
-    let ledger_ref_proofs = LedgerRefProofs::new(vec![]);
-    let accumulator_proofs = UpdateAccumulatorProofs::new(vec![], ledger_ref_proofs);
-
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let sau_tx_payload = SnarkAccountUpdateTxPayload::new(target, update_container);
-
-    TransactionPayload::SnarkAccountUpdate(sau_tx_payload)
+    OLTransaction::new(data, tx_proofs)
 }

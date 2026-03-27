@@ -1,7 +1,9 @@
 //! Proof interface types.
 
+use strata_acct_types::MessageEntry;
+
 use crate::{
-    LedgerRefs, MessageEntry, ProofState, UpdateOutputs,
+    LedgerRefs, ProofState, UpdateOutputs,
     ssz_generated::ssz::proof_interface::UpdateProofPubParams,
 };
 

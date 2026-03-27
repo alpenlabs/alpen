@@ -1,0 +1,28 @@
+import strata_acct_types
+
+### 2 MB limit for proof satisfiers.
+MAX_SATISFIER_LEN = 2 << 20
+
+### Max length of a proof satisfier.
+MAX_SATISFIER_COUNT = 255
+
+### Max number of proof
+MAX_ACC_PROOF_COUNT = 4096
+
+### A list of claims into some accumulator.
+class ClaimList(Container):
+    #~# external_kind: container
+    claims: List[strata_acct_types.AccumulatorClaim, MAX_ACC_PROOF_COUNT]
+
+### A list of raw merkle proofs into accumulators.
+class RawMerkleProofList(Container):
+    #~# external_kind: container
+    proofs: List[strata_acct_types.RawMerkleProof, MAX_ACC_PROOF_COUNT]
+
+### Opaque satisfier for a proof.
+class ProofSatisfier(Container):
+    proof: List[uint8, MAX_SATISFIER_LEN]
+
+### Opaque list of proof satisfiers.
+class ProofSatisfierList(Container):
+    proofs: List[ProofSatisfier, MAX_SATISFIER_COUNT]

@@ -5,10 +5,10 @@
 // TODO make the field names here more consistent, which should also reflect in
 // the spec and state accessor fn/arg names
 
-use strata_acct_types::{AccountId, Hash};
+use strata_acct_types::{AccountId, Hash, MessageEntry};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::L1Height;
-use strata_snark_acct_types::{MessageEntry, Seqno};
+use strata_snark_acct_types::Seqno;
 
 // ============================================================================
 // Inbox message tracking

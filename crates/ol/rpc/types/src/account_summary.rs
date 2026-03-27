@@ -1,10 +1,10 @@
 //! RPC types for the Orchestration Layer.
 
 use serde::{Deserialize, Serialize};
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry, MsgPayload};
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::{EpochCommitment, HexBytes, HexBytes32};
-use strata_snark_acct_types::{MessageEntry, ProofState, UpdateInputData, UpdateStateData};
+use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 
 /// Summary for an account's data for an epoch.
 /// This information can be reconstructed fully from data in DA.

@@ -1,19 +1,10 @@
 //! Tests for basic validation errors like sequence numbers, balance checks, and recipient
 //! validation
 
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_state_types::OLState;
+use strata_acct_types::{AcctError, TxEffects};
+use strata_ledger_types::{IAccountState, IStateAccessor};
 
-use crate::{
-    errors::ExecError,
-    test_utils::{
-        SnarkUpdateBuilder, TEST_NONEXISTENT_ID, create_empty_account, create_test_genesis_state,
-        create_unchecked_snark_update, execute_tx_in_block, get_test_proof,
-        get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
-        setup_genesis_with_snark_account, test_account_id,
-    },
-};
+use crate::{errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_invalid_sequence_number() {
@@ -28,17 +19,14 @@ fn test_snark_update_invalid_sequence_number() {
     create_empty_account(&mut state, recipient_id);
 
     // Try to submit update with wrong sequence number (should be 0, but we use 5)
-    let transfer = strata_snark_acct_types::OutputTransfer::new(
-        recipient_id,
-        BitcoinAmount::from_sat(10_000_000),
-    );
-    let outputs = strata_snark_acct_types::UpdateOutputs::new(vec![transfer], vec![]);
+    let mut effects = TxEffects::default();
+    effects.push_transfer(recipient_id, 10_000_000);
     let invalid_tx = create_unchecked_snark_update(
         snark_id,
         5, // wrong seq_no (should be 0)
         get_test_state_root(2),
         0, // new_msg_idx
-        outputs,
+        effects,
     );
 
     // Execute and expect failure
@@ -46,7 +34,7 @@ fn test_snark_update_invalid_sequence_number() {
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update with wrong sequence should fail");
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidUpdateSequence { expected, got, .. }) => {
             assert_eq!(expected, 0);
             assert_eq!(got, 5);
@@ -87,15 +75,9 @@ fn test_snark_update_insufficient_balance() {
         result.is_err(),
         "Update with insufficient balance should fail"
     );
-    match result.unwrap_err() {
-        ExecError::Acct(AcctError::InsufficientBalance {
-            requested,
-            available,
-        }) => {
-            assert_eq!(requested, BitcoinAmount::from_sat(100_000_000));
-            assert_eq!(available, BitcoinAmount::from_sat(50_000_000));
-        }
-        err => panic!("Expected InsufficientBalance, got: {err:?}"),
+    match result.unwrap_err().into_base() {
+        ExecError::BalanceUnderflow => {}
+        err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
 }
 
@@ -128,10 +110,10 @@ fn test_snark_update_nonexistent_recipient() {
         result.is_err(),
         "Update to non-existent account should fail"
     );
-    match result.unwrap_err() {
-        ExecError::Acct(AcctError::MissingExpectedAccount(id)) => {
+    match result.unwrap_err().into_base() {
+        ExecError::UnknownAccount(id) => {
             assert_eq!(id, nonexistent_id);
         }
-        err => panic!("Expected NonExistentAccount, got: {err:?}"),
+        err => panic!("Expected UnknownAccount, got: {err:?}"),
     }
 }

@@ -1,11 +1,10 @@
 use alpen_ee_common::ExecBlockRecord;
 use borsh::{BorshDeserialize, BorshSerialize};
 use ssz::{Decode, Encode};
-use strata_acct_types::{BitcoinAmount, Hash, MsgPayload};
+use strata_acct_types::{BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_ee_acct_types::EeAccountState;
 use strata_ee_chain_types::ExecBlockPackage;
 use strata_identifiers::OLBlockCommitment;
-use strata_snark_acct_types::MessageEntry;
 
 use super::account_state::DBEeAccountState;
 

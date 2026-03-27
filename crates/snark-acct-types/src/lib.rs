@@ -1,10 +1,8 @@
 //! Types relating to snark accounts and the snark account proof interface.
 
-mod accumulators;
 mod error;
 mod ledger;
 mod manifest;
-mod messages;
 mod outputs;
 mod proof_interface;
 mod state;
@@ -25,7 +23,6 @@ mod ssz_generated {
 pub use error::OutputsError;
 pub use ledger::LedgerInterface;
 pub use manifest::UpdateManifest;
-pub use ssz_generated::ssz::{
-    accumulators::*, messages::*, outputs::*, proof_interface::*, state::*, update::*,
-};
+pub use ssz_generated::ssz::{outputs::*, proof_interface::*, state::*, update::*};
 pub use state::Seqno;
+pub use strata_acct_types::AccumulatorClaim;

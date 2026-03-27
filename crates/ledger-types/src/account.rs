@@ -1,11 +1,13 @@
-use strata_acct_types::{AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, Mmr64};
+use strata_acct_types::{
+    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, MessageEntry, Mmr64,
+};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{MessageEntry, Seqno};
+use strata_snark_acct_types::Seqno;
 
 use crate::coin::Coin;
 
 /// Abstract account state.
-pub trait IAccountState: Sized {
+pub trait IAccountState: Clone + Sized {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
 
@@ -47,10 +49,7 @@ pub struct NewAccountData<T: IAccountState> {
     type_state: AccountTypeState<T>,
 }
 
-impl<T: IAccountState> Clone for NewAccountData<T>
-where
-    T::SnarkAccountState: Clone,
-{
+impl<T: IAccountState> Clone for NewAccountData<T> {
     fn clone(&self) -> Self {
         Self {
             initial_balance: self.initial_balance,
@@ -94,10 +93,7 @@ pub enum AccountTypeState<T: IAccountState> {
     Snark(T::SnarkAccountState),
 }
 
-impl<T: IAccountState> Clone for AccountTypeState<T>
-where
-    T::SnarkAccountState: Clone,
-{
+impl<T: IAccountState> Clone for AccountTypeState<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Empty => Self::Empty,
@@ -121,7 +117,7 @@ pub enum AccountTypeStateMut<'a, T: IAccountState> {
 }
 
 /// Abstract snark account state.
-pub trait ISnarkAccountState: Sized {
+pub trait ISnarkAccountState: Clone + Sized {
     // Proof state accessors
 
     /// Gets the verification key for this snark account.

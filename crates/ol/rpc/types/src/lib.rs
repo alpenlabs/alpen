@@ -11,7 +11,7 @@ mod chain_status;
 mod duty;
 mod provider;
 mod snark_acct_update;
-mod txn;
+mod tx;
 
 pub use account_state::RpcSnarkAccountState;
 pub use account_summary::{
@@ -23,7 +23,7 @@ pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
 pub use duty::*;
 pub use provider::{AccountExtraData, OLRpcProvider};
 pub use snark_acct_update::RpcSnarkAccountUpdate;
-pub use txn::{
-    RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionAttachment, RpcTransactionPayload,
+pub use tx::{
+    RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionPayload, RpcTxConstraints,
     RpcTxConversionError,
 };

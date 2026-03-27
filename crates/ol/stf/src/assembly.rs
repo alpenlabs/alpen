@@ -1,5 +1,6 @@
 //! Block assembly flows.
 
+use strata_acct_types::TxEffects;
 use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessor;
@@ -8,10 +9,10 @@ use strata_ol_chain_types_new::*;
 
 use crate::{
     chain_processing,
-    context::{BasicExecContext, BlockContext, BlockInfo, TxExecContext},
+    context::{BasicExecContext, BlockContext, TxExecContext},
     errors::ExecResult,
     manifest_processing,
-    output::{ExecOutputBuffer, OutputCtx},
+    output::ExecOutputBuffer,
     transaction_processing,
     verification::{BlockExecInput, BlockPostStateCommitments},
     verify_block,
@@ -196,11 +197,34 @@ impl BlockComponents {
         }
     }
 
+    /// Create block components from full OLTransaction objects.
+    pub fn new_txs_from_ol_transactions(txs: Vec<OLTransaction>) -> Self {
+        Self {
+            tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),
+            manifest_container: None,
+        }
+    }
+
     /// Create block components with the given transaction payloads.
+    ///
+    /// Each payload gets default constraints and empty proofs. GAM payloads
+    /// automatically get a zero-value message effect matching their target.
     pub fn new_txs(payloads: Vec<TransactionPayload>) -> Self {
         let txs = payloads
             .into_iter()
-            .map(|p| OLTransaction::new(p, TransactionAttachment::default()))
+            .map(|p| {
+                let mut effects = TxEffects::default();
+                if let TransactionPayload::GenericAccountMessage(ref gam) = p {
+                    effects.push_message(*gam.target(), 0, vec![]);
+                }
+                let data = OLTransactionData {
+                    payload: p,
+                    constraints: TxConstraints::default(),
+                    effects,
+                };
+                let proofs = TxProofs::new_empty();
+                OLTransaction::new(data, proofs)
+            })
             .collect();
         Self {
             tx_segment: OLTxSegment::new(txs).expect("tx segment should be within limits"),

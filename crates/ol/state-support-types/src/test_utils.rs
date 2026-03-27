@@ -1,12 +1,11 @@
 //! Test utilities for state-support-types tests.
 
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_identifiers::{AccountSerial, L1BlockCommitment};
 use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::MessageEntry;
 
 /// Creates a genesis OLState using minimal empty parameters.
 pub(crate) fn create_test_genesis_state() -> OLState {

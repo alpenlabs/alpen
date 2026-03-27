@@ -1,8 +1,8 @@
 //! Helpers for working with ee account during block assembly.
 
+use strata_acct_types::MessageEntry;
 use strata_ee_acct_types::{DecodedEeMessageData, EeAccountState, EnvError, EnvResult};
 use strata_snark_acct_runtime::InputMessage;
-use strata_snark_acct_types::MessageEntry;
 
 use crate::ee_program::process_input_message;
 

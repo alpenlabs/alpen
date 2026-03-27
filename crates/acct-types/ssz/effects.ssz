@@ -1,0 +1,17 @@
+import messages
+
+MAX_TRANSFERS = 255
+MAX_MESSAGES = 255
+
+### Direct external effects that a transaction can cause.
+###
+### How these are validated is dependent on the kind of transaction.
+#~# derive: std::default::Default
+class TxEffects(StableContainer[16]):
+    # Emitted transfers.
+    #~# external_kind: container
+    transfers: Optional[List[messages.SentTransfer, MAX_TRANSFERS]]
+
+    # Emitted messages.
+    #~# external_kind: container
+    messages: Optional[List[messages.SentMessage, MAX_MESSAGES]]

@@ -8,7 +8,9 @@ use std::{
 
 use async_trait::async_trait;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, tree_hash::TreeHash};
+use strata_acct_types::{
+    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload, tree_hash::TreeHash,
+};
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
 use strata_asm_manifest_types::AsmManifest;
 use strata_btc_verification::HeaderVerificationState;
@@ -23,18 +25,14 @@ use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLTxSegment, SignedOLBlockHeader, TransactionAttachment,
-    test_utils as ol_test_utils,
+    OLBlock, OLBlockBody, OLTxSegment, SignedOLBlockHeader, test_utils as ol_test_utils,
 };
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
 use strata_predicate::PredicateKey;
-use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefs, MessageEntry, OutputMessage, ProofState, UpdateOperationData,
-    UpdateOutputs,
-};
+use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
 use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
 use threadpool::ThreadPool;
@@ -278,16 +276,12 @@ impl<'a> StorageAsmMmr<'a> {
         &self.indices
     }
 
-    /// Returns all claims as AccumulatorClaim objects with L1 block heights.
-    ///
-    /// The `genesis_l1_height` is used to compute the height from the MMR leaf
-    /// index: `height = mmr_leaf_index + genesis_l1_height + 1`.
-    pub(crate) fn claims(&self, genesis_l1_height: u64) -> Vec<AccumulatorClaim> {
-        let offset = genesis_l1_height + 1;
+    /// Returns all claims as AccumulatorClaim objects with MMR leaf indices.
+    pub(crate) fn claims(&self) -> Vec<AccumulatorClaim> {
         self.indices
             .iter()
             .zip(self.entries.iter())
-            .map(|(&idx, &hash)| AccumulatorClaim::new(idx + offset, hash))
+            .map(|(&idx, &hash)| AccumulatorClaim::new(idx, hash))
             .collect()
     }
 }
@@ -361,20 +355,18 @@ impl MempoolSnarkTxBuilder {
 
     /// Builds the mempool transaction.
     pub(crate) fn build(self) -> OLMempoolTransaction {
+        // Use a random inner state from proptest
         let mut runner = TestRunner::default();
-        let attachment = TransactionAttachment::new(None, None);
-
-        let full_payload = ol_test_utils::snark_account_update_tx_payload_strategy()
+        let sau_payload = ol_test_utils::sau_tx_payload_strategy()
             .new_tree(&mut runner)
             .unwrap()
             .current();
 
-        let inner_state = full_payload
-            .update_container
-            .base_update
-            .operation
-            .new_proof_state()
-            .inner_state();
+        let inner_state = sau_payload
+            .operation()
+            .update()
+            .proof_state()
+            .inner_state_root();
         let new_proof_state = ProofState::new(inner_state, self.new_msg_idx);
 
         let claims: Vec<AccumulatorClaim> = self.l1_claims.clone().into_iter().collect();
@@ -407,18 +399,12 @@ impl MempoolSnarkTxBuilder {
             self.processed_messages,
             ledger_refs,
             outputs,
-            full_payload
-                .update_container
-                .base_update
-                .operation
-                .extra_data()
-                .to_vec(),
+            vec![],
         );
 
-        let mut update = full_payload.update_container.base_update;
-        update.operation = operation;
+        let update = SnarkAccountUpdate::new(operation, vec![0u8; 32]);
 
-        OLMempoolTransaction::new_snark_account_update(self.account_id, update, attachment)
+        OLMempoolTransaction::new_snark_account_update(self.account_id, update)
     }
 }
 
@@ -654,9 +640,9 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
 /// Default balance for test accounts (100 billion sats).
 pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
-/// Manifest commitment metadata for tests (L1 height + committed manifest hash).
+/// Manifest commitment metadata for tests (MMR leaf index + committed manifest hash).
 pub(crate) struct ManifestCommitment {
-    pub height: L1Height,
+    pub mmr_idx: u64,
     pub hash: Hash,
 }
 
@@ -740,9 +726,13 @@ impl TestEnvBuilder {
             test_manifests
                 .iter()
                 .enumerate()
-                .map(|(i, m)| ManifestCommitment {
-                    height: m.height(),
-                    hash: hashes[i],
+                .map(|(i, m)| {
+                    // Test genesis has last_l1_height=0, so mmr_offset=1
+                    let mmr_idx = m.height() as u64 - 1;
+                    ManifestCommitment {
+                        mmr_idx,
+                        hash: hashes[i],
+                    }
                 })
                 .collect()
         } else {

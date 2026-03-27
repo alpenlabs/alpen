@@ -4,9 +4,9 @@ use std::{collections::HashMap, sync::Arc};
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
 use strata_ledger_types::{IAccountState, IStateAccessor};
-use strata_ol_stf::{ExecError, check_tx_attachment, get_account_state};
+use strata_ol_stf::{ExecError, ExecResult, check_tx_constraints};
 use strata_snark_acct_sys as snark_sys;
-use strata_snark_acct_types::UpdateOperationData;
+use strata_snark_acct_types::Seqno;
 use tracing::error;
 
 use crate::{
@@ -66,12 +66,10 @@ fn seq_no_error_to_mempool_error(txid: OLTxId, expected: u64, got: u64) -> OLMem
 fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
     txid: OLTxId,
     target_account: AccountId,
-    operation: &UpdateOperationData,
+    tx_seq_no: u64,
     mempool_seq_no_range: Option<(u64, u64)>,
     state_accessor: &Arc<S>,
 ) -> OLMempoolResult<()> {
-    let tx_seq_no = operation.seq_no();
-
     if let Some((min_seq_no, max_seq_no)) = mempool_seq_no_range {
         // Has SnarkAccountUpdate transactions in mempool - validate against range
         check_seq_no_in_range(txid, tx_seq_no, min_seq_no, max_seq_no + 1)?;
@@ -101,7 +99,7 @@ fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
                 })?;
 
         if let Err(AcctError::InvalidUpdateSequence { expected, got, .. }) =
-            snark_sys::verify_seq_no(target_account, snark_state, operation)
+            snark_sys::verify_seq_no(target_account, snark_state, Seqno::from(tx_seq_no))
         {
             return Err(seq_no_error_to_mempool_error(txid, expected, got));
         }
@@ -126,7 +124,7 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
     let target_account = tx.target();
 
     // 1. Slot bounds check.
-    check_tx_attachment(tx.attachment(), state_accessor.as_ref()).map_err(|e| match e {
+    check_tx_constraints(tx.constraints(), state_accessor.as_ref()).map_err(|e| match e {
         ExecError::TransactionExpired(max_slot, current_slot) => {
             OLMempoolError::TransactionExpired {
                 txid,
@@ -154,7 +152,7 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
 
     // 3. Sequence number in proper range (for SnarkAccountUpdate transactions).
     if let Some(base_update) = tx.base_update() {
-        let operation = base_update.operation();
+        let tx_seq_no = base_update.operation().seq_no();
 
         // Check if there are SnarkAccountUpdate transactions in mempool for this account
         let mempool_seq_no_range = account_state
@@ -164,13 +162,23 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
         validate_snark_account_update_tx_seq_no(
             txid,
             target_account,
-            operation,
+            tx_seq_no,
             mempool_seq_no_range,
             state_accessor,
         )?;
     }
 
     Ok(())
+}
+
+/// Gets an account state, returning an error if it doesn't exist.
+fn get_account_state<S: IStateAccessor>(
+    state: &S,
+    account: AccountId,
+) -> ExecResult<&S::AccountState> {
+    state
+        .get_account_state(account)?
+        .ok_or(ExecError::UnknownAccount(account))
 }
 
 #[cfg(test)]
@@ -302,11 +310,8 @@ mod tests {
         let target = create_test_account_id();
         let base_update = create_test_snark_update();
         let tx_seq_no = base_update.operation().seq_no();
-        let tx = OLMempoolTransaction::new_snark_account_update(
-            target,
-            base_update,
-            create_test_generic_tx_with_slots(Some(50), Some(150)).attachment,
-        );
+        let tx = OLMempoolTransaction::new_snark_account_update(target, base_update)
+            .with_constraints(create_test_generic_tx_with_slots(Some(50), Some(150)).constraints);
 
         // Create state with snark account expecting the same seq_no as tx (next-expected semantics)
         let state_accessor = Arc::new(create_test_ol_state_with_snark_account(
@@ -327,11 +332,8 @@ mod tests {
         let base_update = create_test_snark_update();
         let tx_seq_no = base_update.operation().seq_no();
 
-        let tx = OLMempoolTransaction::new_snark_account_update(
-            target,
-            base_update.clone(),
-            create_test_generic_tx_with_slots(Some(50), Some(150)).attachment,
-        );
+        let tx = OLMempoolTransaction::new_snark_account_update(target, base_update.clone())
+            .with_constraints(create_test_generic_tx_with_slots(Some(50), Some(150)).constraints);
 
         // Test case 1: Transaction seq_no SMALLER than account seq_no (already used)
         // Account has seq_no = tx_seq_no + 1, transaction has seq_no = tx_seq_no

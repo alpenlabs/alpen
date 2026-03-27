@@ -17,6 +17,9 @@ pub enum ExecError {
     #[error("signature for {0} is invalid")]
     SignatureInvalid(&'static str),
 
+    #[error("amount overflow")]
+    AmountOverflow,
+
     /// Normal balance check fail.
     #[error("tried to underflow a balance")]
     BalanceUnderflow,
@@ -24,10 +27,13 @@ pub enum ExecError {
     #[error("condition in tx attachment failed")]
     TxConditionCheckFailed,
 
-    #[error("transaction has expired: max_slot={0}, current_slot={1}")]
+    #[error("structural requirement check failed ({0})")]
+    TxStructureCheckFailed(&'static str),
+
+    #[error("transaction has expired (max slot {0}, cur slot {1})")]
     TransactionExpired(Slot, Slot),
 
-    #[error("transaction is not mature: min_slot={0}, current_slot={1}")]
+    #[error("transaction is not mature (min slot {0}, cur slot {1})")]
     TransactionNotMature(Slot, Slot),
 
     /// For like if we'd be skipping blocks in validation somehow.
@@ -87,6 +93,10 @@ pub enum ExecError {
     #[error("block logs exceeded limit (count {count}, max {max})")]
     LogsOverflow { count: usize, max: usize },
 
+    /// Wrapper to provide additional context about tx processing.
+    #[error("tx {0} at idx {1} processing failed: {2}")]
+    TxExec(OLTxId, usize, Box<Self>),
+
     /// Various account errors.
     #[error("acct: {0}")]
     Acct(#[from] AcctError),
@@ -98,6 +108,27 @@ pub enum ExecError {
 }
 
 impl ExecError {
+    /// Wraps the exec error with context about a transaction in a block.
+    pub fn with_tx(self, txid: OLTxId, idx: usize) -> Self {
+        Self::TxExec(txid, idx, Box::new(self))
+    }
+
+    /// Returns a ref to the base-level error, unwrapping context self-wrappers.
+    pub fn base(&self) -> &Self {
+        match self {
+            Self::TxExec(_, _, inner) => inner.base(),
+            _ => self,
+        }
+    }
+
+    /// Unwraps self-wrappers to expose the base-level error.
+    pub fn into_base(self) -> Self {
+        match self {
+            Self::TxExec(_, _, inner) => *inner,
+            _ => self,
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         // By default, we can assume all errors indicate the block is invalid,
         // we don't have any execution ones yet.

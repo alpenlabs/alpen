@@ -10,32 +10,12 @@ use strata_ol_stf::ExecError;
 /// Errors that can occur during block assembly operations.
 #[derive(Debug, thiserror::Error)]
 pub enum BlockAssemblyError {
-    /// Database operation failed.
-    #[error("db: {0}")]
-    Db(#[from] DbError),
-
-    /// Various account errors.
-    #[error("acct: {0}")]
-    Acct(#[from] AcctError),
-
-    /// Chain types construction failed.
-    #[error("chain types: {0}")]
-    ChainTypes(#[from] ChainTypesError),
-
-    /// Mempool operation failed.
-    #[error("mempool: {0}")]
-    Mempool(#[from] OLMempoolError),
-
-    /// Block construction/execution failed.
-    #[error("block construction: {0}")]
-    BlockConstruction(#[from] ExecError),
-
     /// Invalid L1 block range where `from_block` height > `to_block` height.
     #[error("invalid L1 block height range (from {from_height} to {to_height})")]
     InvalidRange { from_height: u64, to_height: u64 },
 
     /// L1 header claim hash does not match MMR entry.
-    #[error("L1 header hash mismatch at index {idx}: expected {expected}, got {actual}")]
+    #[error("L1 header hash mismatch at index {idx} (expected {expected}, got {actual})")]
     L1HeaderHashMismatch {
         idx: u64,
         expected: Hash,
@@ -44,7 +24,7 @@ pub enum BlockAssemblyError {
 
     /// Inbox message hash does not match MMR entry.
     #[error(
-        "inbox hash mismatch at index {idx} for account {account_id}: expected {expected}, got {actual}"
+        "inbox hash mismatch at index {idx} for account {account_id} (expected {expected}, got {actual})"
     )]
     InboxEntryHashMismatch {
         idx: u64,
@@ -85,6 +65,9 @@ pub enum BlockAssemblyError {
     #[error("invalid accumulator claim: {0}")]
     InvalidAccumulatorClaim(String),
 
+    #[error("too many accumulator claims")]
+    TooManyClaims,
+
     /// Attempted to build genesis block via block assembly.
     /// Genesis must be created via `init_ol_genesis` at node startup.
     #[error("cannot build genesis block via block assembly")]
@@ -97,6 +80,33 @@ pub enum BlockAssemblyError {
     /// Response channel closed (oneshot sender dropped).
     #[error("response channel closed")]
     ResponseChannelClosed,
+
+    /// Database operation failed.
+    #[error("db: {0}")]
+    Db(#[from] DbError),
+
+    /// Various account errors.
+    #[error("acct: {0}")]
+    Acct(#[from] AcctError),
+
+    /// Chain types construction failed.
+    #[error("chain types: {0}")]
+    ChainTypes(#[from] ChainTypesError),
+
+    /// Mempool operation failed.
+    #[error("mempool: {0}")]
+    Mempool(#[from] OLMempoolError),
+
+    /// Block construction/execution failed.
+    #[error("block construction: {0}")]
+    BlockConstruction(#[from] ExecError),
+
+    /// Snark account update failed pre-validation during proof indexing.
+    ///
+    /// This wraps errors from `verify_snark_acct_update_proofs` when using the
+    /// `TxProofIndexer` to discover needed proofs.
+    #[error("snark update pre-validation: {0}")]
+    SnarkUpdatePreValidation(ExecError),
 
     /// Other unexpected error.
     #[error("other: {0}")]

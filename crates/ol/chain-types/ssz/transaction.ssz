@@ -2,43 +2,113 @@ import strata_acct_types
 import strata_identifiers
 import strata_snark_acct_types
 
-MAX_TX_PAYLOAD_LEN = 1 << 16
+import proofs
+
+GAM_MAX_PAYLOAD_LEN = 1 << 16
+
+SAU_MAX_PROCESSED_MESSAGES = 1 << 16
+SAU_MAX_TYPE_LEDGER_REFS = 255
+
+### Max extra data bytes
+SAU_MAX_EXTRA_DATA_BYTES = 1024
+
+# ====================
+# GAM tx types
+# ====================
+
+### Generic account message payload.
+class GamTxPayload(Container):
+    ### Target account ID.
+    target: strata_acct_types.AccountId
+
+# ====================
+# Snark account update tx types
+# ====================
+
+### The new state of the snark account.
+class SauTxProofState(Container):
+    new_next_msg_idx: uint64
+    inner_state_root: Bytes32
+
+### Description of the precise "update" being made to the account.
+class SauTxUpdateData(Container):
+    seq_no: uint64
+    proof_state: SauTxProofState
+    extra_data: List[uint8, SAU_MAX_EXTRA_DATA_BYTES]
+
+### References to other accessible ledger accumulators.
+class SauTxLedgerRefs(StableContainer[16]):
+    #~# external_kind: container
+    asm_history_proofs: Optional[proofs.ClaimList]
+
+### Description of a snark account changes and other constraint checks we need
+### to check.
+class SauTxOperationData(Container):
+    update_data: SauTxUpdateData
+
+    #~# external_kind: container
+    messages: List[strata_acct_types.MessageEntry, SAU_MAX_PROCESSED_MESSAGES]
+
+    ledger_refs: SauTxLedgerRefs
+
+### Snark account update payload.
+class SauTxPayload(Container):
+    ### Target account ID.
+    target: strata_acct_types.AccountId
+
+    ### Snark account update data.
+    operation_data: SauTxOperationData
+
+# ====================
+# General tx structural types
+# ====================
 
 ### Additional constraints that we can place on a transaction.
 #~# derive: std::default::Default
-class TransactionAttachment(StableContainer[16]):
+class TxConstraints(StableContainer[8]):
     ### Minimum slot for inclusion
     min_slot: Optional[strata_identifiers.Slot]
 
     ### Maximum slot for inclusion
     max_slot: Optional[strata_identifiers.Slot]
 
-### Generic account message payload.
-class GamTxPayload(Container):
-    ### Target account ID
-    target: strata_acct_types.AccountId
-
-    ### Message payload bytes
-    payload: List[uint8, MAX_TX_PAYLOAD_LEN]
-
-### Snark account update payload.
-class SnarkAccountUpdateTxPayload(Container):
-    ### Target account ID
-    target: strata_acct_types.AccountId
-
-    ### Snark account update data
-    #~# external_kind: container
-    update_container: strata_snark_acct_types.SnarkAccountUpdateContainer
-
 ### Transaction payload union.
 class TransactionPayload(Union):
     GenericAccountMessage: GamTxPayload
-    SnarkAccountUpdate: SnarkAccountUpdateTxPayload
+    SnarkAccountUpdate: SauTxPayload
 
-### Transaction container.
-class OLTransaction(Container):
+### Data within the transaction.
+###
+### This is what we compute the txid from.
+class OLTransactionData(Container):
     ### Transaction payload (enum variant)
     payload: TransactionPayload
 
-    ### Additional transaction metadata
-    attachment: TransactionAttachment
+    ### Additional transaction validity conditions.
+    constraints: TxConstraints
+
+    ### External effects of the transaction.
+    #~# external_kind: container
+    effects: strata_acct_types.TxEffects
+
+### Proof data we provide alongside the tx.
+###
+### This does not impact the txid since it's at partially malleable by design.
+class TxProofs(StableContainer[8]):
+    ### Satisfiers for predicate checks.
+    predicate_satisfiers: Optional[proofs.ProofSatisfierList]
+
+    ### Proofs for all accumulators queried by the transactions.
+    ###
+    ### The order is dependent on the tx.
+    accumulator_proofs: Optional[proofs.RawMerkleProofList]
+
+### Transaction container.
+###
+### This is what we compute the wtxid from.
+class OLTransaction(Container):
+    ### Transaction data itself.  Used to compute txid.
+    data: OLTransactionData
+
+    ### Various proofs which might be modified.
+    proofs: TxProofs

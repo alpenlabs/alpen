@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use strata_acct_types::{
-    AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, Mmr64, MsgPayload,
+    AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_da_framework::decode_buf_exact;
@@ -20,7 +20,7 @@ use strata_merkle::CompactMmr64;
 use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
 use strata_ol_state_types::{OLSnarkAccountState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
-use strata_snark_acct_types::{MessageEntry, Seqno};
+use strata_snark_acct_types::Seqno;
 
 use crate::{
     BatchDiffState, DaAccumulatingState, DaAccumulationError, IndexerState, WriteTrackingState,

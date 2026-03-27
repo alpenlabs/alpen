@@ -4,7 +4,7 @@
 //! assembly as they perform all of the block validation checks including
 //! outputs (corresponding with headers/checkpoints/etc).
 
-use strata_identifiers::{Buf32, hash};
+use strata_identifiers::Buf32;
 use strata_ledger_types::IStateAccessor;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
@@ -397,9 +397,7 @@ pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
 #[cfg(test)]
 mod tests {
     use strata_identifiers::OLBlockCommitment;
-    use strata_ol_chain_types_new::{
-        BlockFlags, OLBlockId, OLL1ManifestContainer, OLL1Update, OLTxSegment,
-    };
+    use strata_ol_chain_types_new::{BlockFlags, OLBlockId, OLL1ManifestContainer, OLTxSegment};
     use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1, StateDiff};
 
     use super::*;

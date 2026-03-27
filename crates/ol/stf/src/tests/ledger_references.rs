@@ -1,28 +1,13 @@
 //! Tests for ledger references (referencing ASM manifests)
 
-use strata_acct_types::{AccountId, AcctError, BitcoinAmount, tree_hash::TreeHash};
+use strata_acct_types::{
+    AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash,
+};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, WtxidsRoot};
 use strata_ledger_types::{IAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{SnarkAccountUpdateTxPayload, TransactionPayload};
-use strata_ol_state_types::OLState;
-use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefProofs, LedgerRefs, MmrEntryProof, OutputTransfer, ProofState,
-    SnarkAccountUpdate, SnarkAccountUpdateContainer, UpdateAccumulatorProofs, UpdateOperationData,
-    UpdateOutputs,
-};
 
-use crate::{
-    assembly::BlockComponents,
-    context::BlockInfo,
-    errors::ExecError,
-    test_utils::{
-        ManifestMmrTracker, create_empty_account, create_test_genesis_state,
-        execute_block_with_outputs, execute_tx_in_block, get_test_recipient_account_id,
-        get_test_snark_account_id, get_test_state_root, setup_genesis_with_snark_account,
-        test_l1_block_id,
-    },
-};
+use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_with_valid_ledger_reference() {
@@ -73,39 +58,22 @@ fn test_snark_update_with_valid_ledger_reference() {
     assert_eq!(manifest1_index, 0, "First manifest should be at index 0");
 
     // Step 2: Create a snark update that references the manifest
-    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
-    let manifest1_height = manifest1_index + 1;
-    let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_height,
-        manifest1_hash.into_inner(),
-    )]);
+    // AccumulatorClaim.idx is the MMR leaf index directly
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
-    // Create update with ledger reference and a transfer
-    let transfer = OutputTransfer::new(recipient_id, BitcoinAmount::from_sat(10_000_000));
-    let update_outputs = UpdateOutputs::new(vec![transfer], vec![]);
+    // Create update with ledger reference and a transfer using SnarkUpdateBuilder
+    let snark_state = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
 
-    let seq_no = 0u64;
-    let new_proof_state = ProofState::new(get_test_state_root(2), 0);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![],
-        ledger_refs,
-        update_outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-
-    // Include the valid proof for the ledger reference
-    let accumulator_proofs =
-        UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![manifest1_proof]));
-
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+        .with_transfer(recipient_id, 10_000_000)
+        .with_ledger_refs(vec![claim], vec![manifest1_proof])
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute the update
     let (slot, epoch) = (2, 1); // Increment epoch because we processed manifests in last block
@@ -176,47 +144,26 @@ fn test_snark_update_with_invalid_ledger_reference() {
     let (manifest1_index, _valid_proof) = manifest_tracker.add_manifest(&manifest1);
 
     // Step 2: Create a snark update with INVALID ledger reference proof
-    // AccumulatorClaim.idx is L1 block height; offset = genesis_height(0) + 1 = 1
-    let manifest1_height = manifest1_index + 1;
-    let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_height,
-        manifest1_hash.into_inner(),
-    )]);
+    // AccumulatorClaim.idx is the MMR leaf index directly
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
     // Create an invalid proof with wrong cohashes
-    let invalid_proof = MmrEntryProof::new(
-        manifest1_hash.into_inner(),
-        strata_acct_types::MerkleProof::from_cohashes(
-            vec![[0xff; 32]], // Invalid cohash
-            manifest1_index,  // proof uses raw MMR index
-        ),
-    );
+    let invalid_proof = RawMerkleProof {
+        cohashes: vec![ssz_primitives::FixedBytes::<32>::from([0xff; 32])].into(),
+    };
 
-    // Create update with ledger reference
-    let update_outputs = UpdateOutputs::new_empty();
+    // Create update with invalid ledger reference using SnarkUpdateBuilder
+    let snark_state = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
 
-    let seq_no = 0u64;
-    let new_proof_state = ProofState::new(get_test_state_root(2), 0);
-    let operation_data = UpdateOperationData::new(
-        seq_no,
-        new_proof_state,
-        vec![],
-        ledger_refs,
-        update_outputs,
-        vec![],
-    );
-
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-
-    // Include the INVALID proof
-    let accumulator_proofs =
-        UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![invalid_proof]));
-
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+        .with_ledger_refs(vec![claim], vec![invalid_proof])
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute and expect failure
     let (slot, epoch) = (2, 1); // Increment epoch because we processed manifests in the last block
@@ -233,10 +180,10 @@ fn test_snark_update_with_invalid_ledger_reference() {
         "Update with invalid ledger reference should fail"
     );
 
-    match result.unwrap_err() {
+    match result.unwrap_err().into_base() {
         ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
             assert_eq!(
-                ref_idx, manifest1_height,
+                ref_idx, manifest1_index,
                 "Should fail on the invalid reference"
             );
         }
@@ -285,36 +232,38 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     let (manifest1_index, manifest1_proof) = manifest_tracker.add_manifest(&manifest1);
 
     // Step 2: Create a reference claim with a proof that carries a wrong entry index.
-    let manifest1_height = manifest1_index + 1;
-    let ledger_refs = LedgerRefs::new(vec![AccumulatorClaim::new(
-        manifest1_height,
-        manifest1_hash.into_inner(),
-    )]);
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
-    let mismatched_index_proof = MmrEntryProof::new(
-        manifest1_hash.into_inner(),
-        strata_acct_types::MerkleProof::from_cohashes(
-            manifest1_proof.proof().cohashes(),
-            manifest1_index + 1,
-        ),
-    );
+    // Create a mismatched proof by using the valid cohashes but a wrong index
+    // We reconstruct the proof with wrong index via RawMerkleProof (which strips the index)
+    // but shift the cohashes to produce a wrong root.
+    // Actually we need to create a RawMerkleProof with wrong cohash content to mismatch.
+    // The simplest way: just reverse the cohashes from the valid proof.
+    let mismatched_proof = RawMerkleProof {
+        cohashes: {
+            let mut cohashes: Vec<_> = manifest1_proof.cohashes.iter().cloned().collect();
+            // Corrupt the proof by replacing the first cohash with a bogus one
+            if !cohashes.is_empty() {
+                cohashes[0] = ssz_primitives::FixedBytes::<32>::from([0xff; 32]);
+            } else {
+                // If no cohashes, add a bogus one
+                cohashes.push(ssz_primitives::FixedBytes::<32>::from([0xff; 32]));
+            }
+            cohashes.into()
+        },
+    };
 
-    let operation_data = UpdateOperationData::new(
-        0,
-        ProofState::new(get_test_state_root(2), 0),
-        vec![],
-        ledger_refs,
-        UpdateOutputs::new_empty(),
-        vec![],
-    );
-    let base_update = SnarkAccountUpdate::new(operation_data, vec![0u8; 32]);
-    let accumulator_proofs =
-        UpdateAccumulatorProofs::new(vec![], LedgerRefProofs::new(vec![mismatched_index_proof]));
-    let update_container = SnarkAccountUpdateContainer::new(base_update, accumulator_proofs);
-    let tx = TransactionPayload::SnarkAccountUpdate(SnarkAccountUpdateTxPayload::new(
-        snark_id,
-        update_container,
-    ));
+    let snark_state = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
+
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+        .with_ledger_refs(vec![claim], vec![mismatched_proof])
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute and expect failure due to proof index mismatch.
     let result = execute_tx_in_block(
@@ -326,10 +275,12 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     );
 
     match result {
-        Err(ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. })) => {
-            assert_eq!(ref_idx, manifest1_height);
-        }
-        Err(err) => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
+                assert_eq!(ref_idx, manifest1_index);
+            }
+            err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+        },
         Ok(_) => panic!("Update with mismatched proof index should fail"),
     }
 }

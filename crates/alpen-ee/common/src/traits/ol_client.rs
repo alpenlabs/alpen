@@ -1,6 +1,7 @@
 use async_trait::async_trait;
+use strata_acct_types::MessageEntry;
 use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLTxId};
-use strata_snark_acct_types::{MessageEntry, ProofState, Seqno, SnarkAccountUpdate};
+use strata_snark_acct_types::{ProofState, Seqno, SnarkAccountUpdate};
 use thiserror::Error;
 
 use crate::{OLChainStatus, OLEpochSummary};

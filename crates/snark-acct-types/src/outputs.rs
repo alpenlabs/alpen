@@ -1,7 +1,9 @@
 //! Account output types that get applied to the ledger.
 
 use ssz_types::VariableList;
-use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
+use strata_acct_types::{
+    AccountId, BitcoinAmount, MsgPayload, SentMessage, SentTransfer, TxEffects,
+};
 
 use crate::{
     error::OutputsError,
@@ -91,6 +93,19 @@ impl UpdateOutputs {
         }
 
         Ok(())
+    }
+
+    /// Converts these outputs to [`TxEffects`] for use in transaction
+    /// processing.
+    pub fn to_tx_effects(&self) -> TxEffects {
+        let mut effects = TxEffects::default();
+        for t in self.transfers() {
+            effects.add_transfer(SentTransfer::new(t.dest(), t.value()));
+        }
+        for m in self.messages() {
+            effects.add_message(SentMessage::new(m.dest(), m.payload().clone()));
+        }
+        effects
     }
 
     /// Computes the total value across all transfers and messages.

@@ -1,7 +1,10 @@
 //! Update message types.
 
-use crate::ssz_generated::ssz::{
-    accumulators::*, messages::*, outputs::UpdateOutputs, state::ProofState, update::*,
+use strata_acct_types::{MessageEntry, RawMerkleProof};
+
+use crate::{
+    AccumulatorClaim,
+    ssz_generated::ssz::{outputs::UpdateOutputs, state::ProofState, update::*},
 };
 
 impl UpdateStateData {
@@ -58,6 +61,7 @@ impl UpdateOperationData {
         outputs: UpdateOutputs,
         extra_data: Vec<u8>,
     ) -> Self {
+        // TODO rework?
         Self {
             input: UpdateInputData::new(
                 seq_no,
@@ -122,28 +126,15 @@ impl LedgerRefs {
 }
 
 impl LedgerRefProofs {
-    pub fn new(l1_headers_proofs: Vec<MmrEntryProof>) -> Self {
+    pub fn new(l1_headers_proofs: Vec<RawMerkleProof>) -> Self {
         Self {
             // FIXME does this panic?
             l1_headers_proofs: l1_headers_proofs.into(),
         }
     }
 
-    pub fn l1_headers_proofs(&self) -> &[MmrEntryProof] {
+    pub fn l1_headers_proofs(&self) -> &[RawMerkleProof] {
         self.l1_headers_proofs.as_ref()
-    }
-
-    /// Converts the proof structure to the entries claimed.  This should only
-    /// happen after we've verified all of proofs against the accumulators that
-    /// are being checked.
-    pub fn to_ref_claims(&self) -> LedgerRefs {
-        LedgerRefs::new(
-            self.l1_headers_proofs
-                .as_ref()
-                .iter()
-                .map(|e| e.to_claim())
-                .collect::<Vec<_>>(),
-        )
     }
 }
 
@@ -163,22 +154,10 @@ impl SnarkAccountUpdate {
     pub fn update_proof(&self) -> &[u8] {
         self.update_proof.as_ref()
     }
-
-    /// Converts the base snark account update and converts it into the full
-    /// version by providing accumulator proofs.
-    ///
-    /// The proofs MUST correspond to the accumulator requirements.  This DOES
-    /// NOT validate that they are correct, this must be checked ahead of time.
-    pub fn into_full(self, proofs: UpdateAccumulatorProofs) -> SnarkAccountUpdateContainer {
-        SnarkAccountUpdateContainer {
-            base_update: self,
-            accumulator_proofs: proofs,
-        }
-    }
 }
 
 impl UpdateAccumulatorProofs {
-    pub fn new(inbox_proofs: Vec<MessageEntryProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
+    pub fn new(inbox_proofs: Vec<RawMerkleProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
         Self {
             // FIXME does this panic?
             inbox_proofs: inbox_proofs.into(),
@@ -186,36 +165,11 @@ impl UpdateAccumulatorProofs {
         }
     }
 
-    pub fn inbox_proofs(&self) -> &[MessageEntryProof] {
+    pub fn inbox_proofs(&self) -> &[RawMerkleProof] {
         self.inbox_proofs.as_ref()
     }
 
     pub fn ledger_ref_proofs(&self) -> &LedgerRefProofs {
         &self.ledger_ref_proofs
-    }
-}
-
-impl SnarkAccountUpdateContainer {
-    pub fn new(
-        base_update: SnarkAccountUpdate,
-        accumulator_proofs: UpdateAccumulatorProofs,
-    ) -> Self {
-        Self {
-            base_update,
-            accumulator_proofs,
-        }
-    }
-
-    pub fn base_update(&self) -> &SnarkAccountUpdate {
-        &self.base_update
-    }
-
-    pub fn accumulator_proofs(&self) -> &UpdateAccumulatorProofs {
-        &self.accumulator_proofs
-    }
-
-    /// Gets the inner operation data that we do stuff with.
-    pub fn operation(&self) -> &UpdateOperationData {
-        self.base_update().operation()
     }
 }

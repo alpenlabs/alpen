@@ -506,6 +506,7 @@ fn main() {
                     batch_prover,
                     batch_lifecycle_handle.latest_proof_ready_watcher(),
                     status_watcher,
+                    ext.genesis_l1_height,
                 );
 
                 node.task_executor
