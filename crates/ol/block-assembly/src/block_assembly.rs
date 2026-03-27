@@ -2164,16 +2164,26 @@ mod tests {
         );
     }
 
+    /// Tests that a tx producing logs which would overflow the remaining block
+    /// budget triggers a soft-break: the tx is not included, not marked invalid,
+    /// and remains available for future blocks.
+    ///
+    /// Note: with `TxEffects::MAX_MESSAGES = 255` and `MAX_LOGS_PER_BLOCK = 4096`,
+    /// a single tx can never overflow the per-tx log buffer on its own. So we
+    /// pre-fill the block output buffer to near capacity and verify that even a
+    /// small tx triggers the soft-break when it would push past the limit.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_oversized_log_tx_reported_invalid_and_removed_from_mempool() {
+    async fn test_tx_deferred_when_logs_would_overflow_remaining_budget() {
         let account_id = test_account_id(1);
-        let mut env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account_id, 500_000_000_000)
-            .build()
-            .await;
-        env.sequencer_config.max_txs_per_block = 2;
+        let storage = create_test_storage();
+        let mut parent_state = create_test_genesis_state();
+        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+
+        let (ctx, _mempool) = create_test_block_assembly_context(storage);
+        let parent_header = create_test_parent_header();
+        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
 
         let withdrawal_msg_data = WithdrawalMsgData::new(
             DEFAULT_OPERATOR_FEE,
@@ -2187,7 +2197,8 @@ mod tests {
             OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
         let withdrawal_payload_data = withdrawal_msg.to_vec();
 
-        let output_messages = (0..(MAX_LOGS_PER_BLOCK as usize + 1))
+        // Create a tx with 5 withdrawal messages (= 5 logs).
+        let output_messages: Vec<_> = (0..5)
             .map(|_| {
                 let payload = MsgPayload::new(
                     BitcoinAmount::from_sat(100_000_000),
@@ -2197,42 +2208,123 @@ mod tests {
             })
             .collect();
 
-        let overflow_tx = MempoolSnarkTxBuilder::new(account_id)
+        let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
             .with_output_messages(output_messages)
             .build();
-        let overflow_txid = overflow_tx.compute_txid();
+        let txid = tx.compute_txid();
 
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
-        mempool.add_transaction(overflow_txid, overflow_tx);
+        // Pre-fill output buffer so only 3 logs remain before the cap.
+        // The tx produces 5 logs, so 5 > 3 remaining → soft-break.
+        let output_buffer = ExecOutputBuffer::new_empty();
+        let prefill = MAX_LOGS_PER_BLOCK as usize - 3;
+        output_buffer
+            .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
+            .expect("pre-fill should succeed");
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let result = generate_block_template_inner(
+        let out = process_transactions(
             &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
+            &block_context,
+            &output_buffer,
+            &parent_state,
+            accumulated_batch,
+            vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("block generation should succeed");
-
-        let (template, failed_txs, _da) = result.into_parts();
-        let tx_count = template
-            .body()
-            .tx_segment()
-            .map(|segment: &OLTxSegment| segment.txs().len())
-            .unwrap_or(0);
-        assert_eq!(tx_count, 0, "overflow tx should not be included");
-        assert!(
-            failed_txs.contains(&(overflow_txid, MempoolTxInvalidReason::Invalid)),
-            "oversized tx should be reported invalid to mempool"
         );
 
-        let remaining = mempool.get_transactions(10).await.expect("mempool read");
         assert!(
-            remaining.is_empty(),
-            "oversized tx should be removed from mempool"
+            out.successful_txs.is_empty(),
+            "tx should not be included (logs would overflow)"
+        );
+        assert!(
+            out.failed_txs.is_empty(),
+            "soft-break should not mark tx invalid"
+        );
+    }
+
+    /// Tests that when two txs are processed and the first fills the remaining
+    /// log budget, the second is deferred via soft-break (not included, not
+    /// marked invalid).
+    ///
+    /// Uses `process_transactions` directly with a pre-filled output buffer so
+    /// that realistic message counts (≤ 255 per tx) can trigger the overflow.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_block_full_log_overflow_tx_not_reported_invalid_and_kept_in_mempool() {
+        let account_id = test_account_id(8);
+        let storage = create_test_storage();
+        let mut parent_state = create_test_genesis_state();
+        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+
+        let (ctx, _mempool) = create_test_block_assembly_context(storage);
+        let parent_header = create_test_parent_header();
+        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
+
+        let withdrawal_msg_data =
+            WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, b"bc1qlogcapfull".to_vec(), u32::MAX)
+                .expect("valid withdrawal data");
+        let encoded_withdrawal_body =
+            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
+        let withdrawal_msg =
+            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
+        let withdrawal_payload_data = withdrawal_msg.to_vec();
+
+        // First tx: 10 withdrawal messages = 10 logs.
+        let fill_messages: Vec<_> = (0..10)
+            .map(|_| {
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            })
+            .collect();
+        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_output_messages(fill_messages)
+            .build();
+        let tx_fill_id = tx_fill.compute_txid();
+
+        // Second tx: 1 withdrawal message = 1 log.
+        let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_output_messages(vec![{
+                let payload = MsgPayload::new(
+                    BitcoinAmount::from_sat(100_000_000),
+                    withdrawal_payload_data.clone(),
+                );
+                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
+            }])
+            .build();
+        let tx_overflow_id = tx_overflow.compute_txid();
+
+        // Pre-fill the buffer so that tx_fill's 10 logs exactly reach the cap,
+        // leaving no room for tx_overflow's 1 log.
+        let output_buffer = ExecOutputBuffer::new_empty();
+        let prefill = MAX_LOGS_PER_BLOCK as usize - 10;
+        output_buffer
+            .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
+            .expect("pre-fill should succeed");
+
+        let out = process_transactions(
+            &ctx,
+            &block_context,
+            &output_buffer,
+            &parent_state,
+            accumulated_batch,
+            vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
+            AccumulatedDaData::new_empty(),
+        );
+
+        assert_eq!(
+            out.successful_txs.len(),
+            1,
+            "only first tx should be included"
+        );
+        assert!(
+            out.failed_txs.is_empty(),
+            "block-full overflow tx should not be reported invalid"
         );
     }
 
