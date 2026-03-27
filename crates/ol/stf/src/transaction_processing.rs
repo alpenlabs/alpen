@@ -3,8 +3,6 @@
 use strata_acct_types::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
-use strata_snark_acct_sys::{self as snark_sys, SnarkAccountUpdateData};
-use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 
 use crate::{
     account_processing,
@@ -12,6 +10,7 @@ use crate::{
     context::{BasicExecContext, TxExecContext},
     errors::{ExecError, ExecResult},
     proof_verification::{TxProofVerificationContext, TxProofVerifierImpl, TxProofsTracker},
+    sau_processing,
 };
 
 /// Process a block's transaction segment.
@@ -114,7 +113,13 @@ fn process_update_tx<S: IStateAccessor>(
     let state_ctx = TxProofVerificationContext::from_account_and_state(state, account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
     let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
-    verify_snark_acct_update(account_state, sau_payload, effects, &mut verifier)?;
+    sau_processing::verify_snark_acct_update(
+        target,
+        account_state,
+        sau_payload.operation(),
+        effects,
+        &mut verifier,
+    )?;
 
     // 3. Actually take balance and write new account inner state.
     let upd = sau_payload.operation().update();
@@ -141,72 +146,6 @@ fn process_update_tx<S: IStateAccessor>(
     })??;
 
     Ok(())
-}
-
-fn verify_snark_acct_update(
-    account_state: &impl IAccountState,
-    sau_payload: &SauTxPayload,
-    effects: &TxEffects,
-    proof_verifier: &mut impl TxProofVerifier,
-) -> ExecResult<()> {
-    // 1. Extract snark account specific state.
-    let snark_acct_state = account_state
-        .as_snark_account()
-        .map_err(|_| ExecError::IncorrectTxTargetType)?;
-
-    // 2. Assemble the internal snark account update data.
-    let update_data = build_snark_acct_update_data(sau_payload, effects);
-
-    // 3. Actually call out to the verifier logic.
-    snark_sys::verify_update_correctness(
-        *sau_payload.target(),
-        snark_acct_state,
-        &update_data,
-        proof_verifier,
-    )?;
-
-    Ok(())
-}
-
-fn build_snark_acct_update_data(
-    sau_payload: &SauTxPayload,
-    effects: &TxEffects,
-) -> SnarkAccountUpdateData {
-    let op = sau_payload.operation();
-    let upd = op.update();
-    let proof_state = ProofState::new(
-        upd.proof_state().inner_state_root(),
-        upd.proof_state().new_next_msg_idx(),
-    );
-    let ledger_refs = convert_sau_ledger_refs(op.ledger_refs());
-    let processed_messages: Vec<_> = op.messages_iter().cloned().collect();
-
-    SnarkAccountUpdateData::new(
-        Seqno::from(upd.seq_no()),
-        proof_state,
-        processed_messages,
-        ledger_refs,
-        effects.clone(),
-        upd.extra_data().to_vec(),
-    )
-}
-
-/// Converts `SauTxLedgerRefs` (new chain type) to `LedgerRefs` (snark-acct-types).
-fn convert_sau_ledger_refs(sau_refs: &SauTxLedgerRefs) -> LedgerRefs {
-    match sau_refs.asm_history_proofs() {
-        Some(claim_list) => {
-            let claims: Vec<AccumulatorClaim> = claim_list
-                .claims()
-                .iter()
-                .map(|c| {
-                    let hash: [u8; 32] = c.entry_hash().into();
-                    AccumulatorClaim::new(c.idx(), hash)
-                })
-                .collect();
-            LedgerRefs::new(claims)
-        }
-        None => LedgerRefs::new_empty(),
-    }
 }
 
 /// Applies the effects of a transaction (transfers and messages) to account state.

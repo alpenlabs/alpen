@@ -12,6 +12,7 @@ mod errors;
 mod manifest_processing;
 mod output;
 mod proof_verification;
+mod sau_processing;
 mod transaction_processing;
 mod verification;
 
@@ -28,6 +29,7 @@ pub use errors::{ErrorKind, ExecError, ExecResult};
 pub use manifest_processing::process_block_manifests;
 pub use output::*;
 pub use proof_verification::TxProofVerifierImpl;
+pub use sau_processing::verify_snark_acct_update;
 pub use transaction_processing::{
     check_tx_constraints, process_block_tx_segment, process_single_tx, verify_effects_safe,
 };
