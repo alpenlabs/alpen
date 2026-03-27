@@ -1,8 +1,8 @@
 use strata_checkpoint_types_ssz::CheckpointPayload;
-use strata_db_types::{traits::DatabaseBackend, types::L1BundleStatus};
+use strata_db_types::types::L1BundleStatus;
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_primitives::OLBlockId;
-use strata_storage::{ops::writer::Context, NodeStorage};
+use strata_storage::NodeStorage;
 use tracing::debug;
 
 use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error, PayloadSigningDuty};
@@ -80,15 +80,14 @@ async fn get_earliest_unsigned_checkpoint(
 async fn get_pending_payload_duties(
     node_storage: &NodeStorage,
 ) -> Result<Vec<PayloadSigningDuty>, Error> {
-    let writer_ops =
-        Context::new(node_storage.db().writer_db()).into_ops(node_storage.pool().clone());
+    let l1_writer = node_storage.l1_writer();
 
-    let mut idx = writer_ops.get_next_payload_idx_async().await?;
+    let mut idx = l1_writer.get_next_payload_idx_async().await?;
     let mut duties = vec![];
 
     while idx > 0 {
         idx -= 1;
-        let Some(entry) = writer_ops.get_payload_entry_by_idx_async(idx).await? else {
+        let Some(entry) = l1_writer.get_payload_entry_by_idx_async(idx).await? else {
             break;
         };
         if entry.status == L1BundleStatus::Finalized {

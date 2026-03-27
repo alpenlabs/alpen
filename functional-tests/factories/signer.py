@@ -50,8 +50,8 @@ class SignerFactory(flexitest.Factory):
         config_path = datadir / "signer-config.toml"
         config_path.write_text(
             f'sequencer_key = "{sequencer_key_path}"\n'
-            f'rpc_url = "{ws_url}"\n'
-            f"poll_interval = {TEST_POLL_INTERVAL_MS}\n"
+            f'sequencer_endpoint = "{ws_url}"\n'
+            f"duty_poll_interval = {TEST_POLL_INTERVAL_MS}\n"
         )
 
         tool = shutil.which("strata-signer")

@@ -259,6 +259,7 @@ pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
                             let mut updated_entry = payloadentry.clone();
                             updated_entry.commit_txid = cid;
                             updated_entry.reveal_txid = rid;
+                            updated_entry.payload_signature = None;
                             updated_entry.status = L1BundleStatus::PendingPayloadSign(sighash);
                             insc_ops
                                 .put_payload_entry_async(curr_payloadidx, updated_entry)
@@ -295,6 +296,7 @@ pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
                         // Same recovery path as NeedsResign.
                         warn!("unsigned envelope not in cache, resetting to Unsigned");
                         let mut updated_entry = payloadentry.clone();
+                        updated_entry.payload_signature = None;
                         updated_entry.status = L1BundleStatus::Unsigned;
                         insc_ops
                             .put_payload_entry_async(curr_payloadidx, updated_entry)
@@ -376,6 +378,7 @@ pub(crate) async fn watcher_task<R: Reader + Signer + Wallet>(
                         _ => {
                             warn!("Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
                             let mut updated_entry = payloadentry.clone();
+                            updated_entry.payload_signature = None;
                             updated_entry.status = L1BundleStatus::Unsigned;
                             insc_ops
                                 .put_payload_entry_async(curr_payloadidx, updated_entry)

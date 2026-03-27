@@ -7,14 +7,14 @@ use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{
-    builder::{attach_reveal_signature, build_envelope_txs, EnvelopeError, UnsignedEnvelope},
+    builder::{attach_reveal_signature, build_envelope_txs, EnvelopeError, UnsignedEnvelopeData},
     context::WriterContext,
 };
 use crate::broadcaster::L1BroadcastHandle;
 
 /// Builds envelope transactions for a payload entry.
 ///
-/// Signs the commit tx with the Bitcoin wallet and returns the [`UnsignedEnvelope`]
+/// Signs the commit tx with the Bitcoin wallet and returns the [`UnsignedEnvelopeData`]
 /// whose reveal tx requires a Schnorr signature from the external signer.
 ///
 /// The commit tx is stored in the broadcast DB immediately. The reveal tx is returned
@@ -25,7 +25,7 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
     payloadentry: &BundledPayloadEntry,
     broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<WriterContext<R>>,
-) -> Result<(UnsignedEnvelope, Buf32), EnvelopeError> {
+) -> Result<(UnsignedEnvelopeData, Buf32), EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_envelope",
         component = "btcio_writer_signer",
@@ -70,7 +70,7 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 /// `payload_signature` has been filled by the signer RPC.
 pub(crate) async fn complete_reveal_and_broadcast(
     payload_idx: u64,
-    unsigned: &UnsignedEnvelope,
+    unsigned: &UnsignedEnvelopeData,
     signature: &[u8; 64],
     broadcast_handle: &L1BroadcastHandle,
 ) -> Result<Buf32, EnvelopeError> {

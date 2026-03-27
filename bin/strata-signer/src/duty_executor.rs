@@ -45,6 +45,7 @@ pub(crate) async fn duty_executor_worker(
         select! {
             duty = duty_rx.recv() => {
                 let Some(duty) = duty else {
+                    warn!("duty channel closed (all senders dropped); shutting down executor");
                     return Ok(());
                 };
 

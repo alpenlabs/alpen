@@ -10,7 +10,7 @@ use bitcoin::{
     secp256k1::{
         constants::SCHNORR_SIGNATURE_SIZE, schnorr::Signature, Message, XOnlyPublicKey, SECP256K1,
     },
-    sighash::{Prevouts, SighashCache, TapSighashType},
+    sighash::{Prevouts, SighashCache, TapSighashType, TaprootError},
     taproot::{
         ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder, TaprootBuilderError,
         TaprootSpendInfo,
@@ -103,6 +103,9 @@ pub enum EnvelopeError {
     #[error("envelope build error")]
     EnvelopeBuild(#[from] EnvelopeBuildError),
 
+    #[error("failed to compute sighash")]
+    Sighash(#[from] TaprootError),
+
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -112,7 +115,7 @@ pub enum EnvelopeError {
 /// Held in memory by the watcher task. Lost on restart, which triggers a rebuild
 /// from `Unsigned` status.
 #[derive(Debug, Clone)]
-pub struct UnsignedEnvelope {
+pub struct UnsignedEnvelopeData {
     /// The unsigned commit transaction.
     pub commit_tx: Transaction,
     /// The unsigned reveal transaction (no witness yet).
@@ -132,7 +135,7 @@ pub struct UnsignedEnvelope {
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<UnsignedEnvelope> {
+) -> anyhow::Result<UnsignedEnvelopeData> {
     let network = ctx.client.network().await?;
     let utxos = ctx
         .client
@@ -158,13 +161,13 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 
 /// Builds unsigned envelope transactions (commit + reveal) and computes the sighash.
 ///
-/// Returns an [`UnsignedEnvelope`] containing the transactions and intermediate data
+/// Returns an [`UnsignedEnvelopeData`] containing the transactions and intermediate data
 /// needed to attach the signature later via [`attach_reveal_signature`].
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
     payload: &L1Payload,
     utxos: Vec<ListUnspentItem>,
-) -> Result<UnsignedEnvelope, EnvelopeError> {
+) -> Result<UnsignedEnvelopeData, EnvelopeError> {
     let public_key = env_config
         .envelope_pubkey
         .ok_or_else(|| anyhow!("envelope_pubkey is required for single-envelope transactions"))?;
@@ -227,7 +230,7 @@ pub fn create_envelope_transactions(
     // Compute sighash for the reveal tx
     let sighash = compute_reveal_sighash(&reveal_tx, &output_to_reveal, &reveal_script)?;
 
-    Ok(UnsignedEnvelope {
+    Ok(UnsignedEnvelopeData {
         commit_tx,
         reveal_tx,
         sighash,
@@ -243,14 +246,12 @@ fn compute_reveal_sighash(
     reveal_script: &ScriptBuf,
 ) -> Result<Buf32, EnvelopeError> {
     let mut sighash_cache = SighashCache::new(reveal_tx);
-    let signature_hash = sighash_cache
-        .taproot_script_spend_signature_hash(
-            0,
-            &Prevouts::All(&[output_to_reveal]),
-            TapLeafHash::from_script(reveal_script, LeafVersion::TapScript),
-            TapSighashType::Default,
-        )
-        .map_err(|e| anyhow!("failed to compute sighash: {e}"))?;
+    let signature_hash = sighash_cache.taproot_script_spend_signature_hash(
+        0,
+        &Prevouts::All(&[output_to_reveal]),
+        TapLeafHash::from_script(reveal_script, LeafVersion::TapScript),
+        TapSighashType::Default,
+    )?;
     Ok(Buf32(*signature_hash.as_byte_array()))
 }
 

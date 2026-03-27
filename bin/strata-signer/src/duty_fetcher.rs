@@ -12,9 +12,9 @@ use tracing::{error, info, warn};
 pub(crate) async fn duty_fetcher_worker(
     rpc: Arc<ManagedWsClient>,
     duty_tx: mpsc::Sender<Duty>,
-    poll_interval: u64,
+    duty_poll_interval: u64,
 ) -> anyhow::Result<()> {
-    let mut interval = interval(Duration::from_millis(poll_interval));
+    let mut interval = interval(Duration::from_millis(duty_poll_interval));
 
     'top: loop {
         interval.tick().await;

@@ -81,13 +81,13 @@ impl fmt::Display for Duty {
                     duty.slot(),
                     duty.template.epoch(),
                     duty.target_timestamp(),
-                    if duty.is_ready() { "yes" } else { "no" }
+                    duty.is_ready()
                 )
             }
             Self::SignCheckpoint(duty) => {
                 write!(
                     f,
-                    "SignCheckpoint(epoch: {}, l1_height: {}, l2_slot: {})",
+                    "SignCheckpoint(epoch: {}, l1_height: {}, ol_slot: {})",
                     duty.epoch(),
                     duty.checkpoint.new_tip().l1_height,
                     duty.checkpoint.new_tip().l2_commitment.slot

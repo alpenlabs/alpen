@@ -1,6 +1,6 @@
 sequencer_key = "/path/to/sequencer.key"
-rpc_url = "ws://127.0.0.1:9944"
-poll_interval = 1000
+sequencer_endpoint = "ws://127.0.0.1:9944"
+duty_poll_interval = 1000
 
 [logging]
 # service_label = "prod"

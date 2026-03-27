@@ -60,11 +60,11 @@ fn main() -> anyhow::Result<()> {
 
     // Set up RPC client.
     let ws_config = WsClientConfig {
-        url: config.rpc_url.clone(),
+        url: config.sequencer_endpoint.clone(),
     };
     let rpc = Arc::new(ManagedWsClient::new_with_default_pool(ws_config));
 
-    info!(rpc_url = %config.rpc_url, poll_interval_ms = config.poll_interval, "starting signer");
+    info!(sequencer_endpoint = %config.sequencer_endpoint, duty_poll_interval_ms = config.duty_poll_interval, "starting signer");
 
     // Duty channel.
     let (duty_tx, duty_rx) = mpsc::channel(64);
@@ -75,7 +75,7 @@ fn main() -> anyhow::Result<()> {
 
     executor.spawn_critical_async(
         "duty-fetcher",
-        duty_fetcher_worker(rpc.clone(), duty_tx, config.poll_interval),
+        duty_fetcher_worker(rpc.clone(), duty_tx, config.duty_poll_interval),
     );
     executor.spawn_critical_async(
         "duty-executor",

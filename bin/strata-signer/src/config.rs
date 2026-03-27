@@ -13,11 +13,11 @@ pub(crate) struct SignerConfig {
     pub(crate) sequencer_key: PathBuf,
 
     /// WebSocket RPC URL of the sequencer node (e.g. ws://127.0.0.1:9944).
-    pub(crate) rpc_url: String,
+    pub(crate) sequencer_endpoint: String,
 
     /// Duty poll interval in milliseconds.
-    #[serde(default = "default_poll_interval")]
-    pub(crate) poll_interval: u64,
+    #[serde(default = "default_duty_poll_interval")]
+    pub(crate) duty_poll_interval: u64,
 
     /// Logging configuration.
     #[serde(default)]
@@ -48,6 +48,6 @@ pub(crate) struct LoggingConfig {
     pub(crate) json_format: Option<bool>,
 }
 
-fn default_poll_interval() -> u64 {
+fn default_duty_poll_interval() -> u64 {
     DEFAULT_POLL_INTERVAL_MS
 }
