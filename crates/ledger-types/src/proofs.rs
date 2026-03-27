@@ -12,7 +12,7 @@ pub enum ProofVerifyError {
     InvalidProof,
 
     /// This would be use if we tried to check an account input mmr in a context
-    /// where that doesn't exit.
+    /// where that doesn't exist.
     #[error("proof impossible in this context")]
     InvalidContext,
 }

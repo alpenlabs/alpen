@@ -17,7 +17,7 @@ pub struct RpcOLTransaction {
     /// The payload.
     payload: RpcTransactionPayload,
 
-    /// The constrains.
+    /// The constraints.
     constraints: RpcTxConstraints,
 }
 
