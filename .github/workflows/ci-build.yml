@@ -1,0 +1,206 @@
+# Builds new-architecture Docker images on merge to main (or manual dispatch)
+# and pushes to the shared ECR account.
+#
+# Old architecture images (strata-client, strata-sequencer-client, alpen-reth)
+# remain in the current account via the existing cd.yml workflow.
+#
+# Generate-params and CD dispatch are tracked separately (STR-2775).
+
+name: CI — Build and Push Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Only trigger when source code or Dockerfiles change
+      - "bin/**"
+      - "crates/**"
+      - "docker/strata/**"
+      - "docker/alpen-client/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+  workflow_dispatch:
+    inputs:
+      programs:
+        description: "Comma-separated list of programs to build (leave empty for all)"
+        required: false
+        type: string
+      ref:
+        description: "Git ref to build from (default: current branch)"
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+
+# Cancel in-progress runs for the same branch (except main — let those finish)
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine which programs to build
+  # ---------------------------------------------------------------------------
+  prepare:
+    name: Prepare build matrix
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set build matrix
+        id: set-matrix
+        env:
+          INPUT: ${{ inputs.programs }}
+        run: |
+          # New architecture images only — pushed to shared ECR account
+          ALL='["strata","alpen-client"]'
+
+          if [ -z "$INPUT" ]; then
+            echo "matrix={\"program\":${ALL}}" >> "$GITHUB_OUTPUT"
+          else
+            # Convert comma-separated input to JSON array
+            JSON=$(echo "$INPUT" | jq -Rc 'split(",") | map(gsub("\\s"; ""))')
+            echo "matrix={\"program\":${JSON}}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Build and push each program in parallel
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: "Build ${{ matrix.program }}"
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    outputs:
+      short_tag: ${{ steps.resolve.outputs.short_tag }}
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Resolve actual commit SHA
+        id: resolve
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          SHORT_TAG="${COMMIT_SHA:0:7}"
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
+
+      - name: Free up disk space
+        uses: ./.github/actions/cleanup
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3
+
+      # Authenticate to the shared ECR account
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v4
+        env:
+          ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
+        with:
+          mask-password: "true"
+
+      # --- Build and push via Buildx ------------------------------------------
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          PROGRAM: ${{ matrix.program }}
+          SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
+          COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
+        run: |
+          DOCKERFILE_PATH="docker/${PROGRAM}/Dockerfile"
+          ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHORT_TAG}"
+
+          docker buildx build \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --push \
+            -t "${FULL_IMAGE}" \
+            -f "${DOCKERFILE_PATH}" .
+
+          echo "Successfully pushed: ${FULL_IMAGE}"
+
+  # ---------------------------------------------------------------------------
+  # Dispatch CD to deployments repo
+  # ---------------------------------------------------------------------------
+  dispatch-cd:
+    name: Dispatch CD to deployments
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    permissions: {}
+    environment: prod
+    steps:
+      - name: Trigger deployments repo
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
+          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
+          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
+        run: |
+          jq -n \
+            --arg tag "$SHORT_TAG" \
+            --arg sha "$COMMIT_SHA" \
+            --arg ref "${GITHUB_REF_NAME}" \
+            '{
+              event_type: "new-arch-deploy",
+              client_payload: {
+                tag: $tag,
+                commit_sha: $sha,
+                ref: $ref
+              }
+            }' | gh api repos/alpenlabs/deployments/dispatches --method POST --input -
+
+          echo "Dispatched CD to deployments repo with tag=${SHORT_TAG}"
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  summary:
+    name: Build Summary
+    needs: [build-and-push, dispatch-cd]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Report results
+        env:
+          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
+          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
+          BUILD_RESULT: ${{ needs.build-and-push.result }}
+          CD_RESULT: ${{ needs.dispatch-cd.result }}
+        run: |
+          {
+            echo "## Build Summary"
+            echo ""
+            echo "| Property | Value |"
+            echo "|----------|-------|"
+            echo "| **Commit** | \`${COMMIT_SHA}\` |"
+            echo "| **Image Tag** | \`${SHORT_TAG}\` |"
+            echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
+            echo "| **CD Dispatch** | \`${CD_RESULT}\` |"
+            echo ""
+            echo "### Build Status"
+            echo "Overall: **${BUILD_RESULT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
