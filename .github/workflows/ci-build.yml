@@ -15,7 +15,8 @@ on:
       # Only trigger when source code or Dockerfiles change
       - "bin/**"
       - "crates/**"
-      - "docker/**"
+      - "docker/strata/**"
+      - "docker/alpen-client/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
