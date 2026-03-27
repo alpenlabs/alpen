@@ -105,18 +105,21 @@ mod sequencer_services {
 
         let writer_db = nodectx.storage().db().writer_db();
 
-        start_envelope_task(
-            nodectx.executor(),
-            nodectx.bitcoin_client().clone(),
-            Arc::new(nodectx.config().btcio.writer.clone()),
-            super::rollup_to_btcio_params(nodectx.params().rollup()),
-            sequencer_address,
-            writer_db,
-            nodectx.status_channel().as_ref().clone(),
-            nodectx.storage().pool().clone(),
-            broadcast_handle,
-            envelope_pubkey,
-        )
+        nodectx
+            .task_manager()
+            .handle()
+            .block_on(start_envelope_task(
+                nodectx.executor(),
+                nodectx.bitcoin_client().clone(),
+                Arc::new(nodectx.config().btcio.writer.clone()),
+                super::rollup_to_btcio_params(nodectx.params().rollup()),
+                sequencer_address,
+                writer_db,
+                nodectx.status_channel().as_ref().clone(),
+                nodectx.storage().pool().clone(),
+                broadcast_handle,
+                envelope_pubkey,
+            ))
     }
 
     /// Starts the OL block assembly service.

@@ -429,7 +429,7 @@ fn start_sequencer_tasks(
 
     // Start envelope tasks
     let btcio_params = rollup_to_btcio_params(params.rollup());
-    let envelope_handle = start_envelope_task(
+    let envelope_handle = executor.handle().block_on(start_envelope_task(
         executor,
         bitcoin_client,
         Arc::new(btcio_cfg.writer.clone()),
@@ -440,7 +440,7 @@ fn start_sequencer_tasks(
         pool.clone(),
         broadcast_handle.clone(),
         None,
-    )?;
+    ))?;
 
     let template_manager_handle = start_template_manager_task(&ctx, executor);
 

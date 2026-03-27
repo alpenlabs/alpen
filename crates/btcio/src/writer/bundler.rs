@@ -1,52 +1,9 @@
-use std::{sync::Arc, time::Duration};
-
-use strata_config::btcio::WriterConfig;
 use strata_db_types::{
     types::{BundledPayloadEntry, IntentEntry, IntentStatus},
     DbResult,
 };
 use strata_storage::ops::writer::EnvelopeDataOps;
-use strata_tasks::ShutdownGuard;
-use tokio::{select, sync::mpsc::Receiver, time::interval};
 use tracing::*;
-
-/// Periodically bundles unbundled intents into payload entries.
-pub(crate) async fn bundler_task(
-    mut unbundled: Vec<IntentEntry>,
-    ops: Arc<EnvelopeDataOps>,
-    config: Arc<WriterConfig>,
-    mut intent_rx: Receiver<IntentEntry>,
-    shutdown: ShutdownGuard,
-) -> anyhow::Result<()> {
-    let interval = interval(Duration::from_millis(config.bundle_interval_ms));
-    tokio::pin!(interval);
-    loop {
-        select! {
-            maybe_intent = intent_rx.recv() => {
-                if shutdown.should_shutdown() {
-                    info!("Bundler received shutdown. Stopping.");
-                    break;
-                }
-                if let Some(intent) = maybe_intent {
-                    unbundled.push(intent);
-                } else {
-                    warn!("Intent receiver closed, stopping bundler task");
-                    break;
-                }
-            }
-
-            _ = interval.tick() => {
-                if shutdown.should_shutdown() {
-                    info!("Bundler received shutdown. Stopping.");
-                    break;
-                }
-                // Process unbundled entries, returning entries which are unprocessed for some reason.
-                unbundled = process_unbundled_entries(ops.as_ref(), unbundled).await?;
-            }
-        }
-    }
-    Ok(())
-}
 
 /// Processes and bundles a list of unbundled intents into payload entries. Returns a vector of
 /// entries which are unbundled for some reason.
@@ -54,7 +11,7 @@ pub(crate) async fn bundler_task(
 /// makes sense to include once a bunch of entries are collected.
 /// NOTE: The current logic is simply 1-1 mapping between intents and payloads, in future it can
 /// be sophisticated.
-async fn process_unbundled_entries(
+pub(crate) async fn process_unbundled_entries(
     ops: &EnvelopeDataOps,
     unbundled: Vec<IntentEntry>,
 ) -> DbResult<Vec<IntentEntry>> {
