@@ -91,7 +91,7 @@ jobs:
 
           PARAMS_OUTPUT=$(./target/release/strata-datatool genparams \
             --genesis-l1-view-file .github/fixtures/genesis-l1-view.json \
-            --elf-dir docker/prover-client/elfs/sp1)
+            --elf-dir docker/strata/elfs/sp1)
 
           CHECKPOINT_PREDICATE=$(echo "$PARAMS_OUTPUT" | jq -r '.checkpoint_predicate')
           if [ -z "$CHECKPOINT_PREDICATE" ] || [ "$CHECKPOINT_PREDICATE" = "null" ]; then
