@@ -6,7 +6,7 @@ use strata_db_types::DbResult;
 use strata_identifiers::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
-use strata_ol_mempool::{OLMempoolError, OLMempoolResult, OLMempoolTransaction};
+use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::*;
@@ -25,7 +25,7 @@ use crate::rpc::errors::{
 
 // -- Mock provider --
 
-type SubmitFn = Box<dyn Fn(OLMempoolTransaction) -> OLMempoolResult<OLTxId> + Send + Sync>;
+type SubmitFn = Box<dyn Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync>;
 
 struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
@@ -81,7 +81,7 @@ impl MockProvider {
 
     fn with_submit_fn(
         mut self,
-        f: impl Fn(OLMempoolTransaction) -> OLMempoolResult<OLTxId> + Send + Sync + 'static,
+        f: impl Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync + 'static,
     ) -> Self {
         self.submit_fn = Box::new(f);
         self
@@ -134,7 +134,7 @@ impl OLRpcProvider for MockProvider {
         self.sync_status
     }
 
-    async fn submit_transaction(&self, tx: OLMempoolTransaction) -> OLMempoolResult<OLTxId> {
+    async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         (self.submit_fn)(tx)
     }
 }

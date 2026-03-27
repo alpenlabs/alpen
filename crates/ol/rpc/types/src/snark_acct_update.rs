@@ -7,7 +7,7 @@ use strata_primitives::{HexBytes, HexBytes32};
 pub struct RpcSnarkAccountUpdate {
     /// The target account.
     target: HexBytes32,
-    /// The encode update operation [`strata_snark_acct_types::UpdateOperationData`].
+    /// The encoded update operation [`strata_snark_acct_types::UpdateOperationData`].
     update_operation_encoded: HexBytes,
     /// The update proof.
     update_proof: HexBytes,
@@ -32,7 +32,7 @@ impl RpcSnarkAccountUpdate {
         &self.target
     }
 
-    /// Returns encoded [`strata_snark_acct_types::UpdateOperationData`]
+    /// Returns encoded [`strata_snark_acct_types::UpdateOperationData`].
     pub fn update_operation_encoded(&self) -> &HexBytes {
         &self.update_operation_encoded
     }

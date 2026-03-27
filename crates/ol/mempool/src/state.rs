@@ -21,7 +21,6 @@ use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
     types::{
         MempoolEntry, MempoolOrderingKey, OLMempoolConfig, OLMempoolRejectReason, OLMempoolStats,
-        OLMempoolTransaction, OLMempoolTxPayload,
     },
     validation::validate_transaction,
 };
@@ -189,7 +188,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         for tx_data in all_txs {
             // Parse transaction from bytes
-            let tx: OLMempoolTransaction = match ssz::Decode::from_ssz_bytes(&tx_data.tx_bytes) {
+            let tx: OLTransaction = match ssz::Decode::from_ssz_bytes(&tx_data.tx_bytes) {
                 Ok(tx) => tx,
                 Err(e) => {
                     // Skip malformed transaction and remove from DB
@@ -255,7 +254,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Handle submit transaction command.
     pub(crate) async fn handle_submit_transaction(
         &mut self,
-        tx: Box<OLMempoolTransaction>,
+        tx: Box<OLTransaction>,
     ) -> OLMempoolResult<OLTxId> {
         // Add to mempool
         let txid = self.add_transaction(*tx).await?;
@@ -266,10 +265,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
     pub(crate) async fn handle_get_transactions(
         &mut self,
         limit: usize,
-    ) -> OLMempoolResult<Vec<(OLTxId, OLMempoolTransaction)>> {
+    ) -> OLMempoolResult<Vec<(OLTxId, OLTransaction)>> {
         // Gap checking at submission ensures no gaps exist.
         // Simply return transactions in priority order.
-        let result: Vec<(OLTxId, OLMempoolTransaction)> = self
+        let result: Vec<(OLTxId, OLTransaction)> = self
             .ordering_index
             .values()
             .take(limit)
@@ -332,10 +331,14 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Returns txid if this is a
     /// [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) with a sequence number
     /// that already exists in the mempool for the target account. Returns None otherwise.
-    fn find_account_tx_with_same_seqno(&self, tx: &OLMempoolTransaction) -> Option<OLTxId> {
-        let base_update = tx.base_update()?;
-        let target_account = tx.target();
-        let tx_seq_no = base_update.operation().seq_no();
+    fn find_account_tx_with_same_seqno(&self, tx: &OLTransaction) -> Option<OLTxId> {
+        let target_account = tx.target()?;
+        let tx_seq_no = match tx.payload() {
+            TransactionPayload::SnarkAccountUpdate(payload) => {
+                payload.operation().update().seq_no()
+            }
+            TransactionPayload::GenericAccountMessage(_) => return None,
+        };
 
         // Get account state and check if seq_no exists
         let acct_state = self.account_state.get(&target_account)?;
@@ -348,8 +351,8 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Find txid with this seq_no in the account's transactions
         for txid in &acct_state.txids {
             if let Some(entry) = self.entries.get(txid) {
-                if let Some(entry_update) = entry.tx.base_update()
-                    && entry_update.operation().seq_no() == tx_seq_no
+                if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload()
+                    && payload.operation().update().seq_no() == tx_seq_no
                 {
                     return Some(*txid);
                 }
@@ -368,10 +371,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Add a transaction to the mempool.
     ///
     /// Returns the transaction ID. Idempotent - returns existing txid if duplicate.
-    pub(crate) async fn add_transaction(
-        &mut self,
-        tx: OLMempoolTransaction,
-    ) -> OLMempoolResult<OLTxId> {
+    pub(crate) async fn add_transaction(&mut self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         let txid = tx.compute_txid();
 
         // Idempotent check - if already present, return success
@@ -438,7 +438,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Also updates statistics. Does NOT write to database or perform validation.
     fn add_tx_to_in_memory_state(&mut self, txid: OLTxId, entry: MempoolEntry) {
         let ordering_key = entry.ordering_key;
-        let target_account = entry.tx.target();
+        let target_account = entry
+            .tx
+            .target()
+            .expect("all OL payload variants must have a target");
         let tx_size = entry.size_bytes;
 
         // Add to ordering index
@@ -452,9 +455,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
         acct_state.txids.insert(txid);
 
         // Add seq_no if this is a SnarkAccountUpdate
-        if let Some(base_update) = entry.tx.base_update() {
-            let seq_no = base_update.operation().seq_no();
-            acct_state.seq_nos.insert(seq_no);
+        if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload() {
+            acct_state
+                .seq_nos
+                .insert(payload.operation().update().seq_no());
         }
 
         // Update stats
@@ -469,7 +473,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Get ordering key for ordering index removal
         let ordering_key = entry.ordering_key;
         let size_bytes = entry.size_bytes;
-        let account_id = entry.tx.target();
+        let account_id = entry
+            .tx
+            .target()
+            .expect("all OL payload variants must have a target");
 
         // Remove from memory
         self.entries.remove(&txid);
@@ -480,9 +487,10 @@ impl<P: StateProvider> MempoolServiceState<P> {
             acct_state.txids.remove(&txid);
 
             // Remove seq_no if this is a SnarkAccountUpdate
-            if let Some(base_update) = entry.tx.base_update() {
-                let seq_no = base_update.operation().seq_no();
-                acct_state.seq_nos.remove(&seq_no);
+            if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload() {
+                acct_state
+                    .seq_nos
+                    .remove(&payload.operation().update().seq_no());
             }
 
             // Remove account state entirely if no more transactions
@@ -528,14 +536,17 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         for txid in ids {
             if let Some(entry) = self.entries.get(txid).cloned() {
-                let account = entry.tx.target();
+                let account = entry
+                    .tx
+                    .target()
+                    .expect("all OL payload variants must have a target");
 
                 // Remove using helper
                 self.remove_single_tx(*txid, &entry)?;
 
                 // Track minimum seq_no for account (for cascade removal)
-                if let Some(base_update) = entry.tx.base_update() {
-                    let seq_no = base_update.operation().seq_no();
+                if let TransactionPayload::SnarkAccountUpdate(payload) = entry.tx.payload() {
+                    let seq_no = payload.operation().update().seq_no();
                     account_min_seq
                         .entry(account)
                         .and_modify(|min_seq| *min_seq = (*min_seq).min(seq_no))
@@ -573,9 +584,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
             .iter()
             .filter_map(|&txid| {
                 let entry = self.entries.get(&txid)?;
-                let base_update = entry.tx.base_update()?;
-                let seq_no = base_update.operation().seq_no();
-                (seq_no >= min_failed_seq).then_some(txid)
+                match entry.tx.payload() {
+                    TransactionPayload::SnarkAccountUpdate(payload) => {
+                        let seq_no = payload.operation().update().seq_no();
+                        (seq_no >= min_failed_seq).then_some(txid)
+                    }
+                    TransactionPayload::GenericAccountMessage(_) => None,
+                }
             })
             .collect();
 
@@ -767,87 +782,15 @@ fn extract_account_txs_from_block(block: &OLBlock) -> HashMap<AccountId, Vec<OLT
 
     if let Some(tx_segment) = block.body().tx_segment() {
         for tx in tx_segment.txs() {
-            if let Ok(mempool_tx) = convert_block_tx_to_mempool_tx(tx) {
-                let account = mempool_tx.target();
-                let txid = mempool_tx.compute_txid();
-                by_account.entry(account).or_default().push(txid);
-            }
+            let mempool_tx = tx.clone().with_accumulator_proofs(None);
+            let account = mempool_tx.target();
+            let account = account.expect("all OL payload variants must have a target");
+            let txid = mempool_tx.compute_txid();
+            by_account.entry(account).or_default().push(txid);
         }
     }
 
     by_account
-}
-
-/// Converts a block transaction to a mempool transaction by removing proofs.
-///
-/// Preserves effects from the block transaction so the recomputed txid matches
-/// the original mempool entry.
-fn convert_block_tx_to_mempool_tx(
-    block_tx: &OLTransaction,
-) -> Result<OLMempoolTransaction, OLMempoolError> {
-    let constraints = block_tx.constraints().clone();
-    let effects = block_tx.data().effects().clone();
-
-    match block_tx.payload() {
-        TransactionPayload::GenericAccountMessage(gam) => {
-            let payload = OLMempoolTxPayload::new_generic_account_message(*gam.target(), vec![])
-                .map_err(|e| OLMempoolError::Serialization(e.to_string()))?;
-            Ok(OLMempoolTransaction {
-                payload,
-                constraints,
-                effects,
-            })
-        }
-        TransactionPayload::SnarkAccountUpdate(snark_payload) => {
-            let target = *snark_payload.target();
-            let operation = snark_payload.operation();
-            let update_data = operation.update();
-
-            let proof_state = strata_snark_acct_types::ProofState::new(
-                update_data.proof_state().inner_state_root(),
-                update_data.proof_state().new_next_msg_idx(),
-            );
-            let messages: Vec<_> = operation.messages_iter().cloned().collect();
-            let ledger_refs = strata_snark_acct_types::LedgerRefs::new(
-                operation
-                    .ledger_refs()
-                    .asm_history_proofs()
-                    .map(|c| c.claims.iter().cloned().collect())
-                    .unwrap_or_default(),
-            );
-
-            // Reconstruct UpdateOutputs from the block tx's effects so
-            // the SnarkAccountUpdate SSZ encoding matches the original.
-            let outputs = strata_snark_acct_sys::effects_to_update_outputs(&effects);
-
-            let snark_operation = strata_snark_acct_types::UpdateOperationData::new(
-                update_data.seq_no(),
-                proof_state,
-                messages,
-                ledger_refs,
-                outputs,
-                update_data.extra_data().to_vec(),
-            );
-
-            // Recover the update proof from TxProofs predicate satisfiers.
-            let update_proof = block_tx
-                .proofs()
-                .predicate_satisfiers()
-                .and_then(|ps| ps.proofs().first())
-                .map(|p| p.proof().to_vec())
-                .unwrap_or_default();
-
-            let base_update =
-                strata_snark_acct_types::SnarkAccountUpdate::new(snark_operation, update_proof);
-
-            let payload = OLMempoolTxPayload::new_snark_account_update(target, base_update);
-            Ok(OLMempoolTransaction {
-                payload,
-                constraints,
-                effects,
-            })
-        }
-    }
 }
 
 /// Returns true if a transaction reported as invalid should be removed from the mempool.
@@ -857,7 +800,6 @@ fn should_remove_tx(reason: MempoolTxInvalidReason) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use ssz_types::Optional;
     use strata_identifiers::Buf32;
 
     use super::*;
@@ -866,9 +808,10 @@ mod tests {
         test_utils::{
             create_test_account_id_with, create_test_block_commitment,
             create_test_constraints_with_slots, create_test_context,
-            create_test_generic_tx_with_size, create_test_ol_state_for_tip,
-            create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
-            create_test_state_provider, create_test_tx_with_id,
+            create_test_generic_tx_for_account, create_test_generic_tx_with_size,
+            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
+            create_test_snark_tx_with_seq_no_and_slots, create_test_state_provider,
+            create_test_tx_with_id, snark_seq_no, tx_target, with_max_slot,
         },
         types::OLMempoolConfig,
     };
@@ -961,9 +904,9 @@ mod tests {
         let txs = state.handle_get_transactions(3).await.unwrap();
         assert_eq!(txs.len(), 3);
         // All transactions target same account, should be in seq_no order
-        let tx1_seq = txs[0].1.base_update().unwrap().operation().seq_no();
-        let tx2_seq = txs[1].1.base_update().unwrap().operation().seq_no();
-        let tx3_seq = txs[2].1.base_update().unwrap().operation().seq_no();
+        let tx1_seq = snark_seq_no(&txs[0].1).expect("expected snark tx");
+        let tx2_seq = snark_seq_no(&txs[1].1).expect("expected snark tx");
+        let tx3_seq = snark_seq_no(&txs[2].1).expect("expected snark tx");
         assert_eq!(tx1_seq, 0);
         assert_eq!(tx2_seq, 1);
         assert_eq!(tx3_seq, 2);
@@ -987,31 +930,25 @@ mod tests {
 
         // Add three GAM transactions
         // They should get different priorities due to insertion order
-        let account1 = create_test_account_id_with(200);
-        let gam1 =
-            OLMempoolTransaction::new_generic_account_message(account1, vec![1, 2, 3]).unwrap();
-        let gam1_target = gam1.target();
+        let gam1 = create_test_generic_tx_for_account(200);
+        let gam1_target = tx_target(&gam1);
         state.add_transaction(gam1).await.unwrap();
 
-        let account2 = create_test_account_id_with(201);
-        let gam2 =
-            OLMempoolTransaction::new_generic_account_message(account2, vec![4, 5, 6]).unwrap();
-        let gam2_target = gam2.target();
+        let gam2 = create_test_generic_tx_for_account(201);
+        let gam2_target = tx_target(&gam2);
         state.add_transaction(gam2).await.unwrap();
 
-        let account3 = create_test_account_id_with(202);
-        let gam3 =
-            OLMempoolTransaction::new_generic_account_message(account3, vec![7, 8, 9]).unwrap();
-        let gam3_target = gam3.target();
+        let gam3 = create_test_generic_tx_for_account(202);
+        let gam3_target = tx_target(&gam3);
         state.add_transaction(gam3).await.unwrap();
 
         // All three GAM transactions
         // Should be ordered by insertion order (FIFO)
         let txs = state.handle_get_transactions(3).await.unwrap();
         assert_eq!(txs.len(), 3);
-        assert_eq!(txs[0].1.target(), gam1_target); // First inserted
-        assert_eq!(txs[1].1.target(), gam2_target); // Second inserted
-        assert_eq!(txs[2].1.target(), gam3_target); // Third inserted
+        assert_eq!(tx_target(&txs[0].1), gam1_target); // First inserted
+        assert_eq!(tx_target(&txs[1].1), gam2_target); // Second inserted
+        assert_eq!(tx_target(&txs[2].1), gam3_target); // Third inserted
     }
 
     #[tokio::test]
@@ -1034,24 +971,24 @@ mod tests {
         // All with seq_no=0 (valid for each account)
         // They should get different priorities
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
-        let tx1_target = tx1.target();
+        let tx1_target = tx_target(&tx1);
         state.add_transaction(tx1).await.unwrap();
 
         let tx2 = create_test_snark_tx_with_seq_no(2, 0);
-        let tx2_target = tx2.target();
+        let tx2_target = tx_target(&tx2);
         state.add_transaction(tx2).await.unwrap();
 
         let tx3 = create_test_snark_tx_with_seq_no(3, 0);
-        let tx3_target = tx3.target();
+        let tx3_target = tx_target(&tx3);
         state.add_transaction(tx3).await.unwrap();
 
         // All three transactions have seq_no=0 but different accounts
         // Should be ordered by insertion order (FIFO)
         let txs = state.handle_get_transactions(3).await.unwrap();
         assert_eq!(txs.len(), 3);
-        assert_eq!(txs[0].1.target(), tx1_target); // First inserted
-        assert_eq!(txs[1].1.target(), tx2_target); // Second inserted
-        assert_eq!(txs[2].1.target(), tx3_target); // Third inserted
+        assert_eq!(tx_target(&txs[0].1), tx1_target); // First inserted
+        assert_eq!(tx_target(&txs[1].1), tx2_target); // Second inserted
+        assert_eq!(tx_target(&txs[2].1), tx3_target); // Third inserted
     }
 
     #[tokio::test]
@@ -1146,13 +1083,13 @@ mod tests {
 
         // Create snark updates with sequential seq_nos: 0, 1, 2 for same account
         let snark1 = create_test_snark_tx_with_seq_no(1, 0);
-        let snark1_target = snark1.target();
+        let snark1_target = tx_target(&snark1);
 
         let snark2 = create_test_snark_tx_with_seq_no(1, 1);
-        let snark2_target = snark2.target();
+        let snark2_target = tx_target(&snark2);
 
         let snark3 = create_test_snark_tx_with_seq_no(1, 2);
-        let snark3_target = snark3.target();
+        let snark3_target = tx_target(&snark3);
 
         // Add transactions with seq_no 0, 1, 2
         state.add_transaction(snark1).await.unwrap();
@@ -1162,9 +1099,9 @@ mod tests {
         // SnarkAccountUpdate transactions should be ordered by seq_no (0 < 1 < 2)
         let txs = state.handle_get_transactions(3).await.unwrap();
         assert_eq!(txs.len(), 3);
-        assert_eq!(txs[0].1.target(), snark1_target); // seq_no 0
-        assert_eq!(txs[1].1.target(), snark2_target); // seq_no 1
-        assert_eq!(txs[2].1.target(), snark3_target); // seq_no 2
+        assert_eq!(tx_target(&txs[0].1), snark1_target); // seq_no 0
+        assert_eq!(tx_target(&txs[1].1), snark2_target); // seq_no 1
+        assert_eq!(tx_target(&txs[2].1), snark3_target); // seq_no 2
     }
 
     #[tokio::test]
@@ -1314,7 +1251,7 @@ mod tests {
         // Verify ordering: tx1 (id=0), tx2 (id=1), tx3 (id=2), tx4 (id=3)
         let txs = state.handle_get_transactions(10).await.unwrap();
         assert_eq!(txs.len(), 4);
-        // handle_get_transactions returns Vec<(OLTxId, OLMempoolTransaction)>
+        // handle_get_transactions returns Vec<(OLTxId, OLTransaction)>
         let (tx1_id_result, _) = &txs[0];
         let (tx2_id_result, _) = &txs[1];
         let (tx3_id_result, _) = &txs[2];
@@ -1628,9 +1565,9 @@ mod tests {
         let mut tx2 = create_test_snark_tx_with_seq_no(1, 2);
 
         // Set max_slot so tx1 expires at slot 110, others at 120
-        tx0.constraints.max_slot = Optional::Some(120);
-        tx1.constraints.max_slot = Optional::Some(110);
-        tx2.constraints.max_slot = Optional::Some(120);
+        tx0 = with_max_slot(tx0, Some(120));
+        tx1 = with_max_slot(tx1, Some(110));
+        tx2 = with_max_slot(tx2, Some(120));
 
         let txid0 = state.add_transaction(tx0).await.unwrap();
         let txid1 = state.add_transaction(tx1).await.unwrap();
@@ -1715,10 +1652,7 @@ mod tests {
         let tx2_id = state
             .entries
             .iter()
-            .find(|(_, e)| {
-                e.tx.base_update()
-                    .is_some_and(|u| u.operation().seq_no() == 2)
-            })
+            .find(|(_, e)| snark_seq_no(&e.tx).is_some_and(|seq_no| seq_no == 2))
             .map(|(id, _)| *id)
             .unwrap();
 

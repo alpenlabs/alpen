@@ -25,9 +25,12 @@ use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLTxSegment, SignedOLBlockHeader, test_utils as ol_test_utils,
+    ClaimList, OLBlock, OLBlockBody, OLTransaction, OLTransactionData, OLTxSegment,
+    ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData, SauTxPayload, SauTxProofState,
+    SauTxUpdateData, SignedOLBlockHeader, TransactionPayload, TxProofs,
+    test_utils as ol_test_utils,
 };
-use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolTransaction};
+use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
@@ -64,7 +67,13 @@ pub(crate) fn test_hash(seed: u8) -> Hash {
 /// Creates a test message entry.
 pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) -> MessageEntry {
     let source = test_account_id(source_id);
-    let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![1, 2, 3]);
+    let mut runner = TestRunner::default();
+    let sampled_message = ol_test_utils::message_entry_strategy()
+        .new_tree(&mut runner)
+        .unwrap()
+        .current();
+    let payload_bytes = sampled_message.payload().data().to_vec();
+    let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), payload_bytes);
     MessageEntry::new(source, epoch, payload)
 }
 
@@ -78,7 +87,7 @@ pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyCon
 
 /// Mock mempool provider for tests that stores transactions in memory.
 pub(crate) struct MockMempoolProvider {
-    transactions: Mutex<Vec<(OLTxId, OLMempoolTransaction)>>,
+    transactions: Mutex<Vec<(OLTxId, OLTransaction)>>,
 }
 
 impl MockMempoolProvider {
@@ -90,7 +99,7 @@ impl MockMempoolProvider {
     }
 
     /// Add a transaction to the mock mempool.
-    pub(crate) fn add_transaction(&self, txid: OLTxId, tx: OLMempoolTransaction) {
+    pub(crate) fn add_transaction(&self, txid: OLTxId, tx: OLTransaction) {
         self.transactions.lock().unwrap().push((txid, tx));
     }
 }
@@ -100,7 +109,7 @@ impl MempoolProvider for MockMempoolProvider {
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLMempoolTransaction)>> {
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
         let txs = self.transactions.lock().unwrap();
         Ok(txs.iter().take(limit).cloned().collect())
     }
@@ -122,7 +131,7 @@ impl MempoolProvider for Arc<MockMempoolProvider> {
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLMempoolTransaction)>> {
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
         MempoolProvider::get_transactions(self.as_ref(), limit).await
     }
 
@@ -288,7 +297,7 @@ impl<'a> StorageAsmMmr<'a> {
 
 // ===== Mempool Transaction Builder =====
 
-/// Builder for creating OLMempoolTransaction for snark account updates.
+/// Builder for creating mempool OL transactions for snark account updates.
 ///
 /// Simplifies test setup by providing a fluent API for specifying only the fields
 /// needed for each test case.
@@ -354,7 +363,7 @@ impl MempoolSnarkTxBuilder {
     }
 
     /// Builds the mempool transaction.
-    pub(crate) fn build(self) -> OLMempoolTransaction {
+    pub(crate) fn build(self) -> OLTransaction {
         // Use a random inner state from proptest
         let mut runner = TestRunner::default();
         let sau_payload = ol_test_utils::sau_tx_payload_strategy()
@@ -367,44 +376,55 @@ impl MempoolSnarkTxBuilder {
             .update()
             .proof_state()
             .inner_state_root();
-        let new_proof_state = ProofState::new(inner_state, self.new_msg_idx);
+        let proof_state = SauTxProofState::new(self.new_msg_idx, inner_state);
+        let update_data = SauTxUpdateData::new(self.seq_no, proof_state, vec![]);
 
-        let claims: Vec<AccumulatorClaim> = self.l1_claims.clone().into_iter().collect();
-        let ledger_refs = if claims.is_empty() {
-            LedgerRefs::new_empty()
+        let ledger_refs = if self.l1_claims.is_empty() {
+            SauTxLedgerRefs::new_empty()
         } else {
-            LedgerRefs::new(self.l1_claims)
+            let claim_list =
+                ClaimList::new(self.l1_claims).expect("snark update has too many ASM claims");
+            SauTxLedgerRefs::new_with_claims(claim_list)
         };
 
-        // Build outputs: empty by default, or explicit if with_outputs() was called
-        let outputs = if !self.output_messages.is_empty() {
-            UpdateOutputs::new(vec![], self.output_messages)
+        let operation_data =
+            SauTxOperationData::new(update_data, self.processed_messages, ledger_refs);
+        let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(
+            self.account_id,
+            operation_data,
+        ));
+
+        // Build effects: empty by default, or explicit if with_outputs() was called.
+        let output_messages = if !self.output_messages.is_empty() {
+            self.output_messages
         } else if self.outputs.is_empty() {
-            UpdateOutputs::new_empty()
+            Vec::new()
         } else {
-            let output_messages: Vec<OutputMessage> = self
-                .outputs
+            self.outputs
                 .into_iter()
                 .map(|(dest, value_sats)| {
                     let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![]);
                     OutputMessage::new(dest, payload)
                 })
-                .collect();
-            UpdateOutputs::new(vec![], output_messages)
+                .collect()
         };
 
-        let operation = UpdateOperationData::new(
-            self.seq_no,
-            new_proof_state,
-            self.processed_messages,
-            ledger_refs,
-            outputs,
-            vec![],
-        );
+        let mut effects = strata_acct_types::TxEffects::default();
+        for msg in output_messages {
+            effects.push_message(
+                msg.dest(),
+                msg.payload().value().to_sat(),
+                msg.payload().data().to_vec(),
+            );
+        }
 
-        let update = SnarkAccountUpdate::new(operation, vec![0u8; 32]);
-
-        OLMempoolTransaction::new_snark_account_update(self.account_id, update)
+        let data = OLTransactionData::new(payload, effects);
+        let update_proof = prop::collection::vec(any::<u8>(), 0..64)
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+        let proofs = TxProofs::new(ProofSatisfierList::single(update_proof), None);
+        OLTransaction::new(data, proofs)
     }
 }
 

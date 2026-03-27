@@ -6,8 +6,7 @@ use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::OLBlock;
-use strata_ol_mempool::OLMempoolTransaction;
+use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
@@ -338,16 +337,22 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {
         // Convert RPC transaction to mempool transaction
-        let mempool_tx: OLMempoolTransaction = tx
+        let mempool_tx: OLTransaction = tx
             .try_into()
             .map_err(|e| invalid_params_error(format!("Invalid transaction: {e}")))?;
-        let target = mempool_tx.target();
-        let next_inbox_msg_idx = mempool_tx.base_update().map(|base_update| {
-            base_update
-                .operation()
-                .new_proof_state()
-                .next_inbox_msg_idx()
-        });
+        let target = mempool_tx
+            .target()
+            .expect("all OL payload variants must have a target");
+        let next_inbox_msg_idx = match mempool_tx.payload() {
+            TransactionPayload::SnarkAccountUpdate(payload) => Some(
+                payload
+                    .operation()
+                    .update()
+                    .proof_state()
+                    .new_next_msg_idx(),
+            ),
+            TransactionPayload::GenericAccountMessage(_) => None,
+        };
 
         // Submit to mempool
         let txid = self

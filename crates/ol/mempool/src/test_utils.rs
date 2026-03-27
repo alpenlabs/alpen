@@ -14,11 +14,15 @@ use proptest::{
 };
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{Buf32, Hash, L1BlockCommitment, OLBlockCommitment, OLBlockId, Slot};
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
-use strata_ol_chain_types_new::{TxConstraints, test_utils as ol_test_utils};
+use strata_ol_chain_types_new::{
+    ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
+    SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
+    TxConstraints, TxProofs, test_utils as ol_test_utils,
+};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_predicate::PredicateKey;
@@ -26,10 +30,7 @@ use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
 
-use crate::{
-    OLMempoolSauTxPayload, OLMempoolTransaction, OLMempoolTxPayload, state::MempoolContext,
-    types::OLMempoolConfig,
-};
+use crate::{state::MempoolContext, types::OLMempoolConfig};
 
 /// Create a test account ID using proptest strategy.
 pub(crate) fn create_test_account_id() -> AccountId {
@@ -51,7 +52,7 @@ pub(crate) fn create_test_account_id_with(id: u8) -> AccountId {
 /// Create test transaction constraints using proptest strategy.
 pub(crate) fn create_test_constraints() -> TxConstraints {
     let mut runner = TestRunner::default();
-    ol_test_utils::transaction_attachment_strategy()
+    ol_test_utils::tx_constraints_strategy()
         .new_tree(&mut runner)
         .unwrap()
         .current()
@@ -93,8 +94,8 @@ pub(crate) fn create_test_snark_update() -> SnarkAccountUpdate {
 
 /// Create test transaction constraints with optional min/max slots.
 pub(crate) fn create_test_constraints_with_slots(
-    min_slot: Option<u64>,
-    max_slot: Option<u64>,
+    min_slot: Option<Slot>,
+    max_slot: Option<Slot>,
 ) -> TxConstraints {
     TxConstraints::new(min_slot, max_slot)
 }
@@ -110,41 +111,74 @@ pub(crate) fn create_test_block_commitment(slot: u64) -> OLBlockCommitment {
     OLBlockCommitment::new(slot, OLBlockId::from(Buf32::new(bytes)))
 }
 
-/// Create a test snark account update payload.
-pub(crate) fn create_test_snark_payload() -> OLMempoolTxPayload {
-    OLMempoolTxPayload::SnarkAccountUpdate(OLMempoolSauTxPayload {
-        target: create_test_account_id(),
-        base_update: create_test_snark_update(),
-    })
+pub(crate) fn create_test_snark_tx_from_update(
+    target: AccountId,
+    base_update: SnarkAccountUpdate,
+    constraints: TxConstraints,
+) -> OLTransaction {
+    let operation = base_update.operation();
+    let proof_state = operation.new_proof_state();
+    let sau_proof_state =
+        SauTxProofState::new(proof_state.next_inbox_msg_idx(), proof_state.inner_state());
+    let sau_update_data = SauTxUpdateData::new(
+        operation.seq_no(),
+        sau_proof_state,
+        operation.extra_data().to_vec(),
+    );
+
+    let asm_hist_refs = operation.ledger_refs().l1_header_refs();
+    let sau_ledger_refs = if asm_hist_refs.is_empty() {
+        SauTxLedgerRefs::new_empty()
+    } else {
+        let claim_list =
+            ClaimList::new(asm_hist_refs.to_vec()).expect("snark update has too many ASM claims");
+        SauTxLedgerRefs::new_with_claims(claim_list)
+    };
+
+    let messages = operation.processed_messages().to_vec();
+    let sau_operation_data = SauTxOperationData::new(sau_update_data, messages, sau_ledger_refs);
+    let payload =
+        TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(target, sau_operation_data));
+    let effects = operation.outputs().to_tx_effects();
+    let data = OLTransactionData::new(payload, effects).with_constraints(constraints);
+    let proofs = TxProofs::new(
+        ProofSatisfierList::single(base_update.update_proof().to_vec()),
+        None,
+    );
+    OLTransaction::new(data, proofs)
 }
 
-/// Create a test generic account message payload.
-pub(crate) fn create_test_generic_payload() -> OLMempoolTxPayload {
-    let mut runner = TestRunner::default();
-    let gam_payload = ol_test_utils::gam_tx_payload_strategy()
-        .new_tree(&mut runner)
-        .unwrap()
-        .current();
-    OLMempoolTxPayload::GenericAccountMessage(gam_payload)
+/// Returns the target account from a transaction for tests.
+///
+/// All current OL transaction payload variants include a target account.
+pub(crate) fn tx_target(tx: &OLTransaction) -> AccountId {
+    tx.target()
+        .expect("all OLTransaction payload variants must have a target account")
 }
 
-/// Create a test mempool transaction from a payload.
-pub(crate) fn create_test_mempool_tx(payload: OLMempoolTxPayload) -> OLMempoolTransaction {
-    let constraints = create_test_constraints();
-    match payload {
-        OLMempoolTxPayload::SnarkAccountUpdate(snark_payload) => {
-            OLMempoolTransaction::new_snark_account_update(
-                snark_payload.target,
-                snark_payload.base_update,
-            )
-            .with_constraints(constraints)
+/// Returns the snark sequence number for snark transactions.
+///
+/// Returns `None` for non-snark payload variants.
+pub(crate) fn snark_seq_no(tx: &OLTransaction) -> Option<u64> {
+    match tx.payload() {
+        TransactionPayload::SnarkAccountUpdate(payload) => {
+            Some(payload.operation().update().seq_no())
         }
-        OLMempoolTxPayload::GenericAccountMessage(gam_payload) => {
-            OLMempoolTransaction::new_generic_account_message(*gam_payload.target(), vec![])
-                .expect("Should create transaction")
-                .with_constraints(constraints)
-        }
+        TransactionPayload::GenericAccountMessage(_) => None,
     }
+}
+
+/// Returns a transaction with updated constraints.
+pub(crate) fn with_constraints(tx: OLTransaction, constraints: TxConstraints) -> OLTransaction {
+    let data = tx.data().clone().with_constraints(constraints);
+    OLTransaction::new(data, tx.proofs().clone())
+}
+
+/// Returns a transaction with updated `max_slot` in constraints.
+pub(crate) fn with_max_slot(tx: OLTransaction, max_slot: Option<Slot>) -> OLTransaction {
+    let mut constraints = tx.constraints().clone();
+    constraints.set_max_slot(max_slot);
+    with_constraints(tx, constraints)
 }
 
 /// Creates a genesis OLState using minimal empty parameters.
@@ -203,43 +237,36 @@ pub(crate) fn create_test_ol_state_with_snark_account(
 }
 
 /// Create a test snark account update transaction.
-pub(crate) fn create_test_snark_tx() -> OLMempoolTransaction {
-    create_test_mempool_tx(create_test_snark_payload())
+pub(crate) fn create_test_snark_tx() -> OLTransaction {
+    create_test_snark_tx_from_update(
+        create_test_account_id_with(1),
+        create_test_snark_update(),
+        create_test_constraints(),
+    )
 }
 
 /// Create a test generic account message transaction.
-/// Uses constraints without slot restrictions (min_slot=None, max_slot=None).
-pub(crate) fn create_test_generic_tx() -> OLMempoolTransaction {
-    let constraints = create_test_constraints_with_slots(None, None);
-    let payload = create_test_generic_payload();
-    match payload {
-        OLMempoolTxPayload::GenericAccountMessage(gam_payload) => {
-            OLMempoolTransaction::new_generic_account_message(*gam_payload.target(), vec![])
-                .expect("Should create transaction")
-                .with_constraints(constraints)
-        }
-        _ => panic!("Expected GenericAccountMessage"),
-    }
+/// Uses randomly generated constraints for tests where slot bounds are not fixed.
+pub(crate) fn create_test_generic_tx() -> OLTransaction {
+    let constraints = create_test_constraints();
+    create_test_generic_tx_with_constraints(constraints)
 }
 
 /// Create a test generic account message transaction with constraints.
-pub(crate) fn create_test_generic_tx_with_constraints(
-    constraints: TxConstraints,
-) -> OLMempoolTransaction {
+pub(crate) fn create_test_generic_tx_with_constraints(constraints: TxConstraints) -> OLTransaction {
     let target = create_test_account_id();
     let mut runner = TestRunner::default();
     let payload_strategy = prop::collection::vec(any::<u8>(), 10..100);
     let payload = payload_strategy.new_tree(&mut runner).unwrap().current();
-    OLMempoolTransaction::new_generic_account_message(target, payload)
-        .expect("Should create transaction")
-        .with_constraints(constraints)
+    let data = OLTransactionData::new_gam(target, payload).with_constraints(constraints);
+    OLTransaction::new(data, TxProofs::new_empty())
 }
 
 /// Create a test generic account message transaction with specific slot bounds.
 pub(crate) fn create_test_generic_tx_with_slots(
-    min_slot: Option<u64>,
-    max_slot: Option<u64>,
-) -> OLMempoolTransaction {
+    min_slot: Option<Slot>,
+    max_slot: Option<Slot>,
+) -> OLTransaction {
     let constraints = create_test_constraints_with_slots(min_slot, max_slot);
     create_test_generic_tx_with_constraints(constraints)
 }
@@ -249,32 +276,28 @@ pub(crate) fn create_test_generic_tx_with_size(
     target: AccountId,
     size: usize,
     constraints: TxConstraints,
-) -> OLMempoolTransaction {
+) -> OLTransaction {
     let mut runner = TestRunner::default();
     let payload_strategy = prop::collection::vec(any::<u8>(), size..=size);
     let payload = payload_strategy.new_tree(&mut runner).unwrap().current();
-    OLMempoolTransaction::new_generic_account_message(target, payload)
-        .expect("Should create transaction")
-        .with_constraints(constraints)
+    let data = OLTransactionData::new_gam(target, payload).with_constraints(constraints);
+    OLTransaction::new(data, TxProofs::new_empty())
 }
 
 /// Create a test transaction with a specific target account ID.
 /// Uses the ID byte to create different account IDs, but the update content is randomly generated.
 /// Uses an attachment without slot restrictions (min_slot=None, max_slot=None).
-pub(crate) fn create_test_tx_with_id(id: u8) -> OLMempoolTransaction {
+pub(crate) fn create_test_tx_with_id(id: u8) -> OLTransaction {
     let constraints = create_test_constraints_with_slots(None, None);
-    OLMempoolTransaction::new_snark_account_update(
+    create_test_snark_tx_from_update(
         create_test_account_id_with(id),
         create_test_snark_update(),
+        constraints,
     )
-    .with_constraints(constraints)
 }
 
 /// Create a test snark transaction with a specific seq_no for deterministic ordering tests.
-pub(crate) fn create_test_snark_tx_with_seq_no(
-    account_id: u8,
-    seq_no: u64,
-) -> OLMempoolTransaction {
+pub(crate) fn create_test_snark_tx_with_seq_no(account_id: u8, seq_no: u64) -> OLTransaction {
     create_test_snark_tx_with_seq_no_and_slots(account_id, seq_no, None, None)
 }
 
@@ -282,9 +305,9 @@ pub(crate) fn create_test_snark_tx_with_seq_no(
 pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
     account_id: u8,
     seq_no: u64,
-    min_slot: Option<u64>,
-    max_slot: Option<u64>,
-) -> OLMempoolTransaction {
+    min_slot: Option<Slot>,
+    max_slot: Option<Slot>,
+) -> OLTransaction {
     let mut runner = TestRunner::default();
 
     // Use constraints with specified slot bounds
@@ -321,8 +344,7 @@ pub(crate) fn create_test_snark_tx_with_seq_no_and_slots(
 
     let update = SnarkAccountUpdate::new(operation, vec![]);
 
-    OLMempoolTransaction::new_snark_account_update(create_test_account_id_with(account_id), update)
-        .with_constraints(constraints)
+    create_test_snark_tx_from_update(create_test_account_id_with(account_id), update, constraints)
 }
 
 /// Set up a genesis state in the database for the given tip.
@@ -413,7 +435,7 @@ pub(crate) fn create_test_ol_state_for_tip(slot: u64) -> OLState {
 /// Create a test generic account message transaction for a specific account.
 /// Uses an attachment without slot restrictions (min_slot=None, max_slot=None).
 /// Uses a unique random payload to ensure unique transaction IDs.
-pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLMempoolTransaction {
+pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLTransaction {
     let constraints = create_test_constraints_with_slots(None, None);
     let target = create_test_account_id_with(account_id);
     // Use random payload with account_id prefix to ensure unique transaction IDs
@@ -422,9 +444,8 @@ pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLMempoolTra
     let mut payload = payload_strategy.new_tree(&mut runner).unwrap().current();
     // Prepend account_id to make it deterministic per account
     payload.insert(0, account_id);
-    OLMempoolTransaction::new_generic_account_message(target, payload)
-        .expect("Should create transaction")
-        .with_constraints(constraints)
+    let data = OLTransactionData::new_gam(target, payload).with_constraints(constraints);
+    OLTransaction::new(data, TxProofs::new_empty())
 }
 
 /// In-memory state provider for fast testing without database infrastructure.
