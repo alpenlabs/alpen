@@ -13,11 +13,8 @@ on:
     branches: [main]
     paths:
       - "provers/sp1/**"
-      - "crates/proof-impl/**"
-      - "crates/checkpoint-types/**"
-      - "crates/checkpoint-types-ssz/**"
-      - "crates/zkvm/**"
-      - "crates/asm/subprotocols/checkpoint/**"
+      - "crates/**"
+      - "Cargo.lock"
       - "docker/strata/elfs/**"
       - "rust-toolchain.toml"
   workflow_dispatch:
