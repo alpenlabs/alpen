@@ -152,25 +152,21 @@ jobs:
     steps:
       - name: Trigger deployments repo
         env:
+          GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
           SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
-          DISPATCH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
         run: |
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
-            https://api.github.com/repos/alpenlabs/deployments/dispatches \
-            -d "$(jq -n \
-              --arg tag "$SHORT_TAG" \
-              --arg sha "${GITHUB_SHA}" \
-              --arg ref "${GITHUB_REF_NAME}" \
-              '{
-                event_type: "new-arch-deploy",
-                client_payload: {
-                  tag: $tag,
-                  commit_sha: $sha,
-                  ref: $ref
-                }
-              }')"
+          jq -n \
+            --arg tag "$SHORT_TAG" \
+            --arg sha "${GITHUB_SHA}" \
+            --arg ref "${GITHUB_REF_NAME}" \
+            '{
+              event_type: "new-arch-deploy",
+              client_payload: {
+                tag: $tag,
+                commit_sha: $sha,
+                ref: $ref
+              }
+            }' | gh api repos/alpenlabs/deployments/dispatches --method POST --input -
 
           echo "Dispatched CD to deployments repo with tag=${SHORT_TAG}"
 
