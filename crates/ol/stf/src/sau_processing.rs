@@ -8,7 +8,14 @@ use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno};
 
 use crate::errors::*;
 
-pub fn verify_snark_acct_update(
+/// Verifies a snark account update's proofs.  This assumes the tx has been
+/// taken apart since we're presenting specifically the data from the tx for the
+/// internal components to do what they need.
+///
+/// This is split out from tx processing because we want to be able to call it
+/// from other contexts and be able to richly reason about the ledger ref proofs
+/// we verify.
+pub fn verify_snark_acct_update_proofs(
     target: AccountId,
     account_state: &impl IAccountState,
     sau_op: &SauTxOperationData,

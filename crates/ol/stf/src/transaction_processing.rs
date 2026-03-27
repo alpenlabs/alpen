@@ -113,7 +113,7 @@ fn process_update_tx<S: IStateAccessor>(
     let state_ctx = TxProofVerificationContext::from_account_and_state(state, account_state);
     let proof_tracker = TxProofsTracker::from_txproofs(tx_proofs);
     let mut verifier = TxProofVerifierImpl::new(state_ctx, proof_tracker);
-    sau_processing::verify_snark_acct_update(
+    sau_processing::verify_snark_acct_update_proofs(
         target,
         account_state,
         sau_payload.operation(),
