@@ -4,26 +4,27 @@
 //! and submits signatures. Private keys never leave this process.
 
 mod args;
+mod builder;
 mod config;
 mod constants;
-mod duty_executor;
-mod duty_fetcher;
+mod handlers;
 mod helpers;
+mod input;
+mod service;
 
 use std::{fs, sync::Arc, time::Duration};
 
 use args::Args;
+use builder::SignerBuilder;
 use config::SignerConfig;
 use constants::SHUTDOWN_TIMEOUT_MS;
-use duty_executor::duty_executor_worker;
-use duty_fetcher::duty_fetcher_worker;
 use helpers::load_seqkey;
 use strata_common::{
     logging,
     ws_client::{ManagedWsClient, WsClientConfig},
 };
 use strata_tasks::TaskManager;
-use tokio::{runtime::Builder, sync::mpsc};
+use tokio::runtime::Builder;
 use tracing::info;
 use zeroize::Zeroize;
 
@@ -66,23 +67,20 @@ fn main() -> anyhow::Result<()> {
 
     info!(sequencer_endpoint = %config.sequencer_endpoint, duty_poll_interval_ms = config.duty_poll_interval, "starting signer");
 
-    // Duty channel.
-    let (duty_tx, duty_rx) = mpsc::channel(64);
-
-    // Spawn workers.
+    // Launch signer service.
     let task_manager = TaskManager::new(handle.clone());
     let executor = task_manager.create_executor();
 
-    executor.spawn_critical_async(
-        "duty-fetcher",
-        duty_fetcher_worker(rpc.clone(), duty_tx, config.duty_poll_interval),
-    );
-    executor.spawn_critical_async(
-        "duty-executor",
-        duty_executor_worker(rpc, duty_rx, seq_key.sk),
-    );
+    let _monitor = handle.block_on(
+        SignerBuilder::new(
+            rpc,
+            seq_key.sk,
+            Duration::from_millis(config.duty_poll_interval),
+        )
+        .launch(&executor),
+    )?;
 
-    // Zeroize the key now that it's been moved into the worker.
+    // Zeroize the key now that it's been moved into the service state.
     seq_key.zeroize();
 
     task_manager.start_signal_listeners();

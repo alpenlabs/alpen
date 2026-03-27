@@ -15982,6 +15982,7 @@ dependencies = [
  "strata-ol-rpc-api",
  "strata-ol-sequencer",
  "strata-primitives",
+ "strata-service",
  "strata-tasks",
  "thiserror 2.0.18",
  "tokio",

@@ -17,6 +17,7 @@ strata-key-derivation.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-sequencer.workspace = true
 strata-primitives.workspace = true
+strata-service.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true

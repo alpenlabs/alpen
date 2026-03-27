@@ -1,6 +1,6 @@
-//! Receives signing duties, deduplicates, signs, and submits results via RPC.
+//! Per-duty signing handlers dispatched by the signer service.
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use bitcoin::{
     key::UntweakedKeypair,
@@ -16,8 +16,8 @@ use strata_ol_sequencer::{
 };
 use strata_primitives::{HexBytes64, buf::Buf32};
 use thiserror::Error;
-use tokio::{select, sync::mpsc, time};
-use tracing::{debug, error, info, warn};
+use tokio::{sync::mpsc, time};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Error)]
 #[expect(clippy::enum_variant_names, reason = "pre-existing naming convention")]
@@ -32,48 +32,8 @@ enum DutyExecError {
     CompletePayload(#[source] ClientError),
 }
 
-/// Receives duties from the fetcher, deduplicates them, signs, and submits via RPC.
-pub(crate) async fn duty_executor_worker(
-    rpc: Arc<ManagedWsClient>,
-    mut duty_rx: mpsc::Receiver<Duty>,
-    sequencer_key: Buf32,
-) -> anyhow::Result<()> {
-    let mut seen_duties: HashSet<Buf32> = HashSet::new();
-    let (failed_tx, mut failed_rx) = mpsc::channel::<Buf32>(8);
-
-    loop {
-        select! {
-            duty = duty_rx.recv() => {
-                let Some(duty) = duty else {
-                    warn!("duty channel closed (all senders dropped); shutting down executor");
-                    return Ok(());
-                };
-
-                let duty_id = duty.generate_id();
-                if seen_duties.contains(&duty_id) {
-                    debug!(%duty_id, "skipping already seen duty");
-                    continue;
-                }
-                seen_duties.insert(duty_id);
-
-                tokio::spawn(handle_duty(
-                    rpc.clone(),
-                    duty,
-                    sequencer_key,
-                    failed_tx.clone(),
-                ));
-            }
-            failed = failed_rx.recv() => {
-                if let Some(duty_id) = failed {
-                    warn!(%duty_id, "removing failed duty for retry");
-                    seen_duties.remove(&duty_id);
-                }
-            }
-        }
-    }
-}
-
-async fn handle_duty(
+/// Dispatches a duty to the appropriate signing handler and reports failures.
+pub(crate) async fn handle_duty(
     rpc: Arc<ManagedWsClient>,
     duty: Duty,
     sk: Buf32,
