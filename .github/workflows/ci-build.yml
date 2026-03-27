@@ -34,9 +34,6 @@ env:
   COMMIT: ${{ github.sha }}
   AWS_REGION: us-east-1
 
-permissions:
-  contents: read
-
 # Cancel in-progress runs for the same branch (except main — let those finish)
 concurrency:
   group: ci-build-${{ github.ref }}
@@ -49,6 +46,7 @@ jobs:
   prepare:
     name: Prepare build matrix
     runs-on: ubuntu-latest
+    permissions: {}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       short_tag: ${{ steps.tag.outputs.short_tag }}
@@ -148,6 +146,7 @@ jobs:
     name: Dispatch CD to deployments
     needs: [prepare, build-and-push]
     runs-on: ubuntu-latest
+    permissions: {}
     environment: prod
     steps:
       - name: Trigger deployments repo
@@ -182,6 +181,7 @@ jobs:
     needs: [prepare, build-and-push, dispatch-cd]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Report results
         env:

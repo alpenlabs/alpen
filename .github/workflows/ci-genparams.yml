@@ -35,9 +35,6 @@ on:
 env:
   AWS_REGION: us-east-1
 
-permissions:
-  contents: read
-
 concurrency:
   group: ci-genparams-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -49,6 +46,8 @@ jobs:
   genparams:
     name: Generate SP1 params
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       checkpoint_predicate: ${{ steps.extract.outputs.checkpoint_predicate }}
     steps:
@@ -104,6 +103,7 @@ jobs:
     needs: [genparams]
     if: ${{ inputs.dispatch_cd != false }}
     runs-on: ubuntu-latest
+    permissions: {}
     environment: prod
     steps:
       - name: Trigger deployments repo
@@ -138,6 +138,7 @@ jobs:
     needs: [genparams, dispatch-vk]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Report results
         env:
