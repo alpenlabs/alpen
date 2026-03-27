@@ -32,7 +32,6 @@ on:
         type: string
 
 env:
-  COMMIT: ${{ github.sha }}
   AWS_REGION: us-east-1
 
 # Cancel in-progress runs for the same branch (except main — let those finish)
@@ -50,15 +49,7 @@ jobs:
     permissions: {}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
-      short_tag: ${{ steps.tag.outputs.short_tag }}
     steps:
-      - name: Compute image tag
-        id: tag
-        run: |
-          SHORT_TAG="${COMMIT//[^a-zA-Z0-9._-]/}"
-          SHORT_TAG="${SHORT_TAG:0:7}"
-          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-
       - name: Set build matrix
         id: set-matrix
         env:
@@ -89,14 +80,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
-    env:
-      SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+    outputs:
+      short_tag: ${{ steps.resolve.outputs.short_tag }}
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+
+      - name: Resolve actual commit SHA
+        id: resolve
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          SHORT_TAG="${COMMIT_SHA:0:7}"
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
 
       - name: Free up disk space
         uses: ./.github/actions/cleanup
@@ -125,6 +126,8 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
           PROGRAM: ${{ matrix.program }}
+          SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
+          COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
         run: |
           DOCKERFILE_PATH="docker/${PROGRAM}/Dockerfile"
           ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${PROGRAM}"
@@ -132,7 +135,7 @@ jobs:
 
           docker buildx build \
             --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
             --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --push \
             -t "${FULL_IMAGE}" \
@@ -145,7 +148,7 @@ jobs:
   # ---------------------------------------------------------------------------
   dispatch-cd:
     name: Dispatch CD to deployments
-    needs: [prepare, build-and-push]
+    needs: [build-and-push]
     runs-on: ubuntu-latest
     permissions: {}
     environment: prod
@@ -153,11 +156,12 @@ jobs:
       - name: Trigger deployments repo
         env:
           GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
-          SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
+          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
         run: |
           jq -n \
             --arg tag "$SHORT_TAG" \
-            --arg sha "${GITHUB_SHA}" \
+            --arg sha "$COMMIT_SHA" \
             --arg ref "${GITHUB_REF_NAME}" \
             '{
               event_type: "new-arch-deploy",
@@ -175,14 +179,15 @@ jobs:
   # ---------------------------------------------------------------------------
   summary:
     name: Build Summary
-    needs: [prepare, build-and-push, dispatch-cd]
+    needs: [build-and-push, dispatch-cd]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
     steps:
       - name: Report results
         env:
-          SHORT_TAG: ${{ needs.prepare.outputs.short_tag }}
+          SHORT_TAG: ${{ needs.build-and-push.outputs.short_tag }}
+          COMMIT_SHA: ${{ needs.build-and-push.outputs.commit_sha }}
           BUILD_RESULT: ${{ needs.build-and-push.result }}
           CD_RESULT: ${{ needs.dispatch-cd.result }}
         run: |
@@ -191,7 +196,7 @@ jobs:
             echo ""
             echo "| Property | Value |"
             echo "|----------|-------|"
-            echo "| **Commit** | \`${GITHUB_SHA}\` |"
+            echo "| **Commit** | \`${COMMIT_SHA}\` |"
             echo "| **Image Tag** | \`${SHORT_TAG}\` |"
             echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
             echo "| **CD Dispatch** | \`${CD_RESULT}\` |"

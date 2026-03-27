@@ -50,12 +50,20 @@ jobs:
       contents: read
     outputs:
       checkpoint_predicate: ${{ steps.extract.outputs.checkpoint_predicate }}
+      commit_sha: ${{ steps.resolve.outputs.commit_sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
           ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
+
+      - name: Resolve actual commit SHA
+        id: resolve
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Resolved commit: ${COMMIT_SHA}"
 
       - name: Free up disk space
         uses: ./.github/actions/cleanup
@@ -110,10 +118,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
           CHECKPOINT_PREDICATE: ${{ needs.genparams.outputs.checkpoint_predicate }}
+          COMMIT_SHA: ${{ needs.genparams.outputs.commit_sha }}
         run: |
           jq -n \
             --arg cp "$CHECKPOINT_PREDICATE" \
-            --arg sha "${GITHUB_SHA}" \
+            --arg sha "$COMMIT_SHA" \
             --arg ref "${GITHUB_REF_NAME}" \
             '{
               event_type: "new-arch-vk-update",
@@ -138,6 +147,7 @@ jobs:
     steps:
       - name: Report results
         env:
+          COMMIT_SHA: ${{ needs.genparams.outputs.commit_sha }}
           GENPARAMS_RESULT: ${{ needs.genparams.result }}
           DISPATCH_RESULT: ${{ needs.dispatch-vk.result }}
         run: |
@@ -146,7 +156,7 @@ jobs:
             echo ""
             echo "| Property | Value |"
             echo "|----------|-------|"
-            echo "| **Commit** | \`${GITHUB_SHA}\` |"
+            echo "| **Commit** | \`${COMMIT_SHA}\` |"
             echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
             echo "| **Genparams** | \`${GENPARAMS_RESULT}\` |"
             echo "| **VK Dispatch** | \`${DISPATCH_RESULT}\` |"
