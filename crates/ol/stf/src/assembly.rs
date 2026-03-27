@@ -9,7 +9,7 @@ use strata_ol_chain_types_new::*;
 
 use crate::{
     chain_processing,
-    context::{BasicExecContext, BlockContext, BlockInfo, TxExecContext},
+    context::{BasicExecContext, BlockContext, TxExecContext},
     errors::ExecResult,
     manifest_processing,
     output::ExecOutputBuffer,

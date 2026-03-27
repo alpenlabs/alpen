@@ -592,7 +592,10 @@ pub fn create_empty_account(state: &mut OLState, account_id: AccountId) -> Accou
 
 /// Helper to make a GAM transaction targeting the given account with empty payload data.
 pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
-    OLTransaction::new(OLTransactionData::new_gam(dest, vec![]), TxProofs::new_empty())
+    OLTransaction::new(
+        OLTransactionData::new_gam(dest, vec![]),
+        TxProofs::new_empty(),
+    )
 }
 
 /// Helper to execute a transaction in a non-genesis block.

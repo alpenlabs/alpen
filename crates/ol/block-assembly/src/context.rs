@@ -85,6 +85,14 @@ pub trait AccumulatorProofGenerator: Send + Sync + 'static {
         at_leaf_count: u64,
     ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
 
+    /// Generates inbox MMR proofs for the given accumulator claims.
+    fn generate_inbox_proofs_for_claims(
+        &self,
+        target: AccountId,
+        claims: &[AccumulatorClaim],
+        at_leaf_count: u64,
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>>;
+
     /// Validates claims and generates L1 header reference proofs.
     fn generate_l1_header_proofs<T: IStateAccessor>(
         &self,
@@ -274,6 +282,47 @@ where
             .collect();
 
         Ok(inbox_proofs)
+    }
+
+    fn generate_inbox_proofs_for_claims(
+        &self,
+        target: AccountId,
+        claims: &[AccumulatorClaim],
+        at_leaf_count: u64,
+    ) -> BlockAssemblyResult<Vec<RawMerkleProof>> {
+        if claims.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mmr_handle = self
+            .storage
+            .mmr_index()
+            .as_ref()
+            .get_handle(MmrId::SnarkMsgInbox(target));
+
+        let indices_and_hashes: Vec<_> = claims
+            .iter()
+            .map(|claim| (claim.idx(), claim.entry_hash()))
+            .collect();
+
+        let merkle_proofs = mmr_handle
+            .generate_proofs_for_indices(&indices_and_hashes, at_leaf_count)
+            .map_err(|err| match err {
+                DbError::MmrLeafHashMismatch { idx, expected, got } => {
+                    BlockAssemblyError::InboxEntryHashMismatch {
+                        idx,
+                        account_id: target,
+                        expected,
+                        actual: got,
+                    }
+                }
+                other => BlockAssemblyError::Db(other),
+            })?;
+
+        Ok(merkle_proofs
+            .into_iter()
+            .map(|merkle_proof| merkle_proof.inner.clone())
+            .collect())
     }
 
     fn generate_l1_header_proofs<T: IStateAccessor>(

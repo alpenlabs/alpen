@@ -1,17 +1,21 @@
 //! Block assembly logic.
 
 use std::{
+    slice,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use strata_acct_types::TxEffects;
 use strata_checkpoint_types_ssz::validation::{
     CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict,
 };
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
-use strata_ledger_types::*;
+use strata_ledger_types::{
+    AccProofCheck, IAccountState, ISnarkAccountState, IStateAccessor, TxProofIndexer, *,
+};
 use strata_ol_chain_types_new::*;
 use strata_ol_mempool::{
     MempoolTxInvalidReason, OLMempoolSauTxPayload, OLMempoolTransaction, OLMempoolTxPayload,
@@ -84,6 +88,11 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
+
+        // Pre-validation via TxProofIndexer: delegate to STF error classification.
+        BlockAssemblyError::SnarkUpdatePreValidation(exec_err) => {
+            stf_exec_error_to_mempool_reason(exec_err)
+        }
 
         BlockAssemblyError::Db(db_err) => match db_err {
             DbError::MmrLeafNotFound(_)
@@ -448,6 +457,8 @@ where
             Ok(tx) => tx,
             Err(e) => {
                 debug!(?txid, %e, "failed to validate/generate proofs for transaction");
+                #[cfg(test)]
+                eprintln!("TX CONVERSION FAILED: {e:?}");
                 failed_txs.push((txid, block_assembly_error_to_mempool_reason(&e)));
                 continue;
             }
@@ -522,8 +533,12 @@ where
                 }
             }
             Err(e) => {
+                #[cfg(test)]
+                eprintln!("TX EXECUTION FAILED: {e:?}");
+
                 // Failure: discard tx_buffer (logs) and restore state from backup.
                 debug!(?txid, %e, "transaction execution failed during staging");
+
                 staging_state = DaAccumulatingState::new_with_accumulator(
                     WriteTrackingState::new(parent_state, backup_batch),
                     backup_accumulator,
@@ -654,10 +669,9 @@ where
 
 /// Convert a mempool transaction to a full OL transaction with accumulator proofs.
 ///
-/// For SnarkAccountUpdate transactions, this:
-/// 1. Validates message index against account state
-/// 2. Generates MessageEntryProof for each message using `AccumulatorProofGenerator`
-/// 3. Generates MmrEntryProof for each L1 header reference using `AccumulatorProofGenerator`
+/// For GAM transactions, no proofs are needed.  For snark account update
+/// transactions, a [`TxProofIndexer`] discovers what accumulator proofs are
+/// required and the [`AccumulatorProofGenerator`] produces them.
 fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
     state: &S,
@@ -676,7 +690,7 @@ fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator, S: IStateAccessor>(
         }
 
         OLMempoolTxPayload::SnarkAccountUpdate(mempool_payload) => {
-            convert_snark_account_update(proof_gen, state, mempool_payload)?
+            convert_snark_account_update(proof_gen, state, mempool_payload, &effects)?
         }
     };
 
@@ -686,47 +700,20 @@ fn convert_mempool_tx_to_ol_tx<P: AccumulatorProofGenerator, S: IStateAccessor>(
 
 /// Converts a snark account update mempool payload to a full transaction payload.
 ///
-/// Validates message index against account state and generates accumulator proofs.
+/// Uses [`TxProofIndexer`] with [`verify_snark_acct_update_proofs`] to discover
+/// what accumulator proofs are needed, then generates them via the
+/// [`AccumulatorProofGenerator`].
 fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>(
     proof_gen: &P,
     state: &S,
     mempool_payload: &OLMempoolSauTxPayload,
+    effects: &TxEffects,
 ) -> BlockAssemblyResult<(TransactionPayload, TxProofs)> {
     let target = *mempool_payload.target();
     let base_update = mempool_payload.base_update();
     let operation = base_update.operation();
 
-    // Generate inbox message proofs using AccumulatorProofGenerator
-    // Calculate where messages start: new_state points to NEXT unprocessed message,
-    // so subtract the number of messages being processed in this transaction
-    let messages = operation.processed_messages();
-    let start_idx = operation
-        .new_proof_state()
-        .next_inbox_msg_idx()
-        .saturating_sub(messages.len() as u64);
-    let inbox_leaf_count = state
-        .get_account_state(target)
-        .map_err(BlockAssemblyError::Acct)?
-        .ok_or(BlockAssemblyError::AccountNotFound(target))?
-        .as_snark_account()
-        .map_err(BlockAssemblyError::Acct)?
-        .inbox_mmr()
-        .num_entries();
-    let inbox_proofs =
-        proof_gen.generate_inbox_proofs_at(target, messages, start_idx, inbox_leaf_count)?;
-
-    // Generate L1 header proofs using AccumulatorProofGenerator
-    let asm_hist_refs = operation.ledger_refs().l1_header_refs();
-    let l1_header_proofs = proof_gen.generate_l1_header_proofs(asm_hist_refs, state)?;
-
-    debug!(
-        target = ?target,
-        l1_claim_heights = ?asm_hist_refs.iter().map(|c| c.idx()).collect::<Vec<_>>(),
-        manifests_mmr_entries = state.asm_manifests_mmr().num_entries(),
-        "generated ledger reference proofs for snark update"
-    );
-
-    // Build the SauTxPayload from the mempool update data
+    // Build the SauTxPayload from the mempool update data.
     let proof_state = operation.new_proof_state();
     let sau_proof_state =
         SauTxProofState::new(proof_state.next_inbox_msg_idx(), proof_state.inner_state());
@@ -736,7 +723,7 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
         operation.extra_data().to_vec(),
     );
 
-    // Build ledger refs from the L1 header claims
+    let asm_hist_refs = operation.ledger_refs().l1_header_refs();
     let sau_ledger_refs = if asm_hist_refs.is_empty() {
         SauTxLedgerRefs::new_empty()
     } else {
@@ -744,22 +731,66 @@ fn convert_snark_account_update<P: AccumulatorProofGenerator, S: IStateAccessor>
         SauTxLedgerRefs::new_with_claims(cl)
     };
 
+    let messages = operation.processed_messages();
     let sau_operation_data =
         SauTxOperationData::new(sau_update_data, messages.to_vec(), sau_ledger_refs);
 
     let sau_payload = SauTxPayload::new(target, sau_operation_data);
-    let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
 
-    // Build TxProofs: l1 header proofs + inbox proofs go into accumulator_proofs,
-    // the update proof (predicate satisfier) comes from the base_update.
-    // NOTE: The order must match the verification order in snark-acct-sys verification.rs:
-    // ledger refs (L1 header proofs) are verified first, then inbox MMR proofs.
-    let mut all_acc_proofs = l1_header_proofs.l1_headers_proofs().to_vec();
-    all_acc_proofs.extend(inbox_proofs);
+    // Use the TxProofIndexer to discover what proofs are needed by running the
+    // verification logic in "dry-run" mode.
+    let account_state = state
+        .get_account_state(target)
+        .map_err(BlockAssemblyError::Acct)?
+        .ok_or(BlockAssemblyError::AccountNotFound(target))?;
+
+    let mut indexer = TxProofIndexer::new_fresh();
+    verify_snark_acct_update_proofs(
+        target,
+        account_state,
+        sau_payload.operation(),
+        effects,
+        &mut indexer,
+    )
+    .map_err(BlockAssemblyError::SnarkUpdatePreValidation)?;
+
+    // Generate accumulator proofs for the indexed claims, preserving order.
+    let inbox_leaf_count = account_state
+        .as_snark_account()
+        .map_err(BlockAssemblyError::Acct)?
+        .inbox_mmr()
+        .num_entries();
+
+    let mut all_acc_proofs = Vec::new();
+    for check in indexer.accumulator_checks() {
+        match check {
+            AccProofCheck::AsmHistory(claim) => {
+                let proofs = proof_gen.generate_l1_header_proofs(slice::from_ref(claim), state)?;
+                all_acc_proofs.extend(proofs.l1_headers_proofs().iter().cloned());
+            }
+            AccProofCheck::Inbox(claim) => {
+                let inbox_proofs = proof_gen.generate_inbox_proofs_for_claims(
+                    target,
+                    slice::from_ref(claim),
+                    inbox_leaf_count,
+                )?;
+                all_acc_proofs.extend(inbox_proofs);
+            }
+        }
+    }
+
+    debug!(
+        target = ?target,
+        acc_proof_count = all_acc_proofs.len(),
+        pred_check_count = indexer.predicate_checks().len(),
+        manifests_mmr_entries = state.asm_manifests_mmr().num_entries(),
+        "generated proofs for snark update via indexer"
+    );
+
+    let payload = TransactionPayload::SnarkAccountUpdate(sau_payload);
 
     let acc_proofs = RawMerkleProofList::from_vec_nonempty(all_acc_proofs);
     let pred_satisfiers = ProofSatisfierList::single(base_update.update_proof().to_vec());
-
     let tx_proofs = TxProofs::new(pred_satisfiers, acc_proofs);
 
     Ok((payload, tx_proofs))
@@ -815,7 +846,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_ok(),
@@ -859,7 +891,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_ok(),
@@ -918,7 +951,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
@@ -955,7 +989,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(result.is_err(), "Should fail with nonexistent index");
         let err = result.unwrap_err();
@@ -994,7 +1029,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -1101,7 +1137,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_err(),
@@ -1151,7 +1188,8 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let result = convert_snark_account_update(&ctx, &state, mempool_payload);
+        let result =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects());
 
         assert!(
             result.is_err(),
@@ -1162,12 +1200,15 @@ mod tests {
             matches!(
                 err,
                 BlockAssemblyError::Acct(AcctError::InvalidMsgIndex { .. })
+                    | BlockAssemblyError::SnarkUpdatePreValidation(ExecError::Acct(
+                        AcctError::InvalidMsgIndex { .. }
+                    ))
                     | BlockAssemblyError::InboxEntryHashMismatch { .. }
                     | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
                     | BlockAssemblyError::Db(DbError::MmrLeafNotFoundForAccount(_, _))
                     | BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
             ),
-            "Expected Acct(InvalidMsgIndex) or MMR db error, got: {:?}",
+            "Expected InvalidMsgIndex or MMR db error, got: {:?}",
             err
         );
     }
@@ -1214,8 +1255,9 @@ mod tests {
             OLMempoolTxPayload::SnarkAccountUpdate(payload) => payload,
             _ => panic!("Expected snark account update payload"),
         };
-        let (_, tx_proofs) = convert_snark_account_update(&ctx, &state, mempool_payload)
-            .expect("proof generation should succeed");
+        let (_, tx_proofs) =
+            convert_snark_account_update(&ctx, &state, mempool_payload, mempool_tx.effects())
+                .expect("proof generation should succeed");
 
         // Verify accumulator proofs exist and have correct count
         let acc_proofs = tx_proofs

@@ -172,11 +172,15 @@ impl OLMempoolTransaction {
     }
 
     /// Create a new mempool transaction with a snark account update.
+    ///
+    /// Effects are derived from the update's
+    /// [`UpdateOutputs`](strata_snark_acct_types::UpdateOutputs).
     pub fn new_snark_account_update(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
+        let effects = base_update.operation().outputs().to_tx_effects();
         Self {
             payload: OLMempoolTxPayload::new_snark_account_update(target, base_update),
             constraints: TxConstraints::default(),
-            effects: TxEffects::default(),
+            effects,
         }
     }
 

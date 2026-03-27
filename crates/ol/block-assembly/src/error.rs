@@ -101,6 +101,13 @@ pub enum BlockAssemblyError {
     #[error("block construction: {0}")]
     BlockConstruction(#[from] ExecError),
 
+    /// Snark account update failed pre-validation during proof indexing.
+    ///
+    /// This wraps errors from [`verify_snark_acct_update_proofs`] when using the
+    /// [`TxProofIndexer`] to discover needed proofs.
+    #[error("snark update pre-validation: {0}")]
+    SnarkUpdatePreValidation(ExecError),
+
     /// Other unexpected error.
     #[error("other: {0}")]
     Other(String),
