@@ -18,7 +18,7 @@ on:
       - "crates/checkpoint-types-ssz/**"
       - "crates/zkvm/**"
       - "crates/asm/subprotocols/checkpoint/**"
-      - "docker/prover-client/elfs/**"
+      - "docker/strata/elfs/**"
       - "rust-toolchain.toml"
   workflow_dispatch:
     inputs:
