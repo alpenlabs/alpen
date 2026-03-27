@@ -6,8 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from bitcoinlib.services.bitcoind import BitcoindClient
-
+from common.services.bitcoin import BitcoinService
 from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
@@ -154,8 +153,7 @@ def _target_start_of_epoch_from_tip(
 def wait_for_finalized_epoch_with_mining(
     strata_service: Any,
     strata_rpc: Any,
-    btc_rpc: BitcoindClient,
-    mine_address: str,
+    bitcoin: BitcoinService,
     target_epoch: int = 1,
     timeout: int = 120,
     step: float = 1.0,
@@ -163,16 +161,20 @@ def wait_for_finalized_epoch_with_mining(
     """
     Mine L1 blocks until finalized epoch reaches target.
     """
-    return wait_until_with_value(
-        lambda: (
-            btc_rpc.proxy.generatetoaddress(1, mine_address),
-            strata_service.get_sync_status(strata_rpc).get("finalized"),
-        )[1],
-        lambda v: (
+
+    def _check():
+        return strata_service.get_sync_status(strata_rpc).get("finalized")
+
+    def _is_finalized(v):
+        return (
             isinstance(v, dict)
             and v.get("epoch", -1) >= target_epoch
             and v.get("last_blkid") != "00" * 32
-        ),
+        )
+
+    return bitcoin.mine_until(
+        check=_check,
+        predicate=_is_finalized,
         error_with=f"Timed out waiting for finalized epoch >= {target_epoch}",
         timeout=timeout,
         step=step,
@@ -386,7 +388,6 @@ def setup_revert_ol_state_test(
     """
     strata_rpc = strata_service.wait_for_rpc_ready(timeout=rpc_timeout)
     btc_rpc = btc_service.create_rpc()
-    mine_address = btc_rpc.proxy.getnewaddress()
 
     strata_service.wait_for_additional_blocks(
         additional_blocks, strata_rpc, timeout_per_block=timeout_per_block
@@ -394,8 +395,7 @@ def setup_revert_ol_state_test(
     wait_for_finalized_epoch_with_mining(
         strata_service,
         strata_rpc,
-        btc_rpc,
-        mine_address,
+        btc_service,
         target_epoch=target_epoch,
         timeout=finalization_timeout,
     )
@@ -434,15 +434,13 @@ def setup_revert_ol_state_test_fullnode(
     """
     seq_rpc = seq_service.wait_for_rpc_ready(timeout=rpc_timeout)
     btc_rpc = btc_service.create_rpc()
-    mine_address = btc_rpc.proxy.getnewaddress()
     seq_service.wait_for_additional_blocks(
         additional_blocks, seq_rpc, timeout_per_block=timeout_per_block
     )
     wait_for_finalized_epoch_with_mining(
         seq_service,
         seq_rpc,
-        btc_rpc,
-        mine_address,
+        btc_service,
         target_epoch=target_epoch,
         timeout=finalization_timeout,
     )

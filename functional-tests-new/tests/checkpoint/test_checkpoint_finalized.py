@@ -28,9 +28,6 @@ class TestCheckpointFinalized(StrataNodeTest):
         logger.info("Waiting for Strata RPC to be ready...")
         strata_rpc = strata.wait_for_rpc_ready(timeout=20)
 
-        btc_rpc = bitcoin.create_rpc()
-        mine_addr = btc_rpc.proxy.getnewaddress()
-
         # Get initial sync status
         initial_status = strata.get_sync_status(strata_rpc)
         logger.info(
@@ -42,10 +39,9 @@ class TestCheckpointFinalized(StrataNodeTest):
 
         for target_epoch in range(1, epochs_to_check + 1):
             epoch = mine_until_finalized_epoch(
-                btc_rpc=btc_rpc,
+                bitcoin=bitcoin,
                 strata=strata,
                 strata_rpc=strata_rpc,
-                mine_addr=mine_addr,
                 target_epoch=target_epoch,
                 timeout=120,
                 step=1.0,
