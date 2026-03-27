@@ -161,7 +161,7 @@ fn apply_tx_effects<S: IStateAccessor>(
 
     // 1. Subtract funds from account if not the magic sequencer account.
     //
-    // In practice, right now, this shouldn't matter beacuse we never use this
+    // In practice, right now, this shouldn't matter because we never use this
     // account ID unless it's a GAM tx, which we separately check only sends 0
     // value.
     if source != SEQUENCER_ACCT_ID && !total_sent.is_zero() {
