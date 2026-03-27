@@ -96,8 +96,7 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
         wait_for_finalized_epoch_with_mining(
             seq_service,
             seq_rpc,
-            setup["btc_rpc"],
-            setup["btc_rpc"].proxy.getnewaddress(),
+            btc_service,
             target_epoch=target_finalized_epoch,
             timeout=180,
         )
