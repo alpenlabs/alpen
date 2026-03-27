@@ -43,14 +43,14 @@ impl<C: CheckpointWorkerContext> SyncService for OLCheckpointService<C> {
         Ok(())
     }
 
-    fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         // Skip if no epoch commitment yet (initial watch channel state)
         let Some(commitment) = input else {
             return Ok(Response::Continue);
         };
 
         let epoch = commitment.epoch();
-        if let Err(err) = state.handle_complete_epoch(*commitment) {
+        if let Err(err) = state.handle_complete_epoch(commitment) {
             match err.downcast_ref::<CheckpointNotReady>() {
                 Some(not_ready) => {
                     warn!(%epoch, %not_ready, "epoch data not yet available");

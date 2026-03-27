@@ -100,9 +100,9 @@ impl AsyncService for FcmService {
 
     async fn process_input(
         fcm_state: &mut Self::State,
-        input: &Self::Msg,
+        input: Self::Msg,
     ) -> anyhow::Result<Response> {
-        match input {
+        match &input {
             FcmEvent::NewFcmMsg(m) => process_fc_message(m, fcm_state).await?,
             FcmEvent::NewStateUpdate(st) => handle_new_client_state(fcm_state, st).await?,
             FcmEvent::Abort => return Ok(Response::ShouldExit),

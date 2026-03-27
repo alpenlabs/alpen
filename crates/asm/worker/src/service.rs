@@ -40,7 +40,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
     // TODO(QQ): add tests.
     fn process_input(
         state: &mut AsmWorkerServiceState<W>,
-        incoming_block: &L1BlockCommitment,
+        incoming_block: L1BlockCommitment,
     ) -> anyhow::Result<Response> {
         let ctx = &state.context;
 
@@ -61,7 +61,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         let pivot_span_guard = pivot_span.enter();
 
         let mut skipped_blocks = vec![];
-        let mut pivot_block = *incoming_block;
+        let mut pivot_block = incoming_block;
         let mut pivot_anchor = ctx.get_anchor_state(&pivot_block);
 
         while pivot_anchor.is_err() && pivot_block.height() >= genesis_height {

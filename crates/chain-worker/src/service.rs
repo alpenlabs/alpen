@@ -51,20 +51,20 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for ChainWorkerServic
         Ok(())
     }
 
-    fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             ChainWorkerMessage::TryExecBlock(l2bc, completion) => {
-                let res = state.try_exec_block(l2bc);
+                let res = state.try_exec_block(&l2bc);
                 completion.send_blocking(res);
             }
 
             ChainWorkerMessage::UpdateSafeTip(l2bc, completion) => {
-                let res = state.update_cur_tip(*l2bc);
+                let res = state.update_cur_tip(l2bc);
                 completion.send_blocking(res);
             }
 
             ChainWorkerMessage::FinalizeEpoch(epoch, completion) => {
-                let res = state.finalize_epoch(*epoch);
+                let res = state.finalize_epoch(epoch);
                 completion.send_blocking(res);
             }
         }
