@@ -64,7 +64,13 @@ def check_file(path: Path) -> list[tuple[int, list[str]]]:
                     violations.append((i, lines))
 
             # Reset the flag once we've passed the line with the field
-            if recent_from_or_source and i > from_source_line and stripped and not stripped.startswith("//") and not stripped.startswith("#["):
+            if (
+                recent_from_or_source
+                and i > from_source_line
+                and stripped
+                and not stripped.startswith("//")
+                and not stripped.startswith("#[")
+            ):
                 recent_from_or_source = False
 
     return violations
@@ -100,7 +106,7 @@ def main() -> int:
         "-C",
         "--context",
         type=int,
-        default=0,
+        default=2,
         metavar="N",
         help="show N lines of context around each violation",
     )
@@ -118,13 +124,19 @@ def main() -> int:
             all_violations.append((rs_file, lineno, lines))
 
     if all_violations:
-        print("Found anyhow::Error wrapped with #[from]/#[source] in thiserror types:\n")
+        print(
+            "Found anyhow::Error wrapped with #[from]/#[source] in thiserror types:\n"
+        )
         for path, lineno, lines in all_violations:
-            print(format_violation(path, crates_dir.parent, lineno, lines, args.context))
+            print(
+                format_violation(path, crates_dir.parent, lineno, lines, args.context)
+            )
             if args.context:
                 print()
         print(f"{len(all_violations)} violation(s) found.")
-        print("Use a specific error type instead of anyhow::Error with #[from]/#[source].")
+        print(
+            "Use a specific error type instead of anyhow::Error with #[from]/#[source]."
+        )
         return 1
 
     print("No anyhow::Error in thiserror violations found.")
