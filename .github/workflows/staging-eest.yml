@@ -19,13 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-    timeout-minutes: 120 # TODO: change to 60 once the exex witness generation is optimized.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
           persist-credentials: false
-          ref: releases/0.2.0
-          fetch-depth: 0
 
       - name: Configure AWS ECR Details
         uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v4
@@ -39,87 +37,52 @@ jobs:
         with:
           mask-password: "true"
 
-      - name: Pull latest Docker images from CD pipeline
-        id: pull-images
+      - name: Pull alpen-client image from ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY_PREFIX: ${{ vars.ECR_REPOSITORY_PREFIX }}
         run: |
-          BINARIES=(
-            "strata-client"
-            "strata-sequencer-client"
-            "alpen-reth"
-          )
+          ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/alpen-client"
+          TAG=$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
+            --output text)
 
-          for IMAGE in "${BINARIES[@]}"; do
-            ECR_REPOSITORY="${ECR_REPOSITORY_PREFIX}/${IMAGE}"
-            TAG=$(aws ecr describe-images \
-              --repository-name "${ECR_REPOSITORY}" \
-              --query 'sort_by(imageDetails,& imagePushedAt)[-1].imageTags[0]' \
-              --output text)
-            echo "$TAG"
-            IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
-            docker pull "${IMG_URL}"
-            docker tag "${IMG_URL}" "${IMAGE}:latest"
-          done
-
-      - name: List pulled Docker images
-        run: |
-          docker image list
-
-      - name: Build Prover Client image in native mode
-        run: |
-          # TODO(STR-1527): fetch the prover client image (in native mode) from ECR!
-          mkdir -p docker/prover-client/elfs
-
-          # Build prover
-          docker build \
-            --build-arg PROVER_FEATURES="default" \
-            -t "strata-prover-client:latest" \
-            -f "docker/prover-client/Dockerfile" .
-
-      - name: Switch to main and do stuff
-        run: |
-          # Required because compose yml and test_ee_proof live on main so far.
-          git checkout main
-
-      - name: Build params
-        run: |
-          # TODO: consider switching to uv instead of pip3.
-          # Install base58
-          pip3 install base58
-
-          # Build datatool with sp1 features
-          cargo build --bin strata-datatool --release
-
-          # Generate params: rollup_name := alpn, block_time := 1000
-          cd docker && ./init-keys.sh ../target/release/strata-datatool -n alpn -t 1
-          cat configs/params.json
-
-      - name: Start services with Docker Compose
-        run: |
-          docker image list
-          docker compose -f ./docker/docker-compose-testing.yml up -d
-
-      - name: Wait for services to be ready
-        run: |
-          sleep 60 # Ideally need some healthchecks.
-          EXITED_CONTAINERS=$(docker ps -a --filter "status=exited" --format '{{.Names}}')
-
-          if [ -n "$EXITED_CONTAINERS" ]; then
-            echo "❌ Found exited containers:"
-            echo "$EXITED_CONTAINERS"
-
-            for name in $EXITED_CONTAINERS; do
-              echo -e "\n=== Logs for container: $name ==="
-              docker logs "$name" || echo "(No logs)"
-            done
-
-            echo "❌ One or more containers have exited. Failing step."
+          if [ "${TAG}" = "None" ] || [ -z "${TAG}" ]; then
+            echo "No tagged images found in ${ECR_REPOSITORY}"
             exit 1
-          else
-            echo "✅ All containers are running."
           fi
+
+          echo "Pulling alpen-client:${TAG}"
+          IMG_URL="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+          docker pull "${IMG_URL}"
+          docker tag "${IMG_URL}" "alpen-client:latest"
+
+      - name: Generate alpen-client keys
+        run: |
+          pip3 install coincurve
+          cd docker && ./init-alpen-client-keys.sh
+
+      - name: Start services
+        run: |
+          docker compose --env-file docker/.env.alpen-client \
+            -f docker/docker-compose-eest.yml up -d --build
+
+      - name: Wait for alpen-client to be ready
+        run: |
+          echo "Waiting for alpen-client RPC..."
+          for _i in $(seq 1 30); do
+            if curl -sf -X POST http://localhost:8545 \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' > /dev/null 2>&1; then
+              echo "alpen-client RPC is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "alpen-client failed to start"
+          docker logs alpen_eest
+          exit 1
 
       - name: Run tests
         run: |
@@ -138,16 +101,10 @@ jobs:
             --rpc-chain-id 2892 \
             --tx-wait-timeout 30 \
             -v
-        continue-on-error: true
-
-      - name: Generate a proof of EE blocks execution.
-        working-directory: docker
-        run: |
-          chmod +x test_ee_proof.sh
-          ./test_ee_proof.sh docker
 
       - name: Tear down services
         if: always()
         run: |
-          docker logs strata_prover_client
-          docker compose -f ./docker/docker-compose-testing.yml down
+          docker logs alpen_eest || true
+          docker compose --env-file docker/.env.alpen-client \
+            -f docker/docker-compose-eest.yml down

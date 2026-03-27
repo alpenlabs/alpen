@@ -1,0 +1,94 @@
+# Setup for Ethereum Execution Spec Tests (EEST).
+# Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind for DA.
+#
+# Usage:
+#   ./init-alpen-client-keys.sh
+#   docker compose --env-file .env.alpen-client -f docker-compose-eest.yml up
+
+services:
+
+  bitcoind:
+    build:
+      context: ./bitcoind/
+    image: strata_bitcoind:v0.1.2
+    container_name: eest_bitcoind
+    environment:
+      RPC_ALLOW_IP: "0.0.0.0/0"
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      BITCOIND_WALLET: default
+      GENERATE_BLOCKS: 101
+    volumes:
+      - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
+    ports:
+      - "18443:18443"
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=${BITCOIND_RPC_USER} -rpcpassword=${BITCOIND_RPC_PASSWORD} getwalletinfo"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - eest
+
+  alpen-client:
+    image: alpen-client:latest
+    container_name: alpen_eest
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --sequencer
+      - --sequencer-pubkey
+      - ${SEQUENCER_PUBKEY}
+      - --dummy-ol-client
+      - --custom-chain
+      - ${CHAIN_SPEC:-dev}
+      - --datadir
+      - /app/data
+      - --p2p-secret-key
+      - /app/keys/seq-p2p.hex
+      - --addr
+      - "0.0.0.0"
+      - --port
+      - "30303"
+      - --nat
+      - none
+      - --disable-discovery
+      - --http
+      - --http.addr
+      - "0.0.0.0"
+      - --http.port
+      - "8545"
+      - --http.api
+      - eth,net,web3,txpool,admin,debug
+      - --ee-da-magic-bytes
+      - ${EE_DA_MAGIC_BYTES:-ALPN}
+      - --btc-rpc-url
+      - http://bitcoind:${BITCOIND_RPC_PORT:-18443}
+      - --btc-rpc-user
+      - ${BITCOIND_RPC_USER:-rpcuser}
+      - --btc-rpc-password
+      - ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      - --l1-reorg-safe-depth
+      - "${L1_REORG_SAFE_DEPTH:-1}"
+      - --genesis-l1-height
+      - "${GENESIS_L1_HEIGHT:-101}"
+      - --batch-sealing-block-count
+      - "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      - --color
+      - never
+    environment:
+      SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "8545:8545"
+    volumes:
+      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    networks:
+      - eest
+
+networks:
+  eest:
+    driver: bridge
