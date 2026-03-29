@@ -23,11 +23,6 @@ on:
         description: "Git ref to build from (default: current branch)"
         required: false
         type: string
-      dispatch_cd:
-        description: "Dispatch VK update to deployments repo"
-        required: false
-        type: boolean
-        default: true
 
 env:
   AWS_REGION: us-east-1
@@ -98,7 +93,7 @@ jobs:
           fi
 
           echo "checkpoint_predicate=${CHECKPOINT_PREDICATE}" >> "$GITHUB_OUTPUT"
-          echo "Checkpoint predicate (first 80 chars): ${CHECKPOINT_PREDICATE:0:80}..."
+          echo "Checkpoint predicate: ${CHECKPOINT_PREDICATE}"
 
   # ---------------------------------------------------------------------------
   # Dispatch VK update to deployments repo
@@ -106,7 +101,6 @@ jobs:
   dispatch-vk:
     name: Dispatch VK to deployments
     needs: [genparams]
-    if: ${{ inputs.dispatch_cd != false }}
     runs-on: ubuntu-latest
     permissions: {}
     environment: prod
@@ -145,6 +139,7 @@ jobs:
       - name: Report results
         env:
           COMMIT_SHA: ${{ needs.genparams.outputs.commit_sha }}
+          CHECKPOINT_PREDICATE: ${{ needs.genparams.outputs.checkpoint_predicate }}
           GENPARAMS_RESULT: ${{ needs.genparams.result }}
           DISPATCH_RESULT: ${{ needs.dispatch-vk.result }}
         run: |
@@ -157,4 +152,5 @@ jobs:
             echo "| **Ref** | \`${GITHUB_REF_NAME}\` |"
             echo "| **Genparams** | \`${GENPARAMS_RESULT}\` |"
             echo "| **VK Dispatch** | \`${DISPATCH_RESULT}\` |"
+            echo "| **Checkpoint Predicate** | \`${CHECKPOINT_PREDICATE}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
