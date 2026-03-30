@@ -14977,6 +14977,7 @@ dependencies = [
  "alloy-rlp",
  "alpen-reth-evm",
  "alpen-reth-primitives",
+ "bincode",
  "itertools 0.14.0",
  "reth-chainspec",
  "reth-consensus-common",
@@ -14988,7 +14989,6 @@ dependencies = [
  "reth-trie",
  "revm",
  "revm-primitives",
- "rlp",
  "rsp-client-executor",
  "rsp-mpt",
  "serde",
@@ -15620,6 +15620,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-proofimpl-alpen-acct"
+version = "0.1.0"
+dependencies = [
+ "reth-chainspec",
+ "rkyv",
+ "rsp-primitives",
+ "ssz",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-evm-ee",
+ "strata-identifiers",
+ "strata-predicate",
+ "strata-snark-acct-runtime",
+ "strata-snark-acct-types",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20)",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
+name = "strata-proofimpl-alpen-chunk"
+version = "0.1.0"
+dependencies = [
+ "reth-chainspec",
+ "reth-primitives-traits",
+ "rkyv",
+ "rsp-client-executor",
+ "rsp-primitives",
+ "serde",
+ "serde_json",
+ "ssz",
+ "strata-acct-types",
+ "strata-codec",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-ee-chunk-runtime",
+ "strata-evm-ee",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc20)",
+ "zkaleido-native-adapter",
+]
+
+[[package]]
 name = "strata-proofimpl-checkpoint"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15944,6 +15987,8 @@ dependencies = [
  "sha2",
  "sp1-helper",
  "sp1-sdk",
+ "sp1-verifier",
+ "zkaleido-sp1-groth16-verifier",
 ]
 
 [[package]]
