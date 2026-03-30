@@ -15980,6 +15980,7 @@ dependencies = [
  "strata-crypto",
  "strata-key-derivation",
  "strata-ol-rpc-api",
+ "strata-ol-rpc-types",
  "strata-ol-sequencer",
  "strata-primitives",
  "strata-service",

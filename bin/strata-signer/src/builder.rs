@@ -3,12 +3,12 @@
 use std::{sync::Arc, time::Duration};
 
 use strata_common::ws_client::ManagedWsClient;
-use strata_primitives::buf::Buf32;
 use strata_service::{ServiceBuilder, ServiceMonitor};
 use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;
 
 use crate::{
+    helpers::SequencerSk,
     input::SignerInput,
     service::{SignerService, SignerServiceState, SignerServiceStatus},
 };
@@ -20,14 +20,14 @@ const FAILED_DUTY_CHANNEL_CAPACITY: usize = 64;
 /// Builder for the signer service.
 pub(crate) struct SignerBuilder {
     rpc: Arc<ManagedWsClient>,
-    sequencer_key: Buf32,
+    sequencer_key: SequencerSk,
     duty_poll_interval: Duration,
 }
 
 impl SignerBuilder {
     pub(crate) fn new(
         rpc: Arc<ManagedWsClient>,
-        sequencer_key: Buf32,
+        sequencer_key: SequencerSk,
         duty_poll_interval: Duration,
     ) -> Self {
         Self {

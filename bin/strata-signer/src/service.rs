@@ -8,13 +8,14 @@ use std::{collections::HashSet, sync::Arc};
 use serde::Serialize;
 use strata_common::ws_client::ManagedWsClient;
 use strata_ol_rpc_api::OLSequencerRpcClient;
+use strata_ol_rpc_types::RpcDuty;
 use strata_ol_sequencer::Duty;
 use strata_primitives::buf::Buf32;
 use strata_service::{AsyncService, Response, Service, ServiceState};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::{handlers::handle_duty, input::SignerEvent};
+use crate::{handlers::handle_duty, helpers::SequencerSk, input::SignerEvent};
 
 /// Status exposed by the signer service monitor.
 #[derive(Clone, Debug, Serialize)]
@@ -26,7 +27,10 @@ pub(crate) struct SignerServiceStatus {
 /// Mutable state held across ticks.
 pub(crate) struct SignerServiceState {
     rpc: Arc<ManagedWsClient>,
-    sequencer_key: Buf32,
+    /// Sequencer secret key. Stored as a [`SequencerSk`] so spawned duty
+    /// handlers receive a pointer clone rather than a byte-level copy of key
+    /// material.
+    sequencer_key: SequencerSk,
     seen_duties: HashSet<Buf32>,
     failed_tx: mpsc::Sender<Buf32>,
     duties_processed: u64,
@@ -36,7 +40,7 @@ pub(crate) struct SignerServiceState {
 impl SignerServiceState {
     pub(crate) fn new(
         rpc: Arc<ManagedWsClient>,
-        sequencer_key: Buf32,
+        sequencer_key: SequencerSk,
         failed_tx: mpsc::Sender<Buf32>,
     ) -> Self {
         Self {
@@ -86,7 +90,7 @@ impl AsyncService for SignerService {
     }
 }
 
-/// Fetches duties from the sequencer, deduplicates, and spawns signing tasks.
+/// Fetches duties from the sequencer and dispatches them.
 async fn process_poll_tick(state: &mut SignerServiceState) {
     let rpc_duties = match state.rpc.get_sequencer_duties().await {
         Ok(duties) => duties,
@@ -97,7 +101,11 @@ async fn process_poll_tick(state: &mut SignerServiceState) {
     };
 
     info!(count = rpc_duties.len(), "fetched duties");
+    process_duties(state, rpc_duties).await;
+}
 
+/// Deduplicates duties and spawns a signing task for each unseen one.
+async fn process_duties(state: &mut SignerServiceState, rpc_duties: Vec<RpcDuty>) {
     for rpc_duty in rpc_duties {
         let duty: Duty = match rpc_duty.try_into() {
             Ok(d) => d,
@@ -118,8 +126,87 @@ async fn process_poll_tick(state: &mut SignerServiceState) {
         tokio::spawn(handle_duty(
             state.rpc.clone(),
             duty,
-            state.sequencer_key,
+            state.sequencer_key.clone(),
             state.failed_tx.clone(),
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
+    use strata_ol_rpc_types::{RpcDuty, RpcPayloadSigningDuty};
+    use strata_primitives::{HexBytes32, buf::Buf32};
+    use tokio::sync::mpsc;
+    use zeroize::Zeroizing;
+
+    use super::*;
+    use crate::helpers::SequencerSk;
+
+    fn make_state() -> (SignerServiceState, mpsc::Receiver<Buf32>) {
+        let rpc = Arc::new(ManagedWsClient::new_with_default_pool(WsClientConfig {
+            url: "ws://127.0.0.1:1".to_string(),
+        }));
+        let sk: SequencerSk = Arc::new(Zeroizing::new([0u8; 32]));
+        let (failed_tx, failed_rx) = mpsc::channel(8);
+        (SignerServiceState::new(rpc, sk, failed_tx), failed_rx)
+    }
+
+    fn payload_duty(payload_idx: u64, sighash: [u8; 32]) -> RpcDuty {
+        RpcDuty::SignPayload(RpcPayloadSigningDuty {
+            payload_idx,
+            sighash: HexBytes32(sighash),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_same_duty_not_processed_twice() {
+        let (mut state, _rx) = make_state();
+        let duty = payload_duty(1, [1u8; 32]);
+
+        process_duties(&mut state, vec![duty.clone()]).await;
+        assert_eq!(state.duties_processed, 1);
+        assert_eq!(state.seen_duties.len(), 1);
+
+        // Same duty on next poll — must be skipped.
+        process_duties(&mut state, vec![duty]).await;
+        assert_eq!(state.duties_processed, 1);
+    }
+
+    #[tokio::test]
+    async fn test_different_duties_both_processed() {
+        let (mut state, _rx) = make_state();
+
+        process_duties(
+            &mut state,
+            vec![payload_duty(1, [1u8; 32]), payload_duty(2, [2u8; 32])],
+        )
+        .await;
+
+        assert_eq!(state.duties_processed, 2);
+        assert_eq!(state.seen_duties.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_failed_duty_removed_for_retry() {
+        let (mut state, _rx) = make_state();
+        let sighash = Buf32([1u8; 32]);
+
+        process_duties(&mut state, vec![payload_duty(1, [1u8; 32])]).await;
+        assert!(state.seen_duties.contains(&sighash));
+        assert_eq!(state.duties_processed, 1);
+
+        // Signal failure — duty must be evicted from seen set.
+        SignerService::process_input(&mut state, SignerEvent::DutyFailed(sighash))
+            .await
+            .unwrap();
+        assert!(!state.seen_duties.contains(&sighash));
+        assert_eq!(state.duties_failed, 1);
+
+        // Same duty now re-dispatched.
+        process_duties(&mut state, vec![payload_duty(1, [1u8; 32])]).await;
+        assert_eq!(state.duties_processed, 2);
     }
 }

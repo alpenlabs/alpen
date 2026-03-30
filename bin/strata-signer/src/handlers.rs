@@ -14,10 +14,12 @@ use strata_ol_sequencer::{
     BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty, PayloadSigningDuty,
     sign_checkpoint, sign_header,
 };
-use strata_primitives::{HexBytes64, buf::Buf32};
+use strata_primitives::{HexBytes32, HexBytes64, buf::Buf32};
 use thiserror::Error;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, error, info};
+
+use crate::helpers::SequencerSk;
 
 #[derive(Debug, Error)]
 #[expect(clippy::enum_variant_names, reason = "pre-existing naming convention")]
@@ -36,16 +38,19 @@ enum DutyExecError {
 pub(crate) async fn handle_duty(
     rpc: Arc<ManagedWsClient>,
     duty: Duty,
-    sk: Buf32,
+    sk: SequencerSk,
     failed_tx: mpsc::Sender<Buf32>,
 ) {
     let duty_id = duty.generate_id();
     debug!(%duty_id, %duty, "handling duty");
 
+    // Borrow the key bytes for signing. `Buf32` is a brief stack copy scoped
+    // to this function; the authoritative key lives in the `Arc` allocation.
+    let sk_buf = Buf32(**sk);
     let result = match duty {
-        Duty::SignBlock(block_duty) => handle_sign_block(&rpc, block_duty, &sk).await,
-        Duty::SignCheckpoint(cp_duty) => handle_sign_checkpoint(&rpc, cp_duty, &sk).await,
-        Duty::SignPayload(payload_duty) => handle_sign_payload(&rpc, payload_duty, &sk).await,
+        Duty::SignBlock(block_duty) => handle_sign_block(&rpc, block_duty, &sk_buf).await,
+        Duty::SignCheckpoint(cp_duty) => handle_sign_checkpoint(&rpc, cp_duty, &sk_buf).await,
+        Duty::SignPayload(payload_duty) => handle_sign_payload(&rpc, payload_duty, &sk_buf).await,
     };
 
     if let Err(err) = result {
@@ -112,9 +117,13 @@ async fn handle_sign_payload(
     let payload_idx = duty.payload_idx;
     debug!(%payload_idx, "signed payload envelope sighash");
 
-    rpc.complete_payload_signature(payload_idx, HexBytes64(sig.serialize()))
-        .await
-        .map_err(DutyExecError::CompletePayload)?;
+    rpc.complete_payload_signature(
+        payload_idx,
+        HexBytes32(duty.sighash.0),
+        HexBytes64(sig.serialize()),
+    )
+    .await
+    .map_err(DutyExecError::CompletePayload)?;
 
     info!(%payload_idx, "payload signature submitted");
     Ok(())

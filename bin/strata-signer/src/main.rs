@@ -26,7 +26,6 @@ use strata_common::{
 use strata_tasks::TaskManager;
 use tokio::runtime::Builder;
 use tracing::info;
-use zeroize::Zeroize;
 
 fn main() -> anyhow::Result<()> {
     let args: Args = argh::from_env();
@@ -55,9 +54,9 @@ fn main() -> anyhow::Result<()> {
         default_log_prefix: "signer",
     });
 
-    // Load sequencer key.
-    let mut seq_key = load_seqkey(&config.sequencer_key)?;
-    info!(pubkey = ?seq_key.pk, "sequencer key loaded");
+    // Load sequencer key. Raw bytes are zeroized inside load_seqkey before it returns.
+    let (sk, pubkey) = load_seqkey(&config.sequencer_key)?;
+    info!(?pubkey, "sequencer key loaded");
 
     // Set up RPC client.
     let ws_config = WsClientConfig {
@@ -72,16 +71,9 @@ fn main() -> anyhow::Result<()> {
     let executor = task_manager.create_executor();
 
     let _monitor = handle.block_on(
-        SignerBuilder::new(
-            rpc,
-            seq_key.sk,
-            Duration::from_millis(config.duty_poll_interval),
-        )
-        .launch(&executor),
+        SignerBuilder::new(rpc, sk, Duration::from_millis(config.duty_poll_interval))
+            .launch(&executor),
     )?;
-
-    // Zeroize the key now that it's been moved into the service state.
-    seq_key.zeroize();
 
     task_manager.start_signal_listeners();
     task_manager.monitor(Some(Duration::from_millis(SHUTDOWN_TIMEOUT_MS)))?;
