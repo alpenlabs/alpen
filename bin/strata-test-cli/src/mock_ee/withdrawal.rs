@@ -69,7 +69,7 @@ pub(crate) fn build_snark_withdrawal_json(
             "update_operation_encoded": ssz_hex,
             "update_proof": ""
         },
-        "attachments": {
+        "constraints": {
             "min_slot": null,
             "max_slot": null
         }
