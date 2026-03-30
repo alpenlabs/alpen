@@ -47,10 +47,7 @@ class RevertCheckpointedBlockSeqTest(StrataNodeTest):
         seq_service.stop()
 
         datadir = seq_service.props["datadir"]
-        epoch_sealing = seq_service.props.get("epoch_sealing")
-        if not isinstance(epoch_sealing, dict):
-            raise AssertionError("Missing epoch_sealing config in sequencer service props")
-        slots_per_epoch = epoch_sealing.get("slots_per_epoch")
+        slots_per_epoch = seq_service.props.get("slots_per_epoch")
         if not isinstance(slots_per_epoch, int) or slots_per_epoch <= 0:
             raise AssertionError(f"Invalid slots_per_epoch in sequencer props: {slots_per_epoch!r}")
 

@@ -33,11 +33,8 @@ class TestCheckpointCreated(StrataNodeTest):
         btc_rpc.proxy.generatetoaddress(5, addr)
 
         # Wait for OL to reach the terminal slot of epoch 1.
-        epoch_sealing = strata.props["epoch_sealing"]
-        assert epoch_sealing is not None, "checkpoint env must set epoch_sealing"
-        assert epoch_sealing["policy"] == "FixedSlot", "test assumes FixedSlot policy"
-        slots_per_epoch = epoch_sealing["slots_per_epoch"]
-        assert slots_per_epoch is not None and slots_per_epoch > 0
+        slots_per_epoch = strata.props["slots_per_epoch"]
+        assert isinstance(slots_per_epoch, int) and slots_per_epoch > 0
         epoch1_terminal_slot = slots_per_epoch
         strata.wait_for_block_height(
             epoch1_terminal_slot, strata_rpc, timeout=120, poll_interval=0.5
