@@ -52,6 +52,10 @@ impl SyncService for ChainWorkerService {
                 let res = state.finalize_epoch(epoch);
                 completion.send_blocking(res);
             }
+            ChainWorkerMessage::ApplyDA(da, completion) => {
+                let res = state.apply_da(da)?;
+                completion.send_blocking(res);
+            }
         }
 
         Ok(Response::Continue)

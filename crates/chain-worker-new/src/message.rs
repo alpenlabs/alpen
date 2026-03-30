@@ -28,9 +28,9 @@ pub enum ChainWorkerMessage {
 /// Chain worker message payload for applying DA.
 #[derive(Clone, Debug)]
 pub struct ApplyDAPayload {
-    da: OLDaPayloadV1,
-    manifests: OLL1ManifestContainer,
-    epoch: EpochCommitment,
+    pub(crate) da: OLDaPayloadV1,
+    pub(crate) manifests: OLL1ManifestContainer,
+    pub(crate) epoch: EpochCommitment,
 }
 
 impl ApplyDAPayload {

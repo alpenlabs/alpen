@@ -31,6 +31,18 @@ impl BlockFlags {
         Self(0)
     }
 
+    pub fn terminal() -> Self {
+        let mut flags = 0;
+        flags |= IS_TERMINAL;
+        Self(flags)
+    }
+
+    pub fn non_terminal() -> Self {
+        let mut flags = 0;
+        flags |= !IS_TERMINAL;
+        Self(flags)
+    }
+
     /// Assigns the `IS_TERMINAL` flag to some value.
     pub fn set_is_terminal(&mut self, b: bool) {
         if b {

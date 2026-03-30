@@ -12,15 +12,19 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_da::DaScheme;
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::verify_block;
+use strata_ol_stf::{
+    BasicExecContext, BlockContext, BlockInfo, ExecOutputBuffer, process_block_manifests,
+    process_epoch_initial, verify_block,
+};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::*;
 
 use crate::{
-    ChainWorkerContextImpl,
+    ApplyDAPayload, ChainWorkerContextImpl,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
@@ -353,6 +357,58 @@ impl ChainWorkerServiceState {
         self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }
+
+    pub(crate) fn apply_da(&self, da_payload: &ApplyDAPayload) -> WorkerResult<()> {
+        let ApplyDAPayload {
+            da,
+            epoch,
+            manifests,
+        } = da_payload;
+
+        // Fetch previous state
+        let mut state = fetch_prev_state(self.ctx, epoch)?;
+
+        // Prepare data for processing epoch initial
+        let outbuf = ExecOutputBuffer::new_empty();
+        let timestamp = da.terminal_header_complement.inner().timestamp();
+        let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
+        let parent_header = da
+            .terminal_header_complement
+            .inner()
+            .to_full_header(*epoch, state.compute_state_root());
+        let blkctx = BlockContext::new(block_info, Some(&parent_header));
+
+        // Process epoch initial
+        process_epoch_initial(&mut state, context)?;
+
+        // Apply DA.
+        DaScheme::apply_to_state(da.state_diff, &mut state)?;
+
+        // Prepare context for applying manifests.
+        let exctx = BasicExecContext::new(blkinfo, &outbuf);
+
+        // Apply manifests.
+        process_block_manifests(&mut state, manifests, &exctx)?;
+
+        // TODO: Collect index data
+
+        // Create epoch summary ?
+
+        Ok(())
+    }
+}
+
+/// Fetch state corresponding to previous terminal block.
+fn fetch_prev_state(ctx: ChainWorkerContextImpl, epoch: &EpochCommitment) -> WorkerResult<OLState> {
+    let epoch_summary = self
+        .ctx
+        .fetch_epoch_summaries(epoch.epoch())?
+        .first()
+        .ok_or(WorkerError::MissingEpochSummary(*epoch))?;
+    let prev_terminal = *epoch_summary.prev_terminal();
+    self.ctx
+        .fetch_ol_state(prev_terminal)?
+        .ok_or(WorkerError::MissingPreState(prev_terminal))
 }
 
 impl ServiceState for ChainWorkerServiceState {
