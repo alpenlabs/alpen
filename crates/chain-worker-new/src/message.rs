@@ -1,6 +1,8 @@
 //! Messages from the handle to the worker.
 
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_chain_types_new::OLL1ManifestContainer;
+use strata_ol_da::OLDaPayloadV1;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::CommandCompletionSender;
 
@@ -18,4 +20,29 @@ pub enum ChainWorkerMessage {
 
     /// Update the safe tip.
     UpdateSafeTip(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
+
+    /// Apply the DA
+    ApplyDA(ApplyDAPayload, CommandCompletionSender<WorkerResult<()>>),
+}
+
+/// CSM message payload for applying DA.
+#[derive(Clone, Debug)]
+pub struct ApplyDAPayload {
+    da: OLDaPayloadV1,
+    manifests: OLL1ManifestContainer,
+    epoch: EpochCommitment,
+}
+
+impl ApplyDAPayload {
+    pub fn new(
+        da: OLDaPayloadV1,
+        manifests: OLL1ManifestContainer,
+        epoch: EpochCommitment,
+    ) -> Self {
+        Self {
+            da,
+            manifests,
+            epoch,
+        }
+    }
 }

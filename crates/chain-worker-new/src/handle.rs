@@ -5,7 +5,9 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_service::{CommandHandle, ServiceError, ServiceMonitor};
 use tokio::sync::watch;
 
-use crate::{ChainWorkerStatus, WorkerError, WorkerResult, message::ChainWorkerMessage};
+use crate::{
+    ApplyDAPayload, ChainWorkerStatus, WorkerError, WorkerResult, message::ChainWorkerMessage,
+};
 
 /// Handle for interacting with the chain worker service.
 ///
@@ -85,6 +87,21 @@ impl ChainWorkerHandle {
             .send_and_wait_blocking(|completion| {
                 ChainWorkerMessage::UpdateSafeTip(safe_tip, completion)
             })
+            .map_err(convert_service_error)?
+    }
+
+    /// Apply DA async.
+    pub async fn apply_da(&self, payload: ApplyDAPayload) -> WorkerResult<()> {
+        self.command_handle
+            .send_and_wait(|completion| ChainWorkerMessage::ApplyDA(payload, completion))
+            .await
+            .map_err(convert_service_error)?
+    }
+
+    /// Apply DA blocking.
+    pub fn apply_da_blocking(&self, payload: ApplyDAPayload) -> WorkerResult<()> {
+        self.command_handle
+            .send_and_wait_blocking(|completion| ChainWorkerMessage::ApplyDA(payload, completion))
             .map_err(convert_service_error)?
     }
 

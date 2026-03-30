@@ -26,7 +26,7 @@ mod traits;
 pub use context::ChainWorkerContextImpl;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;
-pub use message::ChainWorkerMessage;
+pub use message::{ApplyDAPayload, ChainWorkerMessage};
 pub use output::OLBlockExecutionOutput;
 pub use service::{ChainWorkerService, ChainWorkerStatus, start_chain_worker_service_from_ctx};
 pub use state::ChainWorkerServiceState;
