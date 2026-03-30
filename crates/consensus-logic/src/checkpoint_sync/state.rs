@@ -43,8 +43,8 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
                 new_ckpt
             }
         };
-        // Extract checkpoint and send to csm
-        extract_checkpoint_and_submit_to_csm(new_ckpt, &self.ctx).await?;
+        // Extract checkpoint and send to chain worker for processing DA.
+        extract_checkpoint_and_submit_to_chain_worker(new_ckpt, &self.ctx).await?;
 
         let epoch = new_ckpt.batch_info.get_epoch_commitment();
         let blk = epoch.to_block_commitment();
@@ -79,14 +79,16 @@ fn validate_new_finalized_epoch<C: CheckpointSyncCtx>(
     Ok(())
 }
 
-async fn extract_checkpoint_and_submit_to_csm<E: DAExtractor, C: CheckpointSyncCtx<E>>(
+async fn extract_checkpoint_and_submit_to_chain_worker<E: DAExtractor, C: CheckpointSyncCtx<E>>(
     new: L1Checkpoint,
     ctx: &C,
 ) -> anyhow::Result<()> {
     let da = ctx.extract_da(&new.l1_reference)?;
+
     let new_epoch = new.batch_info.get_epoch_commitment();
     let new_summary = ctx.get_epoch_summary(new_epoch)?;
     let prev_terminal = new_summary.prev_terminal();
+
     let prev_state: OLState = ctx.get_state_at(prev_terminal)?;
 
     let manifests = ctx.fetch_asm_manifests_range(

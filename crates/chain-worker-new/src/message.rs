@@ -25,7 +25,7 @@ pub enum ChainWorkerMessage {
     ApplyDA(ApplyDAPayload, CommandCompletionSender<WorkerResult<()>>),
 }
 
-/// CSM message payload for applying DA.
+/// Chain worker message payload for applying DA.
 #[derive(Clone, Debug)]
 pub struct ApplyDAPayload {
     da: OLDaPayloadV1,
@@ -44,5 +44,17 @@ impl ApplyDAPayload {
             manifests,
             epoch,
         }
+    }
+
+    pub fn da(&self) -> &OLDaPayloadV1 {
+        &self.da
+    }
+
+    pub fn manifests(&self) -> &OLL1ManifestContainer {
+        &self.manifests
+    }
+
+    pub fn epoch(&self) -> EpochCommitment {
+        self.epoch
     }
 }
