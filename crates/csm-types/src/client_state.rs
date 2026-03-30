@@ -8,9 +8,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::BatchInfo;
-use strata_identifiers::{
-    Buf32, CheckpointL1Ref, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height,
-};
+use strata_identifiers::{CheckpointL1Ref, Epoch, EpochCommitment, L1BlockCommitment};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -130,61 +128,5 @@ impl L1Checkpoint {
             batch_info,
             l1_reference,
         }
-    }
-}
-
-// Custom debug implementation to print txid and wtxid in little endian
-impl fmt::Debug for CheckpointL1Ref {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-        let wtxid_le = {
-            let mut bytes = self.wtxid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-
-        f.debug_struct("CheckpointL1Ref")
-            .field("l1_commitment", &self.l1_commitment)
-            .field("txid", &txid_le)
-            .field("wtxid", &wtxid_le)
-            .finish()
-    }
-}
-
-// Custom display implementation to print txid and wtxid in little endian
-impl fmt::Display for CheckpointL1Ref {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-        let wtxid_le = {
-            let mut bytes = self.wtxid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-
-        write!(
-            f,
-            "CheckpointL1Ref {{ l1_commitment: {}, txid: {}, wtxid: {} }}",
-            self.l1_commitment, txid_le, wtxid_le
-        )
     }
 }

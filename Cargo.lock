@@ -14419,6 +14419,7 @@ dependencies = [
  "strata-merkle",
  "strata-node-context",
  "strata-ol-chain-types-new",
+ "strata-ol-da",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",

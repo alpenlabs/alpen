@@ -369,7 +369,7 @@ pub(crate) fn ensure_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Res
     ensure_cl_genesis(storage, ol_params)
 }
 
-/// Ensure client state genesis
+/// Ensures client state genesis.
 fn ensure_cl_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
     // Check for client state genesis
     let csman = storage.client_state();
@@ -390,7 +390,7 @@ fn ensure_cl_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), 
     }
 }
 
-/// Ensure OL genesis
+/// Ensures OL genesis.
 fn ensure_ol_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
     match storage.ol_block().get_canonical_block_at_blocking(0)? {
         None => {
