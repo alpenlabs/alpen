@@ -3,7 +3,9 @@
 pub mod eth;
 mod rpc;
 pub mod sequencer;
+pub mod state_dump;
 
+use alloy_primitives::BlockNumber;
 use alpen_reth_statediff::BatchStateDiffSerde;
 pub use eth::{AlpenEthApi, StrataNodeCore};
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
@@ -11,7 +13,22 @@ use revm_primitives::alloy_primitives::B256;
 pub use rpc::AlpenRPC;
 pub use sequencer::SequencerClient;
 use serde::{Deserialize, Serialize};
+pub use state_dump::{StateDump, StateDumpRpc};
 use strata_proofimpl_evm_ee_stf::EvmBlockStfInput;
+
+#[cfg_attr(not(test), rpc(server, namespace = "strataee"))]
+#[cfg_attr(test, rpc(server, client, namespace = "strataee"))]
+pub trait StateDumpRpcApi {
+    /// Dumps the complete EVM state at the latest block.
+    ///
+    /// Returns all accounts with their balances, nonces, code, and storage.
+    /// Always dumps the latest block — the `block_number` parameter is accepted
+    /// for forward compatibility but currently ignored.
+    ///
+    /// Designed for L2 chains with small state. Do not use on large chains.
+    #[method(name = "dumpState")]
+    fn dump_state(&self, block_number: Option<BlockNumber>) -> RpcResult<StateDump>;
+}
 
 #[cfg_attr(not(test), rpc(server, namespace = "strataee"))]
 #[cfg_attr(test, rpc(server, client, namespace = "strataee"))]

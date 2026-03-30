@@ -1,0 +1,16 @@
+{
+  "block_number": 9,
+  "block_hash": "0x81ad6e73c2872b85b865889f57add91e85c7e8e8cd887af25f592817e2ed844f",
+  "state_root": "0x6bca2fc3a6b3ab6c13c868817f8744285aebf4ffaed2bee663bbeeec457db2ae",
+  "account_count": 5,
+  "source_chain": "legacy",
+  "chain_spec": "dev",
+  "balances": {
+    "0xb3db71854492AaD2F4995a407a1F5F790AD975d8": "996999917938581421000",
+    "0x000000000000000000000000000000000000dEaD": "3000000000000000000"
+  },
+  "artifacts": {
+    "state_dump": "/Users/drpaudel/Alpen-Labs/alpen/functional-tests/_state_dump_artifacts/state_dump.jsonl",
+    "header": "/Users/drpaudel/Alpen-Labs/alpen/functional-tests/_state_dump_artifacts/header.rlp"
+  }
+}

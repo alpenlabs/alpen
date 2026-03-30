@@ -332,6 +332,7 @@ class RethFactory(flexitest.Factory):
             "--ws.port", str(ethrpc_ws_port),
             "--http",
             "--http.port", str(ethrpc_http_port),
+            "--http.api", "eth,net,web3,debug",
             "--color", "never",
             "--enable-witness-gen",
             "--custom-chain", custom_chain,

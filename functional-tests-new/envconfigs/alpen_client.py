@@ -86,6 +86,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         batch_sealing_block_count: int = 10,
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
+        custom_chain: str = "dev",
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -130,6 +131,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             sequencer_pubkey=pubkey,
             sequencer_privkey=privkey,
             enable_discovery=enable_discovery,
+            custom_chain=custom_chain,
             ol_endpoint=ol_endpoint,
             da_config=da_config,
         )

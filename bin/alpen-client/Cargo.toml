@@ -41,6 +41,7 @@ alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
+alpen-reth-rpc.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
 ssz.workspace = true
 strata-acct-types.workspace = true

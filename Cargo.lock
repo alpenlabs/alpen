@@ -1081,6 +1081,7 @@ dependencies = [
  "alpen-reth-evm",
  "alpen-reth-exex",
  "alpen-reth-node",
+ "alpen-reth-rpc",
  "async-trait",
  "bitcoind-async-client",
  "clap",
@@ -1482,6 +1483,7 @@ dependencies = [
 name = "alpen-reth-rpc"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-consensus",
  "alloy-eips",
  "alloy-network",
  "alloy-primitives",
@@ -1493,6 +1495,7 @@ dependencies = [
  "jsonrpsee-types",
  "reqwest 0.12.28",
  "reth-chainspec",
+ "reth-db",
  "reth-evm",
  "reth-node-api",
  "reth-node-builder",

@@ -22,6 +22,14 @@ build() {
     cargo build  -F sequencer -F debug-utils -F test-mode -F debug-asm --bin strata --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
 }
 
+# Ensures upstream reth binary is available (needed for init-state tests).
+ensure_reth() {
+    if ! command -v reth &> /dev/null; then
+        echo "Installing reth v1.9.1 (needed for init-state tests)..."
+        cargo install reth --git https://github.com/paradigmxyz/reth --tag v1.9.1 --locked
+    fi
+}
+
 # Runs tests.
 run_tests() {
     uv sync
@@ -30,4 +38,5 @@ run_tests() {
 
 setup_path
 build
+ensure_reth
 run_tests "$@"

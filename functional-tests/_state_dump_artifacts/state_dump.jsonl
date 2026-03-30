@@ -1,0 +1,6 @@
+{"root": "0x6bca2fc3a6b3ab6c13c868817f8744285aebf4ffaed2bee663bbeeec457db2ae"}
+{"address": "0x000000000000000000000000000000000000dead", "balance": "0x1bc16d674ec80000", "nonce": 0, "code": "0x", "storage": {}}
+{"address": "0x5400000000000000000000000000000000000010", "balance": "0x13cf16735c28", "nonce": 0, "code": "0x", "storage": {}}
+{"address": "0x5400000000000000000000000000000000000011", "balance": "0x394c549ef000", "nonce": 0, "code": "0x", "storage": {}}
+{"address": "0xb3db71854492aad2f4995a407a1f5f790ad975d8", "balance": "0x361a080ddca6cf98e0", "nonce": 2, "code": "0x", "storage": {}}
+{"address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266", "balance": "0xd38be605048e40561af8", "nonce": 1, "code": "0x", "storage": {}}

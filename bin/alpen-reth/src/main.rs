@@ -7,14 +7,14 @@ use std::{env, process, sync::Arc};
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_reth_exex::{ProverWitnessGenerator, StateDiffGenerator};
 use alpen_reth_node::{args::AlpenNodeArgs, AlpenEthereumNode};
-use alpen_reth_rpc::{AlpenRPC, StrataRpcApiServer};
+use alpen_reth_rpc::{AlpenRPC, StateDumpRpc, StateDumpRpcApiServer, StrataRpcApiServer};
 use clap::Parser;
 use init_db::init_witness_db;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
 use reth_cli_util::sigsegv_handler;
-use reth_node_builder::{NodeBuilder, WithLaunchContext};
+use reth_node_builder::{FullNodeComponents, NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use tracing::info;
 
@@ -79,6 +79,11 @@ fn main() {
                 if let Some(rpc) = extend_rpc {
                     ctx.modules.merge_configured(rpc.into_rpc())?;
                 }
+
+                // Register state dump RPC (strataee_dumpState)
+                let provider = ctx.node().provider().clone();
+                let state_dump_rpc = StateDumpRpc::new(Arc::new(provider));
+                ctx.modules.merge_configured(state_dump_rpc.into_rpc())?;
 
                 Ok(())
             });

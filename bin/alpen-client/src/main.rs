@@ -42,6 +42,7 @@ use alpen_reth_exex::StateDiffGenerator;
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
+use alpen_reth_rpc::{StateDumpRpc, StateDumpRpcApiServer};
 #[cfg(feature = "sequencer")]
 use bitcoind_async_client::{traits::Wallet as _, Auth, Client as BtcClient};
 use clap::Parser;
@@ -51,7 +52,7 @@ use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
 use reth_cli_runner::CliRunner;
 use reth_cli_util::sigsegv_handler;
 use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
-use reth_node_builder::{NodeBuilder, WithLaunchContext};
+use reth_node_builder::{FullNodeComponents, NodeBuilder, WithLaunchContext};
 use reth_node_core::args::LogArgs;
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
@@ -322,12 +323,19 @@ fn main() {
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
             }
 
+            // Register custom RPC modules
             #[cfg(feature = "sequencer")]
             if ext.sequencer {
                 node_builder = node_builder.extend_rpc_modules({
                     let storage = storage.clone();
                     let consensus_watcher = consensus_watcher.clone();
                     move |ctx| {
+                        // State dump RPC (strataee_dumpState)
+                        let provider = ctx.node().provider().clone();
+                        let state_dump_rpc = StateDumpRpc::new(Arc::new(provider));
+                        ctx.modules.merge_configured(state_dump_rpc.into_rpc())?;
+
+                        // Block status RPC (strataee_getBlockStatus)
                         let block_status = rpc::BlockStatusRpc::new(storage, consensus_watcher);
                         ctx.modules.merge_configured(block_status.into_rpc())?;
                         Ok(())

@@ -35,12 +35,14 @@ class EeOLEnv(flexitest.EnvConfig):
         mesh_bootnodes: bool = False,
         pre_generate_blocks: int = 0,
         seal_epoch_slots: int | None = None,
+        custom_chain: str = "dev",
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
         self.pure_discovery = pure_discovery
         self.mesh_bootnodes = mesh_bootnodes
         self.pre_generate_blocks = pre_generate_blocks
+        self.custom_chain = custom_chain
         self.epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
@@ -71,6 +73,7 @@ class EeOLEnv(flexitest.EnvConfig):
             self.pure_discovery,
             bitcoin_service=bitcoin,
             ol_endpoint=ol_endpoint,
+            custom_chain=self.custom_chain,
         )
 
         services = {**alpen_services, **strata_services}

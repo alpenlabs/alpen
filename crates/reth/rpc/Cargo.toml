@@ -12,6 +12,7 @@ alpen-reth-statediff = { workspace = true, features = ["serde"] }
 strata-proofimpl-evm-ee-stf.workspace = true
 strata-rpc-utils.workspace = true
 
+alloy-consensus.workspace = true
 alloy-eips.workspace = true
 alloy-network.workspace = true
 alloy-primitives.workspace = true
@@ -21,6 +22,7 @@ jsonrpsee = { workspace = true, features = ["server", "macros"] }
 jsonrpsee-types.workspace = true
 reqwest.workspace = true
 reth-chainspec.workspace = true
+reth-db.workspace = true
 reth-evm.workspace = true
 reth-node-api.workspace = true
 reth-node-builder.workspace = true
