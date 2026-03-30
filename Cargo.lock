@@ -6253,54 +6253,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integration-tests"
-version = "0.3.0-alpha.1"
-dependencies = [
- "anyhow",
- "bitcoin",
- "bitcoin-bosd",
- "bitcoind-async-client",
- "borsh",
- "corepc-node",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "ssz",
- "strata-asm-common",
- "strata-asm-manifest-types",
- "strata-asm-params",
- "strata-asm-proto-administration",
- "strata-asm-proto-bridge-v1",
- "strata-asm-proto-checkpoint",
- "strata-asm-proto-checkpoint-v0",
- "strata-asm-spec",
- "strata-asm-txs-admin",
- "strata-asm-txs-bridge-v1",
- "strata-asm-worker",
- "strata-bridge-types",
- "strata-btc-types",
- "strata-checkpoint-types-ssz",
- "strata-codec",
- "strata-codec-utils",
- "strata-crypto",
- "strata-db-types",
- "strata-identifiers",
- "strata-l1-envelope-fmt",
- "strata-l1-txfmt",
- "strata-merkle",
- "strata-ol-chain-types-new",
- "strata-ol-stf",
- "strata-params",
- "strata-predicate",
- "strata-primitives",
- "strata-state",
- "strata-tasks",
- "strata-test-utils",
- "strata-test-utils-btcio",
- "strata-test-utils-l2",
- "tokio",
-]
-
-[[package]]
 name = "interprocess"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
