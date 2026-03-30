@@ -8,6 +8,7 @@ use strata_asm_spec as _;
 pub mod asm_worker_context;
 mod asm_worker_submitter;
 pub mod chain_worker_context;
+pub mod checkpoint_sync;
 pub mod checkpoint_verification;
 pub mod exec_worker_context;
 mod fcm;
