@@ -12,14 +12,17 @@ use strata_codec_utils::CodecSsz;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
-use strata_db_types::{traits::DatabaseBackend, types::L1BundleStatus};
+use strata_db_types::types::L1BundleStatus;
 use strata_identifiers::{Epoch, OLBlockId};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_types::RpcDuty;
 use strata_ol_sequencer::{BlockCompletionData, extract_duties};
-use strata_primitives::{HexBytes64, buf::Buf64};
-use strata_storage::{NodeStorage, ops::writer::Context};
+use strata_primitives::{
+    HexBytes32, HexBytes64,
+    buf::{Buf32, Buf64},
+};
+use strata_storage::NodeStorage;
 use tracing::{info, warn};
 
 use crate::rpc::errors::{db_error, internal_error, not_found_error};
@@ -171,25 +174,38 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         Ok(())
     }
 
-    async fn complete_payload_signature(&self, payload_idx: u64, sig: HexBytes64) -> RpcResult<()> {
-        let writer_ops =
-            Context::new(self.storage.db().writer_db()).into_ops(self.storage.pool().clone());
+    async fn complete_payload_signature(
+        &self,
+        payload_idx: u64,
+        expected_sighash: HexBytes32,
+        sig: HexBytes64,
+    ) -> RpcResult<()> {
+        let l1_writer = self.storage.l1_writer();
 
-        let mut entry = writer_ops
+        let mut entry = l1_writer
             .get_payload_entry_by_idx_async(payload_idx)
             .await
             .map_err(db_error)?
             .ok_or_else(|| not_found_error(format!("payload entry {payload_idx} not found")))?;
 
-        if !matches!(entry.status, L1BundleStatus::PendingPayloadSign(_)) {
+        let stored_sighash = match &entry.status {
+            L1BundleStatus::PendingPayloadSign(h) => *h,
+            _ => {
+                return Err(internal_error(format!(
+                    "payload {payload_idx} is not pending signature (status: {:?})",
+                    entry.status
+                )));
+            }
+        };
+
+        if stored_sighash != Buf32(expected_sighash.0) {
             return Err(internal_error(format!(
-                "payload {payload_idx} is not pending signature (status: {:?})",
-                entry.status
+                "sighash mismatch for payload {payload_idx}: signature is for a stale envelope"
             )));
         }
 
         entry.payload_signature = Some(Buf64(sig.0));
-        writer_ops
+        l1_writer
             .put_payload_entry_async(payload_idx, entry)
             .await
             .map_err(db_error)?;

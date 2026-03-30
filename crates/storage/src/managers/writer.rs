@@ -31,4 +31,12 @@ impl L1WriterManager {
     ) -> DbResult<Option<BundledPayloadEntry>> {
         self.ops.get_payload_entry_by_idx_async(idx).await
     }
+
+    pub async fn put_payload_entry_async(
+        &self,
+        idx: u64,
+        entry: BundledPayloadEntry,
+    ) -> DbResult<()> {
+        self.ops.put_payload_entry_async(idx, entry).await
+    }
 }
