@@ -47,7 +47,7 @@ impl<P: ProgramType> AsyncService for ProverService<P> {
         Ok(())
     }
 
-    async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             ProverCommand::SubmitTask {
                 task_id,
@@ -90,7 +90,7 @@ impl<P: ProgramType> AsyncService for ProverService<P> {
             }
             ProverCommand::GetStatusByUuid { uuid, completion } => {
                 debug!(%uuid, "Processing GetStatusByUuid command");
-                let result = state.get_status_by_uuid(uuid).ok();
+                let result = state.get_status_by_uuid(&uuid).ok();
                 if let Some(status) = result {
                     completion.send(status).await;
                 }
@@ -100,7 +100,7 @@ impl<P: ProgramType> AsyncService for ProverService<P> {
                 completion,
             } => {
                 debug!(?task_id, "Processing GetStatusByTaskId command (internal)");
-                let result = state.get_status(task_id).ok();
+                let result = state.get_status(&task_id).ok();
                 if let Some(status) = result {
                     completion.send(status).await;
                 }

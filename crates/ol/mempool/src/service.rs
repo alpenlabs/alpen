@@ -44,21 +44,21 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
         Ok(())
     }
 
-    async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             MempoolInputMessage::Command(cmd) => match cmd {
                 MempoolCommand::SubmitTransaction { tx, completion } => {
-                    let result = state.handle_submit_transaction(tx.clone()).await;
+                    let result = state.handle_submit_transaction(tx).await;
                     completion.send(result).await;
                 }
 
                 MempoolCommand::GetTransactions { completion, limit } => {
-                    let result = state.handle_get_transactions(*limit).await;
+                    let result = state.handle_get_transactions(limit).await;
                     completion.send(result).await;
                 }
 
                 MempoolCommand::ReportInvalidTransactions { txs, completion } => {
-                    state.handle_report_invalid_transactions(txs.clone());
+                    state.handle_report_invalid_transactions(txs);
                     completion.send(()).await;
                 }
             },
@@ -116,7 +116,7 @@ mod tests {
             completion,
         };
 
-        MempoolService::process_input(&mut state, &MempoolInputMessage::Command(command))
+        MempoolService::process_input(&mut state, MempoolInputMessage::Command(command))
             .await
             .expect("Should process command");
 
@@ -157,7 +157,7 @@ mod tests {
                     limit,
                 };
 
-                MempoolService::process_input(&mut state, &MempoolInputMessage::Command(command))
+                MempoolService::process_input(&mut state, MempoolInputMessage::Command(command))
                     .await
                     .expect("Should process command");
 
@@ -213,7 +213,7 @@ mod tests {
             completion,
         };
 
-        MempoolService::process_input(&mut state, &MempoolInputMessage::Command(command))
+        MempoolService::process_input(&mut state, MempoolInputMessage::Command(command))
             .await
             .expect("Should process command");
 

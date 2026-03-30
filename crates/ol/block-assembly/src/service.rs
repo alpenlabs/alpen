@@ -60,13 +60,13 @@ where
         Ok(())
     }
 
-    async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         // Lazily clean up expired templates on every command.
         state.state_mut().cleanup_expired_templates();
 
         match input {
             BlockasmCommand::GenerateBlockTemplate { config, completion } => {
-                let result = generate_block_template(state, config.clone()).await;
+                let result = generate_block_template(state, config).await;
                 _ = completion.send(result).await;
             }
 
@@ -74,7 +74,7 @@ where
                 parent_block_id,
                 completion,
             } => {
-                let result = get_block_template(state, *parent_block_id);
+                let result = get_block_template(state, parent_block_id);
                 _ = completion.send(result).await;
             }
 
@@ -83,7 +83,7 @@ where
                 data,
                 completion,
             } => {
-                let result = complete_block_template(state, *template_id, data.clone());
+                let result = complete_block_template(state, template_id, data);
                 _ = completion.send(result).await;
             }
         }
@@ -273,7 +273,7 @@ mod tests {
         let config = create_test_block_generation_config();
         let (completion, _rx) = create_completion();
         let cmd = BlockasmCommand::GenerateBlockTemplate { config, completion };
-        BlockasmService::<_, _, _>::process_input(&mut state, &cmd)
+        BlockasmService::<_, _, _>::process_input(&mut state, cmd)
             .await
             .unwrap();
 

@@ -248,8 +248,8 @@ impl<C: SequencerContext> AsyncService for SequencerService<C> {
         Ok(())
     }
 
-    async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
-        match input {
+    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
+        match &input {
             SequencerEvent::Tick => process_tick(state).await,
             SequencerEvent::GenerationTick => process_generation_tick(state).await,
         }

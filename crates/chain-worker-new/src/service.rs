@@ -36,20 +36,20 @@ impl SyncService for ChainWorkerService {
         Ok(())
     }
 
-    fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
+    fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             ChainWorkerMessage::TryExecBlock(olbc, completion) => {
-                let res = state.try_exec_block(olbc);
+                let res = state.try_exec_block(&olbc);
                 completion.send_blocking(res);
             }
 
             ChainWorkerMessage::UpdateSafeTip(olbc, completion) => {
-                let res = state.update_cur_tip(*olbc);
+                let res = state.update_cur_tip(olbc);
                 completion.send_blocking(res);
             }
 
             ChainWorkerMessage::FinalizeEpoch(epoch, completion) => {
-                let res = state.finalize_epoch(*epoch);
+                let res = state.finalize_epoch(epoch);
                 completion.send_blocking(res);
             }
         }
