@@ -236,7 +236,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         // Get all epoch commitments for this epoch index
         let epoch_commitments = self
             .ol_checkpoint_mgr
-            .get_epoch_commitments_at_blocking(epoch as u64)?;
+            .get_epoch_commitments_at_blocking(epoch)?;
 
         // Fetch the summary for each commitment
         let mut summaries = Vec::with_capacity(epoch_commitments.len());

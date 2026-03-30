@@ -12,10 +12,31 @@ from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
+_DBTOOL_COMMANDS_REQUIRING_L1_REORG_SAFE_DEPTH = {
+    "get-syncinfo",
+    "get-checkpoint",
+    "get-ol-state",
+    "revert-ol-state",
+}
+
+
+def _inject_l1_reorg_safe_depth(datadir: str, args: list[str]) -> list[str]:
+    """Inject l1_reorg_safe_depth option for dbtool commands that derive status/finality."""
+    if not args:
+        return args
+    if args[0] not in _DBTOOL_COMMANDS_REQUIRING_L1_REORG_SAFE_DEPTH:
+        return args
+    if "--l1-reorg-safe-depth" in args:
+        return args
+
+    l1_reorg_safe_depth = load_rollup_l1_reorg_safe_depth(datadir)
+    return [*args, "--l1-reorg-safe-depth", str(l1_reorg_safe_depth)]
+
 
 def run_dbtool(datadir: str, *args: str, timeout: int = 60) -> tuple[int, str, str]:
     """Run strata-dbtool against a datadir and return (code, stdout, stderr)."""
-    cmd = ["strata-dbtool", "-d", datadir, *args]
+    arg_list = _inject_l1_reorg_safe_depth(datadir, list(args))
+    cmd = ["strata-dbtool", "-d", datadir, *arg_list]
     logger.info("Running command: %s", " ".join(cmd))
     result = subprocess.run(
         cmd,
@@ -71,12 +92,23 @@ def run_dbtool_json(datadir: str, *args: str, timeout: int = 60) -> dict[str, An
     return extract_json_from_output(stdout)
 
 
-def load_rollup_genesis_height(datadir: str) -> int:
-    """Load genesis L1 height from rollup-params.json in the node datadir."""
+def _load_rollup_params(datadir: str) -> dict[str, Any]:
+    """Load rollup params from rollup-params.json in the node datadir."""
     rollup_path = Path(datadir) / "rollup-params.json"
     with open(rollup_path) as f:
-        params = json.load(f)
+        return json.load(f)
+
+
+def load_rollup_genesis_height(datadir: str) -> int:
+    """Load genesis L1 height from rollup-params.json in the node datadir."""
+    params = _load_rollup_params(datadir)
     return int(params["genesis_l1_view"]["blk"]["height"])
+
+
+def load_rollup_l1_reorg_safe_depth(datadir: str) -> int:
+    """Load l1_reorg_safe_depth from rollup-params.json in the node datadir."""
+    params = _load_rollup_params(datadir)
+    return int(params["l1_reorg_safe_depth"])
 
 
 def ol_genesis_slot() -> int:

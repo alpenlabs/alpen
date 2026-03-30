@@ -1,15 +1,14 @@
-use strata_csm_types::{CheckpointState, ClientState};
+use strata_csm_types::CheckpointState;
 use strata_service::{AsyncServiceInput, ServiceInput};
 use tokio::sync::{mpsc, watch};
 use tracing::trace;
 
 use crate::message::ForkChoiceMessage;
 
-#[expect(clippy::large_enum_variant, reason = "used for fork choice manager")]
 #[derive(Clone, Debug)]
 pub enum FcmEvent {
     NewFcmMsg(ForkChoiceMessage),
-    NewStateUpdate(ClientState),
+    NewStateUpdate,
     Abort,
 }
 
@@ -44,7 +43,7 @@ impl AsyncServiceInput for FcmInput {
                 Some(msg)
             }
             c = wait_for_client_change(&mut self.clstate_rx) => {
-                let msg = c.map(FcmEvent::NewStateUpdate).unwrap_or_else(|_| {
+                let msg = c.map(|_| FcmEvent::NewStateUpdate).unwrap_or_else(|_| {
                     trace!("ClientState update channel closed");
                     FcmEvent::Abort
                 });
@@ -55,11 +54,11 @@ impl AsyncServiceInput for FcmInput {
     }
 }
 
-/// Waits until there's a new client state and returns the client state.
+/// Waits until there's a new client state update.
 async fn wait_for_client_change(
     cl_rx: &mut watch::Receiver<CheckpointState>,
-) -> Result<ClientState, watch::error::RecvError> {
+) -> Result<(), watch::error::RecvError> {
     cl_rx.changed().await?;
-    let state = cl_rx.borrow_and_update().clone();
-    Ok(state.client_state)
+    cl_rx.borrow_and_update();
+    Ok(())
 }

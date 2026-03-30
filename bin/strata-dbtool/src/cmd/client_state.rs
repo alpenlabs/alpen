@@ -1,7 +1,6 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{ClientStateDatabase, DatabaseBackend};
-use strata_identifiers::EpochCommitment;
 use strata_primitives::l1::L1BlockCommitment;
 
 use crate::{
@@ -57,15 +56,4 @@ pub(crate) fn get_client_state_update(
 
     // Use the output utility
     output(&client_state_info, args.output_format)
-}
-
-/// Get declared finalized epoch from latest client state.
-pub(crate) fn get_declared_final_epoch(
-    db: &impl DatabaseBackend,
-) -> Result<Option<EpochCommitment>, DisplayedError> {
-    let latest_state = db
-        .client_state_db()
-        .get_latest_client_state()
-        .internal_error("Failed to get latest client state")?;
-    Ok(latest_state.and_then(|(_, state)| state.get_declared_final_epoch()))
 }

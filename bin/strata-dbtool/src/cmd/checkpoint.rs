@@ -2,12 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use argh::FromArgs;
 use strata_asm_logs::CheckpointTipUpdate;
+use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::{
     traits::{DatabaseBackend, L1Database, OLCheckpointDatabase},
-    types::{OLCheckpointEntry, OLCheckpointStatus},
+    types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry},
 };
-use strata_identifiers::{Epoch, L1Height};
+use strata_identifiers::{Epoch, EpochCommitment, L1Height, Slot};
 
 use crate::{
     cli::OutputFormat,
@@ -29,6 +30,11 @@ pub(crate) struct GetCheckpointArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
+
+    /// L1 reorg-safe depth used to determine whether an observed checkpoint is confirmed or
+    /// finalized
+    #[argh(option)]
+    pub(crate) l1_reorg_safe_depth: u32,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -55,6 +61,140 @@ pub(crate) struct GetEpochSummaryArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
+}
+
+pub(crate) struct CheckpointRecord {
+    pub(crate) payload: CheckpointPayload,
+    pub(crate) signing: Option<L1PayloadIntentIndex>,
+    pub(crate) l1_observation: Option<OLCheckpointL1ObservationEntry>,
+}
+
+impl CheckpointRecord {
+    pub(crate) fn to_status_record(&self) -> CheckpointStatusRecord {
+        CheckpointStatusRecord {
+            signing: self.signing,
+            l1_observation: self.l1_observation,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CheckpointStatusRecord {
+    pub(crate) signing: Option<L1PayloadIntentIndex>,
+    pub(crate) l1_observation: Option<OLCheckpointL1ObservationEntry>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CheckpointStatus {
+    Unsigned,
+    Signed,
+    Confirmed,
+    Finalized,
+}
+
+impl CheckpointStatus {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Unsigned => "Unsigned",
+            Self::Signed => "Signed",
+            Self::Confirmed => "Confirmed",
+            Self::Finalized => "Finalized",
+        }
+    }
+}
+
+pub(crate) fn derive_checkpoint_status(
+    status_record: CheckpointStatusRecord,
+    current_l1_tip: L1Height,
+    l1_reorg_safe_depth: u32,
+) -> CheckpointStatus {
+    match (status_record.signing, status_record.l1_observation) {
+        (None, None) => CheckpointStatus::Unsigned,
+        (Some(_), None) => CheckpointStatus::Signed,
+        (_, Some(observation)) => {
+            let confirmations = current_l1_tip
+                .saturating_sub(observation.l1_block.height())
+                .saturating_add(1);
+            let is_finalized = confirmations >= l1_reorg_safe_depth.max(1);
+            if is_finalized {
+                CheckpointStatus::Finalized
+            } else {
+                CheckpointStatus::Confirmed
+            }
+        }
+    }
+}
+
+/// Resolves canonical OL checkpoint commitment at an epoch.
+pub(crate) fn get_canonical_epoch_commitment_at(
+    db: &impl DatabaseBackend,
+    epoch: Epoch,
+) -> Result<Option<EpochCommitment>, DisplayedError> {
+    if epoch == 0 {
+        return Ok(None);
+    }
+
+    let commitments = db
+        .ol_checkpoint_db()
+        .get_epoch_commitments_at(epoch)
+        .internal_error(format!(
+            "Failed to get OL checkpoint commitments at epoch {epoch}"
+        ))?;
+
+    Ok(commitments.first().copied())
+}
+
+/// Gets the derived checkpoint status for a canonical commitment.
+pub(crate) fn get_checkpoint_status_by_commitment(
+    db: &impl DatabaseBackend,
+    checkpoint_epoch: Epoch,
+    commitment: EpochCommitment,
+    l1_reorg_safe_depth: u32,
+) -> Result<Option<CheckpointStatus>, DisplayedError> {
+    let payload = db
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint payload at epoch {checkpoint_epoch}"
+        ))?;
+    let signing = db
+        .ol_checkpoint_db()
+        .get_checkpoint_signing_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint signing entry at epoch {checkpoint_epoch}"
+        ))?;
+    let l1_observation = db
+        .ol_checkpoint_db()
+        .get_checkpoint_l1_observation_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint L1 observation entry at epoch {checkpoint_epoch}"
+        ))?;
+    let Some(_) = payload else {
+        return Ok(None);
+    };
+
+    let current_l1_tip = get_l1_chain_tip(db)?.0;
+    let status_record = CheckpointStatusRecord {
+        signing,
+        l1_observation,
+    };
+    Ok(Some(derive_checkpoint_status(
+        status_record,
+        current_l1_tip,
+        l1_reorg_safe_depth,
+    )))
+}
+
+/// Gets the derived checkpoint status for an epoch from OL checkpoint DB facts.
+pub(crate) fn get_checkpoint_status_at_epoch(
+    db: &impl DatabaseBackend,
+    checkpoint_epoch: Epoch,
+    l1_reorg_safe_depth: u32,
+) -> Result<Option<CheckpointStatus>, DisplayedError> {
+    let Some(commitment) = get_canonical_epoch_commitment_at(db, checkpoint_epoch)? else {
+        return Ok(None);
+    };
+    get_checkpoint_status_by_commitment(db, checkpoint_epoch, commitment, l1_reorg_safe_depth)
 }
 
 /// Count unique checkpoints found in ASM logs starting from a given L1 height.
@@ -112,15 +252,40 @@ fn collect_checkpoint_epochs_in_l1_logs(
 pub(crate) fn get_checkpoint_at_epoch(
     db: &impl DatabaseBackend,
     epoch: Epoch,
-) -> Result<Option<OLCheckpointEntry>, DisplayedError> {
-    // OL checkpoints are created from epoch 1
-    if epoch == 0 {
+) -> Result<Option<CheckpointRecord>, DisplayedError> {
+    let Some(commitment) = get_canonical_epoch_commitment_at(db, epoch)? else {
         return Ok(None);
-    }
+    };
 
-    db.ol_checkpoint_db()
-        .get_checkpoint(epoch)
-        .internal_error(format!("Failed to get OL checkpoint at epoch {epoch}"))
+    let Some(payload) = db
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint payload at epoch {epoch}"
+        ))?
+    else {
+        return Ok(None);
+    };
+
+    let signing = db
+        .ol_checkpoint_db()
+        .get_checkpoint_signing_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint signing entry at epoch {epoch}"
+        ))?;
+
+    let l1_observation = db
+        .ol_checkpoint_db()
+        .get_checkpoint_l1_observation_entry(commitment)
+        .internal_error(format!(
+            "Failed to get OL checkpoint L1 observation entry at epoch {epoch}"
+        ))?;
+
+    Ok(Some(CheckpointRecord {
+        payload,
+        signing,
+        l1_observation,
+    }))
 }
 
 /// Get the range of checkpoint epochs (1 to latest).
@@ -129,10 +294,65 @@ pub(crate) fn get_checkpoint_at_epoch(
 pub(crate) fn get_checkpoint_epoch_range(
     db: &impl DatabaseBackend,
 ) -> Result<Option<(Epoch, Epoch)>, DisplayedError> {
+    get_last_ol_checkpoint_epoch(db)
+        .map(|opt| opt.and_then(|last_epoch| (last_epoch >= 1).then_some((1, last_epoch))))
+}
+
+/// Get last written OL checkpoint payload epoch number.
+pub(crate) fn get_last_ol_checkpoint_epoch(
+    db: &impl DatabaseBackend,
+) -> Result<Option<Epoch>, DisplayedError> {
     db.ol_checkpoint_db()
-        .get_last_checkpoint_epoch()
+        .get_last_checkpoint_payload_epoch()
         .internal_error("Failed to get last OL checkpoint epoch")
-        .map(|opt| opt.and_then(|last| (last >= 1).then_some((1, last))))
+        .map(|commitment| commitment.map(|commitment| commitment.epoch()))
+}
+
+/// Gets the last checkpointed OL slot from checkpoint payload tip data.
+pub(crate) fn get_latest_checkpoint_last_slot(
+    db: &impl DatabaseBackend,
+) -> Result<Slot, DisplayedError> {
+    let Some(latest_epoch_commitment) = db
+        .ol_checkpoint_db()
+        .get_last_checkpoint_payload_epoch()
+        .internal_error("Failed to get last checkpoint epoch")?
+    else {
+        return Ok(0);
+    };
+
+    let checkpoint_payload = db
+        .ol_checkpoint_db()
+        .get_checkpoint_payload_entry(latest_epoch_commitment)
+        .internal_error("Failed to get OL checkpoint payload")?
+        .ok_or_else(|| {
+            DisplayedError::InternalError(
+                "Last checkpoint epoch exists but checkpoint payload is missing".to_string(),
+                Box::new(latest_epoch_commitment),
+            )
+        })?;
+
+    Ok(checkpoint_payload.new_tip().l2_commitment().slot())
+}
+
+/// Gets the latest checkpoint epoch commitment whose derived status is `Finalized`.
+pub(crate) fn get_latest_finalized_checkpoint_epoch(
+    db: &impl DatabaseBackend,
+    l1_reorg_safe_depth: u32,
+) -> Result<Option<EpochCommitment>, DisplayedError> {
+    let Some((start_epoch, end_epoch)) = get_checkpoint_epoch_range(db)? else {
+        return Ok(None);
+    };
+
+    for epoch in (start_epoch..=end_epoch).rev() {
+        let Some(status) = get_checkpoint_status_at_epoch(db, epoch, l1_reorg_safe_depth)? else {
+            continue;
+        };
+        if status == CheckpointStatus::Finalized {
+            return get_canonical_epoch_commitment_at(db, epoch);
+        }
+    }
+
+    Ok(None)
 }
 
 /// Get checkpoint details by epoch.
@@ -141,17 +361,24 @@ pub(crate) fn get_checkpoint(
     args: GetCheckpointArgs,
 ) -> Result<(), DisplayedError> {
     let checkpoint_epoch = args.checkpoint_epoch;
-    let entry = get_checkpoint_at_epoch(db, checkpoint_epoch)?.ok_or_else(|| {
+    let checkpoint = get_checkpoint_at_epoch(db, checkpoint_epoch)?.ok_or_else(|| {
         DisplayedError::UserError(
             "No checkpoint found at epoch".to_string(),
             Box::new(checkpoint_epoch),
         )
     })?;
 
-    let tip = entry.checkpoint.new_tip();
-    let (status, intent_index) = match &entry.status {
-        OLCheckpointStatus::Unsigned => ("Unsigned".to_string(), None),
-        OLCheckpointStatus::Signed(idx) => ("Signed".to_string(), Some(*idx)),
+    let current_l1_tip = get_l1_chain_tip(db)?.0;
+    let tip = checkpoint.payload.new_tip();
+    let derived_status = derive_checkpoint_status(
+        checkpoint.to_status_record(),
+        current_l1_tip,
+        args.l1_reorg_safe_depth,
+    );
+    let intent_index = if derived_status == CheckpointStatus::Signed {
+        checkpoint.signing
+    } else {
+        None
     };
 
     // Create the output data structure
@@ -161,11 +388,17 @@ pub(crate) fn get_checkpoint(
         tip_l1_height: tip.l1_height(),
         tip_ol_slot: tip.l2_commitment().slot(),
         tip_ol_blkid: *tip.l2_commitment().blkid(),
-        ol_state_diff_len: entry.checkpoint.sidecar().ol_state_diff().len(),
-        ol_logs_len: entry.checkpoint.sidecar().ol_logs().len(),
-        proof_len: entry.checkpoint.proof().len(),
-        status,
+        ol_state_diff_len: checkpoint.payload.sidecar().ol_state_diff().len(),
+        ol_logs_len: checkpoint.payload.sidecar().ol_logs().len(),
+        proof_len: checkpoint.payload.proof().len(),
+        status: derived_status.as_str().to_string(),
         intent_index,
+        observed_l1_height: checkpoint
+            .l1_observation
+            .map(|observation| observation.l1_block.height()),
+        observed_l1_blkid: checkpoint
+            .l1_observation
+            .map(|observation| *observation.l1_block.blkid()),
     };
 
     // Use the output utility
@@ -205,33 +438,33 @@ pub(crate) fn get_checkpoints_summary(
     let checkpoint_epochs_in_l1 = collect_checkpoint_epochs_in_l1_logs(db, args.height_from)?;
     let checkpoints_in_l1_blocks = checkpoint_epochs_in_l1.len() as u64;
 
-    // Count checkpoint entries in OL checkpoint DB filtered by checkpoint tip L1 height.
-    // Iterate over the canonical checkpoint epoch range (starting at epoch 1).
+    let epoch_range = get_checkpoint_epoch_range(db)?;
+    let expected_checkpoints_count = epoch_range.map(|(_, end)| u64::from(end)).unwrap_or(0);
+
+    // Collect all epochs that have a checkpoint in the OL checkpoint DB.
+    let mut epochs_in_db = BTreeSet::new();
     let mut checkpoints_found_in_db = 0u64;
-    if let Some((start_epoch, end_epoch)) = get_checkpoint_epoch_range(db)? {
+    if let Some((start_epoch, end_epoch)) = epoch_range {
         for epoch in start_epoch..=end_epoch {
-            let Some(entry) = get_checkpoint_at_epoch(db, epoch)? else {
+            let Some(checkpoint) = get_checkpoint_at_epoch(db, epoch)? else {
                 continue;
             };
-            if entry.checkpoint.new_tip().l1_height() >= start_height {
+            epochs_in_db.insert(epoch);
+            if checkpoint.payload.new_tip().l1_height() >= start_height {
                 checkpoints_found_in_db += 1;
             }
         }
     }
 
-    // Keep expected scope aligned with the DB-filtered range.
-    let expected_checkpoints_count = checkpoints_found_in_db;
-
     // Track L1-observed checkpoints that do not currently exist in OL checkpoint DB.
-    let mut unexpected_checkpoints_info: Vec<UnexpectedCheckpointInfo> = Vec::new();
-    for (epoch, l1_height) in checkpoint_epochs_in_l1 {
-        if get_checkpoint_at_epoch(db, epoch)?.is_none() {
-            unexpected_checkpoints_info.push(UnexpectedCheckpointInfo {
-                checkpoint_epoch: epoch,
-                l1_height,
-            });
-        }
-    }
+    let unexpected_checkpoints_info: Vec<UnexpectedCheckpointInfo> = checkpoint_epochs_in_l1
+        .iter()
+        .filter(|(epoch, _)| !epochs_in_db.contains(epoch))
+        .map(|(&epoch, &l1_height)| UnexpectedCheckpointInfo {
+            checkpoint_epoch: epoch,
+            l1_height,
+        })
+        .collect();
 
     // Create the output data structure
     let summary_info = CheckpointsSummaryInfo {
@@ -251,24 +484,16 @@ pub(crate) fn get_epoch_summary(
     args: GetEpochSummaryArgs,
 ) -> Result<(), DisplayedError> {
     let epoch = args.epoch;
-
-    let epoch_commitments = db
-        .ol_checkpoint_db()
-        .get_epoch_commitments_at(u64::from(epoch))
-        .internal_error(format!(
-            "Failed to get OL epoch commitments for epoch {epoch}"
-        ))?;
-
-    if epoch_commitments.is_empty() {
-        return Err(DisplayedError::UserError(
+    let commitment = get_canonical_epoch_commitment_at(db, epoch)?.ok_or_else(|| {
+        DisplayedError::UserError(
             "No epoch summary found for epoch".to_string(),
             Box::new(epoch),
-        ));
-    }
+        )
+    })?;
 
     let epoch_summary = db
         .ol_checkpoint_db()
-        .get_epoch_summary(epoch_commitments[0])
+        .get_epoch_summary(commitment)
         .internal_error(format!("Failed to get OL epoch summary for epoch {epoch}"))?
         .ok_or_else(|| {
             DisplayedError::UserError(
@@ -285,4 +510,75 @@ pub(crate) fn get_epoch_summary(
 
     // Use the output utility
     output(&epoch_info, args.output_format)
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::{L1BlockCommitment, L1BlockId};
+
+    use super::*;
+
+    fn observation(height: L1Height) -> OLCheckpointL1ObservationEntry {
+        OLCheckpointL1ObservationEntry::new(L1BlockCommitment::new(height, L1BlockId::default()))
+    }
+
+    #[test]
+    fn derive_status_unsigned_when_no_signing_or_observation() {
+        let status_record = CheckpointStatusRecord {
+            signing: None,
+            l1_observation: None,
+        };
+        let status = derive_checkpoint_status(status_record, 100, 6);
+        assert_eq!(status, CheckpointStatus::Unsigned);
+    }
+
+    #[test]
+    fn derive_status_signed_when_signing_exists_without_observation() {
+        let status_record = CheckpointStatusRecord {
+            signing: Some(7),
+            l1_observation: None,
+        };
+        let status = derive_checkpoint_status(status_record, 100, 6);
+        assert_eq!(status, CheckpointStatus::Signed);
+    }
+
+    #[test]
+    fn derive_status_confirmed_when_observed_but_below_depth() {
+        let status_record = CheckpointStatusRecord {
+            signing: Some(7),
+            l1_observation: Some(observation(100)),
+        };
+        let status = derive_checkpoint_status(status_record, 103, 6);
+        assert_eq!(status, CheckpointStatus::Confirmed);
+    }
+
+    #[test]
+    fn derive_status_finalized_when_observed_at_or_above_depth() {
+        let status_record = CheckpointStatusRecord {
+            signing: Some(7),
+            l1_observation: Some(observation(100)),
+        };
+        let status = derive_checkpoint_status(status_record, 105, 6);
+        assert_eq!(status, CheckpointStatus::Finalized);
+    }
+
+    #[test]
+    fn derive_status_confirmed_when_observed_without_signing() {
+        let status_record = CheckpointStatusRecord {
+            signing: None,
+            l1_observation: Some(observation(100)),
+        };
+        let status = derive_checkpoint_status(status_record, 103, 6);
+        assert_eq!(status, CheckpointStatus::Confirmed);
+    }
+
+    #[test]
+    fn derive_status_finalized_when_depth_is_zero() {
+        let status_record = CheckpointStatusRecord {
+            signing: Some(7),
+            l1_observation: Some(observation(100)),
+        };
+        let status = derive_checkpoint_status(status_record, 100, 0);
+        assert_eq!(status, CheckpointStatus::Finalized);
+    }
 }

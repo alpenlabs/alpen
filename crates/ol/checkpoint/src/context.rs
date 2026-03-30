@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::types::OLCheckpointEntry;
-use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
-use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec};
+use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 
 pub(crate) type StateDiffRaw = Vec<u8>;
@@ -20,12 +20,12 @@ pub(crate) type StateDiffRaw = Vec<u8>;
 /// with mock implementations and future production providers.
 pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     /// Get the last summarized epoch index, if any.
-    fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<u64>>;
+    fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<Epoch>>;
 
     /// Get the canonical epoch commitment for a given epoch index.
     fn get_canonical_epoch_commitment_at(
         &self,
-        index: u64,
+        index: Epoch,
     ) -> anyhow::Result<Option<EpochCommitment>>;
 
     /// Get the epoch summary for a commitment.
@@ -34,14 +34,21 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
         commitment: EpochCommitment,
     ) -> anyhow::Result<Option<EpochSummary>>;
 
-    /// Get a checkpoint entry for the given epoch.
-    fn get_checkpoint(&self, epoch: Epoch) -> anyhow::Result<Option<OLCheckpointEntry>>;
+    /// Get a checkpoint payload entry for the given epoch commitment.
+    fn get_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointPayload>>;
 
-    /// Get the last checkpointed epoch, if any.
-    fn get_last_checkpoint_epoch(&self) -> anyhow::Result<Option<Epoch>>;
+    /// Get the last checkpointed payload commitment, if any.
+    fn get_last_checkpoint_payload_epoch(&self) -> anyhow::Result<Option<EpochCommitment>>;
 
-    /// Store a checkpoint entry for the given epoch.
-    fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> anyhow::Result<()>;
+    /// Store a checkpoint payload entry for the given epoch commitment.
+    fn put_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+        payload: CheckpointPayload,
+    ) -> anyhow::Result<()>;
 
     /// Gets proof bytes for the checkpoint.
     fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>>;
@@ -77,7 +84,7 @@ impl CheckpointWorkerContextImpl {
 }
 
 impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
-    fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<u64>> {
+    fn get_last_summarized_epoch(&self) -> anyhow::Result<Option<Epoch>> {
         self.storage
             .ol_checkpoint()
             .get_last_summarized_epoch_blocking()
@@ -86,7 +93,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
 
     fn get_canonical_epoch_commitment_at(
         &self,
-        index: u64,
+        index: Epoch,
     ) -> anyhow::Result<Option<EpochCommitment>> {
         self.storage
             .ol_checkpoint()
@@ -104,24 +111,31 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
-    fn get_checkpoint(&self, epoch: Epoch) -> anyhow::Result<Option<OLCheckpointEntry>> {
+    fn get_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointPayload>> {
         self.storage
             .ol_checkpoint()
-            .get_checkpoint_blocking(epoch)
+            .get_checkpoint_payload_entry_blocking(commitment)
             .map_err(Into::into)
     }
 
-    fn get_last_checkpoint_epoch(&self) -> anyhow::Result<Option<Epoch>> {
+    fn get_last_checkpoint_payload_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {
         self.storage
             .ol_checkpoint()
-            .get_last_checkpoint_epoch_blocking()
+            .get_last_checkpoint_payload_epoch_blocking()
             .map_err(Into::into)
     }
 
-    fn put_checkpoint(&self, epoch: Epoch, entry: OLCheckpointEntry) -> anyhow::Result<()> {
+    fn put_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+        payload: CheckpointPayload,
+    ) -> anyhow::Result<()> {
         self.storage
             .ol_checkpoint()
-            .put_checkpoint_blocking(epoch, entry)
+            .put_checkpoint_payload_entry_blocking(commitment, payload)
             .map_err(Into::into)
     }
 

@@ -63,6 +63,9 @@ impl OLRpcProvider for NodeRpcProvider {
         &self,
         epoch: u64,
     ) -> DbResult<Option<EpochCommitment>> {
+        let Ok(epoch) = Epoch::try_from(epoch) else {
+            return Ok(None);
+        };
         self.storage
             .ol_checkpoint()
             .get_canonical_epoch_commitment_at_async(epoch)

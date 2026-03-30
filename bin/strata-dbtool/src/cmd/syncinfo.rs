@@ -6,7 +6,11 @@ use strata_ledger_types::IStateAccessor;
 use strata_primitives::l1::L1BlockCommitment;
 
 use super::{
-    client_state::get_declared_final_epoch, l1::get_l1_chain_tip,
+    checkpoint::{
+        get_canonical_epoch_commitment_at, get_checkpoint_status_at_epoch,
+        get_latest_finalized_checkpoint_epoch,
+    },
+    l1::get_l1_chain_tip,
     ol::get_canonical_ol_block_at_slot,
 };
 use crate::{
@@ -21,6 +25,10 @@ pub(crate) struct GetSyncinfoArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
+
+    /// L1 reorg-safe depth used to derive finalized checkpoint epoch
+    #[argh(option)]
+    pub(crate) l1_reorg_safe_depth: u32,
 }
 
 /// Show the latest sync information.
@@ -68,11 +76,23 @@ pub(crate) fn get_syncinfo(
             )
         })?;
 
-    // OL state exposes ASM-recorded epoch for previous epoch fields.
-    let recorded_epoch = *top_level_state.asm_recorded_epoch();
-    // Finalized epoch should come from client-state declared final epoch (L1-confirmed).
-    let finalized_epoch = get_declared_final_epoch(db)?.unwrap_or_else(EpochCommitment::null);
     let current_epoch = top_level_state.cur_epoch();
+    let previous_epoch_num = current_epoch.saturating_sub(1);
+    let previous_epoch = if previous_epoch_num == 0 {
+        EpochCommitment::null()
+    } else {
+        get_canonical_epoch_commitment_at(db, previous_epoch_num)?.ok_or_else(|| {
+            DisplayedError::InternalError(
+                "Previous epoch commitment missing in OL checkpoint DB".to_string(),
+                Box::new(previous_epoch_num),
+            )
+        })?
+    };
+    let previous_epoch_status =
+        get_checkpoint_status_at_epoch(db, previous_epoch_num, args.l1_reorg_safe_depth)?
+            .map(|status| status.as_str().to_string());
+    let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
+        .unwrap_or_else(EpochCommitment::null);
     let current_slot = top_level_state.cur_slot();
     let ol_finalized_block_id = *finalized_epoch.last_blkid();
     let previous_block = OLBlockCommitment::new(
@@ -95,7 +115,8 @@ pub(crate) fn get_syncinfo(
         current_epoch,
         current_slot,
         previous_block: &previous_block,
-        previous_epoch: &recorded_epoch,
+        previous_epoch: &previous_epoch,
+        previous_epoch_status,
         finalized_epoch: &finalized_epoch,
         safe_block: &safe_block,
     };

@@ -2,7 +2,7 @@
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, OLBlockId, Slot};
-use strata_primitives::l1::L1Height;
+use strata_primitives::l1::{L1BlockId, L1Height};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
@@ -27,6 +27,10 @@ pub(crate) struct CheckpointInfo {
     pub(crate) status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) intent_index: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) observed_l1_height: Option<L1Height>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) observed_l1_blkid: Option<L1BlockId>,
 }
 
 /// Checkpoints summary information displayed to the user
@@ -116,9 +120,20 @@ impl Formattable for CheckpointInfo {
         ];
 
         if let Some(intent_index) = self.intent_index {
+            output.push(porcelain_field("checkpoint.intent_index", intent_index));
+        }
+
+        if let Some(observed_l1_height) = self.observed_l1_height {
             output.push(porcelain_field(
-                "checkpoint.status.intent_index",
-                intent_index,
+                "checkpoint.l1_observation.height",
+                observed_l1_height,
+            ));
+        }
+
+        if let Some(observed_l1_blkid) = self.observed_l1_blkid {
+            output.push(porcelain_field(
+                "checkpoint.l1_observation.blkid",
+                format!("{:?}", observed_l1_blkid),
             ));
         }
 

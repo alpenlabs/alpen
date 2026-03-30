@@ -1,16 +1,27 @@
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::types::OLCheckpointEntry;
-use strata_identifiers::Epoch;
+use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_db_types::types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry};
+use strata_identifiers::{Epoch, EpochCommitment};
 
-use crate::define_table_with_integer_key;
+use crate::{define_table_with_default_codec, define_table_with_integer_key};
 
-define_table_with_integer_key!(
-    /// Table mapping epoch to OL checkpoint entry.
-    (OLCheckpointSchema) Epoch => OLCheckpointEntry
+define_table_with_default_codec!(
+    /// Table mapping epoch commitment to OL checkpoint payload.
+    (OLCheckpointPayloadSchema) EpochCommitment => CheckpointPayload
+);
+
+define_table_with_default_codec!(
+    /// Table mapping epoch to OL checkpoint payload intent index.
+    (OLCheckpointSigningSchema) EpochCommitment => L1PayloadIntentIndex
+);
+
+define_table_with_default_codec!(
+    /// Table mapping epoch commitment to observed L1 height for checkpoint tip update.
+    (OLCheckpointL1ObservationSchema) EpochCommitment => OLCheckpointL1ObservationEntry
 );
 
 define_table_with_integer_key!(
-    /// Tracks checkpoints that are unsigned.
+    /// Presence marker: this epoch has at least one unsigned payload.
     (UnsignedCheckpointIndexSchema) Epoch => ()
 );
 
