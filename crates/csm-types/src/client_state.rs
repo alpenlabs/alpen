@@ -8,7 +8,9 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::BatchInfo;
-use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
+use strata_identifiers::{
+    Buf32, CheckpointL1Ref, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height,
+};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -102,34 +104,6 @@ impl CheckpointState {
 
     pub fn has_genesis_occurred(&self) -> bool {
         self.block.height() > 0
-    }
-}
-
-/// Represents a reference to a transaction in bitcoin. Redundantly puts block_height a well.
-#[derive(
-    Clone, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
-)]
-pub struct CheckpointL1Ref {
-    pub l1_commitment: L1BlockCommitment,
-    pub txid: Buf32,
-    pub wtxid: Buf32,
-}
-
-impl CheckpointL1Ref {
-    pub fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
-        Self {
-            l1_commitment,
-            txid,
-            wtxid,
-        }
-    }
-
-    pub fn block_height(&self) -> L1Height {
-        self.l1_commitment.height()
-    }
-
-    pub fn block_id(&self) -> &L1BlockId {
-        self.l1_commitment.blkid()
     }
 }
 
