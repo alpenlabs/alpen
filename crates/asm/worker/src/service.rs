@@ -4,6 +4,7 @@ use std::marker;
 
 use bitcoin::hashes::Hash;
 use serde::{Deserialize, Serialize};
+use strata_asm_common::AsmSpec;
 use strata_btc_types::BlockHashExt;
 use strata_primitives::prelude::*;
 use strata_service::{Response, Service, SyncService};
@@ -14,12 +15,14 @@ use crate::{AsmWorkerServiceState, traits::WorkerContext};
 
 /// ASM service implementation using the service framework.
 #[derive(Debug)]
-pub struct AsmWorkerService<W> {
-    _phantom: marker::PhantomData<W>,
+pub struct AsmWorkerService<W, S: AsmSpec> {
+    _phantom: marker::PhantomData<(W, S)>,
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> Service for AsmWorkerService<W> {
-    type State = AsmWorkerServiceState<W>;
+impl<W: WorkerContext + Send + Sync + 'static, S: AsmSpec + Send + Sync + 'static> Service
+    for AsmWorkerService<W, S>
+{
+    type State = AsmWorkerServiceState<W, S>;
     type Msg = L1BlockCommitment;
     type Status = AsmWorkerStatus;
 
@@ -32,14 +35,16 @@ impl<W: WorkerContext + Send + Sync + 'static> Service for AsmWorkerService<W> {
     }
 }
 
-impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<W> {
-    fn on_launch(state: &mut AsmWorkerServiceState<W>) -> anyhow::Result<()> {
+impl<W: WorkerContext + Send + Sync + 'static, S: AsmSpec + Send + Sync + 'static> SyncService
+    for AsmWorkerService<W, S>
+{
+    fn on_launch(state: &mut AsmWorkerServiceState<W, S>) -> anyhow::Result<()> {
         Ok(state.load_latest_or_create_genesis()?)
     }
 
     // TODO(QQ): add tests.
     fn process_input(
-        state: &mut AsmWorkerServiceState<W>,
+        state: &mut AsmWorkerServiceState<W, S>,
         incoming_block: L1BlockCommitment,
     ) -> anyhow::Result<Response> {
         let ctx = &state.context;

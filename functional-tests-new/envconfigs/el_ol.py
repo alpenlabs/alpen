@@ -52,9 +52,11 @@ class EeOLEnv(flexitest.EnvConfig):
             raise ValueError("mesh_bootnodes requires enable_discovery=True")
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
-        strata_services = StrataEnvConfig.get_services(
-            ectx, self.pre_generate_blocks, epoch_sealing_config=self.epoch_seal_config
+        strata_config = StrataEnvConfig(
+            pre_generate_blocks=self.pre_generate_blocks,
+            epoch_sealing=self.epoch_seal_config,
         )
+        strata_services = strata_config._get_services(ectx)
 
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]

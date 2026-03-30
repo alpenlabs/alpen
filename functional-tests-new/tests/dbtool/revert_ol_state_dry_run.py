@@ -5,7 +5,7 @@ import logging
 import flexitest
 
 from common.base_test import StrataNodeTest
-from common.config import ServiceType
+from common.config import EpochSealingConfig, ServiceType
 from envconfigs.strata import StrataEnvConfig
 from tests.dbtool.helpers import (
     get_latest_checkpoint,
@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 @flexitest.register
 class RevertOLStateDryRunTest(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env(StrataEnvConfig(pre_generate_blocks=110, epoch_slots=4))
+        ctx.set_env(
+            StrataEnvConfig(
+                pre_generate_blocks=110, epoch_sealing=EpochSealingConfig.new_fixed_slot(4)
+            )
+        )
 
     def main(self, ctx):
         logger.info("Starting revert dry-run test")
@@ -32,10 +36,7 @@ class RevertOLStateDryRunTest(StrataNodeTest):
 
         seq_service.stop()
         datadir = seq_service.props["datadir"]
-        epoch_sealing = seq_service.props.get("epoch_sealing")
-        if not isinstance(epoch_sealing, dict):
-            raise AssertionError("Missing epoch_sealing config in sequencer service props")
-        slots_per_epoch = epoch_sealing.get("slots_per_epoch")
+        slots_per_epoch = seq_service.props.get("slots_per_epoch")
         if not isinstance(slots_per_epoch, int) or slots_per_epoch <= 0:
             raise AssertionError(f"Invalid slots_per_epoch in sequencer props: {slots_per_epoch!r}")
 

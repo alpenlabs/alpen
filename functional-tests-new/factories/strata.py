@@ -4,7 +4,6 @@ Creates Strata sequencer and fullnode instances.
 """
 
 import contextlib
-from dataclasses import asdict
 from pathlib import Path
 
 import flexitest
@@ -13,6 +12,7 @@ from common.config import (
     BitcoindConfig,
     ClientConfig,
     EpochSealingConfig,
+    OLParams,
     SequencerConfig,
     SequencerRuntimeConfig,
     ServiceType,
@@ -47,6 +47,7 @@ class StrataFactory(flexitest.Factory):
         genesis_l1_height: int,
         is_sequencer: bool = True,
         config_overrides: dict[str, object] | None = None,
+        ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
         **kwargs,
     ) -> StrataService:
@@ -58,6 +59,7 @@ class StrataFactory(flexitest.Factory):
             genesis_l1_height: Genesis L1 height used for param generation.
             is_sequencer: True for sequencer, False for fullnode
             config_overrides: Additional config overrides (-o flag)
+            ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
@@ -94,8 +96,12 @@ class StrataFactory(flexitest.Factory):
         # Generate rollup params via datatool (also produces keys used below).
         params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
-        # Generate OL params via datatool (uses Bitcoin RPC to fetch genesis L1 block).
-        ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+        # Generate or write OL params.
+        if ol_params is not None:
+            ol_params_path = datadir / "ol-params.json"
+            ol_params_path.write_text(ol_params.as_json_string())
+        else:
+            ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
 
         # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
         asm_params_path = generate_asm_params(
@@ -143,15 +149,17 @@ class StrataFactory(flexitest.Factory):
 
         rpc_url = f"http://{rpc_host}:{rpc_port}"
 
+        resolved_slots_per_epoch = 4
+        if epoch_sealing_config is not None and epoch_sealing_config.slots_per_epoch is not None:
+            resolved_slots_per_epoch = epoch_sealing_config.slots_per_epoch
+
         props: StrataProps = {
             "rpc_port": rpc_port,
             "rpc_host": rpc_host,
             "rpc_url": rpc_url,
             "datadir": str(datadir),
             "mode": mode,
-            "epoch_sealing": asdict(epoch_sealing_config)
-            if epoch_sealing_config is not None
-            else None,
+            "slots_per_epoch": resolved_slots_per_epoch,
         }
 
         svc = StrataService(

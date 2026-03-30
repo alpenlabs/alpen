@@ -21,7 +21,7 @@ class StrataProps(TypedDict):
     rpc_url: str
     datadir: str
     mode: str
-    epoch_sealing: dict | None
+    slots_per_epoch: int
 
 
 class StrataService(RpcService):
