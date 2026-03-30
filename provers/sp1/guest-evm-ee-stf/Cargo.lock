@@ -4472,8 +4472,10 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
+ "strata-codec",
  "strata-identifiers",
  "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4520,13 +4522,14 @@ dependencies = [
  "ssz_derive",
  "strata-crypto",
  "strata-identifiers",
+ "strata-params",
  "zkaleido",
 ]
 
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.18",
@@ -4535,7 +4538,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "quote",
  "syn 2.0.114",
@@ -4582,23 +4585,21 @@ dependencies = [
  "const-hex",
  "hex",
  "int-enum",
+ "paste",
  "serde",
  "ssz",
- "ssz_codegen",
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
- "thiserror 2.0.18",
  "tree_hash",
- "tree_hash_derive",
  "zeroize",
 ]
 
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -4610,7 +4611,7 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.2.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "borsh",
  "digest 0.10.7",
@@ -4623,7 +4624,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "thiserror 2.0.18",
 ]
@@ -4661,7 +4662,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "borsh",
  "hex",

@@ -788,6 +788,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1344,6 +1350,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-bridge-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-primitives",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-btc-types"
 version = "0.1.0"
 dependencies = [
@@ -1387,6 +1408,7 @@ dependencies = [
  "ssz_derive",
  "strata-crypto",
  "strata-identifiers",
+ "strata-params",
  "zkaleido",
 ]
 
@@ -1412,7 +1434,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.18",
@@ -1421,7 +1443,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "quote",
  "syn",
@@ -1473,23 +1495,21 @@ dependencies = [
  "const-hex",
  "hex",
  "int-enum",
+ "paste",
  "serde",
  "ssz",
- "ssz_codegen",
  "ssz_derive",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
- "thiserror 2.0.18",
  "tree_hash",
- "tree_hash_derive",
  "zeroize",
 ]
 
 [[package]]
 name = "strata-l1-envelope-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "bitcoin",
  "thiserror 2.0.18",
@@ -1498,7 +1518,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -1516,12 +1536,13 @@ dependencies = [
  "strata-identifiers",
  "strata-predicate",
  "strata-snark-acct-types",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "strata-merkle"
 version = "0.2.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "borsh",
  "digest",
@@ -1541,7 +1562,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "thiserror 2.0.18",
 ]
@@ -1561,7 +1582,6 @@ dependencies = [
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
- "strata-snark-acct-types",
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
@@ -1637,7 +1657,7 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-manifest-types",
+ "strata-bridge-types",
  "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",
@@ -1647,15 +1667,30 @@ dependencies = [
  "strata-ol-da",
  "strata-ol-msg-types",
  "strata-ol-state-types",
+ "strata-predicate",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
 ]
 
 [[package]]
+name = "strata-params"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "borsh",
+ "serde",
+ "strata-btc-types",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+ "strata-predicate",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc9#b9d24f391cb7b0004788230d673685363f6975bb"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
 dependencies = [
  "borsh",
  "hex",
@@ -1709,9 +1744,7 @@ version = "0.1.0"
 dependencies = [
  "ssz",
  "strata-acct-types",
- "strata-identifiers",
  "strata-ledger-types",
- "strata-merkle",
  "strata-snark-acct-types",
 ]
 
