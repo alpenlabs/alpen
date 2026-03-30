@@ -7,9 +7,16 @@ use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
 use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_btc_types::RawBitcoinTx;
+use strata_identifiers::CheckpointL1Ref;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
 use crate::{DaExtractorResult, OLDaPayloadV1, decode_ol_da_payload_bytes};
+
+/// Trait that abstracts DA extraction.
+pub trait DAExtractor {
+    /// Extract DA given a checkpoint reference [`CheckpointL1Ref`].
+    fn extract_da(&self, ckpt_ref: &CheckpointL1Ref) -> DaExtractorResult<OLDaPayloadV1>;
+}
 
 /// Decodes the OL DA payload from a raw checkpoint transaction.
 ///
