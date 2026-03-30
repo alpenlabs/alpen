@@ -73,8 +73,8 @@ impl Service for SignerService {
 }
 
 impl AsyncService for SignerService {
-    async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
-        match input {
+    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
+        match &input {
             SignerEvent::PollTick => process_poll_tick(state).await,
             SignerEvent::DutyFailed(duty_id) => {
                 warn!(%duty_id, "removing failed duty for retry");

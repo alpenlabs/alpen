@@ -7,7 +7,6 @@ edition = "2024"
 default = ["sequencer"]
 sequencer = [
   "dep:strata-asm-txs-checkpoint",
-  "dep:strata-checkpoint-types-ssz",
   "dep:strata-codec",
   "dep:strata-codec-utils",
   "dep:strata-crypto",

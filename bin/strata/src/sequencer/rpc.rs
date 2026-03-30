@@ -12,10 +12,7 @@ use strata_codec_utils::CodecSsz;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
 use strata_crypto::hash;
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
-use strata_db_types::{
-    traits::DatabaseBackend,
-    types::L1BundleStatus,
-};
+use strata_db_types::{traits::DatabaseBackend, types::L1BundleStatus};
 use strata_identifiers::{Epoch, OLBlockId};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_rpc_api::OLSequencerRpcServer;

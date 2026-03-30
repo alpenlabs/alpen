@@ -92,10 +92,7 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> Service for WatcherSer
 }
 
 impl<R: Reader + Signer + Wallet + Send + Sync + 'static> AsyncService for WatcherService<R> {
-    async fn process_input(
-        state: &mut Self::State,
-        _input: &Self::Msg,
-    ) -> anyhow::Result<Response> {
+    async fn process_input(state: &mut Self::State, _input: Self::Msg) -> anyhow::Result<Response> {
         let dspan = debug_span!("process payload", idx=%state.curr_payloadidx);
         let _ = dspan.enter();
 

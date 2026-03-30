@@ -90,8 +90,8 @@ impl Service for BundlerService {
 }
 
 impl AsyncService for BundlerService {
-    async fn process_input(state: &mut Self::State, input: &Self::Msg) -> anyhow::Result<Response> {
-        match input {
+    async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
+        match &input {
             BundlerEvent::IntentReceived(intent) => {
                 state.unbundled.push(intent.clone());
             }
