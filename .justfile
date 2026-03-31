@@ -299,6 +299,11 @@ lint-check-style:
     ./contrib/find_with_structs.sh crates/
     ./contrib/find_with_structs.sh bin/
 
+# Check that new TODO/FIXME comments include a ticket reference
+[group('code-quality')]
+lint-check-todos base_ref="main":
+    ./contrib/check_ticketless_todos.sh {{base_ref}}
+
 # Lints the functional tests and applies fixes where possible
 [group('code-quality')]
 lint-fix-func-tests: ensure-uv activate-uv
