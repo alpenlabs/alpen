@@ -1,6 +1,6 @@
 //! Service framework integration for ASM.
 
-use std::marker;
+use std::{marker, thread::sleep, time::Duration};
 
 use bitcoin::hashes::Hash;
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ use strata_service::{Response, Service, SyncService};
 use strata_state::asm_state::AsmState;
 use tracing::*;
 
-use crate::{AsmWorkerServiceState, traits::WorkerContext};
+use crate::{AsmWorkerServiceState, WorkerError, WorkerResult, traits::WorkerContext};
 
 /// ASM service implementation using the service framework.
 #[derive(Debug)]
@@ -65,7 +65,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
         let mut pivot_anchor = ctx.get_anchor_state(&pivot_block);
 
         while pivot_anchor.is_err() && pivot_block.height() >= genesis_height {
-            let block = ctx.get_l1_block(pivot_block.blkid())?;
+            let block = get_l1_block_with_retry(ctx, pivot_block.blkid())?;
             let parent_height = pivot_block.height() - 1;
             let parent_block_id =
                 L1BlockCommitment::new(parent_height, block.header.prev_blockhash.to_l1_block_id());
@@ -107,7 +107,7 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
             );
             let _genesis_guard = genesis_span.enter();
             // Fetch the genesis block (should work now since L1 reader processed it)
-            let genesis_block = ctx.get_l1_block(pivot_block.blkid())?;
+            let genesis_block = get_l1_block_with_retry(ctx, pivot_block.blkid())?;
 
             // Compute wtxids_root and create manifest
             let wtxids_root: strata_primitives::Buf32 = genesis_block
@@ -181,6 +181,40 @@ impl<W: WorkerContext + Send + Sync + 'static> SyncService for AsmWorkerService<
 
         Ok(Response::Continue)
     }
+}
+
+/// Fetches an L1 block, retrying on transient [`WorkerError::MissingL1Block`] errors.
+///
+/// The L1 reader may notify the ASM worker before the block data is fully
+/// available (e.g. canonical-chain DB write hasn't propagated yet, or the
+/// Bitcoin RPC times out under load). This bridges the gap with exponential
+/// backoff: 200 ms base, 1.5x growth, 2 s cap, 10 retries (~10 s total).
+fn get_l1_block_with_retry<W: WorkerContext>(
+    ctx: &W,
+    blockid: &L1BlockId,
+) -> WorkerResult<bitcoin::Block> {
+    const MAX_RETRIES: u32 = 10;
+    const BASE_DELAY_MS: u64 = 200;
+    const MAX_DELAY_MS: u64 = 2000;
+
+    let mut delay_ms = BASE_DELAY_MS;
+    for attempt in 0..=MAX_RETRIES {
+        match ctx.get_l1_block(blockid) {
+            Ok(block) => return Ok(block),
+            Err(WorkerError::MissingL1Block(id)) if attempt < MAX_RETRIES => {
+                warn!(
+                    attempt,
+                    ?id,
+                    delay_ms,
+                    "L1 block not yet available, retrying"
+                );
+                sleep(Duration::from_millis(delay_ms));
+                delay_ms = (delay_ms * 3 / 2).min(MAX_DELAY_MS);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
 }
 
 /// Status information for the ASM worker service.

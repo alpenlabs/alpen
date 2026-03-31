@@ -47,14 +47,6 @@ def disabled_tests() -> frozenset[str]:
             "keepalive_stub_test",
             "revert_ol_state_fn",
             "revert_checkpointed_block_fn",
-            # Blocked on ASM worker race: L1 reader notifies ASM before block
-            # data is persisted; the notification is consumed but processing
-            # fails with "missing l1 block" and never retries.  Only affects
-            # tests that mine L1 blocks *while strata is running*
-            # (test_l1_connected is unaffected — it checks pre-existing blocks).
-            # TODO: re-enable once the ASM retry logic is fixed.
-            "test_l1_tracking",
-            "test_l1_reorg",
         ]
     )
 

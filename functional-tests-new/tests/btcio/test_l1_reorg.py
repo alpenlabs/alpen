@@ -79,9 +79,11 @@ class TestL1Reorg(StrataNodeTest):
         logger.info(f"Bitcoin tip regressed to {regressed_tip}")
 
         # Mine replacement blocks past the old invalidation point one at a time.
+        # Use a fresh address to avoid duplicate-invalid coinbase collisions.
+        reorg_addr = btc_rpc.proxy.getnewaddress()
         blocks_to_mine = REORG_DEPTH + 2
         for _ in range(blocks_to_mine):
-            btc_rpc.proxy.generatetoaddress(1, addr)
+            btc_rpc.proxy.generatetoaddress(1, reorg_addr)
         post_tip = btc_rpc.proxy.getblockchaininfo()["blocks"]
         logger.info(f"Post-reorg Bitcoin tip: {post_tip}")
 

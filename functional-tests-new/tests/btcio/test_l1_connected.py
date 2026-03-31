@@ -33,18 +33,14 @@ class TestL1Connected(StrataNodeTest):
         btc_rpc = bitcoin.create_rpc()
 
         # The basic env pre-generates 110 blocks. The genesis L1 height
-        # is the tip at the time strata started (~110). Pick a height
-        # we know exists and wait for strata to have a commitment for it.
+        # equals the Bitcoin tip at the time strata started (~110).
+        # The ASM only creates manifests for heights >= genesis, so we
+        # check the genesis height itself.
         chain_info = btc_rpc.proxy.getblockchaininfo()
         tip_height = chain_info["blocks"]
-        logger.info(f"Bitcoin tip: {tip_height}")
+        logger.info(f"Bitcoin tip (genesis L1 height): {tip_height}")
 
-        # Wait for strata to have processed at least the genesis L1 block.
-        # Use a height slightly below the tip to avoid races.
-        check_height = tip_height - 2
-        logger.info(f"Checking L1 header commitment at height {check_height}")
+        commitment = strata.wait_for_l1_commitment_at(tip_height, rpc=rpc, timeout=60)
 
-        commitment = strata.wait_for_l1_commitment_at(check_height, rpc=rpc, timeout=30)
-
-        logger.info(f"L1 header commitment at {check_height}: {commitment}")
+        logger.info(f"L1 header commitment at {tip_height}: {commitment}")
         return True
