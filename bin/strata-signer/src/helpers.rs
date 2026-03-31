@@ -3,17 +3,17 @@
 use std::{fs, path::Path, str::FromStr, sync::Arc};
 
 use bitcoin::bip32::Xpriv;
-use strata_crypto::keys::zeroizable::ZeroizableXpriv;
+use strata_crypto::keys::zeroizable::{ZeroizableBuf32, ZeroizableXpriv};
 use strata_key_derivation::sequencer::SequencerKeys;
 use strata_primitives::buf::Buf32;
 use tracing::debug;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 /// Reference-counted, zeroize-on-drop handle to the sequencer secret key.
 ///
 /// Using [`Arc`] ensures that spawned duty handlers receive a pointer clone
 /// rather than a byte-level copy of key material.
-pub(crate) type SequencerSk = Arc<Zeroizing<[u8; 32]>>;
+pub(crate) type SequencerSk = Arc<ZeroizableBuf32>;
 
 /// Loads the sequencer key from the file at `path`.
 ///
@@ -31,7 +31,7 @@ pub(crate) fn load_seqkey(path: &Path) -> anyhow::Result<(SequencerSk, Buf32)> {
     let seq_xpub = seq_keys.derived_xpub();
     let seq_pk = Buf32::from(seq_xpub.to_x_only_pub().serialize());
 
-    let sk = Arc::new(Zeroizing::new(raw_sk));
+    let sk = Arc::new(ZeroizableBuf32::new(raw_sk));
     raw_sk.zeroize();
 
     debug!(pubkey = ?seq_pk, "ready to sign as sequencer");

@@ -13897,7 +13897,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
- "strata-key-derivation",
  "strata-ledger-types",
  "strata-logging",
  "strata-node-context",
@@ -13929,7 +13928,6 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
- "zeroize",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
  "zkaleido-sp1-host",
 ]
@@ -15975,6 +15973,7 @@ dependencies = [
  "argh",
  "bitcoin",
  "jsonrpsee",
+ "rand 0.8.5",
  "serde",
  "strata-common",
  "strata-crypto",

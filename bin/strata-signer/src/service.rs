@@ -137,10 +137,10 @@ mod tests {
     use std::sync::Arc;
 
     use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
+    use strata_crypto::keys::zeroizable::ZeroizableBuf32;
     use strata_ol_rpc_types::{RpcDuty, RpcPayloadSigningDuty};
     use strata_primitives::{HexBytes32, buf::Buf32};
     use tokio::sync::mpsc;
-    use zeroize::Zeroizing;
 
     use super::*;
     use crate::helpers::SequencerSk;
@@ -149,7 +149,7 @@ mod tests {
         let rpc = Arc::new(ManagedWsClient::new_with_default_pool(WsClientConfig {
             url: "ws://127.0.0.1:1".to_string(),
         }));
-        let sk: SequencerSk = Arc::new(Zeroizing::new([0u8; 32]));
+        let sk: SequencerSk = Arc::new(ZeroizableBuf32::new([0u8; 32]));
         let (failed_tx, failed_rx) = mpsc::channel(8);
         (SignerServiceState::new(rpc, sk, failed_tx), failed_rx)
     }
