@@ -1,13 +1,14 @@
+use std::marker::PhantomData;
+
 use anyhow::anyhow;
-use strata_chain_worker_new::{ApplyDA, ApplyDAPayload, ChainWorkerMessage};
-use strata_checkpoint_types::EpochSummary;
+use strata_chain_worker_new::ApplyDAPayload;
 use strata_csm_types::{ClientState, L1Checkpoint};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_da::DAExtractor;
 use strata_ol_state_types::OLState;
 use strata_primitives::EpochCommitment;
-use strata_service::{Response, ServiceState};
-use tokio::sync::watch;
+use strata_service::ServiceState;
 
 use crate::checkpoint_sync::context::CheckpointSyncCtx;
 
@@ -15,6 +16,7 @@ use crate::checkpoint_sync::context::CheckpointSyncCtx;
 pub struct CheckpointSyncState<E: DAExtractor, C: CheckpointSyncCtx<E>> {
     ctx: C,
     inner: InnerState,
+    _p: PhantomData<E>,
 }
 
 #[derive(Clone, Debug)]
@@ -22,13 +24,12 @@ struct InnerState {
     last_finalized_epoch: Option<EpochCommitment>,
 }
 
-impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
+impl<E: DAExtractor, C: CheckpointSyncCtx<E>> CheckpointSyncState<E, C> {
     pub(crate) async fn handle_new_client_state(
         &mut self,
         client_state: &ClientState,
     ) -> Result<(), anyhow::Error> {
         let new_finalized_ckpt = client_state.get_last_finalized_checkpoint();
-        let new_finalized = new_finalized_ckpt.map(|x| x.batch_info.get_epoch_commitment());
 
         let new_ckpt = match (self.inner.last_finalized_epoch, new_finalized_ckpt) {
             (_, None) => return Ok(()), // if new is none, do nothing
@@ -44,16 +45,16 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
             }
         };
         // Extract checkpoint and send to chain worker for processing DA.
-        extract_checkpoint_and_submit_to_chain_worker(new_ckpt, &self.ctx).await?;
+        extract_checkpoint_and_submit_to_chain_worker(new_ckpt.clone(), &self.ctx).await?;
 
         let epoch = new_ckpt.batch_info.get_epoch_commitment();
         let blk = epoch.to_block_commitment();
 
         // Now that DA application is successful, update safe tip
-        self.ctx().chain_worker().update_safe_tip(blk).await?;
+        self.ctx.chain_worker().update_safe_tip(blk).await?;
 
         // And then finalize
-        self.ctx().chain_worker().finalize_epoch(epoch).await?;
+        self.ctx.chain_worker().finalize_epoch(epoch).await?;
 
         // Update internal state
         self.inner.last_finalized_epoch = Some(epoch);
@@ -62,7 +63,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
     }
 }
 
-fn validate_new_finalized_epoch<C: CheckpointSyncCtx>(
+fn validate_new_finalized_epoch<E: DAExtractor, C: CheckpointSyncCtx<E>>(
     prev: EpochCommitment,
     new: EpochCommitment,
     ctx: &C,
@@ -83,27 +84,35 @@ async fn extract_checkpoint_and_submit_to_chain_worker<E: DAExtractor, C: Checkp
     new: L1Checkpoint,
     ctx: &C,
 ) -> anyhow::Result<()> {
-    let da = ctx.extract_da(&new.l1_reference)?;
-
     let new_epoch = new.batch_info.get_epoch_commitment();
     let new_summary = ctx.get_epoch_summary(new_epoch)?;
     let prev_terminal = new_summary.prev_terminal();
 
-    let prev_state: OLState = ctx.get_state_at(prev_terminal)?;
+    let prev_state: OLState = ctx.get_state_at(*prev_terminal)?;
 
     let manifests = ctx.fetch_asm_manifests_range(
-        prev_state.last_l1_height(),
+        // TODO: figure out the inclusiveness, by looking at block assembly
+        prev_state.last_l1_height().saturating_add(1),
         new.l1_reference.l1_commitment.height(),
     )?;
-    let container = OLL1ManifestContainer::new(manifests)?;
-    let payload = ApplyDAPayload::new(da, container, new_epoch);
 
-    ctx.chain_worker().apply_da(payload).await?;
+    let container = OLL1ManifestContainer::new(manifests)?;
+
+    let da = ctx.extract_da_data(&new.l1_reference)?;
+    let (da_payload, terminal_complement) = da.into_parts();
+
+    let payload = ApplyDAPayload::new(da_payload, container, new_epoch, terminal_complement);
+
+    ctx.chain_worker().apply_da(&payload).await?;
 
     Ok(())
 }
 
-impl<C: CheckpointSyncCtx + Send + Sync + 'static> ServiceState for CheckpointSyncState<C> {
+impl<E, C> ServiceState for CheckpointSyncState<E, C>
+where
+    E: DAExtractor + Send + Sync + 'static,
+    C: CheckpointSyncCtx<E> + Send + Sync + 'static,
+{
     fn name(&self) -> &str {
         "checkpoint-sync"
     }

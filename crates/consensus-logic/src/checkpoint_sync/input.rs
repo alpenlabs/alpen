@@ -4,16 +4,17 @@ use tokio::sync::watch;
 use tracing::trace;
 
 #[derive(Debug)]
-pub struct CheckpointSyncInput {
+pub(super) struct CheckpointSyncInput {
     clstate_rx: watch::Receiver<CheckpointState>,
 }
 
 impl CheckpointSyncInput {
-    fn new(clstate_rx: watch::Receiver<CheckpointState>) -> Self {
+    pub(super) fn new(clstate_rx: watch::Receiver<CheckpointState>) -> Self {
         Self { clstate_rx }
     }
 }
 
+#[expect(clippy::large_enum_variant, reason = "Avoiding Boxes")]
 #[derive(Clone, Debug)]
 pub enum CheckpointSyncEvent {
     NewStateUpdate(ClientState),
