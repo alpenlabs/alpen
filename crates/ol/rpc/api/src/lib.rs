@@ -25,6 +25,10 @@ pub trait OLClientRpc {
     #[method(name = "getChainStatus")]
     async fn chain_status(&self) -> RpcResult<RpcOLChainStatus>;
 
+    /// Get checkpoint info for the given epoch.
+    #[method(name = "getCheckpointInfo")]
+    async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>>;
+
     /// Get account-specific summaries for blocks in a slot range.
     ///
     /// Returns the account's state (balance, sequence number, inbox position) at each block

@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strata_asm_common::AsmManifest;
+use strata_checkpoint_types::EpochSummary;
+use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
@@ -72,6 +74,26 @@ impl OLRpcProvider for NodeRpcProvider {
             .await
     }
 
+    async fn get_epoch_summary(
+        &self,
+        commitment: EpochCommitment,
+    ) -> DbResult<Option<EpochSummary>> {
+        self.storage
+            .ol_checkpoint()
+            .get_epoch_summary_async(commitment)
+            .await
+    }
+
+    async fn get_checkpoint_l1_ref(
+        &self,
+        commitment: EpochCommitment,
+    ) -> DbResult<Option<CheckpointL1Ref>> {
+        self.storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_async(commitment)
+            .await
+    }
+
     async fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
@@ -100,6 +122,10 @@ impl OLRpcProvider for NodeRpcProvider {
 
     fn get_ol_sync_status(&self) -> Option<OLSyncStatus> {
         self.status_channel.get_ol_sync_status()
+    }
+
+    fn get_l1_tip_height(&self) -> Option<L1Height> {
+        Some(self.status_channel.get_l1_status().cur_height)
     }
 
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {

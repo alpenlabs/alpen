@@ -14,6 +14,7 @@ use strata_node_context::{CommonContext, NodeContext};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_checkpoint::OLCheckpointWorkerHandle;
 use strata_ol_mempool::MempoolHandle;
+use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -40,6 +41,11 @@ impl RunContext {
     /// Returns the config.
     pub(crate) fn config(&self) -> &Config {
         self.common.config()
+    }
+
+    /// Returns the params.
+    pub(crate) fn params(&self) -> &Arc<Params> {
+        self.common.params()
     }
 
     /// Returns the storage.
