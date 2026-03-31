@@ -7,7 +7,7 @@ use strata_da_framework::{
 };
 
 /// Diff of global state fields covered by DA.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct GlobalStateDiff {
     /// Slot counter diff.
     pub cur_slot: DaCounter<CtrU64ByU16>,

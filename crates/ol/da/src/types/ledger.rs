@@ -11,7 +11,7 @@ use super::{
 };
 
 /// Diff of ledger state (new accounts + account diffs).
-#[derive(Debug, Codec)]
+#[derive(Debug, Clone, Codec)]
 pub struct LedgerDiff {
     /// New accounts created during the epoch.
     pub new_accounts: U16LenList<NewAccountEntry>,
@@ -174,7 +174,7 @@ impl Codec for SnarkAccountInit {
 }
 
 /// Per-account diff entry keyed by account serial.
-#[derive(Debug, Codec)]
+#[derive(Debug, Clone, Codec)]
 pub struct AccountDiffEntry {
     /// Account serial number.
     pub account_serial: AccountSerial,

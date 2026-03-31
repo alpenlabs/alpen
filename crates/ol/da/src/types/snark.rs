@@ -176,7 +176,7 @@ impl CompoundMember for DaProofStateDiff {
 use super::inbox::InboxBuffer;
 
 /// Diff for snark account state.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SnarkAccountDiff {
     /// Sequence number counter diff.
     pub seq_no: DaCounter<CtrU64ByU16>,

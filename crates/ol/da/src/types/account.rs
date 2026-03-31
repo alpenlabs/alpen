@@ -10,7 +10,7 @@ use super::snark::{SnarkAccountDiff, SnarkAccountTarget};
 ///
 /// The account type is implied by pre-state; the snark field is only populated
 /// for snark accounts.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AccountDiff {
     /// Balance counter diff (signed delta in satoshis).
     pub balance: DaCounter<CtrU64BySignedVarInt>,

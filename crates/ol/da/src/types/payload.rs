@@ -3,9 +3,7 @@
 use std::{collections::BTreeSet, marker::PhantomData};
 
 use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
-use strata_checkpoint_types_ssz::TerminalHeaderComplement;
 use strata_codec::{Codec, CodecError, decode_buf_exact};
-use strata_codec_utils::CodecSsz;
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
 use strata_ledger_types::{
@@ -25,22 +23,16 @@ use crate::DaError;
 /// Versioned OL DA payload containing the state diff.
 ///
 /// Wire format is `strata_codec` (not SSZ).
-#[derive(Debug, Codec)]
+#[derive(Clone, Debug, Codec)]
 pub struct OLDaPayloadV1 {
     /// State diff for the epoch.
     pub state_diff: StateDiff,
-
-    /// Terminal header complement.
-    pub terminal_header_complement: CodecSsz<TerminalHeaderComplement>,
 }
 
 impl OLDaPayloadV1 {
     /// Creates a new [`OLDaPayloadV1`] from a state diff.
-    pub fn new(state_diff: StateDiff, term_hdr_comp: TerminalHeaderComplement) -> Self {
-        Self {
-            state_diff,
-            terminal_header_complement: CodecSsz::new(term_hdr_comp),
-        }
+    pub fn new(state_diff: StateDiff) -> Self {
+        Self { state_diff }
     }
 }
 
@@ -50,7 +42,7 @@ pub fn decode_ol_da_payload_bytes(bytes: &[u8]) -> Result<OLDaPayloadV1, CodecEr
 }
 
 /// Preseal OL state diff (global + ledger).
-#[derive(Debug, Default, Codec)]
+#[derive(Clone, Debug, Default, Codec)]
 pub struct StateDiff {
     /// Global state diff.
     pub global: GlobalStateDiff,
