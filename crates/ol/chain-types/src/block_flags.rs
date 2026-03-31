@@ -31,13 +31,13 @@ impl BlockFlags {
         Self(0)
     }
 
-    pub fn terminal() -> Self {
+    pub fn new_terminal() -> Self {
         let mut flags = 0;
         flags |= IS_TERMINAL;
         Self(flags)
     }
 
-    pub fn non_terminal() -> Self {
+    pub fn new_non_terminal() -> Self {
         let mut flags = 0;
         flags |= !IS_TERMINAL;
         Self(flags)
@@ -55,5 +55,28 @@ impl BlockFlags {
     /// Checks if the `IS_TERMINAL` flag is set.
     pub fn is_terminal(&self) -> bool {
         self.0 & IS_TERMINAL != 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constructor_terminal() {
+        let t = BlockFlags::new_terminal();
+        assert!(
+            t.is_terminal(),
+            "terminal constructor should give terminal flag"
+        );
+    }
+
+    #[test]
+    fn test_constructor_non_terminal() {
+        let t = BlockFlags::new_non_terminal();
+        assert!(
+            !t.is_terminal(),
+            "non-terminal constructor should give non-terminal flag"
+        );
     }
 }
