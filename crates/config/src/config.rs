@@ -215,6 +215,50 @@ pub struct ExecConfig {
     pub reth: RethELConfig,
 }
 
+/// Default number of workers for the selected prover backend.
+const DEFAULT_PROVER_WORKERS: usize = 1;
+
+/// Proving backend selection.
+///
+/// Determines which zkVM backend the integrated prover uses at runtime.
+/// The feature flag gates *compilation* (can this backend be built?),
+/// while this config gates *selection* (should this backend be used?).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProverBackend {
+    /// Direct execution without proof generation. Fast, for development.
+    #[default]
+    Native,
+    /// SP1 proving via remote network. Requires `sp1` feature at compile time.
+    Sp1,
+}
+
+/// Integrated prover configuration.
+///
+/// Controls worker counts and backend selection for the in-process prover.
+/// Only effective when the binary is built with the `prover` feature.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProverConfig {
+    /// Which proving backend to use at runtime.
+    ///
+    /// Defaults to `native`. Set to `sp1` to use the SP1 prover network.
+    /// The `sp1` feature must be enabled at compile time for `sp1` to work.
+    pub backend: ProverBackend,
+
+    /// Number of prover workers for the selected backend.
+    pub workers: usize,
+}
+
+impl Default for ProverConfig {
+    fn default() -> Self {
+        Self {
+            backend: ProverBackend::default(),
+            workers: DEFAULT_PROVER_WORKERS,
+        }
+    }
+}
+
 /// Logging configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct LoggingConfig {
@@ -258,6 +302,10 @@ pub struct Config {
     /// Logging configuration (optional section in TOML).
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// Integrated prover configuration (optional, only used with `prover` feature).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prover: Option<ProverConfig>,
 }
 
 #[cfg(test)]
@@ -313,6 +361,10 @@ mod test {
             [epoch_sealing]
             policy = "FixedSlot"
             slots_per_epoch = 10
+
+            [prover]
+            backend = "sp1"
+            workers = 4
         "#;
 
         let config = toml::from_str::<Config>(config_string_sequencer);
@@ -350,6 +402,13 @@ mod test {
                 );
             }
         }
+
+        let prover = config
+            .prover
+            .as_ref()
+            .expect("prover config should be present for sequencer sample");
+        assert_eq!(prover.backend, ProverBackend::Sp1);
+        assert_eq!(prover.workers, 4);
 
         let config_string_fullnode = r#"
             [bitcoind]
@@ -411,6 +470,22 @@ mod test {
             config.epoch_sealing.is_none(),
             "batcher config should be absent for fullnode"
         );
+        assert!(
+            config.prover.is_none(),
+            "prover config should be absent when omitted"
+        );
+    }
+
+    #[test]
+    fn test_prover_config_defaults_when_fields_omitted() {
+        let config: ProverConfig = toml::from_str("").expect("empty prover config should default");
+        assert_eq!(config.backend, ProverBackend::Native);
+        assert_eq!(config.workers, DEFAULT_PROVER_WORKERS);
+
+        let backend_only: ProverConfig =
+            toml::from_str(r#"backend = "sp1""#).expect("backend-only prover config should parse");
+        assert_eq!(backend_only.backend, ProverBackend::Sp1);
+        assert_eq!(backend_only.workers, DEFAULT_PROVER_WORKERS);
     }
 
     #[test]
