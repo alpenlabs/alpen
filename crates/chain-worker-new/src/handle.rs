@@ -91,17 +91,19 @@ impl ChainWorkerHandle {
     }
 
     /// Apply DA async.
-    pub async fn apply_da(&self, payload: ApplyDAPayload) -> WorkerResult<()> {
+    pub async fn apply_da(&self, payload: &ApplyDAPayload) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait(|completion| ChainWorkerMessage::ApplyDA(payload, completion))
+            .send_and_wait(|completion| ChainWorkerMessage::ApplyDA(payload.clone(), completion))
             .await
             .map_err(convert_service_error)?
     }
 
     /// Apply DA blocking.
-    pub fn apply_da_blocking(&self, payload: ApplyDAPayload) -> WorkerResult<()> {
+    pub fn apply_da_blocking(&self, payload: &ApplyDAPayload) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait_blocking(|completion| ChainWorkerMessage::ApplyDA(payload, completion))
+            .send_and_wait_blocking(|completion| {
+                ChainWorkerMessage::ApplyDA(payload.clone(), completion)
+            })
             .map_err(convert_service_error)?
     }
 

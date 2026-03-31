@@ -179,7 +179,7 @@ pub struct EpochInitialContext {
 }
 
 impl EpochInitialContext {
-    pub(crate) fn new(cur_epoch: Epoch, prev_terminal: OLBlockCommitment) -> Self {
+    pub fn new(cur_epoch: Epoch, prev_terminal: OLBlockCommitment) -> Self {
         Self {
             cur_epoch,
             prev_terminal,

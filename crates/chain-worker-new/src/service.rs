@@ -42,18 +42,16 @@ impl SyncService for ChainWorkerService {
                 let res = state.try_exec_block(&olbc);
                 completion.send_blocking(res);
             }
-
             ChainWorkerMessage::UpdateSafeTip(olbc, completion) => {
                 let res = state.update_cur_tip(olbc);
                 completion.send_blocking(res);
             }
-
             ChainWorkerMessage::FinalizeEpoch(epoch, completion) => {
                 let res = state.finalize_epoch(epoch);
                 completion.send_blocking(res);
             }
             ChainWorkerMessage::ApplyDA(da, completion) => {
-                let res = state.apply_da(da)?;
+                let res = state.apply_da(da);
                 completion.send_blocking(res);
             }
         }

@@ -24,7 +24,9 @@ mod tests;
 pub use assembly::*;
 pub use chain_processing::{process_block_start, process_epoch_initial};
 pub use constants::*;
-pub use context::{BasicExecContext, BlockContext, BlockInfo, EpochInfo, TxExecContext};
+pub use context::{
+    BasicExecContext, BlockContext, BlockInfo, EpochInfo, EpochInitialContext, TxExecContext,
+};
 pub use errors::{ErrorKind, ExecError, ExecResult};
 pub use manifest_processing::process_block_manifests;
 pub use output::*;

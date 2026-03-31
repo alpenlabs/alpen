@@ -5,9 +5,10 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::Checkpoint;
+use strata_identifiers::CheckpointL1Ref;
 use strata_primitives::epoch::EpochCommitment;
 
-use crate::client_state::{CheckpointL1Ref, ClientState};
+use crate::client_state::ClientState;
 
 /// Output of a consensus state transition. Right now it consists of full [`ClientState`] and
 /// sync actions.
