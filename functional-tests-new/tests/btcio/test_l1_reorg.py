@@ -60,7 +60,7 @@ class TestL1Reorg(StrataNodeTest):
         logger.info(f"Will invalidate from height {invalidate_height}")
 
         # Wait for strata to have processed the block at this height.
-        pre_reorg_commitment = strata.wait_for_l1_commitment(
+        pre_reorg_commitment = strata.wait_for_l1_commitment_at(
             invalidate_height, rpc=rpc, timeout=120
         )
         logger.info(f"Pre-reorg commitment at {invalidate_height}: {pre_reorg_commitment}")
@@ -87,7 +87,7 @@ class TestL1Reorg(StrataNodeTest):
 
         # Wait for strata to pick up the new chain; the commitment
         # at invalidate_height must differ from the pre-reorg value.
-        post_reorg_commitment = strata.wait_for_l1_commitment(
+        post_reorg_commitment = strata.wait_for_l1_commitment_at(
             invalidate_height,
             rpc=rpc,
             timeout=120,

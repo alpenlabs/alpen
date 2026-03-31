@@ -196,7 +196,7 @@ class StrataService(RpcService):
         )
         return self.get_cur_block_height(rpc)
 
-    def wait_for_l1_commitment(
+    def wait_for_l1_commitment_at(
         self,
         height: int,
         rpc: JsonRpcClient | None = None,

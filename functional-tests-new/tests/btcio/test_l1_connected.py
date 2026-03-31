@@ -44,7 +44,7 @@ class TestL1Connected(StrataNodeTest):
         check_height = tip_height - 2
         logger.info(f"Checking L1 header commitment at height {check_height}")
 
-        commitment = strata.wait_for_l1_commitment(check_height, rpc=rpc, timeout=30)
+        commitment = strata.wait_for_l1_commitment_at(check_height, rpc=rpc, timeout=30)
 
         logger.info(f"L1 header commitment at {check_height}: {commitment}")
         return True
