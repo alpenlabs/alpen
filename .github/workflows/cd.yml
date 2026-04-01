@@ -138,7 +138,7 @@ jobs:
     environment: ${{ inputs.environment || (github.ref == 'refs/heads/main' && 'development') }}
     steps:
       - name: Set up SSH for private repo access
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
+        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: ${{ secrets.DEPLOYMENTS_REPO_WRITE }}
 
