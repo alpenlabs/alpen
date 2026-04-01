@@ -329,17 +329,17 @@ alloy = { version = "1.0.41", features = [
   "providers",
   "rpc-types",
 ] }
-alloy-consensus = { version = "1.0.41", default-features = false }
+alloy-consensus = { version = "1.7.3", default-features = false }
 alloy-eips = { version = "1.0.41", default-features = false }
-alloy-genesis = { version = "1.0.41", default-features = false }
-alloy-network = { version = "1.0.41", default-features = false }
-alloy-primitives = { version = "1.4.1", default-features = false, features = [
+alloy-genesis = { version = "1.7.3", default-features = false }
+alloy-network = { version = "1.7.3", default-features = false }
+alloy-primitives = { version = "1.5.7", default-features = false, features = [
   "sha3-keccak",
   "map-foldhash",
 ] }
-alloy-rlp = { version = "0.3.10", default-features = false }
+alloy-rlp = { version = "0.3.13", default-features = false }
 alloy-rlp-derive = "0.3.12"
-alloy-rpc-types = { version = "1.1.0", features = [
+alloy-rpc-types = { version = "1.7.3", features = [
   "eth",
 ], default-features = false }
 alloy-rpc-types-engine = { version = "1.1.0", default-features = false }
@@ -347,8 +347,8 @@ alloy-rpc-types-eth = { version = "1.1.0", default-features = false, features = 
   "serde",
 ] }
 alloy-serde = { version = "1.0.41", default-features = false }
-alloy-sol-types = "1.4.1"
-alloy-trie = { version = "0.9.1", default-features = false, features = [
+alloy-sol-types = "1.5.7"
+alloy-trie = { version = "0.9.5", default-features = false, features = [
   "arbitrary",
   "serde",
 ] }
