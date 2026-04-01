@@ -4,14 +4,13 @@ use std::{collections::HashMap, sync::Arc};
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
 use strata_ledger_types::{IAccountState, IStateAccessor};
+use strata_ol_chain_types_new::{OLTransaction, TransactionPayload};
 use strata_ol_stf::{ExecError, ExecResult, check_tx_constraints};
 use strata_snark_acct_sys as snark_sys;
 use strata_snark_acct_types::Seqno;
 use tracing::error;
 
-use crate::{
-    OLMempoolError, OLMempoolResult, state::AccountMempoolState, types::OLMempoolTransaction,
-};
+use crate::{OLMempoolError, OLMempoolResult, state::AccountMempoolState};
 
 /// Checks sequence number against a range and returns appropriate error.
 /// - `tx_seq_no < min_expected` → `UsedSequenceNumber`
@@ -117,11 +116,13 @@ fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
 pub(crate) fn validate_transaction<S: IStateAccessor>(
     txid: OLTxId,
-    tx: &OLMempoolTransaction,
+    tx: &OLTransaction,
     state_accessor: &Arc<S>,
     account_state: &HashMap<AccountId, AccountMempoolState>,
 ) -> OLMempoolResult<()> {
-    let target_account = tx.target();
+    let target_account = tx
+        .target()
+        .expect("all OL payload variants must have a target");
 
     // 1. Slot bounds check.
     check_tx_constraints(tx.constraints(), state_accessor.as_ref()).map_err(|e| match e {
@@ -151,8 +152,8 @@ pub(crate) fn validate_transaction<S: IStateAccessor>(
     })?;
 
     // 3. Sequence number in proper range (for SnarkAccountUpdate transactions).
-    if let Some(base_update) = tx.base_update() {
-        let tx_seq_no = base_update.operation().seq_no();
+    if let TransactionPayload::SnarkAccountUpdate(payload) = tx.payload() {
+        let tx_seq_no = payload.operation().update().seq_no();
 
         // Check if there are SnarkAccountUpdate transactions in mempool for this account
         let mempool_seq_no_range = account_state
@@ -190,15 +191,16 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        create_test_account_id, create_test_generic_tx_with_slots,
-        create_test_ol_state_with_account, create_test_ol_state_with_snark_account,
-        create_test_snark_tx_with_seq_no_and_slots, create_test_snark_update,
+        create_test_account_id, create_test_constraints_with_slots,
+        create_test_generic_tx_with_slots, create_test_ol_state_with_account,
+        create_test_ol_state_with_snark_account, create_test_snark_tx_from_update,
+        create_test_snark_tx_with_seq_no_and_slots, create_test_snark_update, tx_target,
     };
 
     #[test]
     fn test_slot_bounds_expired() {
         let tx = create_test_generic_tx_with_slots(None, Some(50)); // max_slot < current_slot (100)
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -212,7 +214,7 @@ mod tests {
     #[test]
     fn test_slot_bounds_not_yet_valid() {
         let tx = create_test_generic_tx_with_slots(Some(150), None); // min_slot > current_slot (100)
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -227,7 +229,7 @@ mod tests {
     fn test_min_slot_boundary() {
         // min_slot == current_slot should be valid
         let tx = create_test_generic_tx_with_slots(Some(100), None);
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -238,7 +240,7 @@ mod tests {
     fn test_max_slot_boundary() {
         // max_slot == current_slot should be valid (not expired yet)
         let tx = create_test_generic_tx_with_slots(None, Some(100));
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -249,7 +251,7 @@ mod tests {
     fn test_max_slot_one_after_current() {
         // max_slot == current_slot + 1 should be valid
         let tx = create_test_generic_tx_with_slots(None, Some(101));
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -259,7 +261,7 @@ mod tests {
     #[test]
     fn test_slot_bounds_valid() {
         let tx = create_test_generic_tx_with_slots(Some(50), Some(150)); // min < current < max
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -270,7 +272,7 @@ mod tests {
     fn test_validation_with_valid_transaction() {
         // Test that validation works with a normal valid transaction
         let tx = create_test_generic_tx_with_slots(Some(50), Some(150));
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -280,7 +282,7 @@ mod tests {
     #[test]
     fn test_slot_bounds_no_constraints() {
         let tx = create_test_generic_tx_with_slots(None, None); // No slot bounds
-        let state_accessor = Arc::new(create_test_ol_state_with_account(tx.target(), 100));
+        let state_accessor = Arc::new(create_test_ol_state_with_account(tx_target(&tx), 100));
         let account_state = HashMap::new();
 
         let result = validate_transaction(tx.compute_txid(), &tx, &state_accessor, &account_state);
@@ -310,8 +312,11 @@ mod tests {
         let target = create_test_account_id();
         let base_update = create_test_snark_update();
         let tx_seq_no = base_update.operation().seq_no();
-        let tx = OLMempoolTransaction::new_snark_account_update(target, base_update)
-            .with_constraints(create_test_generic_tx_with_slots(Some(50), Some(150)).constraints);
+        let tx = create_test_snark_tx_from_update(
+            target,
+            base_update,
+            create_test_constraints_with_slots(Some(50), Some(150)),
+        );
 
         // Create state with snark account expecting the same seq_no as tx (next-expected semantics)
         let state_accessor = Arc::new(create_test_ol_state_with_snark_account(
@@ -332,8 +337,11 @@ mod tests {
         let base_update = create_test_snark_update();
         let tx_seq_no = base_update.operation().seq_no();
 
-        let tx = OLMempoolTransaction::new_snark_account_update(target, base_update.clone())
-            .with_constraints(create_test_generic_tx_with_slots(Some(50), Some(150)).constraints);
+        let tx = create_test_snark_tx_from_update(
+            target,
+            base_update.clone(),
+            create_test_constraints_with_slots(Some(50), Some(150)),
+        );
 
         // Test case 1: Transaction seq_no SMALLER than account seq_no (already used)
         // Account has seq_no = tx_seq_no + 1, transaction has seq_no = tx_seq_no
@@ -361,7 +369,7 @@ mod tests {
         // tx_seq_no > max_seq_no + 1 → SequenceNumberGap
         let account_seq_no_onchain = 5;
         let tx2 = create_test_snark_tx_with_seq_no_and_slots(1, 10, Some(50), Some(150));
-        let target2 = tx2.target();
+        let target2 = tx_target(&tx2);
 
         let state_accessor2 = Arc::new(create_test_ol_state_with_snark_account(
             target2,

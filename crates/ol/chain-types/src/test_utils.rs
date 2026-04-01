@@ -117,7 +117,7 @@ pub fn accumulator_claim_strategy() -> impl Strategy<Value = AccumulatorClaim> {
     })
 }
 
-pub fn transaction_attachment_strategy() -> impl Strategy<Value = TxConstraints> {
+pub fn tx_constraints_strategy() -> impl Strategy<Value = TxConstraints> {
     (any::<Option<u64>>(), any::<Option<u64>>()).prop_map(|(min_slot, max_slot)| TxConstraints {
         min_slot: min_slot.into(),
         max_slot: max_slot.into(),
@@ -167,11 +167,8 @@ pub fn transaction_payload_strategy() -> impl Strategy<Value = TransactionPayloa
 }
 
 pub fn ol_transaction_strategy() -> impl Strategy<Value = OLTransaction> {
-    (
-        transaction_payload_strategy(),
-        transaction_attachment_strategy(),
-    )
-        .prop_map(|(payload, constraints)| OLTransaction {
+    (transaction_payload_strategy(), tx_constraints_strategy()).prop_map(
+        |(payload, constraints)| OLTransaction {
             data: OLTransactionData {
                 payload,
                 constraints,
@@ -181,5 +178,6 @@ pub fn ol_transaction_strategy() -> impl Strategy<Value = OLTransaction> {
                 predicate_satisfiers: ssz_types::Optional::None,
                 accumulator_proofs: ssz_types::Optional::None,
             },
-        })
+        },
+    )
 }

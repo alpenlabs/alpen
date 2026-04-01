@@ -2,12 +2,9 @@
 
 use std::{cmp::Ordering, collections::BTreeMap};
 
-use ssz_derive::{Decode, Encode};
-use strata_acct_types::{AccountId, TxEffects};
-use strata_crypto::hash;
-use strata_identifiers::OLTxId;
-use strata_ol_chain_types_new::{GamTxPayload, TxConstraints};
-use strata_snark_acct_types::SnarkAccountUpdate;
+use strata_acct_types::AccountId;
+pub use strata_ol_chain_types_new::OLTransaction;
+use strata_ol_chain_types_new::TransactionPayload;
 
 use crate::error::OLMempoolError;
 
@@ -59,185 +56,6 @@ impl Default for OLMempoolConfig {
     }
 }
 
-/// Snark account update payload for mempool (without accumulator proofs).
-///
-/// This type is legacy and the code that uses it should be reworked to use the
-/// new simplified tx format which doesn't embed the proofs in the snark account
-/// update data itself.
-#[derive(Clone, Debug, Encode, Decode, PartialEq, Eq)]
-pub struct OLMempoolSauTxPayload {
-    /// Target account for this transaction.
-    pub target: AccountId,
-    /// Base snark account update WITHOUT accumulator proofs.
-    pub base_update: SnarkAccountUpdate,
-}
-
-impl OLMempoolSauTxPayload {
-    /// Create a new snark account update mempool payload.
-    pub fn new(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
-        Self {
-            target,
-            base_update,
-        }
-    }
-
-    /// Get the target account.
-    pub fn target(&self) -> &AccountId {
-        &self.target
-    }
-
-    /// Get the base update.
-    pub fn base_update(&self) -> &SnarkAccountUpdate {
-        &self.base_update
-    }
-}
-
-/// Transaction payload for mempool.
-///
-/// This represents the payload portion of a mempool transaction WITHOUT accumulator proofs.
-/// It mirrors [`TransactionPayload`](strata_ol_chain_types_new::TransactionPayload) but for
-/// SnarkAccountUpdate, uses a minimal structure without accumulator_proofs. During block assembly,
-/// accumulator proofs are generated and this is converted to a full
-/// [`OLTransaction`](strata_ol_chain_types_new::OLTransaction).
-#[derive(Clone, Debug, Encode, Decode, PartialEq, Eq)]
-#[ssz(enum_behaviour = "union")]
-pub enum OLMempoolTxPayload {
-    /// Generic account message transaction.
-    GenericAccountMessage(GamTxPayload),
-
-    /// Snark account update transaction WITHOUT accumulator proofs.
-    SnarkAccountUpdate(OLMempoolSauTxPayload),
-}
-
-impl OLMempoolTxPayload {
-    /// Get the target account for this transaction payload.
-    pub fn target(&self) -> AccountId {
-        match self {
-            OLMempoolTxPayload::GenericAccountMessage(gam) => *gam.target(),
-            OLMempoolTxPayload::SnarkAccountUpdate(payload) => *payload.target(),
-        }
-    }
-
-    /// Create a new generic account message payload.
-    pub fn new_generic_account_message(
-        target: AccountId,
-        _payload: Vec<u8>,
-    ) -> Result<Self, &'static str> {
-        Ok(Self::GenericAccountMessage(GamTxPayload::new(target)?))
-    }
-
-    /// Create a new snark account update payload without accumulator proofs.
-    pub fn new_snark_account_update(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
-        Self::SnarkAccountUpdate(OLMempoolSauTxPayload::new(target, base_update))
-    }
-}
-
-/// Transaction data for mempool.
-///
-/// This contains the payload and attachment needed for an OL transaction WITHOUT accumulator
-/// proofs. During block assembly, accumulator proofs are generated and this is converted to a full
-/// [`OLTransaction`](strata_ol_chain_types_new::OLTransaction).
-///
-/// The transaction ID ([`OLTxId`]) is computed by SSZ-encoding this structure and hashing it.
-/// This hash equals the hash of [`OLTransaction`](strata_ol_chain_types_new::OLTransaction)
-/// without accumulator proofs, ensuring consistency across mempool, canonical, and RPC
-/// representations.
-#[derive(Clone, Debug, Encode, Decode, PartialEq, Eq)]
-pub struct OLMempoolTransaction {
-    /// Transaction payload (generic message or snark account update).
-    pub payload: OLMempoolTxPayload,
-
-    /// Transaction constraints (min_slot, max_slot).
-    pub constraints: TxConstraints,
-
-    /// External effects of the transaction (transfers and messages).
-    pub effects: TxEffects,
-}
-
-impl OLMempoolTransaction {
-    /// Create a new mempool transaction with a generic account message.
-    pub fn new_generic_account_message(
-        target: AccountId,
-        payload: Vec<u8>,
-    ) -> Result<Self, &'static str> {
-        let mut effects = TxEffects::default();
-        if !payload.is_empty() {
-            effects.push_message(target, 0, payload);
-        }
-        Ok(Self {
-            payload: OLMempoolTxPayload::new_generic_account_message(target, vec![])?,
-            constraints: TxConstraints::default(),
-            effects,
-        })
-    }
-
-    /// Create a new mempool transaction with a snark account update.
-    ///
-    /// Effects are derived from the update's
-    /// [`UpdateOutputs`](strata_snark_acct_types::UpdateOutputs).
-    pub fn new_snark_account_update(target: AccountId, base_update: SnarkAccountUpdate) -> Self {
-        let effects = base_update.operation().outputs().to_tx_effects();
-        Self {
-            payload: OLMempoolTxPayload::new_snark_account_update(target, base_update),
-            constraints: TxConstraints::default(),
-            effects,
-        }
-    }
-
-    /// Sets the constraints on this transaction, consuming and returning self.
-    pub fn with_constraints(mut self, constraints: TxConstraints) -> Self {
-        self.constraints = constraints;
-        self
-    }
-
-    /// Get the target account.
-    pub fn target(&self) -> AccountId {
-        self.payload.target()
-    }
-
-    /// Get the payload.
-    pub fn payload(&self) -> &OLMempoolTxPayload {
-        &self.payload
-    }
-
-    /// Get the constraints.
-    pub fn constraints(&self) -> &TxConstraints {
-        &self.constraints
-    }
-
-    /// Get the effects.
-    pub fn effects(&self) -> &TxEffects {
-        &self.effects
-    }
-
-    /// Sets the effects on this transaction, consuming and returning self.
-    pub fn with_effects(mut self, effects: TxEffects) -> Self {
-        self.effects = effects;
-        self
-    }
-
-    /// Get the base update if this is a snark account update transaction.
-    pub fn base_update(&self) -> Option<&SnarkAccountUpdate> {
-        match &self.payload {
-            OLMempoolTxPayload::SnarkAccountUpdate(payload) => Some(payload.base_update()),
-            OLMempoolTxPayload::GenericAccountMessage(_) => None,
-        }
-    }
-
-    /// Compute the transaction ID by hashing the SSZ-encoded transaction data.
-    ///
-    /// This follows the established pattern: SSZ encode → SHA256 hash.
-    /// The hash of [`OLMempoolTransaction`] should equal the hash of
-    /// [`OLTransaction`](strata_ol_chain_types_new::OLTransaction) without accumulator_proofs,
-    /// and also equal the hash of `RpcOLTransaction`
-    /// when properly converted.
-    pub fn compute_txid(&self) -> OLTxId {
-        let encoded = ssz::Encode::as_ssz_bytes(self);
-        let hash_bytes = hash::raw(&encoded);
-        OLTxId::from(hash_bytes)
-    }
-}
-
 /// Ordering key for mempool transactions.
 ///
 /// Provides collision-free ordering with different strategies for different transaction types:
@@ -273,14 +91,14 @@ pub enum MempoolOrderingKey {
 
 impl MempoolOrderingKey {
     /// Create ordering key for a transaction with the given timestamp_micros.
-    pub(crate) fn for_transaction(tx: &OLMempoolTransaction, timestamp_micros: u64) -> Self {
+    pub(crate) fn for_transaction(tx: &OLTransaction, timestamp_micros: u64) -> Self {
         match tx.payload() {
-            OLMempoolTxPayload::SnarkAccountUpdate(payload) => Self::Snark {
+            TransactionPayload::SnarkAccountUpdate(payload) => Self::Snark {
                 account_id: *payload.target(),
-                seq_no: payload.base_update().operation().seq_no(),
+                seq_no: payload.operation().update().seq_no(),
                 timestamp_micros,
             },
-            OLMempoolTxPayload::GenericAccountMessage(_) => Self::Gam { timestamp_micros },
+            TransactionPayload::GenericAccountMessage(_) => Self::Gam { timestamp_micros },
         }
     }
 
@@ -360,7 +178,7 @@ impl Ord for MempoolOrderingKey {
 #[derive(Clone, Debug)]
 pub(crate) struct MempoolEntry {
     /// The transaction data.
-    pub(crate) tx: OLMempoolTransaction,
+    pub(crate) tx: OLTransaction,
 
     /// Ordering key.
     pub(crate) ordering_key: MempoolOrderingKey,
@@ -372,7 +190,7 @@ pub(crate) struct MempoolEntry {
 impl MempoolEntry {
     /// Create a new mempool entry.
     pub(crate) fn new(
-        tx: OLMempoolTransaction,
+        tx: OLTransaction,
         ordering_key: MempoolOrderingKey,
         size_bytes: usize,
     ) -> Self {
@@ -567,128 +385,48 @@ impl OLMempoolRejectCounts {
 #[cfg(test)]
 mod tests {
     use ::ssz::{Decode, Encode};
-    use proptest::{prelude::*, strategy::ValueTree, test_runner::TestRunner};
-    use strata_acct_types::{AccountId, *};
-    use strata_identifiers::Buf32;
-    use strata_ol_chain_types_new::test_utils;
-    use strata_snark_acct_types::*;
+    use proptest::{
+        prelude::*,
+        strategy::{Strategy, ValueTree},
+        test_runner::TestRunner,
+    };
+    use strata_acct_types::AccountId;
+    use strata_ol_chain_types_new::{
+        OLTransaction, OLTransactionData, TransactionPayload, TxProofs, test_utils,
+    };
 
     use super::*;
     use crate::test_utils::{
-        create_test_account_id, create_test_constraints, create_test_snark_update,
+        create_test_account_id, create_test_constraints, create_test_generic_tx,
+        create_test_snark_tx, create_test_snark_tx_from_update, create_test_snark_tx_with_seq_no,
+        create_test_snark_update,
     };
 
-    fn output_transfer_strategy() -> impl Strategy<Value = OutputTransfer> {
-        (any::<[u8; 32]>().prop_map(AccountId::from), any::<u64>())
-            .prop_map(|(dest, value)| OutputTransfer::new(dest, BitcoinAmount::from_sat(value)))
-    }
-
-    fn output_message_strategy() -> impl Strategy<Value = OutputMessage> {
-        (
-            any::<[u8; 32]>().prop_map(AccountId::from),
-            (any::<u64>(), prop::collection::vec(any::<u8>(), 0..32)).prop_map(|(value, data)| {
-                MsgPayload {
-                    value: BitcoinAmount::from_sat(value),
-                    data: data.into(),
-                }
-            }),
-        )
-            .prop_map(|(dest, payload)| OutputMessage::new(dest, payload))
-    }
-
-    /// Proptest strategy for creating mempool snark account update payloads.
-    ///
-    /// Uses strategies from ol/chain-types to generate meaningful test data.
-    fn mempool_snark_update_tx_payload_strategy() -> impl Strategy<Value = OLMempoolSauTxPayload> {
-        (
-            any::<[u8; 32]>(),                                                     // target
-            any::<[u8; 32]>(), // proof_state inner_state
-            any::<u64>(),      // seq_no
-            prop::collection::vec(test_utils::message_entry_strategy(), 0..5), // messages
-            prop::collection::vec(test_utils::accumulator_claim_strategy(), 0..3), // ledger_refs
-            prop::collection::vec(output_transfer_strategy(), 0..3), // output_transfers
-            prop::collection::vec(output_message_strategy(), 0..3), // output_messages
-            prop::collection::vec(any::<u8>(), 0..32), // extra_data
-            prop::collection::vec(any::<u8>(), 0..100), // update_proof
-        )
-            .prop_map(
-                |(
-                    target_bytes,
-                    state_bytes,
-                    seq_no,
-                    messages,
-                    ledger_refs,
-                    output_transfers,
-                    output_messages,
-                    extra_data,
-                    update_proof,
-                )| {
-                    let proof_state = ProofState::new(Buf32::from(state_bytes), 0);
-                    let operation = UpdateOperationData::new(
-                        seq_no,
-                        proof_state,
-                        messages,
-                        LedgerRefs::new(ledger_refs),
-                        UpdateOutputs::new(output_transfers, output_messages),
-                        extra_data,
-                    );
-                    let base_update = SnarkAccountUpdate::new(operation, update_proof);
-                    OLMempoolSauTxPayload::new(AccountId::from(target_bytes), base_update)
-                },
-            )
-    }
-
-    /// Proptest strategy for creating mempool transaction payloads.
-    ///
-    /// Reuses strategies from ol/chain-types for GenericAccountMessage and creates
-    /// a custom strategy for SnarkAccountUpdate (without accumulator proofs).
-    fn mempool_tx_payload_strategy() -> impl Strategy<Value = OLMempoolTxPayload> {
-        prop_oneof![
-            test_utils::gam_tx_payload_strategy()
-                .prop_map(OLMempoolTxPayload::GenericAccountMessage),
-            mempool_snark_update_tx_payload_strategy()
-                .prop_map(OLMempoolTxPayload::SnarkAccountUpdate),
-        ]
-    }
-
-    /// Proptest strategy for creating mempool transactions.
-    ///
-    /// Reuses transaction_attachment_strategy from ol/chain-types.
-    fn mempool_transaction_strategy() -> impl Strategy<Value = OLMempoolTransaction> {
-        (
-            mempool_tx_payload_strategy(),
-            test_utils::transaction_attachment_strategy(),
-        )
-            .prop_map(|(payload, constraints)| OLMempoolTransaction {
-                payload,
-                constraints,
-                effects: TxEffects::default(),
-            })
+    fn create_test_message_payload() -> Vec<u8> {
+        let mut runner = TestRunner::default();
+        prop::collection::vec(any::<u8>(), 1..64)
+            .new_tree(&mut runner)
+            .unwrap()
+            .current()
     }
 
     #[test]
     fn test_generic_account_message_creation() {
-        let mut runner = TestRunner::default();
-        let payload_strategy = prop::collection::vec(any::<u8>(), 10..100);
-        let payload = payload_strategy.new_tree(&mut runner).unwrap().current();
-
         let target = create_test_account_id();
         let constraints = create_test_constraints();
+        let payload = create_test_message_payload();
 
-        let tx = OLMempoolTransaction::new_generic_account_message(target, payload.clone())
-            .expect("Should create generic account message tx")
-            .with_constraints(constraints.clone());
+        let tx = OLTransaction::new(
+            OLTransactionData::new_gam(target, payload).with_constraints(constraints.clone()),
+            TxProofs::new_empty(),
+        );
 
-        assert_eq!(tx.target(), target);
+        assert_eq!(tx.target(), Some(target));
         assert_eq!(tx.constraints(), &constraints);
-        assert!(tx.base_update().is_none());
-
-        match tx.payload() {
-            OLMempoolTxPayload::GenericAccountMessage(gam) => {
-                assert_eq!(gam.target(), &target);
-            }
-            _ => panic!("Expected GenericAccountMessage"),
-        }
+        assert!(matches!(
+            tx.payload(),
+            TransactionPayload::GenericAccountMessage(_)
+        ));
     }
 
     #[test]
@@ -697,17 +435,17 @@ mod tests {
         let base_update = create_test_snark_update();
         let constraints = create_test_constraints();
 
-        let tx = OLMempoolTransaction::new_snark_account_update(target, base_update.clone())
-            .with_constraints(constraints.clone());
+        let tx = create_test_snark_tx_from_update(target, base_update.clone(), constraints.clone());
 
-        assert_eq!(tx.target(), target);
+        assert_eq!(tx.target(), Some(target));
         assert_eq!(tx.constraints(), &constraints);
-        assert_eq!(tx.base_update(), Some(&base_update));
-
         match tx.payload() {
-            OLMempoolTxPayload::SnarkAccountUpdate(payload) => {
+            TransactionPayload::SnarkAccountUpdate(payload) => {
                 assert_eq!(payload.target(), &target);
-                assert_eq!(payload.base_update(), &base_update);
+                assert_eq!(
+                    payload.operation().update().seq_no(),
+                    base_update.operation().seq_no()
+                );
             }
             _ => panic!("Expected SnarkAccountUpdate"),
         }
@@ -716,103 +454,69 @@ mod tests {
     #[test]
     fn test_compute_txid_generic_message() {
         let target = create_test_account_id();
-        let constraints = create_test_constraints();
-
-        let tx1 = OLMempoolTransaction::new_generic_account_message(target, vec![1, 2, 3])
-            .expect("Should create tx")
-            .with_constraints(constraints.clone());
-        let tx2 = OLMempoolTransaction::new_generic_account_message(target, vec![1, 2, 3])
-            .expect("Should create tx")
-            .with_constraints(constraints);
-
-        // Same transaction should have same ID
+        let payload = create_test_message_payload();
+        let tx1 = OLTransaction::new(
+            OLTransactionData::new_gam(target, payload.clone()),
+            TxProofs::new_empty(),
+        );
+        let tx2 = OLTransaction::new(
+            OLTransactionData::new_gam(target, payload),
+            TxProofs::new_empty(),
+        );
         assert_eq!(tx1.compute_txid(), tx2.compute_txid());
 
-        // Different target should have different ID
         let different_target = create_test_account_id();
-        let tx3 =
-            OLMempoolTransaction::new_generic_account_message(different_target, vec![1, 2, 3])
-                .expect("Should create tx")
-                .with_constraints(create_test_constraints());
+        let tx3 = OLTransaction::new(
+            OLTransactionData::new_gam(different_target, create_test_message_payload()),
+            TxProofs::new_empty(),
+        );
         assert_ne!(tx1.compute_txid(), tx3.compute_txid());
     }
 
     #[test]
     fn test_compute_txid_snark_update() {
-        let target = create_test_account_id();
-        let base_update = create_test_snark_update();
-        let constraints = create_test_constraints();
-
-        let tx1 = OLMempoolTransaction::new_snark_account_update(target, base_update.clone())
-            .with_constraints(constraints.clone());
-        let tx2 = OLMempoolTransaction::new_snark_account_update(target, base_update)
-            .with_constraints(constraints);
-
-        // Same transaction should have same ID
+        let tx1 = create_test_snark_tx();
+        let tx2 = tx1.clone();
         assert_eq!(tx1.compute_txid(), tx2.compute_txid());
 
-        // Different base_update should have different ID
-        let different_base_update = create_test_snark_update();
-        let tx3 = OLMempoolTransaction::new_snark_account_update(target, different_base_update)
-            .with_constraints(create_test_constraints());
+        let tx3 = create_test_snark_tx_with_seq_no(1, 777);
         assert_ne!(tx1.compute_txid(), tx3.compute_txid());
     }
 
     #[test]
     fn test_ssz_roundtrip_generic_message() {
-        let mut runner = TestRunner::default();
-        let payload_strategy = prop::collection::vec(any::<u8>(), 10..100);
-        let payload = payload_strategy.new_tree(&mut runner).unwrap().current();
-
-        let target = create_test_account_id();
-        let constraints = create_test_constraints();
-
-        let tx = OLMempoolTransaction::new_generic_account_message(target, payload)
-            .expect("Should create tx")
-            .with_constraints(constraints);
-
+        let tx = create_test_generic_tx();
         let encoded = Encode::as_ssz_bytes(&tx);
-        let decoded = OLMempoolTransaction::from_ssz_bytes(&encoded).expect("Should decode");
-
+        let decoded = OLTransaction::from_ssz_bytes(&encoded).expect("Should decode");
         assert_eq!(tx, decoded);
     }
 
     #[test]
     fn test_ssz_roundtrip_snark_update() {
-        let target = create_test_account_id();
-        let base_update = create_test_snark_update();
-        let constraints = create_test_constraints();
-
-        let tx = OLMempoolTransaction::new_snark_account_update(target, base_update)
-            .with_constraints(constraints);
-
+        let tx = create_test_snark_tx();
         let encoded = Encode::as_ssz_bytes(&tx);
-        let decoded = OLMempoolTransaction::from_ssz_bytes(&encoded).expect("Should decode");
-
+        let decoded = OLTransaction::from_ssz_bytes(&encoded).expect("Should decode");
         assert_eq!(tx, decoded);
     }
 
-    proptest::proptest! {
+    proptest! {
         #[test]
-        fn test_mempool_tx_ssz_roundtrip(tx in mempool_transaction_strategy()) {
+        fn test_mempool_tx_ssz_roundtrip(tx in test_utils::ol_transaction_strategy()) {
             let encoded = Encode::as_ssz_bytes(&tx);
-            let decoded = OLMempoolTransaction::from_ssz_bytes(&encoded)
-                .expect("Should decode mempool transaction");
+            let decoded = OLTransaction::from_ssz_bytes(&encoded).expect("Should decode transaction");
             prop_assert_eq!(tx, decoded);
         }
 
         #[test]
-        fn test_mempool_tx_id_consistency(tx in mempool_transaction_strategy()) {
+        fn test_mempool_tx_id_consistency(tx in test_utils::ol_transaction_strategy()) {
             let txid1 = tx.compute_txid();
             let txid2 = tx.compute_txid();
             prop_assert_eq!(txid1, txid2, "Transaction ID should be deterministic");
         }
 
         #[test]
-        fn test_mempool_tx_payload_target(
-            payload in mempool_tx_payload_strategy()
-        ) {
-            let target = payload.target();
+        fn test_mempool_tx_payload_has_target(tx in test_utils::ol_transaction_strategy()) {
+            let target = tx.target().expect("all payload variants must have target");
             prop_assert!(target != AccountId::zero(), "Target should not be zero");
         }
     }
@@ -821,10 +525,10 @@ mod tests {
     mod ordering_tests {
         use std::cmp::Ordering;
 
-        use strata_acct_types::AccountId;
-
         use super::*;
-        use crate::test_utils::{create_test_generic_tx, create_test_snark_tx};
+        use crate::test_utils::{
+            create_test_account_id, create_test_generic_tx, create_test_snark_tx,
+        };
 
         #[test]
         fn test_gam_ordering_by_timestamp_micros() {
@@ -851,7 +555,7 @@ mod tests {
 
         #[test]
         fn test_snark_same_account_orders_by_seq_no() {
-            let account = AccountId::from([1u8; 32]);
+            let account = create_test_account_id();
             let tx = create_test_snark_tx();
             let timestamps = [1_000_100, 1_000_050, 1_000_025]; // Decreasing timestamps
             let entries: Vec<_> = timestamps
@@ -881,8 +585,11 @@ mod tests {
 
         #[test]
         fn test_snark_different_accounts_orders_by_timestamp_micros() {
-            let account_a = AccountId::from([1u8; 32]);
-            let account_b = AccountId::from([2u8; 32]);
+            let account_a = create_test_account_id();
+            let mut account_b = create_test_account_id();
+            while account_b == account_a {
+                account_b = create_test_account_id();
+            }
 
             // Different accounts - should order by `timestamp_micros`
             let tx_a = create_test_snark_tx();
@@ -918,7 +625,7 @@ mod tests {
 
         #[test]
         fn test_mixed_snark_gam_orders_by_timestamp_micros() {
-            let account = AccountId::from([1u8; 32]);
+            let account = create_test_account_id();
 
             let tx_snark = create_test_snark_tx();
             let tx_gam = create_test_generic_tx();
@@ -950,7 +657,11 @@ mod tests {
 
         #[test]
         fn test_complex_ordering_scenario() {
-            let (acc_a, acc_b) = (AccountId::from([1u8; 32]), AccountId::from([2u8; 32]));
+            let acc_a = create_test_account_id();
+            let mut acc_b = create_test_account_id();
+            while acc_b == acc_a {
+                acc_b = create_test_account_id();
+            }
             let (tx_gam, tx_snark) = (create_test_generic_tx(), create_test_snark_tx());
 
             let mut entries = [

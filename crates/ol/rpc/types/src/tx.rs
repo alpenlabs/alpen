@@ -3,8 +3,11 @@
 use serde::{Deserialize, Serialize};
 use ssz::Decode;
 use strata_acct_types::AccountId;
-use strata_ol_chain_types_new::TxConstraints;
-use strata_ol_mempool::OLMempoolTransaction;
+use strata_ol_chain_types_new::{
+    ClaimList, OLTransaction, OLTransactionData, ProofSatisfierList, SauTxLedgerRefs,
+    SauTxOperationData, SauTxPayload, SauTxProofState, SauTxUpdateData, TransactionPayload,
+    TxConstraints, TxProofs,
+};
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::{SnarkAccountUpdate, UpdateOperationData};
 
@@ -43,7 +46,7 @@ impl RpcOLTransaction {
         &self.payload
     }
 
-    /// Returns the attachments.
+    /// Returns the constraints.
     pub fn constraints(&self) -> &RpcTxConstraints {
         &self.constraints
     }
@@ -94,7 +97,7 @@ impl RpcGenericAccountMessage {
     }
 }
 
-/// Transaction extra: slot constraints.
+/// Transaction constraints.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcTxConstraints {
@@ -123,10 +126,10 @@ impl RpcTxConstraints {
 }
 
 impl From<TxConstraints> for RpcTxConstraints {
-    fn from(extra: TxConstraints) -> Self {
+    fn from(constraints: TxConstraints) -> Self {
         Self {
-            min_slot: extra.min_slot(),
-            max_slot: extra.max_slot(),
+            min_slot: constraints.min_slot(),
+            max_slot: constraints.max_slot(),
         }
     }
 }
@@ -144,12 +147,12 @@ pub enum RpcTxConversionError {
     #[error("failed to decode update operation data: {0}")]
     DecodeOperationData(String),
 
-    /// Failed to create generic account message (payload too large).
-    #[error("failed to create generic account message: {0}")]
-    InvalidGenericMessage(&'static str),
+    /// Too many ASM history claims in snark operation.
+    #[error("too many ASM history claims in snark operation")]
+    TooManyAsmHistoryClaims,
 }
 
-impl TryFrom<RpcOLTransaction> for OLMempoolTransaction {
+impl TryFrom<RpcOLTransaction> for OLTransaction {
     type Error = RpcTxConversionError;
 
     fn try_from(rpc_tx: RpcOLTransaction) -> Result<Self, Self::Error> {
@@ -158,24 +161,54 @@ impl TryFrom<RpcOLTransaction> for OLMempoolTransaction {
         match rpc_tx.payload {
             RpcTransactionPayload::GenericAccountMessage(gam) => {
                 let target = AccountId::new(gam.target.0);
-                OLMempoolTransaction::new_generic_account_message(target, gam.payload.0)
-                    .map(|tx| tx.with_constraints(constraints))
-                    .map_err(RpcTxConversionError::InvalidGenericMessage)
+                let tx_data =
+                    OLTransactionData::new_gam(target, gam.payload.0).with_constraints(constraints);
+                Ok(OLTransaction::new(tx_data, TxProofs::new_empty()))
             }
             RpcTransactionPayload::SnarkAccountUpdate(sau) => {
                 let target = AccountId::new(sau.target().0);
 
-                // Decode UpdateOperationData from SSZ-encoded bytes
                 let operation =
                     UpdateOperationData::from_ssz_bytes(&sau.update_operation_encoded().0)
                         .map_err(|e| RpcTxConversionError::DecodeOperationData(e.to_string()))?;
-
                 let base_update = SnarkAccountUpdate::new(operation, sau.update_proof().0.clone());
 
-                Ok(
-                    OLMempoolTransaction::new_snark_account_update(target, base_update)
-                        .with_constraints(constraints),
-                )
+                let operation = base_update.operation();
+                let proof_state = operation.new_proof_state();
+                let sau_proof_state = SauTxProofState::new(
+                    proof_state.next_inbox_msg_idx(),
+                    proof_state.inner_state(),
+                );
+                let sau_update_data = SauTxUpdateData::new(
+                    operation.seq_no(),
+                    sau_proof_state,
+                    operation.extra_data().to_vec(),
+                );
+
+                let asm_hist_refs = operation.ledger_refs().l1_header_refs();
+                let sau_ledger_refs = if asm_hist_refs.is_empty() {
+                    SauTxLedgerRefs::new_empty()
+                } else {
+                    let claim_list = ClaimList::new(asm_hist_refs.to_vec())
+                        .ok_or(RpcTxConversionError::TooManyAsmHistoryClaims)?;
+                    SauTxLedgerRefs::new_with_claims(claim_list)
+                };
+
+                let messages = operation.processed_messages().to_vec();
+                let sau_operation_data =
+                    SauTxOperationData::new(sau_update_data, messages, sau_ledger_refs);
+                let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(
+                    target,
+                    sau_operation_data,
+                ));
+                let effects = operation.outputs().to_tx_effects();
+                let tx_data =
+                    OLTransactionData::new(payload, effects).with_constraints(constraints);
+                let tx_proofs = TxProofs::new(
+                    ProofSatisfierList::single(base_update.update_proof().to_vec()),
+                    None,
+                );
+                Ok(OLTransaction::new(tx_data, tx_proofs))
             }
         }
     }

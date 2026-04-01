@@ -254,8 +254,8 @@ impl SequencerOLClient for RpcOLClient {
 
         let rpc_update = RpcSnarkAccountUpdate::new(
             (*self.account_id.inner()).into(),
-            update.operation.as_ssz_bytes().into(),
-            update.update_proof.to_vec().into(),
+            operation.as_ssz_bytes().into(),
+            update.update_proof().to_vec().into(),
         );
 
         let tx = RpcOLTransaction::new(

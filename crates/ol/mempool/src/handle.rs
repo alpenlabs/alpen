@@ -1,14 +1,13 @@
 //! Mempool service handle for external interaction.
 
 use strata_identifiers::OLTxId;
+use strata_ol_chain_types_new::OLTransaction;
 use strata_service::ServiceMonitor;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     MempoolCommand, MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
-    command::create_completion,
-    service::MempoolServiceStatus,
-    types::{OLMempoolStats, OLMempoolTransaction},
+    command::create_completion, service::MempoolServiceStatus, types::OLMempoolStats,
 };
 
 /// Handle for interacting with the mempool service.
@@ -56,7 +55,7 @@ impl MempoolHandle {
     ///
     /// # Returns
     /// The transaction ID if successfully added
-    pub async fn submit_transaction(&self, tx: OLMempoolTransaction) -> OLMempoolResult<OLTxId> {
+    pub async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         let (completion, rx) = create_completion();
         let command = MempoolCommand::SubmitTransaction {
             tx: Box::new(tx),
@@ -72,7 +71,7 @@ impl MempoolHandle {
     pub async fn get_transactions(
         &self,
         limit: usize,
-    ) -> OLMempoolResult<Vec<(OLTxId, OLMempoolTransaction)>> {
+    ) -> OLMempoolResult<Vec<(OLTxId, OLTransaction)>> {
         let (completion, rx) = create_completion();
         let command = MempoolCommand::GetTransactions { completion, limit };
         self.send_command(command, rx).await?

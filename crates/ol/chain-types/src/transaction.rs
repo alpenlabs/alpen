@@ -39,6 +39,15 @@ impl OLTransaction {
     pub fn compute_txid(&self) -> OLTxId {
         self.data().compute_txid()
     }
+
+    /// Returns a new transaction with only accumulator proofs updated.
+    pub fn with_accumulator_proofs(
+        mut self,
+        accumulator_proofs: Option<RawMerkleProofList>,
+    ) -> Self {
+        self.proofs = self.proofs.with_accumulator_proofs(accumulator_proofs);
+        self
+    }
 }
 
 impl TransactionPayload {
@@ -313,6 +322,15 @@ impl TxProofs {
             ssz_types::Optional::None => None,
         }
     }
+
+    /// Returns a new [`TxProofs`] with only accumulator proofs updated.
+    pub fn with_accumulator_proofs(
+        mut self,
+        accumulator_proofs: Option<RawMerkleProofList>,
+    ) -> Self {
+        self.accumulator_proofs = accumulator_proofs.into();
+        self
+    }
 }
 
 #[cfg(test)]
@@ -323,8 +341,8 @@ mod tests {
 
     use crate::{
         test_utils::{
-            gam_tx_payload_strategy, ol_transaction_strategy, transaction_attachment_strategy,
-            transaction_payload_strategy,
+            gam_tx_payload_strategy, ol_transaction_strategy, transaction_payload_strategy,
+            tx_constraints_strategy,
         },
         *,
     };
@@ -332,7 +350,7 @@ mod tests {
     mod tx_constraints {
         use super::*;
 
-        ssz_proptest!(TxConstraints, transaction_attachment_strategy());
+        ssz_proptest!(TxConstraints, tx_constraints_strategy());
 
         #[test]
         fn test_none_values() {

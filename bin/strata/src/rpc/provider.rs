@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use strata_asm_common::AsmManifest;
 use strata_db_types::DbResult;
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types_new::OLBlock;
-use strata_ol_mempool::{MempoolHandle, OLMempoolResult, OLMempoolTransaction};
+use strata_ol_chain_types_new::{OLBlock, OLTransaction};
+use strata_ol_mempool::{MempoolHandle, OLMempoolResult};
 use strata_ol_rpc_types::{AccountExtraData, OLRpcProvider};
 use strata_ol_state_types::OLState;
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
@@ -102,7 +102,7 @@ impl OLRpcProvider for NodeRpcProvider {
         self.status_channel.get_ol_sync_status()
     }
 
-    async fn submit_transaction(&self, tx: OLMempoolTransaction) -> OLMempoolResult<OLTxId> {
+    async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         self.mempool_handle.submit_transaction(tx).await
     }
 }

@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use strata_asm_common::AsmManifest;
 use strata_db_types::{types::AccountExtraDataEntry, DbResult};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
-use strata_ol_chain_types_new::OLBlock;
-use strata_ol_mempool::{OLMempoolResult, OLMempoolTransaction};
+use strata_ol_chain_types_new::{OLBlock, OLTransaction};
+use strata_ol_mempool::OLMempoolResult;
 use strata_ol_state_types::OLState;
 use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec, OLBlockCommitment};
 use strata_status::OLSyncStatus;
@@ -56,5 +56,5 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     fn get_ol_sync_status(&self) -> Option<OLSyncStatus>;
 
     /// Submit a transaction to the mempool.
-    async fn submit_transaction(&self, tx: OLMempoolTransaction) -> OLMempoolResult<OLTxId>;
+    async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId>;
 }

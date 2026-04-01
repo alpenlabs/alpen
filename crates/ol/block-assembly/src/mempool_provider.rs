@@ -4,20 +4,21 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use strata_identifiers::OLTxId;
-use strata_ol_mempool::{MempoolHandle, MempoolTxInvalidReason, OLMempoolTransaction};
+use strata_ol_chain_types_new::OLTransaction;
+use strata_ol_mempool::{MempoolHandle, MempoolTxInvalidReason};
 
 use crate::{BlockAssemblyError, BlockAssemblyResult};
 
 /// Provider for mempool transactions.
 #[async_trait]
 pub trait MempoolProvider: Send + Sync + 'static {
-    /// Gets [`OLMempoolTransaction`] entries from mempool.
+    /// Gets [`OLTransaction`] entries from mempool.
     ///
     /// Returns up to `limit` transactions in priority order with their [`OLTxId`] values.
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLMempoolTransaction)>>;
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>>;
 
     /// Reports invalid transactions to mempool by providing IDs and reasons for being invalid.
     async fn report_invalid_transactions(
@@ -47,7 +48,7 @@ impl MempoolProvider for MempoolProviderImpl {
     async fn get_transactions(
         &self,
         limit: usize,
-    ) -> BlockAssemblyResult<Vec<(OLTxId, OLMempoolTransaction)>> {
+    ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
         self.mempool_handle
             .get_transactions(limit)
             .await
