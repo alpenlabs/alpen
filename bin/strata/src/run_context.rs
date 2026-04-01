@@ -8,7 +8,7 @@ use strata_asm_worker::AsmWorkerHandle;
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_config::Config;
-use strata_consensus_logic::FcmServiceHandle;
+use strata_consensus_logic::{FcmServiceHandle, checkpoint_sync::CssServiceHandle};
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
 #[cfg(feature = "sequencer")]
@@ -68,10 +68,13 @@ impl RunContext {
         &self.service_handles.chain_worker_handle
     }
 
-    /// Returns the fork choice manager handle.
+    /// Returns the fork choice manager handle (only present on sequencer nodes).
     #[cfg(feature = "sequencer")]
     pub(crate) fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
-        &self.service_handles.fcm_handle
+        self.service_handles
+            .fcm_handle
+            .as_ref()
+            .expect("FCM handle must be present on sequencer nodes")
     }
 
     /// Returns the executor.
@@ -154,8 +157,11 @@ pub(crate) struct ServiceHandles {
     /// Handle for the checkpoint worker.
     checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
 
-    /// Handle for the FCM service.
-    fcm_handle: Arc<FcmServiceHandle>,
+    /// Handle for the FCM service (present in all nodes except checkpoint sync node).
+    fcm_handle: Option<Arc<FcmServiceHandle>>,
+
+    /// Monitor for the checkpoint sync service (checkpoint sync only).
+    css_monitor: Option<Arc<CssServiceHandle>>,
 
     /// Handles for sequencer-specific services ([`None`] when not running as sequencer).
     #[cfg(feature = "sequencer")]
@@ -170,7 +176,6 @@ impl ServiceHandles {
         mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
         checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
-        fcm_handle: Arc<FcmServiceHandle>,
     ) -> ServiceHandlesBuilder {
         ServiceHandlesBuilder {
             asm_handle,
@@ -178,7 +183,8 @@ impl ServiceHandles {
             mempool_handle,
             chain_worker_handle,
             checkpoint_handle,
-            fcm_handle,
+            fcm_handle: None,
+            css_monitor: None,
             #[cfg(feature = "sequencer")]
             sequencer_handles: None,
         }
@@ -187,31 +193,28 @@ impl ServiceHandles {
 
 /// Builder for [`ServiceHandles`].
 pub(crate) struct ServiceHandlesBuilder {
-    /// Handle for the ASM worker.
     asm_handle: Arc<AsmWorkerHandle>,
-
-    /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-
-    /// Handle for the mempool.
     mempool_handle: Arc<MempoolHandle>,
-
-    /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
-
-    /// Handle for the checkpoint worker.
     checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
-
-    /// Handle for the FCM service.
-    fcm_handle: Arc<FcmServiceHandle>,
-
-    /// Handles for sequencer-specific services ([`None`] when not running as sequencer).
+    fcm_handle: Option<Arc<FcmServiceHandle>>,
+    css_monitor: Option<Arc<CssServiceHandle>>,
     #[cfg(feature = "sequencer")]
     sequencer_handles: Option<SequencerServiceHandles>,
 }
 
 impl ServiceHandlesBuilder {
-    /// Adds sequencer-specific handles.
+    pub(crate) fn with_fcm_handle(mut self, handle: Arc<FcmServiceHandle>) -> Self {
+        self.fcm_handle = Some(handle);
+        self
+    }
+
+    pub(crate) fn with_css_monitor(mut self, monitor: Arc<CssServiceHandle>) -> Self {
+        self.css_monitor = Some(monitor);
+        self
+    }
+
     #[cfg(feature = "sequencer")]
     pub(crate) fn with_sequencer_handles(
         mut self,
@@ -221,7 +224,6 @@ impl ServiceHandlesBuilder {
         self
     }
 
-    /// Builds [`ServiceHandles`].
     pub(crate) fn build(self) -> ServiceHandles {
         ServiceHandles {
             asm_handle: self.asm_handle,
@@ -230,6 +232,7 @@ impl ServiceHandlesBuilder {
             chain_worker_handle: self.chain_worker_handle,
             checkpoint_handle: self.checkpoint_handle,
             fcm_handle: self.fcm_handle,
+            css_monitor: self.css_monitor,
             #[cfg(feature = "sequencer")]
             sequencer_handles: self.sequencer_handles,
         }

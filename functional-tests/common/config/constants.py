@@ -63,7 +63,8 @@ class ServiceType(str, Enum):
 
     AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
-    Strata = "strata"
+    StrataNode = "strata-node"  # Checkpoint sync node
+    Strata = "strata"  # TODO: rename to StrataSequencer
     AlpenSequencer = "alpen_sequencer"
     AlpenFullNode = "alpen_fullnode"
 

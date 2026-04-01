@@ -6,7 +6,9 @@ use anyhow::{Result, anyhow};
 use strata_btcio::reader::query::bitcoin_data_reader_task;
 use strata_chain_worker_new::start_chain_worker_service_from_ctx;
 use strata_consensus_logic::{
-    AsmBlockSubmitter, FcmContext, start_fcm_service,
+    AsmBlockSubmitter, FcmContext,
+    checkpoint_sync::{BitcoinDAExtractor, start_css_service},
+    start_fcm_service,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
 use strata_identifiers::OLBlockCommitment;
@@ -262,23 +264,38 @@ pub(crate) fn start_strata_services(
     let sequencer_handles =
         sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), sequencer_sk)?;
 
-    let fcm_ctx =
-        FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());
+    let is_sequencer = nodectx.config().client.is_sequencer;
 
-    let fcm_handle = nodectx
-        .task_manager()
-        .handle()
-        .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()))?;
-    let fcm_handle = Arc::new(fcm_handle);
-
-    let service_handles_builder = ServiceHandles::builder(
+    let mut service_handles_builder = ServiceHandles::builder(
         asm_handle,
-        csm_monitor,
+        csm_monitor.clone(),
         mempool_handle,
-        chain_worker_handle,
+        chain_worker_handle.clone(),
         checkpoint_handle,
-        fcm_handle,
     );
+
+    if is_sequencer {
+        let fcm_ctx = FcmContext::from_node_ctx(&nodectx, chain_worker_handle, csm_monitor);
+        let fcm_handle = nodectx
+            .task_manager()
+            .handle()
+            .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()))?;
+        service_handles_builder = service_handles_builder.with_fcm_handle(Arc::new(fcm_handle));
+    } else {
+        let magic_bytes = nodectx.params().rollup().magic_bytes;
+        let da_extractor = BitcoinDAExtractor::new(
+            nodectx.bitcoin_client().clone(),
+            magic_bytes,
+            nodectx.task_manager().handle().clone(),
+        );
+        let css_monitor = nodectx.task_manager().handle().block_on(start_css_service(
+            &nodectx,
+            chain_worker_handle,
+            da_extractor,
+        ))?;
+        service_handles_builder = service_handles_builder.with_css_monitor(Arc::new(css_monitor));
+    }
+
     let service_handles =
         sequencer_services::attach_service_handles(service_handles_builder, sequencer_handles)
             .build();

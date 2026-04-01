@@ -24,6 +24,9 @@ pub struct CheckpointSyncService<C: CheckpointSyncCtx> {
 #[derive(Clone, Debug, Serialize)]
 pub struct CheckpointSyncStatus;
 
+/// Handle type for the checkpoint sync service.
+pub type CssServiceHandle = ServiceMonitor<CheckpointSyncStatus>;
+
 impl<C> Service for CheckpointSyncService<C>
 where
     C: CheckpointSyncCtx + Send + Sync + 'static,

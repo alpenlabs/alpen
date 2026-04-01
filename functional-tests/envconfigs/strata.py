@@ -91,17 +91,27 @@ class StrataEnvConfig(flexitest.EnvConfig):
         if self.genesis_accounts is not None:
             ol_params = OLParams(accounts=self.genesis_accounts).with_genesis_l1(genesis_l1)
 
-        strata = strata_factory.create_node(
+        # Start Strata sequencer
+        genesis_l1_height = btc_rpc.proxy.getblockcount()
+        sequencer = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=True,
             ol_params=ol_params,
             epoch_sealing_config=self.epoch_sealing,
         )
-        strata.wait_for_ready(timeout=30)
+        sequencer.wait_for_ready(timeout=10)
+
+        strata_node = strata_factory.create_node(
+            bitcoind_config,
+            genesis_l1_height,
+            is_sequencer=False,
+        )
+        strata_node.wait_for_ready(timeout=10)
 
         services = {
             ServiceType.Bitcoin: bitcoind,
-            ServiceType.Strata: strata,
+            ServiceType.Strata: sequencer,
+            ServiceType.StrataNode: strata_node,
         }
         return services
