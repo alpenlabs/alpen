@@ -3555,7 +3555,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4518,7 +4518,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4817,7 +4817,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6282,7 +6282,7 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "strata-state",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "strata-test-utils",
  "strata-test-utils-btcio",
  "strata-test-utils-l2",
@@ -7406,7 +7406,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8907,7 +8907,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12316,7 +12316,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12329,7 +12329,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12418,7 +12418,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13889,7 +13889,7 @@ dependencies = [
  "strata-snark-acct-types",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
@@ -14281,7 +14281,7 @@ dependencies = [
  "strata-primitives",
  "strata-service",
  "strata-state",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "strata-test-utils",
  "strata-test-utils-btcio",
  "thiserror 2.0.18",
@@ -14368,7 +14368,7 @@ dependencies = [
  "strata-state",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "strata-test-utils",
  "strata-test-utils-btcio",
  "thiserror 2.0.18",
@@ -14395,7 +14395,7 @@ dependencies = [
  "strata-service",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -14545,7 +14545,7 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "strata-sync",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
@@ -14650,7 +14650,7 @@ dependencies = [
  "strata-state",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "strata-test-utils-l2",
  "thiserror 2.0.18",
  "threadpool",
@@ -14966,7 +14966,7 @@ dependencies = [
  "strata-primitives",
  "strata-state",
  "strata-status",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -15162,7 +15162,7 @@ dependencies = [
  "strata-params",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "tokio",
 ]
 
@@ -15204,7 +15204,7 @@ dependencies = [
  "strata-snark-acct-types",
  "strata-state",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "strata-test-utils-l2",
  "thiserror 2.0.18",
  "threadpool",
@@ -15284,7 +15284,7 @@ dependencies = [
  "strata-primitives",
  "strata-service",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
@@ -15356,7 +15356,7 @@ dependencies = [
  "strata-snark-acct-types",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
@@ -15454,7 +15454,7 @@ dependencies = [
  "strata-service",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -15563,7 +15563,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-service",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -15752,7 +15752,7 @@ dependencies = [
  "strata-rpc-types",
  "strata-rpc-utils",
  "strata-sp1-guest-builder",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "strata-zkvm-hosts",
  "thiserror 2.0.18",
  "tokio",
@@ -15878,7 +15878,7 @@ dependencies = [
  "strata-state",
  "strata-status",
  "strata-storage",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -15903,7 +15903,7 @@ dependencies = [
  "strata-rpc-api",
  "strata-rpc-types",
  "strata-sequencer",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -15913,14 +15913,14 @@ dependencies = [
 [[package]]
 name = "strata-service"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc12#78f1842680eb62041d4bfb78a9883ec4f77b0356"
 dependencies = [
  "anyhow",
  "futures",
  "opentelemetry 0.26.0",
  "serde",
  "serde_json",
- "strata-tasks",
+ "strata-tasks 0.3.0-alpha.1 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc12)",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -16091,6 +16091,18 @@ dependencies = [
 name = "strata-tasks"
 version = "0.3.0-alpha.1"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "strata-tasks"
+version = "0.3.0-alpha.1"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc12#78f1842680eb62041d4bfb78a9883ec4f77b0356"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -16473,7 +16485,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
