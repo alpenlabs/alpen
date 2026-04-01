@@ -6,13 +6,12 @@ use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::DbResult;
 use strata_identifiers::CheckpointL1Ref;
-use strata_node_context::NodeContext;
 use strata_ol_da::{DAExtractor, ExtractedDA};
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_storage::NodeStorage;
 
-pub trait CheckpointSyncCtx<E: DAExtractor> {
+pub trait CheckpointSyncCtx {
     /// Getter for chain worker handle reference.
     fn chain_worker(&self) -> &ChainWorkerHandle;
 
@@ -58,7 +57,7 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
     }
 }
 
-impl<E: DAExtractor> CheckpointSyncCtx<E> for CheckpointSyncCtxImpl<E> {
+impl<E: DAExtractor> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
     fn chain_worker(&self) -> &ChainWorkerHandle {
         &self.chain_worker
     }

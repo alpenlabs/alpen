@@ -12,21 +12,19 @@ use crate::checkpoint_sync::{
 };
 
 #[derive(Clone, Debug)]
-pub struct CheckpointSyncService<E: DAExtractor, C: CheckpointSyncCtx<E>> {
-    _e: PhantomData<E>,
+pub struct CheckpointSyncService<C: CheckpointSyncCtx> {
     _c: PhantomData<C>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CheckpointSyncStatus;
 
-impl<E, C> Service for CheckpointSyncService<E, C>
+impl<C> Service for CheckpointSyncService<C>
 where
-    E: DAExtractor + Send + Sync + 'static,
-    C: CheckpointSyncCtx<E> + Send + Sync + 'static,
+    C: CheckpointSyncCtx + Send + Sync + 'static,
 {
     type Msg = CheckpointSyncEvent;
-    type State = CheckpointSyncState<E, C>;
+    type State = CheckpointSyncState<C>;
     type Status = CheckpointSyncStatus;
 
     fn get_status(_s: &Self::State) -> Self::Status {
@@ -34,10 +32,9 @@ where
     }
 }
 
-impl<E, C> AsyncService for CheckpointSyncService<E, C>
+impl<C> AsyncService for CheckpointSyncService<C>
 where
-    E: DAExtractor + Send + Sync + 'static,
-    C: CheckpointSyncCtx<E> + Send + Sync + 'static,
+    C: CheckpointSyncCtx + Send + Sync + 'static,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
@@ -67,7 +64,7 @@ where
     let input = CheckpointSyncInput::new(clstate_rx);
 
     let service_monitor = ServiceBuilder::<
-        CheckpointSyncService<E, CheckpointSyncCtxImpl<E>>,
+        CheckpointSyncService<CheckpointSyncCtxImpl<E>>,
         CheckpointSyncInput,
     >::new()
     .with_state(state)

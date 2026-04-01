@@ -11,7 +11,6 @@
 
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_da::{DaScheme, OLDaSchemeV1};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
@@ -374,9 +373,6 @@ impl ChainWorkerServiceState {
         let outbuf = ExecOutputBuffer::new_empty();
         let timestamp = terminal_header_complement.timestamp();
         let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
-        let stroot = state.compute_state_root().unwrap(); // TODO: fix unwrap
-        let parent_header = terminal_header_complement.to_full_header(epoch, stroot);
-        // let blkctx = BlockContext::new(&blkinfo, Some(&parent_header));
         let epctx = EpochInitialContext::new(epoch.epoch(), epoch.to_block_commitment());
 
         // Process epoch initial

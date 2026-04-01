@@ -1,11 +1,8 @@
-use std::marker::PhantomData;
-
 use anyhow::anyhow;
 use strata_chain_worker_new::ApplyDAPayload;
 use strata_csm_types::{ClientState, L1Checkpoint};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
-use strata_ol_da::DAExtractor;
 use strata_ol_state_types::OLState;
 use strata_primitives::EpochCommitment;
 use strata_service::ServiceState;
@@ -13,10 +10,9 @@ use strata_service::ServiceState;
 use crate::checkpoint_sync::context::CheckpointSyncCtx;
 
 #[derive(Debug, Clone)]
-pub struct CheckpointSyncState<E: DAExtractor, C: CheckpointSyncCtx<E>> {
+pub struct CheckpointSyncState<C: CheckpointSyncCtx> {
     ctx: C,
     inner: InnerState,
-    _p: PhantomData<E>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,14 +20,13 @@ struct InnerState {
     last_finalized_epoch: Option<EpochCommitment>,
 }
 
-impl<E: DAExtractor, C: CheckpointSyncCtx<E>> CheckpointSyncState<E, C> {
+impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
     pub fn new(ctx: C) -> Self {
         Self {
             ctx,
             inner: InnerState {
                 last_finalized_epoch: None,
             },
-            _p: PhantomData,
         }
     }
 
@@ -73,7 +68,7 @@ impl<E: DAExtractor, C: CheckpointSyncCtx<E>> CheckpointSyncState<E, C> {
     }
 }
 
-fn validate_new_finalized_epoch<E: DAExtractor, C: CheckpointSyncCtx<E>>(
+fn validate_new_finalized_epoch<C: CheckpointSyncCtx>(
     prev: EpochCommitment,
     new: EpochCommitment,
     ctx: &C,
@@ -90,7 +85,7 @@ fn validate_new_finalized_epoch<E: DAExtractor, C: CheckpointSyncCtx<E>>(
     Ok(())
 }
 
-async fn extract_checkpoint_and_submit_to_chain_worker<E: DAExtractor, C: CheckpointSyncCtx<E>>(
+async fn extract_checkpoint_and_submit_to_chain_worker<C: CheckpointSyncCtx>(
     new: L1Checkpoint,
     ctx: &C,
 ) -> anyhow::Result<()> {
@@ -118,10 +113,9 @@ async fn extract_checkpoint_and_submit_to_chain_worker<E: DAExtractor, C: Checkp
     Ok(())
 }
 
-impl<E, C> ServiceState for CheckpointSyncState<E, C>
+impl<C> ServiceState for CheckpointSyncState<C>
 where
-    E: DAExtractor + Send + Sync + 'static,
-    C: CheckpointSyncCtx<E> + Send + Sync + 'static,
+    C: CheckpointSyncCtx + Send + Sync + 'static,
 {
     fn name(&self) -> &str {
         "checkpoint-sync"
