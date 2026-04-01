@@ -1419,7 +1419,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc11#d2393230f55c47eaec4e6e293b2e2032f1e52611"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc12#78f1842680eb62041d4bfb78a9883ec4f77b0356"
 dependencies = [
  "borsh",
  "hex",
