@@ -221,24 +221,16 @@ pub(crate) fn start_strata_services(
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
 
-    // Reuse shared proof storage manager from node storage.
-    let proof_db = nodectx.storage().proof().clone();
-
     // Start OL checkpoint service.
     // When an integrated prover is configured, the prover writes proofs to
     // the proof DB and signals ProofNotify to wake the checkpoint worker.
     // The worker waits subject to proof_publish_mode (Strict = indefinite,
     // Timeout = deadline). Without a prover, empty proofs are used immediately.
-    let proof_publish_mode = nodectx.params().rollup().proof_publish_mode.clone();
     let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
     let mut checkpoint_builder = OLCheckpointBuilder::new()
         .with_node_context(&nodectx)
-        .with_epoch_summary_receiver(epoch_summary_rx)
-        .with_proof_db(proof_db.clone())
-        .with_proof_publish_mode(proof_publish_mode);
+        .with_epoch_summary_receiver(epoch_summary_rx);
 
-    // When an integrated prover is configured, create a shared proof notifier
-    // so the checkpoint worker wakes immediately when a proof is stored.
     #[cfg(feature = "prover")]
     let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> =
         if let Some(prover_config) = &nodectx.config().prover {
@@ -249,10 +241,16 @@ pub(crate) fn start_strata_services(
                 ProverBackend::Native => ProofZkVm::Native,
                 ProverBackend::Sp1 => ProofZkVm::SP1,
             };
-            checkpoint_builder = checkpoint_builder.with_proof_zkvm(zkvm);
-
             let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-            checkpoint_builder = checkpoint_builder.with_proof_notify(notify.clone());
+            let publish_mode = nodectx.params().rollup().proof_publish_mode.clone();
+
+            checkpoint_builder = checkpoint_builder.with_prover(
+                strata_ol_checkpoint::ProverConfig {
+                    zkvm,
+                    notify: notify.clone(),
+                    publish_mode,
+                },
+            );
             Some(notify)
         } else {
             None
