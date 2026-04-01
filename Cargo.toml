@@ -297,7 +297,7 @@ strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = 
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc12" }
 strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
 strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
 strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
