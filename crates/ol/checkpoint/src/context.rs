@@ -91,9 +91,9 @@ const PROOF_WAIT_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Shared signal between the proof storer and the checkpoint worker.
 ///
-/// The proof storer calls [`notify`] after persisting a proof to the DB.
-/// The checkpoint worker blocks on [`wait`], which returns as soon as
-/// the signal arrives (or after [`PROOF_WAIT_INTERVAL`] as a fallback).
+/// The proof storer calls `notify` after persisting a proof to the DB.
+/// The checkpoint worker blocks on `wait`, which returns as soon as
+/// the signal arrives (or after a safety-net timeout as a fallback).
 #[derive(Debug)]
 pub struct ProofNotify {
     mu: Mutex<()>,
@@ -133,9 +133,8 @@ impl Default for ProofNotify {
 
 /// Prover configuration for the checkpoint worker.
 ///
-/// When provided to [`CheckpointWorkerContextImpl`], the worker reads proofs
-/// from the proof DB and waits for the prover to deliver them via
-/// [`ProofNotify`], subject to [`ProofPublishMode`] semantics.
+/// When provided, the worker reads proofs from the proof DB and waits for
+/// the prover to store them, subject to [`ProofPublishMode`] semantics.
 #[derive(Debug)]
 pub struct ProverConfig {
     /// The zkVM backend the prover uses (determines the proof DB key).
@@ -281,10 +280,9 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
     /// The flow depends on whether a prover is configured:
     ///
     /// 1. No prover (`self.prover` is `None`): returns empty bytes.
-    /// 2. Prover configured: checks the proof DB first (handles restarts
-    ///    where the proof was already stored). If not found, enters a wait
-    ///    loop where `ProofNotify::wait` blocks until the proof storer
-    ///    signals, then re-checks the DB. The loop respects `publish_mode`:
+    /// 2. Prover configured: checks the proof DB first (handles restarts where the proof was
+    ///    already stored). If not found, enters a wait loop where `ProofNotify::wait` blocks until
+    ///    the proof storer signals, then re-checks the DB. The loop respects `publish_mode`:
     ///    - `Strict`: waits indefinitely until a proof appears.
     ///    - `Timeout(secs)`: gives up after `secs` seconds and returns empty.
     fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
@@ -310,7 +308,10 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             if let Some(dl) = deadline
                 && Instant::now() >= dl
             {
-                warn!(epoch = epoch_idx, "proof timeout reached; using empty proof");
+                warn!(
+                    epoch = epoch_idx,
+                    "proof timeout reached; using empty proof"
+                );
                 return Ok(Vec::new());
             }
 

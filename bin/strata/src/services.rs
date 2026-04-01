@@ -193,8 +193,8 @@ pub(crate) type OptionalProofNotify = Option<Arc<strata_ol_checkpoint::ProofNoti
 /// Starts services and returns the run context and an optional proof notifier.
 ///
 /// The proof notifier is created when an integrated prover is configured. The
-/// caller passes it to [`prover::start_prover_service`] so that the proof
-/// storer can wake the checkpoint worker immediately after storing a proof.
+/// caller passes it to `start_prover_service` so that the proof storer can
+/// wake the checkpoint worker immediately after storing a proof.
 pub(crate) fn start_strata_services(
     nodectx: NodeContext,
     sequencer_sk: Option<[u8; 32]>,
@@ -232,29 +232,28 @@ pub(crate) fn start_strata_services(
         .with_epoch_summary_receiver(epoch_summary_rx);
 
     #[cfg(feature = "prover")]
-    let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> =
-        if let Some(prover_config) = &nodectx.config().prover {
-            use strata_config::ProverBackend;
-            use strata_primitives::proof::ProofZkVm;
+    let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = if let Some(prover_config) =
+        &nodectx.config().prover
+    {
+        use strata_config::ProverBackend;
+        use strata_primitives::proof::ProofZkVm;
 
-            let zkvm = match prover_config.backend {
-                ProverBackend::Native => ProofZkVm::Native,
-                ProverBackend::Sp1 => ProofZkVm::SP1,
-            };
-            let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-            let publish_mode = nodectx.params().rollup().proof_publish_mode.clone();
-
-            checkpoint_builder = checkpoint_builder.with_prover(
-                strata_ol_checkpoint::ProverConfig {
-                    zkvm,
-                    notify: notify.clone(),
-                    publish_mode,
-                },
-            );
-            Some(notify)
-        } else {
-            None
+        let zkvm = match prover_config.backend {
+            ProverBackend::Native => ProofZkVm::Native,
+            ProverBackend::Sp1 => ProofZkVm::SP1,
         };
+        let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
+        let publish_mode = nodectx.params().rollup().proof_publish_mode.clone();
+
+        checkpoint_builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
+            zkvm,
+            notify: notify.clone(),
+            publish_mode,
+        });
+        Some(notify)
+    } else {
+        None
+    };
 
     #[cfg(not(feature = "prover"))]
     let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
