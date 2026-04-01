@@ -111,7 +111,7 @@ jobs:
           rustup default "$RUST_NIGHTLY"
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
         with:
           # All parallel jobs share the same cache to maximize hits
           shared-key: functional-tests-pr
@@ -235,7 +235,7 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
         with:
           # Separate cache for coverage builds (different RUSTFLAGS produce different artifacts)
           shared-key: functional-tests-coverage
