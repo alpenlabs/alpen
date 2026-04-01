@@ -11,7 +11,9 @@ use strata_checkpoint_types::EpochSummary;
 use strata_db_types::DbResult;
 use strata_identifiers::CheckpointL1Ref;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
-use strata_ol_da::{DAExtractor, DaExtractorError, DaExtractorResult, ExtractedDA, decode_ol_da_payload_bytes};
+use strata_ol_da::{
+    decode_ol_da_payload_bytes, DAExtractor, DaExtractorError, DaExtractorResult, ExtractedDA,
+};
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_storage::NodeStorage;
@@ -146,5 +148,46 @@ impl DAExtractor for BitcoinDAExtractor {
         let complement = sidecar.terminal_header_complement().clone();
 
         Ok(ExtractedDA::new(da_payload, complement))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{ScriptBuf, Transaction};
+    use strata_asm_txs_checkpoint::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
+    use strata_asm_txs_test_utils::create_reveal_transaction_stub;
+    use strata_l1_envelope_fmt::parser::parse_envelope_payload;
+    use strata_ol_da::DaExtractorError;
+
+    fn make_checkpoint_tx(payload: &[u8]) -> Transaction {
+        create_reveal_transaction_stub(payload.to_vec(), &OL_STF_CHECKPOINT_TX_TAG)
+    }
+
+    fn extract_leaf_script(tx: &Transaction) -> Result<ScriptBuf, DaExtractorError> {
+        if tx.input.is_empty() {
+            return Err(DaExtractorError::CheckpointTxError(
+                CheckpointTxError::MissingInputs,
+            ));
+        }
+
+        tx.input[0]
+            .witness
+            .taproot_leaf_script()
+            .map(|leaf| leaf.script.into())
+            .ok_or(DaExtractorError::CheckpointTxError(
+                CheckpointTxError::MissingLeafScript,
+            ))
+    }
+
+    #[test]
+    fn test_envelope_roundtrip_large_payload() {
+        let payload = vec![0xAB; 1_300];
+        assert!(payload.len() > 520, "payload must exceed single push limit");
+
+        let tx = make_checkpoint_tx(&payload);
+
+        let script = extract_leaf_script(&tx).expect("extract envelope-bearing leaf script");
+        let parsed_payload = parse_envelope_payload(&script).expect("parse envelope payload");
+        assert_eq!(parsed_payload, payload);
     }
 }
