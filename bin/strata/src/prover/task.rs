@@ -1,7 +1,7 @@
 //! Task type for checkpoint proof generation.
 
 use serde::{Deserialize, Serialize};
-use strata_identifiers::Epoch;
+use strata_identifiers::EpochCommitment;
 use strata_paas::{ProgramType, ZkVmBackend};
 use strata_primitives::proof::ProofZkVm;
 
@@ -13,18 +13,22 @@ pub(crate) enum CheckpointVariant {
     Checkpoint,
 }
 
-/// Checkpoint proof generation task for a single epoch.
+/// Checkpoint proof generation task.
+///
+/// Identified by [`EpochCommitment`] (epoch index + terminal block) rather
+/// than a bare epoch index, so that reorgs naturally invalidate stale tasks.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct CheckpointTask {
-    /// The epoch to generate a checkpoint proof for.
-    pub epoch: Epoch,
-    /// The zkVM backend used for proving.
+    pub commitment: EpochCommitment,
     pub backend: ZkVmBackend,
 }
 
 impl CheckpointTask {
-    pub(crate) fn new(epoch: Epoch, backend: ZkVmBackend) -> Self {
-        Self { epoch, backend }
+    pub(crate) fn new(commitment: EpochCommitment, backend: ZkVmBackend) -> Self {
+        Self {
+            commitment,
+            backend,
+        }
     }
 
     /// Maps the task's [`ZkVmBackend`] to the corresponding [`ProofZkVm`].

@@ -38,7 +38,7 @@ impl InputFetcher<CheckpointTask> for CheckpointInputFetcher {
     type Error = ProverError;
 
     async fn fetch_input(&self, program: &CheckpointTask) -> Result<Self::Input, Self::Error> {
-        let epoch = program.epoch;
+        let epoch = program.commitment.epoch;
         let epoch_index = u64::from(epoch);
         debug!(%epoch_index, "fetching checkpoint proof input");
 

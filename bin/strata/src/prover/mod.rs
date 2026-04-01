@@ -140,6 +140,7 @@ pub(crate) fn start_prover_service(
         epoch_rx,
         backend,
         proof_db,
+        runctx.storage().clone(),
         last_payload_epoch,
     );
 
@@ -177,6 +178,7 @@ fn spawn_checkpoint_runner(
     mut epoch_rx: watch::Receiver<Option<EpochCommitment>>,
     backend: ZkVmBackend,
     proof_db: Arc<ProofDbManager>,
+    storage: Arc<strata_storage::NodeStorage>,
     last_payload_epoch: Option<Epoch>,
 ) {
     executor.spawn_critical_async("checkpoint-proof-runner", async move {
@@ -205,8 +207,24 @@ fn spawn_checkpoint_runner(
             while next_epoch_to_prove <= latest_epoch {
                 let epoch = next_epoch_to_prove;
 
-                // Skip if proof already exists in the DB (idempotency after restart).
-                let task = CheckpointTask::new(epoch, backend.clone());
+                // Resolve the full epoch commitment from the checkpoint DB.
+                let commitment = match storage
+                    .ol_checkpoint()
+                    .get_canonical_epoch_commitment_at_blocking(epoch)
+                {
+                    Ok(Some(c)) => c,
+                    Ok(None) => {
+                        debug!(%epoch, "epoch commitment not yet available, will retry");
+                        break;
+                    }
+                    Err(e) => {
+                        warn!(%epoch, %e, "failed to read epoch commitment, will retry");
+                        break;
+                    }
+                };
+
+                // Skip if proof already exists (idempotency after restart).
+                let task = CheckpointTask::new(commitment, backend.clone());
                 let zkvm = match task.proof_zkvm() {
                     Ok(z) => z,
                     Err(e) => {
@@ -229,18 +247,11 @@ fn spawn_checkpoint_runner(
                         next_epoch_to_prove += 1;
                     }
                     Ok(TaskResult::Failed { uuid, error }) => {
-                        warn!(
-                            %epoch,
-                            %uuid,
-                            %error,
-                            "checkpoint proof task failed, will retry"
-                        );
-                        // Break inner loop and retry on the next tick or epoch update.
+                        warn!(%epoch, %uuid, %error, "checkpoint proof failed, will retry");
                         break;
                     }
                     Err(e) => {
                         warn!(%epoch, %e, "checkpoint proof failed, will retry");
-                        // Break inner loop and retry on the next tick or epoch update.
                         break;
                     }
                 }

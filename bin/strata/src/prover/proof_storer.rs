@@ -40,8 +40,9 @@ impl ProofStorer<CheckpointTask> for CheckpointProofStorer {
         let zkvm = program
             .proof_zkvm()
             .map_err(|e| ProofStorageError(anyhow::anyhow!(e)))?;
-        let proof_key = ProofKey::new(ProofContext::Checkpoint(u64::from(program.epoch)), zkvm);
-        info!(epoch = program.epoch, "storing checkpoint proof");
+        let epoch = program.commitment.epoch;
+        let proof_key = ProofKey::new(ProofContext::Checkpoint(u64::from(epoch)), zkvm);
+        info!(%epoch, "storing checkpoint proof");
         self.db
             .put_proof(proof_key, proof)
             .map_err(|e| ProofStorageError(e.into()))?;

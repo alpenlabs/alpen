@@ -10,6 +10,7 @@ use std::{
 };
 
 use strata_db_types::types::{SerializableTaskId, SerializableTaskRecord};
+use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_paas::{
     ProverServiceError, ProverServiceResult, TaskId, TaskRecord, TaskStatus, TaskStore, ZkVmBackend,
 };
@@ -33,8 +34,9 @@ impl PersistentTaskStore {
     }
 
     fn to_serializable_id(task_id: &TaskId<CheckpointTask>) -> SerializableTaskId {
+        let epoch = task_id.program().commitment.epoch;
         SerializableTaskId {
-            program: ProofContext::Checkpoint(u64::from(task_id.program().epoch)),
+            program: ProofContext::Checkpoint(u64::from(epoch)),
             backend: match task_id.backend() {
                 ZkVmBackend::Native => 0,
                 ZkVmBackend::SP1 => 1,
@@ -66,8 +68,12 @@ impl PersistentTaskStore {
                 )));
             }
         };
+        // The serialized format only stores the epoch index. Reconstruct a
+        // placeholder commitment — the task store uses this only for
+        // deduplication and status tracking, not for proof generation.
+        let commitment = EpochCommitment::new(epoch, 0, OLBlockId::default());
         Ok(TaskId::new(
-            CheckpointTask::new(epoch, backend.clone()),
+            CheckpointTask::new(commitment, backend.clone()),
             backend,
         ))
     }
