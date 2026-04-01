@@ -353,7 +353,6 @@ impl ChainWorkerServiceState {
 
     /// Finalizes an epoch, merging write batches into finalized state.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.ctx.merge_finalized_epoch(&epoch)?;
         self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }

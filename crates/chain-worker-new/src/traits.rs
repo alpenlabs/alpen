@@ -86,9 +86,4 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
 
     /// Fetches all summaries for an epoch index.
     fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>>;
-
-    /// Merges write batches up to the given epoch into the finalized state.
-    ///
-    /// This means we have to load fewer write batches when reconstructing state.
-    fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
 }
