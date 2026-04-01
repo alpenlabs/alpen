@@ -320,7 +320,7 @@ make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
 # IMPORTANT: ensure alloy-* and revm packages are of the same version as inside reth dependency
 # reth dependencies:
-alloy = { version = "1.0.41", features = [
+alloy = { version = "1.7.3", features = [
   "std",
   "rpc-client-ws",
   "network",
@@ -421,7 +421,7 @@ sp1-helper = "5.2.1"
 sp1-sdk = "5.2.1"
 sp1-verifier = "5.2.1"
 
-anyhow = "1.0.86"
+anyhow = "1.0.102"
 arbitrary = { version = "1.3.2", features = ["derive"] }
 argh = "0.1"
 async-trait = "0.1.80"
@@ -441,8 +441,8 @@ bitvec = { version = "1.0.1", features = ["serde"] }
 borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.11.1"
 cfg-if = "1.0.0"
-chrono = "0.4.38"
-clap = { version = "4.5.39", default-features = false, features = ["derive"] }
+chrono = "0.4.44"
+clap = { version = "4.5.60", default-features = false, features = ["derive"] }
 corepc-node = { version = "0.10.0", features = ["29_0"] }
 criterion = { version = "0.7.0", features = ["html_reports"] }
 deadpool = "0.12.1"
@@ -471,7 +471,7 @@ opentelemetry-otlp = { version = "0.26", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
 parking_lot = "0.12.3"
 paste = "1.0"
-proptest = "1.9.0"
+proptest = "1.10.0"
 rand = "0.8.5"
 rand_chacha = { version = "0.3.1", default-features = false }
 rand_core = { version = "0.6", default-features = false }
@@ -489,16 +489,16 @@ schemars = "1"
 secp256k1 = { version = "0.29.1", features = ["global-context", "std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.94"
-serde_with = "3.3.0"
+serde_with = "3.18.0"
 sha2 = "0.10.8"
 shrex = { version = "1", features = ["serde"] }
 shrex_macros = "1"
 sled = "0.34.7"
-tempfile = "3.10.1"
+tempfile = "3.27.0"
 terrors = "0.3.0"
 thiserror = "2.0.11"
 threadpool = "1.8"
-tokio = { version = "1.37", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 tokio-stream = "0.1.17"
 toml = "0.5"
 tower = "0.5"
@@ -506,7 +506,7 @@ tracing = "0.1"
 tracing-appender = "0.2"
 tracing-opentelemetry = "0.27"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { version = "1.22", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
 
 ssz = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.14.0" }
