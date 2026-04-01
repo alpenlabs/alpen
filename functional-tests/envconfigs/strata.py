@@ -107,7 +107,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
             genesis_l1_height,
             is_sequencer=False,
         )
-        strata_node.wait_for_ready(timeout=10)
+        # strata_node.wait_for_ready(timeout=10)
 
         services = {
             ServiceType.Bitcoin: bitcoind,
