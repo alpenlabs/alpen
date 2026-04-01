@@ -1,11 +1,14 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
+use strata_node_context::NodeContext;
 use strata_ol_da::DAExtractor;
-use strata_service::{AsyncService, Response, Service};
+use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 
 use crate::checkpoint_sync::{
-    context::CheckpointSyncCtx, input::CheckpointSyncEvent, CheckpointSyncState,
+    context::{CheckpointSyncCtx, CheckpointSyncCtxImpl},
+    input::{CheckpointSyncEvent, CheckpointSyncInput},
+    CheckpointSyncState,
 };
 
 #[derive(Clone, Debug)]
@@ -47,4 +50,30 @@ where
         }
         Ok(Response::Continue)
     }
+}
+
+pub async fn start_css_service<E>(
+    nodectx: &NodeContext,
+    chain_worker: Arc<strata_chain_worker_new::ChainWorkerHandle>,
+    da_extractor: E,
+) -> anyhow::Result<ServiceMonitor<CheckpointSyncStatus>>
+where
+    E: DAExtractor + Clone + Send + Sync + 'static,
+{
+    let ctx = CheckpointSyncCtxImpl::new(nodectx.storage().clone(), chain_worker, da_extractor);
+    let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
+
+    let state = CheckpointSyncState::new(ctx);
+    let input = CheckpointSyncInput::new(clstate_rx);
+
+    let service_monitor = ServiceBuilder::<
+        CheckpointSyncService<E, CheckpointSyncCtxImpl<E>>,
+        CheckpointSyncInput,
+    >::new()
+    .with_state(state)
+    .with_input(input)
+    .launch_async("checkpoint-sync", nodectx.executor().as_ref())
+    .await?;
+
+    Ok(service_monitor)
 }

@@ -25,6 +25,16 @@ struct InnerState {
 }
 
 impl<E: DAExtractor, C: CheckpointSyncCtx<E>> CheckpointSyncState<E, C> {
+    pub fn new(ctx: C) -> Self {
+        Self {
+            ctx,
+            inner: InnerState {
+                last_finalized_epoch: None,
+            },
+            _p: PhantomData,
+        }
+    }
+
     pub(crate) async fn handle_new_client_state(
         &mut self,
         client_state: &ClientState,

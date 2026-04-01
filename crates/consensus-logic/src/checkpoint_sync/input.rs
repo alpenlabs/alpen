@@ -4,12 +4,12 @@ use tokio::sync::watch;
 use tracing::trace;
 
 #[derive(Debug)]
-pub(super) struct CheckpointSyncInput {
+pub(crate) struct CheckpointSyncInput {
     clstate_rx: watch::Receiver<CheckpointState>,
 }
 
 impl CheckpointSyncInput {
-    pub(super) fn new(clstate_rx: watch::Receiver<CheckpointState>) -> Self {
+    pub(crate) fn new(clstate_rx: watch::Receiver<CheckpointState>) -> Self {
         Self { clstate_rx }
     }
 }
