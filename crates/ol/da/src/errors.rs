@@ -41,4 +41,7 @@ pub enum DaExtractorError {
 
     #[error("OL DA payload decode failed: {0}")]
     DaPayloadDecode(#[from] CodecError),
+
+    #[error("{0}")]
+    Other(String),
 }

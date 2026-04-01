@@ -11,6 +11,7 @@ strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-spec.workspace = true
 strata-asm-spec-debug = { workspace = true, optional = true }
+strata-asm-txs-checkpoint.workspace = true
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
@@ -24,6 +25,7 @@ strata-csm-worker.workspace = true
 strata-db-types.workspace = true
 strata-eectl.workspace = true
 strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
 strata-ledger-types.workspace = true
 strata-merkle.workspace = true
 strata-node-context.workspace = true

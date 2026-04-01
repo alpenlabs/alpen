@@ -5,6 +5,6 @@ mod input;
 mod service;
 mod state;
 
-pub use context::CheckpointSyncCtxImpl;
+pub use context::{BitcoinDAExtractor, CheckpointSyncCtxImpl};
 pub use service::{start_css_service, CheckpointSyncService, CheckpointSyncStatus};
 pub use state::CheckpointSyncState;
