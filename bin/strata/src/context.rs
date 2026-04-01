@@ -11,13 +11,19 @@ use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
+#[cfg(feature = "prover")]
+use strata_config::ProverBackend;
 use strata_config::{
     BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
 };
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
+#[cfg(feature = "prover")]
+use strata_params::ProofPublishMode;
 use strata_params::{Params, RollupParams, SyncParams};
+#[cfg(feature = "prover")]
+use strata_predicate::PredicateTypeId;
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
@@ -154,6 +160,8 @@ pub(crate) fn resolve_and_validate_params(
 ) -> Result<Arc<Params>, InitError> {
     let rollup_params = load_rollup_params(path)?;
     rollup_params.check_well_formed()?;
+    #[cfg(feature = "prover")]
+    validate_integrated_prover_compatibility(config, &rollup_params)?;
 
     let params = Params {
         rollup: rollup_params,
@@ -165,6 +173,103 @@ pub(crate) fn resolve_and_validate_params(
     }
     .into();
     Ok(params)
+}
+
+#[cfg(feature = "prover")]
+fn validate_integrated_prover_compatibility(
+    config: &Config,
+    rollup_params: &RollupParams,
+) -> Result<(), InitError> {
+    let checkpoint_predicate_id = rollup_params.checkpoint_predicate().id();
+    let checkpoint_predicate_type =
+        PredicateTypeId::try_from(checkpoint_predicate_id).map_err(|e| {
+            InitError::InvalidProverConfig(format!(
+                "invalid checkpoint predicate type id {checkpoint_predicate_id}: {e}"
+            ))
+        })?;
+
+    // Cross-validate proof_publish_mode against checkpoint_predicate.
+    // These are both set at genesis but their interaction can cause chain stalls.
+    validate_proof_mode_predicate_compatibility(
+        &rollup_params.proof_publish_mode,
+        checkpoint_predicate_type,
+    )?;
+
+    // When the prover is not configured, validate that the network does not
+    // require proofs (Strict mode needs a prover to produce them).
+    let Some(prover_config) = config.prover.as_ref() else {
+        if matches!(rollup_params.proof_publish_mode, ProofPublishMode::Strict) {
+            return Err(InitError::InvalidProverConfig(
+                "proof_publish_mode is Strict but no [prover] section is configured; \
+                 the node cannot produce checkpoints without a prover"
+                    .to_string(),
+            ));
+        }
+        return Ok(());
+    };
+
+    let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
+
+    if let Some(expected_backend) = expected_backend
+        && prover_config.backend != expected_backend
+    {
+        return Err(InitError::InvalidProverConfig(format!(
+            "prover backend/predicate mismatch: config.prover.backend={:?}, \
+             checkpoint_predicate={checkpoint_predicate_type} expects {expected_backend:?}",
+            prover_config.backend,
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "prover")]
+fn expected_backend_for_checkpoint_predicate(
+    checkpoint_predicate_type: PredicateTypeId,
+) -> Result<Option<ProverBackend>, InitError> {
+    match checkpoint_predicate_type {
+        // SP1 checkpoint predicates require SP1 proofs.
+        PredicateTypeId::Sp1Groth16 => Ok(Some(ProverBackend::Sp1)),
+        // AlwaysAccept ignores witness bytes, so proofs are optional.
+        PredicateTypeId::AlwaysAccept => Ok(None),
+        // Other predicate types are currently unsupported for integrated checkpoint proving.
+        _ => Err(InitError::InvalidProverConfig(format!(
+            "unsupported checkpoint predicate for integrated prover: {checkpoint_predicate_type}"
+        ))),
+    }
+}
+
+/// Validates that `proof_publish_mode` and `checkpoint_predicate` are compatible.
+///
+/// These are both genesis-level parameters, but their interaction can cause
+/// chain stalls if misconfigured:
+/// - `Timeout` + `Sp1Groth16`: empty proofs will be published but rejected by ASM.
+/// - `Strict` + `AlwaysAccept`: node blocks forever waiting for a proof that the ASM would accept
+///   without.
+#[cfg(feature = "prover")]
+fn validate_proof_mode_predicate_compatibility(
+    proof_publish_mode: &ProofPublishMode,
+    predicate_type: PredicateTypeId,
+) -> Result<(), InitError> {
+    if proof_publish_mode.allow_empty() && predicate_type == PredicateTypeId::Sp1Groth16 {
+        return Err(InitError::InvalidProverConfig(
+            "proof_publish_mode allows empty proofs but checkpoint_predicate is Sp1Groth16; \
+             empty checkpoints will be rejected by the ASM, causing chain stalls"
+                .to_string(),
+        ));
+    }
+
+    if matches!(proof_publish_mode, ProofPublishMode::Strict)
+        && predicate_type == PredicateTypeId::AlwaysAccept
+    {
+        warn!(
+            "proof_publish_mode is Strict but checkpoint_predicate is AlwaysAccept; \
+             the node will block until a proof is generated, but the ASM would accept \
+             empty proofs — consider using Timeout mode for development"
+        );
+    }
+
+    Ok(())
 }
 
 fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
@@ -311,7 +416,11 @@ mod tests {
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
+    #[cfg(feature = "prover")]
+    use strata_config::ProverBackend;
     use strata_config::SequencerConfig;
+    #[cfg(feature = "prover")]
+    use strata_predicate::PredicateTypeId;
 
     use super::{
         load_block_assembly_config, load_sequencer_runtime_config,
@@ -364,5 +473,30 @@ mod tests {
         })
         .unwrap_err();
         assert!(matches!(error, InitError::InvalidOlBlockTimeMs(0)));
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn accepts_matching_backend_for_sp1_predicate() {
+        let result =
+            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Sp1Groth16).unwrap();
+        assert_eq!(result, Some(ProverBackend::Sp1));
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn allows_any_backend_for_always_accept_predicate() {
+        let result =
+            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::AlwaysAccept)
+                .unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn rejects_unsupported_predicate_for_integrated_prover() {
+        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
+            .unwrap_err();
+        assert!(matches!(err, InitError::InvalidProverConfig(_)));
     }
 }
