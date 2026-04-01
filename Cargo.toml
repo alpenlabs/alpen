@@ -395,7 +395,7 @@ reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1",
   "std",
   "serde-bincode-compat",
 ] }
-reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1", default-features = false }
+reth-primitives-traits = { git = "https://github.com/paradigmxyz/reth", tag = "v1.11.3", default-features = false }
 reth-provider = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-revm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-rpc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
