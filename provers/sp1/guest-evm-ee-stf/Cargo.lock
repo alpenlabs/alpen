@@ -536,7 +536,7 @@ dependencies = [
  "reth-evm",
  "reth-primitives",
  "revm",
- "revm-primitives",
+ "revm-primitives 22.1.0",
  "strata-bridge-types",
  "strata-crypto",
  "strata-identifiers",
@@ -3389,7 +3389,7 @@ dependencies = [
  "op-alloy-consensus",
  "reth-codecs",
  "revm-bytecode",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "secp256k1 0.30.0",
  "serde",
@@ -3555,7 +3555,7 @@ dependencies = [
  "revm-inspector",
  "revm-interpreter",
  "revm-precompile",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
 ]
 
@@ -3567,7 +3567,7 @@ checksum = "e2c6b5e6e8dd1e28a4a60e5f46615d4ef0809111c9e63208e55b5c7058200fb0"
 dependencies = [
  "bitvec",
  "phf",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "serde",
 ]
 
@@ -3583,7 +3583,7 @@ dependencies = [
  "revm-bytecode",
  "revm-context-interface",
  "revm-database-interface",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
 ]
@@ -3599,7 +3599,7 @@ dependencies = [
  "auto_impl",
  "either",
  "revm-database-interface",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
 ]
@@ -3613,7 +3613,7 @@ dependencies = [
  "alloy-eips",
  "revm-bytecode",
  "revm-database-interface",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
 ]
@@ -3626,7 +3626,7 @@ checksum = "8cce03e3780287b07abe58faf4a7f5d8be7e81321f93ccf3343c8f7755602bae"
 dependencies = [
  "auto_impl",
  "either",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
 ]
@@ -3645,7 +3645,7 @@ dependencies = [
  "revm-database-interface",
  "revm-interpreter",
  "revm-precompile",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
 ]
@@ -3662,7 +3662,7 @@ dependencies = [
  "revm-database-interface",
  "revm-handler",
  "revm-interpreter",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
  "serde_json",
@@ -3676,7 +3676,7 @@ checksum = "22789ce92c5808c70185e3bc49732f987dc6fd907f77828c8d3470b2299c9c65"
 dependencies = [
  "revm-bytecode",
  "revm-context-interface",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "revm-state",
  "serde",
 ]
@@ -3698,7 +3698,7 @@ dependencies = [
  "cfg-if",
  "k256",
  "p256",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "ripemd",
  "rug",
  "secp256k1 0.31.1",
@@ -3719,6 +3719,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "revm-primitives"
+version = "22.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bcfb5ce6cf18b118932bcdb7da05cd9c250f2cb9f64131396b55f3fe3537c35"
+dependencies = [
+ "alloy-primitives",
+ "num_enum",
+ "once_cell",
+ "serde",
+]
+
+[[package]]
 name = "revm-state"
 version = "8.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3726,7 +3738,7 @@ checksum = "7d8be953b7e374dbdea0773cf360debed8df394ea8d82a8b240a6b5da37592fc"
 dependencies = [
  "bitflags",
  "revm-bytecode",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "serde",
 ]
 
@@ -3792,7 +3804,7 @@ dependencies = [
  "reth-primitives-traits",
  "reth-trie",
  "revm",
- "revm-primitives",
+ "revm-primitives 21.0.2",
  "rsp-mpt",
  "rsp-primitives",
  "serde",
@@ -4707,7 +4719,7 @@ dependencies = [
  "reth-primitives-traits",
  "reth-trie",
  "revm",
- "revm-primitives",
+ "revm-primitives 22.1.0",
  "rsp-client-executor",
  "serde",
  "strata-bridge-types",
