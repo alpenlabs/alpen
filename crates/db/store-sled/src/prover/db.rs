@@ -1,12 +1,14 @@
-use strata_db_types::{DbResult, errors::DbError, traits::ProofDatabase};
+use strata_db_types::{
+    DbResult,
+    errors::DbError,
+    traits::{ProofDatabase, ProverTaskDatabase},
+    types::{SerializableTaskId, SerializableTaskRecord},
+};
 use strata_primitives::proof::{ProofContext, ProofKey};
 use typed_sled::error::Error;
 use zkaleido::ProofReceiptWithMetadata;
 
-use super::schemas::{
-    PaasTaskTree, PaasUuidIndexTree, ProofDepsSchema, ProofSchema, SerializableTaskId,
-    SerializableTaskRecord,
-};
+use super::schemas::{PaasTaskTree, PaasUuidIndexTree, ProofDepsSchema, ProofSchema};
 use crate::define_sled_database;
 
 define_sled_database!(
@@ -106,6 +108,43 @@ impl ProofDatabase for ProofDBSled {
         self.proof_deps_tree
             .compare_and_swap(proof_context, old, None)?;
         Ok(existed)
+    }
+}
+
+impl ProverTaskDatabase for ProofDBSled {
+    fn get_task(&self, task_id: SerializableTaskId) -> DbResult<Option<SerializableTaskRecord>> {
+        Ok(self.paas_task_tree.get(&task_id)?)
+    }
+
+    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<SerializableTaskId>> {
+        Ok(self.paas_uuid_index_tree.get(&uuid)?)
+    }
+
+    fn insert_task(
+        &self,
+        task_id: SerializableTaskId,
+        record: SerializableTaskRecord,
+    ) -> DbResult<()> {
+        self.paas_task_tree.insert(&task_id, &record)?;
+        self.paas_uuid_index_tree.insert(&record.uuid, &task_id)?;
+        Ok(())
+    }
+
+    fn update_task(
+        &self,
+        task_id: SerializableTaskId,
+        record: SerializableTaskRecord,
+    ) -> DbResult<()> {
+        self.paas_task_tree.insert(&task_id, &record)?;
+        Ok(())
+    }
+
+    fn list_all_tasks(&self) -> DbResult<Vec<(SerializableTaskId, SerializableTaskRecord)>> {
+        Ok(self
+            .paas_task_tree
+            .iter()
+            .filter_map(|result| result.ok())
+            .collect())
     }
 }
 
