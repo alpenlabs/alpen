@@ -5,7 +5,9 @@ use std::{sync::Arc, thread};
 use jsonrpsee::core::ClientError;
 use strata_common::ws_client::ManagedWsClient;
 use strata_ol_rpc_api::OLSequencerRpcClient;
-use strata_ol_sequencer::{BlockCompletionData, Duty, sign_checkpoint, sign_header, sign_payload};
+use strata_ol_sequencer::{
+    BlockCompletionData, Duty, sign_checkpoint, sign_header, sign_reveal_tx,
+};
 use strata_primitives::{
     HexBytes32, HexBytes64,
     buf::{Buf32, Buf64},
@@ -26,8 +28,8 @@ enum DutyExecError {
     #[error("failed submitting checkpoint signature: {0}")]
     CompleteCheckpoint(#[source] ClientError),
 
-    #[error("failed submitting payload signature: {0}")]
-    CompletePayload(#[source] ClientError),
+    #[error("failed submitting reveal tx signature: {0}")]
+    CompleteRevealTx(#[source] ClientError),
 }
 
 /// Dispatches a duty to the appropriate signing handler and reports failures.
@@ -49,11 +51,11 @@ pub(crate) async fn handle_duty(
             completion,
         } => complete_block_duty(&rpc, template_id, completion).await,
         SignedDuty::Checkpoint { epoch, sig } => complete_checkpoint_duty(&rpc, epoch, sig).await,
-        SignedDuty::Payload {
+        SignedDuty::RevealTx {
             payload_idx,
             sighash,
             sig,
-        } => complete_payload_duty(&rpc, payload_idx, sighash, sig).await,
+        } => complete_reveal_tx_duty(&rpc, payload_idx, sighash, sig).await,
     };
 
     if let Err(err) = result {
@@ -72,7 +74,7 @@ enum SignedDuty {
         epoch: u32,
         sig: Buf64,
     },
-    Payload {
+    RevealTx {
         payload_idx: u64,
         sighash: Buf32,
         sig: Buf64,
@@ -102,10 +104,10 @@ fn sign_duty(duty: &Duty, sk: &SequencerSk) -> SignedDuty {
                 sig,
             }
         }
-        Duty::SignPayload(duty) => {
-            let sig = sign_payload(&duty.sighash, &sk_buf);
+        Duty::SignRevealTx(duty) => {
+            let sig = sign_reveal_tx(&duty.sighash, &sk_buf);
             debug!(payload_idx = %duty.payload_idx, "signed payload envelope sighash");
-            SignedDuty::Payload {
+            SignedDuty::RevealTx {
                 payload_idx: duty.payload_idx,
                 sighash: duty.sighash,
                 sig,
@@ -140,7 +142,7 @@ async fn complete_checkpoint_duty(
     Ok(())
 }
 
-async fn complete_payload_duty(
+async fn complete_reveal_tx_duty(
     rpc: &ManagedWsClient,
     payload_idx: u64,
     sighash: Buf32,
@@ -148,7 +150,7 @@ async fn complete_payload_duty(
 ) -> Result<(), DutyExecError> {
     rpc.complete_payload_signature(payload_idx, HexBytes32(sighash.0), HexBytes64(sig.0))
         .await
-        .map_err(DutyExecError::CompletePayload)?;
+        .map_err(DutyExecError::CompleteRevealTx)?;
     info!(%payload_idx, "payload signature submitted");
     Ok(())
 }

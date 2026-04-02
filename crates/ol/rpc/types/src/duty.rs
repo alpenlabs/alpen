@@ -3,7 +3,7 @@ use ssz::{Decode, Encode};
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_ol_block_assembly::FullBlockTemplate;
 use strata_ol_chain_types_new::{OLBlockBody, OLBlockHeader};
-use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, PayloadSigningDuty};
+use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, RevealTxSigningDuty};
 use strata_primitives::{Buf32, HexBytes32};
 use thiserror::Error;
 
@@ -12,7 +12,7 @@ use thiserror::Error;
 pub enum RpcDuty {
     SignBlock(RpcBlockSigningDuty),
     SignCheckpoint(RpcCheckpointSigningDuty),
-    SignPayload(RpcPayloadSigningDuty),
+    SignRevealTx(RpcRevealTxSigningDuty),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -45,7 +45,7 @@ impl From<Duty> for RpcDuty {
                 let checkpoint = c.checkpoint().as_ssz_bytes();
                 RpcDuty::SignCheckpoint(RpcCheckpointSigningDuty { checkpoint })
             }
-            Duty::SignPayload(p) => RpcDuty::SignPayload(RpcPayloadSigningDuty {
+            Duty::SignRevealTx(p) => RpcDuty::SignRevealTx(RpcRevealTxSigningDuty {
                 payload_idx: p.payload_idx,
                 sighash: HexBytes32(p.sighash.0),
             }),
@@ -62,7 +62,7 @@ pub struct RpcCheckpointSigningDuty {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcPayloadSigningDuty {
+pub struct RpcRevealTxSigningDuty {
     /// Index of the payload entry in the writer DB.
     pub payload_idx: u64,
     /// Taproot script-spend sighash to sign (32 bytes).
@@ -105,12 +105,12 @@ impl TryFrom<RpcDuty> for Duty {
                 let duty = CheckpointSigningDuty::new(checkpoint);
                 Ok(Duty::SignCheckpoint(duty))
             }
-            RpcDuty::SignPayload(rpc_payload_duty) => {
-                let duty = PayloadSigningDuty::new(
+            RpcDuty::SignRevealTx(rpc_payload_duty) => {
+                let duty = RevealTxSigningDuty::new(
                     rpc_payload_duty.payload_idx,
                     Buf32(rpc_payload_duty.sighash.0),
                 );
-                Ok(Duty::SignPayload(duty))
+                Ok(Duty::SignRevealTx(duty))
             }
         }
     }

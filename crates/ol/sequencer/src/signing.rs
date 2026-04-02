@@ -20,7 +20,7 @@ pub fn sign_checkpoint(checkpoint: &CheckpointPayload, sk: &Buf32) -> Buf64 {
     sign_schnorr_sig(&msg, sk)
 }
 
-/// Signs a payload envelope sighash and returns the signature.
-pub fn sign_payload(sighash: &Buf32, sk: &Buf32) -> Buf64 {
+/// Signs a reveal transaction sighash and returns the signature.
+pub fn sign_reveal_tx(sighash: &Buf32, sk: &Buf32) -> Buf64 {
     sign_schnorr_sig(sighash, sk)
 }

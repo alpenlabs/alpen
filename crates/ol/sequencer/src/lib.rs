@@ -13,10 +13,10 @@ pub mod signing;
 mod types;
 
 pub use builder::SequencerBuilder;
-pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry, PayloadSigningDuty};
+pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry, RevealTxSigningDuty};
 pub use error::Error;
 pub use extraction::extract_duties;
 pub use service::{SequencerContext, SequencerContextError, SequencerServiceStatus};
-pub use signing::{sign_checkpoint, sign_header, sign_payload};
+pub use signing::{sign_checkpoint, sign_header, sign_reveal_tx};
 pub use strata_ol_block_assembly::BlockasmHandle;
 pub use types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate, BlockTemplateExt};

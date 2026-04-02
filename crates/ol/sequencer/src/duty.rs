@@ -44,8 +44,8 @@ pub enum Duty {
     /// Duty to sign checkpoint
     SignCheckpoint(CheckpointSigningDuty),
 
-    /// Duty to sign a payload envelope's reveal transaction
-    SignPayload(PayloadSigningDuty),
+    /// Duty to sign the reveal transaction of a payload envelope.
+    SignRevealTx(RevealTxSigningDuty),
 }
 
 impl Duty {
@@ -54,7 +54,7 @@ impl Duty {
         match self {
             Self::SignBlock(_) => Expiry::NextBlock,
             Self::SignCheckpoint(d) => Expiry::CheckpointFinalized(d.checkpoint.new_tip().epoch),
-            Self::SignPayload(_) => Expiry::Never,
+            Self::SignRevealTx(_) => Expiry::Never,
         }
     }
 
@@ -66,7 +66,7 @@ impl Duty {
                 let encoded = c.checkpoint.as_ssz_bytes();
                 hash::raw(&encoded)
             }
-            Self::SignPayload(p) => p.sighash,
+            Self::SignRevealTx(p) => p.sighash,
         }
     }
 }
@@ -93,10 +93,10 @@ impl fmt::Display for Duty {
                     duty.checkpoint.new_tip().l2_commitment.slot
                 )
             }
-            Self::SignPayload(duty) => {
+            Self::SignRevealTx(duty) => {
                 write!(
                     f,
-                    "SignPayload(idx: {}, sighash: {})",
+                    "SignRevealTx(idx: {}, sighash: {})",
                     duty.payload_idx, duty.sighash
                 )
             }
@@ -163,16 +163,16 @@ impl BlockSigningDuty {
     }
 }
 
-/// A duty to sign a payload envelope's reveal transaction.
+/// A duty to sign the reveal transaction of a payload envelope.
 #[derive(Debug, Clone)]
-pub struct PayloadSigningDuty {
+pub struct RevealTxSigningDuty {
     /// Index of the payload entry in the writer DB.
     pub payload_idx: u64,
     /// Taproot script-spend sighash to sign.
     pub sighash: Buf32,
 }
 
-impl PayloadSigningDuty {
+impl RevealTxSigningDuty {
     pub fn new(payload_idx: u64, sighash: Buf32) -> Self {
         Self {
             payload_idx,

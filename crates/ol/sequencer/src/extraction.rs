@@ -5,7 +5,7 @@ use strata_primitives::OLBlockId;
 use strata_storage::NodeStorage;
 use tracing::debug;
 
-use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error, PayloadSigningDuty};
+use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error, RevealTxSigningDuty};
 
 /// Extract sequencer duties.
 pub async fn extract_duties(
@@ -41,7 +41,7 @@ pub async fn extract_duties(
 
     // Payload signing duties
     let pending_payloads = get_pending_payload_duties(node_storage).await?;
-    duties.extend(pending_payloads.into_iter().map(Duty::SignPayload));
+    duties.extend(pending_payloads.into_iter().map(Duty::SignRevealTx));
 
     Ok(duties)
 }
@@ -79,7 +79,7 @@ async fn get_earliest_unsigned_checkpoint(
 /// Gets payload entries pending an external signature.
 async fn get_pending_payload_duties(
     node_storage: &NodeStorage,
-) -> Result<Vec<PayloadSigningDuty>, Error> {
+) -> Result<Vec<RevealTxSigningDuty>, Error> {
     let l1_writer = node_storage.l1_writer();
 
     let mut idx = l1_writer.get_next_payload_idx_async().await?;
@@ -95,7 +95,7 @@ async fn get_pending_payload_duties(
         }
         if let L1BundleStatus::PendingPayloadSign(sighash) = entry.status {
             if entry.payload_signature.is_none() {
-                duties.push(PayloadSigningDuty::new(idx, sighash));
+                duties.push(RevealTxSigningDuty::new(idx, sighash));
             }
         }
     }

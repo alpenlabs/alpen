@@ -138,7 +138,7 @@ mod tests {
 
     use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
     use strata_crypto::keys::zeroizable::ZeroizedBuf32;
-    use strata_ol_rpc_types::{RpcDuty, RpcPayloadSigningDuty};
+    use strata_ol_rpc_types::{RpcDuty, RpcRevealTxSigningDuty};
     use strata_primitives::{HexBytes32, buf::Buf32};
     use tokio::sync::mpsc;
 
@@ -155,7 +155,7 @@ mod tests {
     }
 
     fn payload_duty(payload_idx: u64, sighash: [u8; 32]) -> RpcDuty {
-        RpcDuty::SignPayload(RpcPayloadSigningDuty {
+        RpcDuty::SignRevealTx(RpcRevealTxSigningDuty {
             payload_idx,
             sighash: HexBytes32(sighash),
         })
