@@ -17,7 +17,7 @@ use strata_ledger_types::{
     IStateAccessor, NewAccountData,
 };
 use strata_merkle::CompactMmr64;
-use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1};
+use strata_ol_da::{AccountTypeInit, MAX_MSG_PAYLOAD_BYTES, OLDaPayloadV1, U16LenBytes};
 use strata_ol_state_types::{OLSnarkAccountState, WriteBatch};
 use strata_predicate::{MAX_CONDITION_LEN, PredicateKey, PredicateTypeId};
 use strata_snark_acct_types::Seqno;
@@ -1259,5 +1259,36 @@ fn test_combined_layers_preserve_base_state() {
             .inbox_mmr()
             .num_entries(),
         original_inbox_count
+    );
+}
+
+#[test]
+fn test_da_blob_captures_snark_extra_data() {
+    let account_id = test_account_id(1);
+    let (base_state, _serial) =
+        setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+
+    let mut da_state = DaAccumulatingState::new(base_state);
+
+    da_state
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .update_inner_state(test_hash(42), 0, Seqno::new(1), b"test_extra_data")
+                .unwrap();
+        })
+        .unwrap();
+
+    let blob_bytes = da_state
+        .take_completed_epoch_da_blob()
+        .expect("build DA blob")
+        .expect("expected DA blob");
+    let blob: OLDaPayloadV1 = decode_buf_exact(&blob_bytes).expect("decode DA blob");
+
+    let diffs = blob.state_diff.ledger.account_diffs.entries();
+    assert_eq!(diffs.len(), 1);
+    assert_eq!(
+        diffs[0].diff.snark.extra_data.new_value(),
+        Some(&U16LenBytes::new(b"test_extra_data".to_vec()))
     );
 }
