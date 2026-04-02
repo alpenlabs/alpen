@@ -17,6 +17,6 @@ pub use duty::{BlockSigningDuty, CheckpointSigningDuty, Duty, Expiry, PayloadSig
 pub use error::Error;
 pub use extraction::extract_duties;
 pub use service::{SequencerContext, SequencerContextError, SequencerServiceStatus};
-pub use signing::{sign_checkpoint, sign_header};
+pub use signing::{sign_checkpoint, sign_header, sign_payload};
 pub use strata_ol_block_assembly::BlockasmHandle;
 pub use types::{BlockCompletionData, BlockGenerationConfig, BlockTemplate, BlockTemplateExt};

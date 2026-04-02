@@ -1,22 +1,17 @@
 //! Per-duty signing handlers dispatched by the signer service.
 
-use std::sync::Arc;
+use std::{sync::Arc, thread};
 
-use bitcoin::{
-    key::UntweakedKeypair,
-    secp256k1::{Message, SECP256K1, SecretKey},
-};
 use jsonrpsee::core::ClientError;
-use rand::{RngCore, rngs::OsRng};
 use strata_common::ws_client::ManagedWsClient;
 use strata_ol_rpc_api::OLSequencerRpcClient;
-use strata_ol_sequencer::{
-    BlockCompletionData, BlockSigningDuty, CheckpointSigningDuty, Duty, PayloadSigningDuty,
-    sign_checkpoint, sign_header,
+use strata_ol_sequencer::{BlockCompletionData, Duty, sign_checkpoint, sign_header, sign_payload};
+use strata_primitives::{
+    HexBytes32, HexBytes64,
+    buf::{Buf32, Buf64},
 };
-use strata_primitives::{HexBytes32, HexBytes64, buf::Buf32};
 use thiserror::Error;
-use tokio::{sync::mpsc, time};
+use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 use zeroize::Zeroize;
 
@@ -45,14 +40,21 @@ pub(crate) async fn handle_duty(
     let duty_id = duty.generate_id();
     debug!(%duty_id, %duty, "handling duty");
 
-    // Zeroized after use so key bytes don't linger on the stack.
-    let mut sk_buf = Buf32(**sk);
-    let result = match duty {
-        Duty::SignBlock(block_duty) => handle_sign_block(&rpc, block_duty, &sk_buf).await,
-        Duty::SignCheckpoint(cp_duty) => handle_sign_checkpoint(&rpc, cp_duty, &sk_buf).await,
-        Duty::SignPayload(payload_duty) => handle_sign_payload(&rpc, payload_duty, &sk_buf).await,
+    // Sign synchronously so key bytes never enter the async state machine.
+    let signed = sign_duty(&duty, &sk);
+
+    let result = match signed {
+        SignedDuty::Block {
+            template_id,
+            completion,
+        } => complete_block_duty(&rpc, template_id, completion).await,
+        SignedDuty::Checkpoint { epoch, sig } => complete_checkpoint_duty(&rpc, epoch, sig).await,
+        SignedDuty::Payload {
+            payload_idx,
+            sighash,
+            sig,
+        } => complete_payload_duty(&rpc, payload_idx, sighash, sig).await,
     };
-    sk_buf.zeroize();
 
     if let Err(err) = result {
         error!(%duty_id, %err, "duty failed");
@@ -60,71 +62,93 @@ pub(crate) async fn handle_duty(
     }
 }
 
-async fn handle_sign_block(
+/// Outcome of synchronous signing — holds only the data needed for async submission.
+enum SignedDuty {
+    Block {
+        template_id: strata_primitives::OLBlockId,
+        completion: BlockCompletionData,
+    },
+    Checkpoint {
+        epoch: u32,
+        sig: Buf64,
+    },
+    Payload {
+        payload_idx: u64,
+        sighash: Buf32,
+        sig: Buf64,
+    },
+}
+
+/// Signs a duty synchronously. Key bytes stay on the sync stack and are zeroized before returning.
+fn sign_duty(duty: &Duty, sk: &SequencerSk) -> SignedDuty {
+    let mut sk_buf = Buf32(***sk);
+    let result = match duty {
+        Duty::SignBlock(duty) => {
+            if let Some(wait) = duty.wait_duration() {
+                debug!(wait_ms = %wait.as_millis(), "waiting for block target time");
+                thread::sleep(wait);
+            }
+            let sig = sign_header(duty.template.header(), &sk_buf);
+            SignedDuty::Block {
+                template_id: duty.template_id(),
+                completion: BlockCompletionData::from_signature(sig),
+            }
+        }
+        Duty::SignCheckpoint(duty) => {
+            let sig = sign_checkpoint(duty.checkpoint(), &sk_buf);
+            debug!(epoch = %duty.epoch(), %sig, "signed checkpoint");
+            SignedDuty::Checkpoint {
+                epoch: duty.epoch(),
+                sig,
+            }
+        }
+        Duty::SignPayload(duty) => {
+            let sig = sign_payload(&duty.sighash, &sk_buf);
+            debug!(payload_idx = %duty.payload_idx, "signed payload envelope sighash");
+            SignedDuty::Payload {
+                payload_idx: duty.payload_idx,
+                sighash: duty.sighash,
+                sig,
+            }
+        }
+    };
+    sk_buf.zeroize();
+    result
+}
+
+async fn complete_block_duty(
     rpc: &ManagedWsClient,
-    duty: BlockSigningDuty,
-    sk: &Buf32,
+    template_id: strata_primitives::OLBlockId,
+    completion: BlockCompletionData,
 ) -> Result<(), DutyExecError> {
-    if let Some(wait) = duty.wait_duration() {
-        debug!(wait_ms = %wait.as_millis(), "waiting for block target time");
-        time::sleep(wait).await;
-    }
-
-    let template_id = duty.template_id();
-    let sig = sign_header(duty.template.header(), sk);
-    let completion = BlockCompletionData::from_signature(sig);
-
     rpc.complete_block_template(template_id, completion)
         .await
         .map_err(DutyExecError::CompleteTemplate)?;
-
     info!(%template_id, "block signed and submitted");
     Ok(())
 }
 
-async fn handle_sign_checkpoint(
+async fn complete_checkpoint_duty(
     rpc: &ManagedWsClient,
-    duty: CheckpointSigningDuty,
-    sk: &Buf32,
+    epoch: u32,
+    sig: Buf64,
 ) -> Result<(), DutyExecError> {
-    let epoch = duty.epoch();
-    let sig = sign_checkpoint(duty.checkpoint(), sk);
-
-    debug!(%epoch, %sig, "signed checkpoint");
-
     rpc.complete_checkpoint_signature(epoch, HexBytes64(sig.0))
         .await
         .map_err(DutyExecError::CompleteCheckpoint)?;
-
     info!(%epoch, "checkpoint signature submitted");
     Ok(())
 }
 
-async fn handle_sign_payload(
+async fn complete_payload_duty(
     rpc: &ManagedWsClient,
-    duty: PayloadSigningDuty,
-    sk: &Buf32,
+    payload_idx: u64,
+    sighash: Buf32,
+    sig: Buf64,
 ) -> Result<(), DutyExecError> {
-    let secret_key = SecretKey::from_slice(&sk.0).expect("valid secret key");
-    let keypair = UntweakedKeypair::from_secret_key(SECP256K1, &secret_key);
-
-    let msg = Message::from_digest_slice(duty.sighash.as_ref()).expect("sighash is valid 32 bytes");
-
-    let mut aux_rand = [0u8; 32];
-    OsRng.fill_bytes(&mut aux_rand);
-    let sig = SECP256K1.sign_schnorr_with_aux_rand(&msg, &keypair, &aux_rand);
-
-    let payload_idx = duty.payload_idx;
-    debug!(%payload_idx, "signed payload envelope sighash");
-
-    rpc.complete_payload_signature(
-        payload_idx,
-        HexBytes32(duty.sighash.0),
-        HexBytes64(sig.serialize()),
-    )
-    .await
-    .map_err(DutyExecError::CompletePayload)?;
-
+    rpc.complete_payload_signature(payload_idx, HexBytes32(sighash.0), HexBytes64(sig.0))
+        .await
+        .map_err(DutyExecError::CompletePayload)?;
     info!(%payload_idx, "payload signature submitted");
     Ok(())
 }

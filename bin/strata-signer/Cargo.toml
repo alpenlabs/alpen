@@ -25,7 +25,6 @@ anyhow.workspace = true
 argh.workspace = true
 bitcoin.workspace = true
 jsonrpsee.workspace = true
-rand.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
