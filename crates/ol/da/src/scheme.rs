@@ -1,7 +1,9 @@
 //! DA scheme implementations for OL state.
 
 use strata_da_framework::DaWrite;
-use strata_ledger_types::{IAccountState, IAccountStateConstructible, ISnarkAccountStateConstructible, IStateAccessor};
+use strata_ledger_types::{
+    IAccountState, IAccountStateConstructible, ISnarkAccountStateConstructible, IStateAccessor,
+};
 
 use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 
