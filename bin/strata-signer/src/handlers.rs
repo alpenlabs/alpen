@@ -18,6 +18,7 @@ use strata_primitives::{HexBytes32, HexBytes64, buf::Buf32};
 use thiserror::Error;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, error, info};
+use zeroize::Zeroize;
 
 use crate::helpers::SequencerSk;
 
@@ -44,14 +45,14 @@ pub(crate) async fn handle_duty(
     let duty_id = duty.generate_id();
     debug!(%duty_id, %duty, "handling duty");
 
-    // Borrow the key bytes for signing. `Buf32` is a brief stack copy scoped
-    // to this function; the authoritative key lives in the `Arc` allocation.
-    let sk_buf = Buf32(**sk);
+    // Zeroized after use so key bytes don't linger on the stack.
+    let mut sk_buf = Buf32(**sk);
     let result = match duty {
         Duty::SignBlock(block_duty) => handle_sign_block(&rpc, block_duty, &sk_buf).await,
         Duty::SignCheckpoint(cp_duty) => handle_sign_checkpoint(&rpc, cp_duty, &sk_buf).await,
         Duty::SignPayload(payload_duty) => handle_sign_payload(&rpc, payload_duty, &sk_buf).await,
     };
+    sk_buf.zeroize();
 
     if let Err(err) = result {
         error!(%duty_id, %err, "duty failed");
@@ -64,7 +65,6 @@ async fn handle_sign_block(
     duty: BlockSigningDuty,
     sk: &Buf32,
 ) -> Result<(), DutyExecError> {
-    // TODO: recheck this logic
     if let Some(wait) = duty.wait_duration() {
         debug!(wait_ms = %wait.as_millis(), "waiting for block target time");
         time::sleep(wait).await;
