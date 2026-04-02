@@ -1,28 +1,32 @@
 //! DA scheme implementations for OL state.
 
 use strata_da_framework::DaWrite;
-use strata_ol_state_types::OLState;
+use strata_ledger_types::{IAccountState, IAccountStateConstructible, ISnarkAccountStateConstructible, IStateAccessor};
 
 use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 
-/// DA scheme v1 for applying OL checkpoint state diffs to [`OLState`].
+/// DA scheme v1 for applying OL checkpoint state diffs to any state accumulator
+/// implementing [`IStateAccessor`].
 #[derive(Debug, Default)]
 pub struct OLDaSchemeV1;
 
-impl DaScheme<OLState> for OLDaSchemeV1 {
+impl<S> DaScheme<S> for OLDaSchemeV1
+where
+    S: IStateAccessor,
+    S::AccountState: IAccountStateConstructible,
+    <S::AccountState as IAccountState>::SnarkAccountState: ISnarkAccountStateConstructible,
+{
     type Diff = OLDaPayloadV1;
 
-    /// Applies an [`OLDaPayloadV1`] to the OL state accumulator.
+    /// Applies an [`OLDaPayloadV1`] to the state accumulator.
     ///
     /// Converts the payload's raw [`StateDiff`](crate::StateDiff) into a
     /// typed [`OLStateDiff`], then runs the two-phase DA write protocol:
     ///
-    /// 1. poll_context() — validates diff entries against current state (e.g. account serial
-    ///    ordering, ledger invariants).
-    /// 2. apply() — mutates the accumulator (`acc`) with the validated diff (global fields, ledger
-    ///    entries, snark accounts).
-    fn apply_to_state(diff: Self::Diff, acc: &mut OLState) -> DaResult<()> {
-        let state_diff = OLStateDiff::<OLState>::from(diff.state_diff);
+    /// 1. poll_context() — validates diff entries against current state.
+    /// 2. apply() — mutates the accumulator with the validated diff.
+    fn apply_to_state(diff: Self::Diff, acc: &mut S) -> DaResult<()> {
+        let state_diff = OLStateDiff::<S>::from(diff.state_diff);
         DaWrite::poll_context(&state_diff, acc, &())?;
         DaWrite::apply(&state_diff, acc, &())
     }
