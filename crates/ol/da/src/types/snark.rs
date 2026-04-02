@@ -9,6 +9,8 @@ use strata_da_framework::{
 };
 use strata_snark_acct_types::ProofState;
 
+use super::encoding::U16LenBytes;
+
 /// DA-encoded proof state (inner state root + next inbox read index).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DaProofState {
@@ -186,6 +188,9 @@ pub struct SnarkAccountDiff {
 
     /// Inbox append-only diff.
     pub inbox: DaLinacc<InboxBuffer>,
+
+    /// Extra data from the last snark account update in the epoch.
+    pub extra_data: DaRegister<U16LenBytes>,
 }
 
 impl Default for SnarkAccountDiff {
@@ -194,21 +199,24 @@ impl Default for SnarkAccountDiff {
             seq_no: DaCounter::new_unchanged(),
             proof_state: <DaProofStateDiff as Default>::default(),
             inbox: DaLinacc::new(),
+            extra_data: DaRegister::new_unset(),
         }
     }
 }
 
 impl SnarkAccountDiff {
-    /// Creates a new [`SnarkAccountDiff`] from a sequence number, proof state, and inbox diff.
+    /// Creates a new [`SnarkAccountDiff`].
     pub fn new(
         seq_no: DaCounter<CtrU64ByU16>,
         proof_state: DaProofStateDiff,
         inbox: DaLinacc<InboxBuffer>,
+        extra_data: DaRegister<U16LenBytes>,
     ) -> Self {
         Self {
             seq_no,
             proof_state,
             inbox,
+            extra_data,
         }
     }
 }
@@ -218,6 +226,7 @@ make_compound_impl! {
         seq_no: counter (CtrU64ByU16),
         proof_state: compound (DaProofStateDiff),
         inbox: compound (DaLinacc<InboxBuffer>),
+        extra_data: register (U16LenBytes),
     }
 }
 
@@ -230,6 +239,7 @@ pub struct SnarkAccountTarget {
     pub seq_no: u64,
     pub proof_state: DaProofState,
     pub inbox: InboxBuffer,
+    pub extra_data: U16LenBytes,
 }
 
 impl CompoundMember for SnarkAccountDiff {
@@ -241,6 +251,7 @@ impl CompoundMember for SnarkAccountDiff {
         CompoundMember::is_default(&self.seq_no)
             && CompoundMember::is_default(&self.proof_state)
             && CompoundMember::is_default(&self.inbox)
+            && CompoundMember::is_default(&self.extra_data)
     }
 
     fn decode_set(dec: &mut impl Decoder) -> Result<Self, CodecError> {

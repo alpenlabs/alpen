@@ -295,11 +295,23 @@ fn apply_snark_diff<T: IAccountStateMut>(
     let mut next_proof_state =
         DaProofState::new(snark.inner_state_root(), snark.next_inbox_msg_idx());
     diff.proof_state.apply(&mut next_proof_state, &())?;
-    snark.set_proof_state_directly(
-        next_proof_state.inner().inner_state(),
-        next_proof_state.inner().next_inbox_msg_idx(),
-        next_seqno,
-    );
+
+    if let Some(data) = diff.extra_data.new_value() {
+        snark
+            .update_inner_state(
+                next_proof_state.inner().inner_state(),
+                next_proof_state.inner().next_inbox_msg_idx(),
+                next_seqno,
+                data.as_slice(),
+            )
+            .map_err(|_| DaError::InvalidStateDiff("failed to update inner state"))?;
+    } else {
+        snark.set_proof_state_directly(
+            next_proof_state.inner().inner_state(),
+            next_proof_state.inner().next_inbox_msg_idx(),
+            next_seqno,
+        );
+    }
 
     for entry in diff.inbox.new_entries() {
         let msg = MessageEntry::new(entry.source, entry.incl_epoch, entry.payload.clone());
@@ -315,7 +327,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
 mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
-    use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
+    use strata_da_framework::{DaCounter, DaLinacc, DaRegister, DaWrite, SignedVarInt, counter_schemes};
     use strata_identifiers::AccountSerial;
     use strata_ledger_types::{AccountTypeState, NewAccountData};
     use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
@@ -464,6 +476,7 @@ mod tests {
             DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
             DaProofStateDiff::default(),
             DaLinacc::new(),
+            DaRegister::new_unset(),
         );
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(
