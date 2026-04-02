@@ -14413,6 +14413,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "strata-acct-types",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-db-types",

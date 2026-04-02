@@ -9,6 +9,7 @@
 //! even though both must live in [`ChainWorkerServiceState`] due to the current
 //! service framework design.
 
+use strata_acct_types::AccountId;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -366,7 +367,17 @@ impl ChainWorkerServiceState {
         } = da_payload;
 
         // Fetch previous state
-        let mut state = fetch_prev_state(&self.ctx, &epoch)?;
+        let state = fetch_prev_state(&self.ctx, &epoch)?;
+
+        // Extract new account IDs before the payload is consumed.
+        let new_account_ids: Vec<AccountId> = da
+            .state_diff
+            .ledger
+            .new_accounts
+            .entries()
+            .iter()
+            .map(|e| e.account_id)
+            .collect();
 
         // Prepare data for processing epoch initial
         let outbuf = ExecOutputBuffer::new_empty();
@@ -374,21 +385,26 @@ impl ChainWorkerServiceState {
         let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
         let epctx = EpochInitialContext::new(epoch.epoch(), epoch.to_block_commitment());
 
-        // Process epoch initial
-        process_epoch_initial(&mut state, &epctx)?;
+        // Wrap state to collect index data
+        let mut indexer_state = IndexerState::new(state);
 
-        // Apply DA.
-        OLDaSchemeV1::apply_to_state(da, &mut state).unwrap(); // TODO: fix unwrap
+        process_epoch_initial(&mut indexer_state, &epctx)?;
 
-        // Prepare context for applying manifests.
+        OLDaSchemeV1::apply_to_state(da, &mut indexer_state).unwrap(); // TODO: fix unwrap
+
         let exctx = BasicExecContext::new(blkinfo, &outbuf);
+        process_block_manifests(&mut indexer_state, &manifests, &exctx)?;
 
-        // Apply manifests.
-        process_block_manifests(&mut state, &manifests, &exctx)?;
+        let (state, indexer_writes) = indexer_state.into_parts();
+        let terminal_commitment = epoch.to_block_commitment();
 
-        // TODO: Collect index data
-
-        // Create epoch summary ?
+        self.ctx.store_da_output(
+            terminal_commitment,
+            epoch.epoch(),
+            state,
+            &new_account_ids,
+            &indexer_writes,
+        )?;
 
         Ok(())
     }

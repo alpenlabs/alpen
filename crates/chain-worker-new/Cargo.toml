@@ -8,6 +8,7 @@ description = "New chain worker implementation using OL STF and new OL types"
 workspace = true
 
 [dependencies]
+strata-acct-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-checkpoint-types-ssz.workspace = true
 strata-db-types.workspace = true

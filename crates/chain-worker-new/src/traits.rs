@@ -1,5 +1,6 @@
 //! Traits for the chain worker to interface with the underlying system.
 
+use strata_acct_types::AccountId;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -72,6 +73,17 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
         &self,
         commitment: OLBlockCommitment,
         state: OLState,
+    ) -> WorkerResult<()>;
+
+    /// Stores the DA application output: toplevel state, account creation
+    /// epochs, snark extra data, and auxiliary indexer data.
+    fn store_da_output(
+        &self,
+        commitment: OLBlockCommitment,
+        epoch: u32,
+        state: OLState,
+        new_account_ids: &[AccountId],
+        indexer_writes: &IndexerWrites,
     ) -> WorkerResult<()>;
 
     // =========================================================================

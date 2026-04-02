@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use strata_acct_types::AccountId;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{DbResult, types::AccountExtraDataEntry};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
@@ -91,6 +92,40 @@ impl ChainWorkerContextImpl {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
+
+    fn store_account_creation_epochs(
+        &self,
+        epoch: u32,
+        account_ids: &[AccountId],
+    ) -> WorkerResult<()> {
+        account_ids.iter().try_for_each(|id| {
+            self.account_mgr
+                .insert_account_creation_epoch_blocking(*id, epoch)
+        })?;
+        Ok(())
+    }
+
+    fn store_snark_extra_data(
+        &self,
+        commitment: OLBlockCommitment,
+        epoch: u32,
+        writes: &IndexerWrites,
+    ) -> WorkerResult<()> {
+        writes
+            .snark_state_updates()
+            .iter()
+            .try_for_each(|update| -> DbResult<()> {
+                let acct_id = update.account_id();
+                if let Some(extra_data) = update.extra_data() {
+                    let key = (acct_id, epoch);
+                    let entry = AccountExtraDataEntry::new(extra_data.to_vec(), commitment);
+                    self.account_mgr
+                        .insert_account_extra_data_blocking(key, entry)?
+                }
+                Ok(())
+            })?;
+        Ok(())
+    }
 }
 
 impl ChainWorkerContext for ChainWorkerContextImpl {
@@ -159,28 +194,17 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .put_write_batch_blocking(commitment, output.write_batch().clone())?;
 
         // Record creation epoch for newly created accounts.
-        let wb = output.write_batch();
         let epoch = block.header().epoch();
-        wb.ledger().iter_new_accounts().try_for_each(|(_, id)| {
-            self.account_mgr
-                .insert_account_creation_epoch_blocking(*id, epoch)
-            // TODO: might need to account for extra data as well
-        })?;
+        let new_ids: Vec<AccountId> = output
+            .write_batch()
+            .ledger()
+            .iter_new_accounts()
+            .map(|(_, id)| *id)
+            .collect();
+        self.store_account_creation_epochs(epoch, &new_ids)?;
 
         // Write account extra data
-        let mut snark_updates_iter = output.indexer_writes().snark_state_updates().iter();
-        snark_updates_iter.try_for_each(|update| -> DbResult<()> {
-            let acct_id = update.account_id();
-            if let Some(extra_data) = update.extra_data() {
-                // NOTE: this is expected to be updated for given epoch at every block that contains
-                // extra data for this account
-                let key = (acct_id, epoch);
-                let entry = AccountExtraDataEntry::new(extra_data.to_vec(), commitment);
-                self.account_mgr
-                    .insert_account_extra_data_blocking(key, entry)?
-            }
-            Ok(())
-        })?;
+        self.store_snark_extra_data(commitment, epoch, output.indexer_writes())?;
 
         Ok(())
     }
@@ -215,6 +239,21 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
     ) -> WorkerResult<()> {
         self.ol_state_mgr
             .put_toplevel_ol_state_blocking(commitment, state)?;
+        Ok(())
+    }
+
+    fn store_da_output(
+        &self,
+        commitment: OLBlockCommitment,
+        epoch: u32,
+        state: OLState,
+        new_account_ids: &[AccountId],
+        indexer_writes: &IndexerWrites,
+    ) -> WorkerResult<()> {
+        self.store_toplevel_state(commitment, state)?;
+        self.store_account_creation_epochs(epoch, new_account_ids)?;
+        self.store_snark_extra_data(commitment, epoch, indexer_writes)?;
+        self.store_auxiliary_data(commitment, indexer_writes)?;
         Ok(())
     }
 
