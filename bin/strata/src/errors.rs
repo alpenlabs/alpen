@@ -43,9 +43,6 @@ pub(crate) enum InitError {
     #[error("failed to create node storage: {0}")]
     StorageCreation(String),
 
-    #[error("missing sync endpoint (required for non-sequencer nodes)")]
-    MissingSyncEndpoint,
-
     #[error("missing sequencer config file: {0}")]
     MissingSequencerConfig(path::PathBuf),
 

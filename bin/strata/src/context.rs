@@ -137,10 +137,6 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 }
 
 fn validate_config(config: Config) -> Result<Config, InitError> {
-    if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
-        return Err(InitError::MissingSyncEndpoint);
-    }
-
     if config.client.is_sequencer && config.sequencer.is_none() {
         return Err(InitError::MissingSequencerConfig(PathBuf::from(
             "sequencer.toml",
