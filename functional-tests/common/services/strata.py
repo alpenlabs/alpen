@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 from common.rpc import JsonRpcClient
 from common.rpc_types.strata import *
 from common.services.base import RpcService
+from common.utils import with_mining
 from common.wait import wait_until, wait_until_with_value
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ class StrataService(RpcService):
             name: Service name for logging
         """
         super().__init__(dict(props), cmd, stdout, name)
+        self.rpc = None
 
     def _rpc_health_check(self, rpc):
         """Check Strata health by calling strata_protocolVersion."""
@@ -65,6 +67,9 @@ class StrataService(RpcService):
                 raise RuntimeError(f"process '{self._name}' crashed")
 
         rpc.set_pre_call_hook(_status_check)
+
+        # Set rpc for future use
+        self.rpc = rpc
 
         return rpc
 
@@ -122,7 +127,8 @@ class StrataService(RpcService):
             step=poll_interval,
         )
 
-    def get_sync_status(self, rpc: JsonRpcClient | None = None) -> ChainSyncStatus:
+    # kwargs added for backward compatibility, since the rpc argument has been removed now
+    def get_sync_status(self, *kwargs) -> ChainSyncStatus:
         """
         Get the current chain sync status.
 
@@ -132,12 +138,12 @@ class StrataService(RpcService):
         Returns:
             ChainSyncStatus
         """
-        if rpc is None:
-            rpc = self.create_rpc()
+        rpc = self.rpc or self.create_rpc()
 
         status = wait_until_with_value(
             rpc.strata_getChainStatus,
             lambda x: x is not None,
+            timeout=200,
             error_with="Timed out getting chain status",
         )
         return status
@@ -261,6 +267,25 @@ class StrataService(RpcService):
             error_with=f"No L1 header commitment at height {height}",
             timeout=timeout,
             step=poll_interval,
+        )
+
+    def wait_until_checkpoint_finalized(
+        self, target: int, btcrpc=None, timeout=120, step=1.0
+    ) -> ChainSyncStatus:
+        """
+        Waits on `self.get_sync_status` until target is finalized.
+        If btcrpc is not None, it also mines bitcoin blocks.
+        """
+        fn = self.get_sync_status
+        fn = with_mining(btcrpc, fn) if btcrpc is not None else fn
+        return wait_until_with_value(
+            fn,
+            lambda v: (
+                v["finalized"]["epoch"] >= target and v["finalized"]["last_blkid"] != "00" * 32
+            ),
+            error_with="First epoch not finalized",
+            timeout=timeout,
+            step=step,
         )
 
     def check_block_generation_in_range(self, rpc: JsonRpcClient, start: int, end: int) -> int:

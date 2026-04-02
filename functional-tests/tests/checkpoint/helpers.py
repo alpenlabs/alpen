@@ -51,35 +51,6 @@ def wait_for_checkpoint_duty(
     )
 
 
-def mine_until_finalized_epoch(
-    bitcoin: BitcoinService,
-    strata: StrataService,
-    strata_rpc,
-    target_epoch: int,
-    timeout: int = 120,
-    step: float = 1.0,
-) -> dict:
-    """Mine L1 blocks until finalized epoch reaches target_epoch."""
-
-    def _check():
-        return strata.get_sync_status(strata_rpc).get("finalized")
-
-    def _is_finalized(v):
-        return (
-            isinstance(v, dict)
-            and v.get("epoch", -1) >= target_epoch
-            and v.get("last_blkid") != "00" * 32
-        )
-
-    return bitcoin.mine_until(
-        check=_check,
-        predicate=_is_finalized,
-        error_with=f"Finalized epoch did not reach {target_epoch}",
-        timeout=timeout,
-        step=step,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Checkpoint payload parsing
 # ---------------------------------------------------------------------------

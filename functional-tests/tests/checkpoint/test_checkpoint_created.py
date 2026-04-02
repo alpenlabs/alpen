@@ -42,6 +42,9 @@ class TestCheckpointCreated(StrataNodeTest):
 
         # Wait for a checkpoint duty for epoch >= 1.
         duty = wait_for_checkpoint_duty(strata_rpc, timeout=60, step=0.5, min_epoch=1)
+        if duty is None:
+            raise AssertionError("found empty duty")
+
         epoch = parse_checkpoint_epoch(duty)
         assert epoch >= 1, f"expected checkpoint duty for epoch >= 1, got {epoch}"
         logger.info("Checkpoint created for epoch %d", epoch)
