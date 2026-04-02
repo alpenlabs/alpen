@@ -1,6 +1,7 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::CheckpointPayload;
-use strata_db_types::types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry};
+use strata_csm_types::CheckpointL1Ref;
+use strata_db_types::types::L1PayloadIntentIndex;
 use strata_identifiers::{Epoch, EpochCommitment};
 
 use crate::{define_table_with_default_codec, define_table_with_integer_key};
@@ -16,8 +17,8 @@ define_table_with_default_codec!(
 );
 
 define_table_with_default_codec!(
-    /// Table mapping epoch commitment to observed L1 height for checkpoint tip update.
-    (OLCheckpointL1ObservationSchema) EpochCommitment => OLCheckpointL1ObservationEntry
+    /// Table mapping epoch commitment to persisted [`CheckpointL1Ref`].
+    (OLCheckpointL1RefSchema) EpochCommitment => CheckpointL1Ref
 );
 
 define_table_with_integer_key!(

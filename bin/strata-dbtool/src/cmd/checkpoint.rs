@@ -4,9 +4,10 @@ use argh::FromArgs;
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     traits::{DatabaseBackend, L1Database, OLCheckpointDatabase},
-    types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry},
+    types::L1PayloadIntentIndex,
 };
 use strata_identifiers::{Epoch, EpochCommitment, L1Height, Slot};
 
@@ -66,22 +67,22 @@ pub(crate) struct GetEpochSummaryArgs {
 pub(crate) struct CheckpointRecord {
     pub(crate) payload: CheckpointPayload,
     pub(crate) signing: Option<L1PayloadIntentIndex>,
-    pub(crate) l1_observation: Option<OLCheckpointL1ObservationEntry>,
+    pub(crate) l1_ref: Option<CheckpointL1Ref>,
 }
 
 impl CheckpointRecord {
     pub(crate) fn to_status_record(&self) -> CheckpointStatusRecord {
         CheckpointStatusRecord {
             signing: self.signing,
-            l1_observation: self.l1_observation,
+            l1_ref: self.l1_ref.clone(),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CheckpointStatusRecord {
     pub(crate) signing: Option<L1PayloadIntentIndex>,
-    pub(crate) l1_observation: Option<OLCheckpointL1ObservationEntry>,
+    pub(crate) l1_ref: Option<CheckpointL1Ref>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,12 +109,12 @@ pub(crate) fn derive_checkpoint_status(
     current_l1_tip: L1Height,
     l1_reorg_safe_depth: u32,
 ) -> CheckpointStatus {
-    match (status_record.signing, status_record.l1_observation) {
+    match (status_record.signing, status_record.l1_ref) {
         (None, None) => CheckpointStatus::Unsigned,
         (Some(_), None) => CheckpointStatus::Signed,
-        (_, Some(observation)) => {
+        (_, Some(l1_ref)) => {
             let confirmations = current_l1_tip
-                .saturating_sub(observation.l1_block.height())
+                .saturating_sub(l1_ref.l1_commitment.height())
                 .saturating_add(1);
             let is_finalized = confirmations >= l1_reorg_safe_depth.max(1);
             if is_finalized {
@@ -163,21 +164,18 @@ pub(crate) fn get_checkpoint_status_by_commitment(
         .internal_error(format!(
             "Failed to get OL checkpoint signing entry at epoch {checkpoint_epoch}"
         ))?;
-    let l1_observation = db
+    let l1_ref = db
         .ol_checkpoint_db()
-        .get_checkpoint_l1_observation_entry(commitment)
+        .get_checkpoint_l1_ref(commitment)
         .internal_error(format!(
-            "Failed to get OL checkpoint L1 observation entry at epoch {checkpoint_epoch}"
+            "Failed to get OL checkpoint L1 ref at epoch {checkpoint_epoch}"
         ))?;
     let Some(_) = payload else {
         return Ok(None);
     };
 
     let current_l1_tip = get_l1_chain_tip(db)?.0;
-    let status_record = CheckpointStatusRecord {
-        signing,
-        l1_observation,
-    };
+    let status_record = CheckpointStatusRecord { signing, l1_ref };
     Ok(Some(derive_checkpoint_status(
         status_record,
         current_l1_tip,
@@ -274,17 +272,17 @@ pub(crate) fn get_checkpoint_at_epoch(
             "Failed to get OL checkpoint signing entry at epoch {epoch}"
         ))?;
 
-    let l1_observation = db
+    let l1_ref = db
         .ol_checkpoint_db()
-        .get_checkpoint_l1_observation_entry(commitment)
+        .get_checkpoint_l1_ref(commitment)
         .internal_error(format!(
-            "Failed to get OL checkpoint L1 observation entry at epoch {epoch}"
+            "Failed to get OL checkpoint L1 ref at epoch {epoch}"
         ))?;
 
     Ok(Some(CheckpointRecord {
         payload,
         signing,
-        l1_observation,
+        l1_ref,
     }))
 }
 
@@ -394,11 +392,13 @@ pub(crate) fn get_checkpoint(
         status: derived_status.as_str().to_string(),
         intent_index,
         observed_l1_height: checkpoint
-            .l1_observation
-            .map(|observation| observation.l1_block.height()),
+            .l1_ref
+            .as_ref()
+            .map(|l1_ref| l1_ref.l1_commitment.height()),
         observed_l1_blkid: checkpoint
-            .l1_observation
-            .map(|observation| *observation.l1_block.blkid()),
+            .l1_ref
+            .as_ref()
+            .map(|l1_ref| *l1_ref.l1_commitment.blkid()),
     };
 
     // Use the output utility
@@ -518,25 +518,29 @@ mod tests {
 
     use super::*;
 
-    fn observation(height: L1Height) -> OLCheckpointL1ObservationEntry {
-        OLCheckpointL1ObservationEntry::new(L1BlockCommitment::new(height, L1BlockId::default()))
+    fn checkpoint_l1_ref(height: L1Height) -> CheckpointL1Ref {
+        CheckpointL1Ref::new(
+            L1BlockCommitment::new(height, L1BlockId::default()),
+            [1u8; 32].into(),
+            [2u8; 32].into(),
+        )
     }
 
     #[test]
-    fn derive_status_unsigned_when_no_signing_or_observation() {
+    fn derive_status_unsigned_when_no_signing_or_l1_ref() {
         let status_record = CheckpointStatusRecord {
             signing: None,
-            l1_observation: None,
+            l1_ref: None,
         };
         let status = derive_checkpoint_status(status_record, 100, 6);
         assert_eq!(status, CheckpointStatus::Unsigned);
     }
 
     #[test]
-    fn derive_status_signed_when_signing_exists_without_observation() {
+    fn derive_status_signed_when_signing_exists_without_l1_ref() {
         let status_record = CheckpointStatusRecord {
             signing: Some(7),
-            l1_observation: None,
+            l1_ref: None,
         };
         let status = derive_checkpoint_status(status_record, 100, 6);
         assert_eq!(status, CheckpointStatus::Signed);
@@ -546,7 +550,7 @@ mod tests {
     fn derive_status_confirmed_when_observed_but_below_depth() {
         let status_record = CheckpointStatusRecord {
             signing: Some(7),
-            l1_observation: Some(observation(100)),
+            l1_ref: Some(checkpoint_l1_ref(100)),
         };
         let status = derive_checkpoint_status(status_record, 103, 6);
         assert_eq!(status, CheckpointStatus::Confirmed);
@@ -556,7 +560,7 @@ mod tests {
     fn derive_status_finalized_when_observed_at_or_above_depth() {
         let status_record = CheckpointStatusRecord {
             signing: Some(7),
-            l1_observation: Some(observation(100)),
+            l1_ref: Some(checkpoint_l1_ref(100)),
         };
         let status = derive_checkpoint_status(status_record, 105, 6);
         assert_eq!(status, CheckpointStatus::Finalized);
@@ -566,7 +570,7 @@ mod tests {
     fn derive_status_confirmed_when_observed_without_signing() {
         let status_record = CheckpointStatusRecord {
             signing: None,
-            l1_observation: Some(observation(100)),
+            l1_ref: Some(checkpoint_l1_ref(100)),
         };
         let status = derive_checkpoint_status(status_record, 103, 6);
         assert_eq!(status, CheckpointStatus::Confirmed);
@@ -576,7 +580,7 @@ mod tests {
     fn derive_status_finalized_when_depth_is_zero() {
         let status_record = CheckpointStatusRecord {
             signing: Some(7),
-            l1_observation: Some(observation(100)),
+            l1_ref: Some(checkpoint_l1_ref(100)),
         };
         let status = derive_checkpoint_status(status_record, 100, 0);
         assert_eq!(status, CheckpointStatus::Finalized);

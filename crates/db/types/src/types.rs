@@ -12,10 +12,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
-use strata_identifiers::{L1BlockCommitment, OLTxId};
+use strata_identifiers::{Buf32, OLBlockCommitment, OLTxId};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::{buf::Buf32, L1Height, OLBlockCommitment};
+use strata_primitives::L1Height;
 use zkaleido::Proof;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
@@ -423,21 +423,6 @@ impl MempoolTxData {
 /// Index into the L1 payload intent store.
 pub type L1PayloadIntentIndex = u64;
 
-/// L1 observation facts recorded for an OL checkpoint commitment.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
-)]
-pub struct OLCheckpointL1ObservationEntry {
-    /// L1 block commitment where the checkpoint was observed.
-    pub l1_block: L1BlockCommitment,
-}
-
-impl OLCheckpointL1ObservationEntry {
-    pub fn new(l1_block: L1BlockCommitment) -> Self {
-        Self { l1_block }
-    }
-}
-
 /// A chunked envelope entry representing a commit tx funding N reveal txs.
 ///
 /// Used for posting large DA blobs that exceed single-transaction limits.
@@ -593,7 +578,12 @@ impl fmt::Display for ChunkedEnvelopeStatus {
 
 #[cfg(test)]
 mod tests {
+    use proptest::{
+        strategy::{Strategy, ValueTree},
+        test_runner::TestRunner,
+    };
     use serde_json;
+    use strata_identifiers::test_utils::{buf32_strategy, l1_block_commitment_strategy};
 
     use super::*;
 
@@ -673,13 +663,24 @@ mod tests {
     }
 
     #[test]
-    fn ol_checkpoint_l1_observation_entry_borsh_roundtrip() {
-        let observation = OLCheckpointL1ObservationEntry::new(L1BlockCommitment::new(
-            123,
-            Buf32::from([42; 32]).into(),
-        ));
+    fn checkpoint_l1_ref_borsh_roundtrip() {
+        let mut runner = TestRunner::default();
+        let l1_commitment = l1_block_commitment_strategy()
+            .new_tree(&mut runner)
+            .expect("failed to generate L1BlockCommitment")
+            .current();
+        let txid = buf32_strategy()
+            .new_tree(&mut runner)
+            .expect("failed to generate txid")
+            .current();
+        let wtxid = buf32_strategy()
+            .new_tree(&mut runner)
+            .expect("failed to generate wtxid")
+            .current();
+
+        let observation = CheckpointL1Ref::new(l1_commitment, txid, wtxid);
         let bytes = borsh::to_vec(&observation).unwrap();
-        let decoded: OLCheckpointL1ObservationEntry = borsh::from_slice(&bytes).unwrap();
+        let decoded: CheckpointL1Ref = borsh::from_slice(&bytes).unwrap();
         assert_eq!(decoded, observation);
     }
 }

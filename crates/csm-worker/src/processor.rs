@@ -11,7 +11,6 @@ use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
-use strata_db_types::types::OLCheckpointL1ObservationEntry;
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
@@ -211,9 +210,12 @@ fn mark_ol_checkpoint_l1_observed(
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     let ol_checkpoint = state.storage.ol_checkpoint();
+    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
+    // TODO(STR-2952): populate real checkpoint wtxid here.
+    let checkpoint_wtxid = checkpoint_txid;
 
-    let observation = OLCheckpointL1ObservationEntry::new(*asm_block);
-    ol_checkpoint.put_checkpoint_l1_observation_entry_blocking(commitment, observation)?;
+    let observation = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
+    ol_checkpoint.put_checkpoint_l1_ref_blocking(commitment, observation.clone())?;
 
     // Update cached confirmed epoch monotonically.
     if state
@@ -240,7 +242,9 @@ fn mark_ol_checkpoint_l1_observed(
     debug!(
         ?commitment,
         l1_height = asm_block.height(),
-        "Recorded OL checkpoint L1 observation from v1 tip update"
+        ?checkpoint_txid,
+        ?checkpoint_wtxid,
+        "Recorded OL checkpoint L1 ref from v1 tip update"
     );
     Ok(())
 }
@@ -553,12 +557,22 @@ mod tests {
         let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
         let observation = storage
             .ol_checkpoint()
-            .get_checkpoint_l1_observation_entry_blocking(commitment)
-            .expect("query observation entry");
+            .get_checkpoint_l1_ref_blocking(commitment)
+            .expect("query l1 ref");
         assert_eq!(
-            observation.map(|entry| entry.l1_block),
+            observation.as_ref().map(|entry| entry.txid),
+            Some(Buf32::from([epoch as u8; 32])),
+            "l1 ref should persist checkpoint txid from v1 tip log"
+        );
+        assert_eq!(
+            observation.as_ref().map(|entry| entry.wtxid),
+            Some(Buf32::from([(epoch + 10) as u8; 32])),
+            "l1 ref should persist checkpoint wtxid from v1 tip log"
+        );
+        assert_eq!(
+            observation.as_ref().map(|entry| entry.l1_commitment),
             Some(asm_block),
-            "observation entry should be written from v1 tip log"
+            "l1 ref should be written from v1 tip log"
         );
 
         let payload = storage

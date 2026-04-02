@@ -70,7 +70,7 @@ impl SyncService for CsmWorkerService {
             }
 
             let confirmations = current_l1_tip
-                .saturating_sub(observation.l1_block.height())
+                .saturating_sub(observation.l1_commitment.height())
                 .saturating_add(1);
             if confirmations >= finality_depth {
                 let epoch = *commitment;

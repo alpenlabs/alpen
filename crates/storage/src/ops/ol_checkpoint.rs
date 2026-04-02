@@ -1,9 +1,7 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::CheckpointPayload;
-use strata_db_types::{
-    traits::OLCheckpointDatabase,
-    types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry},
-};
+use strata_csm_types::CheckpointL1Ref;
+use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex};
 use strata_identifiers::Epoch;
 use strata_primitives::epoch::EpochCommitment;
 
@@ -26,10 +24,10 @@ inst_ops_simple! {
         get_checkpoint_signing_entry(epoch: EpochCommitment) => Option<L1PayloadIntentIndex>;
         del_checkpoint_signing_entry(epoch: EpochCommitment) => bool;
         del_checkpoint_signing_entries_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
-        put_checkpoint_l1_observation_entry(epoch: EpochCommitment, l1_observation: OLCheckpointL1ObservationEntry) => ();
-        get_checkpoint_l1_observation_entry(epoch: EpochCommitment) => Option<OLCheckpointL1ObservationEntry>;
-        del_checkpoint_l1_observation_entry(epoch: EpochCommitment) => bool;
-        del_checkpoint_l1_observation_entries_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
+        put_checkpoint_l1_ref(epoch: EpochCommitment, l1_ref: CheckpointL1Ref) => ();
+        get_checkpoint_l1_ref(epoch: EpochCommitment) => Option<CheckpointL1Ref>;
+        del_checkpoint_l1_ref(epoch: EpochCommitment) => bool;
+        del_checkpoint_l1_refs_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
         get_next_unsigned_checkpoint_epoch() => Option<Epoch>;
     }
 }

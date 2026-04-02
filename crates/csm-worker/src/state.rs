@@ -2,8 +2,7 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_csm_types::ClientState;
-use strata_db_types::types::OLCheckpointL1ObservationEntry;
+use strata_csm_types::{CheckpointL1Ref, ClientState};
 use strata_identifiers::Epoch;
 use strata_params::Params;
 use strata_primitives::prelude::*;
@@ -47,7 +46,7 @@ pub struct CsmWorkerState {
     ///
     /// Items are appended when new observation facts are written and consumed as
     /// finalized depth progresses.
-    pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, OLCheckpointL1ObservationEntry)>,
+    pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
 
     /// Status channel for publishing state updates.
     pub(crate) status_channel: Arc<StatusChannel>,
@@ -79,10 +78,10 @@ impl CsmWorkerState {
             current_l1_tip,
         )?;
 
-        let finalized_from_l1_observations =
+        let finalized_from_l1_refs =
             derive_finalized_epoch(observed_checkpoints.iter(), current_l1_tip, finality_depth);
         let finalized_epoch =
-            max_epoch_commitment(baseline_finalized_epoch, finalized_from_l1_observations);
+            max_epoch_commitment(baseline_finalized_epoch, finalized_from_l1_refs);
 
         // Confirmed means "observed on L1" and may be finalized. If we only loaded
         // observations after finalized, fall back to finalized when no newer observed entry exists.
@@ -122,13 +121,13 @@ impl CsmWorkerState {
 
 /// Loads observed checkpoint candidates from the OL checkpoint DB starting from `start_epoch`.
 ///
-/// Only epochs with both a canonical commitment and an L1 observation entry are included.
+/// Only epochs with both a canonical commitment and an L1 ref are included.
 /// Used at startup to populate the incremental finalization queue.
 fn load_observed_checkpoints_from_db(
     storage: &NodeStorage,
     start_epoch: Epoch,
     current_l1_tip: L1Height,
-) -> anyhow::Result<VecDeque<(EpochCommitment, OLCheckpointL1ObservationEntry)>> {
+) -> anyhow::Result<VecDeque<(EpochCommitment, CheckpointL1Ref)>> {
     let ol_checkpoint = storage.ol_checkpoint();
     let Some(last_payload_commitment) =
         ol_checkpoint.get_last_checkpoint_payload_epoch_blocking()?
@@ -143,13 +142,11 @@ fn load_observed_checkpoints_from_db(
         else {
             continue;
         };
-        let Some(observation) =
-            ol_checkpoint.get_checkpoint_l1_observation_entry_blocking(commitment)?
-        else {
+        let Some(observation) = ol_checkpoint.get_checkpoint_l1_ref_blocking(commitment)? else {
             continue;
         };
 
-        if observation.l1_block.height() > current_l1_tip {
+        if observation.l1_commitment.height() > current_l1_tip {
             continue;
         }
 
@@ -168,14 +165,14 @@ fn derive_finalized_epoch<'a, I>(
     finality_depth: u32,
 ) -> Option<EpochCommitment>
 where
-    I: Iterator<Item = &'a (EpochCommitment, OLCheckpointL1ObservationEntry)>,
+    I: Iterator<Item = &'a (EpochCommitment, CheckpointL1Ref)>,
 {
     let mut latest_finalized = None;
     let finality_depth = finality_depth.max(1);
 
     for (commitment, observation) in observed {
         let confirmations = current_l1_tip
-            .saturating_sub(observation.l1_block.height())
+            .saturating_sub(observation.l1_commitment.height())
             .saturating_add(1);
         if confirmations >= finality_depth {
             latest_finalized = Some(*commitment);
@@ -210,9 +207,8 @@ mod tests {
 
     use strata_checkpoint_types::EpochSummary;
     use strata_checkpoint_types_ssz::test_utils::create_test_checkpoint_payload;
-    use strata_csm_types::{ClientState, ClientUpdateOutput};
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::types::OLCheckpointL1ObservationEntry;
     use strata_identifiers::Buf32;
     use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::prelude::*;
@@ -325,12 +321,13 @@ mod tests {
             .put_checkpoint_payload_entry_blocking(commitment_1, payload_1)
             .expect("insert epoch 1 payload");
         ol_checkpoint
-            .put_checkpoint_l1_observation_entry_blocking(
+            .put_checkpoint_l1_ref_blocking(
                 commitment_1,
-                OLCheckpointL1ObservationEntry::new(L1BlockCommitment::new(
-                    17,
-                    L1BlockId::default(),
-                )),
+                CheckpointL1Ref::new(
+                    L1BlockCommitment::new(17, L1BlockId::default()),
+                    Buf32::from([1; 32]),
+                    Buf32::from([2; 32]),
+                ),
             )
             .expect("insert epoch 1 observation");
 
@@ -351,12 +348,13 @@ mod tests {
             .put_checkpoint_payload_entry_blocking(commitment_2, payload_2)
             .expect("insert epoch 2 payload");
         ol_checkpoint
-            .put_checkpoint_l1_observation_entry_blocking(
+            .put_checkpoint_l1_ref_blocking(
                 commitment_2,
-                OLCheckpointL1ObservationEntry::new(L1BlockCommitment::new(
-                    19,
-                    L1BlockId::default(),
-                )),
+                CheckpointL1Ref::new(
+                    L1BlockCommitment::new(19, L1BlockId::default()),
+                    Buf32::from([3; 32]),
+                    Buf32::from([4; 32]),
+                ),
             )
             .expect("insert epoch 2 observation");
 
