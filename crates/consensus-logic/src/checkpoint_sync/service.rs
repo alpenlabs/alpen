@@ -12,7 +12,7 @@ use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMon
 use crate::checkpoint_sync::{
     context::{CheckpointSyncCtx, CheckpointSyncCtxImpl},
     input::{CheckpointSyncEvent, CheckpointSyncInput},
-    state::{apply_checkpoint, InnerState},
+    state::{apply_checkpoint, build_ol_sync_status, genesis_ol_sync_status, InnerState},
     CheckpointSyncState,
 };
 
@@ -65,10 +65,23 @@ pub async fn start_css_service<E>(
 where
     E: DAExtractor + Clone + Send + Sync + 'static,
 {
-    let ctx = CheckpointSyncCtxImpl::new(nodectx.storage().clone(), chain_worker, da_extractor);
+    let ctx = CheckpointSyncCtxImpl::new(
+        nodectx.storage().clone(),
+        chain_worker,
+        da_extractor,
+        nodectx.status_channel().clone(),
+    );
     let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
 
     let inner_state = initialize_css_inner_state(nodectx, &ctx).await?;
+
+    // Publish initial OL sync status so the RPC is populated from startup.
+    let initial_status = match inner_state.last_finalized_epoch() {
+        Some(epoch) => build_ol_sync_status(&ctx, epoch)?,
+        None => genesis_ol_sync_status(),
+    };
+    ctx.publish_ol_sync_status(initial_status);
+
     let state = CheckpointSyncState::new(ctx, inner_state);
     let input = CheckpointSyncInput::new(clstate_rx);
 

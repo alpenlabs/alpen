@@ -6,6 +6,7 @@ use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_state_types::OLState;
 use strata_primitives::EpochCommitment;
 use strata_service::ServiceState;
+use strata_status::OLSyncStatus;
 
 use crate::checkpoint_sync::context::CheckpointSyncCtx;
 
@@ -25,6 +26,10 @@ impl InnerState {
         Self {
             last_finalized_epoch,
         }
+    }
+
+    pub(crate) fn last_finalized_epoch(&self) -> Option<EpochCommitment> {
+        self.last_finalized_epoch
     }
 }
 
@@ -79,6 +84,9 @@ pub(crate) async fn apply_checkpoint(
     // And then finalize
     ctx.chain_worker().finalize_epoch(epoch).await?;
 
+    let status = build_ol_sync_status(ctx, epoch)?;
+    ctx.publish_ol_sync_status(status);
+
     Ok(())
 }
 
@@ -125,6 +133,44 @@ async fn extract_checkpoint_and_submit_to_chain_worker<C: CheckpointSyncCtx>(
     ctx.chain_worker().apply_da(&payload).await?;
 
     Ok(())
+}
+
+/// Builds an [`OLSyncStatus`] from a finalized epoch.
+pub(crate) fn build_ol_sync_status(
+    ctx: &impl CheckpointSyncCtx,
+    epoch: EpochCommitment,
+) -> anyhow::Result<OLSyncStatus> {
+    let summary = ctx.get_epoch_summary(epoch)?;
+    let terminal = *summary.terminal();
+    let epoch_num = summary.epoch();
+    let new_l1 = *summary.new_l1();
+    let prev_epoch = summary
+        .get_prev_epoch_commitment()
+        .unwrap_or(EpochCommitment::null());
+
+    Ok(OLSyncStatus::new(
+        terminal,
+        epoch_num,
+        true, // checkpoint sync always lands on terminal blocks
+        prev_epoch,
+        epoch, // confirmed = finalized for checkpoint sync
+        epoch,
+        new_l1,
+    ))
+}
+
+/// Builds a default genesis [`OLSyncStatus`].
+pub(crate) fn genesis_ol_sync_status() -> OLSyncStatus {
+    let null_epoch = EpochCommitment::null();
+    OLSyncStatus::new(
+        null_epoch.to_block_commitment(),
+        0,
+        false,
+        null_epoch,
+        null_epoch,
+        null_epoch,
+        Default::default(),
+    )
 }
 
 impl<C> ServiceState for CheckpointSyncState<C>

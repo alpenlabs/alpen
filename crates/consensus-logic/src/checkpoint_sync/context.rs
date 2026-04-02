@@ -16,6 +16,7 @@ use strata_ol_da::{
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
+use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
 
@@ -38,6 +39,9 @@ pub trait CheckpointSyncCtx {
         start: L1Height,
         end: L1Height,
     ) -> anyhow::Result<Vec<AsmManifest>>;
+
+    /// Publishes the OL sync status update to the status channel.
+    fn publish_ol_sync_status(&self, status: OLSyncStatus);
 }
 
 #[derive(Clone)]
@@ -49,6 +53,7 @@ pub struct CheckpointSyncCtxImpl<E: DAExtractor> {
     storage: Arc<NodeStorage>,
     chain_worker: Arc<ChainWorkerHandle>,
     da_extractor: E,
+    status_channel: Arc<StatusChannel>,
 }
 
 impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
@@ -56,11 +61,13 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
         storage: Arc<NodeStorage>,
         chain_worker: Arc<ChainWorkerHandle>,
         da_extractor: E,
+        status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
             storage,
             chain_worker,
             da_extractor,
+            status_channel,
         }
     }
 }
@@ -106,6 +113,11 @@ impl<E: DAExtractor> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
             manifests.push(manifest);
         }
         Ok(manifests)
+    }
+
+    fn publish_ol_sync_status(&self, status: OLSyncStatus) {
+        self.status_channel
+            .update_ol_sync_status(OLSyncStatusUpdate::new(status));
     }
 }
 
