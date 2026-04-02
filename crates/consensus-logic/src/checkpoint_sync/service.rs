@@ -99,13 +99,13 @@ async fn initialize_css_inner_state(
         return Ok(InnerState::new(None));
     };
 
-    let start_epoch = last_finalized.batch_info.get_epoch_commitment();
+    let cur_finalized = last_finalized.batch_info.get_epoch_commitment();
     let l1_tip_height = nodectx.bitcoin_client().get_blockchain_info().await?.blocks;
     let reorg_safe_depth = nodectx.params().rollup().l1_reorg_safe_depth;
 
     //  Get unapplied epochs.
     let (mut last_applied_epoch, unapplied_epochs) =
-        scan_unapplied_epochs(nodectx, start_epoch, l1_tip_height, reorg_safe_depth).await?;
+        scan_unapplied_epochs(nodectx, cur_finalized, l1_tip_height, reorg_safe_depth).await?;
 
     // Apply the epochs in reverse order.
     for (l1ref, epoch) in unapplied_epochs.into_iter().rev() {
@@ -122,7 +122,7 @@ async fn initialize_css_inner_state(
 /// Returns the last applied epoch (if any) and the unapplied epochs in newest-first order.
 async fn scan_unapplied_epochs(
     nodectx: &NodeContext,
-    start_epoch: EpochCommitment,
+    start_finalized: EpochCommitment,
     l1_tip_height: u32,
     reorg_safe_depth: u32,
 ) -> anyhow::Result<(
@@ -131,44 +131,45 @@ async fn scan_unapplied_epochs(
 )> {
     let mut unapplied = Vec::new();
     let mut last_applied = None;
-    let mut cur_epoch = start_epoch;
+    let mut cur_finalized = start_finalized;
 
     let ckpt_db = nodectx.storage().ol_checkpoint();
     let state_db = nodectx.storage().ol_state();
 
     loop {
         let l1_obs = ckpt_db
-            .get_checkpoint_l1_observation_entry_async(cur_epoch)
+            .get_checkpoint_l1_observation_entry_async(cur_finalized)
             .await?
-            .ok_or_else(|| fin_epoch_err(cur_epoch, "l1 observation entry"))?;
-
-        let summary = ckpt_db
-            .get_epoch_summary_async(cur_epoch)
-            .await?
-            .ok_or_else(|| fin_epoch_err(cur_epoch, "epoch summary"))?;
-
-        // Stop at genesis — no previous epoch to continue from.
-        let prev_epoch = summary.get_prev_epoch_commitment();
+            .ok_or_else(|| fin_epoch_err(cur_finalized, "l1 observation entry"))?;
 
         let is_finalized = l1_tip_height.saturating_sub(l1_obs.l1_block.height) >= reorg_safe_depth;
-
         if !is_finalized {
-            cur_epoch = if let Some(e) = prev_epoch { e } else { break };
-            continue;
+            return Err(anyhow!(
+                "Obtained unfinalized epoch when the descendants are finalized: {}",
+                cur_finalized
+            ));
         }
 
+        // Check if it has been applied. It is applied if the state db contains state corresponding
+        // to the terminal OL block of this finalized epoch.
         if state_db
-            .get_toplevel_ol_state_async(cur_epoch.to_block_commitment())
+            .get_toplevel_ol_state_async(cur_finalized.to_block_commitment())
             .await?
             .is_some()
         {
-            last_applied = Some(cur_epoch);
+            last_applied = Some(cur_finalized);
             break;
         }
+        unapplied.push((build_l1ref(l1_obs.l1_block), cur_finalized));
 
-        unapplied.push((build_l1ref(l1_obs.l1_block), cur_epoch));
+        let summary = ckpt_db
+            .get_epoch_summary_async(cur_finalized)
+            .await?
+            .ok_or_else(|| fin_epoch_err(cur_finalized, "epoch summary"))?;
 
-        cur_epoch = if let Some(e) = prev_epoch { e } else { break };
+        let prev_epoch = summary.get_prev_epoch_commitment();
+
+        cur_finalized = if let Some(e) = prev_epoch { e } else { break };
     }
 
     Ok((last_applied, unapplied))
