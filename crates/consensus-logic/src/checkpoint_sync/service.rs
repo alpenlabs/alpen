@@ -8,13 +8,14 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
 use strata_ol_da::DAExtractor;
-use strata_primitives::{Buf32, EpochCommitment, L1BlockCommitment};
+use strata_primitives::EpochCommitment;
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
+use tracing::{debug, info, warn};
 
 use crate::checkpoint_sync::{
     context::{CheckpointSyncCtx, CheckpointSyncCtxImpl},
     input::{CheckpointSyncEvent, CheckpointSyncInput},
-    state::{apply_checkpoint, build_ol_sync_status, genesis_ol_sync_status, InnerState},
+    state::{apply_checkpoint, build_ol_sync_status, InnerState},
     CheckpointSyncState,
 };
 
@@ -53,7 +54,10 @@ where
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             CheckpointSyncEvent::NewCsmStateUpdate => state.handle_new_client_state().await?,
-            CheckpointSyncEvent::Abort => return Ok(Response::ShouldExit),
+            CheckpointSyncEvent::Abort => {
+                warn!("checkpoint sync received abort signal, shutting down");
+                return Ok(Response::ShouldExit);
+            }
         }
         Ok(Response::Continue)
     }
@@ -77,14 +81,20 @@ where
     );
     let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
 
+    info!("initializing checkpoint sync service");
     let inner_state = initialize_css_inner_state(nodectx, &ctx).await?;
 
     // Publish initial OL sync status so the RPC is populated from startup.
-    let initial_status = match inner_state.last_finalized_epoch() {
-        Some(epoch) => build_ol_sync_status(&ctx, epoch).await?,
-        None => genesis_ol_sync_status(),
+    match inner_state.last_finalized_epoch() {
+        Some(epoch) => {
+            debug!(%epoch, "resuming from last finalized epoch");
+            let status = build_ol_sync_status(&ctx, epoch).await?;
+            ctx.publish_ol_sync_status(status);
+        }
+        None => {
+            debug!("no finalized epoch found, doing nothing");
+        }
     };
-    ctx.publish_ol_sync_status(initial_status);
 
     let state = CheckpointSyncState::new(ctx, inner_state);
     let input = CheckpointSyncInput::new(clstate_rx);
@@ -113,6 +123,7 @@ async fn initialize_css_inner_state(
         .get_cur_client_state()
         .get_last_finalized_checkpoint()
     else {
+        debug!("no finalized checkpoint in client state, nothing to catch up on");
         return Ok(InnerState::new(None));
     };
 
@@ -120,12 +131,35 @@ async fn initialize_css_inner_state(
     let l1_tip_height = nodectx.bitcoin_client().get_blockchain_info().await?.blocks;
     let reorg_safe_depth = nodectx.params().rollup().l1_reorg_safe_depth;
 
-    //  Get unapplied epochs.
+    debug!(
+        %cur_finalized,
+        l1_tip_height,
+        reorg_safe_depth,
+        "scanning for unapplied epochs"
+    );
+
     let (mut last_applied_epoch, unapplied_epochs) =
         scan_unapplied_epochs(nodectx, cur_finalized, l1_tip_height, reorg_safe_depth).await?;
 
-    // Apply the epochs in reverse order.
-    for (l1ref, epoch) in unapplied_epochs.into_iter().rev() {
+    let num_unapplied = unapplied_epochs.len();
+    if num_unapplied > 0 {
+        info!(
+            num_unapplied,
+            ?last_applied_epoch,
+            "catching up on unapplied epochs"
+        );
+    } else {
+        debug!(?last_applied_epoch, "all epochs already applied");
+    }
+
+    // Apply the epochs in chronological order (oldest first).
+    for (i, (l1ref, epoch)) in unapplied_epochs.into_iter().rev().enumerate() {
+        info!(
+            %epoch,
+            progress = i + 1,
+            total = num_unapplied,
+            "applying epoch during init"
+        );
         apply_checkpoint(ctx, epoch, l1ref).await?;
         last_applied_epoch = Some(epoch);
     }
@@ -174,9 +208,11 @@ async fn scan_unapplied_epochs(
             .await?
             .is_some()
         {
+            debug!(%cur_finalized, "found already-applied epoch, stopping scan");
             last_applied = Some(cur_finalized);
             break;
         }
+        debug!(%cur_finalized, "epoch not yet applied, queuing for catchup");
         unapplied.push((l1_ref, cur_finalized));
 
         let summary = ckpt_db

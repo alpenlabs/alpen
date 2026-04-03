@@ -1,5 +1,4 @@
-use std::future::Future;
-use std::sync::Arc;
+use std::{future::Future, sync::Arc};
 
 use anyhow::anyhow;
 use bitcoin::Transaction;
@@ -11,7 +10,7 @@ use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::{DbError, DbResult};
-use strata_identifiers::CheckpointL1Ref;
+use strata_identifiers::{CheckpointL1Ref, Epoch};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_da::{
     decode_ol_da_payload_bytes, DAExtractor, DaExtractorError, DaExtractorResult, ExtractedDA,
@@ -21,16 +20,20 @@ use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
-use tokio::runtime::Handle;
+use tracing::debug;
 
 pub trait CheckpointSyncCtx: Send + Sync {
     /// Getter for chain worker handle reference.
     fn chain_worker(&self) -> &ChainWorkerHandle;
 
     /// Getter for current csm status.
-    fn fetch_csm_status(
+    fn fetch_csm_status(&self) -> impl Future<Output = anyhow::Result<CsmWorkerStatus>> + Send;
+
+    /// Gets the canonical epoch commitment for given epoch number.
+    fn get_canonical_epoch_commitment(
         &self,
-    ) -> impl Future<Output = anyhow::Result<CsmWorkerStatus>> + Send;
+        ep: Epoch,
+    ) -> impl Future<Output = DbResult<Option<EpochCommitment>>> + Send;
 
     /// Gets the corresponding epoch summary. If not found, returns error.
     fn get_epoch_summary(
@@ -104,7 +107,14 @@ impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E
     }
 
     async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {
-        todo!()
+        Ok(self.csm_monitor.get_current())
+    }
+
+    async fn get_canonical_epoch_commitment(&self, ep: Epoch) -> DbResult<Option<EpochCommitment>> {
+        self.storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_async(ep)
+            .await
     }
 
     async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<EpochSummary> {
@@ -118,6 +128,7 @@ impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E
     async fn extract_da_data(&self, ckpt_ref: &CheckpointL1Ref) -> anyhow::Result<ExtractedDA> {
         self.da_extractor
             .extract_da(ckpt_ref)
+            .await
             .map_err(|e| anyhow!("DA extraction failed: {e}"))
     }
 
@@ -168,26 +179,26 @@ impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E
 pub struct BitcoinDAExtractor {
     client: Arc<Client>,
     magic_bytes: MagicBytes,
-    handle: Handle,
 }
 
 impl BitcoinDAExtractor {
-    pub fn new(client: Arc<Client>, magic_bytes: MagicBytes, handle: Handle) -> Self {
+    pub fn new(client: Arc<Client>, magic_bytes: MagicBytes) -> Self {
         Self {
             client,
             magic_bytes,
-            handle,
         }
     }
 }
 
 impl DAExtractor for BitcoinDAExtractor {
-    fn extract_da(&self, ckpt_ref: &CheckpointL1Ref) -> DaExtractorResult<ExtractedDA> {
+    async fn extract_da(&self, ckpt_ref: &CheckpointL1Ref) -> DaExtractorResult<ExtractedDA> {
         let txid = ckpt_ref.txid.to_txid();
+        debug!(%txid, "fetching checkpoint tx from Bitcoin");
 
         let raw_tx_resp = self
-            .handle
-            .block_on(self.client.get_raw_transaction_verbosity_zero(&txid))
+            .client
+            .get_raw_transaction_verbosity_zero(&txid)
+            .await
             .map_err(|e| DaExtractorError::Other(format!("failed to fetch tx {txid}: {e}")))?;
 
         let raw_tx = RawBitcoinTx::from(raw_tx_resp.0);
@@ -199,6 +210,12 @@ impl DAExtractor for BitcoinDAExtractor {
         let sidecar = envelope.payload.sidecar();
         let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff())?;
         let complement = sidecar.terminal_header_complement().clone();
+
+        debug!(
+            %txid,
+            da_size = sidecar.ol_state_diff().len(),
+            "extracted DA from checkpoint tx"
+        );
 
         Ok(ExtractedDA::new(da_payload, complement))
     }

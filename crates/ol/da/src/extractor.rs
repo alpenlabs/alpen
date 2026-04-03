@@ -8,7 +8,10 @@ use crate::{DaExtractorResult, OLDaPayloadV1};
 /// Trait that abstracts DA extraction.
 pub trait DAExtractor {
     /// Extract DA given a checkpoint reference [`CheckpointL1Ref`].
-    fn extract_da(&self, ckpt_ref: &CheckpointL1Ref) -> DaExtractorResult<ExtractedDA>;
+    fn extract_da(
+        &self,
+        ckpt_ref: &CheckpointL1Ref,
+    ) -> impl Future<Output = DaExtractorResult<ExtractedDA>> + Send;
 }
 
 #[derive(Debug)]
