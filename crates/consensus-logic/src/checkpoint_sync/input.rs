@@ -1,7 +1,7 @@
 use strata_csm_types::{CheckpointState, ClientState};
 use strata_service::{AsyncServiceInput, ServiceInput};
 use tokio::sync::watch;
-use tracing::trace;
+use tracing::{debug, trace};
 
 #[derive(Debug)]
 pub(crate) struct CheckpointSyncInput {
@@ -14,10 +14,10 @@ impl CheckpointSyncInput {
     }
 }
 
-#[expect(clippy::large_enum_variant, reason = "Avoiding Boxes")]
+/// Input event for checkpoint sync service.
 #[derive(Clone, Debug)]
 pub enum CheckpointSyncEvent {
-    NewStateUpdate(ClientState),
+    NewCsmStateUpdate,
     Abort,
 }
 
@@ -29,7 +29,8 @@ impl AsyncServiceInput for CheckpointSyncInput {
     async fn recv_next(&mut self) -> anyhow::Result<Option<Self::Msg>> {
         let msg = wait_for_client_change(&mut self.clstate_rx)
             .await
-            .map(CheckpointSyncEvent::NewStateUpdate)
+            .map(|_| CheckpointSyncEvent::NewCsmStateUpdate)
+            .inspect(|v| debug!(client_state = ?v, "Received new client state update"))
             .unwrap_or_else(|e| {
                 trace!("ClientState update channel closed: {e}");
                 CheckpointSyncEvent::Abort

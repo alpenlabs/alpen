@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use strata_chain_worker_new::ApplyDAPayload;
-use strata_csm_types::{CheckpointL1Ref, ClientState};
+use strata_csm_types::CheckpointL1Ref;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_state_types::OLState;
@@ -38,31 +38,34 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         Self { ctx, inner }
     }
 
-    pub(crate) async fn handle_new_client_state(
-        &mut self,
-        client_state: &ClientState,
-    ) -> Result<(), anyhow::Error> {
-        let new_finalized_ckpt = client_state.get_last_finalized_checkpoint();
-
-        let new_ckpt = match (self.inner.last_finalized_epoch, new_finalized_ckpt) {
+    pub(crate) async fn handle_new_client_state(&mut self) -> Result<(), anyhow::Error> {
+        let csm_status = self.ctx.fetch_csm_status().await?;
+        let new_finalized = csm_status.last_finalized_epoch;
+        let new_finalized = match (self.inner.last_finalized_epoch, new_finalized) {
             (_, None) => return Ok(()), // if new is none, do nothing
-            (None, Some(new_ckpt)) => new_ckpt,
-            (Some(prev), Some(new_ckpt)) => {
-                let new = new_ckpt.batch_info.get_epoch_commitment();
-                if prev == new {
+            (None, Some(new_fin)) => new_fin,
+            (Some(prev), Some(new_fin)) => {
+                if prev == new_fin {
                     return Ok(());
                 };
                 // Check continuity and validity
-                validate_new_finalized_epoch(prev, new, &self.ctx)?;
-                new_ckpt
+                validate_new_finalized_epoch(prev, new_fin, &self.ctx).await?;
+                new_fin
             }
         };
 
-        let epoch = new_ckpt.batch_info.get_epoch_commitment();
-        apply_checkpoint(&self.ctx, epoch, new_ckpt.l1_reference).await?;
+        let l1_ref = self.ctx.fetch_l1_reference(new_finalized).await?.ok_or_else(|| {
+            anyhow!(
+                "L1 reference not found for finalized epoch: {}",
+                new_finalized
+            )
+        })?;
+        // sanity check if finalized?
+
+        apply_checkpoint(&self.ctx, new_finalized, l1_ref).await?;
 
         // Update internal state
-        self.inner.last_finalized_epoch = Some(epoch);
+        self.inner.last_finalized_epoch = Some(new_finalized);
 
         Ok(())
     }
@@ -84,19 +87,19 @@ pub(crate) async fn apply_checkpoint(
     // And then finalize
     ctx.chain_worker().finalize_epoch(epoch).await?;
 
-    let status = build_ol_sync_status(ctx, epoch)?;
+    let status = build_ol_sync_status(ctx, epoch).await?;
     ctx.publish_ol_sync_status(status);
 
     Ok(())
 }
 
-fn validate_new_finalized_epoch<C: CheckpointSyncCtx>(
+async fn validate_new_finalized_epoch<C: CheckpointSyncCtx>(
     prev: EpochCommitment,
     new: EpochCommitment,
     ctx: &C,
 ) -> Result<(), anyhow::Error> {
-    let prev_summary = ctx.get_epoch_summary(prev)?;
-    let new_summary = ctx.get_epoch_summary(new)?;
+    let prev_summary = ctx.get_epoch_summary(prev).await?;
+    let new_summary = ctx.get_epoch_summary(new).await?;
     if new_summary.prev_terminal() != prev_summary.terminal() {
         return Err(anyhow!(
             "Received incompatible finalized checkpoint {}",
@@ -112,20 +115,22 @@ async fn extract_checkpoint_and_submit_to_chain_worker<C: CheckpointSyncCtx>(
     l1ref: CheckpointL1Ref,
     ctx: &C,
 ) -> anyhow::Result<()> {
-    let new_summary = ctx.get_epoch_summary(new_epoch)?;
+    let new_summary = ctx.get_epoch_summary(new_epoch).await?;
     let prev_terminal = new_summary.prev_terminal();
 
-    let prev_state: OLState = ctx.get_state_at(*prev_terminal)?;
+    let prev_state: OLState = ctx.get_state_at(*prev_terminal).await?;
 
-    let manifests = ctx.fetch_asm_manifests_range(
-        // TODO: figure out the inclusiveness, by looking at block assembly
-        prev_state.last_l1_height().saturating_add(1),
-        l1ref.l1_commitment.height(),
-    )?;
+    let manifests = ctx
+        .fetch_asm_manifests_range(
+            // TODO: figure out the inclusiveness, by looking at block assembly
+            prev_state.last_l1_height().saturating_add(1),
+            l1ref.l1_commitment.height(),
+        )
+        .await?;
 
     let container = OLL1ManifestContainer::new(manifests)?;
 
-    let da = ctx.extract_da_data(&l1ref)?;
+    let da = ctx.extract_da_data(&l1ref).await?;
     let (da_payload, terminal_complement) = da.into_parts();
 
     let payload = ApplyDAPayload::new(da_payload, container, new_epoch, terminal_complement);
@@ -136,11 +141,11 @@ async fn extract_checkpoint_and_submit_to_chain_worker<C: CheckpointSyncCtx>(
 }
 
 /// Builds an [`OLSyncStatus`] from a finalized epoch.
-pub(crate) fn build_ol_sync_status(
+pub(crate) async fn build_ol_sync_status(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
 ) -> anyhow::Result<OLSyncStatus> {
-    let summary = ctx.get_epoch_summary(epoch)?;
+    let summary = ctx.get_epoch_summary(epoch).await?;
     let terminal = *summary.terminal();
     let epoch_num = summary.epoch();
     let new_l1 = *summary.new_l1();
@@ -149,13 +154,9 @@ pub(crate) fn build_ol_sync_status(
         .unwrap_or(EpochCommitment::null());
 
     Ok(OLSyncStatus::new(
-        terminal,
-        epoch_num,
-        true, // checkpoint sync always lands on terminal blocks
-        prev_epoch,
-        epoch, // confirmed = finalized for checkpoint sync
-        epoch,
-        new_l1,
+        terminal, epoch_num, true, // checkpoint sync always lands on terminal blocks
+        prev_epoch, epoch, // confirmed = finalized for checkpoint sync
+        epoch, new_l1,
     ))
 }
 
@@ -175,7 +176,7 @@ pub(crate) fn genesis_ol_sync_status() -> OLSyncStatus {
 
 impl<C> ServiceState for CheckpointSyncState<C>
 where
-    C: CheckpointSyncCtx + Send + Sync + 'static,
+    C: CheckpointSyncCtx + 'static,
 {
     fn name(&self) -> &str {
         "checkpoint-sync"

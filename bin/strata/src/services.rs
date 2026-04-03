@@ -291,6 +291,7 @@ pub(crate) fn start_strata_services(
         let css_monitor = nodectx.task_manager().handle().block_on(start_css_service(
             &nodectx,
             chain_worker_handle,
+            csm_monitor,
             da_extractor,
         ))?;
         service_handles_builder = service_handles_builder.with_css_monitor(Arc::new(css_monitor));

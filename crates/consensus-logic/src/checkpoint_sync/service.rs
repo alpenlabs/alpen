@@ -3,7 +3,9 @@ use std::{marker::PhantomData, sync::Arc};
 use anyhow::anyhow;
 use bitcoind_async_client::traits::Reader;
 use serde::Serialize;
+use strata_chain_worker_new::ChainWorkerHandle;
 use strata_csm_types::CheckpointL1Ref;
+use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
 use strata_ol_da::DAExtractor;
 use strata_primitives::{Buf32, EpochCommitment, L1BlockCommitment};
@@ -29,7 +31,7 @@ pub type CssServiceHandle = ServiceMonitor<CheckpointSyncStatus>;
 
 impl<C> Service for CheckpointSyncService<C>
 where
-    C: CheckpointSyncCtx + Send + Sync + 'static,
+    C: CheckpointSyncCtx + 'static,
 {
     type Msg = CheckpointSyncEvent;
     type State = CheckpointSyncState<C>;
@@ -42,7 +44,7 @@ where
 
 impl<C> AsyncService for CheckpointSyncService<C>
 where
-    C: CheckpointSyncCtx + Send + Sync + 'static,
+    C: CheckpointSyncCtx + 'static,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
@@ -50,7 +52,7 @@ where
 
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
-            CheckpointSyncEvent::NewStateUpdate(st) => state.handle_new_client_state(&st).await?,
+            CheckpointSyncEvent::NewCsmStateUpdate => state.handle_new_client_state().await?,
             CheckpointSyncEvent::Abort => return Ok(Response::ShouldExit),
         }
         Ok(Response::Continue)
@@ -59,7 +61,8 @@ where
 
 pub async fn start_css_service<E>(
     nodectx: &NodeContext,
-    chain_worker: Arc<strata_chain_worker_new::ChainWorkerHandle>,
+    chain_worker: Arc<ChainWorkerHandle>,
+    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     da_extractor: E,
 ) -> anyhow::Result<ServiceMonitor<CheckpointSyncStatus>>
 where
@@ -69,6 +72,7 @@ where
         nodectx.storage().clone(),
         chain_worker,
         da_extractor,
+        csm_monitor,
         nodectx.status_channel().clone(),
     );
     let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
@@ -77,7 +81,7 @@ where
 
     // Publish initial OL sync status so the RPC is populated from startup.
     let initial_status = match inner_state.last_finalized_epoch() {
-        Some(epoch) => build_ol_sync_status(&ctx, epoch)?,
+        Some(epoch) => build_ol_sync_status(&ctx, epoch).await?,
         None => genesis_ol_sync_status(),
     };
     ctx.publish_ol_sync_status(initial_status);
@@ -150,12 +154,12 @@ async fn scan_unapplied_epochs(
     let state_db = nodectx.storage().ol_state();
 
     loop {
-        let l1_obs = ckpt_db
-            .get_checkpoint_l1_observation_entry_async(cur_finalized)
+        let l1_ref = ckpt_db
+            .get_checkpoint_l1_ref_async(cur_finalized)
             .await?
             .ok_or_else(|| fin_epoch_err(cur_finalized, "l1 observation entry"))?;
 
-        let is_finalized = l1_tip_height.saturating_sub(l1_obs.l1_block.height) >= reorg_safe_depth;
+        let is_finalized = l1_tip_height.saturating_sub(l1_ref.block_height()) >= reorg_safe_depth;
         if !is_finalized {
             return Err(anyhow!(
                 "Obtained unfinalized epoch when the descendants are finalized: {}",
@@ -173,7 +177,7 @@ async fn scan_unapplied_epochs(
             last_applied = Some(cur_finalized);
             break;
         }
-        unapplied.push((build_l1ref(l1_obs.l1_block), cur_finalized));
+        unapplied.push((l1_ref, cur_finalized));
 
         let summary = ckpt_db
             .get_epoch_summary_async(cur_finalized)
@@ -186,12 +190,6 @@ async fn scan_unapplied_epochs(
     }
 
     Ok((last_applied, unapplied))
-}
-
-/// Builds a [`CheckpointL1Ref`] for the given L1 block.
-/// NOTE: txid and wtxid will be populated when STR-2560 is merged.
-fn build_l1ref(l1_block: L1BlockCommitment) -> CheckpointL1Ref {
-    CheckpointL1Ref::new(l1_block, Buf32::zero(), Buf32::zero())
 }
 
 fn fin_epoch_err(epoch: EpochCommitment, item: &str) -> anyhow::Error {

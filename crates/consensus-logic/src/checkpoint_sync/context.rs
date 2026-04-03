@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::anyhow;
@@ -8,7 +9,8 @@ use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::DbResult;
+use strata_csm_worker::CsmWorkerStatus;
+use strata_db_types::{DbError, DbResult};
 use strata_identifiers::CheckpointL1Ref;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_da::{
@@ -16,32 +18,53 @@ use strata_ol_da::{
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
+use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
 
-pub trait CheckpointSyncCtx {
+pub trait CheckpointSyncCtx: Send + Sync {
     /// Getter for chain worker handle reference.
     fn chain_worker(&self) -> &ChainWorkerHandle;
 
+    /// Getter for current csm status.
+    fn fetch_csm_status(
+        &self,
+    ) -> impl Future<Output = anyhow::Result<CsmWorkerStatus>> + Send;
+
     /// Gets the corresponding epoch summary. If not found, returns error.
-    fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<EpochSummary>;
+    fn get_epoch_summary(
+        &self,
+        epoch: EpochCommitment,
+    ) -> impl Future<Output = DbResult<EpochSummary>> + Send;
 
     /// Extract da given the extractor.
-    fn extract_da_data(&self, ckpt_ref: &CheckpointL1Ref) -> anyhow::Result<ExtractedDA>;
+    fn extract_da_data(
+        &self,
+        ckpt_ref: &CheckpointL1Ref,
+    ) -> impl Future<Output = anyhow::Result<ExtractedDA>> + Send;
 
     /// Gets state at given `OLBlockCommitment`.
-    fn get_state_at(&self, blkid: OLBlockCommitment) -> anyhow::Result<OLState>;
+    fn get_state_at(
+        &self,
+        blkid: OLBlockCommitment,
+    ) -> impl Future<Output = anyhow::Result<OLState>> + Send;
 
     /// Gets asm manifests for a range.
     fn fetch_asm_manifests_range(
         &self,
         start: L1Height,
         end: L1Height,
-    ) -> anyhow::Result<Vec<AsmManifest>>;
+    ) -> impl Future<Output = anyhow::Result<Vec<AsmManifest>>> + Send;
 
     /// Publishes the OL sync status update to the status channel.
     fn publish_ol_sync_status(&self, status: OLSyncStatus);
+
+    /// Gets L1 reference for given epoch commitment.
+    fn fetch_l1_reference(
+        &self,
+        epoch: EpochCommitment,
+    ) -> impl Future<Output = anyhow::Result<Option<CheckpointL1Ref>>> + Send;
 }
 
 #[derive(Clone)]
@@ -53,6 +76,7 @@ pub struct CheckpointSyncCtxImpl<E: DAExtractor> {
     storage: Arc<NodeStorage>,
     chain_worker: Arc<ChainWorkerHandle>,
     da_extractor: E,
+    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     status_channel: Arc<StatusChannel>,
 }
 
@@ -61,45 +85,53 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
         storage: Arc<NodeStorage>,
         chain_worker: Arc<ChainWorkerHandle>,
         da_extractor: E,
+        csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         status_channel: Arc<StatusChannel>,
     ) -> Self {
         Self {
             storage,
             chain_worker,
             da_extractor,
+            csm_monitor,
             status_channel,
         }
     }
 }
 
-impl<E: DAExtractor> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
+impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
     fn chain_worker(&self) -> &ChainWorkerHandle {
         &self.chain_worker
     }
 
-    fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<EpochSummary> {
-        self.storage
-            .ol_checkpoint()
-            .get_epoch_summary_blocking(epoch)?
-            .ok_or(strata_db_types::DbError::NonExistentEntry)
+    async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {
+        todo!()
     }
 
-    fn extract_da_data(&self, ckpt_ref: &CheckpointL1Ref) -> anyhow::Result<ExtractedDA> {
+    async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<EpochSummary> {
+        self.storage
+            .ol_checkpoint()
+            .get_epoch_summary_async(epoch)
+            .await?
+            .ok_or(DbError::NonExistentEntry)
+    }
+
+    async fn extract_da_data(&self, ckpt_ref: &CheckpointL1Ref) -> anyhow::Result<ExtractedDA> {
         self.da_extractor
             .extract_da(ckpt_ref)
             .map_err(|e| anyhow!("DA extraction failed: {e}"))
     }
 
-    fn get_state_at(&self, blkid: OLBlockCommitment) -> anyhow::Result<OLState> {
+    async fn get_state_at(&self, blkid: OLBlockCommitment) -> anyhow::Result<OLState> {
         let state = self
             .storage
             .ol_state()
-            .get_toplevel_ol_state_blocking(blkid)?
+            .get_toplevel_ol_state_async(blkid)
+            .await?
             .ok_or_else(|| anyhow!("missing OL state for {blkid:?}"))?;
         Ok((*state).clone())
     }
 
-    fn fetch_asm_manifests_range(
+    async fn fetch_asm_manifests_range(
         &self,
         start: L1Height,
         end: L1Height,
@@ -108,7 +140,8 @@ impl<E: DAExtractor> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
         let mut manifests = Vec::new();
         for height in start..=end {
             let manifest = l1_mgr
-                .get_block_manifest_at_height(height)?
+                .get_block_manifest_at_height_async(height)
+                .await?
                 .ok_or_else(|| anyhow!("missing ASM manifest at L1 height {height}"))?;
             manifests.push(manifest);
         }
@@ -118,6 +151,14 @@ impl<E: DAExtractor> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
     fn publish_ol_sync_status(&self, status: OLSyncStatus) {
         self.status_channel
             .update_ol_sync_status(OLSyncStatusUpdate::new(status));
+    }
+
+    async fn fetch_l1_reference(
+        &self,
+        epoch: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointL1Ref>> {
+        let ckpt_db = self.storage.ol_checkpoint();
+        Ok(ckpt_db.get_checkpoint_l1_ref_async(epoch).await?)
     }
 }
 
