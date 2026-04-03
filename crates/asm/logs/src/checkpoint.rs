@@ -112,15 +112,17 @@ mod tests {
     use proptest::prelude::*;
     use strata_checkpoint_types_ssz::{test_utils::checkpoint_tip_strategy, CheckpointTip};
     use strata_codec::{decode_buf_exact, encode_to_vec};
-    use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
+    use strata_identifiers::{test_utils::buf32_strategy, Buf32, OLBlockCommitment, OLBlockId};
+    use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
 
     #[test]
     fn checkpoint_tip_update_roundtrip() {
-        let l2_commitment = OLBlockCommitment::new(42, OLBlockId::from(Buf32::from([0xAB; 32])));
+        let mut arb = ArbitraryGenerator::new();
+        let l2_commitment = OLBlockCommitment::new(42, OLBlockId::from(arb.generate::<Buf32>()));
         let tip = CheckpointTip::new(7, 100, l2_commitment);
-        let txid = Buf32::from([0xCD; 32]);
+        let txid: Buf32 = arb.generate();
         let update = CheckpointTipUpdate::new(tip, txid);
 
         let encoded = encode_to_vec(&update).expect("encoding should not fail");
@@ -137,12 +139,9 @@ mod tests {
         #[test]
         fn checkpoint_tip_update_roundtrip_proptest(
             tip in checkpoint_tip_strategy(),
-            txid_bytes in any::<[u8; 32]>(),
+            txid_bytes in buf32_strategy(),
         ) {
-            let update = CheckpointTipUpdate::new(
-                tip,
-                Buf32::from(txid_bytes),
-            );
+            let update = CheckpointTipUpdate::new(tip, txid_bytes);
 
             let encoded = encode_to_vec(&update).expect("encoding should not fail");
             let decoded: CheckpointTipUpdate =

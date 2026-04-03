@@ -13942,6 +13942,7 @@ dependencies = [
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
+ "strata-test-utils",
 ]
 
 [[package]]
