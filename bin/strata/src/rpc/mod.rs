@@ -16,9 +16,9 @@ use provider::NodeRpcProvider;
 use strata_btcio::writer::EnvelopeHandle;
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
-use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
 use strata_consensus_logic::FcmServiceHandle;
+use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
