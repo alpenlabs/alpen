@@ -7,7 +7,7 @@ from eth_typing import HexStr
 from hexbytes import HexBytes
 from web3.types import TxReceipt
 
-from load.reth.log_helper import log_metadata_var, tx_caller
+from utils.log_helper import log_metadata_var, tx_caller
 
 from .evm_account import AbstractAccount
 from .utils import compile_solidity
