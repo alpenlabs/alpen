@@ -3,6 +3,7 @@ producing blocks and posting updates"""
 
 import logging
 
+from common.utils import with_mining
 import flexitest
 
 from common.base_test import BaseTest
@@ -58,7 +59,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         while new_updates_count < CHECK_N_UPDATES:
             # Wait until next_epoch is present
             status = wait_until_with_value(
-                lambda: get_sync_status_and_mine_blocks(strata_seq, btc_rpc),
+                with_mining(btc_rpc, strata_seq.get_sync_status),
                 lambda s, next_epoch=next_epoch: s["tip"]["epoch"] > next_epoch,
                 error_with=f"Expected epoch {next_epoch} not found",
                 timeout=60,
@@ -88,14 +89,3 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                     )
 
                 next_epoch += 1
-
-
-def get_sync_status_and_mine_blocks(strata: StrataService, btc_rpc):
-    """
-    Gets sync status, but also piggybacks block mining to let DA chunks
-    submitted by alpen to get included
-    """
-    mine_address = btc_rpc.proxy.getnewaddress()
-    btc_rpc.proxy.generatetoaddress(2, mine_address)
-    st = strata.get_sync_status()
-    return st

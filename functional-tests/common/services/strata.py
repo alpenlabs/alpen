@@ -99,7 +99,7 @@ class StrataService(RpcService):
 
     def wait_for_account_genesis_epoch_commitment(
         self,
-        account_id: int,
+        account_id: str,
         rpc: JsonRpcClient | None = None,
         timeout: int = 20,
         poll_interval: float = 0.5,
@@ -283,7 +283,7 @@ class StrataService(RpcService):
             lambda v: (
                 v["finalized"]["epoch"] >= target and v["finalized"]["last_blkid"] != "00" * 32
             ),
-            error_with="First epoch not finalized",
+            error_with=f"Epoch {target} not finalized",
             timeout=timeout,
             step=step,
         )

@@ -8,6 +8,7 @@ import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config.constants import ServiceType
+from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
 from common.wait import wait_until_with_value
 
@@ -19,38 +20,31 @@ class TestCheckpointSyncNode(StrataNodeTest):
     """Tests that the checkpoint sync node correctly syncs from L1"""
 
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("basic")
+        ctx.set_env("checkpoint")
 
     def main(self, ctx):
         # Get strata nodes(sequencer and non-sequencer)
         sequencer: StrataService = self.get_service(ServiceType.Strata)
         strata_node: StrataService = self.get_service(ServiceType.StrataNode)
 
+        btc: BitcoinService = self.get_service(ServiceType.Bitcoin)
+        btcrpc = btc.create_rpc()
+
         # Wait for RPCs to be ready
-        seqrpc = sequencer.wait_for_rpc_ready(timeout=10)
-        noderpc = strata_node.wait_for_rpc_ready(timeout=10)
+        sequencer.wait_for_rpc_ready(timeout=10)
+        strata_node.wait_for_rpc_ready(timeout=10)
 
-        # Just check that the sync status tip for node is being updated and
-        # for each change, make sure sequencer has that OL block.
+        num_epochs_to_check = 3
+        for epoch in range(1, num_epochs_to_check + 1):
+            # Check finalization in sequencer
+            sequencer.wait_until_checkpoint_finalized(epoch, btcrpc, timeout=120)
+            logger.info(f"Epoch {epoch} finalized in sequencer")
 
-        num_epochs_to_check = 4
-        initial_status = strata_node.get_sync_status(
-            noderpc
-        )  # XXX: not quite liking to have rpc passed as an arugment, allows for wrong rpc to be passed in
-        tip = initial_status["tip"]
-        cur_tip_epoch_node = tip["epoch"]
-        for _ in range(num_epochs_to_check):
-            sync_status = wait_until_with_value(
-                lambda: strata_node.get_sync_status(noderpc),
-                lambda v, prev=cur_tip_epoch_node: (
-                    v["tip"] is not None and v["tip"]["epoch"] > prev
-                ),
-                timeout=60,
-                error_with="Epoch not progressing",
-            )
-            assert tip["blkid"] != "00" * 32
-            cur_tip_epoch = tip["epoch"]
-            # TODO: Check that the tip, confirmed and finalized are all same
+            # Check finalization in strata node
+            sync_status = strata_node.wait_until_checkpoint_finalized(epoch, timeout=20)
+            logger.info(f"Epoch {epoch} finalized in strata node")
+
+            # Check tip, confirmed and finalized are aligned in node
             tip_blk = sync_status["tip"]["blkid"]
             confirmed_block = sync_status["confirmed"]["last_blkid"]
             finalized_block = sync_status["finalized"]["last_blkid"]
@@ -62,4 +56,4 @@ class TestCheckpointSyncNode(StrataNodeTest):
                 "Tip block should equal finalized block for checkpoint node"
             )
 
-            logger.info("tip epoch advanced to %s", cur_tip_epoch)
+            logger.info("finalized epoch advanced to %s", sync_status["finalized"]["epoch"])
