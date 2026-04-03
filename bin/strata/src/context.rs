@@ -21,6 +21,7 @@ use strata_config::{
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
+use strata_primitives::OLBlockCommitment;
 use strata_params::{Params, RollupParams, SyncParams};
 #[cfg(feature = "prover")]
 use strata_predicate::PredicateTypeId;
@@ -28,7 +29,7 @@ use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
@@ -359,10 +360,14 @@ fn init_status_channel(
     Ok(StatusChannel::new(cur_state, cur_block, l1_status, None, None).into())
 }
 
-/// Ensures CL and OL genesis.
-pub(crate) fn ensure_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
-    ensure_ol_genesis(storage, ol_params)?;
-    ensure_cl_genesis(storage, ol_params)
+/// Ensures CL and OL genesis. Returns the genesis block commitment.
+pub(crate) fn ensure_genesis(
+    storage: &NodeStorage,
+    ol_params: &OLParams,
+) -> Result<OLBlockCommitment, InitError> {
+    let commitment = ensure_ol_genesis(storage, ol_params)?;
+    ensure_cl_genesis(storage, ol_params)?;
+    Ok(commitment)
 }
 
 /// Ensures client state genesis.
@@ -386,18 +391,22 @@ fn ensure_cl_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), 
     }
 }
 
-/// Ensures OL genesis.
-fn ensure_ol_genesis(storage: &NodeStorage, ol_params: &OLParams) -> Result<(), InitError> {
+/// Ensures OL genesis. Returns the genesis block commitment.
+fn ensure_ol_genesis(
+    storage: &NodeStorage,
+    ol_params: &OLParams,
+) -> Result<OLBlockCommitment, InitError> {
     match storage.ol_block().get_canonical_block_at_blocking(0)? {
         None => {
-            // Initialize OL genesis block and state
-            init_ol_genesis(ol_params, storage)
+            info!("No canonical block found at slot 0, doing OL genesis");
+            let commitment = init_ol_genesis(ol_params, storage)
+                .inspect(|blkid| info!(%blkid, "Done genesis with block"))
                 .map_err(|e| InitError::StorageCreation(e.to_string()))?;
-            Ok(())
+            Ok(commitment)
         }
-        Some(_) => {
-            // Do nothing, genesis block exists
-            Ok(())
+        Some(commitment) => {
+            info!(%commitment, "Genesis block found, no need for genesis");
+            Ok(commitment)
         }
     }
 }

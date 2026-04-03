@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use strata_btcio::reader::query::bitcoin_data_reader_task;
 use strata_chain_worker_new::start_chain_worker_service_from_ctx;
 use strata_consensus_logic::{
@@ -11,10 +11,11 @@ use strata_consensus_logic::{
     start_fcm_service,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
-use strata_identifiers::OLBlockCommitment;
+use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
 
 use crate::{
     context::ensure_genesis,
@@ -215,7 +216,12 @@ pub(crate) fn start_strata_services(
     // Check and do genesis if not yet. This should be done after asm/csm/btcio and before mempool
     // because genesis requires asm to be working and mempool and other services expect genesis to
     // have happened.
-    ensure_genesis(nodectx.storage().as_ref(), nodectx.ol_params())?;
+    let genesis_commitment = ensure_genesis(nodectx.storage().as_ref(), nodectx.ol_params())?;
+
+    // Populate initial OL sync status so downstream consumers don't need fallback logic.
+    if nodectx.status_channel().get_ol_sync_status().is_none() {
+        init_ol_sync_status(&nodectx, genesis_commitment);
+    }
 
     // Start mempool service
     let mempool_handle = Arc::new(start_mempool(&nodectx)?);
@@ -283,11 +289,7 @@ pub(crate) fn start_strata_services(
         service_handles_builder = service_handles_builder.with_fcm_handle(Arc::new(fcm_handle));
     } else {
         let magic_bytes = nodectx.params().rollup().magic_bytes;
-        let da_extractor = BitcoinDAExtractor::new(
-            nodectx.bitcoin_client().clone(),
-            magic_bytes,
-            nodectx.task_manager().handle().clone(),
-        );
+        let da_extractor = BitcoinDAExtractor::new(nodectx.bitcoin_client().clone(), magic_bytes);
         let css_monitor = nodectx.task_manager().handle().block_on(start_css_service(
             &nodectx,
             chain_worker_handle,
@@ -331,22 +333,11 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
 fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     let config = OLMempoolConfig::default();
 
-    // Get current chain tip - try status channel first, fall back to genesis from storage
-    let current_tip = match nodectx.status_channel().get_ol_sync_status() {
-        Some(status) => status.tip,
-        None => {
-            // No chain sync status yet - get genesis block from OL storage
-            let genesis_blocks = nodectx
-                .storage()
-                .ol_block()
-                .get_blocks_at_height_blocking(0)
-                .map_err(|e| anyhow!("Failed to get genesis block: {e}"))?;
-            let genesis_blkid = genesis_blocks
-                .first()
-                .ok_or_else(|| anyhow!("Genesis block not found, cannot start mempool"))?;
-            OLBlockCommitment::new(0, *genesis_blkid)
-        }
-    };
+    let current_tip = nodectx
+        .status_channel()
+        .get_ol_sync_status()
+        .expect("OL sync status must be set before starting mempool")
+        .tip;
 
     let storage = nodectx.storage().clone();
     let status_channel = nodectx.status_channel().as_ref().clone();
@@ -360,4 +351,24 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
             .launch(&executor)
             .await
     })
+}
+
+/// Populates the status channel with an initial `OLSyncStatus` derived from genesis state.
+fn init_ol_sync_status(nodectx: &NodeContext, genesis_commitment: OLBlockCommitment) {
+    let genesis_epoch = EpochCommitment::from_terminal(0, genesis_commitment);
+    let safe_l1 = nodectx.ol_params().last_l1_block;
+
+    let status = OLSyncStatus::new(
+        genesis_commitment,
+        0,
+        true,
+        genesis_epoch,
+        genesis_epoch,
+        genesis_epoch,
+        safe_l1,
+    );
+
+    nodectx
+        .status_channel()
+        .update_ol_sync_status(OLSyncStatusUpdate::new(status));
 }
