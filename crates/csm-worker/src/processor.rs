@@ -566,8 +566,8 @@ mod tests {
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.wtxid),
-            Some(Buf32::from([(epoch + 10) as u8; 32])),
-            "l1 ref should persist checkpoint wtxid from v1 tip log"
+            Some(Buf32::from([epoch as u8; 32])),
+            "l1 ref should persist checkpoint wtxid from v1 tip log, which is same as txid(until STR-2952)"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.l1_commitment),
