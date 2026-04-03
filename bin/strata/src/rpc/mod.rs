@@ -86,7 +86,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     let deps = RpcDeps {
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
-        genesis_l1_height: runctx.params().rollup().genesis_l1_view.height(),
+        genesis_l1_height: runctx.asm_params().l1_view.height(),
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
         mempool_handle: runctx.mempool_handle().clone(),

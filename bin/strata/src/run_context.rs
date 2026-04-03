@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use strata_asm_params::AsmParams;
 use strata_asm_worker::AsmWorkerHandle;
 #[cfg(feature = "sequencer")]
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
@@ -14,7 +15,6 @@ use strata_node_context::{CommonContext, NodeContext};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_checkpoint::OLCheckpointWorkerHandle;
 use strata_ol_mempool::MempoolHandle;
-use strata_params::Params;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -43,9 +43,8 @@ impl RunContext {
         self.common.config()
     }
 
-    /// Returns the params.
-    pub(crate) fn params(&self) -> &Arc<Params> {
-        self.common.params()
+    pub(crate) fn asm_params(&self) -> &Arc<AsmParams> {
+        self.common.asm_params()
     }
 
     /// Returns the storage.
