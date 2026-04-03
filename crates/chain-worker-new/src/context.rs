@@ -18,7 +18,7 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{AccountManager, OLBlockManager, OLCheckpointManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::{
     errors::{WorkerError, WorkerResult},
@@ -250,6 +250,12 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         new_account_ids: &[AccountId],
         indexer_writes: &IndexerWrites,
     ) -> WorkerResult<()> {
+        debug!(
+            epoch,
+            new_accounts = new_account_ids.len(),
+            snark_updates = indexer_writes.snark_state_updates().len(),
+            "storing DA output"
+        );
         self.store_toplevel_state(commitment, state)?;
         self.store_account_creation_epochs(epoch, new_account_ids)?;
         self.store_snark_extra_data(commitment, epoch, indexer_writes)?;
@@ -271,23 +277,16 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .ok_or(WorkerError::MissingEpochSummary(*epoch))
     }
 
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>> {
-        // Get all epoch commitments for this epoch index
-        let epoch_commitments = self
+    fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>> {
+        let Some(epoch_commitment) = self
             .ol_checkpoint_mgr
-            .get_epoch_commitments_at_blocking(epoch)?;
+            .get_canonical_epoch_commitment_at_blocking(epoch)?
+        else {
+            return Ok(None);
+        };
 
-        // Fetch the summary for each commitment
-        let mut summaries = Vec::with_capacity(epoch_commitments.len());
-        for commitment in epoch_commitments {
-            if let Some(summary) = self
-                .ol_checkpoint_mgr
-                .get_epoch_summary_blocking(commitment)?
-            {
-                summaries.push(summary);
-            }
-        }
-
-        Ok(summaries)
+        Ok(self
+            .ol_checkpoint_mgr
+            .get_epoch_summary_blocking(epoch_commitment)?)
     }
 }

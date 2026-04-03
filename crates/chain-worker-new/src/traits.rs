@@ -97,5 +97,5 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     fn fetch_summary(&self, epoch: &EpochCommitment) -> WorkerResult<EpochSummary>;
 
     /// Fetches all summaries for an epoch index.
-    fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>>;
+    fn fetch_canonical_epoch_summary_at(&self, epoch: u32) -> WorkerResult<Option<EpochSummary>>;
 }

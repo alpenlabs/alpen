@@ -5,6 +5,7 @@ use strata_identifiers::OLBlockCommitment;
 use strata_node_context::NodeContext;
 use strata_primitives::epoch::EpochCommitment;
 use strata_service::{Response, Service, ServiceBuilder, SyncService};
+use tracing::debug;
 
 use crate::{
     ChainWorkerContextImpl, ChainWorkerHandle, WorkerError, message::ChainWorkerMessage,
@@ -51,6 +52,8 @@ impl SyncService for ChainWorkerService {
                 completion.send_blocking(res);
             }
             ChainWorkerMessage::ApplyDA(da, completion) => {
+                let epoch = da.epoch();
+                debug!(?epoch, "Processing da message");
                 let res = state.apply_da(da);
                 completion.send_blocking(res);
             }

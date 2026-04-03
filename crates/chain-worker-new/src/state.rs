@@ -318,11 +318,12 @@ impl ChainWorkerServiceState {
         // Get previous terminal from storage.
         // Note: Epoch 0 (genesis) is created by genesis initialization, not chain-worker.
         // Chain-worker starts processing from slot 1, so completed_epoch >= 1 is guaranteed.
-        let prev_summaries = self.ctx.fetch_epoch_summaries(completed_epoch - 1)?;
-        let prev_terminal = prev_summaries
-            .first()
-            .map(|s| *s.terminal())
-            .unwrap_or(OLBlockCommitment::null());
+        let prev_ep_num = completed_epoch.saturating_sub(1);
+        let prev_terminal = *self
+            .ctx
+            .fetch_canonical_epoch_summary_at(prev_ep_num)?
+            .ok_or(WorkerError::MissingEpochSummaryAt(prev_ep_num))?
+            .terminal();
 
         // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
         let epochal = last_block_output.write_batch().epochal();
@@ -348,12 +349,14 @@ impl ChainWorkerServiceState {
 
     /// Updates the current tip as managed by the worker.
     pub(crate) fn update_cur_tip(&mut self, tip: OLBlockCommitment) -> WorkerResult<()> {
+        debug!(slot = tip.slot(), %tip, "updating safe tip");
         self.state.cur_tip = tip;
         Ok(())
     }
 
     /// Finalizes an epoch, merging write batches into finalized state.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
+        info!(epoch_num = epoch.epoch(), %epoch, "finalizing epoch");
         self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }
@@ -365,6 +368,12 @@ impl ChainWorkerServiceState {
             manifests,
             terminal_header_complement,
         } = da_payload;
+
+        info!(
+            epoch_num = epoch.epoch(),
+            last_slot = epoch.last_slot,
+            "applying DA for epoch"
+        );
 
         // Fetch previous state
         let state = fetch_prev_state(&self.ctx, &epoch)?;
@@ -379,6 +388,12 @@ impl ChainWorkerServiceState {
             .map(|e| e.account_id)
             .collect();
 
+        debug!(
+            epoch_num = epoch.epoch(),
+            new_accounts = new_account_ids.len(),
+            "extracted new account IDs from DA payload"
+        );
+
         // Prepare data for processing epoch initial
         let outbuf = ExecOutputBuffer::new_empty();
         let timestamp = terminal_header_complement.timestamp();
@@ -388,16 +403,20 @@ impl ChainWorkerServiceState {
         // Wrap state to collect index data
         let mut indexer_state = IndexerState::new(state);
 
+        debug!(epoch_num = epoch.epoch(), "processing epoch initial");
         process_epoch_initial(&mut indexer_state, &epctx)?;
 
+        debug!(epoch_num = epoch.epoch(), "applying DA state diff");
         OLDaSchemeV1::apply_to_state(da, &mut indexer_state).unwrap(); // TODO: fix unwrap
 
+        debug!(epoch_num = epoch.epoch(), "processing block manifests");
         let exctx = BasicExecContext::new(blkinfo, &outbuf);
         process_block_manifests(&mut indexer_state, &manifests, &exctx)?;
 
         let (state, indexer_writes) = indexer_state.into_parts();
         let terminal_commitment = epoch.to_block_commitment();
 
+        debug!(epoch_num = epoch.epoch(), "persisting DA output to storage");
         self.ctx.store_da_output(
             terminal_commitment,
             epoch.epoch(),
@@ -405,6 +424,8 @@ impl ChainWorkerServiceState {
             &new_account_ids,
             &indexer_writes,
         )?;
+
+        info!(epoch_num = epoch.epoch(), "DA applied successfully");
 
         Ok(())
     }
@@ -415,11 +436,15 @@ fn fetch_prev_state(
     ctx: &ChainWorkerContextImpl,
     epoch: &EpochCommitment,
 ) -> WorkerResult<OLState> {
-    let summaries = ctx.fetch_epoch_summaries(epoch.epoch())?;
-    let summary = summaries
-        .first()
+    let prev_summary = ctx
+        .fetch_canonical_epoch_summary_at(epoch.epoch().saturating_sub(1))?
         .ok_or(WorkerError::MissingEpochSummary(*epoch))?;
-    let prev_terminal = *summary.prev_terminal();
+    let prev_terminal = *prev_summary.terminal();
+    debug!(
+        epoch_num = epoch.epoch(),
+        ?prev_terminal,
+        "fetching previous terminal state"
+    );
     ctx.fetch_ol_state(prev_terminal)?
         .ok_or(WorkerError::MissingPreState(prev_terminal))
 }
