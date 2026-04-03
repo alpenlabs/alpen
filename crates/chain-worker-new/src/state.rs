@@ -12,6 +12,7 @@
 use strata_acct_types::AccountId;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_da::{DaScheme, OLDaSchemeV1};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
@@ -376,7 +377,7 @@ impl ChainWorkerServiceState {
         );
 
         // Fetch previous state
-        let state = fetch_prev_state(&self.ctx, &epoch)?;
+        let (state, prev_terminal) = fetch_prev_state(&self.ctx, &epoch)?;
 
         // Extract new account IDs before the payload is consumed.
         let new_account_ids: Vec<AccountId> = da
@@ -416,6 +417,12 @@ impl ChainWorkerServiceState {
         let (state, indexer_writes) = indexer_state.into_parts();
         let terminal_commitment = epoch.to_block_commitment();
 
+        // Extract summary data before state is moved into storage.
+        let new_l1 = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
+        let epoch_final_state = state
+            .compute_state_root()
+            .map_err(|_| WorkerError::StateRootComputation)?;
+
         debug!(epoch_num = epoch.epoch(), "persisting DA output to storage");
         self.ctx.store_da_output(
             terminal_commitment,
@@ -424,6 +431,16 @@ impl ChainWorkerServiceState {
             &new_account_ids,
             &indexer_writes,
         )?;
+
+        let summary = EpochSummary::new(
+            epoch.epoch(),
+            terminal_commitment,
+            prev_terminal,
+            new_l1,
+            epoch_final_state,
+        );
+        debug!(?summary, "storing epoch summary from DA");
+        self.ctx.store_summary(summary)?;
 
         info!(epoch_num = epoch.epoch(), "DA applied successfully");
 
@@ -435,7 +452,7 @@ impl ChainWorkerServiceState {
 fn fetch_prev_state(
     ctx: &ChainWorkerContextImpl,
     epoch: &EpochCommitment,
-) -> WorkerResult<OLState> {
+) -> WorkerResult<(OLState, OLBlockCommitment)> {
     let prev_summary = ctx
         .fetch_canonical_epoch_summary_at(epoch.epoch().saturating_sub(1))?
         .ok_or(WorkerError::MissingEpochSummary(*epoch))?;
@@ -445,8 +462,10 @@ fn fetch_prev_state(
         ?prev_terminal,
         "fetching previous terminal state"
     );
-    ctx.fetch_ol_state(prev_terminal)?
-        .ok_or(WorkerError::MissingPreState(prev_terminal))
+    let st = ctx
+        .fetch_ol_state(prev_terminal)?
+        .ok_or(WorkerError::MissingPreState(prev_terminal))?;
+    Ok((st, prev_terminal))
 }
 
 impl ServiceState for ChainWorkerServiceState {

@@ -76,4 +76,8 @@ pub enum WorkerError {
     /// Functionality not yet implemented.
     #[error("not yet implemented")]
     Unimplemented,
+
+    /// Failed to compute state root
+    #[error("state root computation failed")]
+    StateRootComputation,
 }
