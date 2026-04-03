@@ -125,14 +125,14 @@ impl Formattable for CheckpointInfo {
 
         if let Some(observed_l1_height) = self.observed_l1_height {
             output.push(porcelain_field(
-                "checkpoint.l1_observation.height",
+                "checkpoint.l1_ref.height",
                 observed_l1_height,
             ));
         }
 
         if let Some(observed_l1_blkid) = self.observed_l1_blkid {
             output.push(porcelain_field(
-                "checkpoint.l1_observation.blkid",
+                "checkpoint.l1_ref.blkid",
                 format!("{:?}", observed_l1_blkid),
             ));
         }

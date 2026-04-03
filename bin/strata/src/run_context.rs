@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use strata_asm_params::AsmParams;
 use strata_asm_worker::AsmWorkerHandle;
 #[cfg(feature = "sequencer")]
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
@@ -40,6 +41,10 @@ impl RunContext {
     /// Returns the config.
     pub(crate) fn config(&self) -> &Config {
         self.common.config()
+    }
+
+    pub(crate) fn asm_params(&self) -> &Arc<AsmParams> {
+        self.common.asm_params()
     }
 
     /// Returns the storage.

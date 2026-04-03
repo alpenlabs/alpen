@@ -13820,6 +13820,7 @@ dependencies = [
  "strata-btc-types",
  "strata-btcio",
  "strata-chain-worker-new",
+ "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils",
@@ -13931,6 +13932,7 @@ dependencies = [
 name = "strata-asm-logs"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "strata-asm-common",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
@@ -13940,6 +13942,7 @@ dependencies = [
  "strata-msg-fmt",
  "strata-predicate",
  "strata-primitives",
+ "strata-test-utils",
 ]
 
 [[package]]
@@ -15371,7 +15374,9 @@ dependencies = [
  "ssz",
  "strata-acct-types",
  "strata-asm-common",
+ "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
+ "strata-csm-types",
  "strata-db-types",
  "strata-identifiers",
  "strata-ol-block-assembly",

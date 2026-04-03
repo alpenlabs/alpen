@@ -2,6 +2,7 @@ use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_common::{AsmLogEntry, MsgRelayer, TxInputRef, VerifiedAuxData, logging};
 use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
+use strata_btc_types::TxidExt;
 use strata_identifiers::L1Height;
 use tracing::debug_span;
 
@@ -68,7 +69,8 @@ pub(crate) fn handle_checkpoint_tx(
             let new_tip = envelope.payload.new_tip;
             state.update_verified_tip(new_tip);
 
-            let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip);
+            let checkpoint_txid = tx.tx().compute_txid().to_buf32();
+            let checkpoint_tip_update = CheckpointTipUpdate::new(new_tip, checkpoint_txid);
             let log_entry = AsmLogEntry::from_log(&checkpoint_tip_update)
                 .expect("CheckpointTipUpdate encoding is infallible for fixed-size SSZ");
             relayer.emit_log(log_entry);

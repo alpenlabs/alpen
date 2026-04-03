@@ -8,7 +8,7 @@ use serde::Serialize;
 use strata_asm_common::{AsmManifest, AuxData};
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::CheckpointPayload;
-use strata_csm_types::{ClientState, ClientUpdateOutput};
+use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId, Slot,
 };
@@ -33,7 +33,7 @@ use crate::{
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, OLCheckpointL1ObservationEntry,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
     },
     DbResult, RawMmrId,
 };
@@ -367,28 +367,25 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Get the next checkpoint epoch that is unsigned.
     fn get_next_unsigned_checkpoint_epoch(&self) -> DbResult<Option<Epoch>>;
 
-    /// Store an OL checkpoint L1 observation entry by epoch commitment.
-    fn put_checkpoint_l1_observation_entry(
+    /// Store an OL checkpoint L1 ref by epoch commitment.
+    fn put_checkpoint_l1_ref(
         &self,
         epoch: EpochCommitment,
-        l1_observation: OLCheckpointL1ObservationEntry,
+        l1_ref: CheckpointL1Ref,
     ) -> DbResult<()>;
 
-    /// Get an OL checkpoint L1 observation entry by epoch commitment.
-    fn get_checkpoint_l1_observation_entry(
-        &self,
-        epoch: EpochCommitment,
-    ) -> DbResult<Option<OLCheckpointL1ObservationEntry>>;
+    /// Get an OL checkpoint L1 ref by epoch commitment.
+    fn get_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<Option<CheckpointL1Ref>>;
 
-    /// Delete an OL checkpoint L1 observation entry by epoch commitment.
+    /// Delete an OL checkpoint L1 ref by epoch commitment.
     ///
     /// Returns true if it existed and was deleted.
-    fn del_checkpoint_l1_observation_entry(&self, epoch: EpochCommitment) -> DbResult<bool>;
+    fn del_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<bool>;
 
-    /// Delete checkpoint L1 observation entries from the specified epoch onwards (inclusive).
+    /// Delete checkpoint L1 refs from the specified epoch onwards (inclusive).
     ///
     /// Returns a vector of deleted epoch commitments.
-    fn del_checkpoint_l1_observation_entries_from_epoch(
+    fn del_checkpoint_l1_refs_from_epoch(
         &self,
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;

@@ -14,6 +14,7 @@ use node::*;
 use provider::NodeRpcProvider;
 #[cfg(feature = "sequencer")]
 use strata_btcio::writer::EnvelopeHandle;
+use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
@@ -32,6 +33,7 @@ use crate::sequencer::OLSeqRpcServer;
 struct RpcDeps {
     rpc_host: String,
     rpc_port: u16,
+    genesis_l1_height: L1Height,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     mempool_handle: Arc<MempoolHandle>,
@@ -84,6 +86,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     let deps = RpcDeps {
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
+        genesis_l1_height: runctx.asm_params().l1_view.height(),
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
         mempool_handle: runctx.mempool_handle().clone(),
@@ -112,7 +115,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
-    let ol_rpc_server = OLRpcServer::new(client_provider);
+    let ol_rpc_server = OLRpcServer::new(client_provider, deps.genesis_l1_height);
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
@@ -124,7 +127,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
-    let ol_fullnode_listener = OLRpcServer::new(fullnode_provider);
+    let ol_fullnode_listener = OLRpcServer::new(fullnode_provider, deps.genesis_l1_height);
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)

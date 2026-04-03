@@ -1,9 +1,8 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
-    DbError, DbResult,
-    traits::OLCheckpointDatabase,
-    types::{L1PayloadIntentIndex, OLCheckpointL1ObservationEntry},
+    DbError, DbResult, traits::OLCheckpointDatabase, types::L1PayloadIntentIndex,
 };
 use strata_identifiers::{Epoch, EpochCommitment};
 use typed_sled::error;
@@ -15,7 +14,7 @@ define_sled_database!(
     pub struct OLCheckpointDBSled {
         payload_tree: OLCheckpointPayloadSchema,
         signing_tree: OLCheckpointSigningSchema,
-        l1_observation_tree: OLCheckpointL1ObservationSchema,
+        l1_ref_tree: OLCheckpointL1RefSchema,
         unsigned_tree: UnsignedCheckpointIndexSchema,
         epoch_summary_tree: OLEpochSummarySchema,
     }
@@ -181,7 +180,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             (
                 &self.payload_tree,
                 &self.signing_tree,
-                &self.l1_observation_tree,
+                &self.l1_ref_tree,
                 &self.unsigned_tree,
             ),
             |(pt, st, lot, ut)| {
@@ -192,7 +191,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
                 pt.remove(&epoch)?;
                 // Payload deletion intentionally cascades to signing for the same commitment.
                 st.remove(&epoch)?;
-                // Payload deletion intentionally cascades to L1 observation for the same
+                // Payload deletion intentionally cascades to L1 ref for the same
                 // commitment.
                 lot.remove(&epoch)?;
                 if !had_signing {
@@ -223,7 +222,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             (
                 &self.payload_tree,
                 &self.signing_tree,
-                &self.l1_observation_tree,
+                &self.l1_ref_tree,
                 &self.unsigned_tree,
             ),
             |(pt, st, lot, ut)| {
@@ -234,7 +233,7 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
                         pt.remove(epoch_comm)?;
                         // Payload deletion intentionally cascades to signing.
                         st.remove(epoch_comm)?;
-                        // Payload deletion intentionally cascades to L1 observation.
+                        // Payload deletion intentionally cascades to L1 ref.
                         lot.remove(epoch_comm)?;
                         if !had_signing {
                             ut.remove(&epoch_comm.epoch())?;
@@ -331,43 +330,38 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         Ok(deleted_epochs)
     }
 
-    fn put_checkpoint_l1_observation_entry(
+    fn put_checkpoint_l1_ref(
         &self,
         epoch: EpochCommitment,
-        l1_observation: OLCheckpointL1ObservationEntry,
+        l1_ref: CheckpointL1Ref,
     ) -> DbResult<()> {
-        self.config
-            .with_retry((&self.l1_observation_tree,), |(lot,)| {
-                lot.insert(&epoch, &l1_observation)?;
-                Ok(())
-            })?;
+        self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
+            lot.insert(&epoch, &l1_ref)?;
+            Ok(())
+        })?;
         Ok(())
     }
 
-    fn get_checkpoint_l1_observation_entry(
-        &self,
-        epoch: EpochCommitment,
-    ) -> DbResult<Option<OLCheckpointL1ObservationEntry>> {
-        Ok(self.l1_observation_tree.get(&epoch)?)
+    fn get_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<Option<CheckpointL1Ref>> {
+        Ok(self.l1_ref_tree.get(&epoch)?)
     }
 
-    fn del_checkpoint_l1_observation_entry(&self, epoch: EpochCommitment) -> DbResult<bool> {
-        self.config
-            .with_retry((&self.l1_observation_tree,), |(lot,)| {
-                if !lot.contains_key(&epoch)? {
-                    return Ok(false);
-                }
-                lot.remove(&epoch)?;
-                Ok(true)
-            })
+    fn del_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
+            if !lot.contains_key(&epoch)? {
+                return Ok(false);
+            }
+            lot.remove(&epoch)?;
+            Ok(true)
+        })
     }
 
-    fn del_checkpoint_l1_observation_entries_from_epoch(
+    fn del_checkpoint_l1_refs_from_epoch(
         &self,
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>> {
         let mut keys = Vec::new();
-        for item in self.l1_observation_tree.iter() {
+        for item in self.l1_ref_tree.iter() {
             let (epoch_comm, _entry) = item?;
             if epoch_comm.epoch() >= start_epoch {
                 keys.push(epoch_comm);
@@ -378,18 +372,16 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
             return Ok(Vec::new());
         }
 
-        let deleted_epochs = self
-            .config
-            .with_retry((&self.l1_observation_tree,), |(lot,)| {
-                let mut deleted_epochs = Vec::new();
-                for epoch_comm in &keys {
-                    if lot.contains_key(epoch_comm)? {
-                        lot.remove(epoch_comm)?;
-                        deleted_epochs.push(*epoch_comm);
-                    }
+        let deleted_epochs = self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
+            let mut deleted_epochs = Vec::new();
+            for epoch_comm in &keys {
+                if lot.contains_key(epoch_comm)? {
+                    lot.remove(epoch_comm)?;
+                    deleted_epochs.push(*epoch_comm);
                 }
-                Ok(deleted_epochs)
-            })?;
+            }
+            Ok(deleted_epochs)
+        })?;
         Ok(deleted_epochs)
     }
 

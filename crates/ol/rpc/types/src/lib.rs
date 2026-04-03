@@ -8,6 +8,7 @@ mod account_summary;
 mod block;
 mod blocktag;
 mod chain_status;
+mod checkpoint;
 mod duty;
 mod provider;
 mod snark_acct_update;
@@ -20,6 +21,7 @@ pub use account_summary::{
 pub use block::RpcBlockRangeEntry;
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
+pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
 pub use duty::*;
 pub use provider::{AccountExtraData, OLRpcProvider};
 pub use snark_acct_update::RpcSnarkAccountUpdate;

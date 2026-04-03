@@ -11,7 +11,6 @@ use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
-use strata_db_types::types::OLCheckpointL1ObservationEntry;
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
@@ -132,9 +131,10 @@ fn process_checkpoint_tip_log(
         );
     }
 
-    // v1 tip logs do not contain txid/wtxid or full batch transition details.
+    // v1 tip logs do not contain full batch transition details.
     // CSM only needs epoch progression for finalized-epoch signaling, so we
-    // synthesize a minimal checkpoint view from the tip.
+    // synthesize a minimal checkpoint view from the tip while preserving
+    // txid/wtxid from the tip update log.
     // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
     // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
@@ -210,9 +210,12 @@ fn mark_ol_checkpoint_l1_observed(
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     let ol_checkpoint = state.storage.ol_checkpoint();
+    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
+    // TODO(STR-2952): populate real checkpoint wtxid here.
+    let checkpoint_wtxid = checkpoint_txid;
 
-    let observation = OLCheckpointL1ObservationEntry::new(*asm_block);
-    ol_checkpoint.put_checkpoint_l1_observation_entry_blocking(commitment, observation)?;
+    let observation = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
+    ol_checkpoint.put_checkpoint_l1_ref_blocking(commitment, observation.clone())?;
 
     // Update cached confirmed epoch monotonically.
     if state
@@ -239,7 +242,9 @@ fn mark_ol_checkpoint_l1_observed(
     debug!(
         ?commitment,
         l1_height = asm_block.height(),
-        "Recorded OL checkpoint L1 observation from v1 tip update"
+        ?checkpoint_txid,
+        ?checkpoint_wtxid,
+        "Recorded OL checkpoint L1 ref from v1 tip update"
     );
     Ok(())
 }
@@ -264,7 +269,11 @@ fn checkpoint_from_tip_update(
     asm_block: &L1BlockCommitment,
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
-    let l1_reference = CheckpointL1Ref::new(*asm_block, Buf32::zero(), Buf32::zero());
+    // TODO(STR-2952): populate real checkpoint wtxid here.
+    // For now we mirror txid to preserve the required `CheckpointL1Ref` shape.
+    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
+    let checkpoint_wtxid = checkpoint_txid;
+    let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 
     // TODO(STR-2438): This v0-shaped `BatchInfo` synthesis is
     // semantically incorrect for checkpoint-v1 tip updates (start/end L1 and
@@ -503,7 +512,7 @@ mod tests {
                 OLBlockId::from(Buf32::from([epoch as u8; 32])),
             );
             let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-            let tip_update = CheckpointTipUpdate::new(tip);
+            let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
             let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
             let result = process_log(&mut state, &log, &asm_block);
@@ -540,7 +549,7 @@ mod tests {
 
         let ol_tip = OLBlockCommitment::new(90, OLBlockId::from(Buf32::from([epoch as u8; 32])));
         let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-        let tip_update = CheckpointTipUpdate::new(tip);
+        let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
         let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
         process_log(&mut state, &log, &asm_block).expect("tip log should process");
@@ -548,12 +557,22 @@ mod tests {
         let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
         let observation = storage
             .ol_checkpoint()
-            .get_checkpoint_l1_observation_entry_blocking(commitment)
-            .expect("query observation entry");
+            .get_checkpoint_l1_ref_blocking(commitment)
+            .expect("query l1 ref");
         assert_eq!(
-            observation.map(|entry| entry.l1_block),
+            observation.as_ref().map(|entry| entry.txid),
+            Some(Buf32::from([epoch as u8; 32])),
+            "l1 ref should persist checkpoint txid from v1 tip log"
+        );
+        assert_eq!(
+            observation.as_ref().map(|entry| entry.wtxid),
+            Some(Buf32::from([epoch as u8; 32])),
+            "l1 ref should persist checkpoint wtxid from v1 tip log, which is same as txid(until STR-2952)"
+        );
+        assert_eq!(
+            observation.as_ref().map(|entry| entry.l1_commitment),
             Some(asm_block),
-            "observation entry should be written from v1 tip log"
+            "l1 ref should be written from v1 tip log"
         );
 
         let payload = storage

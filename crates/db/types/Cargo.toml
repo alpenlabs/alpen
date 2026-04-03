@@ -39,4 +39,5 @@ stubs = ["dep:parking_lot"]
 [dev-dependencies]
 proptest.workspace = true
 serde_json.workspace = true
+strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-merkle = { workspace = true, features = ["ssz"] }

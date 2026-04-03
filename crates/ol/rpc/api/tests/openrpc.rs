@@ -68,6 +68,10 @@ fn spec_contains_expected_methods() {
         "missing strata_getChainStatus, found: {method_names:?}"
     );
     assert!(
+        method_names.contains(&"strata_getCheckpointInfo"),
+        "missing strata_getCheckpointInfo, found: {method_names:?}"
+    );
+    assert!(
         method_names.contains(&"strata_getBlocksSummaries"),
         "missing strata_getBlocksSummaries, found: {method_names:?}"
     );
@@ -171,6 +175,47 @@ fn client_rpc_get_account_epoch_summary_has_two_params() {
     );
     assert_eq!(params[0]["name"], "account_id");
     assert_eq!(params[1]["name"], "epoch");
+}
+
+#[test]
+fn client_rpc_get_checkpoint_info_has_epoch_param() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getCheckpointInfo")
+        .expect("strata_getCheckpointInfo should exist");
+
+    let params = method["params"].as_array().unwrap();
+    assert_eq!(params.len(), 1, "getCheckpointInfo should have 1 param");
+    assert_eq!(params[0]["name"], "epoch");
+    assert_eq!(params[0]["schema"]["type"], "integer");
+}
+
+#[test]
+fn client_rpc_get_checkpoint_info_result_is_optional() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getCheckpointInfo")
+        .expect("strata_getCheckpointInfo should exist");
+
+    let result = &method["result"];
+    assert!(
+        result.get("required").is_none() || result["required"] == false,
+        "optional result should not be required"
+    );
+
+    let any_of = result["schema"]["anyOf"]
+        .as_array()
+        .expect("optional result schema should use anyOf");
+    assert!(
+        any_of.iter().any(|v| v["type"] == "null"),
+        "optional result schema should contain a null variant, got: {any_of:?}"
+    );
 }
 
 #[test]

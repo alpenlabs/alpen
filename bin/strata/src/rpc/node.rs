@@ -2,16 +2,18 @@
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
+use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{
-    AccountId, Epoch, EpochCommitment, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
+    AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
+    OLBlockCommitment, OLBlockId, OLTxId,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
-    RpcBlockRangeEntry, RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
-    RpcUpdateInputData,
+    RpcBlockRangeEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
+    RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::ProofState;
@@ -24,12 +26,16 @@ use crate::rpc::errors::{
 /// OL RPC server implementation, generic over a provider.
 pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
+    genesis_l1_height: L1Height,
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
-    pub(crate) fn new(provider: P) -> Self {
-        Self { provider }
+    pub(crate) fn new(provider: P, genesis_l1_height: L1Height) -> Self {
+        Self {
+            provider,
+            genesis_l1_height,
+        }
     }
 
     async fn get_canonical_block_at_height(&self, height: u64) -> RpcResult<Option<OLBlockId>> {
@@ -50,6 +56,64 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .map_err(db_error)?
             .ok_or(not_found_error(format!("block not found: {blkid}")))?;
         Ok(blk)
+    }
+
+    async fn get_canonical_epoch_summary(
+        &self,
+        epoch: Epoch,
+    ) -> RpcResult<Option<(EpochCommitment, EpochSummary)>> {
+        let Some(commitment) = self
+            .provider
+            .get_canonical_epoch_commitment_at(epoch as u64)
+            .await
+            .map_err(db_error)?
+        else {
+            return Ok(None);
+        };
+
+        let Some(summary) = self
+            .provider
+            .get_epoch_summary(commitment)
+            .await
+            .map_err(db_error)?
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some((commitment, summary)))
+    }
+
+    async fn get_first_l2_block_in_epoch(
+        &self,
+        summary: &EpochSummary,
+    ) -> RpcResult<L2BlockCommitment> {
+        let prev_terminal_blkid = *summary.prev_terminal().blkid();
+        let mut cur_blkid = *summary.terminal().blkid();
+        // Parent links should move from terminal toward prev_terminal within this slot span.
+        let max_hops = summary
+            .terminal()
+            .slot()
+            .saturating_sub(summary.prev_terminal().slot())
+            .saturating_add(1);
+        let mut hops = 0u64;
+
+        while hops <= max_hops {
+            let block = self.get_block(cur_blkid).await?;
+            let header = block.header();
+            let parent = *header.parent_blkid();
+
+            if parent == prev_terminal_blkid {
+                return Ok(L2BlockCommitment::new(header.slot(), cur_blkid));
+            }
+
+            cur_blkid = parent;
+            hops = hops.saturating_add(1);
+        }
+
+        Err(internal_error(format!(
+            "Unable to derive first L2 block for epoch {} from terminal ancestry",
+            summary.epoch()
+        )))
     }
 }
 
@@ -172,6 +236,97 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let finalized = chain_sync_status.finalized_epoch;
 
         Ok(RpcOLChainStatus::new(tip, confirmed, finalized))
+    }
+
+    async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>> {
+        let Some((commitment, epoch_summary)) = self.get_canonical_epoch_summary(epoch).await?
+        else {
+            return Ok(None);
+        };
+        let l2_start = self.get_first_l2_block_in_epoch(&epoch_summary).await?;
+        let l2_range = (l2_start, *epoch_summary.terminal());
+
+        let l1_start = if epoch == 0 {
+            let l1_start_height = self.genesis_l1_height.saturating_add(1);
+            let l1_start_manifest = self
+                .provider
+                .get_block_manifest_at_height(l1_start_height)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    not_found_error(format!(
+                        "No L1 manifest found at genesis+1 height {} for epoch 0",
+                        l1_start_height
+                    ))
+                })?;
+
+            L1BlockCommitment::new(l1_start_height, *l1_start_manifest.blkid())
+        } else {
+            let prev_epoch = epoch - 1;
+            let (_, prev_summary) = self
+                .get_canonical_epoch_summary(prev_epoch)
+                .await?
+                .ok_or_else(|| {
+                    not_found_error(format!("No canonical summary found for epoch {prev_epoch}"))
+                })?;
+
+            let l1_start_height = prev_summary.new_l1().height().saturating_add(1);
+            let l1_start_manifest = self
+                .provider
+                .get_block_manifest_at_height(l1_start_height)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    not_found_error(format!(
+                        "No L1 manifest found at checkpoint start height {} for epoch {}",
+                        l1_start_height, epoch
+                    ))
+                })?;
+
+            L1BlockCommitment::new(l1_start_height, *l1_start_manifest.blkid())
+        };
+        let l1_end = *epoch_summary.new_l1();
+        let l1_range = (l1_start, l1_end);
+
+        let l1_ref = self
+            .provider
+            .get_checkpoint_l1_ref(commitment)
+            .await
+            .map_err(db_error)?;
+        let confirmation_status = if let Some(obs) = l1_ref {
+            let l1_reference = RpcCheckpointL1Ref::new(obs.l1_commitment, obs.txid, obs.wtxid);
+            let observed_height = obs.l1_commitment.height();
+            let Some(tip) = self.provider.get_l1_tip_height() else {
+                return Err(internal_error(
+                    "L1 tip height unavailable while constructing checkpoint info",
+                ));
+            };
+            if tip < observed_height {
+                return Err(internal_error(format!(
+                    "L1 tip height {tip} is below observed checkpoint height {observed_height}",
+                )));
+            }
+
+            let is_finalized = self
+                .provider
+                .get_ol_sync_status()
+                .is_some_and(|sync_status| sync_status.finalized_epoch.epoch() >= epoch);
+
+            if is_finalized {
+                RpcCheckpointConfStatus::Finalized { l1_reference }
+            } else {
+                RpcCheckpointConfStatus::Confirmed { l1_reference }
+            }
+        } else {
+            RpcCheckpointConfStatus::Pending
+        };
+
+        Ok(Some(RpcCheckpointInfo {
+            idx: epoch as u64,
+            l1_range,
+            l2_range,
+            confirmation_status,
+        }))
     }
 
     async fn get_blocks_summaries(
