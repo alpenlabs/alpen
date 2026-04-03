@@ -1,5 +1,8 @@
 .data
 configs/*
 !configs/*.toml
+!configs/alpen-client/
+configs/alpen-client/*
+!configs/alpen-client/seq-p2p.hex
 .env.alpen
 .env.alpen-fullnode

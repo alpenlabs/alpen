@@ -58,11 +58,6 @@ jobs:
           docker pull "${IMG_URL}"
           docker tag "${IMG_URL}" "alpen-client:latest"
 
-      - name: Generate alpen-client keys
-        run: |
-          pip3 install coincurve
-          cd docker && ./init-alpen-client-keys.sh
-
       - name: Start services
         run: |
           docker compose --env-file docker/.env.alpen-client \
