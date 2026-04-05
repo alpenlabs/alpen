@@ -151,7 +151,7 @@ impl Subprotocol for BridgeV1Subproto {
                     selected_operator,
                 } => {
                     if let Err(e) =
-                        state.create_withdrawal_assignment(output, *selected_operator, l1ref)
+                        state.create_batch_withdrawal_assignments(output, *selected_operator, l1ref)
                     {
                         // PANIC: Withdrawal assignment failure indicates catastrophic system
                         // compromise.

@@ -121,20 +121,14 @@ impl CheckpointState {
         *self.available_funds.entry(amount).or_insert(0) += 1;
     }
 
-    /// Verifies that the available funds can cover all withdrawal intents using **exact
-    /// denomination matching**.
+    /// Verifies that the available funds can cover all withdrawal intents.
     ///
     /// Does not mutate state. On success returns a [`VerifiedWithdrawals`] token that must
     /// be passed to [`deduct_withdrawals`](Self::deduct_withdrawals) to apply the deduction.
     /// This enforces at the type level deduction can only happen after successful verification.
     ///
-    /// N.B. Despite bridge targeting single denomination deposits, the checkpoint withdrawals
-    /// verification logic below allows for multi denominations to be successfully handled (as
-    /// long as they were successfully processed by the bridge according to the ASM protocol).
-    /// The algorithm is quite naive. For instance, if bridge somehow was able to process
-    /// the deposits of 2 BTC and 5 BTC, then that means checkpoints with withdrawal intents
-    /// of 2 and 5 BTC are valid (as long as they can be honored by its count), but 7(=2+5) BTC
-    /// is not supported (and such checkpoints would be treated as invalid and thus skipped).
+    /// Each intent's amount is greedily decomposed into available UTXO denominations
+    /// (largest first). This supports both single-denomination and batch withdrawal intents.
     pub(crate) fn verify_can_honor_withdrawals(
         &self,
         withdrawal_intents: &[WithdrawOutput],
@@ -147,13 +141,7 @@ impl CheckpointState {
         };
 
         for intent in withdrawal_intents {
-            let denom = intent.amt();
-            let count = funds.get_mut(&denom).ok_or_else(&insufficient)?;
-            *count = count.checked_sub(1).ok_or_else(&insufficient)?;
-
-            if *count == 0 {
-                funds.remove(&denom);
-            }
+            funds = get_funds_after_withdrawal(&funds, intent.amt()).ok_or_else(&insufficient)?;
         }
 
         Ok(VerifiedWithdrawals(funds))
@@ -168,8 +156,41 @@ impl CheckpointState {
     }
 }
 
+/// Computes the remaining funds after greedily deducting UTXOs to cover a withdrawal amount.
+///
+/// Consumes largest denominations first. Returns `Some(remaining_funds)` if the amount
+/// is exactly covered, `None` if it cannot be covered. Does not modify the input.
+fn get_funds_after_withdrawal(
+    funds: &BTreeMap<BitcoinAmount, u32>,
+    amount: BitcoinAmount,
+) -> Option<BTreeMap<BitcoinAmount, u32>> {
+    let mut result = funds.clone();
+    let mut remaining = amount.to_sat();
+
+    for (denom, count) in result.iter_mut().rev() {
+        if remaining == 0 {
+            break;
+        }
+        let denom_sat = denom.to_sat();
+        if denom_sat > remaining {
+            continue;
+        }
+
+        let n = (remaining / denom_sat).min(*count as u64) as u32;
+        *count -= n;
+        remaining -= n as u64 * denom_sat;
+    }
+
+    (remaining == 0).then(|| {
+        result.retain(|_, c| *c > 0);
+        result
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use bitcoin_bosd::Descriptor;
     use strata_asm_bridge_msgs::WithdrawOutput;
     use strata_btc_types::BitcoinAmount;
@@ -177,8 +198,83 @@ mod tests {
     use strata_identifiers::L2BlockCommitment;
     use strata_predicate::{PredicateKey, PredicateTypeId};
 
-    use super::CheckpointState;
+    use super::{CheckpointState, get_funds_after_withdrawal};
     use crate::errors::InvalidCheckpointPayload;
+
+    fn funds(entries: &[(u64, u32)]) -> BTreeMap<BitcoinAmount, u32> {
+        entries
+            .iter()
+            .map(|(sats, count)| (BitcoinAmount::from_sat(*sats), *count))
+            .collect()
+    }
+
+    fn sat(sats: u64) -> BitcoinAmount {
+        BitcoinAmount::from_sat(sats)
+    }
+
+    // --- get_funds_after_withdrawal tests ---
+
+    #[test]
+    fn test_greedy_single_denom_exact() {
+        let f = funds(&[(100_000_000, 5)]);
+        let result = get_funds_after_withdrawal(&f, sat(100_000_000)).unwrap();
+        assert_eq!(result, funds(&[(100_000_000, 4)]));
+    }
+
+    #[test]
+    fn test_greedy_single_denom_batch() {
+        let f = funds(&[(100_000_000, 5)]);
+        let result = get_funds_after_withdrawal(&f, sat(300_000_000)).unwrap();
+        assert_eq!(result, funds(&[(100_000_000, 2)]));
+    }
+
+    #[test]
+    fn test_greedy_single_denom_insufficient() {
+        let f = funds(&[(100_000_000, 2)]);
+        assert!(get_funds_after_withdrawal(&f, sat(300_000_000)).is_none());
+    }
+
+    #[test]
+    fn test_greedy_non_multiple() {
+        let f = funds(&[(100_000_000, 5)]);
+        assert!(get_funds_after_withdrawal(&f, sat(150_000_000)).is_none());
+    }
+
+    #[test]
+    fn test_greedy_zero_amount() {
+        let f = funds(&[(100_000_000, 5)]);
+        let result = get_funds_after_withdrawal(&f, sat(0)).unwrap();
+        assert_eq!(result, f);
+    }
+
+    #[test]
+    fn test_greedy_empty_funds() {
+        let f = funds(&[]);
+        assert!(get_funds_after_withdrawal(&f, sat(100_000_000)).is_none());
+    }
+
+    #[test]
+    fn test_greedy_multi_denom_largest_first() {
+        // 2 BTC and 5 BTC available, withdraw 7 BTC
+        let f = funds(&[(200_000_000, 1), (500_000_000, 1)]);
+        let result = get_funds_after_withdrawal(&f, sat(700_000_000)).unwrap();
+        assert_eq!(result, funds(&[]));
+    }
+
+    #[test]
+    fn test_greedy_multi_denom_partial() {
+        // 1 BTC x3 and 2 BTC x2, withdraw 5 BTC = 2x2 BTC + 1x1 BTC
+        let f = funds(&[(100_000_000, 3), (200_000_000, 2)]);
+        let result = get_funds_after_withdrawal(&f, sat(500_000_000)).unwrap();
+        assert_eq!(result, funds(&[(100_000_000, 2)]));
+    }
+
+    #[test]
+    fn test_greedy_does_not_modify_input() {
+        let f = funds(&[(100_000_000, 5)]);
+        let _ = get_funds_after_withdrawal(&f, sat(300_000_000));
+        assert_eq!(f, funds(&[(100_000_000, 5)]));
+    }
 
     fn dummy_state() -> CheckpointState {
         let tip = CheckpointTip::new(0, 100, L2BlockCommitment::null());
@@ -244,6 +340,18 @@ mod tests {
     }
 
     #[test]
+    fn test_non_divisible_withdrawal_fails() {
+        let mut state = dummy_state();
+        state.record_deposit(BitcoinAmount::from_sat(100_000_000));
+        state.record_deposit(BitcoinAmount::from_sat(100_000_000));
+
+        // 1.5 BTC cannot be covered by 1 BTC denominations
+        let intents = vec![withdrawal(150_000_000)];
+        assert!(state.verify_can_honor_withdrawals(&intents).is_err());
+        assert_eq!(state.available_deposit_sum(), 200_000_000);
+    }
+
+    #[test]
     fn test_insufficient_count_fails() {
         let mut state = dummy_state();
         let denom = BitcoinAmount::from_sat(500_000_000);
@@ -256,6 +364,23 @@ mod tests {
 
         // State unchanged
         assert_eq!(state.available_deposit_sum(), 500_000_000);
+    }
+
+    #[test]
+    fn test_batch_withdrawal_single_denom() {
+        let mut state = dummy_state();
+        let denom = BitcoinAmount::from_sat(100_000_000);
+
+        // 5 deposits of 1 BTC each
+        for _ in 0..5 {
+            state.record_deposit(denom);
+        }
+
+        // Batch withdrawal of 3 BTC (single intent)
+        let intents = vec![withdrawal(300_000_000)];
+        let token = state.verify_can_honor_withdrawals(&intents).unwrap();
+        state.deduct_withdrawals(token);
+        assert_eq!(state.available_deposit_sum(), 200_000_000);
     }
 
     #[test]

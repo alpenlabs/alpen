@@ -177,6 +177,40 @@ impl BridgeV1State {
         )
     }
 
+    /// Decomposes a batch withdrawal into N individual assignments.
+    ///
+    /// Splits `withdrawal_output.amt()` into `N = amt / denomination` calls to
+    /// [`create_withdrawal_assignment`](Self::create_withdrawal_assignment), each with the
+    /// bridge denomination and the same destination and operator selection.
+    pub fn create_batch_withdrawal_assignments(
+        &mut self,
+        withdrawal_output: &WithdrawOutput,
+        selected_operator: OperatorSelection,
+        l1_block: &L1BlockCommitment,
+    ) -> Result<(), WithdrawalCommandError> {
+        let amt = withdrawal_output.amt().to_sat();
+        let denom = self.denomination.to_sat();
+
+        if !amt.is_multiple_of(denom) {
+            return Err(WithdrawalCommandError::DepositWithdrawalAmountMismatch(
+                Mismatch {
+                    expected: denom,
+                    got: amt,
+                },
+            ));
+        }
+
+        let n = amt / denom;
+        let single_output =
+            WithdrawOutput::new(withdrawal_output.destination().clone(), self.denomination);
+
+        for _ in 0..n {
+            self.create_withdrawal_assignment(&single_output, selected_operator, l1_block)?;
+        }
+
+        Ok(())
+    }
+
     /// Processes all expired assignments by reassigning them to new operators.
     ///
     /// This function iterates through all assignments, identifies those that have expired

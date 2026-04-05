@@ -28,11 +28,11 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
 
     let withdrawal_amount = input.value;
 
-    // Verify that the transaction value matches the required withdrawal amount
-    if withdrawal_amount < FIXED_WITHDRAWAL_WEI {
-        return Err(PrecompileError::other(
-            "Invalid withdrawal value: must have 10 BTC in wei",
-        ));
+    // Verify that the transaction value is a positive exact multiple of the withdrawal denomination
+    if withdrawal_amount.is_zero() || !(withdrawal_amount % FIXED_WITHDRAWAL_WEI).is_zero() {
+        return Err(PrecompileError::other(format!(
+            "Invalid withdrawal value: must be a positive exact multiple of {FIXED_WITHDRAWAL_WEI} wei",
+        )));
     }
 
     // Convert wei to satoshis
