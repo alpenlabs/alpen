@@ -117,7 +117,7 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
     // 2. Check if the withdrawal amount is a positive exact multiple of the denomination
     let withdrawal_amt = payload.value();
 
-    // TODO move to params struct
+    // TODO(STR-2974) move to params struct
     let withdrawal_denom: u64 = 100_000_000;
 
     // 3. Verify the amount is a positive exact multiple of the denomination.
