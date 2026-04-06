@@ -285,8 +285,10 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: u64) -> OLState {
 
 const TEST_GENESIS_L1_HEIGHT: L1Height = 0;
 
+const TEST_MAX_HEADERS_RANGE: usize = 5000;
+
 fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
-    OLRpcServer::new(provider, TEST_GENESIS_L1_HEIGHT)
+    OLRpcServer::new(provider, TEST_GENESIS_L1_HEIGHT, TEST_MAX_HEADERS_RANGE)
 }
 
 fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {

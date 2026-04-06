@@ -57,6 +57,10 @@ fn spec_contains_expected_methods() {
         method_names.contains(&"strata_getRawBlockById"),
         "missing strata_getRawBlockById, found: {method_names:?}"
     );
+    assert!(
+        method_names.contains(&"strata_getHeadersInRange"),
+        "missing strata_getHeadersInRange, found: {method_names:?}"
+    );
 
     // Client Node methods
     assert!(
@@ -323,4 +327,20 @@ fn sequencer_rpc_complete_block_template_has_two_params() {
     );
     assert_eq!(params[0]["name"], "template_id");
     assert_eq!(params[1]["name"], "completion");
+}
+
+#[test]
+fn get_headers_in_range_has_two_params() {
+    let spec = build_spec();
+    let methods = spec["methods"].as_array().unwrap();
+
+    let method = methods
+        .iter()
+        .find(|m| m["name"] == "strata_getHeadersInRange")
+        .expect("strata_getHeadersInRange should exist");
+
+    let params = method["params"].as_array().unwrap();
+    assert_eq!(params.len(), 2, "getHeadersInRange should have 2 params");
+    assert_eq!(params[0]["name"], "start_height");
+    assert_eq!(params[1]["name"], "end_height");
 }

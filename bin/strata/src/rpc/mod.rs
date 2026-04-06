@@ -34,6 +34,7 @@ struct RpcDeps {
     rpc_host: String,
     rpc_port: u16,
     genesis_l1_height: L1Height,
+    max_headers_range: usize,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     mempool_handle: Arc<MempoolHandle>,
@@ -87,6 +88,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
         genesis_l1_height: runctx.asm_params().l1_view.height(),
+        max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
         mempool_handle: runctx.mempool_handle().clone(),
@@ -115,7 +117,11 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
-    let ol_rpc_server = OLRpcServer::new(client_provider, deps.genesis_l1_height);
+    let ol_rpc_server = OLRpcServer::new(
+        client_provider,
+        deps.genesis_l1_height,
+        deps.max_headers_range,
+    );
     let ol_module = OLClientRpcServer::into_rpc(ol_rpc_server);
     module
         .merge(ol_module)
@@ -127,7 +133,11 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         deps.status_channel.clone(),
         deps.mempool_handle.clone(),
     );
-    let ol_fullnode_listener = OLRpcServer::new(fullnode_provider, deps.genesis_l1_height);
+    let ol_fullnode_listener = OLRpcServer::new(
+        fullnode_provider,
+        deps.genesis_l1_height,
+        deps.max_headers_range,
+    );
     let ol_fullnode_module = OLFullNodeRpcServer::into_rpc(ol_fullnode_listener);
     module
         .merge(ol_fullnode_module)

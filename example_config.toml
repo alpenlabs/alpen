@@ -5,6 +5,7 @@ datadir = "/path/to/data/directory"
 # sequencer_key = "/path/to/data/directory/"
 # sequencer_bitcoin_address = ""
 db_retry_count = 5
+max_headers_range = 5_000
 
 [bitcoind]
 rpc_url = "localhost:18332"

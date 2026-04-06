@@ -165,6 +165,7 @@ mod test {
                 db_retry_count: 3,
                 db_retry_delay_ms: 200,
                 is_sequencer: false,
+                max_headers_range: 5000,
             },
             bitcoind: BitcoindConfig {
                 rpc_url: "".to_string(),

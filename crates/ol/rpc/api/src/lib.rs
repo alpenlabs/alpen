@@ -90,6 +90,15 @@ pub trait OLFullNodeRpc {
     /// Get serialized block for a given block id.
     #[method(name = "getRawBlockById")]
     async fn get_raw_block_by_id(&self, block_id: OLBlockId) -> RpcResult<HexBytes>;
+
+    /// Get block headers in a slot range.
+    /// `start_height` and `end_height` are inclusive.
+    #[method(name = "getHeadersInRange")]
+    async fn get_headers_in_range(
+        &self,
+        start_height: u64,
+        end_height: u64,
+    ) -> RpcResult<Vec<RpcHeaderRangeEntry>>;
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.
