@@ -57,8 +57,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
                     debug!(%prev, "finalized epoch unchanged, skipping");
                     return Ok(());
                 };
-                debug!(%prev, %new_fin, "new finalized epoch, validating continuity");
-                validate_new_finalized_epoch(prev, new_fin, &self.ctx).await?;
+                debug!(%prev, %new_fin, "new finalized epoch");
                 new_fin
             }
         };
@@ -111,25 +110,6 @@ pub(crate) async fn apply_checkpoint(
 
     info!(%epoch, "checkpoint applied and finalized");
 
-    Ok(())
-}
-
-async fn validate_new_finalized_epoch<C: CheckpointSyncCtx>(
-    prev: EpochCommitment,
-    new: EpochCommitment,
-    ctx: &C,
-) -> Result<(), anyhow::Error> {
-    let prev_summary = ctx.get_epoch_summary(prev).await?;
-    let new_summary = ctx.get_epoch_summary(new).await?;
-    if new_summary.prev_terminal() != prev_summary.terminal() {
-        return Err(anyhow!(
-            "Received incompatible finalized checkpoint {}: prev_terminal {:?} != expected {:?}",
-            new,
-            new_summary.prev_terminal(),
-            prev_summary.terminal(),
-        ));
-    }
-    debug!(%prev, %new, "epoch continuity validated");
     Ok(())
 }
 

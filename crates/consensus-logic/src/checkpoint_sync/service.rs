@@ -185,7 +185,6 @@ async fn scan_unapplied_epochs(
     let mut cur_finalized = start_finalized;
 
     let ckpt_db = nodectx.storage().ol_checkpoint();
-    let state_db = nodectx.storage().ol_state();
 
     loop {
         let l1_ref = ckpt_db
@@ -201,10 +200,10 @@ async fn scan_unapplied_epochs(
             ));
         }
 
-        // Check if it has been applied. It is applied if the state db contains state corresponding
-        // to the terminal OL block of this finalized epoch.
-        if state_db
-            .get_toplevel_ol_state_async(cur_finalized.to_block_commitment())
+        // Check if it has been applied. It is applied if the epoch summary is present because
+        // chain worker inserts an epoch summary after executing the DA.
+        if ckpt_db
+            .get_epoch_summary_async(cur_finalized)
             .await?
             .is_some()
         {
