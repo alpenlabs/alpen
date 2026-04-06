@@ -31,12 +31,15 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
     def main(self, ctx):
         alpen_seq: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
         strata_seq: StrataService = self.get_service(ServiceType.Strata)
+        strata_node: StrataService = self.get_service(ServiceType.StrataNode)
         bitcoin: BitcoinService = self.get_service(ServiceType.Bitcoin)
         btc_rpc = bitcoin.create_rpc()
 
         # Wait for chains to be active
         logger.info("Waiting for Strata RPC to be ready...")
         strata_rpc = strata_seq.wait_for_rpc_ready(timeout=10)
+        node_rpc = strata_node.wait_for_rpc_ready(timeout=10)
+
         logger.info("Waiting for Alpen account genesis commitment...")
         strata_seq.wait_for_account_genesis_epoch_commitment(
             ALPEN_ACCOUNT_ID,
@@ -65,7 +68,13 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                 timeout=60,
             )
 
-            new_epochs_since_last = list(range(next_epoch, status["tip"]["epoch"]))
+            tip_epoch = status["tip"]["epoch"]
+
+            # Wait until tip epoch is finalized in sequencer and strata node
+            strata_seq.wait_until_checkpoint_finalized(tip_epoch, btcrpc=btc_rpc)
+            strata_node.wait_until_checkpoint_finalized(tip_epoch)
+
+            new_epochs_since_last = list(range(next_epoch, tip_epoch))
             logger.info(f"new epochs since last: {new_epochs_since_last}")
 
             # Check for new updates in one of the new epochs
@@ -81,6 +90,13 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                     )
                     last_new_update_at = ep
                     new_updates_count += 1
+
+                    # Check that with correponding result from strata node
+                    node_acct_summary = node_rpc.strata_getAccountEpochSummary(ALPEN_ACCOUNT_ID, ep)
+                    assert node_acct_summary == acct_summary, (
+                        f"Account summary for epoch {ep} should be same "
+                        "from sequencer and checkpoint sync node"
+                    )
 
                 elif ep > last_new_update_at + EXPECT_UPDATE_WITHIN_EPOCH:
                     raise AssertionError(
