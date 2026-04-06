@@ -312,7 +312,7 @@ lint-fix-func-tests: ensure-uv activate-uv
 
 # Runs all lints and checks for issues without trying to fix them
 [group('code-quality')]
-lint: fmt-check-ws fmt-check-func-tests fmt-check-toml lint-check-ws lint-check-func-tests lint-check-codespell lint-check-shell lint-check-style
+lint: fmt-check-ws fmt-check-func-tests fmt-check-toml lint-check-ws lint-check-func-tests lint-check-codespell lint-check-shell lint-check-style lint-check-todos
     @echo "\n\033[36m======== OK: Lints and Formatting ========\033[0m\n"
 
 # Runs all lints and applies fixes where possible
