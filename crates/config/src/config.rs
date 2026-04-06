@@ -18,7 +18,7 @@ const DEFAULT_DATADIR: &str = "strata-data";
 const DEFAULT_DB_RETRY_DELAY: u64 = 200;
 
 /// Default maximum number of headers returned in a single `getHeadersInRange` RPC query.
-const DEFAULT_MAX_HEADERS_RANGE: usize = 5000;
+const DEFAULT_MAX_HEADERS_RANGE: usize = 5_000;
 
 /// Default maximum transactions per block.
 const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
