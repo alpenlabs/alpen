@@ -14,7 +14,9 @@ use zkaleido_native_adapter::NativeHost;
 pub fn get_host(id: &ProofContext) -> Arc<NativeHost> {
     let native_host = match id {
         ProofContext::EvmEeStf(..) => EvmEeProgram::native_host(),
-        ProofContext::Checkpoint(..) => CheckpointProgram::native_host(),
+        ProofContext::Checkpoint(..) | ProofContext::CheckpointCommitment(..) => {
+            CheckpointProgram::native_host()
+        }
     };
     Arc::new(native_host)
 }

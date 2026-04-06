@@ -94,7 +94,7 @@ pub(crate) fn start_prover_service(
     // Explicitly zero all backends, then enable only the selected one.
     // This is required because the paas ProverServiceBuilder defaults
     // missing backends to 1 worker (unwrap_or(1) in builder.rs).
-    // TODO(paas): ProverServiceConfig should default to 0 workers for
+    // TODO(STR-1947): ProverServiceConfig should default to 0 workers for
     // unspecified backends, so callers only need to set the ones they want.
     let worker_counts = HashMap::from([
         (ZkVmBackend::Native, 0),
@@ -198,6 +198,18 @@ fn spawn_checkpoint_runner(
 
                     if let Some(commitment) = *epoch_rx.borrow() {
                         latest_epoch = latest_epoch.max(commitment.epoch());
+                        // Handle same-epoch reorgs (or any canonical commitment
+                        // change for an already-processed epoch) by rewinding the
+                        // cursor so we re-evaluate proof presence for that epoch.
+                        let rewind_epoch = commitment.epoch().max(1);
+                        if rewind_epoch < next_epoch_to_prove {
+                            debug!(
+                                rewind_epoch,
+                                old_next_epoch = next_epoch_to_prove,
+                                "observed commitment update for already-processed epoch; rewinding prover cursor"
+                            );
+                            next_epoch_to_prove = rewind_epoch;
+                        }
                     }
                 }
                 _ = retry_tick.tick() => {}
@@ -225,14 +237,13 @@ fn spawn_checkpoint_runner(
 
                 // Skip if proof already exists (idempotency after restart).
                 let task = CheckpointTask::new(commitment, backend.clone());
-                let zkvm = match task.proof_zkvm() {
-                    Ok(z) => z,
-                    Err(e) => {
-                        warn!(%epoch, %e, "skipping epoch due to unsupported backend");
-                        break;
-                    }
-                };
-                let proof_key = ProofKey::new(ProofContext::Checkpoint(u64::from(epoch)), zkvm);
+                let zkvm = task.proof_zkvm().map_err(|e| {
+                    anyhow::anyhow!(
+                        "unsupported checkpoint backend at epoch {epoch}: backend={:?}, error={e}",
+                        task.backend
+                    )
+                })?;
+                let proof_key = ProofKey::new(ProofContext::CheckpointCommitment(commitment), zkvm);
                 if proof_db.get_proof(proof_key).ok().flatten().is_some() {
                     debug!(%epoch, "proof already exists, skipping");
                     next_epoch_to_prove += 1;
@@ -243,6 +254,43 @@ fn spawn_checkpoint_runner(
 
                 match prover_handle.execute_task(task, backend.clone()).await {
                     Ok(TaskResult::Completed { uuid }) => {
+                        // Re-check canonical commitment before advancing the
+                        // cursor. If the epoch reorged while proving, keep the
+                        // cursor at this epoch so we immediately reprove.
+                        let latest_commitment = match storage
+                            .ol_checkpoint()
+                            .get_canonical_epoch_commitment_at_blocking(epoch)
+                        {
+                            Ok(Some(c)) => c,
+                            Ok(None) => {
+                                warn!(
+                                    %epoch,
+                                    %uuid,
+                                    "canonical commitment missing after proof completion; will retry epoch"
+                                );
+                                break;
+                            }
+                            Err(e) => {
+                                warn!(
+                                    %epoch,
+                                    %uuid,
+                                    %e,
+                                    "failed to re-check canonical commitment after proof completion; will retry epoch"
+                                );
+                                break;
+                            }
+                        };
+                        if latest_commitment != commitment {
+                            warn!(
+                                %epoch,
+                                %uuid,
+                                proved_commitment = ?commitment,
+                                canonical_commitment = ?latest_commitment,
+                                "epoch commitment changed while proving; reproving epoch"
+                            );
+                            continue;
+                        }
+
                         info!(%epoch, %uuid, "checkpoint proof completed");
                         next_epoch_to_prove += 1;
                     }

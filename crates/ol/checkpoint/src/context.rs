@@ -195,16 +195,16 @@ impl CheckpointWorkerContextImpl {
         proof_bytes.to_vec()
     }
 
-    /// Attempts to read a non-empty proof from the proof DB for the given epoch.
+    /// Attempts to read a non-empty proof from the proof DB for the given epoch commitment.
     ///
     /// Returns `Ok(Some(bytes))` if a valid proof is found, `Ok(None)` if no
     /// proof is available yet. Uses the prover's configured zkVM backend.
     fn try_read_proof(
         &self,
         prover: &ProverConfig,
-        epoch_idx: u64,
+        commitment: EpochCommitment,
     ) -> anyhow::Result<Option<Vec<u8>>> {
-        let proof_key = ProofKey::new(ProofContext::Checkpoint(epoch_idx), prover.zkvm);
+        let proof_key = ProofKey::new(ProofContext::CheckpointCommitment(commitment), prover.zkvm);
         if let Some(receipt) = self.storage.proof().get_proof(proof_key)? {
             let proof_bytes =
                 Self::payload_proof_bytes(&proof_key, receipt.receipt().proof().as_bytes());
@@ -293,7 +293,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         let epoch_idx = u64::from(epoch.epoch());
 
         // Check DB first — proof may already exist (e.g. after restart).
-        if let Some(bytes) = self.try_read_proof(prover, epoch_idx)? {
+        if let Some(bytes) = self.try_read_proof(prover, *epoch)? {
             return Ok(bytes);
         }
 
@@ -318,7 +318,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             debug!(epoch = epoch_idx, "waiting for checkpoint proof...");
             prover.notify.wait();
 
-            if let Some(bytes) = self.try_read_proof(prover, epoch_idx)? {
+            if let Some(bytes) = self.try_read_proof(prover, *epoch)? {
                 return Ok(bytes);
             }
         }

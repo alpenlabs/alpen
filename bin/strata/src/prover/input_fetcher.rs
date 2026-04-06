@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_stf::execute_block_batch;
 use strata_paas::InputFetcher;
@@ -38,33 +38,42 @@ impl InputFetcher<CheckpointTask> for CheckpointInputFetcher {
     type Error = ProverError;
 
     async fn fetch_input(&self, program: &CheckpointTask) -> Result<Self::Input, Self::Error> {
-        let epoch = program.commitment.epoch;
+        let task_commitment = program.commitment;
+        let epoch = task_commitment.epoch;
         let epoch_index = u64::from(epoch);
         debug!(%epoch_index, "fetching checkpoint proof input");
 
         let storage = Arc::clone(&self.storage);
-        spawn_blocking(move || fetch_input_blocking(storage, epoch))
+        spawn_blocking(move || fetch_input_blocking(storage, task_commitment))
             .await
-            .map_err(|e| ProverError::DaReplay(format!("input fetch task join error: {e}")))?
+            .map_err(|e| ProverError::InputFetchJoin(e.to_string()))?
     }
 }
 
 fn fetch_input_blocking(
     storage: Arc<NodeStorage>,
-    epoch: Epoch,
+    task_commitment: EpochCommitment,
 ) -> Result<CheckpointProverInput, ProverError> {
+    let epoch: Epoch = task_commitment.epoch;
     let epoch_index = u64::from(epoch);
     debug!(%epoch_index, "fetching checkpoint proof input (blocking)");
 
-    // Get epoch summary.
-    let commitment = storage
+    // Ensure this task still matches the canonical commitment for the epoch.
+    let canonical_commitment = storage
         .ol_checkpoint()
         .get_canonical_epoch_commitment_at_blocking(epoch)?
         .ok_or(ProverError::EpochCommitmentNotFound(epoch_index))?;
+    if canonical_commitment != task_commitment {
+        return Err(ProverError::StaleTaskCommitment {
+            epoch: epoch_index,
+            task: task_commitment,
+            canonical: canonical_commitment,
+        });
+    }
 
     let summary = storage
         .ol_checkpoint()
-        .get_epoch_summary_blocking(commitment)?
+        .get_epoch_summary_blocking(task_commitment)?
         .ok_or(ProverError::EpochSummaryNotFound(epoch_index))?;
 
     let terminal = summary.terminal();
@@ -121,12 +130,12 @@ fn fetch_input_blocking(
     let da_state_diff_bytes = {
         let mut da_state = DaAccumulatingState::new((*start_state).clone());
         execute_block_batch(&mut da_state, &blocks, &parent)
-            .map_err(|e| ProverError::DaReplay(e.to_string()))?;
+            .map_err(|e| ProverError::DaComputation(e.to_string()))?;
         da_state
             .take_completed_epoch_da_blob()
-            .map_err(|e| ProverError::DaReplay(e.to_string()))?
+            .map_err(|e| ProverError::DaComputation(e.to_string()))?
             .ok_or_else(|| {
-                ProverError::DaReplay("no DA blob produced after epoch replay".to_string())
+                ProverError::DaComputation("no DA blob produced after epoch replay".to_string())
             })?
     };
 

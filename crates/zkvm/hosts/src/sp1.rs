@@ -52,6 +52,8 @@ define_host!(
 pub fn get_host(id: &ProofContext) -> Arc<SP1Host> {
     match id {
         ProofContext::EvmEeStf(..) => Arc::clone(&EVM_EE_STF_HOST),
-        ProofContext::Checkpoint(..) => Arc::clone(&CHECKPOINT_HOST),
+        ProofContext::Checkpoint(..) | ProofContext::CheckpointCommitment(..) => {
+            Arc::clone(&CHECKPOINT_HOST)
+        }
     }
 }

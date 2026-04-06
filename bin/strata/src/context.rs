@@ -12,6 +12,8 @@ use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
 #[cfg(feature = "prover")]
+use strata_asm_params::SubprotocolInstance;
+#[cfg(feature = "prover")]
 use strata_config::ProverBackend;
 use strata_config::{
     BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
@@ -53,24 +55,25 @@ pub(crate) fn init_node_context(
     config: Config,
     handle: Handle,
 ) -> Result<NodeContext, InitError> {
-    // Validate params
-    let params_path = args
-        .rollup_params
-        .as_ref()
-        .ok_or(InitError::MissingRollupParams)?;
-    let params = resolve_and_validate_params(params_path, &config)?;
-    let blockasm_config = config
-        .sequencer
-        .as_ref()
-        .map(load_block_assembly_config)
-        .transpose()?;
-
-    // Load ASM params
+    // Load ASM params first so integrated prover compatibility checks can use
+    // the same checkpoint predicate source that runtime ASM will enforce.
     let asm_params_path = args
         .asm_params
         .as_ref()
         .ok_or(InitError::MissingAsmParams)?;
     let asm_params = load_asm_params(asm_params_path)?;
+
+    // Validate params
+    let params_path = args
+        .rollup_params
+        .as_ref()
+        .ok_or(InitError::MissingRollupParams)?;
+    let params = resolve_and_validate_params(params_path, &config, &asm_params)?;
+    let blockasm_config = config
+        .sequencer
+        .as_ref()
+        .map(load_block_assembly_config)
+        .transpose()?;
 
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
@@ -157,11 +160,14 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
 pub(crate) fn resolve_and_validate_params(
     path: &Path,
     config: &Config,
+    asm_params: &AsmParams,
 ) -> Result<Arc<Params>, InitError> {
     let rollup_params = load_rollup_params(path)?;
     rollup_params.check_well_formed()?;
     #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(config, &rollup_params)?;
+    validate_integrated_prover_compatibility(config, &rollup_params, asm_params)?;
+    #[cfg(not(feature = "prover"))]
+    let _ = asm_params;
 
     let params = Params {
         rollup: rollup_params,
@@ -179,14 +185,9 @@ pub(crate) fn resolve_and_validate_params(
 fn validate_integrated_prover_compatibility(
     config: &Config,
     rollup_params: &RollupParams,
+    asm_params: &AsmParams,
 ) -> Result<(), InitError> {
-    let checkpoint_predicate_id = rollup_params.checkpoint_predicate().id();
-    let checkpoint_predicate_type =
-        PredicateTypeId::try_from(checkpoint_predicate_id).map_err(|e| {
-            InitError::InvalidProverConfig(format!(
-                "invalid checkpoint predicate type id {checkpoint_predicate_id}: {e}"
-            ))
-        })?;
+    let checkpoint_predicate_type = checkpoint_predicate_type_from_asm_params(asm_params)?;
 
     // Cross-validate proof_publish_mode against checkpoint_predicate.
     // These are both set at genesis but their interaction can cause chain stalls.
@@ -221,6 +222,32 @@ fn validate_integrated_prover_compatibility(
     }
 
     Ok(())
+}
+
+#[cfg(feature = "prover")]
+fn checkpoint_predicate_type_from_asm_params(
+    asm_params: &AsmParams,
+) -> Result<PredicateTypeId, InitError> {
+    let checkpoint_subprotocol = asm_params
+        .subprotocols
+        .iter()
+        .find_map(|instance| match instance {
+            SubprotocolInstance::Checkpoint(cfg) => Some(cfg),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            InitError::InvalidProverConfig(
+                "AsmParams missing Checkpoint subprotocol; cannot validate integrated prover config"
+                    .to_string(),
+            )
+        })?;
+
+    let checkpoint_predicate_id = checkpoint_subprotocol.checkpoint_predicate.id();
+    PredicateTypeId::try_from(checkpoint_predicate_id).map_err(|e| {
+        InitError::InvalidProverConfig(format!(
+            "invalid AsmParams checkpoint predicate type id {checkpoint_predicate_id}: {e}"
+        ))
+    })
 }
 
 #[cfg(feature = "prover")]

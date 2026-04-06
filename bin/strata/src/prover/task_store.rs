@@ -10,7 +10,6 @@ use std::{
 };
 
 use strata_db_types::types::{SerializableTaskId, SerializableTaskRecord};
-use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_paas::{
     ProverServiceError, ProverServiceResult, TaskId, TaskRecord, TaskStatus, TaskStore, ZkVmBackend,
 };
@@ -22,8 +21,8 @@ use super::task::CheckpointTask;
 /// Persistent task store for checkpoint proof tasks.
 ///
 /// Maps [`CheckpointTask`] to the existing [`SerializableTaskId`] schema
-/// via [`ProofContext::Checkpoint`], sharing the same database instance as the
-/// proof storer.
+/// via commitment-aware proof context keys, sharing the same database instance
+/// as the proof storer.
 pub(crate) struct PersistentTaskStore {
     db: Arc<ProverTaskDbManager>,
 }
@@ -34,9 +33,8 @@ impl PersistentTaskStore {
     }
 
     fn to_serializable_id(task_id: &TaskId<CheckpointTask>) -> SerializableTaskId {
-        let epoch = task_id.program().commitment.epoch;
         SerializableTaskId {
-            program: ProofContext::Checkpoint(u64::from(epoch)),
+            program: ProofContext::CheckpointCommitment(task_id.program().commitment),
             backend: match task_id.backend() {
                 ZkVmBackend::Native => 0,
                 ZkVmBackend::SP1 => 1,
@@ -58,20 +56,14 @@ impl PersistentTaskStore {
                 )));
             }
         };
-        let epoch = match ser.program {
-            ProofContext::Checkpoint(idx) => u32::try_from(idx).map_err(|_| {
-                ProverServiceError::Internal(anyhow::anyhow!("epoch index {idx} exceeds u32::MAX"))
-            })?,
+        let commitment = match ser.program {
+            ProofContext::CheckpointCommitment(commitment) => commitment,
             ref other => {
                 return Err(ProverServiceError::Internal(anyhow::anyhow!(
-                    "unexpected proof context: {other:?}"
+                    "unexpected proof context for checkpoint task store: {other:?}"
                 )));
             }
         };
-        // The serialized format only stores the epoch index. Reconstruct a
-        // placeholder commitment — the task store uses this only for
-        // deduplication and status tracking, not for proof generation.
-        let commitment = EpochCommitment::new(epoch, 0, OLBlockId::default());
         Ok(TaskId::new(
             CheckpointTask::new(commitment, backend.clone()),
             backend,

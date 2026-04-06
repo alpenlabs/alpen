@@ -55,7 +55,9 @@ impl ProgramType for ProofTask {
     fn routing_key(&self) -> Self::RoutingKey {
         match self.0 {
             ProofContext::EvmEeStf(..) => ProofContextVariant::EvmEeStf,
-            ProofContext::Checkpoint(_) => ProofContextVariant::Checkpoint,
+            ProofContext::Checkpoint(_) | ProofContext::CheckpointCommitment(..) => {
+                ProofContextVariant::Checkpoint
+            }
         }
     }
 }

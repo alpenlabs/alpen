@@ -227,14 +227,15 @@ pub(crate) fn start_strata_services(
     // The worker waits subject to proof_publish_mode (Strict = indefinite,
     // Timeout = deadline). Without a prover, empty proofs are used immediately.
     let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
-    let mut checkpoint_builder = OLCheckpointBuilder::new()
+    let checkpoint_builder = OLCheckpointBuilder::new()
         .with_node_context(&nodectx)
         .with_epoch_summary_receiver(epoch_summary_rx);
 
     #[cfg(feature = "prover")]
-    let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = if let Some(prover_config) =
-        &nodectx.config().prover
-    {
+    let (checkpoint_builder, proof_notify): (
+        OLCheckpointBuilder,
+        Option<Arc<strata_ol_checkpoint::ProofNotify>>,
+    ) = if let Some(prover_config) = &nodectx.config().prover {
         use strata_config::ProverBackend;
         use strata_primitives::proof::ProofZkVm;
 
@@ -245,14 +246,14 @@ pub(crate) fn start_strata_services(
         let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
         let publish_mode = nodectx.params().rollup().proof_publish_mode.clone();
 
-        checkpoint_builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
+        let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
             zkvm,
             notify: notify.clone(),
             publish_mode,
         });
-        Some(notify)
+        (builder, Some(notify))
     } else {
-        None
+        (checkpoint_builder, None)
     };
 
     #[cfg(not(feature = "prover"))]
