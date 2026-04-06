@@ -1,7 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::anyhow;
-use bitcoind_async_client::traits::Reader;
 use serde::Serialize;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_csm_types::CheckpointL1Ref;
@@ -78,6 +77,8 @@ where
         da_extractor,
         csm_monitor,
         nodectx.status_channel().clone(),
+        nodectx.bitcoin_client().clone(),
+        nodectx.params().rollup().clone(),
     );
     let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
 
@@ -128,18 +129,27 @@ async fn initialize_css_inner_state(
     };
 
     let cur_finalized = last_finalized.batch_info.get_epoch_commitment();
-    let l1_tip_height = nodectx.bitcoin_client().get_blockchain_info().await?.blocks;
-    let reorg_safe_depth = nodectx.params().rollup().l1_reorg_safe_depth;
 
+    let last_applied_epoch = find_and_apply_unapplied_epochs(ctx, cur_finalized).await?;
+
+    Ok(InnerState::new(last_applied_epoch))
+}
+
+pub(crate) async fn find_and_apply_unapplied_epochs(
+    ctx: &impl CheckpointSyncCtx,
+    cur_finalized: EpochCommitment,
+) -> anyhow::Result<Option<EpochCommitment>> {
+    let l1_tip_height = ctx.fetch_l1_tip_height().await?;
+    let reorg_safe_depth = ctx.rollup_params().l1_reorg_safe_depth;
     debug!(
         %cur_finalized,
         l1_tip_height,
         reorg_safe_depth,
-        "scanning for unapplied epochs"
+        "scanning for unapplied finalized epochs"
     );
 
     let (mut last_applied_epoch, unapplied_epochs) =
-        scan_unapplied_epochs(nodectx, cur_finalized, l1_tip_height, reorg_safe_depth).await?;
+        scan_unapplied_epochs(ctx, cur_finalized, l1_tip_height, reorg_safe_depth).await?;
 
     let num_unapplied = unapplied_epochs.len();
     if num_unapplied > 0 {
@@ -163,16 +173,15 @@ async fn initialize_css_inner_state(
         apply_checkpoint(ctx, epoch, l1ref).await?;
         last_applied_epoch = Some(epoch);
     }
-
-    Ok(InnerState::new(last_applied_epoch))
+    Ok(last_applied_epoch)
 }
 
 /// Walks backwards from `start_epoch`, collecting reorg-safe epochs that have not yet
 /// been applied to the OL state. Stops at genesis or the first already-applied epoch.
 ///
 /// Returns the last applied epoch (if any) and the unapplied epochs in newest-first order.
-async fn scan_unapplied_epochs(
-    nodectx: &NodeContext,
+pub(crate) async fn scan_unapplied_epochs(
+    ctx: &impl CheckpointSyncCtx,
     start_finalized: EpochCommitment,
     l1_tip_height: u32,
     reorg_safe_depth: u32,
@@ -184,15 +193,27 @@ async fn scan_unapplied_epochs(
     let mut last_applied = None;
     let mut cur_finalized = start_finalized;
 
-    let ckpt_db = nodectx.storage().ol_checkpoint();
-
     loop {
-        let l1_ref = ckpt_db
-            .get_checkpoint_l1_ref_async(cur_finalized)
+        // Don't need to go beyond genesis epoch which is deterministic
+        if cur_finalized.epoch() == 0 {
+            last_applied = Some(cur_finalized);
+            break;
+        }
+        let l1_ref = ctx
+            .get_checkpoint_l1_ref(cur_finalized)
             .await?
             .ok_or_else(|| fin_epoch_err(cur_finalized, "l1 observation entry"))?;
 
-        let is_finalized = l1_tip_height.saturating_sub(l1_ref.block_height()) >= reorg_safe_depth;
+        let num_confs = l1_tip_height.saturating_sub(l1_ref.block_height());
+        debug!(
+            ?reorg_safe_depth,
+            ?num_confs,
+            ?l1_ref,
+            ?cur_finalized,
+            "l1 ref for checkpoint"
+        );
+
+        let is_finalized = num_confs >= reorg_safe_depth;
         if !is_finalized {
             return Err(anyhow!(
                 "Obtained unfinalized epoch when the descendants are finalized: {}",
@@ -202,11 +223,7 @@ async fn scan_unapplied_epochs(
 
         // Check if it has been applied. It is applied if the epoch summary is present because
         // chain worker inserts an epoch summary after executing the DA.
-        if ckpt_db
-            .get_epoch_summary_async(cur_finalized)
-            .await?
-            .is_some()
-        {
+        if ctx.get_epoch_summary(cur_finalized).await?.is_some() {
             debug!(%cur_finalized, "found already-applied epoch, stopping scan");
             last_applied = Some(cur_finalized);
             break;
@@ -214,12 +231,9 @@ async fn scan_unapplied_epochs(
         debug!(%cur_finalized, "epoch not yet applied, queuing for catchup");
         unapplied.push((l1_ref, cur_finalized));
 
-        let summary = ckpt_db
-            .get_epoch_summary_async(cur_finalized)
-            .await?
-            .ok_or_else(|| fin_epoch_err(cur_finalized, "epoch summary"))?;
-
-        let prev_epoch = summary.get_prev_epoch_commitment();
+        let prev_epoch = ctx
+            .get_canonical_epoch_commitment(cur_finalized.epoch().saturating_sub(1))
+            .await?;
 
         cur_finalized = if let Some(e) = prev_epoch { e } else { break };
     }

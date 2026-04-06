@@ -16,6 +16,7 @@ use strata_ol_da::{
     decode_ol_da_payload_bytes, DAExtractor, DaExtractorError, DaExtractorResult, ExtractedDA,
 };
 use strata_ol_state_types::OLState;
+use strata_params::RollupParams;
 use strata_primitives::{EpochCommitment, L1Height, OLBlockCommitment};
 use strata_service::ServiceMonitor;
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
@@ -26,6 +27,12 @@ pub trait CheckpointSyncCtx: Send + Sync {
     /// Getter for chain worker handle reference.
     fn chain_worker(&self) -> &ChainWorkerHandle;
 
+    /// Rollup params.
+    fn rollup_params(&self) -> &RollupParams;
+
+    /// Fetches L1 tip height.
+    fn fetch_l1_tip_height(&self) -> impl Future<Output = anyhow::Result<L1Height>> + Send;
+
     /// Getter for current csm status.
     fn fetch_csm_status(&self) -> impl Future<Output = anyhow::Result<CsmWorkerStatus>> + Send;
 
@@ -35,11 +42,17 @@ pub trait CheckpointSyncCtx: Send + Sync {
         ep: Epoch,
     ) -> impl Future<Output = DbResult<Option<EpochCommitment>>> + Send;
 
+    /// Gets the L1 reference of the epoch commitment if present
+    fn get_checkpoint_l1_ref(
+        &self,
+        epoch: EpochCommitment,
+    ) -> impl Future<Output = DbResult<Option<CheckpointL1Ref>>> + Send;
+
     /// Gets the corresponding epoch summary. If not found, returns error.
     fn get_epoch_summary(
         &self,
         epoch: EpochCommitment,
-    ) -> impl Future<Output = DbResult<EpochSummary>> + Send;
+    ) -> impl Future<Output = DbResult<Option<EpochSummary>>> + Send;
 
     /// Extract da given the extractor.
     fn extract_da_data(
@@ -81,6 +94,8 @@ pub struct CheckpointSyncCtxImpl<E: DAExtractor> {
     da_extractor: E,
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
     status_channel: Arc<StatusChannel>,
+    bitcoin_client: Arc<Client>,
+    rollup_params: RollupParams,
 }
 
 impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
@@ -90,6 +105,8 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
         da_extractor: E,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
         status_channel: Arc<StatusChannel>,
+        bitcoin_client: Arc<Client>,
+        rollup_params: RollupParams,
     ) -> Self {
         Self {
             storage,
@@ -97,6 +114,8 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
             da_extractor,
             csm_monitor,
             status_channel,
+            bitcoin_client,
+            rollup_params,
         }
     }
 }
@@ -104,6 +123,14 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
 impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
     fn chain_worker(&self) -> &ChainWorkerHandle {
         &self.chain_worker
+    }
+
+    fn rollup_params(&self) -> &RollupParams {
+        &self.rollup_params
+    }
+
+    async fn fetch_l1_tip_height(&self) -> anyhow::Result<L1Height> {
+        Ok(self.bitcoin_client.get_blockchain_info().await?.blocks)
     }
 
     async fn fetch_csm_status(&self) -> anyhow::Result<CsmWorkerStatus> {
@@ -117,12 +144,21 @@ impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E
             .await
     }
 
-    async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<EpochSummary> {
+    async fn get_checkpoint_l1_ref(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<CheckpointL1Ref>> {
+        self.storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_async(epoch)
+            .await
+    }
+
+    async fn get_epoch_summary(&self, epoch: EpochCommitment) -> DbResult<Option<EpochSummary>> {
         self.storage
             .ol_checkpoint()
             .get_epoch_summary_async(epoch)
-            .await?
-            .ok_or(DbError::NonExistentEntry)
+            .await
     }
 
     async fn extract_da_data(&self, ckpt_ref: &CheckpointL1Ref) -> anyhow::Result<ExtractedDA> {

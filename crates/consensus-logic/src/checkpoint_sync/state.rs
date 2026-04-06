@@ -1,6 +1,7 @@
 use anyhow::anyhow;
 use strata_chain_worker_new::ApplyDAPayload;
 use strata_csm_types::CheckpointL1Ref;
+use strata_db_types::DbError;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_state_types::OLState;
@@ -9,7 +10,10 @@ use strata_service::ServiceState;
 use strata_status::OLSyncStatus;
 use tracing::{debug, info};
 
-use crate::checkpoint_sync::context::CheckpointSyncCtx;
+use crate::checkpoint_sync::{
+    context::CheckpointSyncCtx,
+    service::{find_and_apply_unapplied_epochs, scan_unapplied_epochs},
+};
 
 #[derive(Debug, Clone)]
 pub struct CheckpointSyncState<C: CheckpointSyncCtx> {
@@ -19,18 +23,18 @@ pub struct CheckpointSyncState<C: CheckpointSyncCtx> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct InnerState {
-    last_finalized_epoch: Option<EpochCommitment>,
+    last_finalized_and_applied: Option<EpochCommitment>,
 }
 
 impl InnerState {
     pub(crate) fn new(last_finalized_epoch: Option<EpochCommitment>) -> Self {
         Self {
-            last_finalized_epoch,
+            last_finalized_and_applied: last_finalized_epoch,
         }
     }
 
     pub(crate) fn last_finalized_epoch(&self) -> Option<EpochCommitment> {
-        self.last_finalized_epoch
+        self.last_finalized_and_applied
     }
 }
 
@@ -43,7 +47,7 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         let csm_status = self.ctx.fetch_csm_status().await?;
         debug!(?csm_status, "Obtained csm status");
         let new_finalized = csm_status.last_finalized_epoch;
-        let new_finalized = match (self.inner.last_finalized_epoch, new_finalized) {
+        let new_finalized = match (self.inner.last_finalized_and_applied, new_finalized) {
             (_, None) => {
                 debug!("no finalized epoch in CSM status, skipping");
                 return Ok(());
@@ -76,13 +80,14 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
         debug!(
             %new_finalized,
             l1_height = l1_ref.block_height(),
-            "applying new finalized checkpoint"
+            "checking previous unapplied and applying new finalized checkpoint"
         );
-        apply_checkpoint(&self.ctx, new_finalized, l1_ref).await?;
+
+        let last_applied = find_and_apply_unapplied_epochs(&self.ctx, new_finalized).await?;
 
         // Update internal state
-        self.inner.last_finalized_epoch = Some(new_finalized);
-        info!(%new_finalized, "checkpoint sync advanced");
+        self.inner.last_finalized_and_applied = last_applied;
+        info!(?last_applied, "checkpoint sync advanced");
 
         Ok(())
     }
@@ -163,7 +168,10 @@ pub(crate) async fn build_ol_sync_status(
     ctx: &impl CheckpointSyncCtx,
     epoch: EpochCommitment,
 ) -> anyhow::Result<OLSyncStatus> {
-    let summary = ctx.get_epoch_summary(epoch).await?;
+    let summary = ctx
+        .get_epoch_summary(epoch)
+        .await?
+        .ok_or(DbError::NonExistentEntry)?;
     let terminal = *summary.terminal();
     let epoch_num = summary.epoch();
     let new_l1 = *summary.new_l1();
