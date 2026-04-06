@@ -114,6 +114,8 @@ struct SnarkDelta {
     base_proof_state: DaProofState,
     final_proof_state: DaProofState,
     inbox: DaLinacc<InboxBuffer>,
+    /// This collects the latest extra data for an account in the epoch. Overridden when new extra
+    /// data appears within the same epoch.
     last_extra_data: Option<U16LenBytes>,
 }
 

@@ -68,7 +68,7 @@ impl RunContext {
         &self.service_handles.chain_worker_handle
     }
 
-    /// Returns the fork choice manager handle (only present on sequencer nodes).
+    /// Returns the fork choice manager handle (not present on checkpoint-sync nodes).
     #[cfg(feature = "sequencer")]
     pub(crate) fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
         self.service_handles
@@ -193,13 +193,28 @@ impl ServiceHandles {
 
 /// Builder for [`ServiceHandles`].
 pub(crate) struct ServiceHandlesBuilder {
+    /// Handle for the ASM worker.
     asm_handle: Arc<AsmWorkerHandle>,
+
+    /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+
+    /// Handle for the mempool.
     mempool_handle: Arc<MempoolHandle>,
+
+    /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
+
+    /// Handle for the checkpoint worker.
     checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
+
+    /// Handle for the FCM service (present in all nodes except checkpoint sync node).
     fcm_handle: Option<Arc<FcmServiceHandle>>,
+
+    /// Monitor for the checkpoint sync service (checkpoint sync only).
     css_monitor: Option<Arc<CssServiceHandle>>,
+
+    /// Handles for sequencer-specific services ([`None`] when not running as sequencer).
     #[cfg(feature = "sequencer")]
     sequencer_handles: Option<SequencerServiceHandles>,
 }

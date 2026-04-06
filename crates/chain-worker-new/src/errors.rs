@@ -2,6 +2,7 @@
 
 use strata_db_types::errors::DbError;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_ol_da::DaError;
 use strata_primitives::epoch::EpochCommitment;
 use thiserror::Error;
 
@@ -48,6 +49,10 @@ pub enum WorkerError {
     /// STF execution error.
     #[error("STF execution failure: {0}")]
     StfExecution(#[from] strata_ol_stf::ExecError),
+
+    /// DA application failed.
+    #[error("DA application failure for epoch {0}: {1}")]
+    DaApplication(EpochCommitment, DaError),
 
     /// Database error.
     #[error("database failure: {0}")]

@@ -396,9 +396,6 @@ impl ChainWorkerServiceState {
         );
 
         // Prepare data for processing epoch initial
-        let outbuf = ExecOutputBuffer::new_empty();
-        let timestamp = terminal_header_complement.timestamp();
-        let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
         let epctx = EpochInitialContext::new(epoch.epoch(), epoch.to_block_commitment());
 
         // Wrap state to collect index data
@@ -407,10 +404,16 @@ impl ChainWorkerServiceState {
         debug!(epoch_num = epoch.epoch(), "processing epoch initial");
         process_epoch_initial(&mut indexer_state, &epctx)?;
 
-        debug!(epoch_num = epoch.epoch(), "applying DA state diff");
-        OLDaSchemeV1::apply_to_state(da, &mut indexer_state).unwrap(); // TODO: fix unwrap
+        debug!(epoch_num = epoch.epoch(), "applying state diff");
+        OLDaSchemeV1::apply_to_state(da, &mut indexer_state)
+            .map_err(|e| WorkerError::DaApplication(epoch, e))?;
 
-        debug!(epoch_num = epoch.epoch(), "processing block manifests");
+        // Prepare data for processing manifests
+        let outbuf = ExecOutputBuffer::new_empty();
+        let timestamp = terminal_header_complement.timestamp();
+        let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
+
+        debug!(epoch_num = epoch.epoch(), "processing ASM manifests");
         let exctx = BasicExecContext::new(blkinfo, &outbuf);
         process_block_manifests(&mut indexer_state, &manifests, &exctx)?;
 
@@ -419,7 +422,7 @@ impl ChainWorkerServiceState {
 
         // Extract summary data before state is moved into storage.
         let new_l1 = L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid());
-        let epoch_final_state = state
+        let epoch_final_state_root = state
             .compute_state_root()
             .map_err(|_| WorkerError::StateRootComputation)?;
 
@@ -437,7 +440,7 @@ impl ChainWorkerServiceState {
             terminal_commitment,
             prev_terminal,
             new_l1,
-            epoch_final_state,
+            epoch_final_state_root,
         );
         debug!(?summary, "storing epoch summary from DA");
         self.ctx.store_summary(summary)?;
@@ -448,7 +451,7 @@ impl ChainWorkerServiceState {
     }
 }
 
-/// Fetch state corresponding to previous terminal block.
+/// Fetch state corresponding to previous epoch.
 fn fetch_prev_state(
     ctx: &ChainWorkerContextImpl,
     epoch: &EpochCommitment,

@@ -91,7 +91,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                     last_new_update_at = ep
                     new_updates_count += 1
 
-                    # Check that with correponding result from strata node
+                    # Check that with corresponding result from strata node
                     node_acct_summary = node_rpc.strata_getAccountEpochSummary(ALPEN_ACCOUNT_ID, ep)
                     assert node_acct_summary == acct_summary, (
                         f"Account summary for epoch {ep} should be same "

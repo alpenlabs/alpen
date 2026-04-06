@@ -118,7 +118,7 @@ async fn initialize_css_inner_state(
     nodectx: &NodeContext,
     ctx: &impl CheckpointSyncCtx,
 ) -> anyhow::Result<InnerState> {
-    // No finalized checkpoint yet — nothing to sync.
+    // Get finalized checkpoint, if none just exit because there's nothing to sync.
     let Some(last_finalized) = nodectx
         .status_channel()
         .get_cur_client_state()

@@ -11,8 +11,7 @@ use strata_status::OLSyncStatus;
 use tracing::{debug, info};
 
 use crate::checkpoint_sync::{
-    context::CheckpointSyncCtx,
-    service::{find_and_apply_unapplied_epochs, scan_unapplied_epochs},
+    context::CheckpointSyncCtx, service::find_and_apply_unapplied_epochs,
 };
 
 #[derive(Debug, Clone)]
