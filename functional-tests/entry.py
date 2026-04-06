@@ -18,8 +18,6 @@ from envs import testenv
 from factory import factory
 from utils import *
 from utils.constants import TEST_DIR, DD_ROOT
-from load.cfg import RethLoadConfigBuilder
-from load.reth import BasicRethBlockJob, BasicRethTxJob
 
 KEEP_ALIVE_TEST_FILE: str = "keepalive_stub_test"
 KEEP_ALIVE_TEST_NAME: str = "KeepAliveEnvMockTest"
@@ -171,12 +169,6 @@ def main(argv):
         "load_generator": load_gen_fac,
     }
 
-    # Let load env have state diff generation exex for benchmarking.
-    reth_load_env = testenv.LoadEnvConfig(110, enable_state_diff_gen=True)
-    reth_load_env.with_load_builder(
-        RethLoadConfigBuilder().with_jobs([BasicRethBlockJob, BasicRethTxJob]).with_rate(30)
-    )
-
     global_envs = {
         # Basic env is the default env for all tests.
         "basic": testenv.BasicEnvConfig(110),
@@ -189,11 +181,8 @@ def main(argv):
             110
         ),  # TODO: Need to generate at least horizon blocks, based on params
         "prover": testenv.BasicEnvConfig(110, rollup_settings=RollupParamsSettings.new_default().strict_mode()),
-        "load_reth": reth_load_env,
         # separate env for running crash_* tests
         "crash": testenv.BasicEnvConfig(110),
-        # Separate env with state diffs exex enabled.
-        "state_diffs": testenv.BasicEnvConfig(110, enable_state_diff_gen=True),
     }
 
     setup_root_logger()

@@ -30,23 +30,6 @@ class RethWaiter(RpcWaiter):
         """
         return int(self.rpc_client.eth_blockNumber(), 16)
 
-    def wait_until_state_diff_at_blockhash(self, blockhash, timeout: None | int = None):
-        return self._wait_until_with_value(
-            lambda: self.rpc_client.strataee_getStateDiffForBlock(blockhash),
-            lambda value: value is not None,
-            error_with="Finding non empty statediff for blockhash {blockhash} timed out",
-            timeout=timeout or self.timeout,
-        )
-
-    def wait_until_block_witness_at_blockhash(self, blockhash, timeout: None | int = None):
-        return self._wait_until_with_value(
-            # TODO: parameterize True
-            lambda: self.rpc_client.strataee_getBlockWitness(blockhash, True),
-            lambda value: value is not None,
-            error_with="Finding non empty witness for blockhash {blockhash} timed out",
-            timeout=timeout or self.timeout,
-        )
-
     def wait_until_tx_included_in_block(self, txid: str):
         def _query():
             try:
