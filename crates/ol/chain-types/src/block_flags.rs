@@ -38,9 +38,7 @@ impl BlockFlags {
     }
 
     pub fn new_non_terminal() -> Self {
-        let mut flags = 0;
-        flags |= !IS_TERMINAL;
-        Self(flags)
+        Self::zero()
     }
 
     /// Assigns the `IS_TERMINAL` flag to some value.
