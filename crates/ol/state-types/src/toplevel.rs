@@ -25,7 +25,7 @@ impl OLState {
         let ledger = TsnlLedgerAccountsTable::from_genesis_account_params(&params.accounts)?;
         let total_ledger_funds = ledger.calculate_total_funds();
 
-        let global = GlobalState::new(params.header.slot);
+        let global = GlobalState::new(params.header.slot, AccountSerial::first_nonreserved());
         let manifests_mmr_offset = params.last_l1_block.height() as u64 + 1;
         let epoch = EpochalState::new(
             total_ledger_funds,
@@ -42,6 +42,14 @@ impl OLState {
         })
     }
 
+    pub fn global_state(&self) -> &GlobalState {
+        &self.global
+    }
+
+    pub fn epoch_state(&self) -> &EpochalState {
+        &self.epoch
+    }
+
     /// Checks that a batch can be applied safely.
     ///
     /// This checks:
@@ -53,7 +61,7 @@ impl OLState {
     /// we're constructing write batches.
     pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountState>) -> AcctResult<()> {
         // Check serial ordering.
-        let mut next_serial = self.ledger.next_avail_serial();
+        let mut next_serial = self.global.get_next_avail_serial();
         for (serial, id) in batch.ledger().iter_new_accounts() {
             let state = batch
                 .ledger()
@@ -88,7 +96,7 @@ impl OLState {
             // At this point we know that if the serial is greater than the
             // current highest serial then it doesn't exist yet, which we've
             // already checked for.
-            if state.serial() >= self.ledger.next_avail_serial() {
+            if state.serial() >= self.global.get_next_avail_serial() {
                 continue;
             }
 
@@ -137,115 +145,29 @@ impl OLState {
 
         Ok(())
     }
-}
 
-impl IStateAccessor for OLState {
-    type AccountState = OLAccountState;
-    type AccountStateMut = OLAccountState;
-
-    // ===== Global state methods =====
-
-    fn cur_slot(&self) -> u64 {
-        self.global.get_cur_slot()
+    #[cfg(test)]
+    pub fn next_account_serial(&self) -> AccountSerial {
+        self.global.get_next_avail_serial()
     }
 
-    fn set_cur_slot(&mut self, slot: u64) {
-        self.global.set_cur_slot(slot);
+    #[cfg(test)]
+    #[deprecated(note = "use `next_account_serial`")]
+    pub fn next_avail_serial(&self) -> AccountSerial {
+        self.next_account_serial()
     }
 
-    // ===== Epochal state methods =====
-
-    fn cur_epoch(&self) -> u32 {
-        self.epoch.cur_epoch()
+    #[cfg(test)]
+    pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
+        self.ledger.get_account_state(id)
     }
 
-    fn set_cur_epoch(&mut self, epoch: u32) {
-        self.epoch.set_cur_epoch(epoch);
-    }
-
-    fn last_l1_blkid(&self) -> &L1BlockId {
-        self.epoch.last_l1_blkid()
-    }
-
-    fn last_l1_height(&self) -> L1Height {
-        self.epoch.last_l1_height()
-    }
-
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        self.epoch.append_manifest(height, mf);
-    }
-
-    fn asm_recorded_epoch(&self) -> &EpochCommitment {
-        self.epoch.asm_recorded_epoch()
-    }
-
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.epoch.set_asm_recorded_epoch(epoch);
-    }
-
-    fn total_ledger_balance(&self) -> BitcoinAmount {
-        self.epoch.total_ledger_balance()
-    }
-
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.epoch.set_total_ledger_balance(amt);
-    }
-
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.epoch.asm_manifests_mmr()
-    }
-
-    // ===== Account methods =====
-
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
-        Ok(self.ledger.get_account_state(&id).is_some())
-    }
-
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
-        Ok(self.ledger.get_account_state(&id))
-    }
-
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
-    where
-        F: FnOnce(&mut Self::AccountStateMut) -> R,
-    {
-        let acct = self
-            .ledger
-            .get_account_state_mut(&id)
-            .ok_or(AcctError::MissingExpectedAccount(id))?;
-        Ok(f(acct))
-    }
-
-    fn create_new_account(
-        &mut self,
-        id: AccountId,
-        new_acct_data: NewAccountData<Self::AccountState>,
-    ) -> AcctResult<AccountSerial> {
-        let serial = self.ledger.next_avail_serial();
-        let account = OLAccountState::new_with_serial(new_acct_data, serial);
-        self.ledger.create_account(id, account)
-    }
-
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
-        Ok(self.ledger.get_serial_acct_id(serial).copied())
-    }
-
-    fn next_account_serial(&self) -> AccountSerial {
-        self.ledger.next_avail_serial()
-    }
-
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // Compute the state root by hashing the SSZ encoding of the state
-        let encoded = self.as_ssz_bytes();
-        let hash = raw(&encoded);
-        Ok(hash)
-    }
-}
-
-impl IStateBatchApplicable for OLState {
-    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
-        // Delegate to the inherent method
-        OLState::apply_write_batch(self, batch)
+    #[cfg(test)]
+    pub fn check_account_exists(&self, id: &AccountId) -> Result<(), AcctError> {
+        self.ledger
+            .get_account_state(id)
+            .map(|_| ())
+            .ok_or(AcctError::MissingExpectedAccount(*id))
     }
 }
 
@@ -274,7 +196,7 @@ mod tests {
 
         state.apply_write_batch(batch).unwrap();
 
-        assert_eq!(state.cur_slot(), 42);
+        assert_eq!(state.global.cur_slot, 42);
     }
 
     #[test]
@@ -287,7 +209,7 @@ mod tests {
 
         state.apply_write_batch(batch).unwrap();
 
-        assert_eq!(state.cur_epoch(), 5);
+        assert_eq!(state.epoch.cur_epoch, 5);
     }
 
     #[test]
@@ -303,6 +225,7 @@ mod tests {
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
         );
+
         let serial = state.next_account_serial();
         batch
             .ledger_mut()
@@ -312,8 +235,8 @@ mod tests {
         state.apply_write_batch(batch).unwrap();
 
         // Verify account exists and has correct balance.
-        assert!(state.check_account_exists(account_id).unwrap());
-        let account = state.get_account_state(account_id).unwrap().unwrap();
+        assert!(state.get_account_state(&account_id).is_some());
+        let account = state.get_account_state(&account_id).unwrap();
         assert_eq!(account.balance(), BitcoinAmount::from_sat(1000));
         assert_eq!(account.serial(), serial);
     }
@@ -322,6 +245,7 @@ mod tests {
     fn test_apply_batch_updates_existing_account() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(1);
+        let serial = AccountSerial::first_nonreserved();
 
         // Create an account directly in state.
         let snark_state =
@@ -330,7 +254,10 @@ mod tests {
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
         );
-        let serial = state.create_new_account(account_id, new_acct).unwrap();
+        state
+            .ledger
+            .create_new_account(account_id, serial, new_acct)
+            .unwrap();
 
         // Create a batch that updates the account.
         let mut batch = WriteBatch::new_from_state(&state);
@@ -349,7 +276,7 @@ mod tests {
         state.apply_write_batch(batch).unwrap();
 
         // Verify account was updated.
-        let account = state.get_account_state(account_id).unwrap().unwrap();
+        let account = state.get_account_state(&account_id).unwrap();
         assert_eq!(account.balance(), BitcoinAmount::from_sat(2000));
     }
 
@@ -394,15 +321,15 @@ mod tests {
         state.apply_write_batch(batch).unwrap();
 
         // Verify all changes applied.
-        assert_eq!(state.cur_slot(), 100);
-        assert_eq!(state.cur_epoch(), 10);
-        assert!(state.check_account_exists(account_id_1).unwrap());
-        assert!(state.check_account_exists(account_id_2).unwrap());
+        assert_eq!(state.global.cur_slot, 100);
+        assert_eq!(state.epoch.cur_epoch, 10);
+        assert!(state.get_account_state(&account_id_1).is_some());
+        assert!(state.get_account_state(&account_id_2).is_some());
 
-        let account_1 = state.get_account_state(account_id_1).unwrap().unwrap();
+        let account_1 = state.get_account_state(&account_id_1).unwrap();
         assert_eq!(account_1.balance(), BitcoinAmount::from_sat(1000));
 
-        let account_2 = state.get_account_state(account_id_2).unwrap().unwrap();
+        let account_2 = state.get_account_state(&account_id_2).unwrap();
         assert_eq!(account_2.balance(), BitcoinAmount::from_sat(2000));
     }
 
@@ -412,6 +339,7 @@ mod tests {
 
         let mut state = create_test_genesis_state();
         let existing_id = test_account_id(1);
+        let existing_serial = AccountSerial::first_nonreserved();
         let new_id = test_account_id(2);
 
         // Create an existing account in state first.
@@ -421,7 +349,10 @@ mod tests {
             BitcoinAmount::from_sat(1000),
             AccountTypeState::Snark(snark_state),
         );
-        let existing_serial = state.create_new_account(existing_id, new_acct).unwrap();
+        state
+            .ledger
+            .create_new_account(existing_id, existing_serial, new_acct)
+            .expect("test: create_new_account");
 
         // Create a batch that both updates existing and creates new.
         let mut batch = WriteBatch::new_from_state(&state);
@@ -454,13 +385,12 @@ mod tests {
         state.apply_write_batch(batch).unwrap();
 
         // Verify existing account was updated.
-        let existing_account = state.get_account_state(existing_id).unwrap().unwrap();
+        let existing_account = state.get_account_state(&existing_id).unwrap();
         assert_eq!(existing_account.balance(), BitcoinAmount::from_sat(5000));
         assert_eq!(existing_account.serial(), existing_serial);
 
         // Verify new account was created.
-        assert!(state.check_account_exists(new_id).unwrap());
-        let new_account = state.get_account_state(new_id).unwrap().unwrap();
+        let new_account = state.get_account_state(&new_id).unwrap();
         assert_eq!(new_account.balance(), BitcoinAmount::from_sat(3000));
         assert_eq!(new_account.serial(), new_serial);
     }

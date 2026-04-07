@@ -12,7 +12,7 @@ use strata_ledger_types::{
 };
 
 use crate::{
-    SerialMap,
+    OLState, SerialMap,
     ssz_generated::ssz::state::{EpochalState, GlobalState},
 };
 
@@ -40,23 +40,8 @@ impl<A> WriteBatch<A> {
     /// Creates a new write batch by extracting state from a state accessor.
     ///
     /// This initializes the global and epochal state from the accessor's current values.
-    pub fn new_from_state<S>(state: &S) -> Self
-    where
-        S: IStateAccessor<AccountState = A>,
-    {
-        // TODO provide accessors/constructors to simplify this
-        let global = GlobalState::new(state.cur_slot());
-        let manifests_mmr_start_height = asm_manifests_mmr_start_height(state)
-            .expect("state: invalid manifests MMR start height derivation");
-        let epochal = EpochalState::new(
-            state.total_ledger_balance(),
-            state.cur_epoch(),
-            L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid()),
-            *state.asm_recorded_epoch(),
-            state.asm_manifests_mmr().clone(),
-            manifests_mmr_start_height as u64,
-        );
-        WriteBatch::new(global, epochal)
+    pub fn new_from_state(state: &OLState) -> Self {
+        WriteBatch::new(state.global.clone(), state.epoch.clone())
     }
 
     /// Returns a reference to the global state in this batch.
