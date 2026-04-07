@@ -1,6 +1,6 @@
 //! Sled-backed account genesis database implementation.
 
-use strata_db_types::{DbError, DbResult, traits::AccountDatabase, types::AccountExtraDataEntry};
+use strata_db_types::{DbResult, traits::AccountDatabase, types::AccountExtraDataEntry};
 use strata_identifiers::{AccountId, Epoch};
 use strata_primitives::nonempty_vec::NonEmptyVec;
 
@@ -16,11 +16,7 @@ define_sled_database!(
 
 impl AccountDatabase for AccountGenesisDBSled {
     fn insert_account_creation_epoch(&self, account_id: AccountId, epoch: Epoch) -> DbResult<()> {
-        if self.genesis_tree.get(&account_id)?.is_some() {
-            return Err(DbError::EntryAlreadyExists);
-        }
-        self.genesis_tree
-            .compare_and_swap(account_id, None, Some(epoch))?;
+        self.genesis_tree.insert(&account_id, &epoch)?;
         Ok(())
     }
 
