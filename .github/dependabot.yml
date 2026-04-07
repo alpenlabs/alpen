@@ -243,3 +243,16 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+
+  # Nix flake
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 14
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
