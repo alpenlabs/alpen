@@ -150,14 +150,14 @@ impl ChainWorkerServiceState {
     }
 
     /// Tries to execute a block using the new OL STF.
+    #[instrument(skip(self), fields(slot = block_commitment.slot(), %block_commitment))]
     pub(crate) fn try_exec_block(
         &mut self,
         block_commitment: &OLBlockCommitment,
     ) -> WorkerResult<()> {
         self.check_initialized()?;
 
-        let blkid = block_commitment.blkid();
-        debug!(%blkid, "Trying to execute block");
+        debug!("trying to execute block");
 
         // Fetch block and parent context
         let (block, parent_header, parent_commitment) =
@@ -171,7 +171,10 @@ impl ChainWorkerServiceState {
         self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
 
         // Handle epoch terminal if needed
-        debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
+        debug!(
+            is_terminal = block.header().is_terminal(),
+            "checking if block is terminal"
+        );
         if block.header().is_terminal() {
             self.handle_complete_epoch(&block, &output)?;
             // Send the epoch commitment to receiver
@@ -303,6 +306,7 @@ impl ChainWorkerServiceState {
 
     /// Takes the block and post-state and inserts database entries to reflect
     /// the epoch being finished on-chain.
+    #[instrument(skip_all, fields(epoch = block.header().epoch(), slot = block.header().slot()))]
     fn handle_complete_epoch(
         &mut self,
         block: &OLBlock,
@@ -362,6 +366,7 @@ impl ChainWorkerServiceState {
         Ok(())
     }
 
+    #[instrument(skip(self, da_payload), fields(epoch_num = da_payload.epoch.epoch(), last_slot = da_payload.epoch.last_slot))]
     pub(crate) fn apply_da(&self, da_payload: ApplyDAPayload) -> WorkerResult<()> {
         let ApplyDAPayload {
             da_payload: da,
@@ -370,11 +375,7 @@ impl ChainWorkerServiceState {
             terminal_header_complement,
         } = da_payload;
 
-        info!(
-            epoch_num = epoch.epoch(),
-            last_slot = epoch.last_slot,
-            "applying DA for epoch"
-        );
+        info!("applying DA for epoch");
 
         // Fetch previous state
         let (state, prev_terminal) = fetch_prev_state(&self.ctx, &epoch)?;
@@ -390,7 +391,6 @@ impl ChainWorkerServiceState {
             .collect();
 
         debug!(
-            epoch_num = epoch.epoch(),
             new_accounts = new_account_ids.len(),
             "extracted new account IDs from DA payload"
         );
@@ -401,10 +401,10 @@ impl ChainWorkerServiceState {
         // Wrap state to collect index data
         let mut indexer_state = IndexerState::new(state);
 
-        debug!(epoch_num = epoch.epoch(), "processing epoch initial");
+        debug!("processing epoch initial");
         process_epoch_initial(&mut indexer_state, &epctx)?;
 
-        debug!(epoch_num = epoch.epoch(), "applying state diff");
+        debug!("applying state diff");
         OLDaSchemeV1::apply_to_state(da, &mut indexer_state)
             .map_err(|e| WorkerError::DaApplication(epoch, e))?;
 
@@ -413,7 +413,7 @@ impl ChainWorkerServiceState {
         let timestamp = terminal_header_complement.timestamp();
         let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
 
-        debug!(epoch_num = epoch.epoch(), "processing ASM manifests");
+        debug!("processing ASM manifests");
         let exctx = BasicExecContext::new(blkinfo, &outbuf);
         process_block_manifests(&mut indexer_state, &manifests, &exctx)?;
 
@@ -426,7 +426,7 @@ impl ChainWorkerServiceState {
             .compute_state_root()
             .map_err(|_| WorkerError::StateRootComputation)?;
 
-        debug!(epoch_num = epoch.epoch(), "persisting DA output to storage");
+        debug!("persisting DA output to storage");
         self.ctx.store_da_output(
             terminal_commitment,
             epoch.epoch(),
@@ -445,13 +445,14 @@ impl ChainWorkerServiceState {
         debug!(?summary, "storing epoch summary from DA");
         self.ctx.store_summary(summary)?;
 
-        info!(epoch_num = epoch.epoch(), "DA applied successfully");
+        info!("DA applied successfully");
 
         Ok(())
     }
 }
 
 /// Fetch state corresponding to previous epoch.
+#[instrument(skip(ctx), fields(epoch_num = epoch.epoch()))]
 fn fetch_prev_state(
     ctx: &ChainWorkerContextImpl,
     epoch: &EpochCommitment,
@@ -460,11 +461,7 @@ fn fetch_prev_state(
         .fetch_canonical_epoch_summary_at(epoch.epoch().saturating_sub(1))?
         .ok_or(WorkerError::MissingEpochSummary(*epoch))?;
     let prev_terminal = *prev_summary.terminal();
-    debug!(
-        epoch_num = epoch.epoch(),
-        ?prev_terminal,
-        "fetching previous terminal state"
-    );
+    debug!(?prev_terminal, "fetching previous terminal state");
     let st = ctx
         .fetch_ol_state(prev_terminal)?
         .ok_or(WorkerError::MissingPreState(prev_terminal))?;
