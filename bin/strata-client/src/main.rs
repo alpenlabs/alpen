@@ -12,7 +12,7 @@ use jsonrpsee::{server, Methods};
 use rpc_client::sync_client;
 use strata_asm_params::AsmParams;
 use strata_btcio::{
-    broadcaster::{spawn_broadcaster_task, L1BroadcastHandle},
+    broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
     reader::query::bitcoin_data_reader_task,
     writer::start_envelope_task,
     BtcioParams,
@@ -150,7 +150,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
             ctx.bitcoin_client.clone(),
             btcio_params,
             config.btcio.broadcaster.poll_interval_ms,
-        );
+        )?;
         let writer_db = DatabaseBackend::writer_db(database.as_ref());
 
         // TODO: split writer tasks from this
@@ -490,19 +490,17 @@ fn start_broadcaster_tasks(
     bitcoin_client: Arc<Client>,
     btcio_params: BtcioParams,
     broadcast_poll_interval: u64,
-) -> Arc<L1BroadcastHandle> {
+) -> anyhow::Result<Arc<L1BroadcastHandle>> {
     // Set up L1 broadcaster.
     let broadcast_ctx = l1tx_broadcast::Context::new(broadcast_database.clone());
     let broadcast_ops = Arc::new(broadcast_ctx.into_ops(pool));
-    // start broadcast task
-    let broadcast_handle = spawn_broadcaster_task(
-        executor,
-        bitcoin_client.clone(),
-        broadcast_ops,
-        btcio_params,
-        broadcast_poll_interval,
-    );
-    Arc::new(broadcast_handle)
+    let broadcast_handle = executor.handle().block_on(async {
+        BroadcasterBuilder::new(bitcoin_client, broadcast_ops, btcio_params)
+            .with_broadcast_poll_interval_ms(broadcast_poll_interval)
+            .launch(executor)
+            .await
+    })?;
+    Ok(Arc::new(broadcast_handle))
 }
 
 // FIXME this shouldn't take ownership of `CoreContext`

@@ -56,6 +56,7 @@ pub struct TestBitcoinClient {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendRawTransactionMode {
     Success,
+    AlreadyInMempool,
     MissingOrInvalidInput,
     InvalidParameter,
     HttpInternalServerError,
@@ -248,6 +249,10 @@ impl Broadcaster for TestBitcoinClient {
     async fn send_raw_transaction(&self, _tx: &Transaction) -> ClientResult<Txid> {
         match self.send_raw_transaction_mode {
             SendRawTransactionMode::Success => Ok(Txid::from_slice(&[1u8; 32]).unwrap()),
+            SendRawTransactionMode::AlreadyInMempool => Err(ClientError::Server(
+                -25,
+                "txn-already-in-mempool".to_string(),
+            )),
             SendRawTransactionMode::MissingOrInvalidInput => Err(ClientError::Server(
                 -26,
                 "missing or invalid input".to_string(),
