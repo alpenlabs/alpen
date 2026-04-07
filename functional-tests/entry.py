@@ -181,8 +181,9 @@ def main(argv):
             110
         ),  # TODO: Need to generate at least horizon blocks, based on params
         "prover": testenv.BasicEnvConfig(110, rollup_settings=RollupParamsSettings.new_default().strict_mode()),
-        # separate env for running crash_* tests
-        "crash": testenv.BasicEnvConfig(110),
+        # crash tests migrated to functional-tests-new/tests/strata/
+        # Separate env with state diffs exex enabled.
+        "state_diffs": testenv.BasicEnvConfig(110, enable_state_diff_gen=True),
     }
 
     setup_root_logger()

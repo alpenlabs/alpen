@@ -265,6 +265,15 @@ def main(argv: list[str]) -> int:
     }
 
     # Define global environments
+    #
+    # NOTE: "basic" is shared across every test that names it. flexitest
+    # reuses the same running services between those tests, so any test that
+    # restarts strata, mutates the bitcoin chain (invalidateblock,
+    # generatetoaddress), or depends on the L1 reader being caught up to a
+    # specific height MUST use a standalone env via
+    # `StrataEnvConfig(pre_generate_blocks=...)` instead. See
+    # tests/btcio/test_l1_connected.py and crash tests in tests/strata/ for
+    # examples and rationale.
     global_envs: dict[str, flexitest.EnvConfig] = {
         "basic": StrataEnvConfig(pre_generate_blocks=110),
         "checkpoint": StrataEnvConfig(

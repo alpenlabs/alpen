@@ -140,3 +140,21 @@ class RpcService(flexitest.service.ProcService):
             timeout=timeout,
             step=interval,
         )
+
+    def wait_for_down(self, timeout: int = 30, interval: float = 0.5) -> None:
+        """
+        Wait until the service process has exited.
+
+        Args:
+            timeout: Maximum time to wait in seconds
+            interval: Time between checks in seconds
+
+        Raises:
+            AssertionError: If service doesn't stop within timeout
+        """
+        wait_until(
+            lambda: not self.check_status(),
+            error_with=f"Service '{self._name}' did not stop within {timeout}s",
+            timeout=timeout,
+            step=interval,
+        )

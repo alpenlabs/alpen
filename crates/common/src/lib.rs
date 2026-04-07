@@ -3,8 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod bail_tags;
 pub mod logging;
 pub mod retry;
+
+pub use bail_tags::*;
 
 #[cfg(feature = "debug-utils")]
 mod bail_manager;
