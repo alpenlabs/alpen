@@ -226,6 +226,43 @@ class StrataService(RpcService):
         )
         return self.get_cur_block_height(rpc)
 
+    def wait_for_l1_commitment_at(
+        self,
+        height: int,
+        rpc: JsonRpcClient | None = None,
+        timeout: int = 60,
+        poll_interval: float = 0.5,
+        differs_from: object | None = None,
+    ) -> object:
+        """Wait for an L1 header commitment at a given height.
+
+        Args:
+            height: L1 block height to check.
+            rpc: Optional RPC client. If None, creates a new one.
+            timeout: Maximum time to wait in seconds.
+            poll_interval: How often to poll.
+            differs_from: If set, also require the commitment to differ
+                from this value (useful for reorg detection).
+
+        Returns:
+            The L1 header commitment value.
+        """
+        if rpc is None:
+            rpc = self.create_rpc()
+
+        def predicate(v):
+            if v is None:
+                return False
+            return differs_from is None or v != differs_from
+
+        return wait_until_with_value(
+            lambda: rpc.strata_getL1HeaderCommitment(height),
+            predicate,
+            error_with=f"No L1 header commitment at height {height}",
+            timeout=timeout,
+            step=poll_interval,
+        )
+
     def check_block_generation_in_range(self, rpc: JsonRpcClient, start: int, end: int) -> int:
         """Checks for range of blocks produced and returns current block height"""
         logger.info(f"Waiting for blocks from {start} to {end} be produced...")
