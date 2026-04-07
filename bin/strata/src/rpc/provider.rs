@@ -11,30 +11,36 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{DbError, DbResult, MmrId};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
-use strata_ol_mempool::{MempoolHandle, OLMempoolResult};
+#[cfg(feature = "sequencer")]
+use strata_ol_mempool::MempoolHandle;
+use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_rpc_types::{AccountExtraData, OLRpcProvider};
 use strata_ol_state_types::OLState;
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
 use strata_storage::NodeStorage;
 
-/// Production provider that delegates to [`NodeStorage`], [`StatusChannel`],
-/// and [`MempoolHandle`].
+/// Production provider that delegates to [`NodeStorage`] and [`StatusChannel`].
+///
+/// When the `sequencer` feature is enabled, also holds an optional
+/// [`MempoolHandle`] for transaction submission.
 pub(crate) struct NodeRpcProvider {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    mempool_handle: Arc<MempoolHandle>,
+    #[cfg(feature = "sequencer")]
+    mempool_handle: Option<Arc<MempoolHandle>>,
 }
 
 impl NodeRpcProvider {
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
-        mempool_handle: Arc<MempoolHandle>,
+        #[cfg(feature = "sequencer")] mempool_handle: Option<Arc<MempoolHandle>>,
     ) -> Self {
         Self {
             storage,
             status_channel,
+            #[cfg(feature = "sequencer")]
             mempool_handle,
         }
     }
@@ -157,7 +163,17 @@ impl OLRpcProvider for NodeRpcProvider {
         Some(self.status_channel.get_l1_status().cur_height)
     }
 
+    #[cfg(feature = "sequencer")]
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
-        self.mempool_handle.submit_transaction(tx).await
+        let handle = self
+            .mempool_handle
+            .as_ref()
+            .ok_or_else(|| OLMempoolError::ServiceClosed("not a sequencer node".into()))?;
+        handle.submit_transaction(tx).await
+    }
+
+    #[cfg(not(feature = "sequencer"))]
+    async fn submit_transaction(&self, _tx: OLTransaction) -> OLMempoolResult<OLTxId> {
+        Err(OLMempoolError::ServiceClosed("not a sequencer node".into()))
     }
 }

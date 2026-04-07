@@ -318,12 +318,11 @@ impl EpochDaAccumulator {
         }
 
         // Capture the last extra_data from snark state updates for DA encoding.
-        if let Some(snark_delta) = delta.snark.as_mut() {
-            if let Some(last_update) = writes.snark_state_updates().last() {
-                if let Some(data) = last_update.extra_data() {
-                    snark_delta.last_extra_data = Some(U16LenBytes::new(data.to_vec()));
-                }
-            }
+        if let Some(snark_delta) = delta.snark.as_mut()
+            && let Some(last_update) = writes.snark_state_updates().last()
+            && let Some(data) = last_update.extra_data()
+        {
+            snark_delta.last_extra_data = Some(U16LenBytes::new(data.to_vec()));
         }
 
         Ok(())

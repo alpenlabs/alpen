@@ -13,7 +13,7 @@ use strata_consensus_logic::{
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_node_context::NodeContext;
-use strata_ol_checkpoint::OLCheckpointBuilder;
+#[cfg(feature = "sequencer")]
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
 
@@ -38,31 +38,48 @@ mod sequencer_services {
     use strata_ol_block_assembly::{
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
+    use strata_ol_checkpoint::OLCheckpointBuilder;
     use strata_ol_mempool::MempoolHandle;
+    use strata_primitives::EpochCommitment;
     use strata_storage::ops::l1tx_broadcast;
+    use tokio::sync::watch;
 
     use crate::{
         helpers::generate_sequencer_address,
         run_context::{SequencerServiceHandles, ServiceHandlesBuilder},
+        services::start_mempool,
     };
 
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
-        mempool_handle: Arc<MempoolHandle>,
+        epoch_summary_rx: watch::Receiver<Option<EpochCommitment>>,
         sequencer_sk: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
         }
 
+        // Start mempool service
+        let mempool_handle = Arc::new(start_mempool(nodectx)?);
+
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
         let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), sequencer_sk)?;
-        let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
+        let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle.clone())?);
+
+        // Start checkpoint service
+        let checkpoint_handle = Arc::new(
+            OLCheckpointBuilder::new()
+                .with_node_context(nodectx)
+                .with_epoch_summary_receiver(epoch_summary_rx)
+                .launch(nodectx.executor())?,
+        );
 
         Ok(Some(SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
+            mempool_handle,
+            checkpoint_handle,
         )))
     }
 
@@ -166,17 +183,16 @@ mod sequencer_services {
 
 #[cfg(not(feature = "sequencer"))]
 mod sequencer_services {
-    use std::sync::Arc;
-
     use anyhow::Result;
     use strata_node_context::NodeContext;
-    use strata_ol_mempool::MempoolHandle;
+    use strata_primitives::EpochCommitment;
+    use tokio::sync::watch;
 
     use crate::run_context::ServiceHandlesBuilder;
 
     pub(super) fn start_if_enabled(
         _: &NodeContext,
-        _: Arc<MempoolHandle>,
+        _: watch::Receiver<Option<EpochCommitment>>,
         _: Option<[u8; 32]>,
     ) -> Result<()> {
         Ok(())
@@ -223,9 +239,6 @@ pub(crate) fn start_strata_services(
         init_ol_sync_status(&nodectx, genesis_commitment);
     }
 
-    // Start mempool service
-    let mempool_handle = Arc::new(start_mempool(&nodectx)?);
-
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
 
@@ -268,17 +281,12 @@ pub(crate) fn start_strata_services(
     let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
 
     let sequencer_handles =
-        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), sequencer_sk)?;
+        sequencer_services::start_if_enabled(&nodectx, epoch_summary_rx, sequencer_sk)?;
 
     let is_sequencer = nodectx.config().client.is_sequencer;
 
-    let mut service_handles_builder = ServiceHandles::builder(
-        asm_handle,
-        csm_monitor.clone(),
-        mempool_handle,
-        chain_worker_handle.clone(),
-        checkpoint_handle,
-    );
+    let mut service_handles_builder =
+        ServiceHandles::builder(asm_handle, csm_monitor.clone(), chain_worker_handle.clone());
 
     if is_sequencer {
         let fcm_ctx = FcmContext::from_node_ctx(&nodectx, chain_worker_handle, csm_monitor);
@@ -330,6 +338,7 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
 }
 
 /// Starts the mempool service.
+#[cfg(feature = "sequencer")]
 fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
     let config = OLMempoolConfig::default();
 

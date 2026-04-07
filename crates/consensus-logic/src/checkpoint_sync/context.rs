@@ -9,7 +9,7 @@ use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_worker::CsmWorkerStatus;
-use strata_db_types::{DbError, DbResult};
+use strata_db_types::DbResult;
 use strata_identifiers::{CheckpointL1Ref, Epoch};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_da::{

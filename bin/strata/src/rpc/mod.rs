@@ -19,6 +19,7 @@ use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
 use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
+#[cfg(feature = "sequencer")]
 use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
@@ -39,7 +40,6 @@ struct RpcDeps {
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    mempool_handle: Arc<MempoolHandle>,
     #[cfg(feature = "sequencer")]
     seq_deps: Option<SeqRpcDeps>,
 }
@@ -52,15 +52,23 @@ struct SeqRpcDeps {
 
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
+
+    /// Mempool Handle.
+    mempool_handle: Arc<MempoolHandle>,
 }
 
 #[cfg(feature = "sequencer")]
 impl SeqRpcDeps {
     /// Creates a new [`SeqRpcDeps`] instance.
-    fn new(envelope_handle: Arc<EnvelopeHandle>, blockasm_handle: Arc<BlockasmHandle>) -> Self {
+    fn new(
+        envelope_handle: Arc<EnvelopeHandle>,
+        blockasm_handle: Arc<BlockasmHandle>,
+        mempool_handle: Arc<MempoolHandle>,
+    ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
+            mempool_handle,
         }
     }
 
@@ -83,6 +91,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
+            handles.mempool_handle().clone(),
         )
     });
 
@@ -93,7 +102,6 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
-        mempool_handle: runctx.mempool_handle().clone(),
         #[cfg(feature = "sequencer")]
         seq_deps,
     };
@@ -128,12 +136,16 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
             Ok::<Vec<&'static str>, ErrorObjectOwned>(KNOWN_BAIL_TAGS.to_vec())
         });
     }
+    // Extract mempool handle from sequencer deps (if available).
+    #[cfg(feature = "sequencer")]
+    let mempool_handle = deps.seq_deps.as_ref().map(|sd| sd.mempool_handle.clone());
 
     // Create and register OL client RPC server
     let client_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
-        deps.mempool_handle.clone(),
+        #[cfg(feature = "sequencer")]
+        mempool_handle.clone(),
     );
     let ol_rpc_server = OLRpcServer::new(
         client_provider,
@@ -149,7 +161,8 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     let fullnode_provider = NodeRpcProvider::new(
         deps.storage.clone(),
         deps.status_channel.clone(),
-        deps.mempool_handle.clone(),
+        #[cfg(feature = "sequencer")]
+        mempool_handle,
     );
     let ol_fullnode_listener = OLRpcServer::new(
         fullnode_provider,

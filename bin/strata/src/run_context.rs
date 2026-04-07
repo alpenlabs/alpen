@@ -13,7 +13,9 @@ use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::{CommonContext, NodeContext};
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
+#[cfg(feature = "sequencer")]
 use strata_ol_checkpoint::OLCheckpointWorkerHandle;
+#[cfg(feature = "sequencer")]
 use strata_ol_mempool::MempoolHandle;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
@@ -111,6 +113,12 @@ pub(crate) struct SequencerServiceHandles {
 
     /// Handle for the block assembly service.
     blockasm_handle: Arc<BlockasmHandle>,
+
+    /// Handle for the mempool.
+    mempool_handle: Arc<MempoolHandle>,
+
+    /// Handle for the checkpoint worker.
+    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
 }
 
 #[cfg(feature = "sequencer")]
@@ -120,11 +128,15 @@ impl SequencerServiceHandles {
         broadcast_handle: Arc<L1BroadcastHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
+        mempool_handle: Arc<MempoolHandle>,
+        checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
     ) -> Self {
         Self {
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
+            mempool_handle,
+            checkpoint_handle,
         }
     }
 
@@ -137,6 +149,15 @@ impl SequencerServiceHandles {
     pub(crate) fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
         &self.blockasm_handle
     }
+
+    pub(crate) fn mempool_handle(&self) -> &Arc<MempoolHandle> {
+        &self.mempool_handle
+    }
+
+    #[expect(dead_code, reason = "will be used")]
+    pub(crate) fn checkpoint_handle(&self) -> &Arc<OLCheckpointWorkerHandle> {
+        &self.checkpoint_handle
+    }
 }
 
 /// Handles for all services.
@@ -148,14 +169,8 @@ pub(crate) struct ServiceHandles {
     /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
 
-    /// Handle for the mempool.
-    mempool_handle: Arc<MempoolHandle>,
-
     /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
-
-    /// Handle for the checkpoint worker.
-    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
 
     /// Handle for the FCM service (present in all nodes except checkpoint sync node).
     fcm_handle: Option<Arc<FcmServiceHandle>>,
@@ -173,16 +188,12 @@ impl ServiceHandles {
     pub(crate) fn builder(
         asm_handle: Arc<AsmWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-        mempool_handle: Arc<MempoolHandle>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
-        checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
     ) -> ServiceHandlesBuilder {
         ServiceHandlesBuilder {
             asm_handle,
             csm_monitor,
-            mempool_handle,
             chain_worker_handle,
-            checkpoint_handle,
             fcm_handle: None,
             css_monitor: None,
             #[cfg(feature = "sequencer")]
@@ -199,14 +210,8 @@ pub(crate) struct ServiceHandlesBuilder {
     /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
 
-    /// Handle for the mempool.
-    mempool_handle: Arc<MempoolHandle>,
-
     /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
-
-    /// Handle for the checkpoint worker.
-    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
 
     /// Handle for the FCM service (present in all nodes except checkpoint sync node).
     fcm_handle: Option<Arc<FcmServiceHandle>>,
@@ -243,9 +248,7 @@ impl ServiceHandlesBuilder {
         ServiceHandles {
             asm_handle: self.asm_handle,
             csm_monitor: self.csm_monitor,
-            mempool_handle: self.mempool_handle,
             chain_worker_handle: self.chain_worker_handle,
-            checkpoint_handle: self.checkpoint_handle,
             fcm_handle: self.fcm_handle,
             css_monitor: self.css_monitor,
             #[cfg(feature = "sequencer")]
