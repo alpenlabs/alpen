@@ -631,31 +631,9 @@ uv run python entry.py
 If the functional tests fail, you can find the logs in the `_dd` directory inside the functional tests directory.
 The datadir will be the outputted by the test framework and will be named after the test run.
 
-### Functional Tests (Legacy)
-
-Located in `functional-tests/`. Uses `uv` for dependency management.
-
-```bash
-cd functional-tests
-
-# Run specific test
-./run_test.sh -t bridge/bridge_deposit_happy.py
-
-# Run test group
-./run_test.sh -g bridge
-
-# Start test environment
-./run_test.sh -e basic
-```
-
-If the functional tests fail, you can find the logs in the `_dd` directory inside the functional tests directory.
-The datadir will be the outputted by the test framework and will be named after the test run.
-
 ### Prover Tests
 
-```bash
-PROVER_TEST=1 cd functional-tests && ./run_test.sh -g prover
-```
+Prover functional tests are being migrated as the prover submodule architecture stabilizes.
 
 ## Configuration
 

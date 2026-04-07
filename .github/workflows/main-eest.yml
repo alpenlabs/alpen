@@ -57,10 +57,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b # v7.3.0
         with:
-          working-directory: functional-tests
+          working-directory: functional-tests-new
           activate-environment: true
           enable-cache: true
-          cache-suffix: "functional-tests"
+          cache-suffix: "functional-tests-new"
 
       - name: Set up Rust
         env:
@@ -75,7 +75,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build Cargo project
-        run: cargo build --locked -F debug-utils
+        run: cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-datatool --bin strata-test-cli
 
       - name: Run basic env in fntests
         env:
@@ -85,10 +85,10 @@ jobs:
           sudo apt-get install -y screen
           NEWPATH="$(realpath target/debug/)"
           export PATH="${NEWPATH}:${PATH}"
-          which strata-client
-          cd functional-tests
-          screen -dmS basic_env uv run python entry.py -e basic
-          sleep 15  # Wait for the service to start
+          which strata
+          cd functional-tests-new
+          screen -dmS basic_env uv run python entry.py --keep-alive basic
+          sleep 20  # Wait for the service to start
 
       - name: Run tests
         id: runtests
