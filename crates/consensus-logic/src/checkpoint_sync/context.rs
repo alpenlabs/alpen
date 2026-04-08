@@ -6,7 +6,7 @@ use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_common::{AsmManifest, TxInputRef};
 use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
-use strata_chain_worker_new::ChainWorkerHandle;
+use strata_chain_worker_new::{ApplyDAPayload, ChainWorkerHandle};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
@@ -24,9 +24,6 @@ use strata_storage::NodeStorage;
 use tracing::debug;
 
 pub trait CheckpointSyncCtx: Send + Sync {
-    /// Getter for chain worker handle reference.
-    fn chain_worker(&self) -> &ChainWorkerHandle;
-
     /// Rollup params.
     fn rollup_params(&self) -> &RollupParams;
 
@@ -81,6 +78,24 @@ pub trait CheckpointSyncCtx: Send + Sync {
         &self,
         epoch: EpochCommitment,
     ) -> impl Future<Output = anyhow::Result<Option<CheckpointL1Ref>>> + Send;
+
+    /// Submits a DA payload to the chain worker.
+    fn apply_da(
+        &self,
+        payload: &ApplyDAPayload,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Updates the safe tip in the chain worker.
+    fn update_safe_tip(
+        &self,
+        tip: OLBlockCommitment,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
+    /// Finalizes an epoch in the chain worker.
+    fn finalize_epoch(
+        &self,
+        epoch: EpochCommitment,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
 #[derive(Clone)]
@@ -121,10 +136,6 @@ impl<E: DAExtractor> CheckpointSyncCtxImpl<E> {
 }
 
 impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E> {
-    fn chain_worker(&self) -> &ChainWorkerHandle {
-        &self.chain_worker
-    }
-
     fn rollup_params(&self) -> &RollupParams {
         &self.rollup_params
     }
@@ -206,6 +217,18 @@ impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E
     ) -> anyhow::Result<Option<CheckpointL1Ref>> {
         let ckpt_db = self.storage.ol_checkpoint();
         Ok(ckpt_db.get_checkpoint_l1_ref_async(epoch).await?)
+    }
+
+    async fn apply_da(&self, payload: &ApplyDAPayload) -> anyhow::Result<()> {
+        Ok(self.chain_worker.apply_da(payload).await?)
+    }
+
+    async fn update_safe_tip(&self, tip: OLBlockCommitment) -> anyhow::Result<()> {
+        Ok(self.chain_worker.update_safe_tip(tip).await?)
+    }
+
+    async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()> {
+        Ok(self.chain_worker.finalize_epoch(epoch).await?)
     }
 }
 

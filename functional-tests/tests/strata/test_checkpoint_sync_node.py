@@ -10,7 +10,6 @@ from common.base_test import StrataNodeTest
 from common.config.constants import ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
-from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 

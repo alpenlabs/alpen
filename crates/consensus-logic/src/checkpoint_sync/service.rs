@@ -135,6 +135,8 @@ async fn initialize_css_inner_state(
     Ok(InnerState::new(last_applied_epoch))
 }
 
+/// Searches for unapplied finalized epochs and returns last applied epoch. If none found, returns
+/// `None`.
 pub(crate) async fn find_and_apply_unapplied_epochs(
     ctx: &impl CheckpointSyncCtx,
     cur_finalized: EpochCommitment,
@@ -190,14 +192,12 @@ pub(crate) async fn scan_unapplied_epochs(
     Vec<(CheckpointL1Ref, EpochCommitment)>,
 )> {
     let mut unapplied = Vec::new();
-    let mut last_applied = None;
     let mut cur_finalized = start_finalized;
 
-    loop {
-        // Don't need to go beyond genesis epoch which is deterministic
+    let last_applied = loop {
+        // Don't need to go beyond genesis epoch
         if cur_finalized.epoch() == 0 {
-            last_applied = Some(cur_finalized);
-            break;
+            break Some(cur_finalized);
         }
         let l1_ref = ctx
             .get_checkpoint_l1_ref(cur_finalized)
@@ -225,8 +225,7 @@ pub(crate) async fn scan_unapplied_epochs(
         // chain worker inserts an epoch summary after executing the DA.
         if ctx.get_epoch_summary(cur_finalized).await?.is_some() {
             debug!(%cur_finalized, "found already-applied epoch, stopping scan");
-            last_applied = Some(cur_finalized);
-            break;
+            break Some(cur_finalized);
         }
         debug!(%cur_finalized, "epoch not yet applied, queuing for catchup");
         unapplied.push((l1_ref, cur_finalized));
@@ -235,8 +234,13 @@ pub(crate) async fn scan_unapplied_epochs(
             .get_canonical_epoch_commitment(cur_finalized.epoch().saturating_sub(1))
             .await?;
 
-        cur_finalized = if let Some(e) = prev_epoch { e } else { break };
-    }
+        cur_finalized = prev_epoch.ok_or_else(|| {
+            anyhow!(
+                "predecessor epoch {} not found in db for finalized epoch",
+                cur_finalized.epoch().saturating_sub(1)
+            )
+        })?;
+    };
 
     Ok((last_applied, unapplied))
 }
