@@ -10,9 +10,9 @@ workspace = true
 # reuse much of reth in this crate so that we can factor it all out eventually.
 
 [dependencies]
+alpen-bridge-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-stf.workspace = true
-strata-bridge-types.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true

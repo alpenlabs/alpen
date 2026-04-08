@@ -1,4 +1,5 @@
-use strata_bridge_types::{DepositDescriptorError, OperatorIdx};
+use alpen_bridge_types::DepositDescriptorError;
+use strata_bridge_types::OperatorIdx;
 use strata_btc_verification::L1VerificationError;
 use strata_primitives::l1::L1BlockId;
 use strata_state::prelude::*;

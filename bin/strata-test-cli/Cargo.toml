@@ -11,12 +11,12 @@ name = "strata-test-cli"
 path = "src/main.rs"
 
 [dependencies]
+alpen-bridge-types.workspace = true
 shrex.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
-strata-bridge-types.workspace = true
 strata-cli-common.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true

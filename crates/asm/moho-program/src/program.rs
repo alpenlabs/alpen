@@ -1,12 +1,10 @@
-use bitcoin::hashes::Hash;
 use moho_types::{ExportState, InnerStateCommitment, StateReference};
-use strata_asm_common::{AnchorState, AsmSpec};
+use strata_asm_common::AnchorState;
 use strata_asm_logs::{AsmStfUpdate, NewExportEntry};
 use strata_asm_spec::StrataAsmSpec;
-use strata_asm_stf::{AsmStfInput, AsmStfOutput, compute_asm_transition, group_txs_by_subprotocol};
+use strata_asm_stf::{AsmStfOutput, compute_asm_transition};
 use strata_crypto::hash::compute_borsh_hash;
 use strata_predicate::PredicateKey;
-use strata_primitives::Buf32;
 
 use crate::{input::AsmStepInput, traits::MohoProgram};
 
@@ -39,38 +37,13 @@ impl MohoProgram for AsmStfProgram {
         spec: &StrataAsmSpec,
         input: &AsmStepInput,
     ) -> AsmStfOutput {
-        // 1. Validate the input
-        assert!(input.validate_block());
-
-        // For blocks without witness data (pre-SegWit or legacy-only transactions),
-        // the witness merkle root equals the transaction merkle root per Bitcoin protocol.
-        let wtxids_root: Buf32 = input
-            .block
-            .0
-            .witness_root()
-            .map(|root| root.as_raw_hash().to_byte_array())
-            .unwrap_or_else(|| {
-                input
-                    .block
-                    .0
-                    .header
-                    .merkle_root
-                    .as_raw_hash()
-                    .to_byte_array()
-            })
-            .into();
-
-        // 2. Restructure the raw input to be formatted according to what we want.
-        let protocol_txs = group_txs_by_subprotocol(spec.magic_bytes(), &input.block.0.txdata);
-        let stf_input = AsmStfInput {
-            protocol_txs,
-            header: &input.block.0.header,
-            aux_data: input.aux_data.clone(),
-            wtxids_root,
-        };
-
-        // 3. Actually invoke the ASM state transition function.
-        compute_asm_transition(spec, pre_state, stf_input).expect("asm: compute transition")
+        // The new ASM STF entry point internally validates block integrity,
+        // groups txs by subprotocol via `pre_state.magic()`, and computes the
+        // wtxids root. Callers just provide block, aux data, and an optional
+        // coinbase inclusion proof. Pass `None` here for now — alpen's runner
+        // path doesn't supply one.
+        compute_asm_transition(spec, pre_state, &input.block.0, &input.aux_data, None)
+            .expect("asm: compute transition")
     }
 
     fn extract_post_state(output: &Self::StepOutput) -> &Self::State {

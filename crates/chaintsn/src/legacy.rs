@@ -1,6 +1,6 @@
 //! Legacy routines extracted from `StateCache`.
 
-use strata_bridge_types::DepositIntent;
+use alpen_bridge_types::DepositIntent;
 use strata_identifiers::{AccountSerial, L1BlockCommitment};
 use strata_ol_chainstate_types::Chainstate;
 

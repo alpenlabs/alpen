@@ -11,6 +11,7 @@ name = "alpen"
 path = "src/main.rs"
 
 [dependencies]
+alpen-bridge-types.workspace = true
 alpen-reth-primitives.workspace = true
 strata-asm-txs-bridge-v1.workspace = true
 strata-bridge-types.workspace = true

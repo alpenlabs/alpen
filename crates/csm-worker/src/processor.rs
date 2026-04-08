@@ -3,10 +3,8 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{
-    CheckpointTipUpdate, CheckpointUpdate,
-    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
-};
+use strata_asm_logs::{constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE, CheckpointTipUpdate};
+use strata_asm_proto_checkpoint_v0::{CheckpointUpdate, CHECKPOINT_UPDATE_LOG_TYPE};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
@@ -310,10 +308,8 @@ mod tests {
     use std::sync::Arc;
 
     use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{
-        CheckpointTipUpdate, CheckpointUpdate,
-        constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
-    };
+    use strata_asm_logs::{constants::DEPOSIT_LOG_TYPE_ID, CheckpointTipUpdate};
+    use strata_asm_proto_checkpoint_v0::{CheckpointUpdate, CHECKPOINT_UPDATE_LOG_TYPE};
     use strata_checkpoint_types::BatchInfo;
     use strata_checkpoint_types_ssz::CheckpointTip;
     use strata_csm_types::{ClientState, ClientUpdateOutput};

@@ -5,7 +5,7 @@
 //! entire in memory.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_bridge_types::{DepositIntent, WithdrawalIntent};
+use alpen_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_identifiers::{AccountSerial, Epoch};
 use strata_primitives::{
     epoch::EpochCommitment,

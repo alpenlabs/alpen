@@ -1,7 +1,7 @@
 use std::{thread, time};
 
 use strata_asm_common::AsmManifest;
-use strata_asm_logs::{constants::CHECKPOINT_UPDATE_LOG_TYPE, CheckpointUpdate};
+use strata_asm_proto_checkpoint_v0::{CheckpointUpdate, CHECKPOINT_UPDATE_LOG_TYPE};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::{context::StateAccessor, transition::process_block};
 use strata_checkpoint_types::Checkpoint;

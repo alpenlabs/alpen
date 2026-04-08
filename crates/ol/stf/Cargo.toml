@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+alpen-bridge-types.workspace = true
 ssz_primitives = { workspace = true, optional = true }
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
-strata-bridge-types.workspace = true
 strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
