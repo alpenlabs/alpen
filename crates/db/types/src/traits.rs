@@ -16,7 +16,6 @@ use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::{
-    nonempty_vec::NonEmptyVec,
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
@@ -677,10 +676,10 @@ pub trait AccountDatabase: Send + Sync + 'static {
     /// Gets the creation epoch for an account, if recorded.
     fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
 
-    /// Inserts account extra data for a given epoch index. This appends the inserted extra data to
-    /// the existing value in the db.
-    // NOTE: This gets updated in every OL block where there is snark update for the account.
-    // NOTE: We only want the extra data for an epoch and not per-block so this should suffice.
+    /// Inserts account extra data for a given epoch index. This replaces the existing extra data in
+    /// db with the new value with the same key.
+    // NOTE: We only want the extra data for an epoch and not per-block so this is a correct
+    // behaviour.
     // TODO: Make this more robust by associating with epoch commitment instead of epoch index.
     fn insert_account_extra_data(
         &self,
@@ -693,7 +692,7 @@ pub trait AccountDatabase: Send + Sync + 'static {
     fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
+    ) -> DbResult<Option<AccountExtraDataEntry>>;
 }
 
 /// Database interface for OL mempool transactions.

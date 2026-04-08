@@ -290,13 +290,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             let update = RpcUpdateInputData {
                 seq_no: next_seq_no,
                 proof_state: proof_state.into(),
-                extra_data: extra_data
-                    .last() // FIXME: check if this is canonical or not and account for reorgs.
-                    .cloned()
-                    .expect("Should be present")
-                    .into_parts()
-                    .0
-                    .into(),
+                extra_data: extra_data.into_parts().0.into(),
                 messages: messages.into_iter().map(Into::into).collect(),
             };
             Some(update)

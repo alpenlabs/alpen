@@ -15,11 +15,11 @@ use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::OLMempoolResult;
 use strata_ol_state_types::OLState;
-use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec, OLBlockCommitment};
+use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment};
 use strata_status::OLSyncStatus;
 
 /// Extra data associated with an account at a given epoch.
-pub type AccountExtraData = NonEmptyVec<AccountExtraDataEntry>;
+pub type AccountExtraData = AccountExtraDataEntry;
 
 /// Provides all data access needed by the OL RPC server.
 #[async_trait]

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use ops::account::{AccountOps, Context};
 use strata_db_types::{traits::AccountDatabase, types::AccountExtraDataEntry, DbResult};
 use strata_identifiers::{AccountId, Epoch};
-use strata_primitives::nonempty_vec::NonEmptyVec;
 use threadpool::ThreadPool;
 
 use crate::ops;
@@ -68,7 +67,7 @@ impl AccountManager {
     pub fn get_account_extra_data_blocking(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>> {
+    ) -> DbResult<Option<AccountExtraDataEntry>> {
         self.ops.get_account_extra_data_blocking(key)
     }
 
@@ -76,7 +75,7 @@ impl AccountManager {
     pub async fn get_account_extra_data_async(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>> {
+    ) -> DbResult<Option<AccountExtraDataEntry>> {
         self.ops.get_account_extra_data_async(key).await
     }
 }

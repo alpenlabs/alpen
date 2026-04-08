@@ -2,7 +2,6 @@
 
 use strata_db_types::{DbResult, traits::AccountDatabase, types::AccountExtraDataEntry};
 use strata_identifiers::{AccountId, Epoch};
-use strata_primitives::nonempty_vec::NonEmptyVec;
 
 use super::schemas::{AccountExtraDataSchema, AccountGenesisSchema};
 use crate::define_sled_database;
@@ -29,24 +28,17 @@ impl AccountDatabase for AccountGenesisDBSled {
         key: (AccountId, Epoch),
         extra_data: AccountExtraDataEntry,
     ) -> DbResult<()> {
-        // Append to existing list of entries
+        // Replace the existing entry
         let curr = self.extra_data_tree.get(&key)?;
-        let new = if let Some(ref d) = curr {
-            let mut new = d.clone();
-            new.push(extra_data);
-            new
-        } else {
-            NonEmptyVec::new(extra_data)
-        };
         self.extra_data_tree
-            .compare_and_swap(key, curr, Some(new))?;
+            .compare_and_swap(key, curr, Some(extra_data))?;
         Ok(())
     }
 
     fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>> {
+    ) -> DbResult<Option<AccountExtraDataEntry>> {
         Ok(self.extra_data_tree.get(&key)?)
     }
 }
