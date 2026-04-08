@@ -74,11 +74,11 @@ bin/strata-*/ @alpenlabs/bin @alpenlabs/chain-core
 bin/strata/ @alpenlabs/bin @alpenlabs/chain-core
 
 # Functional tests
-functional-tests-new/ @alpenlabs/python # catch all
-functional-tests-new/fn_*.py @alpenlabs/python @alpenlabs/ci
-functional-tests-new/constants.py @alpenlabs/python @alpenlabs/ci
-functional-tests-new/entry.py @alpenlabs/python @alpenlabs/ci
-functional-tests-new/uv.lock @alpenlabs/python
+functional-tests/ @alpenlabs/python # catch all
+functional-tests/fn_*.py @alpenlabs/python @alpenlabs/ci
+functional-tests/constants.py @alpenlabs/python @alpenlabs/ci
+functional-tests/entry.py @alpenlabs/python @alpenlabs/ci
+functional-tests/uv.lock @alpenlabs/python
 
 
 # Docker/Containers

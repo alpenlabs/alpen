@@ -117,7 +117,7 @@ you can run the basic CI checks in your local environment:
 - [`bitcoind`](https://bitcoin.org/en/download): to run the unit and functional tests.
 - Functional test runner:
   to run functional tests, see instructions in its
-  [`README.md`](./functional-tests-new/README.md).
+  [`README.md`](./functional-tests/README.md).
 
 We also provide a [`flake.nix`](flake.nix) with a `devShell` with all the dependencies
 necessary for local development.

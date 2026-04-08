@@ -21,14 +21,14 @@ jobs:
   unit-tests:
     uses: ./.github/workflows/unit.yml
 
-  functional-tests-new:
-    uses: ./.github/workflows/functional-new.yml
+  functional-tests:
+    uses: ./.github/workflows/functional.yml
 
   collect-test-metrics:
     name: Collect test metrics
     runs-on: ubuntu-latest
     if: always()
-    needs: [functional-tests-new]
+    needs: [functional-tests]
     permissions:
       contents: read
       actions: read
@@ -73,7 +73,7 @@ jobs:
     name: Publish coverage reports
     runs-on: ubuntu-latest
     if: always()
-    needs: [unit-tests, functional-tests-new]
+    needs: [unit-tests, functional-tests]
     timeout-minutes: 10
     steps:
       # NOTE: codecov action needs source files in the same path as in the lcov.info

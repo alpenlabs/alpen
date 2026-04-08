@@ -65,14 +65,14 @@ COPY --from=builder /out/ /usr/local/bin/
 
 # Copy functional test suite
 WORKDIR /tests
-COPY functional-tests-new/pyproject.toml functional-tests-new/uv.lock ./
+COPY functional-tests/pyproject.toml functional-tests/uv.lock ./
 RUN uv sync
 
-COPY functional-tests-new/entry.py ./
-COPY functional-tests-new/common ./common
-COPY functional-tests-new/envconfigs ./envconfigs
-COPY functional-tests-new/factories ./factories
-COPY functional-tests-new/tests ./tests
+COPY functional-tests/entry.py ./
+COPY functional-tests/common ./common
+COPY functional-tests/envconfigs ./envconfigs
+COPY functional-tests/factories ./factories
+COPY functional-tests/tests ./tests
 
 ENV RUST_BACKTRACE=1
 ENV RUST_LOG="debug,sled=warn,hyper=warn,h2=warn,soketto=warn,jsonrpsee-server=warn,mio=warn"

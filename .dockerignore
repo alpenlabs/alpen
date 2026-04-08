@@ -4,7 +4,6 @@
 .github/
 .ruff_cache/
 .vscode/
-functional-tests/
 docker/.data
 
 # Ignore build artifacts and cache
@@ -14,7 +13,7 @@ target/*
 
 # Ignore test-related files and directories
 test/
-functional-tests-new/_dd/
+functional-tests/_dd/
 **/_dd/
 
 # Ignore cache, temporary, and virtual environment files

@@ -222,7 +222,7 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
 
-  # Legacy functional-tests/ removed — see functional-tests-new/
+  # Legacy functional-tests/ removed — see functional-tests/
 
   # Nix flake
   - package-ecosystem: "nix"

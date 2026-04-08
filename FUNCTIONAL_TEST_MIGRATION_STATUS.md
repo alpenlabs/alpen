@@ -683,7 +683,7 @@ Tests that call `strataee_*` RPCs (4 tests marked "can't port" in STR-2087) have
 
 ## 8. Functional Test Frameworks Comparison
 
-### New Framework (`functional-tests-new/`)
+### New Framework (`functional-tests/`)
 
 **Binaries built**: `cargo build --bin strata --bin alpen-client`
 
@@ -767,7 +767,7 @@ flexitest.Test
 **Epic**: [STR-2085](https://alpenlabs.atlassian.net/browse/STR-2085) — Migrate functional tests to new binaries
 **Assignee**: Ashish | **Status**: Draft | **Created**: 2026-01-15
 
-**End goal**: Migrate → Delete `functional-tests/` → Rename `functional-tests-new/` to `functional-tests`
+**End goal**: Migrate → Delete legacy `functional-tests/` → Rename complete
 
 **Blocks**: [STR-2170](https://alpenlabs.atlassian.net/browse/STR-2170) — Remove unused crates (can't delete old code until tests migrated)
 **Related**: [STR-2045](https://alpenlabs.atlassian.net/browse/STR-2045) — Fix functional tests flakiness (Draft)
