@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
-#[cfg(not(feature = "debug-asm"))]
 use strata_asm_spec::StrataAsmSpec;
 #[cfg(feature = "debug-asm")]
 use strata_asm_spec_debug::DebugAsmSpec;
@@ -198,13 +197,21 @@ fn spawn_csm_listener(
         max_historical_blocks,
     )?;
 
-    // Convert historical states to ASM worker status updates
+    // Convert historical states to ASM worker status updates.
+    //
+    // `storage.asm()` returns alpen-local `strata_state::AsmState` but
+    // `AsmWorkerStatus::cur_state` expects `strata_asm_worker::AsmState`.
+    // The two types are field-identical; adapt at this boundary until a
+    // follow-up collapses storage onto a single canonical type.
     let initial_updates: Vec<AsmWorkerStatus> = historical_states
         .into_iter()
         .map(|(block, state)| AsmWorkerStatus {
             is_initialized: true,
             cur_block: Some(block),
-            cur_state: Some(state),
+            cur_state: Some(strata_asm_worker::AsmState::new(
+                state.state().clone(),
+                state.logs().clone(),
+            )),
         })
         .collect();
 
@@ -303,10 +310,14 @@ pub fn spawn_asm_worker(
     );
 
     // Construct the ASM spec based on the enabled feature.
+    //
+    // Since asm PR #67 (worker-generic-spec), `StrataAsmSpec` is a unit struct
+    // and `DebugAsmSpec::new` wraps it — neither takes params anymore. The
+    // spec is passed through the builder's new `with_asm_spec` setter.
     #[cfg(not(feature = "debug-asm"))]
-    let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
+    let asm_spec = StrataAsmSpec;
     #[cfg(feature = "debug-asm")]
-    let asm_spec = DebugAsmSpec::from_asm_params(&asm_params);
+    let asm_spec = DebugAsmSpec::new(StrataAsmSpec);
 
     // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()

@@ -201,8 +201,7 @@ mod tests {
     use proptest::prelude::*;
     use strata_checkpoint_types::EpochSummary;
     use strata_checkpoint_types_ssz::{
-        CheckpointPayload, CheckpointTip,
-        test_utils::{checkpoint_sidecar_strategy, ol_logs_strategy, state_diff_strategy},
+        CheckpointPayload, CheckpointTip, test_utils::checkpoint_sidecar_strategy,
     };
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
@@ -219,6 +218,32 @@ mod tests {
 
     use super::OLCheckpointServiceState;
     use crate::context::{CheckpointWorkerContext, CheckpointWorkerContextImpl, StateDiffRaw};
+
+    /// Strategy for generating random state diff bytes of varying sizes.
+    ///
+    /// Inlined from the (now private) helper in
+    /// `strata_checkpoint_types_ssz::test_utils`.
+    fn state_diff_strategy() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 0..1024)
+    }
+
+    /// Strategy for generating random alpen-local [`OLLog`] vectors.
+    ///
+    /// Inlined from the (now private) helper in
+    /// `strata_checkpoint_types_ssz::test_utils`, re-pointed at alpen's
+    /// `strata_ol_chain_types_new::OLLog` (the variant that
+    /// `fetch_da_for_epoch` returns).
+    fn ol_logs_strategy() -> impl Strategy<Value = Vec<OLLog>> {
+        use strata_acct_types::AccountSerial;
+        prop::collection::vec(
+            (
+                any::<u32>().prop_map(AccountSerial::from),
+                prop::collection::vec(any::<u8>(), 0..=256),
+            )
+                .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload)),
+            0..10,
+        )
+    }
 
     /// Test context that delegates everything to the real impl but stubs out
     /// `fetch_da_for_epoch` with provided DA data. This avoids needing a full

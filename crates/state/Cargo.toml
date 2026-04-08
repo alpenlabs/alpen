@@ -17,9 +17,7 @@ strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true
 
-anyhow.workspace = true
 arbitrary.workspace = true
-async-trait.workspace = true
 borsh.workspace = true
 serde.workspace = true
 

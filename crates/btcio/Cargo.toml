@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
 strata-config.workspace = true
@@ -17,7 +18,6 @@ strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
-strata-state.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true
@@ -39,7 +39,6 @@ hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 proptest.workspace = true
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
-strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true
 strata-test-utils.workspace = true
 strata-test-utils-btcio.workspace = true

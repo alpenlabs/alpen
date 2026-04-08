@@ -1,7 +1,7 @@
 use std::{thread, time};
 
 use strata_asm_common::AsmManifest;
-use strata_asm_proto_checkpoint_v0::{CheckpointUpdate, CHECKPOINT_UPDATE_LOG_TYPE};
+use strata_asm_logs::{constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE, CheckpointTipUpdate};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::{context::StateAccessor, transition::process_block};
 use strata_checkpoint_types::Checkpoint;
@@ -268,21 +268,27 @@ fn has_expected_checkpoint(
     expected_checkpoint: Option<&Checkpoint>,
     _params: &RollupParams,
 ) -> bool {
-    // Look for checkpoint ack logs in the ASM manifest
+    // Look for checkpoint tip update logs in the ASM manifest.
+    //
+    // Migrated from the retired checkpoint-v0 `CheckpointUpdate` (which
+    // carried a full `EpochCommitment`) to v1 `CheckpointTipUpdate` (which
+    // carries just the `CheckpointTip { epoch, l1_height, l2_commitment }`).
+    // The epoch-match check is sufficient for "end this epoch?" — full
+    // commitment comparison was never used by the v0 path either.
     for log in manifest.logs() {
         // Try to parse as SPS-52 message
         let Some(msg) = log.try_as_msg() else {
             continue;
         };
 
-        // Check if this is a checkpoint ack log
-        if msg.ty() != CHECKPOINT_UPDATE_LOG_TYPE {
+        // Check if this is a checkpoint tip update log
+        if msg.ty() != CHECKPOINT_TIP_UPDATE_LOG_TYPE {
             continue;
         }
 
-        // Try to decode checkpoint ack data
-        let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
-            warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
+        // Try to decode checkpoint tip update data
+        let Ok(ack_data) = log.try_into_log::<CheckpointTipUpdate>() else {
+            warn!(blockid = %manifest.blkid(), "failed to decode checkpoint tip update log");
             continue;
         };
 
@@ -292,10 +298,14 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        // Check if the ack epoch matches our expected checkpoint
-        if ack_data.epoch_commitment().epoch() == expected.batch_info().epoch() {
+        // Check if the tip epoch matches our expected checkpoint
+        let tip_epoch = ack_data.tip().epoch;
+        if tip_epoch == expected.batch_info().epoch() {
             // Found checkpoint ack for expected epoch. Should end current epoch.
-            debug!(epoch = %ack_data.epoch_commitment(), "found checkpoint ack in ASM manifest");
+            debug!(
+                epoch = tip_epoch,
+                "found checkpoint tip update in ASM manifest"
+            );
             return true;
         }
     }

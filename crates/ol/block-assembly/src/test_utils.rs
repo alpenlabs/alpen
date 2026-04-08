@@ -11,9 +11,10 @@ use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunn
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload, tree_hash::TreeHash,
 };
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
+};
 use strata_asm_manifest_types::AsmManifest;
-use strata_btc_verification::HeaderVerificationState;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{MmrId, errors::DbError};
@@ -21,6 +22,7 @@ use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot, test_utils::ol_block_commitment_strategy,
 };
+use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
@@ -636,16 +638,23 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     // Store ASM state at the highest L1 block
     let l1_commitment = L1BlockCommitment::new(end, last_blkid);
 
-    // Create minimal ASM state for testing
-    let pow_state = HeaderVerificationState::default();
+    // Create minimal ASM state for testing.
+    //
+    // `AnchorState.chain_view.pow_state` is the SSZ-backed asm-common
+    // `HeaderVerificationState`, not the native `strata_btc_verification`
+    // one — bridge via `from_native`.
+    let pow_state = HeaderVerificationState::from_native(
+        strata_btc_verification::HeaderVerificationState::default(),
+    );
     let history_accumulator = AsmHistoryAccumulatorState::new(0);
     let chain_view = ChainViewState {
         pow_state,
         history_accumulator,
     };
     let anchor_state = AnchorState {
+        magic: AnchorState::magic_ssz(MagicBytes::from([0u8; 4])),
         chain_view,
-        sections: vec![],
+        sections: vec![].into(),
     };
     let asm_state = AsmState::new(anchor_state, vec![]);
 

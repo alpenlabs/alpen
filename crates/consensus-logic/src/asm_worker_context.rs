@@ -3,14 +3,28 @@
 use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
-use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
+use strata_asm_worker::{AsmState as WorkerAsmState, WorkerContext, WorkerError, WorkerResult};
 use strata_db_types::DbError;
 use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
-use strata_state::asm_state::AsmState;
+use strata_state::asm_state::AsmState as LocalAsmState;
 use strata_storage::{AsmStateManager, L1BlockManager, MmrIndexHandle};
 use tokio::runtime::Handle;
 use tracing::{self, error};
+
+/// Converts alpen-local [`LocalAsmState`] (what storage uses) to the
+/// asm-worker's [`WorkerAsmState`] (what the `WorkerContext` trait expects).
+///
+/// Both types carry identical field schemas; this is a type-level adapter
+/// only. Follow-up will collapse storage onto one of the two.
+fn to_worker_state(local: &LocalAsmState) -> WorkerAsmState {
+    WorkerAsmState::new(local.state().clone(), local.logs().clone())
+}
+
+/// Inverse of [`to_worker_state`].
+fn to_local_state(worker: &WorkerAsmState) -> LocalAsmState {
+    LocalAsmState::new(worker.state().clone(), worker.logs().clone())
+}
 
 #[expect(
     missing_debug_implementations,
@@ -71,24 +85,29 @@ impl WorkerContext for AsmWorkerCtx {
         Err(WorkerError::MissingL1Block(*blockid))
     }
 
-    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AsmState)>> {
-        self.asmman.fetch_most_recent_state().map_err(conv_db_err)
+    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, WorkerAsmState)>> {
+        Ok(self
+            .asmman
+            .fetch_most_recent_state()
+            .map_err(conv_db_err)?
+            .map(|(commitment, local)| (commitment, to_worker_state(&local))))
     }
 
-    fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AsmState> {
+    fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<WorkerAsmState> {
         self.asmman
             .get_state(*blockid)
             .map_err(conv_db_err)?
+            .map(|local| to_worker_state(&local))
             .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
     }
 
     fn store_anchor_state(
         &self,
         blockid: &L1BlockCommitment,
-        state: &AsmState,
+        state: &WorkerAsmState,
     ) -> WorkerResult<()> {
         self.asmman
-            .put_state(*blockid, state.clone())
+            .put_state(*blockid, to_local_state(state))
             .map_err(conv_db_err)
     }
 

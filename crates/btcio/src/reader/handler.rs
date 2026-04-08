@@ -1,7 +1,7 @@
 use bitcoind_async_client::traits::Reader;
+use strata_asm_worker::AsmWorkerHandle;
 use strata_btc_types::BlockHashExt;
 use strata_identifiers::{Epoch, L1BlockCommitment};
-use strata_state::BlockSubmitter;
 use tracing::*;
 
 use super::{
@@ -12,7 +12,7 @@ use super::{
 pub(crate) async fn handle_bitcoin_event<R: Reader>(
     event: L1Event,
     ctx: &ReaderContext<R>,
-    block_submitter: &impl BlockSubmitter,
+    asm_worker: &AsmWorkerHandle,
 ) -> anyhow::Result<()> {
     let new_block = match event {
         L1Event::RevertTo(block) => {
@@ -34,7 +34,7 @@ pub(crate) async fn handle_bitcoin_event<R: Reader>(
 
     // Dispatch new blocks.
     if let Some(block) = new_block {
-        block_submitter.submit_block_async(block).await?;
+        asm_worker.submit_block_async(block).await?;
     }
     Ok(())
 }

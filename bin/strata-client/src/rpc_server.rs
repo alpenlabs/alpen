@@ -1,14 +1,14 @@
 #![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use std::{collections::BTreeMap, sync::Arc};
 
+use alpen_bridge_types::{PublickeyTable, WithdrawalIntent};
 use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::{future, TryFutureExt};
 use jsonrpsee::core::RpcResult;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
-use strata_asm_txs_checkpoint_v0::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
-use alpen_bridge_types::{PublickeyTable, WithdrawalIntent};
+use strata_asm_txs_checkpoint::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
@@ -908,12 +908,9 @@ impl StrataSequencerApiServer for SequencerServerImpl {
 
         trace!(%checkpoint_idx, "signature OK");
 
-        let checkpoint_tag = TagData::new(
-            CHECKPOINT_V0_SUBPROTOCOL_ID,
-            OL_STF_CHECKPOINT_TX_TYPE,
-            vec![],
-        )
-        .map_err(|e| Error::Other(e.to_string()))?;
+        let checkpoint_tag =
+            TagData::new(CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, vec![])
+                .map_err(|e| Error::Other(e.to_string()))?;
         let payload = L1Payload::new(
             vec![borsh::to_vec(&signed_checkpoint).map_err(|e| Error::Other(e.to_string()))?],
             checkpoint_tag,

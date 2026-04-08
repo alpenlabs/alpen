@@ -42,4 +42,5 @@ tracing.workspace = true
 [dev-dependencies]
 mockall.workspace = true
 rand.workspace = true
+strata-bridge-types.workspace = true
 strata-test-utils.workspace = true

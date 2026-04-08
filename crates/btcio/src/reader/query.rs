@@ -7,6 +7,7 @@ use std::{
 use anyhow::bail;
 use bitcoin::{params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
+use strata_asm_worker::AsmWorkerHandle;
 use strata_btc_types::BlockHashExt;
 use strata_btc_verification::{
     get_relative_difficulty_adjustment_height, BtcWork, HeaderVerificationState, L1Anchor,
@@ -17,7 +18,6 @@ use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
     l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1Height},
 };
-use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
 use tokio::time::sleep;
@@ -49,13 +49,13 @@ pub(crate) struct ReaderContext<R: Reader> {
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
-pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
+pub async fn bitcoin_data_reader_task(
     client: Arc<impl Reader>,
     storage: Arc<NodeStorage>,
     config: Arc<ReaderConfig>,
     btcio_params: BtcioParams,
     status_channel: StatusChannel,
-    event_submitter: Arc<E>,
+    asm_worker: Arc<AsmWorkerHandle>,
 ) -> anyhow::Result<()> {
     let target_next_block =
         calculate_target_next_block(storage.l1().as_ref(), btcio_params.genesis_l1_height())?;
@@ -67,7 +67,7 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
         btcio_params,
         status_channel,
     };
-    do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
+    do_reader_task(ctx, target_next_block, asm_worker.as_ref()).await
 }
 
 /// Calculates target next block to start polling l1 from.
@@ -88,7 +88,7 @@ fn calculate_target_next_block(
 async fn do_reader_task<R: Reader>(
     ctx: ReaderContext<R>,
     target_next_block: L1Height,
-    event_submitter: &impl BlockSubmitter,
+    asm_worker: &AsmWorkerHandle,
 ) -> anyhow::Result<()> {
     info!(%target_next_block, "started L1 reader task!");
 
@@ -107,7 +107,7 @@ async fn do_reader_task<R: Reader>(
             Ok(events) => {
                 // handle events
                 for ev in events {
-                    handle_bitcoin_event(ev, &ctx, event_submitter).await?;
+                    handle_bitcoin_event(ev, &ctx, asm_worker).await?;
                 }
             }
         };

@@ -1,17 +1,24 @@
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
-use strata_btc_verification::HeaderVerificationState;
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState, HeaderVerificationState,
+};
 use strata_db_types::traits::AsmDatabase;
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_state::asm_state::AsmState;
 
 pub fn test_get_asm(db: &impl AsmDatabase) {
+    // `AnchorState.chain_view.pow_state` is the SSZ-backed ASM-local
+    // `HeaderVerificationState` (re-exported from `strata_asm_common`), not the
+    // native `strata_btc_verification` one — convert via `from_native`.
+    let native_hvs = strata_btc_verification::HeaderVerificationState::default();
     let state = AsmState::new(
         AnchorState {
+            magic: AnchorState::magic_ssz(MagicBytes::from([0u8; 4])),
             chain_view: ChainViewState {
-                pow_state: HeaderVerificationState::default(),
+                pow_state: HeaderVerificationState::from_native(native_hvs),
                 history_accumulator: AsmHistoryAccumulatorState::new(0),
             },
-            sections: vec![],
+            sections: vec![].into(),
         },
         vec![],
     );

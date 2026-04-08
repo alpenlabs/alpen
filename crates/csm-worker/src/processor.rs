@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
-use strata_asm_logs::{constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE, CheckpointTipUpdate};
+use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
@@ -228,13 +228,12 @@ fn checkpoint_from_tip_update(
     L1Checkpoint::new(batch_info, l1_reference)
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
     use strata_asm_common::AsmLogEntry;
-    use strata_asm_logs::{constants::DEPOSIT_LOG_TYPE_ID, CheckpointTipUpdate};
+    use strata_asm_logs::{CheckpointTipUpdate, constants::DEPOSIT_LOG_TYPE_ID};
     use strata_checkpoint_types_ssz::CheckpointTip;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
@@ -405,7 +404,7 @@ mod tests {
                 OLBlockId::from(Buf32::from([epoch as u8; 32])),
             );
             let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-            let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
+            let tip_update = CheckpointTipUpdate::new(tip);
             let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
             let result = process_log(&mut state, &log, &asm_block);
@@ -437,12 +436,15 @@ mod tests {
         let (mut state, storage) = create_test_state();
 
         let epoch = 9u32;
-        let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+        // Use a non-default L1BlockId so the placeholder txid (derived from the
+        // block hash) differs from Buf32::zero() and the assertions remain
+        // meaningful.
+        let asm_block = L1BlockCommitment::new(250, L1BlockId::from(Buf32::from([0x55u8; 32])));
         state.last_asm_block = Some(asm_block);
 
         let ol_tip = OLBlockCommitment::new(90, OLBlockId::from(Buf32::from([epoch as u8; 32])));
         let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-        let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
+        let tip_update = CheckpointTipUpdate::new(tip);
         let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
         process_log(&mut state, &log, &asm_block).expect("tip log should process");
@@ -452,15 +454,21 @@ mod tests {
             .ol_checkpoint()
             .get_checkpoint_l1_ref_blocking(commitment)
             .expect("query l1 ref");
+        // TODO(csm-indexer): `CheckpointTipUpdate` does not carry the real
+        // envelope txid/wtxid — `mark_ol_checkpoint_l1_observed` uses the L1
+        // block hash as a deterministic placeholder. Once the indexer lands
+        // (or asm's tip update gains a txid field), restore the assertion to
+        // the real checkpoint transaction hash.
+        let placeholder_txid: Buf32 = (*asm_block.blkid()).into();
         assert_eq!(
             observation.as_ref().map(|entry| entry.txid),
-            Some(Buf32::from([epoch as u8; 32])),
-            "l1 ref should persist checkpoint txid from v1 tip log"
+            Some(placeholder_txid),
+            "l1 ref currently persists the L1 block hash as a placeholder txid"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.wtxid),
-            Some(Buf32::from([epoch as u8; 32])),
-            "l1 ref should persist checkpoint wtxid from v1 tip log, which is same as txid(until STR-2952)"
+            Some(placeholder_txid),
+            "l1 ref currently persists the L1 block hash as a placeholder wtxid"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.l1_commitment),
@@ -477,5 +485,4 @@ mod tests {
             "tip log path should not require payload entry to write observation"
         );
     }
-
 }
