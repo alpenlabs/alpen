@@ -9,11 +9,12 @@ use strata_primitives::{epoch::EpochCommitment, l1::BitcoinTxid};
 
 use crate::constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE};
 
-/// V0 checkpoint log. Emitted by the v0 checkpoint subprotocol.
+/// V0 checkpoint log emitted by the v0 checkpoint subprotocol.
 ///
-/// Contains full checkpoint metadata including batch info, chainstate transition,
-/// and the L1 transaction ID. Superseded by [`CheckpointTipUpdate`] in the main
-/// (v1) checkpoint subprotocol.
+/// Contains full checkpoint metadata: epoch commitment, batch info, and the L1
+/// transaction ID that carried the checkpoint proof.
+///
+/// Superseded in the main (v1) checkpoint subprotocol by [`CheckpointTipUpdate`].
 #[derive(Debug, Clone, Codec)]
 pub struct CheckpointUpdate {
     /// Commitment to the epoch terminal block.
@@ -68,11 +69,12 @@ impl AsmLog for CheckpointUpdate {
     const TY: TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
 }
 
-/// Records a verified [`CheckpointTip`] update from the v1 checkpoint subprotocol.
+/// V1 checkpoint tip update log emitted by the main checkpoint subprotocol.
 ///
-/// Carries the tip (epoch, L1 height, L2 commitment) and the txid of the L1
-/// transaction that delivered the checkpoint tx. The inner [`CheckpointTip`]
-/// is encoded via [`CodecSsz`] per its SSZ schema.
+/// Records a verified [`CheckpointTip`] (epoch, L1 height, L2 commitment)
+/// together with the L1 transaction ID that carried the checkpoint proof.
+///
+/// The inner [`CheckpointTip`] is encoded via [`CodecSsz`] according to its SSZ schema.
 #[derive(Debug, Clone, Codec)]
 pub struct CheckpointTipUpdate {
     /// The new verified checkpoint tip.
