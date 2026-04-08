@@ -4,8 +4,8 @@
 //! decide to expand the chain state in the future such that we can't keep it
 //! entire in memory.
 
-use borsh::{BorshDeserialize, BorshSerialize};
 use alpen_bridge_types::{DepositIntent, WithdrawalIntent};
+use borsh::{BorshDeserialize, BorshSerialize};
 use strata_identifiers::{AccountSerial, Epoch};
 use strata_primitives::{
     epoch::EpochCommitment,

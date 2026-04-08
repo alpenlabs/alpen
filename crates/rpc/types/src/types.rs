@@ -4,9 +4,9 @@
 //!  - implementation of RPC client
 //!  - crate for just data structures that represents the JSON responses from Bitcoin core RPC
 
+use alpen_bridge_types::WithdrawalIntent;
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
-use alpen_bridge_types::WithdrawalIntent;
 use strata_asm_proto_bridge_v1::DepositEntry;
 use strata_bridge_types::OperatorBitmap;
 use strata_btc_types::{Buf32BitcoinExt, L1BlockIdBitcoinExt};

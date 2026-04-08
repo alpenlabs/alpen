@@ -3,9 +3,8 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use strata_primitives::crypto::EvenPublicKey;
-
 use strata_bridge_types::OperatorIdx;
+use strata_primitives::crypto::EvenPublicKey;
 
 // A table that maps [`OperatorIdx`] to the corresponding [`EvenPublicKey`].
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

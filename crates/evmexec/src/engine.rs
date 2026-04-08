@@ -8,10 +8,10 @@ use alloy_rpc_types::{
     },
     Withdrawal,
 };
+use alpen_bridge_types::WithdrawalIntent;
 use alpen_reth_evm::{address_to_subject, constants::COINBASE_ADDRESS, subject_to_address};
 use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::B256;
-use alpen_bridge_types::WithdrawalIntent;
 use strata_db_types::DbError;
 use strata_eectl::{
     engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},

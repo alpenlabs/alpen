@@ -1,9 +1,9 @@
 //! Deposit-withdraw tests for end-to-end workflows
 
+use alpen_bridge_types::DepositDescriptor;
 use strata_acct_types::{BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
 use strata_asm_logs::DepositLog;
-use alpen_bridge_types::DepositDescriptor;
 use strata_identifiers::{Buf32, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};

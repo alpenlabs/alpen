@@ -1,12 +1,12 @@
 //! ASM manifest processing.
 
+use alpen_bridge_types::DepositDescriptor;
 use strata_acct_types::MsgPayload;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog,
     constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
 };
-use alpen_bridge_types::DepositDescriptor;
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::IStateAccessor;

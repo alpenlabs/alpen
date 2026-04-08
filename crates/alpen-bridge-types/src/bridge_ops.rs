@@ -4,10 +4,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use ssz::{Decode as SszDecodeTrait, DecodeError, Encode as SszEncodeTrait};
 use ssz_derive::{Decode, Encode};
+use strata_bridge_types::OperatorSelection;
 use strata_identifiers::SubjectId;
 use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
-
-use strata_bridge_types::OperatorSelection;
 
 /// Describes an intent to withdraw that hasn't been dispatched yet.
 #[derive(Clone, Debug, Eq, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
@@ -176,10 +175,10 @@ impl DepositIntent {
 mod tests {
     use proptest::prelude::*;
     use ssz::{Decode, Encode};
+    use strata_bridge_types::OperatorSelection;
     use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32, l1::BitcoinAmount};
 
     use super::WithdrawalIntent;
-    use strata_bridge_types::OperatorSelection;
 
     fn descriptor_strategy() -> impl Strategy<Value = Descriptor> {
         prop_oneof![
