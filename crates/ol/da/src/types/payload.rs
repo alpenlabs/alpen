@@ -274,8 +274,10 @@ fn apply_balance_delta<T: IAccountStateMut>(
         acct.add_balance(coin);
     } else {
         let delta = BitcoinAmount::from_sat(incr.magnitude());
-        acct.take_balance(delta)
+        let coin = acct
+            .take_balance(delta)
             .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
+        coin.safely_consume_unchecked();
     }
     Ok(())
 }
