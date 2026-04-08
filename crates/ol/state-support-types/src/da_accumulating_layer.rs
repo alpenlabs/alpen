@@ -298,14 +298,15 @@ impl EpochDaAccumulator {
             }
 
             let source_id = entry.source();
-            if source_id.is_special() {
-                return Err(DaAccumulationError::MessageSourceMissing(source_id));
-            }
-            let exists = state
-                .check_account_exists(source_id)
-                .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
-            if !exists {
-                return Err(DaAccumulationError::MessageSourceMissing(source_id));
+            // NOTE: special accounts (sequencer/bridge gateway) are valid message
+            // sources but don't exist in the ledger. Skip the existence check for them.
+            if !source_id.is_special() {
+                let exists = state
+                    .check_account_exists(source_id)
+                    .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
+                if !exists {
+                    return Err(DaAccumulationError::MessageSourceMissing(source_id));
+                }
             }
 
             let entry = DaMessageEntry::new(source_id, entry.incl_epoch(), entry.payload().clone());
