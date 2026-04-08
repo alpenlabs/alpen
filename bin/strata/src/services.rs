@@ -11,11 +11,9 @@ use strata_consensus_logic::{
     start_fcm_service,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
-use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_node_context::NodeContext;
 #[cfg(feature = "sequencer")]
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
-use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
 
 use crate::{
     context::ensure_genesis,
@@ -232,7 +230,11 @@ pub(crate) fn start_strata_services(
     // Check and do genesis if not yet. This should be done after asm/csm/btcio and before mempool
     // because genesis requires asm to be working and mempool and other services expect genesis to
     // have happened.
-    let genesis_commitment = ensure_genesis(nodectx.storage().as_ref(), nodectx.ol_params())?;
+    ensure_genesis(
+        nodectx.storage().as_ref(),
+        nodectx.ol_params(),
+        nodectx.status_channel().as_ref(),
+    )?;
 
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);

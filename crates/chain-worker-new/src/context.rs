@@ -3,11 +3,11 @@
 //! This module provides [`ChainWorkerContextImpl`], a production implementation
 //! of the worker context that uses the storage layer managers for database access.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use strata_acct_types::AccountId;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::{DbResult, types::AccountExtraDataEntry};
+use strata_db_types::types::AccountExtraDataEntry;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -111,19 +111,21 @@ impl ChainWorkerContextImpl {
         epoch: u32,
         writes: &IndexerWrites,
     ) -> WorkerResult<()> {
-        writes
+        let grouped: HashMap<AccountId, AccountExtraDataEntry> = writes
             .snark_state_updates()
             .iter()
-            .try_for_each(|update| -> DbResult<()> {
-                let acct_id = update.account_id();
-                if let Some(extra_data) = update.extra_data() {
-                    let key = (acct_id, epoch);
-                    let entry = AccountExtraDataEntry::new(extra_data.to_vec(), commitment);
-                    self.account_mgr
-                        .insert_account_extra_data_blocking(key, entry)?
-                }
-                Ok(())
-            })?;
+            .filter_map(|u| {
+                Some((
+                    u.account_id(),
+                    AccountExtraDataEntry::new(u.extra_data()?.to_vec(), commitment),
+                ))
+            })
+            .collect();
+
+        for (acct_id, entries) in grouped {
+            self.account_mgr
+                .insert_account_extra_data_blocking((acct_id, epoch), entries)?;
+        }
         Ok(())
     }
 }
