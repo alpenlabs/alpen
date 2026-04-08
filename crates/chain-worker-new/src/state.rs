@@ -324,11 +324,15 @@ impl ChainWorkerServiceState {
         // Note: Epoch 0 (genesis) is created by genesis initialization, not chain-worker.
         // Chain-worker starts processing from slot 1, so completed_epoch >= 1 is guaranteed.
         let prev_ep_num = completed_epoch.saturating_sub(1);
-        let prev_terminal = *self
-            .ctx
-            .fetch_canonical_epoch_summary_at(prev_ep_num)?
-            .ok_or(WorkerError::MissingEpochSummaryAt(prev_ep_num))?
-            .terminal();
+        let prev_terminal = if completed_epoch == 0 {
+            OLBlockCommitment::null()
+        } else {
+            *self
+                .ctx
+                .fetch_canonical_epoch_summary_at(prev_ep_num)?
+                .ok_or(WorkerError::MissingEpochSummaryAt(prev_ep_num))?
+                .terminal()
+        };
 
         // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
         let epochal = last_block_output.write_batch().epochal();

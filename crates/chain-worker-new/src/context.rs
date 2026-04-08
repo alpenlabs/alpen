@@ -201,8 +201,8 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .iter_new_accounts()
             .map(|(_, id)| *id)
             .collect();
-        self.store_account_creation_epochs(epoch, &new_ids)?;
 
+        self.store_account_creation_epochs(epoch, &new_ids)?;
         // Write account extra data
         self.store_snark_extra_data(commitment, epoch, output.indexer_writes())?;
 

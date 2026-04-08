@@ -234,11 +234,6 @@ pub(crate) fn start_strata_services(
     // have happened.
     let genesis_commitment = ensure_genesis(nodectx.storage().as_ref(), nodectx.ol_params())?;
 
-    // Populate initial OL sync status so downstream consumers don't need fallback logic.
-    if nodectx.status_channel().get_ol_sync_status().is_none() {
-        init_ol_sync_status(&nodectx, genesis_commitment);
-    }
-
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
 
@@ -360,24 +355,4 @@ fn start_mempool(nodectx: &NodeContext) -> Result<MempoolHandle> {
             .launch(&executor)
             .await
     })
-}
-
-/// Populates the status channel with an initial `OLSyncStatus` derived from genesis state.
-fn init_ol_sync_status(nodectx: &NodeContext, genesis_commitment: OLBlockCommitment) {
-    let genesis_epoch = EpochCommitment::from_terminal(0, genesis_commitment);
-    let safe_l1 = nodectx.ol_params().last_l1_block;
-
-    let status = OLSyncStatus::new(
-        genesis_commitment,
-        0,
-        true,
-        genesis_epoch,
-        genesis_epoch,
-        genesis_epoch,
-        safe_l1,
-    );
-
-    nodectx
-        .status_channel()
-        .update_ol_sync_status(OLSyncStatusUpdate::new(status));
 }
