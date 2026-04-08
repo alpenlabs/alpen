@@ -6,6 +6,7 @@ use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
 use strata_snark_acct_sys as snark_sys;
+use tracing::warn;
 
 use crate::{
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
@@ -123,6 +124,7 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
     // 3. Verify the amount is a positive exact multiple of the denomination.
     let amt_raw: u64 = withdrawal_amt.into();
     if amt_raw == 0 || !amt_raw.is_multiple_of(withdrawal_denom) {
+        warn!(%amt_raw, "ignoring withdrawal with invalid amount");
         return Ok(());
     }
 
