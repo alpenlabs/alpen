@@ -11,8 +11,8 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
-    RpcBlockRangeEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
+    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockEntry,
+    RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_primitives::{HexBytes, HexBytes32};
@@ -27,14 +27,16 @@ use crate::rpc::errors::{
 pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
     genesis_l1_height: L1Height,
+    max_headers_range: usize,
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
-    pub(crate) fn new(provider: P, genesis_l1_height: L1Height) -> Self {
+    pub(crate) fn new(provider: P, genesis_l1_height: L1Height, max_headers_range: usize) -> Self {
         Self {
             provider,
             genesis_l1_height,
+            max_headers_range,
         }
     }
 
@@ -639,7 +641,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> RpcResult<Vec<RpcBlockRangeEntry>> {
+    ) -> RpcResult<Vec<RpcBlockEntry>> {
         let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
 
         if start_height > end_height || block_count > MAX_RAW_BLOCKS_RANGE {
@@ -676,5 +678,36 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .await
             .map(|b| HexBytes(b.as_ssz_bytes()))?;
         Ok(raw_blk)
+    }
+
+    async fn get_headers_in_range(
+        &self,
+        start_height: u64,
+        end_height: u64,
+    ) -> RpcResult<Vec<RpcBlockHeaderEntry>> {
+        let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
+
+        if start_height > end_height || block_count > self.max_headers_range {
+            return Err(invalid_params_error("Invalid block range"));
+        }
+
+        let last_blkid = self
+            .get_canonical_block_at_height(end_height)
+            .await?
+            .ok_or(not_found_error(format!(
+                "No blocks found at slot {end_height}"
+            )))?;
+
+        let mut cur_blkid = last_blkid;
+        let mut entries = Vec::with_capacity(block_count);
+
+        for _ in (start_height..=end_height).rev() {
+            let blk = self.get_block(cur_blkid).await?;
+            cur_blkid = blk.header().parent_blkid;
+            entries.push(RpcBlockHeaderEntry::from(&blk));
+        }
+        entries.reverse();
+
+        Ok(entries)
     }
 }

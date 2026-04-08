@@ -17,6 +17,9 @@ const DEFAULT_DATADIR: &str = "strata-data";
 /// Default DB retry delay in ms.
 const DEFAULT_DB_RETRY_DELAY: u64 = 200;
 
+/// Default maximum number of headers returned in a single `getHeadersInRange` RPC query.
+const DEFAULT_MAX_HEADERS_RANGE: usize = 5_000;
+
 /// Default maximum transactions per block.
 const DEFAULT_MAX_TXS_PER_BLOCK: usize = 1000;
 
@@ -62,6 +65,10 @@ pub struct ClientConfig {
     /// If sequencer tasks should run or not. Default to false.
     #[serde(default)]
     pub is_sequencer: bool,
+
+    /// Maximum number of headers returned in a single `getHeadersInRange` RPC query.
+    #[serde(default = "default_max_headers_range")]
+    pub max_headers_range: usize,
 }
 
 fn default_p2p_port() -> u16 {
@@ -78,6 +85,10 @@ fn default_datadir() -> PathBuf {
 
 fn default_db_retry_delay() -> u64 {
     DEFAULT_DB_RETRY_DELAY
+}
+
+fn default_max_headers_range() -> usize {
+    DEFAULT_MAX_HEADERS_RANGE
 }
 
 fn default_max_txs_per_block() -> usize {
