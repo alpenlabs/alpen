@@ -8,7 +8,10 @@ use anyhow::bail;
 use bitcoin::{params, Block, BlockHash, CompactTarget};
 use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
-use strata_btc_verification::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
+use strata_btc_verification::{
+    get_relative_difficulty_adjustment_height, BtcWork, HeaderVerificationState, L1Anchor,
+    TimestampStore,
+};
 use strata_config::btcio::ReaderConfig;
 use strata_primitives::{
     constants::TIMESTAMPS_FOR_MEDIAN,
@@ -401,11 +404,23 @@ pub async fn fetch_verification_state(
     client: &impl Reader,
     block_height: L1Height,
 ) -> anyhow::Result<HeaderVerificationState> {
-    // Create BTC parameters based on the current network.
     let network = client.network().await?;
     let genesis_l1_view = fetch_genesis_l1_view(client, block_height).await?;
-    // Build the header verification state structure.
-    let header_verification_state = HeaderVerificationState::new(network, &genesis_l1_view);
+
+    // Build the L1 anchor from the genesis view.
+    let anchor = L1Anchor {
+        block: genesis_l1_view.blk,
+        next_target: genesis_l1_view.next_target,
+        epoch_start_timestamp: genesis_l1_view.epoch_start_timestamp,
+        network,
+    };
+
+    // Preserve the historical 11 timestamps for the MTP check on the next block.
+    // The accumulated PoW is left at zero — matches the previous behavior of
+    // this bootstrap path; cumulative chainwork is only relevant during reorgs.
+    let timestamps = TimestampStore::new(genesis_l1_view.last_11_timestamps);
+    let header_verification_state =
+        HeaderVerificationState::new(anchor, timestamps, BtcWork::default());
 
     trace!(%block_height, ?header_verification_state, "HeaderVerificationState");
 

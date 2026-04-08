@@ -142,9 +142,15 @@ fn mark_ol_checkpoint_l1_observed(
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     let ol_checkpoint = state.storage.ol_checkpoint();
-    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
-    // TODO(STR-2952): populate real checkpoint wtxid here.
-    let checkpoint_wtxid = checkpoint_txid;
+    // TODO(csm-indexer): asm's CheckpointTipUpdate does not carry the originating
+    // checkpoint txid/wtxid. Use the L1 block hash as a deterministic, unique
+    // placeholder until either (a) the asm log gains a txid field, or (b) CSM is
+    // repurposed as an L1 indexer that scans the block for the envelope tx.
+    // RPC consumers reading `CheckpointL1Ref.txid`/`.wtxid` will see the L1
+    // block hash, not the actual checkpoint tx hash.
+    let placeholder_txid: Buf32 = (*asm_block.blkid()).into();
+    let checkpoint_txid = placeholder_txid;
+    let checkpoint_wtxid = placeholder_txid;
 
     let observation = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
     ol_checkpoint.put_checkpoint_l1_ref_blocking(commitment, observation.clone())?;
@@ -201,10 +207,12 @@ fn checkpoint_from_tip_update(
     asm_block: &L1BlockCommitment,
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
-    // TODO(STR-2952): populate real checkpoint wtxid here.
-    // For now we mirror txid to preserve the required `CheckpointL1Ref` shape.
-    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
-    let checkpoint_wtxid = checkpoint_txid;
+    // TODO(csm-indexer): same placeholder as `mark_ol_checkpoint_l1_observed` —
+    // see the rationale there. Use L1 block hash until the indexer / asm-side
+    // txid field is in place.
+    let placeholder_txid: Buf32 = (*asm_block.blkid()).into();
+    let checkpoint_txid = placeholder_txid;
+    let checkpoint_wtxid = placeholder_txid;
     let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 
     // TODO(STR-2438): This v0-shaped `BatchInfo` synthesis is

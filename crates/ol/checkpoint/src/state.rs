@@ -166,7 +166,27 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     let terminal_header = ctx
         .get_block_header(summary.terminal())?
         .ok_or_else(|| anyhow::anyhow!("missing terminal block for epoch summary {:?}", summary))?;
-    let terminal_header_complement = TerminalHeaderComplement::from_full_header(&terminal_header);
+    // Asm's `TerminalHeaderComplement` no longer exposes `from_full_header`;
+    // construct it field-by-field from the proven terminal header.
+    let terminal_header_complement = TerminalHeaderComplement::new(
+        terminal_header.timestamp(),
+        *terminal_header.parent_blkid(),
+        *terminal_header.body_root(),
+        *terminal_header.logs_root(),
+    );
+
+    // `fetch_da_for_epoch` returns alpen's local `OLLog` (from
+    // `strata-ol-chain-types-new`) but `CheckpointSidecar::new` expects asm's
+    // `OLLog` (from `strata-checkpoint-types-ssz`). The two SSZ schemas are
+    // identical (same `account_serial` + `payload` fields), so the conversion
+    // is field-by-field.
+    let ol_logs: Vec<strata_checkpoint_types_ssz::OLLog> = ol_logs
+        .into_iter()
+        .map(|log| strata_checkpoint_types_ssz::OLLog {
+            account_serial: log.account_serial,
+            payload: log.payload,
+        })
+        .collect();
 
     let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
     let proof = ctx.get_proof(&commitment)?;
