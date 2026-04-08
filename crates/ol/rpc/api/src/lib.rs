@@ -85,7 +85,7 @@ pub trait OLFullNodeRpc {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> RpcResult<Vec<RpcBlockRangeEntry>>;
+    ) -> RpcResult<Vec<RpcBlockEntry>>;
 
     /// Get serialized block for a given block id.
     #[method(name = "getRawBlockById")]
@@ -98,7 +98,7 @@ pub trait OLFullNodeRpc {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> RpcResult<Vec<RpcHeaderRangeEntry>>;
+    ) -> RpcResult<Vec<RpcBlockHeaderEntry>>;
 }
 
 /// OL RPC methods served by sequencer node for sequencer signer.

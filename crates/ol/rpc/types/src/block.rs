@@ -7,14 +7,14 @@ use strata_primitives::{HexBytes, HexBytes32, OLBlockId};
 /// Rpc version of OL block entry in a slot range.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcBlockRangeEntry {
+pub struct RpcBlockEntry {
     slot: Slot,
     epoch: Epoch,
     blkid: OLBlockId,
     raw_block: HexBytes,
 }
 
-impl RpcBlockRangeEntry {
+impl RpcBlockEntry {
     pub fn slot(&self) -> u64 {
         self.slot
     }
@@ -32,7 +32,7 @@ impl RpcBlockRangeEntry {
     }
 }
 
-impl From<&OLBlock> for RpcBlockRangeEntry {
+impl From<&OLBlock> for RpcBlockEntry {
     fn from(block: &OLBlock) -> Self {
         Self {
             slot: block.header().slot(),
@@ -46,7 +46,7 @@ impl From<&OLBlock> for RpcBlockRangeEntry {
 /// RPC version of an OL block header entry in a slot range.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-pub struct RpcHeaderRangeEntry {
+pub struct RpcBlockHeaderEntry {
     slot: Slot,
     epoch: Epoch,
     blkid: OLBlockId,
@@ -58,7 +58,7 @@ pub struct RpcHeaderRangeEntry {
     is_terminal: bool,
 }
 
-impl RpcHeaderRangeEntry {
+impl RpcBlockHeaderEntry {
     pub fn slot(&self) -> Slot {
         self.slot
     }
@@ -96,7 +96,7 @@ impl RpcHeaderRangeEntry {
     }
 }
 
-impl From<&OLBlock> for RpcHeaderRangeEntry {
+impl From<&OLBlock> for RpcBlockHeaderEntry {
     fn from(block: &OLBlock) -> Self {
         let header = block.header();
         Self {

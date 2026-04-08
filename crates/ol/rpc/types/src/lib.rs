@@ -18,7 +18,7 @@ pub use account_state::RpcSnarkAccountState;
 pub use account_summary::{
     RpcAccountBlockSummary, RpcAccountEpochSummary, RpcMessageEntry, RpcUpdateInputData,
 };
-pub use block::{RpcBlockRangeEntry, RpcHeaderRangeEntry};
+pub use block::{RpcBlockEntry, RpcBlockHeaderEntry};
 pub use blocktag::OLBlockOrTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
 pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};

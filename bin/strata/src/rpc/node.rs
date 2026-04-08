@@ -11,10 +11,9 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
-    RpcBlockRangeEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcHeaderRangeEntry, RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
-    RpcUpdateInputData,
+    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockEntry,
+    RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
+    RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::ProofState;
@@ -642,7 +641,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> RpcResult<Vec<RpcBlockRangeEntry>> {
+    ) -> RpcResult<Vec<RpcBlockEntry>> {
         let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
 
         if start_height > end_height || block_count > MAX_RAW_BLOCKS_RANGE {
@@ -685,7 +684,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> RpcResult<Vec<RpcHeaderRangeEntry>> {
+    ) -> RpcResult<Vec<RpcBlockHeaderEntry>> {
         let block_count = (end_height.saturating_sub(start_height) + 1) as usize;
 
         if start_height > end_height || block_count > self.max_headers_range {
@@ -705,7 +704,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         for _ in (start_height..=end_height).rev() {
             let blk = self.get_block(cur_blkid).await?;
             cur_blkid = blk.header().parent_blkid;
-            entries.push(RpcHeaderRangeEntry::from(&blk));
+            entries.push(RpcBlockHeaderEntry::from(&blk));
         }
         entries.reverse();
 
