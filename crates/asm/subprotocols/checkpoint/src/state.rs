@@ -241,6 +241,13 @@ mod tests {
     }
 
     #[test]
+    fn test_greedy_withdrawal_below_denom() {
+        // 0.5 BTC requested but all UTXOs are 1 BTC or larger — nothing usable
+        let f = funds(&[(100_000_000, 3), (200_000_000, 2)]);
+        assert!(get_funds_after_withdrawal(&f, sat(50_000_000)).is_none());
+    }
+
+    #[test]
     fn test_greedy_zero_amount() {
         let f = funds(&[(100_000_000, 5)]);
         let result = get_funds_after_withdrawal(&f, sat(0)).unwrap();
@@ -267,6 +274,15 @@ mod tests {
         let f = funds(&[(100_000_000, 3), (200_000_000, 2)]);
         let result = get_funds_after_withdrawal(&f, sat(500_000_000)).unwrap();
         assert_eq!(result, funds(&[(100_000_000, 2)]));
+    }
+
+    #[test]
+    fn test_greedy_skips_high_denom_uses_lower() {
+        // 1 BTC x3 and 5 BTC x1 available, withdraw 2 BTC:
+        // greedy skips 5 BTC (too large), uses two 1 BTC UTXOs
+        let f = funds(&[(100_000_000, 3), (500_000_000, 1)]);
+        let result = get_funds_after_withdrawal(&f, sat(200_000_000)).unwrap();
+        assert_eq!(result, funds(&[(100_000_000, 1), (500_000_000, 1)]));
     }
 
     #[test]
