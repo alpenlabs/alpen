@@ -14128,28 +14128,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-proto-checkpoint-v0"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "strata-asm-bridge-msgs",
- "strata-asm-checkpoint-msgs",
- "strata-asm-common",
- "strata-asm-logs",
- "strata-asm-txs-checkpoint-v0",
- "strata-btc-types",
- "strata-checkpoint-types",
- "strata-codec",
- "strata-codec-utils",
- "strata-identifiers",
- "strata-msg-fmt",
- "strata-params",
- "strata-predicate",
- "strata-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "strata-asm-proto-debug-v1"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm.git?rev=124edbf43be12c2ebad4e5776727ba06259f8dfb#124edbf43be12c2ebad4e5776727ba06259f8dfb"
@@ -14254,21 +14232,6 @@ dependencies = [
  "strata-codec-utils",
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-asm-txs-checkpoint-v0"
-version = "0.1.0"
-dependencies = [
- "alpen-bridge-types",
- "bitcoin",
- "borsh",
- "ssz",
- "strata-asm-common",
- "strata-checkpoint-types",
- "strata-l1-envelope-fmt",
- "strata-ol-chainstate-types",
  "thiserror 2.0.18",
 ]
 
@@ -14470,7 +14433,6 @@ dependencies = [
  "rand_core 0.6.4",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-proto-checkpoint-v0",
  "strata-bridge-types",
  "strata-btc-verification",
  "strata-checkpoint-types",
@@ -14544,7 +14506,6 @@ dependencies = [
  "strata-asm-params",
  "strata-asm-proto-bridge-v1",
  "strata-asm-txs-bridge-v1",
- "strata-asm-txs-checkpoint-v0",
  "strata-bridge-types",
  "strata-btcio",
  "strata-checkpoint-types",
@@ -14728,7 +14689,6 @@ dependencies = [
  "serde_json",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-proto-checkpoint-v0",
  "strata-asm-worker",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
@@ -15048,7 +15008,6 @@ dependencies = [
  "reth-rpc-api",
  "reth-rpc-layer",
  "revm-primitives",
- "strata-bridge-types",
  "strata-db-types",
  "strata-eectl",
  "strata-ol-chain-types",
@@ -15884,7 +15843,6 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-asm-proto-checkpoint-v0",
  "strata-chainexec",
  "strata-chaintsn",
  "strata-checkpoint-types",

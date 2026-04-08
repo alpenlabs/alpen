@@ -19,8 +19,6 @@ members = [
   # Alpen-local ASM crates (not in the asm repo)
   "crates/alpen-bridge-types",
   "crates/asm/moho-program",
-  "crates/asm/subprotocols/checkpoint-v0",
-  "crates/asm/txs/checkpoint-v0",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -196,8 +194,6 @@ strata-btc-verification = { git = "https://github.com/alpenlabs/asm.git", rev = 
 # Alpen-local ASM crates (not in the asm repo)
 alpen-bridge-types = { path = "crates/alpen-bridge-types" }
 strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
-strata-asm-proto-checkpoint-v0 = { path = "crates/asm/subprotocols/checkpoint-v0" }
-strata-asm-txs-checkpoint-v0 = { path = "crates/asm/txs/checkpoint-v0" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }

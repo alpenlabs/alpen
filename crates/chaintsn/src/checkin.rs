@@ -3,7 +3,6 @@
 use alpen_bridge_types::{DepositDescriptor, DepositIntent};
 use strata_asm_common::AsmManifest;
 use strata_asm_logs::{constants::DEPOSIT_LOG_TYPE_ID, DepositLog};
-use strata_asm_proto_checkpoint_v0::{CheckpointUpdate, CHECKPOINT_UPDATE_LOG_TYPE};
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
 use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment, L1Height};
@@ -125,13 +124,12 @@ fn process_asm_logs<'s, S: StateAccessor>(
 ) -> Result<(), TsnError> {
     for log in manifest.logs() {
         match log.ty() {
-            Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
-                if let Ok(ckpt_update) = log.try_into_log::<CheckpointUpdate>() {
-                    if let Err(e) = process_l1_checkpoint(state, &ckpt_update) {
-                        warn!(%e, "failed to process L1 checkpoint");
-                    }
-                }
-            }
+            // TODO(checkpoint-v1): wire up CHECKPOINT_TIP_UPDATE_LOG_TYPE handling.
+            // The v0 CheckpointUpdate path was removed when checkpoint-v0 was
+            // retired. The v1 CheckpointTipUpdate carries less information
+            // (tip + txid) than the v0 update did, so the equivalent
+            // `process_l1_checkpoint` needs to derive `finalized_epoch` from
+            // `tip.epoch` rather than the old `epoch_commitment` field.
             Some(DEPOSIT_LOG_TYPE_ID) => {
                 if let Ok(deposit) = log.try_into_log::<DepositLog>() {
                     if let Err(e) = process_l1_deposit(state, deposit) {
@@ -145,16 +143,6 @@ fn process_asm_logs<'s, S: StateAccessor>(
         }
     }
 
-    Ok(())
-}
-
-fn process_l1_checkpoint<'s, S: StateAccessor>(
-    state: &mut FauxStateCache<'s, S>,
-    ckpt_update: &CheckpointUpdate,
-) -> Result<(), OpError> {
-    debug!(?ckpt_update, "observed l1 checkpoint");
-    let new_fin_epoch = ckpt_update.epoch_commitment();
-    state.inner_mut().set_finalized_epoch(new_fin_epoch);
     Ok(())
 }
 
