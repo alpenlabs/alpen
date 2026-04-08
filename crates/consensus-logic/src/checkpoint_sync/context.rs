@@ -80,10 +80,8 @@ pub trait CheckpointSyncCtx: Send + Sync {
     ) -> impl Future<Output = anyhow::Result<Option<CheckpointL1Ref>>> + Send;
 
     /// Submits a DA payload to the chain worker.
-    fn apply_da(
-        &self,
-        payload: &ApplyDAPayload,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn apply_da(&self, payload: &ApplyDAPayload)
+        -> impl Future<Output = anyhow::Result<()>> + Send;
 
     /// Updates the safe tip in the chain worker.
     fn update_safe_tip(

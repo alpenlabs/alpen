@@ -57,7 +57,6 @@ pub async fn start_fcm_service(
 
     // Update status channel
 
-
     let (fcm_tx, fcm_rx) = mpsc_channel::<ForkChoiceMessage>(64);
     let fcm_input = FcmInput::new(fcm_rx, clstate_rx);
 

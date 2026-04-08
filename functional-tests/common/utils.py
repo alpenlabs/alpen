@@ -1,5 +1,10 @@
+"""
+Utils modules for commonly used items.
+"""
+
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 from bitcoinlib.services.bitcoind import BitcoindClient
 

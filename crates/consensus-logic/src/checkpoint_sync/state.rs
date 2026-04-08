@@ -594,12 +594,7 @@ mod tests {
     #[tokio::test]
     async fn build_status_genesis_uses_null_prev() {
         let epoch0 = make_epoch(0, 0, 0x00);
-        let summary = make_epoch_summary(
-            0,
-            epoch0,
-            EpochCommitment::null(),
-            100,
-        );
+        let summary = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
 
         let ctx = MockCtx::new(3, 200).add_epoch(epoch0, make_l1_ref(100), Some(summary));
         let status = build_ol_sync_status(&ctx, epoch0).await.unwrap();
