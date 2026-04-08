@@ -168,45 +168,16 @@ alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
-# ASM crates from alpenlabs/asm (post PR #65 break-bridge-cycle, patch-free)
-strata-asm-bridge-msgs = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-checkpoint-msgs = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-common = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-logs = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-params = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-proto-administration = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-proto-bridge-v1 = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-proto-debug-v1 = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-spec = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-spec-debug = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-stf = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-txs-admin = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-txs-bridge-v1 = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-txs-checkpoint = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-txs-test-utils = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-asm-worker = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-bridge-types = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
-strata-btc-verification = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
-
-# Alpen-local ASM crates (not in the asm repo)
-alpen-bridge-types = { path = "crates/alpen-bridge-types" }
-strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
-strata-checkpoint-types-ssz = { git = "https://github.com/alpenlabs/asm.git", rev = "124edbf43be12c2ebad4e5776727ba06259f8dfb" }
 strata-cli-common = { path = "crates/cli-common" }
-strata-codec-utils = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
-strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13", default-features = false }
 strata-csm-types = { path = "crates/csm-types" }
 strata-csm-worker = { path = "crates/csm-worker" }
 strata-da-framework = { path = "crates/da-framework" }
@@ -220,7 +191,6 @@ strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
 strata-eectl = { path = "crates/eectl" }
 strata-evm-ee = { path = "crates/evm-ee" }
 strata-evmexec = { path = "crates/evmexec" }
-strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }
@@ -273,11 +243,43 @@ strata-test-utils-l2 = { path = "crates/test-utils/l2" }
 strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
+# Alpen-local ASM crates (not in the asm repo), to be eliminaed/re-adapted.
+# WIP
+alpen-bridge-types = { path = "crates/alpen-bridge-types" }
+strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
+
+# alpenlabs/asm (tag v0.1.0-rc1, first tagged pre-release)
+strata-asm-bridge-msgs = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-checkpoint-msgs = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-common = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-logs = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-params = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-proto-administration = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-proto-bridge-v1 = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-proto-debug-v1 = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-spec = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-spec-debug = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-stf = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-txs-admin = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-txs-bridge-v1 = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-txs-checkpoint = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-txs-test-utils = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-asm-worker = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-bridge-types = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-btc-verification = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+strata-checkpoint-types-ssz = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc1" }
+
 # strata-common
+strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
 ], tag = "v0.1.0-alpha-rc13" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
+strata-codec-utils = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
+strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13", default-features = false }
+strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc13" }
