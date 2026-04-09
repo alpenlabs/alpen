@@ -2,8 +2,6 @@
 
 import logging
 
-from common.services.bitcoin import BitcoinService
-from common.services.strata import StrataService
 from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)

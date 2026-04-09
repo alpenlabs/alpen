@@ -275,7 +275,7 @@ mod tests {
         let pool = threadpool::ThreadPool::new(4);
         let storage = Arc::new(create_node_storage(db, pool).expect("Failed to create storage"));
 
-        let tip_block = L1BlockCommitment::new(20, L1BlockId::default());
+        let tip_block = L1BlockCommitment::new(21, L1BlockId::default());
         storage
             .client_state()
             .put_update_blocking(

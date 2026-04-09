@@ -8,7 +8,6 @@ from typing import TypeVar
 
 from bitcoinlib.services.bitcoind import BitcoindClient
 
-
 T = TypeVar("T")
 
 
