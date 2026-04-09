@@ -1019,6 +1019,13 @@ fn test_vk_size_at_predicate_limit_roundtrips() {
 }
 
 #[test]
+#[should_panic(expected = "valid length")]
+fn test_oversized_predicate_key_panics() {
+    let oversized_vk_len = MAX_CONDITION_LEN as usize + 1;
+    let _ = PredicateKey::new(PredicateTypeId::AlwaysAccept, vec![0u8; oversized_vk_len]);
+}
+
+#[test]
 fn test_message_source_missing_is_rejected() {
     let account_id = test_account_id(1);
     let (state, _) = setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
