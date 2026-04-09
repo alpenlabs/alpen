@@ -17,8 +17,12 @@ impl EeAccountState {
         Self {
             last_exec_blkid: last_exec_blkid.0.into(),
             tracked_balance,
-            pending_inputs: pending_inputs.into(),
-            pending_fincls: pending_fincls.into(),
+            pending_inputs: pending_inputs
+                .try_into()
+                .expect("pending inputs should not exceed capacity"),
+            pending_fincls: pending_fincls
+                .try_into()
+                .expect("pending fincls should not exceed capacity"),
         }
     }
 
@@ -79,7 +83,9 @@ impl EeAccountState {
         } else {
             let mut vec: Vec<_> = self.pending_inputs.clone().into();
             vec.drain(..n);
-            self.pending_inputs = vec.into();
+            self.pending_inputs = vec
+                .try_into()
+                .expect("pending inputs should not exceed capacity");
             true
         }
     }
@@ -99,7 +105,9 @@ impl EeAccountState {
         } else {
             let mut vec: Vec<_> = self.pending_fincls.clone().into();
             vec.drain(..n);
-            self.pending_fincls = vec.into();
+            self.pending_fincls = vec
+                .try_into()
+                .expect("pending fincls should not exceed capacity");
             true
         }
     }
@@ -216,8 +224,12 @@ mod tests {
                     EeAccountState {
                         last_exec_blkid: last_exec_blkid.into(),
                         tracked_balance: BitcoinAmount::from_sat(balance),
-                        pending_inputs: inputs.into(),
-                        pending_fincls: fincls.into(),
+                        pending_inputs: inputs
+                            .try_into()
+                            .expect("pending inputs should not exceed capacity"),
+                        pending_fincls: fincls
+                            .try_into()
+                            .expect("pending fincls should not exceed capacity"),
                     }
                 },)
         );

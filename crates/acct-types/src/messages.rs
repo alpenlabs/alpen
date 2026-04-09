@@ -84,7 +84,9 @@ impl MsgPayload {
         Self {
             value,
             // FIXME size limits
-            data: data.into(),
+            data: data
+                .try_into()
+                .expect("message payload bytes must fit within SSZ max length"),
         }
     }
 
@@ -197,7 +199,9 @@ mod tests {
             (any::<u64>(), prop::collection::vec(any::<u8>(), 0..100)).prop_map(|(sats, data)| {
                 MsgPayload {
                     value: BitcoinAmount::from_sat(sats),
-                    data: data.into(),
+                    data: data
+                        .try_into()
+                        .expect("message payload bytes must fit within SSZ max length"),
                 }
             })
         );
@@ -227,7 +231,9 @@ mod tests {
                         dest: AccountId::new(id),
                         payload: MsgPayload {
                             value: BitcoinAmount::from_sat(sats),
-                            data: data.into(),
+                            data: data
+                                .try_into()
+                                .expect("message payload bytes must fit within SSZ max length"),
                         },
                     }
                 })
@@ -260,7 +266,9 @@ mod tests {
                         source: AccountId::new(id),
                         payload: MsgPayload {
                             value: BitcoinAmount::from_sat(sats),
-                            data: data.into(),
+                            data: data
+                                .try_into()
+                                .expect("message payload bytes must fit within SSZ max length"),
                         },
                     }
                 })

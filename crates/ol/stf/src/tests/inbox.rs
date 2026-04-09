@@ -222,7 +222,7 @@ fn test_snark_update_invalid_message_proof() {
 
     // Create an invalid proof with bogus cohashes
     let invalid_raw_proof = RawMerkleProof {
-        cohashes: vec![FixedBytes::<32>::from([0xff; 32])].into(),
+        cohashes: vec![FixedBytes::<32>::from([0xff; 32])].try_into().unwrap(),
     };
 
     // Use SnarkUpdateBuilder with the invalid proof

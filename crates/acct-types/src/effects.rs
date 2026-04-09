@@ -10,7 +10,11 @@ impl TxEffects {
         match &mut self.transfers {
             ssz_types::Optional::Some(list) => list.push(xfr).is_ok(),
             none => {
-                *none = ssz_types::Optional::Some(vec![xfr].into());
+                *none = ssz_types::Optional::Some(
+                    vec![xfr]
+                        .try_into()
+                        .expect("transfer list must fit within SSZ max length"),
+                );
                 true
             }
         }
@@ -39,7 +43,11 @@ impl TxEffects {
         match &mut self.messages {
             ssz_types::Optional::Some(list) => list.push(msg).is_ok(),
             none => {
-                *none = ssz_types::Optional::Some(vec![msg].into());
+                *none = ssz_types::Optional::Some(
+                    vec![msg]
+                        .try_into()
+                        .expect("message list must fit within SSZ max length"),
+                );
                 true
             }
         }

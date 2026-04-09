@@ -218,7 +218,9 @@ mod tests {
         TxProofs::new(
             None,
             Some(RawMerkleProofList {
-                proofs: proofs.into(),
+                proofs: proofs
+                    .try_into()
+                    .expect("proofs should not exceed capacity"),
             }),
         )
     }
@@ -226,12 +228,16 @@ mod tests {
     fn make_pred_proofs(n: usize) -> TxProofs {
         let proofs: Vec<ProofSatisfier> = (0..n)
             .map(|i| ProofSatisfier {
-                proof: vec![i as u8].into(),
+                proof: vec![i as u8]
+                    .try_into()
+                    .expect("proof should not exceed capacity"),
             })
             .collect();
         TxProofs::new(
             Some(ProofSatisfierList {
-                proofs: proofs.into(),
+                proofs: proofs
+                    .try_into()
+                    .expect("proofs should not exceed capacity"),
             }),
             None,
         )

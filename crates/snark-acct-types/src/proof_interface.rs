@@ -19,10 +19,14 @@ impl UpdateProofPubParams {
         Self {
             cur_state,
             new_state,
-            message_inputs: message_inputs.into(),
+            message_inputs: message_inputs
+                .try_into()
+                .expect("message inputs must fit within SSZ max length"),
             ledger_refs,
             outputs,
-            extra_data: extra_data.into(),
+            extra_data: extra_data
+                .try_into()
+                .expect("extra data must fit within SSZ max length"),
         }
     }
 
@@ -75,7 +79,9 @@ mod tests {
         (any::<u64>(), prop::collection::vec(any::<u8>(), 0..32)).prop_map(|(value, data)| {
             MsgPayload {
                 value: BitcoinAmount::from_sat(value),
-                data: data.into(),
+                data: data
+                    .try_into()
+                    .expect("message payload bytes must fit within SSZ max length"),
             }
         })
     }
@@ -99,7 +105,9 @@ mod tests {
 
     fn ledger_refs_strategy() -> impl Strategy<Value = LedgerRefs> {
         prop::collection::vec(accumulator_claim_strategy(), 0..3).prop_map(|refs| LedgerRefs {
-            l1_header_refs: refs.into(),
+            l1_header_refs: refs
+                .try_into()
+                .expect("ledger refs must fit within SSZ max length"),
         })
     }
 
@@ -121,8 +129,12 @@ mod tests {
             prop::collection::vec(output_message_strategy(), 0..3),
         )
             .prop_map(|(transfers, messages)| UpdateOutputs {
-                transfers: transfers.into(),
-                messages: messages.into(),
+                transfers: transfers
+                    .try_into()
+                    .expect("transfers must fit within SSZ max length"),
+                messages: messages
+                    .try_into()
+                    .expect("messages must fit within SSZ max length"),
             })
     }
 
@@ -140,10 +152,14 @@ mod tests {
                     UpdateProofPubParams {
                         cur_state,
                         new_state,
-                        message_inputs: message_inputs.into(),
+                        message_inputs: message_inputs
+                            .try_into()
+                            .expect("message inputs must fit within SSZ max length"),
                         ledger_refs,
                         outputs,
-                        extra_data: extra_data.into(),
+                        extra_data: extra_data
+                            .try_into()
+                            .expect("extra data must fit within SSZ max length"),
                     }
                 },
             )

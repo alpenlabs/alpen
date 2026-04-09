@@ -189,7 +189,10 @@ mod tests {
         };
 
         let body = OLBlockBody {
-            tx_segment: Some(OLTxSegment { txs: vec![].into() }).into(),
+            tx_segment: Some(OLTxSegment {
+                txs: vec![].try_into().unwrap(),
+            })
+            .into(),
             l1_update: None.into(),
         };
 

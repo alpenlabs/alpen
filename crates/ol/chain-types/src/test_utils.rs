@@ -26,8 +26,11 @@ pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
 }
 
 pub fn ol_tx_segment_strategy() -> impl Strategy<Value = OLTxSegment> {
-    prop::collection::vec(ol_transaction_strategy(), 0..10)
-        .prop_map(|txs| OLTxSegment { txs: txs.into() })
+    prop::collection::vec(ol_transaction_strategy(), 0..10).prop_map(|txs| OLTxSegment {
+        txs: txs
+            .try_into()
+            .expect("transactions must fit within SSZ max length"),
+    })
 }
 
 pub fn l1_update_strategy() -> impl Strategy<Value = Option<OLL1Update>> {
@@ -105,7 +108,9 @@ pub fn message_entry_strategy() -> impl Strategy<Value = MessageEntry> {
             incl_epoch,
             payload: MsgPayload {
                 value: BitcoinAmount::from_sat(value),
-                data: data.into(),
+                data: data
+                    .try_into()
+                    .expect("message payload bytes must fit within SSZ max length"),
             },
         })
 }
@@ -148,9 +153,13 @@ pub fn sau_tx_payload_strategy() -> impl Strategy<Value = SauTxPayload> {
                             new_next_msg_idx: 0,
                             inner_state_root: state_bytes.into(),
                         },
-                        extra_data: extra_data.into(),
+                        extra_data: extra_data
+                            .try_into()
+                            .expect("extra data must fit within SSZ max length"),
                     },
-                    messages: messages.into(),
+                    messages: messages
+                        .try_into()
+                        .expect("messages must fit within SSZ max length"),
                     ledger_refs: SauTxLedgerRefs {
                         asm_history_proofs: ssz_types::Optional::None,
                     },

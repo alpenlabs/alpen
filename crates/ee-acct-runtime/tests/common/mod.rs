@@ -53,7 +53,7 @@ fn with_archived_inputs<R>(
 pub fn make_snark_state(ee_state: &EeAccountState) -> SnarkAccountState {
     SnarkAccountState {
         // Dummy VK since we don't actually care about it in any of these tests.
-        update_vk: Vec::new().into(),
+        update_vk: Vec::new().try_into().unwrap(),
         proof_state: ProofState::new(ee_state.compute_state_root(), 0),
         seq_no: 0,
         inbox_mmr: strata_acct_types::Mmr64 {

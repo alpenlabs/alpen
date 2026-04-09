@@ -22,7 +22,9 @@ impl AsmManifest {
             height,
             blkid,
             wtxids_root,
-            logs: logs.into(),
+            logs: logs
+                .try_into()
+                .expect("ASM manifest logs must fit within SSZ max length"),
         }
     }
 

@@ -497,7 +497,8 @@ impl InboxMmrTracker {
                 .iter()
                 .map(|h| FixedBytes::from(*h))
                 .collect::<Vec<_>>()
-                .into(),
+                .try_into()
+                .expect("proof cohashes should fit into RawMerkleProof"),
         }
     }
 
@@ -548,7 +549,8 @@ impl ManifestMmrTracker {
                 .iter()
                 .map(|h| FixedBytes::from(*h))
                 .collect::<Vec<_>>()
-                .into(),
+                .try_into()
+                .expect("proof cohashes should fit into RawMerkleProof"),
         };
 
         (index, raw_proof)
@@ -694,7 +696,7 @@ impl SnarkUpdateBuilder {
         let update_data = SauTxUpdateData {
             seq_no: self.seq_no,
             proof_state,
-            extra_data: vec![].into(),
+            extra_data: vec![].try_into().unwrap(),
         };
 
         // Build ledger refs
@@ -708,7 +710,7 @@ impl SnarkUpdateBuilder {
 
         let operation_data = SauTxOperationData {
             update_data,
-            messages: self.processed_messages.into(),
+            messages: self.processed_messages.try_into().unwrap(),
             ledger_refs,
         };
 
@@ -728,7 +730,9 @@ impl SnarkUpdateBuilder {
             None
         } else {
             Some(RawMerkleProofList {
-                proofs: all_accumulator_proofs.into(),
+                proofs: all_accumulator_proofs
+                    .try_into()
+                    .expect("test: too many accumulator proofs"),
             })
         };
 
@@ -737,9 +741,12 @@ impl SnarkUpdateBuilder {
         } else {
             Some(ProofSatisfierList {
                 proofs: vec![ProofSatisfier {
-                    proof: proof.into(),
+                    proof: proof
+                        .try_into()
+                        .expect("test: proof should fit in ProofSatisfier"),
                 }]
-                .into(),
+                .try_into()
+                .expect("test: too many predicate proofs"),
             })
         };
 
@@ -780,12 +787,12 @@ pub fn create_unchecked_snark_update(
     let update_data = SauTxUpdateData {
         seq_no: wrong_seq_no,
         proof_state,
-        extra_data: vec![].into(),
+        extra_data: vec![].try_into().unwrap(),
     };
 
     let operation_data = SauTxOperationData {
         update_data,
-        messages: vec![].into(),
+        messages: vec![].try_into().unwrap(),
         ledger_refs: SauTxLedgerRefs::new_empty(),
     };
 
@@ -805,9 +812,10 @@ pub fn create_unchecked_snark_update(
     let tx_proofs = TxProofs::new(
         Some(ProofSatisfierList {
             proofs: vec![ProofSatisfier {
-                proof: vec![0u8; 32].into(),
+                proof: vec![0u8; 32].try_into().unwrap(),
             }]
-            .into(),
+            .try_into()
+            .expect("test: too many predicate proofs"),
         }),
         None,
     );

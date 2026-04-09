@@ -158,7 +158,9 @@ mod tests {
                             serial: AccountSerial::new(serial),
                             balance: BitcoinAmount::from_sat(sats),
                         },
-                        encoded_state: encoded.into(),
+                        encoded_state: encoded
+                            .try_into()
+                            .expect("encoded state should not exceed capacity"),
                     }
                 })
         );
@@ -167,7 +169,7 @@ mod tests {
         fn test_zero_ssz() {
             let state = EncodedAccountInnerState {
                 intrinsics: AccountIntrinsicState::new_empty(AccountSerial::new(0)),
-                encoded_state: vec![].into(),
+                encoded_state: vec![].try_into().unwrap(),
             };
             let encoded = state.as_ssz_bytes();
             let decoded = EncodedAccountInnerState::from_ssz_bytes(&encoded).unwrap();
