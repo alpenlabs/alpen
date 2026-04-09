@@ -10,16 +10,13 @@ use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{types::AccountExtraDataEntry, DbResult};
+use strata_db_types::{types::AccountExtraData, DbResult};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::OLMempoolResult;
 use strata_ol_state_types::OLState;
-use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment};
+use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec, OLBlockCommitment};
 use strata_status::OLSyncStatus;
-
-/// Extra data associated with an account at a given epoch.
-pub type AccountExtraData = AccountExtraDataEntry;
 
 /// Provides all data access needed by the OL RPC server.
 #[async_trait]
@@ -58,7 +55,7 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     async fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraData>>;
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraData>>>;
 
     /// Gets account inbox messages in `[start_idx, end_idx_exclusive)` from the account inbox MMR.
     /// Returns an empty vector when `end_idx_exclusive <= start_idx`.

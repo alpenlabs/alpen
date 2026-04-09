@@ -54,7 +54,7 @@ use writer::db::L1WriterDBSled;
 
 // Re-exports
 #[rustfmt::skip]
-pub use account::db::AccountGenesisDBSled;
+pub use account::db::AccountDBSled;
 pub use asm::AsmDBSled;
 pub use config::SledDbConfig;
 pub use mmr_index::MmrIndexDb;
@@ -81,7 +81,7 @@ pub fn open_sled_backend(
 /// Complete Sled backend with all database types
 #[derive(Debug)]
 pub struct SledBackend {
-    account_genesis_db: Arc<AccountGenesisDBSled>,
+    account_genesis_db: Arc<AccountDBSled>,
     asm_db: Arc<AsmDBSled>,
     l1_db: Arc<L1DBSled>,
     l2_db: Arc<L2DBSled>,
@@ -104,10 +104,7 @@ impl SledBackend {
         let db_ref = &sled_db;
         let config_ref = &config;
 
-        let account_genesis_db = Arc::new(AccountGenesisDBSled::new(
-            db_ref.clone(),
-            config_ref.clone(),
-        )?);
+        let account_genesis_db = Arc::new(AccountDBSled::new(db_ref.clone(), config_ref.clone())?);
         let asm_db = Arc::new(AsmDBSled::new(db_ref.clone(), config_ref.clone())?);
         let l1_db = Arc::new(L1DBSled::new(db_ref.clone(), config_ref.clone())?);
         let l2_db = Arc::new(L2DBSled::new(db_ref.clone(), config_ref.clone())?);

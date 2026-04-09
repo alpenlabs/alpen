@@ -5,7 +5,7 @@ use strata_acct_types::{MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{DbError, DbResult, types::AccountExtraDataEntry};
+use strata_db_types::{DbResult, types::AccountExtraData};
 use strata_identifiers::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
@@ -16,7 +16,8 @@ use strata_ol_rpc_types::*;
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 use strata_primitives::{
-    HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
+    HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, nonempty_vec::NonEmptyVec,
+    prelude::BitcoinAmount,
 };
 use strata_snark_acct_types::Seqno;
 use strata_status::OLSyncStatus;
@@ -38,7 +39,7 @@ struct MockProvider {
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
-    account_extra_data: HashMap<(AccountId, Epoch), AccountExtraData>,
+    account_extra_data: HashMap<(AccountId, Epoch), NonEmptyVec<AccountExtraData>>,
     account_creation_epochs: HashMap<AccountId, Epoch>,
     manifests: HashMap<L1Height, AsmManifest>,
     l1_tip_height: Option<L1Height>,
@@ -145,9 +146,8 @@ impl MockProvider {
         extra_data: Vec<u8>,
         block: OLBlockCommitment,
     ) -> Self {
-        let entry = AccountExtraDataEntry::new(extra_data, block);
-        self.account_extra_data
-            .insert((account_id, epoch), AccountExtraData::new(entry));
+        let entry = NonEmptyVec::new(entry);
+        self.account_extra_data.insert((account_id, epoch), entry);
         self
     }
 
@@ -224,7 +224,7 @@ impl OLRpcProvider for MockProvider {
     async fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraData>> {
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraData>>> {
         Ok(self.account_extra_data.get(&key).cloned())
     }
 

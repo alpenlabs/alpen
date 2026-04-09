@@ -16,6 +16,7 @@ use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::{
+    nonempty_vec::NonEmptyVec,
     prelude::*,
     proof::{ProofContext, ProofKey},
 };
@@ -31,7 +32,7 @@ use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
-        AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
+        AccountExtraData, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
         L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskId, PersistedTaskRecord,
     },
     DbResult, RawMmrId,
@@ -676,15 +677,19 @@ pub trait AccountDatabase: Send + Sync + 'static {
     /// Gets the creation epoch for an account, if recorded.
     fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
 
-    /// Inserts account extra data for a given epoch index. This replaces the existing extra data in
-    /// db with the new value with the same key.
-    // NOTE: We only want the extra data for an epoch and not per-block so this is a correct
-    // behaviour.
+    /// Inserts/Updates the list of extra data for an epoch.
     // TODO: Make this more robust by associating with epoch commitment instead of epoch index.
-    fn insert_account_extra_data(
+    fn put_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-        extra_data: AccountExtraDataEntry,
+        extra_data: NonEmptyVec<AccountExtraData>,
+    ) -> DbResult<()>;
+
+    /// Append an account extra data
+    fn append_account_extra_data(
+        &self,
+        key: (AccountId, Epoch),
+        extra_data: AccountExtraData,
     ) -> DbResult<()>;
 
     /// Gets the account extra data for given account and OLBlockId. Returns an array of collected
@@ -692,7 +697,7 @@ pub trait AccountDatabase: Send + Sync + 'static {
     fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraDataEntry>>;
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraData>>>;
 }
 
 /// Database interface for OL mempool transactions.

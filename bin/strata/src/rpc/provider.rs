@@ -14,9 +14,9 @@ use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 #[cfg(feature = "sequencer")]
 use strata_ol_mempool::MempoolHandle;
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
-use strata_ol_rpc_types::{AccountExtraData, OLRpcProvider};
+use strata_ol_rpc_types::OLRpcProvider;
 use strata_ol_state_types::OLState;
-use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
+use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment, nonempty_vec::NonEmptyVec};
 use strata_status::{OLSyncStatus, StatusChannel};
 use strata_storage::NodeStorage;
 
@@ -102,7 +102,7 @@ impl OLRpcProvider for NodeRpcProvider {
     async fn get_account_extra_data(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraData>> {
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraData>>> {
         self.storage
             .account()
             .get_account_extra_data_async(key)

@@ -3,18 +3,21 @@
 //! This module provides [`ChainWorkerContextImpl`], a production implementation
 //! of the worker context that uses the storage layer managers for database access.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    sync::Arc,
+};
 
 use strata_acct_types::AccountId;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::types::AccountExtraDataEntry;
+use strata_db_types::types::AccountExtraData;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::IndexerWrites;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
-use strata_primitives::epoch::EpochCommitment;
+use strata_primitives::{epoch::EpochCommitment, nonempty_vec::NonEmptyVec};
 use strata_status::StatusChannel;
 use strata_storage::{AccountManager, OLBlockManager, OLCheckpointManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
@@ -105,26 +108,25 @@ impl ChainWorkerContextImpl {
         Ok(())
     }
 
-    fn store_snark_extra_data(
-        &self,
-        commitment: OLBlockCommitment,
-        epoch: u32,
-        writes: &IndexerWrites,
-    ) -> WorkerResult<()> {
-        let grouped: HashMap<AccountId, AccountExtraDataEntry> = writes
-            .snark_state_updates()
-            .iter()
-            .filter_map(|u| {
-                Some((
-                    u.account_id(),
-                    AccountExtraDataEntry::new(u.extra_data()?.to_vec(), commitment),
-                ))
-            })
-            .collect();
+    fn store_snark_extra_data(&self, epoch: u32, writes: &IndexerWrites) -> WorkerResult<()> {
+        // First group extra data by account ids to get a map of accountId -> NonEmptyVec<ExtraData>
+        let mut grouped: HashMap<AccountId, NonEmptyVec<AccountExtraData>> = HashMap::new();
+
+        for update in writes.snark_state_updates() {
+            let Some(extra) = update.extra_data() else {
+                continue;
+            };
+            match grouped.entry(update.account_id()) {
+                Entry::Occupied(mut e) => e.get_mut().push(extra.to_vec()),
+                Entry::Vacant(e) => {
+                    e.insert(NonEmptyVec::new(extra.to_vec()));
+                }
+            }
+        }
 
         for (acct_id, entries) in grouped {
             self.account_mgr
-                .insert_account_extra_data_blocking((acct_id, epoch), entries)?;
+                .put_account_extra_data_blocking((acct_id, epoch), entries)?;
         }
         Ok(())
     }
@@ -206,7 +208,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         self.store_account_creation_epochs(epoch, &new_ids)?;
         // Write account extra data
-        self.store_snark_extra_data(commitment, epoch, output.indexer_writes())?;
+        self.store_snark_extra_data(epoch, output.indexer_writes())?;
 
         Ok(())
     }
@@ -260,7 +262,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         );
         self.store_toplevel_state(commitment, state)?;
         self.store_account_creation_epochs(epoch, new_account_ids)?;
-        self.store_snark_extra_data(commitment, epoch, indexer_writes)?;
+        self.store_snark_extra_data(epoch, indexer_writes)?;
         self.store_auxiliary_data(commitment, indexer_writes)?;
         Ok(())
     }

@@ -12,7 +12,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
-use strata_identifiers::{Buf32, OLBlockCommitment, OLTxId};
+use strata_identifiers::{Buf32, OLTxId};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
 use strata_paas::TaskStatus;
@@ -515,23 +515,7 @@ impl fmt::Display for ChunkedEnvelopeEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
-pub struct AccountExtraDataEntry {
-    /// Extra data for an account
-    extra_data: Vec<u8>,
-    /// The block in which the data is present
-    block: OLBlockCommitment,
-}
-
-impl AccountExtraDataEntry {
-    pub fn new(extra_data: Vec<u8>, block: OLBlockCommitment) -> Self {
-        Self { extra_data, block }
-    }
-
-    pub fn into_parts(self) -> (Vec<u8>, OLBlockCommitment) {
-        (self.extra_data, self.block)
-    }
-}
+pub type AccountExtraData = Vec<u8>;
 
 /// Metadata for a single reveal transaction within a chunked envelope.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]

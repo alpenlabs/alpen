@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use ops::account::{AccountOps, Context};
-use strata_db_types::{traits::AccountDatabase, types::AccountExtraDataEntry, DbResult};
+use strata_db_types::{traits::AccountDatabase, types::AccountExtraData, DbResult};
 use strata_identifiers::{AccountId, Epoch};
+use strata_primitives::nonempty_vec::NonEmptyVec;
 use threadpool::ThreadPool;
 
 use crate::ops;
@@ -44,22 +45,40 @@ impl AccountManager {
     }
 
     /// Inserts account extra data by blocking.
-    pub fn insert_account_extra_data_blocking(
+    pub fn put_account_extra_data_blocking(
         &self,
         key: (AccountId, Epoch),
-        extra_data: AccountExtraDataEntry,
+        extra_data: NonEmptyVec<AccountExtraData>,
     ) -> DbResult<()> {
-        self.ops.insert_account_extra_data_blocking(key, extra_data)
+        self.ops.put_account_extra_data_blocking(key, extra_data)
     }
 
     /// Inserts account extra data async.
-    pub async fn insert_account_extra_data_async(
+    pub async fn put_account_extra_data_async(
         &self,
         key: (AccountId, Epoch),
-        extra_data: AccountExtraDataEntry,
+        extra_data: NonEmptyVec<AccountExtraData>,
+    ) -> DbResult<()> {
+        self.ops.put_account_extra_data_async(key, extra_data).await
+    }
+
+    /// Appends account extra data by blocking.
+    pub fn append_account_extra_data_blocking(
+        &self,
+        key: (AccountId, Epoch),
+        extra_data: AccountExtraData,
+    ) -> DbResult<()> {
+        self.ops.append_account_extra_data_blocking(key, extra_data)
+    }
+
+    /// Appends account extra data async.
+    pub async fn append_account_extra_data_async(
+        &self,
+        key: (AccountId, Epoch),
+        extra_data: AccountExtraData,
     ) -> DbResult<()> {
         self.ops
-            .insert_account_extra_data_async(key, extra_data)
+            .append_account_extra_data_async(key, extra_data)
             .await
     }
 
@@ -67,7 +86,7 @@ impl AccountManager {
     pub fn get_account_extra_data_blocking(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraDataEntry>> {
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraData>>> {
         self.ops.get_account_extra_data_blocking(key)
     }
 
@@ -75,7 +94,7 @@ impl AccountManager {
     pub async fn get_account_extra_data_async(
         &self,
         key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraDataEntry>> {
+    ) -> DbResult<Option<NonEmptyVec<AccountExtraData>>> {
         self.ops.get_account_extra_data_async(key).await
     }
 }
