@@ -160,6 +160,15 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
 
         Ok(())
     }
+
+    fn set_update_vk(&mut self, new_vk: PredicateKey) {
+        // NOTE: predicate-key updates are intentionally NOT pushed to
+        // `self.writes`. They are observable via the ASM log that drove the
+        // mutation, so DA consumers can replay logs to reconstruct the new vk.
+        // Revisit if a future indexer needs DA-level tracking of vk rotations.
+        self.inner.set_update_vk(new_vk);
+        self.modified = true;
+    }
 }
 
 // ============================================================================

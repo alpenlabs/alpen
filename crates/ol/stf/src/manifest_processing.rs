@@ -3,12 +3,14 @@
 use strata_acct_types::MsgPayload;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
-    CheckpointTipUpdate, DepositLog,
-    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
+    CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
+    constants::{
+        CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID, EE_PREDICATE_KEY_UPDATE_LOG_TYPE,
+    },
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
 use strata_msg_fmt::Msg;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
@@ -104,6 +106,14 @@ fn process_asm_log<S: IStateAccessor>(
             process_checkpoint_tip_update(state, &data, context)?;
         }
 
+        EE_PREDICATE_KEY_UPDATE_LOG_TYPE => {
+            // Parse the per-snark-account predicate key update.
+            let Ok(data) = log.try_into_log::<EePredicateKeyUpdate>() else {
+                return Ok(());
+            };
+            process_ee_predicate_key_update(state, &data)?;
+        }
+
         _ => {
             // Some other log type, which we don't care about, skip it.
         }
@@ -161,6 +171,28 @@ fn process_checkpoint_tip_update<S: IStateAccessor>(
     let tip = data.tip();
     let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     state.set_asm_recorded_epoch(epoch_commitment);
+
+    Ok(())
+}
+
+fn process_ee_predicate_key_update<S: IStateAccessor>(
+    state: &mut S,
+    data: &EePredicateKeyUpdate,
+) -> ExecResult<()> {
+    // Resolve the account serial. Silently skip if not found, matching the
+    // deposit handler convention.
+    let Some(acct_id) = state.find_account_id_by_serial(data.account())? else {
+        return Ok(());
+    };
+
+    let new_vk = data.new_predicate().clone();
+    state.update_account(acct_id, |astate| {
+        // Silently skip if the target is not a snark account; non-snark
+        // accounts have no predicate key to update.
+        if let Ok(snark) = astate.as_snark_account_mut() {
+            snark.set_update_vk(new_vk);
+        }
+    })?;
 
     Ok(())
 }

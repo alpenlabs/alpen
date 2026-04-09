@@ -13,6 +13,9 @@ mod updates;
 mod deposit_withdrawal;
 
 #[cfg(test)]
+mod ee_predicate_update;
+
+#[cfg(test)]
 mod multi_operations;
 
 #[cfg(test)]

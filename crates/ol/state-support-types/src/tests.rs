@@ -556,6 +556,10 @@ impl ISnarkAccountStateMut for TestSnarkState {
     fn insert_inbox_message(&mut self, _entry: MessageEntry) -> strata_acct_types::AcctResult<()> {
         Ok(())
     }
+
+    fn set_update_vk(&mut self, new_vk: PredicateKey) {
+        self.update_vk = new_vk;
+    }
 }
 
 impl ISnarkAccountStateConstructible for TestSnarkState {

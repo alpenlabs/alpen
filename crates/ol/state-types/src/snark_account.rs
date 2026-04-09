@@ -84,6 +84,10 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
             .expect("ol/state: mmr add_leaf");
         Ok(())
     }
+
+    fn set_update_vk(&mut self, new_vk: PredicateKey) {
+        self.update_vk = new_vk;
+    }
 }
 
 impl ProofState {
