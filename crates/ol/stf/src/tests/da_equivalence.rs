@@ -7,7 +7,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, L1BlockCommitment, OLBlockCommitment};
 use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
 use strata_ol_chain_types_new::{OLBlock, OLBlockBody, OLBlockHeader, SignedOLBlockHeader};
-use strata_ol_da::{DaScheme, OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_da::decode_ol_da_payload_bytes;
 use strata_ol_state_support_types::{
     DaAccumulatingState, IndexerState, IndexerWrites, WriteTrackingState,
 };
@@ -15,9 +15,8 @@ use strata_ol_state_types::OLSnarkAccountState;
 use strata_predicate::PredicateKey;
 
 use crate::{
-    BasicExecContext, BlockInfo, EpochInitialContext, ExecOutputBuffer,
+    BlockInfo, EpochInitialContext, apply_da_epoch,
     assembly::{BlockComponents, CompletedBlock, execute_block_batch},
-    process_block_manifests, process_epoch_initial,
     test_utils::{
         build_chain_with_transactions, create_empty_account, create_test_genesis_state,
         get_test_recipient_account_id, get_test_snark_account_id, get_test_state_root,
@@ -137,31 +136,33 @@ fn da_reconstruction_matches_block_execution() {
     let payload0 = decode_ol_da_payload_bytes(&genesis_blob).expect("decode genesis blob");
     let ep0_commitment = OLBlockCommitment::new(0, genesis.header().compute_blkid());
     let epctx0 = EpochInitialContext::new(0, ep0_commitment);
-    process_epoch_initial(&mut recon_state, &epctx0).expect("epoch 0 initial");
-    OLDaSchemeV1::apply_to_state(payload0, &mut recon_state).expect("epoch 0 DA apply");
+    let blkinfo0 = BlockInfo::new(genesis.header().timestamp(), 0, 0);
     let components0 = BlockComponents::from_block(&genesis_ol);
-    if let Some(mf) = components0.manifest_container() {
-        let outbuf = ExecOutputBuffer::new_empty();
-        let blkinfo = BlockInfo::new(genesis.header().timestamp(), 0, 0);
-        let exctx = BasicExecContext::new(blkinfo, &outbuf);
-        process_block_manifests(&mut recon_state, mf, &exctx).expect("epoch 0 manifests");
-    }
+    apply_da_epoch(
+        &epctx0,
+        &mut recon_state,
+        payload0,
+        blkinfo0,
+        components0.manifest_container(),
+    )
+    .expect("epoch 0 reconstruction");
 
     // Epoch 1 reconstruction
     let payload1 = decode_ol_da_payload_bytes(&epoch1_blob).expect("decode epoch1 blob");
     let terminal_slot = terminal.header().slot();
     let ep1_commitment = OLBlockCommitment::new(terminal_slot, terminal.header().compute_blkid());
     let epctx1 = EpochInitialContext::new(1, ep1_commitment);
-    process_epoch_initial(&mut recon_state, &epctx1).expect("epoch 1 initial");
-    OLDaSchemeV1::apply_to_state(payload1, &mut recon_state).expect("epoch 1 DA apply");
+    let blkinfo1 = BlockInfo::new(terminal.header().timestamp(), terminal_slot, 1);
     let terminal_ol = to_ol_block(terminal.header(), terminal.body());
     let components1 = BlockComponents::from_block(&terminal_ol);
-    if let Some(mf) = components1.manifest_container() {
-        let outbuf = ExecOutputBuffer::new_empty();
-        let blkinfo = BlockInfo::new(terminal.header().timestamp(), terminal_slot, 1);
-        let exctx = BasicExecContext::new(blkinfo, &outbuf);
-        process_block_manifests(&mut recon_state, mf, &exctx).expect("epoch 1 manifests");
-    }
+    apply_da_epoch(
+        &epctx1,
+        &mut recon_state,
+        payload1,
+        blkinfo1,
+        components1.manifest_container(),
+    )
+    .expect("epoch 1 reconstruction");
 
     let recon_root = recon_state.compute_state_root().expect("recon state root");
     assert_eq!(
@@ -271,19 +272,19 @@ fn reconstruct_epoch_via_da(
     let terminal_commitment =
         OLBlockCommitment::new(terminal_slot, terminal.header().compute_blkid());
     let epctx = EpochInitialContext::new(1, terminal_commitment);
+    let blkinfo = BlockInfo::new(terminal.header().timestamp(), terminal_slot, 1);
+    let components = BlockComponents::from_block(terminal);
 
     let recon_state = create_post_genesis_state(genesis);
     let mut indexer = IndexerState::new(recon_state);
-    process_epoch_initial(&mut indexer, &epctx).expect("epoch initial");
-    OLDaSchemeV1::apply_to_state(payload, &mut indexer).expect("DA apply");
-
-    let components = BlockComponents::from_block(terminal);
-    if let Some(mf) = components.manifest_container() {
-        let outbuf = ExecOutputBuffer::new_empty();
-        let blkinfo = BlockInfo::new(terminal.header().timestamp(), terminal_slot, 1);
-        let exctx = BasicExecContext::new(blkinfo, &outbuf);
-        process_block_manifests(&mut indexer, mf, &exctx).expect("manifests");
-    }
+    apply_da_epoch(
+        &epctx,
+        &mut indexer,
+        payload,
+        blkinfo,
+        components.manifest_container(),
+    )
+    .expect("DA epoch reconstruction");
 
     let (state, writes) = indexer.into_parts();
     let state_root = state.compute_state_root().expect("state root");

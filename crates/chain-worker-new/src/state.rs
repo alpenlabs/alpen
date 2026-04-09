@@ -14,13 +14,9 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_da::{DaScheme, OLDaSchemeV1};
 use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::{
-    BasicExecContext, BlockInfo, EpochInitialContext, ExecOutputBuffer, process_block_manifests,
-    process_epoch_initial, verify_block,
-};
+use strata_ol_stf::{BlockInfo, EpochInitialContext, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::*;
@@ -399,27 +395,21 @@ impl ChainWorkerServiceState {
             "extracted new account IDs from DA payload"
         );
 
-        // Prepare data for processing epoch initial
-        let epctx = EpochInitialContext::new(epoch.epoch(), epoch.to_block_commitment());
-
         // Wrap state to collect index data
         let mut indexer_state = IndexerState::new(state);
 
-        debug!("processing epoch initial");
-        process_epoch_initial(&mut indexer_state, &epctx)?;
-
-        debug!("applying state diff");
-        OLDaSchemeV1::apply_to_state(da_payload, &mut indexer_state)
-            .map_err(|e| WorkerError::DaApplication(epoch, e))?;
-
-        // Prepare data for processing manifests
-        let outbuf = ExecOutputBuffer::new_empty();
+        let epctx = EpochInitialContext::new(epoch.epoch(), epoch.to_block_commitment());
         let timestamp = terminal_header_complement.timestamp();
         let blkinfo = BlockInfo::new(timestamp, epoch.last_slot, epoch.epoch());
 
-        debug!("processing ASM manifests");
-        let exctx = BasicExecContext::new(blkinfo, &outbuf);
-        process_block_manifests(&mut indexer_state, &manifests, &exctx)?;
+        debug!("applying DA epoch reconstruction");
+        apply_da_epoch(
+            &epctx,
+            &mut indexer_state,
+            da_payload,
+            blkinfo,
+            Some(&manifests),
+        )?;
 
         let (state, indexer_writes) = indexer_state.into_parts();
         let terminal_commitment = epoch.to_block_commitment();

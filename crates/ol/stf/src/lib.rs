@@ -8,6 +8,7 @@ mod assembly;
 mod chain_processing;
 mod constants;
 mod context;
+mod da_reconstruction;
 mod errors;
 mod manifest_processing;
 mod output;
@@ -23,6 +24,7 @@ mod tests;
 
 pub use assembly::*;
 pub use chain_processing::{process_block_start, process_epoch_initial};
+pub use da_reconstruction::apply_da_epoch;
 pub use constants::*;
 pub use context::{
     BasicExecContext, BlockContext, BlockInfo, EpochInfo, EpochInitialContext, TxExecContext,

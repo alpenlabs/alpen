@@ -2,6 +2,7 @@ use strata_acct_types::{AccountId, AcctError, BitcoinAmount};
 use strata_codec::CodecError;
 use strata_identifiers::OLTxId;
 use strata_ol_chain_types_new::{Epoch, Slot};
+use strata_ol_da::DaError;
 use thiserror::Error;
 
 /// Execution result error.
@@ -104,7 +105,10 @@ pub enum ExecError {
     /// Codec error.
     #[error("codec: {0}")]
     Codec(#[from] CodecError),
-    // TODO more types
+
+    /// DA application error.
+    #[error("da: {0}")]
+    Da(#[from] DaError),
 }
 
 impl ExecError {
