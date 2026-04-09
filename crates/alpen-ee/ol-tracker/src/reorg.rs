@@ -363,7 +363,9 @@ mod tests {
             });
             let (consensus_tx, _) = watch::channel(ConsensusHeads {
                 confirmed: Hash::new([0; 32]),
+                confirmed_epoch: 0,
                 finalized: Hash::new([0; 32]),
+                finalized_epoch: 0,
             });
 
             OLTrackerCtx {

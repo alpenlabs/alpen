@@ -12,6 +12,9 @@ members = [
   "crates/alpen-ee/engine",
   "crates/alpen-ee/genesis",
   "crates/alpen-ee/ol-tracker",
+  "crates/alpen-ee/rpc/api",
+  "crates/alpen-ee/rpc/server",
+  "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
   "crates/asm/common",
   "crates/asm/logs",
@@ -176,6 +179,9 @@ alpen-ee-engine = { path = "crates/alpen-ee/engine" }
 alpen-ee-exec-chain = { path = "crates/alpen-ee/exec-chain" }
 alpen-ee-genesis = { path = "crates/alpen-ee/genesis" }
 alpen-ee-ol-tracker = { path = "crates/alpen-ee/ol-tracker" }
+alpen-ee-rpc-api = { path = "crates/alpen-ee/rpc/api" }
+alpen-ee-rpc-server = { path = "crates/alpen-ee/rpc/server" }
+alpen-ee-rpc-types = { path = "crates/alpen-ee/rpc/types" }
 alpen-ee-sequencer = { path = "crates/alpen-ee/sequencer" }
 alpen-reth-db = { path = "crates/reth/db" }
 alpen-reth-evm = { path = "crates/reth/evm" }

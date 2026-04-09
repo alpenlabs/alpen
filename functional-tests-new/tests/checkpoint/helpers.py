@@ -2,6 +2,8 @@
 
 import logging
 
+from common.services.bitcoin import BitcoinService
+from common.services.strata import StrataService
 from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
@@ -50,26 +52,28 @@ def wait_for_checkpoint_duty(
 
 
 def mine_until_finalized_epoch(
-    btc_rpc,
-    strata,
+    bitcoin: BitcoinService,
+    strata: StrataService,
     strata_rpc,
-    mine_addr: str,
     target_epoch: int,
     timeout: int = 120,
     step: float = 1.0,
 ) -> dict:
     """Mine L1 blocks until finalized epoch reaches target_epoch."""
 
-    return wait_until_with_value(
-        lambda: (
-            btc_rpc.proxy.generatetoaddress(1, mine_addr),
-            strata.get_sync_status(strata_rpc).get("finalized"),
-        )[1],
-        lambda v: (
+    def _check():
+        return strata.get_sync_status(strata_rpc).get("finalized")
+
+    def _is_finalized(v):
+        return (
             isinstance(v, dict)
             and v.get("epoch", -1) >= target_epoch
             and v.get("last_blkid") != "00" * 32
-        ),
+        )
+
+    return bitcoin.mine_until(
+        check=_check,
+        predicate=_is_finalized,
         error_with=f"Finalized epoch did not reach {target_epoch}",
         timeout=timeout,
         step=step,

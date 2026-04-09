@@ -117,6 +117,15 @@ class AlpenClientService(RpcService):
             number = hex(number)
         return rpc.eth_getBlockByNumber(number, False)
 
+    def get_block_status(self, block_hash: str) -> str:
+        """Get the L1 finalization status of an EE block.
+
+        Returns one of: "pending", "confirmed", "finalized".
+        """
+        rpc = self.create_rpc()
+        result = rpc.strataee_getBlockStatus(block_hash)
+        return result["status"]
+
     def get_peers(self) -> list[dict]:
         """Get connected peers via admin_peers."""
         rpc = self.create_rpc()

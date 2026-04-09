@@ -32,6 +32,7 @@ use alpen_ee_exec_chain::{
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
+use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
@@ -374,6 +375,19 @@ fn main() {
                     |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
                 });
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
+            }
+
+            #[cfg(feature = "sequencer")]
+            if ext.sequencer {
+                node_builder = node_builder.extend_rpc_modules({
+                    let storage = storage.clone();
+                    let consensus_watcher = consensus_watcher.clone();
+                    move |ctx| {
+                        let ee_rpc_server = EeRpcServer::new(storage, consensus_watcher);
+                        ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
+                        Ok(())
+                    }
+                });
             }
 
             let handle = node_builder.launch().await?;
