@@ -204,16 +204,16 @@ pub(crate) async fn scan_unapplied_epochs(
             .await?
             .ok_or_else(|| fin_epoch_err(cur_finalized, "l1 observation entry"))?;
 
-        let num_confs = l1_tip_height.saturating_sub(l1_ref.block_height());
+        let depth = l1_tip_height.saturating_sub(l1_ref.block_height());
         debug!(
             ?reorg_safe_depth,
-            ?num_confs,
+            ?depth,
             ?l1_ref,
             ?cur_finalized,
             "l1 ref for checkpoint"
         );
 
-        let is_finalized = num_confs >= reorg_safe_depth;
+        let is_finalized = depth >= reorg_safe_depth;
         if !is_finalized {
             return Err(anyhow!(
                 "Obtained unfinalized epoch when the descendants are finalized: {}",

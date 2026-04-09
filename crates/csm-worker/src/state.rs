@@ -171,10 +171,8 @@ where
     let finality_depth = finality_depth.max(1);
 
     for (commitment, observation) in observed {
-        let confirmations = current_l1_tip
-            .saturating_sub(observation.l1_commitment.height())
-            .saturating_add(1);
-        if confirmations >= finality_depth {
+        let depth = current_l1_tip.saturating_sub(observation.l1_commitment.height());
+        if depth >= finality_depth {
             latest_finalized = Some(*commitment);
         }
     }
