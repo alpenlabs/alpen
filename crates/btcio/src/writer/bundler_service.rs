@@ -60,7 +60,7 @@ impl AsyncServiceInput for BundlerInput {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct BundlerStatus {
+pub struct BundlerStatus {
     pub(crate) pending_intents: usize,
 }
 

@@ -3,7 +3,7 @@ mod bundler;
 mod bundler_builder;
 mod bundler_service;
 pub mod chunked_envelope;
-pub(crate) mod context;
+mod context;
 mod fees;
 mod handle;
 mod signer;
@@ -13,5 +13,8 @@ mod watcher_service;
 #[cfg(test)]
 pub(crate) mod test_utils;
 
+pub use bundler_builder::BundlerBuilder;
 pub use chunked_envelope::{create_chunked_envelope_task, ChunkedEnvelopeHandle};
-pub use handle::{start_envelope_task, EnvelopeHandle};
+pub use context::WriterContext;
+pub use handle::EnvelopeHandle;
+pub use watcher_builder::WatcherBuilder;

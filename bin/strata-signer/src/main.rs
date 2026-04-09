@@ -4,18 +4,13 @@
 //! and submits signatures. Private keys never leave this process.
 
 mod args;
-mod builder;
 mod config;
 mod constants;
-mod handlers;
 mod helpers;
-mod input;
-mod service;
 
 use std::{fs, sync::Arc, time::Duration};
 
 use args::Args;
-use builder::SignerBuilder;
 use config::SignerConfig;
 use constants::SHUTDOWN_TIMEOUT_MS;
 use helpers::load_seqkey;
@@ -23,6 +18,7 @@ use strata_common::{
     logging,
     ws_client::{ManagedWsClient, WsClientConfig},
 };
+use strata_signer::builder::SignerBuilder;
 use strata_tasks::TaskManager;
 use tokio::runtime::Builder;
 use tracing::info;

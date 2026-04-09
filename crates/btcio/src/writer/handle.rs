@@ -1,27 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use bitcoin::Address;
-use bitcoind_async_client::Client;
-use strata_config::btcio::WriterConfig;
 use strata_csm_types::{PayloadDest, PayloadIntent};
-use strata_db_types::{
-    traits::L1WriterDatabase,
-    types::{IntentEntry, L1BundleStatus},
-};
+use strata_db_types::types::{IntentEntry, L1BundleStatus};
 use strata_primitives::buf::Buf32;
-use strata_status::StatusChannel;
-use strata_storage::ops::writer::{Context, EnvelopeDataOps};
-use strata_tasks::TaskExecutor;
-use tokio::sync::mpsc::{self, Sender};
+use strata_storage::ops::writer::EnvelopeDataOps;
+use tokio::sync::mpsc::Sender;
 use tracing::*;
-
-use crate::{
-    broadcaster::L1BroadcastHandle,
-    writer::{
-        bundler_builder::BundlerBuilder, context::WriterContext, watcher_builder::WatcherBuilder,
-    },
-    BtcioParams,
-};
 
 /// A handle to the Envelope task.
 #[expect(
@@ -127,63 +111,6 @@ impl EnvelopeHandle {
 
         Ok(None)
     }
-}
-
-/// Starts the envelope task.
-///
-/// This creates an [`EnvelopeHandle`] and spawns a watcher task that watches the status of
-/// incriptions in bitcoin.
-///
-/// # Returns
-///
-/// [`Result<EnvelopeHandle>`](anyhow::Result)
-#[expect(clippy::too_many_arguments, reason = "used for starting envelope task")]
-pub async fn start_envelope_task<D: L1WriterDatabase + Send + Sync + 'static>(
-    executor: &TaskExecutor,
-    bitcoin_client: Arc<Client>,
-    config: Arc<WriterConfig>,
-    btcio_params: BtcioParams,
-    sequencer_address: Address,
-    db: Arc<D>,
-    status_channel: StatusChannel,
-    pool: threadpool::ThreadPool,
-    broadcast_handle: Arc<L1BroadcastHandle>,
-    envelope_pubkey: Option<[u8; 32]>,
-) -> anyhow::Result<Arc<EnvelopeHandle>> {
-    let writer_ops = Arc::new(Context::new(db).into_ops(pool));
-    let (intent_tx, intent_rx) = mpsc::channel::<IntentEntry>(64);
-
-    let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
-    let mut ctx = WriterContext::new(
-        btcio_params,
-        config.clone(),
-        sequencer_address,
-        bitcoin_client,
-        status_channel,
-    );
-    if let Some(pk) = &envelope_pubkey {
-        ctx = ctx.with_envelope_pubkey(pk);
-    }
-    let ctx = Arc::new(ctx);
-
-    let _ = WatcherBuilder::new(
-        ctx,
-        writer_ops.clone(),
-        broadcast_handle,
-        Duration::from_millis(config.write_poll_dur_ms),
-    )
-    .launch(executor)
-    .await?;
-
-    let _ = BundlerBuilder::new(
-        writer_ops,
-        Duration::from_millis(config.bundle_interval_ms),
-        intent_rx,
-    )
-    .launch(executor)
-    .await?;
-
-    Ok(envelope_handle)
 }
 
 /// Looks into the database from descending index order till it reaches 0 or `Finalized`

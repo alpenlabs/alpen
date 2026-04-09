@@ -1,15 +1,14 @@
 //! Builder for launching the signer service.
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use strata_common::ws_client::ManagedWsClient;
-use strata_service::{ServiceBuilder, ServiceMonitor};
+use strata_service::{ServiceBuilder, ServiceMonitor, TickingInput, TokioMpscInput};
 use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;
 
 use crate::{
     helpers::SequencerSk,
-    input::SignerInput,
     service::{SignerService, SignerServiceState, SignerServiceStatus},
 };
 
@@ -18,14 +17,23 @@ use crate::{
 const FAILED_DUTY_CHANNEL_CAPACITY: usize = 64;
 
 /// Builder for the signer service.
-pub(crate) struct SignerBuilder {
+pub struct SignerBuilder {
     rpc: Arc<ManagedWsClient>,
     sequencer_key: SequencerSk,
     duty_poll_interval: Duration,
 }
 
+impl fmt::Debug for SignerBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignerBuilder")
+            .field("rpc", &self.rpc)
+            .field("duty_poll_interval", &self.duty_poll_interval)
+            .finish_non_exhaustive()
+    }
+}
+
 impl SignerBuilder {
-    pub(crate) fn new(
+    pub fn new(
         rpc: Arc<ManagedWsClient>,
         sequencer_key: SequencerSk,
         duty_poll_interval: Duration,
@@ -37,14 +45,15 @@ impl SignerBuilder {
         }
     }
 
-    pub(crate) async fn launch(
+    pub async fn launch(
         self,
         executor: &TaskExecutor,
     ) -> anyhow::Result<ServiceMonitor<SignerServiceStatus>> {
         let (failed_tx, failed_rx) = mpsc::channel(FAILED_DUTY_CHANNEL_CAPACITY);
 
-        let state = SignerServiceState::new(self.rpc, self.sequencer_key, failed_tx);
-        let input = SignerInput::new(self.duty_poll_interval, failed_rx);
+        let state =
+            SignerServiceState::new(self.rpc, self.sequencer_key, executor.clone(), failed_tx);
+        let input = TickingInput::new(self.duty_poll_interval, TokioMpscInput::new(failed_rx));
 
         ServiceBuilder::<SignerService, _>::new()
             .with_state(state)

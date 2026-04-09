@@ -580,7 +580,7 @@ pub(crate) mod test_context {
     use strata_status::StatusChannel;
     use strata_test_utils::ArbitraryGenerator;
 
-    use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext, BtcioParams};
+    use crate::{test_utils::TestBitcoinClient, writer::WriterContext, BtcioParams};
 
     pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
         let client = Arc::new(TestBitcoinClient::new(1));

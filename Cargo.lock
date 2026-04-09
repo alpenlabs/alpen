@@ -15970,14 +15970,11 @@ name = "strata-signer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "argh",
- "bitcoin",
  "jsonrpsee",
  "rand 0.8.5",
  "serde",
  "strata-common",
  "strata-crypto",
- "strata-key-derivation",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
@@ -15985,6 +15982,25 @@ dependencies = [
  "strata-service",
  "strata-tasks",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "strata-signer-bin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argh",
+ "bitcoin",
+ "serde",
+ "strata-common",
+ "strata-crypto",
+ "strata-key-derivation",
+ "strata-primitives",
+ "strata-signer",
+ "strata-tasks",
  "tokio",
  "toml 0.5.11",
  "tracing",

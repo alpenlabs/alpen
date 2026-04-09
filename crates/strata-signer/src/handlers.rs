@@ -6,11 +6,11 @@ use jsonrpsee::core::ClientError;
 use strata_common::ws_client::ManagedWsClient;
 use strata_ol_rpc_api::OLSequencerRpcClient;
 use strata_ol_sequencer::{
-    BlockCompletionData, Duty, sign_checkpoint, sign_header, sign_reveal_tx,
+    sign_checkpoint, sign_header, sign_reveal_tx, BlockCompletionData, Duty,
 };
 use strata_primitives::{
-    HexBytes32, HexBytes64,
     buf::{Buf32, Buf64},
+    HexBytes32, HexBytes64,
 };
 use thiserror::Error;
 use tokio::sync::mpsc;

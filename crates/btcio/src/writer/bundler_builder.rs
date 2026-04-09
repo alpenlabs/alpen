@@ -13,14 +13,15 @@ use crate::writer::{
     bundler_service::{BundlerInput, BundlerService, BundlerState, BundlerStatus},
 };
 
-pub(crate) struct BundlerBuilder {
+#[expect(missing_debug_implementations, reason = "mpsc::Receiver lacks Debug")]
+pub struct BundlerBuilder {
     ops: Arc<EnvelopeDataOps>,
     bundle_interval: Duration,
     intent_rx: mpsc::Receiver<IntentEntry>,
 }
 
 impl BundlerBuilder {
-    pub(crate) fn new(
+    pub fn new(
         ops: Arc<EnvelopeDataOps>,
         bundle_interval: Duration,
         intent_rx: mpsc::Receiver<IntentEntry>,
@@ -32,7 +33,7 @@ impl BundlerBuilder {
         }
     }
 
-    pub(crate) async fn launch(
+    pub async fn launch(
         self,
         executor: &TaskExecutor,
     ) -> anyhow::Result<ServiceMonitor<BundlerStatus>> {

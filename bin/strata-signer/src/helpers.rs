@@ -6,14 +6,9 @@ use bitcoin::bip32::Xpriv;
 use strata_crypto::keys::zeroizable::{ZeroizableXpriv, ZeroizedBuf32};
 use strata_key_derivation::sequencer::SequencerKeys;
 use strata_primitives::buf::Buf32;
+use strata_signer::helpers::SequencerSk;
 use tracing::debug;
 use zeroize::Zeroize;
-
-/// Reference-counted, zeroize-on-drop handle to the sequencer secret key.
-///
-/// Using [`Arc`] ensures that spawned duty handlers receive a pointer clone
-/// rather than a byte-level copy of key material.
-pub(crate) type SequencerSk = Arc<ZeroizedBuf32>;
 
 /// Loads the sequencer key from the file at `path`.
 ///

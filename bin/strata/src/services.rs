@@ -22,12 +22,12 @@ use crate::{
 
 #[cfg(feature = "sequencer")]
 mod sequencer_services {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use anyhow::{Result, anyhow};
     use strata_btcio::{
-        broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
-        writer::{EnvelopeHandle, start_envelope_task},
+        broadcaster::{L1BroadcastHandle, spawn_broadcaster_task},
+        writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     };
     use strata_config::EpochSealingConfig;
     use strata_db_types::traits::DatabaseBackend;
@@ -36,7 +36,8 @@ mod sequencer_services {
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
-    use strata_storage::ops::l1tx_broadcast;
+    use strata_storage::ops::{l1tx_broadcast, writer::Context};
+    use tokio::sync::mpsc;
 
     use crate::{
         helpers::generate_sequencer_address,
@@ -104,22 +105,47 @@ mod sequencer_services {
             .block_on(generate_sequencer_address(nodectx.bitcoin_client()))?;
 
         let writer_db = nodectx.storage().db().writer_db();
+        let config = Arc::new(nodectx.config().btcio.writer.clone());
+        let btcio_params = super::rollup_to_btcio_params(nodectx.params().rollup());
+        let executor = nodectx.executor();
 
-        nodectx
-            .task_manager()
-            .handle()
-            .block_on(start_envelope_task(
-                nodectx.executor(),
-                nodectx.bitcoin_client().clone(),
-                Arc::new(nodectx.config().btcio.writer.clone()),
-                super::rollup_to_btcio_params(nodectx.params().rollup()),
+        nodectx.task_manager().handle().block_on(async {
+            let writer_ops =
+                Arc::new(Context::new(writer_db).into_ops(nodectx.storage().pool().clone()));
+            let (intent_tx, intent_rx) = mpsc::channel(64);
+            let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
+
+            let mut ctx = WriterContext::new(
+                btcio_params,
+                config.clone(),
                 sequencer_address,
-                writer_db,
+                nodectx.bitcoin_client().clone(),
                 nodectx.status_channel().as_ref().clone(),
-                nodectx.storage().pool().clone(),
+            );
+            if let Some(pk) = &envelope_pubkey {
+                ctx = ctx.with_envelope_pubkey(pk);
+            }
+            let ctx = Arc::new(ctx);
+
+            let _ = WatcherBuilder::new(
+                ctx,
+                writer_ops.clone(),
                 broadcast_handle,
-                envelope_pubkey,
-            ))
+                Duration::from_millis(config.write_poll_dur_ms),
+            )
+            .launch(executor)
+            .await?;
+
+            let _ = BundlerBuilder::new(
+                writer_ops,
+                Duration::from_millis(config.bundle_interval_ms),
+                intent_rx,
+            )
+            .launch(executor)
+            .await?;
+
+            Ok(envelope_handle)
+        })
     }
 
     /// Starts the OL block assembly service.

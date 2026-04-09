@@ -9,7 +9,7 @@ use crate::BtcioParams;
 
 /// All the items that writer tasks need as context.
 #[derive(Debug, Clone)]
-pub(crate) struct WriterContext<R: Reader + Signer + Wallet> {
+pub struct WriterContext<R: Reader + Signer + Wallet> {
     /// Btcio required parameters
     pub btcio_params: BtcioParams,
 
@@ -35,7 +35,7 @@ pub(crate) struct WriterContext<R: Reader + Signer + Wallet> {
 }
 
 impl<R: Reader + Signer + Wallet> WriterContext<R> {
-    pub(crate) fn new(
+    pub fn new(
         btcio_params: BtcioParams,
         config: Arc<WriterConfig>,
         sequencer_address: Address,
@@ -56,7 +56,7 @@ impl<R: Reader + Signer + Wallet> WriterContext<R> {
     ///
     /// The pubkey will be used as the taproot key in envelope transactions
     /// for SPS-51 authentication. Signing is handled externally by the signer binary.
-    pub(crate) fn with_envelope_pubkey(mut self, pubkey_bytes: &[u8; 32]) -> Self {
+    pub fn with_envelope_pubkey(mut self, pubkey_bytes: &[u8; 32]) -> Self {
         let pubkey =
             XOnlyPublicKey::from_slice(pubkey_bytes).expect("valid x-only public key bytes");
         self.envelope_pubkey = Some(pubkey);
