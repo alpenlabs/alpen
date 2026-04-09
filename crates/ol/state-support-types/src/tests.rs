@@ -1287,8 +1287,10 @@ fn test_da_blob_captures_snark_extra_data() {
 
     let diffs = blob.state_diff.ledger.account_diffs.entries();
     assert_eq!(diffs.len(), 1);
+    let extra_entries = diffs[0].diff.snark.extra_data.new_entries();
+    assert_eq!(extra_entries.len(), 1);
     assert_eq!(
-        diffs[0].diff.snark.extra_data.new_value(),
-        Some(&U16LenBytes::new(b"test_extra_data".to_vec()))
+        extra_entries[0],
+        U16LenBytes::new(b"test_extra_data".to_vec())
     );
 }

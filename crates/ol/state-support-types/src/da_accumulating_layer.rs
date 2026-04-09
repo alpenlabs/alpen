@@ -21,9 +21,9 @@ use strata_ledger_types::{
 };
 use strata_ol_da::{
     AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    DaProofStateDiff, GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES,
-    MAX_VK_BYTES, NewAccountEntry, OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff,
-    U16LenBytes, U16LenList,
+    DaProofStateDiff, ExtraDataBuffer, GlobalStateDiff, InboxBuffer, LedgerDiff,
+    MAX_MSG_PAYLOAD_BYTES, MAX_VK_BYTES, NewAccountEntry, OLDaPayloadV1, SnarkAccountDiff,
+    SnarkAccountInit, StateDiff, U16LenBytes, U16LenList,
 };
 use thiserror::Error;
 
@@ -114,9 +114,8 @@ struct SnarkDelta {
     base_proof_state: DaProofState,
     final_proof_state: DaProofState,
     inbox: DaLinacc<InboxBuffer>,
-    /// This collects the latest extra data for an account in the epoch. Overridden when new extra
-    /// data appears within the same epoch.
-    last_extra_data: Option<U16LenBytes>,
+    /// All extra data entries from snark account updates within the epoch.
+    extra_data: DaLinacc<ExtraDataBuffer>,
 }
 
 impl SnarkDelta {
@@ -130,7 +129,7 @@ impl SnarkDelta {
             base_proof_state: base_proof_state.clone(),
             final_proof_state: base_proof_state,
             inbox: DaLinacc::new(),
-            last_extra_data: None,
+            extra_data: DaLinacc::new(),
         }
     }
 
@@ -154,15 +153,11 @@ impl SnarkDelta {
         next_idx_builder.set(self.final_proof_state.inner().next_inbox_msg_idx())?;
         let next_inbox_msg_idx = next_idx_builder.into_write()?;
         let proof_state = DaProofStateDiff::new(inner_state, next_inbox_msg_idx);
-        let extra_data = match &self.last_extra_data {
-            Some(data) => DaRegister::new_set(data.clone()),
-            None => DaRegister::new_unset(),
-        };
         Ok(SnarkAccountDiff::new(
             seq_no,
             proof_state,
             self.inbox.clone(),
-            extra_data,
+            self.extra_data.clone(),
         ))
     }
 }
@@ -318,12 +313,15 @@ impl EpochDaAccumulator {
             }
         }
 
-        // Capture the last extra_data from snark state updates for DA encoding.
-        if let Some(snark_delta) = delta.snark.as_mut()
-            && let Some(last_update) = writes.snark_state_updates().last()
-            && let Some(data) = last_update.extra_data()
-        {
-            snark_delta.last_extra_data = Some(U16LenBytes::new(data.to_vec()));
+        // Capture all extra_data from snark state updates for DA encoding.
+        if let Some(snark_delta) = delta.snark.as_mut() {
+            for update in writes.snark_state_updates() {
+                if let Some(data) = update.extra_data() {
+                    snark_delta
+                        .extra_data
+                        .append_entry(U16LenBytes::new(data.to_vec()));
+                }
+            }
         }
 
         Ok(())

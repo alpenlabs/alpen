@@ -26,7 +26,9 @@ pub use ledger::{
     AccountDiffEntry, AccountInit, AccountTypeInit, LedgerDiff, NewAccountEntry, SnarkAccountInit,
 };
 pub use payload::{OLDaPayloadV1, OLStateDiff, StateDiff, decode_ol_da_payload_bytes};
-pub use snark::{DaProofState, DaProofStateDiff, SnarkAccountDiff, SnarkAccountTarget};
+pub use snark::{
+    DaProofState, DaProofStateDiff, ExtraDataBuffer, SnarkAccountDiff, SnarkAccountTarget,
+};
 
 /// Maximum size for snark account update VK in DA payloads.
 ///

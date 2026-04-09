@@ -298,21 +298,24 @@ fn apply_snark_diff<T: IAccountStateMut>(
         DaProofState::new(snark.inner_state_root(), snark.next_inbox_msg_idx());
     diff.proof_state.apply(&mut next_proof_state, &())?;
 
-    if let Some(data) = diff.extra_data.new_value() {
-        snark
-            .update_inner_state(
-                next_proof_state.inner().inner_state(),
-                next_proof_state.inner().next_inbox_msg_idx(),
-                next_seqno,
-                data.as_slice(),
-            )
-            .map_err(|_| DaError::InvalidStateDiff("failed to update inner state"))?;
-    } else {
+    let extra_entries = diff.extra_data.new_entries();
+    if extra_entries.is_empty() {
         snark.set_proof_state_directly(
             next_proof_state.inner().inner_state(),
             next_proof_state.inner().next_inbox_msg_idx(),
             next_seqno,
         );
+    } else {
+        for entry in extra_entries {
+            snark
+                .update_inner_state(
+                    next_proof_state.inner().inner_state(),
+                    next_proof_state.inner().next_inbox_msg_idx(),
+                    next_seqno,
+                    entry.as_slice(),
+                )
+                .map_err(|_| DaError::InvalidStateDiff("failed to update inner state"))?;
+        }
     }
 
     for entry in diff.inbox.new_entries() {
@@ -329,9 +332,7 @@ fn apply_snark_diff<T: IAccountStateMut>(
 mod tests {
     use strata_acct_types::{AccountId, BitcoinAmount, Hash};
     use strata_codec::encode_to_vec;
-    use strata_da_framework::{
-        DaCounter, DaLinacc, DaRegister, DaWrite, SignedVarInt, counter_schemes,
-    };
+    use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
     use strata_identifiers::AccountSerial;
     use strata_ledger_types::{AccountTypeState, NewAccountData};
     use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
@@ -480,7 +481,7 @@ mod tests {
             DaCounter::<counter_schemes::CtrU64ByU16>::new_changed(1u16),
             DaProofStateDiff::default(),
             DaLinacc::new(),
-            DaRegister::new_unset(),
+            DaLinacc::new(),
         );
         let account_diff = AccountDiff::new(DaCounter::new_unchanged(), snark_diff);
         let diff = StateDiff::new(

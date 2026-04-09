@@ -175,17 +175,20 @@ fn da_reconstruction_matches_block_execution() {
 struct EpochArtifacts {
     summary: EpochSummary,
     new_account_ids: Vec<AccountId>,
-    snark_extra_data: HashMap<AccountId, Vec<u8>>,
+    snark_extra_data: HashMap<AccountId, Vec<Vec<u8>>>,
 }
 
-/// Extracts the last snark extra_data per account from IndexerWrites, matching
-/// the HashMap-based deduplication that `store_snark_extra_data` performs.
-fn extract_snark_extra_data(writes: &IndexerWrites) -> HashMap<AccountId, Vec<u8>> {
-    writes
-        .snark_state_updates()
-        .iter()
-        .filter_map(|u| Some((u.account_id(), u.extra_data()?.to_vec())))
-        .collect()
+/// Extracts all snark extra_data per account from IndexerWrites.
+fn extract_snark_extra_data(writes: &IndexerWrites) -> HashMap<AccountId, Vec<Vec<u8>>> {
+    let mut map: HashMap<AccountId, Vec<Vec<u8>>> = HashMap::new();
+    for update in writes.snark_state_updates() {
+        if let Some(data) = update.extra_data() {
+            map.entry(update.account_id())
+                .or_default()
+                .push(data.to_vec());
+        }
+    }
+    map
 }
 
 /// Executes epoch 1 blocks one-by-one through `IndexerState<WriteTrackingState<_>>`,

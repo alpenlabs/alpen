@@ -4,6 +4,7 @@ use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_da_framework::{
     BitSeqReader, BitSeqWriter, CompoundMember, DaCounter, DaLinacc, DaRegister, DaWrite,
+    LinearAccumulator,
     counter_schemes::{CtrU64ByU16, CtrU64ByUnsignedVarInt},
     make_compound_impl,
 };
@@ -177,6 +178,28 @@ impl CompoundMember for DaProofStateDiff {
 
 use super::inbox::InboxBuffer;
 
+/// Buffer collecting extra data entries from snark account updates within an epoch.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ExtraDataBuffer {
+    entries: Vec<U16LenBytes>,
+}
+
+impl ExtraDataBuffer {
+    pub fn entries(&self) -> &[U16LenBytes] {
+        &self.entries
+    }
+}
+
+impl LinearAccumulator for ExtraDataBuffer {
+    type InsertCnt = u16;
+    type EntryData = U16LenBytes;
+    const MAX_INSERT: u16 = u16::MAX;
+
+    fn insert(&mut self, entry: &U16LenBytes) {
+        self.entries.push(entry.clone());
+    }
+}
+
 /// Diff for snark account state.
 #[derive(Debug, Clone)]
 pub struct SnarkAccountDiff {
@@ -189,8 +212,8 @@ pub struct SnarkAccountDiff {
     /// Inbox append-only diff.
     pub inbox: DaLinacc<InboxBuffer>,
 
-    /// Extra data from the last snark account update in the epoch.
-    pub extra_data: DaRegister<U16LenBytes>,
+    /// Extra data from all snark account updates in the epoch.
+    pub extra_data: DaLinacc<ExtraDataBuffer>,
 }
 
 impl Default for SnarkAccountDiff {
@@ -199,7 +222,7 @@ impl Default for SnarkAccountDiff {
             seq_no: DaCounter::new_unchanged(),
             proof_state: <DaProofStateDiff as Default>::default(),
             inbox: DaLinacc::new(),
-            extra_data: DaRegister::new_unset(),
+            extra_data: DaLinacc::new(),
         }
     }
 }
@@ -210,7 +233,7 @@ impl SnarkAccountDiff {
         seq_no: DaCounter<CtrU64ByU16>,
         proof_state: DaProofStateDiff,
         inbox: DaLinacc<InboxBuffer>,
-        extra_data: DaRegister<U16LenBytes>,
+        extra_data: DaLinacc<ExtraDataBuffer>,
     ) -> Self {
         Self {
             seq_no,
@@ -226,7 +249,7 @@ make_compound_impl! {
         seq_no: counter (CtrU64ByU16),
         proof_state: compound (DaProofStateDiff),
         inbox: compound (DaLinacc<InboxBuffer>),
-        extra_data: register (U16LenBytes),
+        extra_data: compound (DaLinacc<ExtraDataBuffer>),
     }
 }
 
@@ -239,7 +262,7 @@ pub struct SnarkAccountTarget {
     pub seq_no: u64,
     pub proof_state: DaProofState,
     pub inbox: InboxBuffer,
-    pub extra_data: U16LenBytes,
+    pub extra_data: ExtraDataBuffer,
 }
 
 impl CompoundMember for SnarkAccountDiff {

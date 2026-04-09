@@ -6,7 +6,7 @@ use strata_service::{CommandHandle, ServiceError, ServiceMonitor};
 use tokio::sync::watch;
 
 use crate::{
-    FinalizedCkptPayload, ChainWorkerStatus, WorkerError, WorkerResult, message::ChainWorkerMessage,
+    ChainWorkerStatus, FinalizedCkptPayload, WorkerError, WorkerResult, message::ChainWorkerMessage,
 };
 
 /// Handle for interacting with the chain worker service.
@@ -93,7 +93,9 @@ impl ChainWorkerHandle {
     /// Apply DA async.
     pub async fn apply_da(&self, payload: &FinalizedCkptPayload) -> WorkerResult<()> {
         self.command_handle
-            .send_and_wait(|completion| ChainWorkerMessage::ApplyFinalizedCkpt(payload.clone(), completion))
+            .send_and_wait(|completion| {
+                ChainWorkerMessage::ApplyFinalizedCkpt(payload.clone(), completion)
+            })
             .await
             .map_err(convert_service_error)?
     }
