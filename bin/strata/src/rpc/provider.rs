@@ -3,10 +3,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use ssz::Decode;
+use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::DbResult;
+use strata_db_types::{DbError, DbResult, MmrId};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::{MempoolHandle, OLMempoolResult};
@@ -99,6 +101,36 @@ impl OLRpcProvider for NodeRpcProvider {
             .account()
             .get_account_extra_data_async(key)
             .await
+    }
+
+    async fn get_account_inbox_messages(
+        &self,
+        account_id: AccountId,
+        start_idx: u64,
+        end_idx_exclusive: u64,
+    ) -> DbResult<Vec<MessageEntry>> {
+        if end_idx_exclusive <= start_idx {
+            return Ok(Vec::new());
+        }
+
+        let mmr_handle = self
+            .storage
+            .mmr_index()
+            .as_ref()
+            .get_handle(MmrId::SnarkMsgInbox(account_id));
+
+        let mut messages = Vec::with_capacity((end_idx_exclusive - start_idx) as usize);
+        for idx in start_idx..end_idx_exclusive {
+            let preimage = mmr_handle.get(idx).await?;
+            let message = MessageEntry::from_ssz_bytes(&preimage).map_err(|e| {
+                DbError::Other(format!(
+                    "failed to decode account inbox message at index {idx} for account {account_id}: {e}"
+                ))
+            })?;
+            messages.push(message);
+        }
+
+        Ok(messages)
     }
 
     async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>> {
