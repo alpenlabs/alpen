@@ -17,7 +17,7 @@ pub(crate) fn apply_action(action: SyncAction, storage: &Arc<NodeStorage>) -> an
         SyncAction::FinalizeEpoch(epoch_comm) => {
             info!(?epoch_comm, "finalizing epoch");
 
-            strata_common::check_bail_trigger("csm_event_finalize_epoch");
+            strata_common::check_bail_trigger(strata_common::BAIL_CSM_EVENT_FINALIZE_EPOCH);
 
             // Write that the checkpoint is finalized.
             //

@@ -14,6 +14,8 @@ use node::*;
 use provider::NodeRpcProvider;
 #[cfg(feature = "sequencer")]
 use strata_btcio::writer::EnvelopeHandle;
+#[cfg(feature = "debug-utils")]
+use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
 use strata_identifiers::L1Height;
 #[cfg(feature = "sequencer")]
 use strata_ol_block_assembly::BlockasmHandle;
@@ -110,6 +112,22 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     let _ = module.register_method("strata_protocolVersion", |_, _, _ctx| {
         Ok::<u32, ErrorObjectOwned>(1)
     });
+
+    #[cfg(feature = "debug-utils")]
+    {
+        let _ = module.register_method("debug_bail", |params, _, _| {
+            let ctx: String = params.one()?;
+            let _ = BAIL_SENDER.send(Some(ctx));
+            Ok::<(), ErrorObjectOwned>(())
+        });
+
+        // Returns the registered bail tag identifiers. Functional tests use
+        // this to validate tag strings without maintaining a Python-side
+        // mirror of the Rust constants in `strata_common::bail_tags`.
+        let _ = module.register_method("debug_listBailTags", |_, _, _| {
+            Ok::<Vec<&'static str>, ErrorObjectOwned>(KNOWN_BAIL_TAGS.to_vec())
+        });
+    }
 
     // Create and register OL client RPC server
     let client_provider = NodeRpcProvider::new(

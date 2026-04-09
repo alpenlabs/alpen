@@ -352,6 +352,8 @@ async fn handle_sign_block_duty<C: SequencerContext>(
     duty_id: Buf32,
     sequencer_key: &Buf32,
 ) -> Result<(), SequencerDutyError> {
+    strata_common::check_bail_trigger(strata_common::BAIL_DUTY_SIGN_BLOCK);
+
     if let Some(wait_duration) = duty.wait_duration() {
         warn!(?duty_id, "got duty too early; sleeping till target time");
         tokio::time::sleep(wait_duration).await;

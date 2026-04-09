@@ -601,7 +601,7 @@ fn process_fc_message(
 ) -> anyhow::Result<()> {
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
-            strata_common::check_bail_trigger("fcm_new_block");
+            strata_common::check_bail_trigger(strata_common::BAIL_FCM_NEW_BLOCK);
 
             let block_bundle = fcm_state
                 .get_block_data(&blkid)?

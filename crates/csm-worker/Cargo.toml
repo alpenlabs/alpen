@@ -31,3 +31,6 @@ strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
 threadpool.workspace = true
 serde_json.workspace = true
+
+[features]
+debug-utils = ["strata-common/debug-utils"]

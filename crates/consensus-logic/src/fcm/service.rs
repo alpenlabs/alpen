@@ -118,7 +118,7 @@ async fn process_fc_message(
     let ckpt_db = fcm_state.ctx().storage().ol_checkpoint().clone();
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
-            strata_common::check_bail_trigger("fcm_new_block");
+            strata_common::check_bail_trigger(strata_common::BAIL_FCM_NEW_BLOCK);
 
             let block_bundle = blk_db
                 .get_block_data_async(*blkid)

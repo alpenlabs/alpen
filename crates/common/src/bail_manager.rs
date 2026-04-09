@@ -3,8 +3,6 @@ use std::{process, sync::LazyLock};
 use tokio::sync::watch;
 use tracing::*;
 
-pub const BAIL_DUTY_SIGN_BLOCK: &str = "duty_sign_block";
-
 struct BailWatch {
     sender: watch::Sender<Option<String>>,
     receiver: watch::Receiver<Option<String>>,
@@ -25,12 +23,13 @@ pub static BAIL_SENDER: LazyLock<watch::Sender<Option<String>>> =
 pub static BAIL_RECEIVER: LazyLock<watch::Receiver<Option<String>>> =
     LazyLock::new(|| BAIL_MANAGER.receiver.clone());
 
-/// Checks to see if we should bail out.
+/// Checks to see if we should bail out. Calls `abort()` to simulate a real
+/// crash — no destructors, no flush, no atexit handlers.
 pub fn check_bail_trigger(ctx: &str) {
     if let Some(val) = BAIL_RECEIVER.borrow().clone() {
-        warn!(%ctx, "tripped bail interrupt, exiting...");
+        warn!(%ctx, "tripped bail interrupt, aborting");
         if ctx == val {
-            process::exit(0);
+            process::abort();
         }
     }
 }

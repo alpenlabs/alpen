@@ -34,7 +34,7 @@ impl Service for CsmWorkerService {
 
 impl SyncService for CsmWorkerService {
     fn process_input(state: &mut Self::State, asm_status: Self::Msg) -> anyhow::Result<Response> {
-        strata_common::check_bail_trigger("csm_event");
+        strata_common::check_bail_trigger(strata_common::BAIL_CSM_EVENT);
 
         // Extract the current block from ASM status
         let Some(asm_block) = asm_status.cur_block else {
