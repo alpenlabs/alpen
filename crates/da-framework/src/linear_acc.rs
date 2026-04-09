@@ -147,7 +147,7 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
 #[cfg(test)]
 mod tests {
     use strata_codec::BufDecoder;
-    use strata_merkle::{CompactMmr64, Mmr, MmrState, Sha256Hasher, hasher::MerkleHasher};
+    use strata_merkle::{CompactMmr64, MerkleHasher, Mmr, MmrState, Sha256Hasher};
 
     use super::*;
     use crate::{CompoundMember, DaWrite};
