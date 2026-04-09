@@ -66,7 +66,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     ) -> RpcResult<Option<(EpochCommitment, EpochSummary)>> {
         let Some(commitment) = self
             .provider
-            .get_canonical_epoch_commitment_at(epoch as u64)
+            .get_canonical_epoch_commitment_at(epoch)
             .await
             .map_err(db_error)?
         else {
@@ -129,7 +129,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         // Get epoch commitments for the given epoch
         let epoch_commitment = self
             .provider
-            .get_canonical_epoch_commitment_at(epoch as u64)
+            .get_canonical_epoch_commitment_at(epoch)
             .await
             .map_err(|e| {
                 error!(?e, ?epoch, "Failed to get canonical epoch commitment");
@@ -181,7 +181,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         // Get previous epoch commitment if available
         let prev_epoch_commitment = if epoch > 0 {
             self.provider
-                .get_canonical_epoch_commitment_at((epoch - 1) as u64)
+                .get_canonical_epoch_commitment_at(epoch - 1)
                 .await
                 .map_err(db_error)?
                 .ok_or_else(|| {
@@ -476,7 +476,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             })?;
 
         self.provider
-            .get_canonical_epoch_commitment_at(epoch as u64)
+            .get_canonical_epoch_commitment_at(epoch)
             .await
             .map_err(db_error)?
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))

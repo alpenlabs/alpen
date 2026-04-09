@@ -33,7 +33,7 @@ struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
     canonical_slots: HashMap<u64, OLBlockCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLState>>,
-    epoch_commitments: HashMap<u64, EpochCommitment>,
+    epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
     account_extra_data: HashMap<(AccountId, Epoch), AccountExtraData>,
@@ -77,7 +77,7 @@ impl MockProvider {
         self
     }
 
-    fn with_epoch_commitment(mut self, epoch: u64, commitment: EpochCommitment) -> Self {
+    fn with_epoch_commitment(mut self, epoch: Epoch, commitment: EpochCommitment) -> Self {
         self.epoch_commitments.insert(epoch, commitment);
         self
     }
@@ -140,7 +140,7 @@ impl OLRpcProvider for MockProvider {
 
     async fn get_canonical_epoch_commitment_at(
         &self,
-        epoch: u64,
+        epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>> {
         Ok(self.epoch_commitments.get(&epoch).copied())
     }

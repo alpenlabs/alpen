@@ -38,7 +38,7 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     /// Get the canonical epoch commitment for the given epoch.
     async fn get_canonical_epoch_commitment_at(
         &self,
-        epoch: u64,
+        epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>>;
 
     /// Get OL epoch summary by epoch commitment.
