@@ -292,15 +292,17 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 # strata-common
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
-], tag = "v0.1.0-alpha-rc11" }
-strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-merkle = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
-strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc11" }
+], tag = "v0.1.0-alpha-rc15" }
+strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
+  "legacy_compact",
+], tag = "v0.1.0-alpha-rc15" }
+strata-msg-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-service = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
@@ -434,7 +436,9 @@ bdk_esplora = { version = "0.20.1", features = [
 bdk_wallet = "1.0.0"
 bincode = "1.3"
 bitcoin = { version = "0.32.6", features = ["serde"] }
-bitcoin-bosd = { version = "0.9.0", default-features = false }
+bitcoin-bosd = { git = "https://github.com/alpenlabs/bitcoin-bosd", version = "0.10.0", tag = "v0.10.0", features = [
+  "ssz",
+] }
 bitcoind-async-client = { version = "0.10.1", features = ["29_0"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 borsh = { version = "1.5.0", features = ["derive"] }
