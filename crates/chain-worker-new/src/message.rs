@@ -22,20 +22,23 @@ pub enum ChainWorkerMessage {
     /// Update the safe tip.
     UpdateSafeTip(OLBlockCommitment, CommandCompletionSender<WorkerResult<()>>),
 
-    /// Apply the DA
-    ApplyDA(ApplyDAPayload, CommandCompletionSender<WorkerResult<()>>),
+    /// Apply the Finalized DA
+    ApplyFinalizedCkpt(
+        FinalizedCkptPayload,
+        CommandCompletionSender<WorkerResult<()>>,
+    ),
 }
 
-/// Chain worker message payload for applying DA.
+/// Chain worker message payload for applying finalized checkpoint.
 #[derive(Clone, Debug)]
-pub struct ApplyDAPayload {
+pub struct FinalizedCkptPayload {
     pub(crate) da_payload: OLDaPayloadV1,
     pub(crate) manifests: OLL1ManifestContainer,
     pub(crate) epoch: EpochCommitment,
     pub(crate) terminal_header_complement: TerminalHeaderComplement,
 }
 
-impl ApplyDAPayload {
+impl FinalizedCkptPayload {
     pub fn new(
         da_payload: OLDaPayloadV1,
         manifests: OLL1ManifestContainer,

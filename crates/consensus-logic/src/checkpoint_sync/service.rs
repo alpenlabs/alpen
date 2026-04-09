@@ -83,7 +83,7 @@ where
     let clstate_rx = nodectx.status_channel().subscribe_checkpoint_state();
 
     info!("initializing checkpoint sync service");
-    let inner_state = initialize_css_inner_state(nodectx, &ctx).await?;
+    let inner_state = initialize_css_inner_state(&ctx).await?;
 
     // Publish initial OL sync status so the RPC is populated from startup.
     match inner_state.last_finalized_epoch() {
@@ -114,21 +114,12 @@ where
 
 /// Traverses epochs backwards from the latest finalized checkpoint to find the last
 /// applied epoch, then applies any subsequent reorg-safe epochs in chronological order.
-async fn initialize_css_inner_state(
-    nodectx: &NodeContext,
-    ctx: &impl CheckpointSyncCtx,
-) -> anyhow::Result<InnerState> {
+async fn initialize_css_inner_state(ctx: &impl CheckpointSyncCtx) -> anyhow::Result<InnerState> {
     // Get finalized checkpoint, if none just exit because there's nothing to sync.
-    let Some(last_finalized) = nodectx
-        .status_channel()
-        .get_cur_client_state()
-        .get_last_finalized_checkpoint()
-    else {
+    let Some(cur_finalized) = ctx.fetch_csm_status().await?.last_finalized_epoch else {
         debug!("no finalized checkpoint in client state, nothing to catch up on");
         return Ok(InnerState::new(None));
     };
-
-    let cur_finalized = last_finalized.batch_info.get_epoch_commitment();
 
     let last_applied_epoch = find_and_apply_unapplied_epochs(ctx, cur_finalized).await?;
 

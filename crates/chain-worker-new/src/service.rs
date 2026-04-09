@@ -51,10 +51,10 @@ impl SyncService for ChainWorkerService {
                 let res = state.finalize_epoch(epoch);
                 completion.send_blocking(res);
             }
-            ChainWorkerMessage::ApplyDA(da, completion) => {
-                let epoch = da.epoch();
-                debug!(?epoch, "Processing da message");
-                let res = state.apply_da(da);
+            ChainWorkerMessage::ApplyFinalizedCkpt(payload, completion) => {
+                let epoch = payload.epoch();
+                debug!(?epoch, "Processing finalized checkpoint message");
+                let res = state.apply_finalized_ckpt(payload);
                 completion.send_blocking(res);
             }
         }

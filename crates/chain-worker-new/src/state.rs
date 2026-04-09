@@ -26,7 +26,7 @@ use strata_service::ServiceState;
 use tracing::*;
 
 use crate::{
-    ApplyDAPayload, ChainWorkerContextImpl,
+    ChainWorkerContextImpl, FinalizedCkptPayload,
     errors::{WorkerError, WorkerResult},
     output::OLBlockExecutionOutput,
     traits::ChainWorkerContext,
@@ -150,7 +150,7 @@ impl ChainWorkerServiceState {
     }
 
     /// Tries to execute a block using the new OL STF.
-    #[instrument(skip(self), fields(slot = block_commitment.slot(), %block_commitment))]
+    #[instrument(skip(self), fields(%block_commitment))]
     pub(crate) fn try_exec_block(
         &mut self,
         block_commitment: &OLBlockCommitment,
@@ -365,19 +365,19 @@ impl ChainWorkerServiceState {
 
     /// Finalizes an epoch, merging write batches into finalized state.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        info!(epoch_num = epoch.epoch(), %epoch, "finalizing epoch");
+        info!(%epoch, "finalizing epoch");
         self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }
 
-    #[instrument(skip(self, da_payload), fields(epoch_num = da_payload.epoch.epoch(), last_slot = da_payload.epoch.last_slot))]
-    pub(crate) fn apply_da(&self, da_payload: ApplyDAPayload) -> WorkerResult<()> {
-        let ApplyDAPayload {
-            da_payload: da,
+    #[instrument(skip(self, payload), fields(epoch_num = payload.epoch.epoch(), last_slot = payload.epoch.last_slot))]
+    pub(crate) fn apply_finalized_ckpt(&self, payload: FinalizedCkptPayload) -> WorkerResult<()> {
+        let FinalizedCkptPayload {
+            da_payload,
             epoch,
             manifests,
             terminal_header_complement,
-        } = da_payload;
+        } = payload;
 
         info!("applying DA for epoch");
 
@@ -385,7 +385,7 @@ impl ChainWorkerServiceState {
         let (state, prev_terminal) = fetch_prev_state(&self.ctx, &epoch)?;
 
         // Extract new account IDs before the payload is consumed.
-        let new_account_ids: Vec<AccountId> = da
+        let new_account_ids: Vec<AccountId> = da_payload
             .state_diff
             .ledger
             .new_accounts
@@ -409,7 +409,7 @@ impl ChainWorkerServiceState {
         process_epoch_initial(&mut indexer_state, &epctx)?;
 
         debug!("applying state diff");
-        OLDaSchemeV1::apply_to_state(da, &mut indexer_state)
+        OLDaSchemeV1::apply_to_state(da_payload, &mut indexer_state)
             .map_err(|e| WorkerError::DaApplication(epoch, e))?;
 
         // Prepare data for processing manifests

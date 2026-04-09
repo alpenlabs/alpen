@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use strata_chain_worker_new::ApplyDAPayload;
+use strata_chain_worker_new::FinalizedCkptPayload;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::DbError;
 use strata_ledger_types::IStateAccessor;
@@ -154,7 +154,7 @@ async fn extract_checkpoint_and_submit_to_chain_worker<C: CheckpointSyncCtx>(
     let da = ctx.extract_da_data(&l1ref).await?;
     let (da_payload, terminal_complement) = da.into_parts();
 
-    let payload = ApplyDAPayload::new(da_payload, container, new_epoch, terminal_complement);
+    let payload = FinalizedCkptPayload::new(da_payload, container, new_epoch, terminal_complement);
 
     debug!(%new_epoch, "submitting DA payload to chain worker");
     ctx.apply_da(&payload).await?;
@@ -200,7 +200,7 @@ mod tests {
 
     use bitcoin::Amount;
     use strata_btc_types::GenesisL1View;
-    use strata_chain_worker_new::ApplyDAPayload;
+    use strata_chain_worker_new::FinalizedCkptPayload;
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_worker::CsmWorkerStatus;
     use strata_db_types::DbResult;
@@ -424,7 +424,7 @@ mod tests {
             Ok(self.l1_refs.get(&epoch).cloned())
         }
 
-        async fn apply_da(&self, payload: &ApplyDAPayload) -> anyhow::Result<()> {
+        async fn apply_da(&self, payload: &FinalizedCkptPayload) -> anyhow::Result<()> {
             self.chain_worker_calls
                 .lock()
                 .unwrap()

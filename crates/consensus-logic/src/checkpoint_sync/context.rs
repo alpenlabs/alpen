@@ -6,7 +6,7 @@ use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_common::{AsmManifest, TxInputRef};
 use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
-use strata_chain_worker_new::{ApplyDAPayload, ChainWorkerHandle};
+use strata_chain_worker_new::{ChainWorkerHandle, FinalizedCkptPayload};
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
@@ -80,8 +80,10 @@ pub trait CheckpointSyncCtx: Send + Sync {
     ) -> impl Future<Output = anyhow::Result<Option<CheckpointL1Ref>>> + Send;
 
     /// Submits a DA payload to the chain worker.
-    fn apply_da(&self, payload: &ApplyDAPayload)
-        -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn apply_da(
+        &self,
+        payload: &FinalizedCkptPayload,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
 
     /// Updates the safe tip in the chain worker.
     fn update_safe_tip(
@@ -217,7 +219,7 @@ impl<E: DAExtractor + Send + Sync> CheckpointSyncCtx for CheckpointSyncCtxImpl<E
         Ok(ckpt_db.get_checkpoint_l1_ref_async(epoch).await?)
     }
 
-    async fn apply_da(&self, payload: &ApplyDAPayload) -> anyhow::Result<()> {
+    async fn apply_da(&self, payload: &FinalizedCkptPayload) -> anyhow::Result<()> {
         Ok(self.chain_worker.apply_da(payload).await?)
     }
 
