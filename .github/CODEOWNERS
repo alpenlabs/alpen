@@ -75,8 +75,6 @@ bin/strata/ @alpenlabs/bin @alpenlabs/chain-core
 
 # Functional tests
 functional-tests/ @alpenlabs/python # catch all
-functional-tests/fn_*.py @alpenlabs/python @alpenlabs/ci
-functional-tests/constants.py @alpenlabs/python @alpenlabs/ci
 functional-tests/entry.py @alpenlabs/python @alpenlabs/ci
 functional-tests/uv.lock @alpenlabs/python
 
