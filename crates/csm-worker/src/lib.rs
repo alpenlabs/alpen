@@ -9,7 +9,6 @@ mod processor;
 mod service;
 mod state;
 mod status;
-mod sync_actions;
 
 pub use service::CsmWorkerService;
 pub use state::CsmWorkerState;

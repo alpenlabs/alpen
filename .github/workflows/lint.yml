@@ -63,7 +63,7 @@ jobs:
         crate:
           - strata-state
           # - strata-primitives # unsupported due to `secp256k1` FFI dependency
-          - strata-identifiers
+          # - strata-identifiers # moved to strata-common (git dep), not a local crate
           # - strata-dbtool # unsupported due to `rkyv` dependency
           # - alpen-client # unsupported due to `rkyv` dependency
           # - alpen-cli # unsupported due to `secp256k1` FFI dependency

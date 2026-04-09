@@ -4,15 +4,13 @@ use std::sync::Arc;
 
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
-use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
-use strata_csm_types::{
-    CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
-};
+use strata_checkpoint_types::BatchInfo;
+use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
 
-use crate::{state::CsmWorkerState, sync_actions::apply_action};
+use crate::state::CsmWorkerState;
 
 pub(crate) fn process_log(
     state: &mut CsmWorkerState,
@@ -187,18 +185,6 @@ fn mark_ol_checkpoint_l1_observed(
     Ok(())
 }
 
-fn newly_finalized_epoch(
-    prev_final_epoch: Option<&EpochCommitment>,
-    new_final_epoch: Option<&EpochCommitment>,
-) -> Option<EpochCommitment> {
-    // Return the newly declared finalized epoch only when finality advanced.
-    match (prev_final_epoch, new_final_epoch) {
-        (None, Some(new)) => Some(*new),
-        (Some(old), Some(new)) if new.epoch() > old.epoch() => Some(*new),
-        _ => None,
-    }
-}
-
 /// Build a compatibility synthetic [`L1Checkpoint`] from a v1 checkpoint tip update.
 // TODO(STR-2438): Remove this adapter once CSM consumes checkpoint-v1-native
 // structures without legacy `L1Checkpoint` synthesis.
@@ -241,7 +227,6 @@ mod tests {
     use strata_primitives::{
         buf::Buf32,
         epoch::EpochCommitment,
-        l1::BitcoinTxid,
         ol::{OLBlockCommitment, OLBlockId},
         prelude::*,
     };
