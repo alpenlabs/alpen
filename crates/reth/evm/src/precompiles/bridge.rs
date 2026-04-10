@@ -28,12 +28,8 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
 
     let withdrawal_amount = input.value;
 
-    // Verify that the transaction value matches the required withdrawal amount
-    if withdrawal_amount < FIXED_WITHDRAWAL_WEI {
-        return Err(PrecompileError::other(
-            "Invalid withdrawal value: must have 10 BTC in wei",
-        ));
-    }
+    // Verify that the transaction value is a positive exact multiple of the withdrawal denomination
+    validate_withdrawal_amount(withdrawal_amount)?;
 
     // Convert wei to satoshis
     let (sats, _) = wei_to_sats(withdrawal_amount);
@@ -69,6 +65,16 @@ pub(crate) fn bridge_context_call(mut input: PrecompileInput<'_>) -> PrecompileR
     let gas_cost = 0;
 
     Ok(PrecompileOutput::new(gas_cost, Bytes::new()))
+}
+
+/// Validates that the withdrawal amount is a positive exact multiple of the denomination.
+fn validate_withdrawal_amount(amount: U256) -> Result<(), PrecompileError> {
+    if amount.is_zero() || !(amount % FIXED_WITHDRAWAL_WEI).is_zero() {
+        return Err(PrecompileError::other(format!(
+            "Invalid withdrawal value: must be a positive exact multiple of {FIXED_WITHDRAWAL_WEI} wei",
+        )));
+    }
+    Ok(())
 }
 
 /// Validates that input is a valid BOSD [`Descriptor`].
@@ -153,5 +159,32 @@ mod tests {
         // Exactly 4 bytes (operator only, no BOSD)
         let data = vec![0x00, 0x00, 0x00, 0x05];
         assert!(WithdrawalCalldata::decode(&data).is_none());
+    }
+
+    // --- withdrawal amount validation tests ---
+
+    #[test]
+    fn test_validate_withdrawal_exact_denomination() {
+        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI).is_ok());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_exact_multiple() {
+        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI * U256::from(3)).is_ok());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_zero_rejected() {
+        assert!(validate_withdrawal_amount(U256::ZERO).is_err());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_non_multiple_rejected() {
+        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI + U256::from(1)).is_err());
+    }
+
+    #[test]
+    fn test_validate_withdrawal_below_denomination_rejected() {
+        assert!(validate_withdrawal_amount(FIXED_WITHDRAWAL_WEI - U256::from(1)).is_err());
     }
 }
