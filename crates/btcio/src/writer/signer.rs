@@ -7,25 +7,23 @@ use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{
-    builder::{attach_reveal_signature, build_envelope_txs, EnvelopeError, UnsignedEnvelopeData},
+    builder::{attach_reveal_signature, build_envelope_txs, EnvelopeData, EnvelopeError},
     context::WriterContext,
 };
 use crate::broadcaster::L1BroadcastHandle;
 
 /// Builds envelope transactions for a payload entry.
 ///
-/// Signs the commit tx with the Bitcoin wallet and returns the [`UnsignedEnvelopeData`]
-/// whose reveal tx requires a Schnorr signature from the external signer.
-///
-/// The commit tx is stored in the broadcast DB immediately. The reveal tx is returned
-/// unsigned — it will be completed by [`complete_reveal_and_broadcast`] once the signer
-/// provides the signature.
+/// Signs the commit tx with the Bitcoin wallet and caches the result in [`EnvelopeData`].
+/// Neither transaction is broadcast yet — both are sent together by
+/// [`complete_reveal_and_broadcast`] once the external signer provides the reveal signature.
+/// This ensures a cache miss on restart is safe: resetting to `Unsigned` cannot orphan a
+/// UTXO because nothing has been broadcast.
 pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
     payload_idx: u64,
     payloadentry: &BundledPayloadEntry,
-    broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<WriterContext<R>>,
-) -> Result<(UnsignedEnvelopeData, Buf32), EnvelopeError> {
+) -> Result<EnvelopeData, EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_envelope",
         component = "btcio_writer_signer",
@@ -34,43 +32,33 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 
     async {
         trace!("Building payload envelope transactions");
-        let unsigned = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
+        let mut envelope = build_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
-        let commit_txid = unsigned.commit_tx.compute_txid();
-        debug!(commit_txid = %commit_txid, "Signing commit transaction with wallet");
+        let commit_txid = envelope.commit_tx.compute_txid();
+        debug!(%commit_txid, "Signing commit transaction with wallet");
         let signed_commit = ctx
             .client
-            .sign_raw_transaction_with_wallet(&unsigned.commit_tx, None)
+            .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
             .await
             .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
             .tx;
-        let cid: Buf32 = signed_commit.compute_txid().to_buf32();
+        envelope.commit_tx = signed_commit;
 
-        let centry = L1TxEntry::from_tx(&signed_commit);
-        broadcast_handle
-            .put_tx_entry(cid, centry)
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
-
-        info!(
-            commit_txid = %cid,
-            sighash = %unsigned.sighash,
-            "built envelope, commit stored — awaiting reveal signature"
-        );
-        Ok((unsigned, cid))
+        info!(%commit_txid, sighash = %envelope.sighash, "envelope built, commit signed");
+        Ok(envelope)
     }
     .instrument(span)
     .await
 }
 
-/// Attaches the external signer's Schnorr signature to the reveal tx and stores it
-/// for broadcast.
+/// Attaches the external signer's Schnorr signature to the reveal tx and stores both
+/// commit and reveal for broadcast.
 ///
-/// Called by the watcher when it sees a `PendingPayloadSign` entry whose
+/// Called by the watcher when it sees a `PendingRevealTxSign` entry whose
 /// `payload_signature` has been filled by the signer RPC.
 pub(crate) async fn complete_reveal_and_broadcast(
     payload_idx: u64,
-    unsigned: &UnsignedEnvelopeData,
+    envelope: &EnvelopeData,
     signature: &[u8; 64],
     broadcast_handle: &L1BroadcastHandle,
 ) -> Result<Buf32, EnvelopeError> {
@@ -81,23 +69,28 @@ pub(crate) async fn complete_reveal_and_broadcast(
     );
 
     async {
-        let mut reveal_tx = unsigned.reveal_tx.clone();
+        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        broadcast_handle
+            .put_tx_entry(cid, L1TxEntry::from_tx(&envelope.commit_tx))
+            .await
+            .map_err(|e| EnvelopeError::Other(e.into()))?;
+
+        let mut reveal_tx = envelope.reveal_tx.clone();
         attach_reveal_signature(
             &mut reveal_tx,
-            &unsigned.reveal_script,
-            &unsigned.taproot_spend_info,
+            &envelope.reveal_script,
+            &envelope.taproot_spend_info,
             signature,
         )
         .map_err(EnvelopeError::Other)?;
 
         let rid: Buf32 = reveal_tx.compute_txid().to_buf32();
-        let rentry = L1TxEntry::from_tx(&reveal_tx);
         broadcast_handle
-            .put_tx_entry(rid, rentry)
+            .put_tx_entry(rid, L1TxEntry::from_tx(&reveal_tx))
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
-        info!(reveal_txid = %rid, "reveal tx signed and stored for broadcast");
+        info!(%cid, reveal_txid = %rid, "commit and reveal stored for broadcast");
         Ok(rid)
     }
     .instrument(span)
@@ -106,9 +99,11 @@ pub(crate) async fn complete_reveal_and_broadcast(
 
 #[cfg(test)]
 mod test {
+    use strata_btc_types::TxidExt;
     use strata_csm_types::L1Payload;
     use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus};
     use strata_l1_txfmt::TagData;
+    use strata_primitives::buf::Buf32;
 
     use super::*;
     use crate::{
@@ -135,15 +130,14 @@ mod test {
             .await
             .unwrap();
 
-        let (unsigned, cid) = create_payload_envelopes(0, &entry, bcast_handle.as_ref(), ctx)
-            .await
-            .unwrap();
+        let envelope = create_payload_envelopes(0, &entry, ctx).await.unwrap();
 
-        // Commit tx should be stored in broadcast DB
+        // Commit tx should not be in broadcast DB yet — deferred until reveal sig arrives
+        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
         let ctx_entry = bcast_handle.get_tx_entry_by_id_async(cid).await.unwrap();
-        assert!(ctx_entry.is_some());
+        assert!(ctx_entry.is_none());
 
         // Sighash should be non-zero
-        assert_ne!(unsigned.sighash, Buf32::zero());
+        assert_ne!(envelope.sighash, Buf32::zero());
     }
 }

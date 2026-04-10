@@ -20,7 +20,7 @@ use crate::{
     broadcaster::L1BroadcastHandle,
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
-        builder::{EnvelopeError, UnsignedEnvelopeData},
+        builder::{EnvelopeData, EnvelopeError},
         context::WriterContext,
         signer::{complete_reveal_and_broadcast, create_payload_envelopes},
     },
@@ -42,11 +42,11 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-    ) -> impl Future<Output = Result<(UnsignedEnvelopeData, Buf32), EnvelopeError>> + Send;
+    ) -> impl Future<Output = Result<EnvelopeData, EnvelopeError>> + Send;
     fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
-        unsigned: &UnsignedEnvelopeData,
+        envelope: &EnvelopeData,
         sig: &[u8; 64],
     ) -> impl Future<Output = anyhow::Result<Buf32>> + Send;
     fn get_tx_status(
@@ -101,17 +101,17 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-    ) -> Result<(UnsignedEnvelopeData, Buf32), EnvelopeError> {
-        create_payload_envelopes(idx, entry, &self.broadcast_handle, self.context.clone()).await
+    ) -> Result<EnvelopeData, EnvelopeError> {
+        create_payload_envelopes(idx, entry, self.context.clone()).await
     }
 
     async fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
-        unsigned: &UnsignedEnvelopeData,
+        envelope: &EnvelopeData,
         sig: &[u8; 64],
     ) -> anyhow::Result<Buf32> {
-        complete_reveal_and_broadcast(idx, unsigned, sig, &self.broadcast_handle)
+        complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
             .await
             .map_err(Into::into)
     }
@@ -136,7 +136,7 @@ pub struct WatcherStatus {
 
 pub(crate) struct WatcherState<C: WatcherServiceContext> {
     pub(crate) ctx: C,
-    pub(crate) unsigned_cache: HashMap<u64, UnsignedEnvelopeData>,
+    pub(crate) envelope_cache: HashMap<u64, EnvelopeData>,
     pub(crate) curr_payloadidx: u64,
     // Keeps the inner mpsc channel open so TickingInput never receives a closed signal.
     _tick_guard: mpsc::Sender<()>,
@@ -146,7 +146,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
     pub(crate) fn new(ctx: C, curr_payloadidx: u64, tick_guard: mpsc::Sender<()>) -> Self {
         Self {
             ctx,
-            unsigned_cache: HashMap::new(),
+            envelope_cache: HashMap::new(),
             curr_payloadidx,
             _tick_guard: tick_guard,
         }
@@ -169,7 +169,7 @@ impl<C: WatcherServiceContext> Service for WatcherService<C> {
     fn get_status(state: &Self::State) -> Self::Status {
         WatcherStatus {
             current_payload_idx: state.curr_payloadidx,
-            cache_size: state.unsigned_cache.len(),
+            cache_size: state.envelope_cache.len(),
         }
     }
 }
@@ -182,7 +182,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
         if let Some(payloadentry) = state.ctx.get_payload_entry(state.curr_payloadidx).await? {
             match payloadentry.status {
                 // If unsigned or needs resign, build envelope txs, sign commit with
-                // wallet, and transition to PendingPayloadSign awaiting the external
+                // wallet, and transition to PendingRevealTxSign awaiting the external
                 // signer's Schnorr signature on the reveal tx.
                 L1BundleStatus::Unsigned | L1BundleStatus::NeedsResign => {
                     debug!(current_status=?payloadentry.status);
@@ -191,22 +191,22 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                         .create_envelopes(state.curr_payloadidx, &payloadentry)
                         .await
                     {
-                        Ok((unsigned, cid)) => {
-                            let rid: Buf32 = unsigned.reveal_tx.compute_txid().to_buf32();
-                            let sighash = unsigned.sighash;
+                        Ok(envelope) => {
+                            let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+                            let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+                            let sighash = envelope.sighash;
 
                             let mut updated_entry = payloadentry.clone();
                             updated_entry.commit_txid = cid;
                             updated_entry.reveal_txid = rid;
                             updated_entry.payload_signature = None;
-                            updated_entry.status = L1BundleStatus::PendingPayloadSign(sighash);
+                            updated_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
                             state
                                 .ctx
                                 .put_payload_entry(state.curr_payloadidx, updated_entry)
                                 .await?;
 
-                            // Cache the unsigned envelope for later signature attachment
-                            state.unsigned_cache.insert(state.curr_payloadidx, unsigned);
+                            state.envelope_cache.insert(state.curr_payloadidx, envelope);
 
                             debug!(%sighash, "envelope built, awaiting signer");
                         }
@@ -225,16 +225,16 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 // Waiting for the external signer to provide the reveal signature.
                 // When the signature arrives (via RPC), complete the reveal tx and
                 // transition to Unpublished.
-                L1BundleStatus::PendingPayloadSign(_sighash) => {
+                L1BundleStatus::PendingRevealTxSign(_sighash) => {
                     let Some(sig) = &payloadentry.payload_signature else {
                         trace!("waiting for signer to provide reveal signature");
                         return Ok(Response::Continue);
                     };
-                    let Some(unsigned) = state.unsigned_cache.remove(&state.curr_payloadidx) else {
+                    let Some(envelope) = state.envelope_cache.remove(&state.curr_payloadidx) else {
                         // Cache miss (e.g. restart) — reset to Unsigned to rebuild
                         // envelope from scratch (new UTXOs, new sighash).
-                        // Same recovery path as NeedsResign.
-                        warn!("unsigned envelope not in cache, resetting to Unsigned");
+                        // Safe: nothing has been broadcast yet.
+                        warn!("envelope not in cache, resetting to Unsigned");
                         let mut updated_entry = payloadentry.clone();
                         updated_entry.payload_signature = None;
                         updated_entry.status = L1BundleStatus::Unsigned;
@@ -246,7 +246,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                     };
                     match state
                         .ctx
-                        .complete_reveal_and_broadcast(state.curr_payloadidx, &unsigned, sig.as_ref())
+                        .complete_reveal_and_broadcast(state.curr_payloadidx, &envelope, sig.as_ref())
                         .await
                     {
                         Ok(_rid) => {
