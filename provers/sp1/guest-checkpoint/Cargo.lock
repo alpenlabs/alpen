@@ -1256,7 +1256,7 @@ dependencies = [
  "serde",
  "sizzle-parser",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.14.0",
  "ssz_primitives",
  "ssz_types",
  "syn",
@@ -1269,6 +1269,16 @@ dependencies = [
 name = "ssz_derive"
 version = "0.14.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.14.0#952235f10c23882d8defabc6a35121c04878b85a"
+dependencies = [
+ "darling",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "ssz_derive"
+version = "0.15.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
 dependencies = [
  "darling",
  "quote",
@@ -1310,7 +1320,7 @@ dependencies = [
  "num_enum",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-codec",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -1326,7 +1336,7 @@ dependencies = [
  "borsh",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-crypto",
  "strata-identifiers",
  "strata-params",
@@ -1364,7 +1374,7 @@ dependencies = [
  "serde",
  "sha2",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "strata-identifiers",
  "thiserror 2.0.18",
  "zeroize",
@@ -1382,7 +1392,7 @@ dependencies = [
  "paste",
  "serde",
  "ssz",
- "ssz_derive",
+ "ssz_derive 0.15.0",
  "ssz_primitives",
  "ssz_types",
  "strata-codec",
@@ -1426,7 +1436,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_codegen",
- "ssz_derive",
+ "ssz_derive 0.14.0",
  "ssz_primitives",
  "ssz_types",
  "thiserror 2.0.18",
