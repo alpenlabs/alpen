@@ -1,4 +1,6 @@
 //! OL RPC server implementation for a strata node.
+use std::collections::{HashMap, hash_map::Entry};
+
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
@@ -9,16 +11,21 @@ use strata_identifiers::{
     OLBlockCommitment, OLBlockId, OLTxId,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
+use strata_ol_chain_types_new::{
+    OLBlock, OLBlockHeader, OLTransaction, OLTxSegment, TransactionPayload,
+};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockEntry,
-    RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
+    AccountExtraData, OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary,
+    RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo,
+    RpcCheckpointL1Ref, RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState,
+    RpcUpdateInputData,
 };
+use strata_ol_state_types::OLAccountState;
+use strata_ol_stf::SEQUENCER_ACCT_ID;
 use strata_primitives::{HexBytes, HexBytes32};
-use strata_snark_acct_types::ProofState;
-use tracing::{error, info};
+use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
+use tracing::{error, info, warn, warn_span};
 
 use crate::rpc::errors::{
     db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
@@ -29,6 +36,122 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
+}
+
+pub(crate) fn extract_account_activity_from_block(
+    account_id: AccountId,
+    block_epoch: Epoch,
+    tx_segment: Option<&OLTxSegment>,
+    account_state: &OLAccountState,
+) -> (Vec<UpdateInputData>, Vec<MessageEntry>) {
+    let mut updates = Vec::new();
+    let mut new_inbox_messages = Vec::new();
+    let account_is_snark = account_state.as_snark_account().is_ok();
+
+    let Some(tx_segment) = tx_segment else {
+        return (updates, new_inbox_messages);
+    };
+
+    for tx in tx_segment.txs() {
+        let sender = match tx.payload() {
+            TransactionPayload::GenericAccountMessage(_) => SEQUENCER_ACCT_ID,
+            TransactionPayload::SnarkAccountUpdate(payload) => {
+                if *payload.target() == account_id {
+                    let op = payload.operation();
+                    let update_state = UpdateStateData::new(
+                        ProofState::new(
+                            op.update().proof_state().inner_state_root(),
+                            op.update().proof_state().new_next_msg_idx(),
+                        ),
+                        op.update().extra_data().to_vec(),
+                    );
+                    updates.push(UpdateInputData::new(
+                        op.update().seq_no(),
+                        op.messages_iter().cloned().collect(),
+                        update_state,
+                    ));
+                }
+                *payload.target()
+            }
+        };
+
+        if account_is_snark {
+            // `new_inbox_messages` reflects snark inbox appends (not all messages/effects).
+            for msg in tx.data().effects().messages_iter() {
+                if msg.dest() == account_id {
+                    new_inbox_messages.push(MessageEntry::new(
+                        sender,
+                        block_epoch,
+                        msg.payload().clone(),
+                    ));
+                }
+            }
+        }
+    }
+
+    (updates, new_inbox_messages)
+}
+
+pub(crate) fn resolve_update_extra_data_for_block(
+    account_id: AccountId,
+    epoch: Epoch,
+    block_commitment: OLBlockCommitment,
+    updates: &mut [UpdateInputData],
+    extra_data_entries: Option<&AccountExtraData>,
+) {
+    if updates.is_empty() {
+        return;
+    }
+
+    let _warn_span = warn_span!(
+        "resolve_update_extra_data_for_block",
+        %account_id,
+        epoch,
+        %block_commitment,
+        update_count = updates.len()
+    )
+    .entered();
+
+    let Some(extra_data_entries) = extra_data_entries else {
+        warn!("missing account extra-data index; using tx payload extra_data");
+        return;
+    };
+
+    // NOTE: We pair block-level index entries to SAU updates positionally. This assumes
+    // index insertion order for a block matches SAU tx order in the block tx segment.
+    // Current flow reference:
+    // - STF applies txs in tx-segment order in `process_block_tx_segment`.
+    // - SAU updates are appended to index writes in `update_inner_state`.
+    // - Chain worker persists those updates in iteration order in `store_block_output`.
+    // If any of that ordering changes, pairing can drift.
+    let mut matching_index_entries_iter = extra_data_entries
+        .iter()
+        .filter(|entry| entry.block() == &block_commitment);
+    let mut applied_updates_count = 0usize;
+    for update in updates.iter_mut() {
+        let Some(entry) = matching_index_entries_iter.next() else {
+            break;
+        };
+        // Index data is authoritative for update extra data.
+        update.set_extra_data(entry.extra_data().to_vec());
+        applied_updates_count = applied_updates_count.saturating_add(1);
+    }
+    // `matching_index_entries_iter` has been advanced by the loop above. Counting what's left
+    // and adding `applied_updates_count` gives the total number of index entries for this block.
+    let matching_index_entries_count =
+        applied_updates_count.saturating_add(matching_index_entries_iter.count());
+
+    if matching_index_entries_count == 0 {
+        warn!("no indexed extra-data entries for block; using tx payload extra_data");
+        return;
+    }
+
+    if matching_index_entries_count != updates.len() {
+        warn!(
+            matching_index_entries_count,
+            "extra-data index/update count mismatch; unmatched updates use tx payload extra_data"
+        );
+    }
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
@@ -439,9 +562,9 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .unwrap_or(0);
 
         // Walk backwards from end_slot via parent references to ensure blocks are chained.
-        // This guarantees all returned blocks are from the same chain, not different forks.
         // Once we reach a finalized block, we can fetch remaining blocks directly by slot.
-        let mut chain_blocks: Vec<(u64, OLBlockId)> = Vec::new();
+        // We cache only the fields needed for summaries: block id, header, and tx segment.
+        let mut chain_blocks: Vec<(OLBlockId, OLBlockHeader, Option<OLTxSegment>)> = Vec::new();
 
         // Get the block at end_slot (we'll walk backwards from here)
         let end_block_id = self.get_canonical_block_at_height(end_slot).await?;
@@ -457,13 +580,14 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         loop {
             // Get the block data to access parent
             let block = self.get_block(current_id).await?;
-
-            let header = block.header();
+            let header = block.header().clone();
             let current_slot = header.slot();
+            let parent_id = *header.parent_blkid();
+            let tx_segment = block.body().tx_segment().cloned();
 
             // Add this block if it's within our range
             if current_slot >= start_slot && current_slot <= end_slot {
-                chain_blocks.push((current_slot, current_id));
+                chain_blocks.push((current_id, header, tx_segment));
             }
 
             // Stop if we've reached or passed start_slot
@@ -478,14 +602,19 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 for slot in (start_slot..current_slot).rev() {
                     let blkid = self.get_canonical_block_at_height(slot).await?;
                     if let Some(blkid) = blkid {
-                        chain_blocks.push((slot, blkid));
+                        let block = self.get_block(blkid).await?;
+                        chain_blocks.push((
+                            blkid,
+                            block.header().clone(),
+                            block.body().tx_segment().cloned(),
+                        ));
                     }
                 }
                 break;
             }
 
             // Move to parent block
-            current_id = *header.parent_blkid();
+            current_id = parent_id;
         }
 
         // Reverse to get ascending slot order
@@ -493,9 +622,12 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
         // Now build summaries for each block in the chain
         let mut summaries = Vec::with_capacity(chain_blocks.len());
+        let mut extra_data_cache: HashMap<Epoch, Option<AccountExtraData>> = HashMap::new();
 
-        for (slot, block_id) in chain_blocks {
+        for (block_id, header, tx_segment) in chain_blocks {
+            let slot = header.slot();
             let block_commitment = OLBlockCommitment::new(slot, block_id);
+            let epoch = header.epoch();
 
             // Get OL state at this block
             let ol_state = self
@@ -538,13 +670,39 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 Err(_) => (0, 0), // Non-snark account
             };
 
+            let (mut updates, new_inbox_messages) = extract_account_activity_from_block(
+                account_id,
+                epoch,
+                tx_segment.as_ref(),
+                account_state,
+            );
+            let epoch_extra_data = match extra_data_cache.entry(epoch) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let fetched = self
+                        .provider
+                        .get_account_extra_data((account_id, epoch))
+                        .await
+                        .map_err(db_error)?;
+                    entry.insert(fetched)
+                }
+            }
+            .as_ref();
+            resolve_update_extra_data_for_block(
+                account_id,
+                epoch,
+                block_commitment,
+                &mut updates,
+                epoch_extra_data,
+            );
+
             summaries.push(RpcAccountBlockSummary::new(
                 account_id,
                 block_commitment,
                 account_state.balance(),
                 next_seq_no,
-                vec![], // updates - requires write batch analysis
-                vec![], // new_inbox_messages - requires write batch analysis
+                updates,
+                new_inbox_messages,
                 next_inbox_msg_idx,
             ));
         }

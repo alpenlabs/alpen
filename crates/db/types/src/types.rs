@@ -528,6 +528,14 @@ impl AccountExtraDataEntry {
         Self { extra_data, block }
     }
 
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+
+    pub fn block(&self) -> &OLBlockCommitment {
+        &self.block
+    }
+
     pub fn into_parts(self) -> (Vec<u8>, OLBlockCommitment) {
         (self.extra_data, self.block)
     }

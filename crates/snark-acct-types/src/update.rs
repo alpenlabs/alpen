@@ -25,6 +25,13 @@ impl UpdateStateData {
     pub fn extra_data(&self) -> &[u8] {
         self.extra_data.as_ref()
     }
+
+    /// Replaces the update state's extra data in-place.
+    pub fn set_extra_data(&mut self, extra_data: Vec<u8>) {
+        self.extra_data = extra_data
+            .try_into()
+            .expect("snark account extra data must fit within SSZ max length");
+    }
 }
 
 impl UpdateInputData {
@@ -53,6 +60,11 @@ impl UpdateInputData {
 
     pub fn extra_data(&self) -> &[u8] {
         self.update_state.extra_data()
+    }
+
+    /// Replaces the update's extra data in-place.
+    pub fn set_extra_data(&mut self, extra_data: Vec<u8>) {
+        self.update_state.set_extra_data(extra_data);
     }
 }
 
