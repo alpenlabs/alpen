@@ -384,7 +384,7 @@ reth-ethereum-forks = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9
 reth-ethereum-payload-builder = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-ethereum-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-evm = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
-reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
+reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth", tag = "v2.0.0" }
 reth-exex = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-ipc = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 reth-network = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
