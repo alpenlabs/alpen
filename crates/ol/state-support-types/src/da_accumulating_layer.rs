@@ -729,7 +729,7 @@ where
     fn create_new_account(
         &mut self,
         id: AccountId,
-        new_acct_data: NewAccountData<Self::AccountState>,
+        new_acct_data: NewAccountData,
     ) -> AcctResult<AccountSerial> {
         let expected_first_serial = self.inner.next_account_serial();
         let serial = self.inner.create_new_account(id, new_acct_data)?;

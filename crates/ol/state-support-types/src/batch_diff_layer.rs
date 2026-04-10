@@ -12,6 +12,8 @@ use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::{IStateAccessor, NewAccountData};
 use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 
+use crate::write_tracking_layer::IComputeStateRootWithWrites;
+
 /// A read-only state accessor that overlays a stack of WriteBatch diffs.
 ///
 /// Reads check each batch in reverse order (last = most recent), then fall back
@@ -70,7 +72,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn cur_slot(&self) -> u64 {
         self.batches
             .last()
-            .map(|b| b.global().get_cur_slot())
+            .and_then(|b| b.global_writes().cur_slot)
             .unwrap_or_else(|| self.base.cur_slot())
     }
 
@@ -84,7 +86,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn cur_epoch(&self) -> u32 {
         self.batches
             .last()
-            .map(|b| b.epochal().cur_epoch())
+            .and_then(|b| b.epochal_writes().cur_epoch)
             .unwrap_or_else(|| self.base.cur_epoch())
     }
 
@@ -96,14 +98,14 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn last_l1_blkid(&self) -> &L1BlockId {
         self.batches
             .last()
-            .map(|b| b.epochal().last_l1_blkid())
+            .and_then(|b| b.epochal_writes().last_l1_blkid.as_ref())
             .unwrap_or_else(|| self.base.last_l1_blkid())
     }
 
     fn last_l1_height(&self) -> L1Height {
         self.batches
             .last()
-            .map(|b| b.epochal().last_l1_height())
+            .and_then(|b| b.epochal_writes().last_l1_height)
             .unwrap_or_else(|| self.base.last_l1_height())
     }
 
@@ -115,7 +117,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
         self.batches
             .last()
-            .map(|b| b.epochal().asm_recorded_epoch())
+            .and_then(|b| b.epochal_writes().asm_recorded_epoch.as_ref())
             .unwrap_or_else(|| self.base.asm_recorded_epoch())
     }
 
@@ -127,7 +129,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.batches
             .last()
-            .map(|b| b.epochal().total_ledger_balance())
+            .and_then(|b| b.epochal_writes().total_ledger_balance)
             .unwrap_or_else(|| self.base.total_ledger_balance())
     }
 
@@ -139,7 +141,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn asm_manifests_mmr(&self) -> &Mmr64 {
         self.batches
             .last()
-            .map(|b| b.epochal().asm_manifests_mmr())
+            .and_then(|b| b.epochal_writes().asm_manifests_mmr.as_ref())
             .unwrap_or_else(|| self.base.asm_manifests_mmr())
     }
 
@@ -177,7 +179,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     fn create_new_account(
         &mut self,
         _id: AccountId,
-        _new_acct_data: NewAccountData<Self::AccountState>,
+        _new_acct_data: NewAccountData,
     ) -> AcctResult<AccountSerial> {
         Err(AcctError::Unsupported)
     }
@@ -216,22 +218,36 @@ impl<'batches, 'base, S: IStateAccessor> IStateBatchApplicable
     }
 }
 
+impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrites
+    for BatchDiffState<'batches, 'base, S>
+{
+    fn compute_state_root_with_writes(
+        &self,
+        batch: WriteBatch<Self::AccountState>,
+    ) -> AcctResult<Buf32> {
+        // TODO: incorporate self.batches when computing state root
+        self.base.compute_state_root_with_writes(batch)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use strata_acct_types::{AcctError, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
-    use strata_ledger_types::{AccountTypeState, IAccountState, IStateAccessor, NewAccountData};
+    use strata_ledger_types::{IAccountState, IStateAccessor};
     use strata_ol_params::OLParams;
     use strata_ol_state_types::OLState;
 
     use super::*;
-    use crate::test_utils::*;
+    use crate::{memory_state_layer::MemoryStateBaseLayer, test_utils::*};
 
-    fn new_ol_state_at(epoch: Epoch, slot: Slot) -> OLState {
+    fn new_layer_at(epoch: Epoch, slot: Slot) -> MemoryStateBaseLayer {
         let mut params = OLParams::new_empty(L1BlockCommitment::default());
         params.header.slot = slot;
         params.header.epoch = epoch;
-        OLState::from_genesis_params(&params).expect("failed to create OLState from genesis params")
+        let state = OLState::from_genesis_params(&params)
+            .expect("failed to create OLState from genesis params");
+        MemoryStateBaseLayer::new(state)
     }
 
     // =========================================================================
@@ -241,11 +257,11 @@ mod tests {
     #[test]
     fn test_read_from_base_when_empty_batches() {
         let account_id = test_account_id(1);
-        let (base_state, serial) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, serial) =
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         // Should read from base
         let account = diff_state.get_account_state(account_id).unwrap().unwrap();
@@ -255,9 +271,9 @@ mod tests {
 
     #[test]
     fn test_global_state_from_base_when_empty() {
-        let base_state = new_ol_state_at(5, 100);
+        let base_layer = new_layer_at(5, 100);
         let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         assert_eq!(diff_state.cur_slot(), 100);
         assert_eq!(diff_state.cur_epoch(), 5);
@@ -267,11 +283,11 @@ mod tests {
     fn test_check_account_exists_in_base_only() {
         let account_id = test_account_id(1);
         let nonexistent_id = test_account_id(99);
-        let (base_state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, _) =
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         assert!(diff_state.check_account_exists(account_id).unwrap());
         assert!(!diff_state.check_account_exists(nonexistent_id).unwrap());
@@ -284,22 +300,19 @@ mod tests {
     #[test]
     fn test_read_from_single_batch() {
         let account_id = test_account_id(1);
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
 
         // Create a batch with an account
-        let mut batch = WriteBatch::new_from_state(&base_state);
+        let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(5000),
-            AccountTypeState::Snark(snark_state),
-        );
-        let serial = base_state.next_account_serial();
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
             .create_account_from_data(account_id, new_acct, serial);
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         // Should read from batch
         let account = diff_state.get_account_state(account_id).unwrap().unwrap();
@@ -310,35 +323,32 @@ mod tests {
     #[test]
     fn test_check_account_exists_in_batch() {
         let account_id = test_account_id(1);
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
 
-        let mut batch = WriteBatch::new_from_state(&base_state);
+        let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(5000),
-            AccountTypeState::Snark(snark_state),
-        );
-        let serial = base_state.next_account_serial();
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
             .create_account_from_data(account_id, new_acct, serial);
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         assert!(diff_state.check_account_exists(account_id).unwrap());
     }
 
     #[test]
     fn test_global_state_from_top_batch() {
-        let base_state = new_ol_state_at(5, 100);
+        let base_layer = new_layer_at(5, 100);
 
-        let mut batch = WriteBatch::new_from_state(&base_state);
-        batch.global_mut().set_cur_slot(200);
-        batch.epochal_mut().set_cur_epoch(10);
+        let mut batch = WriteBatch::default();
+        batch.global_writes_mut().cur_slot = Some(200);
+        batch.epochal_writes_mut().cur_epoch = Some(10);
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         assert_eq!(diff_state.cur_slot(), 200);
         assert_eq!(diff_state.cur_epoch(), 10);
@@ -351,28 +361,22 @@ mod tests {
     #[test]
     fn test_read_from_batch_stack_last_shadows() {
         let account_id = test_account_id(1);
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
 
         // First batch: account with 1000 sats
-        let mut batch1 = WriteBatch::new_from_state(&base_state);
+        let mut batch1 = WriteBatch::default();
         let snark_state1 = test_snark_account_state(1);
-        let new_acct1 = NewAccountData::new(
-            BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state1),
-        );
-        let serial1 = base_state.next_account_serial();
+        let new_acct1 = test_new_snark_account_data(&snark_state1, BitcoinAmount::from_sat(1000));
+        let serial1 = base_layer.next_account_serial();
         batch1
             .ledger_mut()
             .create_account_from_data(account_id, new_acct1, serial1);
 
         // Second batch (more recent): same account with 5000 sats
         // This batch shadows the first, so uses a different serial
-        let mut batch2 = WriteBatch::new_from_state(&base_state);
+        let mut batch2 = WriteBatch::default();
         let snark_state2 = test_snark_account_state(2);
-        let new_acct2 = NewAccountData::new(
-            BitcoinAmount::from_sat(5000),
-            AccountTypeState::Snark(snark_state2),
-        );
+        let new_acct2 = test_new_snark_account_data(&snark_state2, BitcoinAmount::from_sat(5000));
         let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
         batch2
             .ledger_mut()
@@ -380,7 +384,7 @@ mod tests {
 
         // Last batch should shadow first
         let batches = vec![batch1, batch2];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         let account = diff_state.get_account_state(account_id).unwrap().unwrap();
         assert_eq!(account.balance(), BitcoinAmount::from_sat(5000));
@@ -390,34 +394,28 @@ mod tests {
     fn test_read_falls_through_to_earlier_batch() {
         let account_id_1 = test_account_id(1);
         let account_id_2 = test_account_id(2);
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
 
         // First batch: account 1
-        let mut batch1 = WriteBatch::new_from_state(&base_state);
+        let mut batch1 = WriteBatch::default();
         let snark_state1 = test_snark_account_state(1);
-        let new_acct1 = NewAccountData::new(
-            BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state1),
-        );
-        let serial1 = base_state.next_account_serial();
+        let new_acct1 = test_new_snark_account_data(&snark_state1, BitcoinAmount::from_sat(1000));
+        let serial1 = base_layer.next_account_serial();
         batch1
             .ledger_mut()
             .create_account_from_data(account_id_1, new_acct1, serial1);
 
         // Second batch: account 2 only
-        let mut batch2 = WriteBatch::new_from_state(&base_state);
+        let mut batch2 = WriteBatch::default();
         let snark_state2 = test_snark_account_state(2);
-        let new_acct2 = NewAccountData::new(
-            BitcoinAmount::from_sat(2000),
-            AccountTypeState::Snark(snark_state2),
-        );
+        let new_acct2 = test_new_snark_account_data(&snark_state2, BitcoinAmount::from_sat(2000));
         let serial2 = AccountSerial::from(SYSTEM_RESERVED_ACCTS + 1);
         batch2
             .ledger_mut()
             .create_account_from_data(account_id_2, new_acct2, serial2);
 
         let batches = vec![batch1, batch2];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         // Account 1 should be found in batch1 (falls through from batch2)
         let account1 = diff_state.get_account_state(account_id_1).unwrap().unwrap();
@@ -432,22 +430,19 @@ mod tests {
     fn test_read_falls_through_to_base() {
         let account_id_base = test_account_id(1);
         let account_id_batch = test_account_id(2);
-        let (base_state, _) =
-            setup_state_with_snark_account(account_id_base, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, _) =
+            setup_layer_with_snark_account(account_id_base, 1, BitcoinAmount::from_sat(1000));
 
-        let mut batch = WriteBatch::new_from_state(&base_state);
+        let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(2);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(2000),
-            AccountTypeState::Snark(snark_state),
-        );
-        let serial = base_state.next_account_serial();
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(2000));
+        let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
             .create_account_from_data(account_id_batch, new_acct, serial);
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         // Account in base should be found
         let base_account = diff_state
@@ -467,21 +462,18 @@ mod tests {
     #[test]
     fn test_find_serial_in_batch_stack() {
         let account_id = test_account_id(1);
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
 
-        let mut batch = WriteBatch::new_from_state(&base_state);
+        let mut batch = WriteBatch::default();
         let snark_state = test_snark_account_state(1);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state),
-        );
-        let serial = base_state.next_account_serial();
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
+        let serial = base_layer.next_account_serial();
         batch
             .ledger_mut()
             .create_account_from_data(account_id, new_acct, serial);
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         let found_id = diff_state.find_account_id_by_serial(serial).unwrap();
         assert_eq!(found_id, Some(account_id));
@@ -494,11 +486,11 @@ mod tests {
     #[test]
     fn test_update_account_returns_unsupported() {
         let account_id = test_account_id(1);
-        let (base_state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let (base_layer, _) =
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         let batches: Vec<WriteBatch<_>> = vec![];
-        let mut diff_state = BatchDiffState::new(&base_state, &batches);
+        let mut diff_state = BatchDiffState::new(&base_layer, &batches);
 
         let result = diff_state.update_account(account_id, |_acct| {});
         assert!(matches!(result, Err(AcctError::Unsupported)));
@@ -506,16 +498,13 @@ mod tests {
 
     #[test]
     fn test_create_account_returns_unsupported() {
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
         let batches: Vec<WriteBatch<_>> = vec![];
-        let mut diff_state = BatchDiffState::new(&base_state, &batches);
+        let mut diff_state = BatchDiffState::new(&base_layer, &batches);
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state),
-        );
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
 
         let result = diff_state.create_new_account(account_id, new_acct);
         assert!(matches!(result, Err(AcctError::Unsupported)));
@@ -523,9 +512,9 @@ mod tests {
 
     #[test]
     fn test_compute_state_root_returns_unsupported() {
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
         let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         let result = diff_state.compute_state_root();
         assert!(matches!(result, Err(AcctError::Unsupported)));
@@ -537,15 +526,13 @@ mod tests {
 
     #[test]
     fn test_epochal_state_from_top_batch() {
-        let base_state = create_test_genesis_state();
+        let base_layer = create_test_base_layer();
 
-        let mut batch = WriteBatch::new_from_state(&base_state);
-        batch
-            .epochal_mut()
-            .set_total_ledger_balance(BitcoinAmount::from_sat(1_000_000));
+        let mut batch = WriteBatch::default();
+        batch.epochal_writes_mut().total_ledger_balance = Some(BitcoinAmount::from_sat(1_000_000));
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         assert_eq!(
             diff_state.total_ledger_balance(),
@@ -555,11 +542,11 @@ mod tests {
 
     #[test]
     fn test_last_l1_blkid_from_batch() {
-        let base_state = create_test_genesis_state();
-        let batch = WriteBatch::new_from_state(&base_state);
+        let base_layer = create_test_base_layer();
+        let batch: WriteBatch<_> = WriteBatch::default();
 
         let batches = vec![batch];
-        let diff_state = BatchDiffState::new(&base_state, &batches);
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
 
         // Should return the L1 block ID from the batch's epochal state
         let blkid = diff_state.last_l1_blkid();

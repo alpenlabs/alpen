@@ -26,18 +26,12 @@
 //! These parts are committed to in the toplevel state, which is updated later
 //! when we finish a state transition.
 
-#![expect(missing_debug_implementations, reason = "annoying!")]
-
 mod account;
 mod coin;
 mod proofs;
 mod state_accessor;
 
-pub use account::{
-    AccountTypeState, AccountTypeStateMut, AccountTypeStateRef, IAccountState,
-    IAccountStateConstructible, IAccountStateMut, ISnarkAccountState,
-    ISnarkAccountStateConstructible, ISnarkAccountStateMut, NewAccountData,
-};
+pub use account::*;
 pub use coin::Coin;
 pub use proofs::*;
 pub use state_accessor::{

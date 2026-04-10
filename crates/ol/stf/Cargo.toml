@@ -18,6 +18,7 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-da.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-params = { workspace = true, optional = true }
+strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
 strata-snark-acct-sys.workspace = true
@@ -36,4 +37,4 @@ strata-predicate.workspace = true
 workspace = true
 
 [features]
-test-utils = ["dep:ssz_primitives", "dep:strata-ol-params"]
+test-utils = ["dep:ssz_primitives", "dep:strata-ol-params", "dep:strata-ol-state-support-types"]

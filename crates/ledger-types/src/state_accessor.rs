@@ -90,7 +90,7 @@ pub trait IStateAccessor {
     fn create_new_account(
         &mut self,
         id: AccountId,
-        new_acct_data: NewAccountData<Self::AccountState>,
+        new_acct_data: NewAccountData,
     ) -> AcctResult<AccountSerial>;
 
     /// Resolves an account serial to an account ID.

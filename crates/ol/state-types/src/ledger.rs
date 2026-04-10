@@ -2,10 +2,10 @@
 //!
 //! This uses the "transitional" types described in the OL STF spec.
 
+use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
 };
-use strata_ledger_types::{IAccountStateConstructible, NewAccountData};
 use strata_ol_params::GenesisSnarkAccountData;
 
 use crate::ssz_generated::ssz::state::{
@@ -19,7 +19,7 @@ impl TsnlLedgerAccountsTable {
     /// This reserves serials for system accounts with 0 values.
     pub fn new_empty() -> Self {
         Self {
-            accounts: Vec::new().into(),
+            accounts: VariableList::empty(),
         }
     }
 
@@ -28,7 +28,13 @@ impl TsnlLedgerAccountsTable {
         accounts: impl IntoIterator<Item = (&'a AccountId, &'a GenesisSnarkAccountData)>,
     ) -> AcctResult<Self> {
         let mut table = Self::new_empty();
-        let mut next_serial = AccountSerial::first_nonreserved();
+
+        // Use this because the number of reserved accocunts is the same as the
+        // first non-reserved account.
+        //
+        // This used to be `first_nonreserved` but then we accidentally got rid
+        // of that crate.
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
 
         for (id, acct_params) in accounts {
             // Fun serial bookkeeping.
@@ -110,8 +116,9 @@ impl TsnlLedgerAccountsTable {
         &mut self,
         id: AccountId,
         serial: AccountSerial,
-        new_acct_data: NewAccountData<OLAccountState>,
+        new_acct_data: strata_ledger_types::NewAccountData,
     ) -> AcctResult<()> {
+        use strata_ledger_types::IAccountState as _;
         let acct = OLAccountState::new_with_serial(new_acct_data, serial);
         self.create_account(id, acct)?;
         Ok(())

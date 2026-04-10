@@ -6,11 +6,7 @@ use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry};
 use strata_codec::{Codec, CodecError, decode_buf_exact};
 use strata_da_framework::{DaError as FrameworkDaError, DaWrite, SignedVarInt};
 use strata_identifiers::AccountSerial;
-use strata_ledger_types::{
-    AccountTypeState, Coin, IAccountState, IAccountStateConstructible, IAccountStateMut,
-    ISnarkAccountState, ISnarkAccountStateConstructible, ISnarkAccountStateMut, IStateAccessor,
-    NewAccountData,
-};
+use strata_ledger_types::*;
 use strata_predicate::PredicateKeyBuf;
 use strata_snark_acct_types::Seqno;
 
@@ -88,24 +84,7 @@ impl<S: IStateAccessor> Default for OLStateDiff<S> {
     }
 }
 
-impl<S: IStateAccessor> From<StateDiff> for OLStateDiff<S> {
-    fn from(diff: StateDiff) -> Self {
-        Self::new(diff)
-    }
-}
-
-impl<S: IStateAccessor> From<OLStateDiff<S>> for StateDiff {
-    fn from(diff: OLStateDiff<S>) -> Self {
-        diff.diff
-    }
-}
-
-impl<S> DaWrite for OLStateDiff<S>
-where
-    S: IStateAccessor,
-    S::AccountState: IAccountStateConstructible,
-    <S::AccountState as IAccountState>::SnarkAccountState: ISnarkAccountStateConstructible,
-{
+impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
     type Target = S;
     type Context = ();
     type Error = DaError;
@@ -122,7 +101,7 @@ where
         let pre_state_next_serial = target.next_account_serial();
         validate_ledger_entries(pre_state_next_serial, &self.diff)?;
         for entry in self.diff.ledger.new_accounts.entries() {
-            new_account_data_from_init::<S::AccountState>(&entry.init)?;
+            new_account_data_from_init(&entry.init)?;
             let exists = target
                 .check_account_exists(entry.account_id)
                 .map_err(|_| FrameworkDaError::InsufficientContext)?;
@@ -160,7 +139,7 @@ where
             if exists {
                 return Err(DaError::InvalidLedgerDiff("new account already exists"));
             }
-            let new_acct = new_account_data_from_init::<S::AccountState>(&entry.init)?;
+            let new_acct = new_account_data_from_init(&entry.init)?;
             let serial = target
                 .create_new_account(entry.account_id, new_acct)
                 .map_err(|_| DaError::InvalidLedgerDiff("failed to create new account"))?;
@@ -181,19 +160,16 @@ where
     }
 }
 
-fn new_account_data_from_init<T>(init: &AccountInit) -> Result<NewAccountData<T>, DaError>
-where
-    T: IAccountState + IAccountStateConstructible,
-    T::SnarkAccountState: ISnarkAccountStateConstructible,
-{
+fn new_account_data_from_init(init: &AccountInit) -> Result<NewAccountData, DaError> {
     let type_state = match &init.type_state {
-        AccountTypeInit::Empty => AccountTypeState::Empty,
+        AccountTypeInit::Empty => NewAccountTypeState::Empty,
         AccountTypeInit::Snark(snark) => {
             let buf = PredicateKeyBuf::try_from(snark.update_vk.as_slice())
                 .map_err(|_| DaError::InvalidLedgerDiff("invalid predicate key"))?;
-            let snark_state =
-                T::SnarkAccountState::new_fresh(buf.to_owned(), snark.initial_state_root);
-            AccountTypeState::Snark(snark_state)
+            NewAccountTypeState::Snark {
+                update_vk: buf.to_owned(),
+                initial_state_root: snark.initial_state_root,
+            }
         }
     };
     Ok(NewAccountData::new(init.balance, type_state))
@@ -385,9 +361,9 @@ mod tests {
     fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(2);
-        let new_acct = NewAccountData::<OLAccountState>::new(
+        let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(10),
-            AccountTypeState::Empty,
+            NewAccountTypeState::Empty,
         );
         state
             .create_new_account(account_id, new_acct)
@@ -415,9 +391,9 @@ mod tests {
     fn test_ol_state_diff_apply_updates_balance() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(3);
-        let new_acct = NewAccountData::<OLAccountState>::new(
+        let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(1_000),
-            AccountTypeState::Empty,
+            NewAccountTypeState::Empty,
         );
         let serial = state
             .create_new_account(account_id, new_acct)
@@ -450,11 +426,12 @@ mod tests {
     fn test_ol_state_diff_apply_snark_seqno() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(4);
-        let snark_state =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::from([0x11u8; 32]));
-        let new_acct = NewAccountData::<OLAccountState>::new(
+        let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(500),
-            AccountTypeState::Snark(snark_state),
+            NewAccountTypeState::Snark {
+                update_vk: PredicateKey::always_accept(),
+                initial_state_root: Hash::from([0x11u8; 32]),
+            },
         );
         let serial = state
             .create_new_account(account_id, new_acct)

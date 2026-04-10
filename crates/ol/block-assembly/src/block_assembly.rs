@@ -372,8 +372,7 @@ where
     <<S as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
 {
     let (accumulator, logs) = accumulated_da.into_parts();
-    let accumulated_batch = WriteBatch::new_from_state(parent_state);
-    let write_state = WriteTrackingState::new(parent_state, accumulated_batch);
+    let write_state = WriteTrackingState::new_empty(parent_state);
     let mut da_state = DaAccumulatingState::new_with_accumulator(write_state, accumulator);
 
     // Process block start for every block (sets cur_slot, etc.)
@@ -737,12 +736,13 @@ mod tests {
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_identifiers::{Buf32, L1Height, OLBlockId};
     use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLState;
 
     use super::*;
     use crate::test_utils::*;
 
-    type OlWriteBatch = WriteBatch<<OLState as IStateAccessor>::AccountState>;
+    type OlWriteBatch = WriteBatch<<MemoryStateBaseLayer as IStateAccessor>::AccountState>;
 
     async fn build_process_tx_env(account_id: AccountId) -> TestEnv {
         let env_builder = TestStorageFixtureBuilder::new()
@@ -2245,7 +2245,7 @@ mod tests {
         timestamp: u64,
         slot_offset: u64,
     ) -> (
-        Arc<OLState>,
+        Arc<MemoryStateBaseLayer>,
         OLBlockHeader,
         BlockInfo,
         OlWriteBatch,
@@ -2269,7 +2269,7 @@ mod tests {
             parent_header.slot() + slot_offset,
             parent_header.epoch(),
         );
-        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
+        let accumulated_batch = WriteBatch::default();
         let output_buffer = ExecOutputBuffer::new_empty();
         (
             parent_state,

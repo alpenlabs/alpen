@@ -7,6 +7,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_params::OLParams;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
@@ -54,7 +55,8 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
     // Create initial OL state (uses genesis params).
-    let mut ol_state = OLState::from_genesis_params(params)?;
+    let ol_state_raw = OLState::from_genesis_params(params)?;
+    let mut ol_state = MemoryStateBaseLayer::new(ol_state_raw);
 
     // Create genesis block info.
     let genesis_ts = params.header.timestamp;
@@ -72,6 +74,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     let block_context = BlockContext::new(&genesis_info, None);
     let genesis_block =
         execute_and_complete_block(&mut ol_state, block_context, genesis_components)?;
+    let ol_state = ol_state.into_inner();
 
     // Create signed header (genesis uses zero signature).
     let signed_header = SignedOLBlockHeader::new(genesis_block.header().clone(), Buf64::zero());

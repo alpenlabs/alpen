@@ -64,32 +64,12 @@ impl OLBlockExecutionOutput {
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::{L1BlockId, OLBlockId};
-    use strata_merkle::{CompactMmr64, Mmr64B32};
-    use strata_ol_state_types::{EpochalState, GlobalState};
-    use strata_primitives::{
-        epoch::EpochCommitment, l1::L1BlockCommitment, prelude::BitcoinAmount,
-    };
-
     use super::*;
-
-    fn test_epochal_state() -> EpochalState {
-        EpochalState::new(
-            BitcoinAmount::from_sat(0),
-            0,
-            L1BlockCommitment::new(0, L1BlockId::from(Buf32::zero())),
-            EpochCommitment::new(0, 0, OLBlockId::from(Buf32::zero())),
-            Mmr64B32::from_generic(&CompactMmr64::new(64)),
-            1, // offset = genesis_height(0) + 1
-        )
-    }
 
     #[test]
     fn test_output_creation_and_accessors() {
         let state_root = Buf32::from([1u8; 32]);
-        let global = GlobalState::new(100);
-        let epochal = test_epochal_state();
-        let write_batch = WriteBatch::new(global, epochal);
+        let write_batch = WriteBatch::default();
         let indexer_writes = IndexerWrites::new();
 
         let output = OLBlockExecutionOutput::new(state_root, write_batch, indexer_writes);
@@ -101,9 +81,7 @@ mod tests {
     #[test]
     fn test_output_into_parts() {
         let state_root = Buf32::from([2u8; 32]);
-        let global = GlobalState::new(200);
-        let epochal = test_epochal_state();
-        let write_batch = WriteBatch::new(global, epochal);
+        let write_batch = WriteBatch::default();
         let indexer_writes = IndexerWrites::new();
 
         let output = OLBlockExecutionOutput::new(state_root, write_batch, indexer_writes);

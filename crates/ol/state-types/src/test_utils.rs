@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use ssz_types::VariableList;
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::BitcoinAmount;
 use strata_identifiers::{
     EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
     test_utils::{account_id_strategy, account_serial_strategy, buf32_strategy},

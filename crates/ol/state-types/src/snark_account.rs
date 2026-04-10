@@ -33,6 +33,10 @@ impl OLSnarkAccountState {
 }
 
 impl ISnarkAccountState for OLSnarkAccountState {
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
+        Self::new_fresh(update_vk, initial_state_root)
+    }
+
     fn update_vk(&self) -> &PredicateKey {
         &self.update_vk
     }
@@ -51,12 +55,6 @@ impl ISnarkAccountState for OLSnarkAccountState {
 
     fn inbox_mmr(&self) -> &Mmr64B32 {
         &self.inbox_mmr
-    }
-}
-
-impl ISnarkAccountStateConstructible for OLSnarkAccountState {
-    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
-        OLSnarkAccountState::new_fresh(update_vk, initial_state_root)
     }
 }
 

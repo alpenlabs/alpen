@@ -1,16 +1,13 @@
 //! Toplevel state.
 
-use ssz::Encode;
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
-use strata_asm_manifest_types::AsmManifest;
-use strata_crypto::hash::raw;
-use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::*;
+use strata_acct_types::{
+    AccountId, AccountSerial, AcctError, AcctResult, Mmr64, SYSTEM_RESERVED_ACCTS,
+};
 use strata_merkle::CompactMmr64;
 use strata_ol_params::OLParams;
 
 use crate::{
-    IStateBatchApplicable, WriteBatch,
+    WriteBatch,
     ssz_generated::ssz::state::{
         EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
     },
@@ -25,7 +22,10 @@ impl OLState {
         let ledger = TsnlLedgerAccountsTable::from_genesis_account_params(&params.accounts)?;
         let total_ledger_funds = ledger.calculate_total_funds();
 
-        let global = GlobalState::new(params.header.slot, AccountSerial::first_nonreserved());
+        let global = GlobalState::new(
+            params.header.slot,
+            AccountSerial::new(SYSTEM_RESERVED_ACCTS),
+        );
         let manifests_mmr_offset = params.last_l1_block.height() as u64 + 1;
         let epoch = EpochalState::new(
             total_ledger_funds,
@@ -35,6 +35,7 @@ impl OLState {
             manifests_mmr,
             manifests_mmr_offset,
         );
+
         Ok(Self {
             epoch,
             global,
@@ -118,16 +119,24 @@ impl OLState {
     pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> AcctResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
-        let (global, epochal, ledger) = batch.into_parts();
+        let (global_writes, epochal_writes, ledger) = batch.into_parts();
 
         // Separate new accounts from updates.
         let (new_accounts, updated_accounts) = ledger.into_new_and_updated();
 
-        // Create new accounts.
+        // Create new accounts and update the serial counter.
+        let mut num_new_accounts = 0usize;
         for (account_id, account_state) in new_accounts {
             self.ledger
                 .create_account(account_id, account_state)
                 .expect("state: failed to create account");
+            num_new_accounts += 1;
+        }
+        if num_new_accounts > 0 {
+            let next_serial = self.global.get_next_avail_serial();
+            let new_serial =
+                AccountSerial::from(next_serial.into_inner() + num_new_accounts as u32);
+            self.global.set_next_avail_serial(new_serial);
         }
 
         // Update existing accounts.
@@ -139,9 +148,35 @@ impl OLState {
             *existing = account_state;
         }
 
-        // Finally, update global and epochal state.
-        self.global = global;
-        self.epoch = epochal;
+        // Apply global state writes.
+        if let Some(slot) = global_writes.cur_slot {
+            self.global.set_cur_slot(slot);
+        }
+
+        // Apply epochal state writes.
+        if let Some(epoch) = epochal_writes.cur_epoch {
+            self.epoch.set_cur_epoch(epoch);
+        }
+        if let Some(blkid) = epochal_writes.last_l1_blkid {
+            // We need to set both blkid and height together via last_l1_block.
+            // For now, set them individually.
+            let height = epochal_writes
+                .last_l1_height
+                .unwrap_or_else(|| self.epoch.last_l1_height());
+            self.epoch.last_l1_block = strata_identifiers::L1BlockCommitment::new(height, blkid);
+        } else if let Some(height) = epochal_writes.last_l1_height {
+            self.epoch.last_l1_block =
+                strata_identifiers::L1BlockCommitment::new(height, *self.epoch.last_l1_blkid());
+        }
+        if let Some(epoch) = epochal_writes.asm_recorded_epoch {
+            self.epoch.set_asm_recorded_epoch(epoch);
+        }
+        if let Some(amt) = epochal_writes.total_ledger_balance {
+            self.epoch.set_total_ledger_balance(amt);
+        }
+        if let Some(mmr) = epochal_writes.asm_manifests_mmr {
+            self.epoch.manifests_mmr = mmr;
+        }
 
         Ok(())
     }
@@ -157,7 +192,6 @@ impl OLState {
         self.next_account_serial()
     }
 
-    #[cfg(test)]
     pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
         self.ledger.get_account_state(id)
     }
@@ -173,8 +207,8 @@ impl OLState {
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::BitcoinAmount;
-    use strata_ledger_types::{AccountTypeState, IAccountState, NewAccountData};
+    use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+    use strata_ledger_types::{IAccountState, NewAccountData};
     use strata_predicate::PredicateKey;
 
     use super::*;
@@ -189,10 +223,10 @@ mod tests {
     #[test]
     fn test_apply_batch_updates_global_state() {
         let mut state = create_test_genesis_state();
-        let mut batch = WriteBatch::new_from_state(&state);
+        let mut batch = WriteBatch::default();
 
         // Modify slot in batch.
-        batch.global_mut().set_cur_slot(42);
+        batch.global_writes_mut().cur_slot = Some(42);
 
         state.apply_write_batch(batch).unwrap();
 
@@ -202,10 +236,10 @@ mod tests {
     #[test]
     fn test_apply_batch_updates_epochal_state() {
         let mut state = create_test_genesis_state();
-        let mut batch = WriteBatch::new_from_state(&state);
+        let mut batch = WriteBatch::default();
 
         // Modify epoch in batch.
-        batch.epochal_mut().set_cur_epoch(5);
+        batch.epochal_writes_mut().cur_epoch = Some(5);
 
         state.apply_write_batch(batch).unwrap();
 
@@ -216,14 +250,13 @@ mod tests {
     fn test_apply_batch_creates_new_account() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(1);
-        let mut batch = WriteBatch::new_from_state(&state);
+        let mut batch = WriteBatch::default();
 
         // Create a new account in the batch.
-        let snark_state =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
-        let new_acct = NewAccountData::new(
+        let new_acct = NewAccountData::new_snark(
             BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state),
+            PredicateKey::always_accept(),
+            [0u8; 32].into(),
         );
 
         let serial = state.next_account_serial();
@@ -245,14 +278,13 @@ mod tests {
     fn test_apply_batch_updates_existing_account() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(1);
-        let serial = AccountSerial::first_nonreserved();
+        let serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
 
         // Create an account directly in state.
-        let snark_state =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
-        let new_acct = NewAccountData::new(
+        let new_acct = NewAccountData::new_snark(
             BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state),
+            PredicateKey::always_accept(),
+            [0u8; 32].into(),
         );
         state
             .ledger
@@ -260,7 +292,7 @@ mod tests {
             .unwrap();
 
         // Create a batch that updates the account.
-        let mut batch = WriteBatch::new_from_state(&state);
+        let mut batch = WriteBatch::default();
         let snark_state_updated =
             OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
         let updated_account = OLAccountState::new(
@@ -286,31 +318,29 @@ mod tests {
         let account_id_1 = test_account_id(1);
         let account_id_2 = test_account_id(2);
 
-        let mut batch = WriteBatch::new_from_state(&state);
+        let mut batch = WriteBatch::default();
 
         // Modify global state.
-        batch.global_mut().set_cur_slot(100);
+        batch.global_writes_mut().cur_slot = Some(100);
 
         // Modify epochal state.
-        batch.epochal_mut().set_cur_epoch(10);
+        batch.epochal_writes_mut().cur_epoch = Some(10);
 
         // Create two new accounts.
-        let snark_state_1 =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
-        let new_acct_1 = NewAccountData::new(
+        let new_acct_1 = NewAccountData::new_snark(
             BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state_1),
+            PredicateKey::always_accept(),
+            [0u8; 32].into(),
         );
         let serial_1 = state.next_account_serial();
         batch
             .ledger_mut()
             .create_account_from_data(account_id_1, new_acct_1, serial_1);
 
-        let snark_state_2 =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [1u8; 32].into());
-        let new_acct_2 = NewAccountData::new(
+        let new_acct_2 = NewAccountData::new_snark(
             BitcoinAmount::from_sat(2000),
-            AccountTypeState::Snark(snark_state_2),
+            PredicateKey::always_accept(),
+            [1u8; 32].into(),
         );
         let serial_2 = AccountSerial::from(serial_1.inner() + 1);
         batch
@@ -339,15 +369,14 @@ mod tests {
 
         let mut state = create_test_genesis_state();
         let existing_id = test_account_id(1);
-        let existing_serial = AccountSerial::first_nonreserved();
+        let existing_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let new_id = test_account_id(2);
 
         // Create an existing account in state first.
-        let snark_state =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [0u8; 32].into());
-        let new_acct = NewAccountData::new(
+        let new_acct = NewAccountData::new_snark(
             BitcoinAmount::from_sat(1000),
-            AccountTypeState::Snark(snark_state),
+            PredicateKey::always_accept(),
+            [0u8; 32].into(),
         );
         state
             .ledger
@@ -355,7 +384,7 @@ mod tests {
             .expect("test: create_new_account");
 
         // Create a batch that both updates existing and creates new.
-        let mut batch = WriteBatch::new_from_state(&state);
+        let mut batch = WriteBatch::default();
 
         // Update the existing account.
         let updated_snark =
@@ -370,11 +399,10 @@ mod tests {
             .update_account(existing_id, updated_account);
 
         // Create a new account.
-        let new_snark =
-            OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), [2u8; 32].into());
-        let new_acct_data = NewAccountData::new(
+        let new_acct_data = NewAccountData::new_snark(
             BitcoinAmount::from_sat(3000),
-            AccountTypeState::Snark(new_snark),
+            PredicateKey::always_accept(),
+            [2u8; 32].into(),
         );
         let new_serial = state.next_account_serial();
         batch

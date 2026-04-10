@@ -12,9 +12,10 @@ use strata_acct_types::{
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ledger_types::{IAccountStateConstructible, IAccountStateMut, IStateAccessor};
+use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::MempoolTxInvalidReason;
+use strata_ol_state_support_types::IComputeStateRootWithWrites;
 use strata_ol_state_types::{IStateBatchApplicable, StateProvider};
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
@@ -23,18 +24,19 @@ use crate::{BlockAssemblyError, BlockAssemblyResult, MempoolProvider};
 
 /// Account state capabilities required by block assembly.
 pub trait BlockAssemblyAccountState:
-    Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync
+    Clone + IAccountState + IAccountStateMut + Send + Sync
 {
 }
 
 impl<T> BlockAssemblyAccountState for T where
-    T: Clone + IAccountStateConstructible + IAccountStateMut + Send + Sync
+    T: Clone + IAccountState + IAccountStateMut + Send + Sync
 {
 }
 
 /// State capabilities required by block assembly.
 pub trait BlockAssemblyStateAccess:
-    IStateBatchApplicable
+    IComputeStateRootWithWrites
+    + IStateBatchApplicable
     + IStateAccessor<AccountState: BlockAssemblyAccountState>
     + Clone
     + Send
@@ -43,7 +45,8 @@ pub trait BlockAssemblyStateAccess:
 }
 
 impl<T> BlockAssemblyStateAccess for T where
-    T: IStateBatchApplicable
+    T: IComputeStateRootWithWrites
+        + IStateBatchApplicable
         + IStateAccessor<AccountState: BlockAssemblyAccountState>
         + Clone
         + Send

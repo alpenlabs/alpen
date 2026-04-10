@@ -1,7 +1,7 @@
 //! DA scheme implementations for OL state.
 
 use strata_da_framework::DaWrite;
-use strata_ol_state_types::OLState;
+use strata_ledger_types::IStateAccessor;
 
 use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 
@@ -9,7 +9,7 @@ use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 #[derive(Debug, Default)]
 pub struct OLDaSchemeV1;
 
-impl DaScheme<OLState> for OLDaSchemeV1 {
+impl<S: IStateAccessor> DaScheme<S> for OLDaSchemeV1 {
     type Diff = OLDaPayloadV1;
 
     /// Applies an [`OLDaPayloadV1`] to the OL state accumulator.
@@ -21,8 +21,8 @@ impl DaScheme<OLState> for OLDaSchemeV1 {
     ///    ordering, ledger invariants).
     /// 2. apply() — mutates the accumulator (`acc`) with the validated diff (global fields, ledger
     ///    entries, snark accounts).
-    fn apply_to_state(diff: Self::Diff, acc: &mut OLState) -> DaResult<()> {
-        let state_diff = OLStateDiff::<OLState>::from(diff.state_diff);
+    fn apply_to_state(diff: Self::Diff, acc: &mut S) -> DaResult<()> {
+        let state_diff = OLStateDiff::<S>::new(diff.state_diff);
         DaWrite::poll_context(&state_diff, acc, &())?;
         DaWrite::apply(&state_diff, acc, &())
     }

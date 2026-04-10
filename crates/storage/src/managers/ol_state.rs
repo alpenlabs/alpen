@@ -5,6 +5,7 @@ use std::{future::Future, num::NonZeroUsize, sync::Arc};
 use futures::TryFutureExt;
 use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
 use strata_identifiers::OLBlockCommitment;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{OLAccountState, OLState, StateProvider, WriteBatch};
 use strata_storage_common::exec::{GenericRecv, OpsError};
 use threadpool::ThreadPool;
@@ -203,21 +204,31 @@ impl OLStateManager {
 
 // Implement StateProvider trait for OLStateManager
 impl StateProvider for OLStateManager {
-    type State = OLState;
+    type State = MemoryStateBaseLayer;
     type Error = DbError;
 
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
     ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
-        self.get_toplevel_ol_state_async(tip)
+        self.get_toplevel_ol_state_async(tip).map_ok(|opt| {
+            opt.map(|arc| {
+                let state = Arc::try_unwrap(arc).unwrap_or_else(|a| (*a).clone());
+                Arc::new(MemoryStateBaseLayer::new(state))
+            })
+        })
     }
 
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
     ) -> Result<Option<Arc<Self::State>>, Self::Error> {
-        self.get_toplevel_ol_state_blocking(tip)
+        self.get_toplevel_ol_state_blocking(tip).map(|opt| {
+            opt.map(|arc| {
+                let state = Arc::try_unwrap(arc).unwrap_or_else(|a| (*a).clone());
+                Arc::new(MemoryStateBaseLayer::new(state))
+            })
+        })
     }
 }
 
@@ -258,7 +269,7 @@ mod tests {
             .get_toplevel_ol_state_blocking(commitment)
             .expect("test: get")
             .unwrap();
-        assert_eq!(retrieved.cur_slot(), state.cur_slot());
+        assert_eq!(retrieved.global_state().get_cur_slot(), state.global_state().get_cur_slot());
     }
 
     fn proptest_get_latest_toplevel_blocking(
@@ -287,7 +298,7 @@ mod tests {
             .expect("test: get latest")
             .unwrap();
         assert_eq!(latest_commitment, higher);
-        assert_eq!(latest_state.cur_slot(), state.cur_slot());
+        assert_eq!(latest_state.global_state().get_cur_slot(), state.global_state().get_cur_slot());
     }
 
     fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLState) {
@@ -350,7 +361,7 @@ mod tests {
             .await
             .expect("test: get")
             .unwrap();
-        assert_eq!(retrieved.cur_slot(), state.cur_slot());
+        assert_eq!(retrieved.global_state().get_cur_slot(), state.global_state().get_cur_slot());
     }
 
     async fn proptest_get_latest_toplevel_async(

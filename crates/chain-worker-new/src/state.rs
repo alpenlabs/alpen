@@ -12,8 +12,8 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_support_types::{IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState};
+use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::verify_block;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
@@ -222,11 +222,12 @@ impl ChainWorkerServiceState {
         parent_header: Option<&OLBlockHeader>,
         parent_commitment: OLBlockCommitment,
     ) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
-        // Fetch parent state
-        let parent_state = self
+        // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
+        let parent_state_raw = self
             .ctx
             .fetch_ol_state(parent_commitment)?
             .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+        let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
 
         // Execute and extract outputs
         let (write_batch, indexer_writes) =
@@ -237,6 +238,7 @@ impl ChainWorkerServiceState {
         new_state
             .apply_write_batch(write_batch.clone())
             .map_err(|e| WorkerError::Unexpected(format!("Failed to apply write batch: {}", e)))?;
+        let new_state = new_state.into_inner();
 
         // Use the state root from the header (verify_block validated it).
         // Note: logs are validated internally by verify_block via the logs_root commitment.
@@ -252,12 +254,12 @@ impl ChainWorkerServiceState {
     ///
     /// This is a pure function that builds the state stack and executes the STF.
     fn run_stf_verification(
-        parent_state: &OLState,
+        parent_state: &MemoryStateBaseLayer,
         block: &OLBlock,
         parent_header: Option<&OLBlockHeader>,
     ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
-        // Build the state stack: IndexerState<WriteTrackingState<&OLState>>
-        let tracking_state = WriteTrackingState::new_from_state(parent_state);
+        // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
+        let tracking_state = WriteTrackingState::new_empty(parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);
 
         verify_block(
@@ -269,7 +271,7 @@ impl ChainWorkerServiceState {
 
         // Extract outputs
         let (tracking_state, indexer_writes) = indexer_state.into_parts();
-        let write_batch = tracking_state.into_batch();
+        let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
 
         Ok((write_batch, indexer_writes))
     }
@@ -320,9 +322,12 @@ impl ChainWorkerServiceState {
             .unwrap_or(OLBlockCommitment::null());
 
         // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
-        let epochal = last_block_output.write_batch().epochal();
-        let new_tip_height = epochal.last_l1_height();
-        let new_tip_blkid = epochal.last_l1_blkid();
+        let epochal = last_block_output.write_batch().epochal_writes();
+        let new_tip_height = epochal.last_l1_height
+            .expect("terminal block must have L1 height in write batch");
+        let new_tip_blkid = epochal.last_l1_blkid
+            .as_ref()
+            .expect("terminal block must have L1 blkid in write batch");
         let new_l1_block = L1BlockCommitment::new(new_tip_height, *new_tip_blkid);
 
         let epoch_final_state = *last_block_output.computed_state_root();

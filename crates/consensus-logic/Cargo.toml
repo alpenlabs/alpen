@@ -24,7 +24,6 @@ strata-csm-worker.workspace = true
 strata-db-types.workspace = true
 strata-eectl.workspace = true
 strata-identifiers.workspace = true
-strata-ledger-types.workspace = true
 strata-merkle.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types.workspace = true

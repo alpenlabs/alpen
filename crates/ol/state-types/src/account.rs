@@ -1,6 +1,6 @@
 use strata_acct_types::*;
 use strata_identifiers::AccountSerial;
-use strata_ledger_types::{AccountTypeState, *};
+use strata_ledger_types::*;
 
 use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
 
@@ -22,6 +22,21 @@ impl OLAccountState {
 
 impl IAccountState for OLAccountState {
     type SnarkAccountState = OLSnarkAccountState;
+
+    fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self {
+        let balance = new_acct_data.initial_balance();
+        let type_state = match new_acct_data.into_type_state() {
+            NewAccountTypeState::Empty => OLAccountTypeState::Empty,
+            NewAccountTypeState::Snark {
+                update_vk,
+                initial_state_root,
+            } => OLAccountTypeState::Snark(OLSnarkAccountState::new_fresh(
+                update_vk,
+                initial_state_root,
+            )),
+        };
+        Self::new(serial, balance, type_state)
+    }
 
     fn serial(&self) -> AccountSerial {
         self.serial
@@ -81,16 +96,6 @@ impl IAccountStateMut for OLAccountState {
     }
 }
 
-impl IAccountStateConstructible for OLAccountState {
-    fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self {
-        Self::new(
-            serial,
-            new_acct_data.initial_balance(),
-            OLAccountTypeState::from_generic(new_acct_data.into_type_state()),
-        )
-    }
-}
-
 impl OLAccountTypeState {
     /// Returns the account type ID for this state.
     pub fn ty(&self) -> AccountTypeId {
@@ -100,21 +105,6 @@ impl OLAccountTypeState {
         }
     }
 
-    /// Converts from the generic wrapper.
-    pub fn from_generic(ts: AccountTypeState<OLAccountState>) -> Self {
-        match ts {
-            AccountTypeState::Empty => OLAccountTypeState::Empty,
-            AccountTypeState::Snark(s) => OLAccountTypeState::Snark(s),
-        }
-    }
-
-    /// Converts into the generic wrapper.
-    pub fn into_generic(self) -> AccountTypeState<OLAccountState> {
-        match self {
-            OLAccountTypeState::Empty => AccountTypeState::Empty,
-            OLAccountTypeState::Snark(s) => AccountTypeState::Snark(s),
-        }
-    }
 }
 
 #[cfg(test)]

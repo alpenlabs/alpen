@@ -82,6 +82,11 @@ impl<S: ISnarkAccountStateMut + Clone> Clone for IndexerSnarkAccountStateMut<S> 
 }
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMut<S> {
+    fn new_fresh(_update_vk: PredicateKey, _initial_state_root: Hash) -> Self {
+        // TODO: refactor indexer bookkeeping types so this isn't required on wrappers
+        unimplemented!("cannot construct wrapper type directly")
+    }
+
     fn update_vk(&self) -> &PredicateKey {
         self.inner.update_vk()
     }
@@ -267,6 +272,11 @@ where
 
 impl<A: IAccountStateMut> IAccountState for IndexerAccountStateMut<A> {
     type SnarkAccountState = A::SnarkAccountState;
+
+    fn new_with_serial(_new_acct_data: NewAccountData, _serial: AccountSerial) -> Self {
+        // TODO: refactor indexer bookkeeping types so this isn't required on wrappers
+        unimplemented!("cannot construct wrapper type directly")
+    }
 
     fn serial(&self) -> AccountSerial {
         self.inner.serial()
@@ -486,7 +496,7 @@ where
     fn create_new_account(
         &mut self,
         id: AccountId,
-        new_acct_data: NewAccountData<Self::AccountState>,
+        new_acct_data: NewAccountData,
     ) -> AcctResult<AccountSerial> {
         self.inner.create_new_account(id, new_acct_data)
     }
@@ -509,9 +519,7 @@ mod tests {
     use strata_acct_types::BitcoinAmount;
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
-    use strata_ledger_types::{
-        AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
-    };
+    use strata_ledger_types::*;
     use strata_predicate::PredicateKey;
     use strata_snark_acct_types::Seqno;
 
@@ -524,7 +532,7 @@ mod tests {
 
     #[test]
     fn test_passthrough_slot() {
-        let state = create_test_genesis_state();
+        let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
         // Test initial slot
@@ -541,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_passthrough_epoch() {
-        let state = create_test_genesis_state();
+        let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
         // Test initial epoch
@@ -560,7 +568,7 @@ mod tests {
     fn test_passthrough_get_account_state() {
         let account_id = test_account_id(1);
         let (state, serial) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let indexer = IndexerState::new(state);
 
         // Verify account can be retrieved
@@ -574,7 +582,7 @@ mod tests {
         let account_id = test_account_id(1);
         let nonexistent_id = test_account_id(99);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let indexer = IndexerState::new(state);
 
         assert!(indexer.check_account_exists(account_id).unwrap());
@@ -583,14 +591,17 @@ mod tests {
 
     #[test]
     fn test_passthrough_create_account() {
-        let state = create_test_genesis_state();
+        let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
         let account_id = test_account_id(1);
         let snark_state = test_snark_account_state(1);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(5000),
-            AccountTypeState::Snark(snark_state),
+            NewAccountTypeState::Snark {
+                update_vk: snark_state.update_vk().clone(),
+                initial_state_root: snark_state.inner_state_root(),
+            },
         );
 
         let serial = indexer.create_new_account(account_id, new_acct).unwrap();
@@ -606,7 +617,7 @@ mod tests {
     fn test_passthrough_compute_state_root() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
 
         // Get state root directly
         let direct_root = state.compute_state_root().unwrap();
@@ -626,7 +637,7 @@ mod tests {
     fn test_tracks_inbox_message_writes() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Insert a message into the inbox
@@ -651,7 +662,7 @@ mod tests {
     fn test_tracks_multiple_inbox_writes_same_account() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Insert multiple messages
@@ -684,7 +695,7 @@ mod tests {
         let account_id_2 = test_account_id(2);
 
         // Setup state with two snark accounts
-        let mut state = create_test_genesis_state();
+        let mut state = create_test_base_layer();
         let snark_state_1 = test_snark_account_state(1);
         let snark_state_2 = test_snark_account_state(2);
         state
@@ -692,7 +703,10 @@ mod tests {
                 account_id_1,
                 NewAccountData::new(
                     BitcoinAmount::from_sat(1000),
-                    AccountTypeState::Snark(snark_state_1),
+                    NewAccountTypeState::Snark {
+                        update_vk: snark_state_1.update_vk().clone(),
+                        initial_state_root: snark_state_1.inner_state_root(),
+                    },
                 ),
             )
             .unwrap();
@@ -701,7 +715,10 @@ mod tests {
                 account_id_2,
                 NewAccountData::new(
                     BitcoinAmount::from_sat(2000),
-                    AccountTypeState::Snark(snark_state_2),
+                    NewAccountTypeState::Snark {
+                        update_vk: snark_state_2.update_vk().clone(),
+                        initial_state_root: snark_state_2.inner_state_root(),
+                    },
                 ),
             )
             .unwrap();
@@ -745,7 +762,7 @@ mod tests {
 
     #[test]
     fn test_tracks_manifest_writes() {
-        let state = create_test_genesis_state();
+        let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
         // Create a test manifest
@@ -772,7 +789,7 @@ mod tests {
     fn test_modification_flag_on_balance_add() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Add balance
@@ -793,7 +810,7 @@ mod tests {
     fn test_modification_flag_on_balance_take() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Take balance
@@ -814,7 +831,7 @@ mod tests {
     fn test_modification_flag_on_snark_update() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Update snark state
@@ -840,7 +857,7 @@ mod tests {
     fn test_no_modification_when_closure_doesnt_mutate() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let original_root = state.compute_state_root().unwrap();
         let mut indexer = IndexerState::new(state);
 
@@ -870,8 +887,8 @@ mod tests {
         let balance = BitcoinAmount::from_sat(1000);
 
         // Create two identical states
-        let (mut direct_state, _) = setup_state_with_snark_account(account_id, 1, balance);
-        let (base_state, _) = setup_state_with_snark_account(account_id, 1, balance);
+        let (mut direct_state, _) = setup_layer_with_snark_account(account_id, 1, balance);
+        let (base_state, _) = setup_layer_with_snark_account(account_id, 1, balance);
         let mut wrapped_state = IndexerState::new(base_state);
 
         // Create identical message
@@ -929,8 +946,8 @@ mod tests {
         let balance = BitcoinAmount::from_sat(1000);
 
         // Create two identical states
-        let (mut direct_state, _) = setup_state_with_snark_account(account_id, 1, balance);
-        let (base_state, _) = setup_state_with_snark_account(account_id, 1, balance);
+        let (mut direct_state, _) = setup_layer_with_snark_account(account_id, 1, balance);
+        let (base_state, _) = setup_layer_with_snark_account(account_id, 1, balance);
         let mut wrapped_state = IndexerState::new(base_state);
 
         // Apply balance change to both
@@ -969,7 +986,7 @@ mod tests {
     fn test_inbox_write_captures_pre_insertion_index() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Insert three messages sequentially
@@ -997,7 +1014,7 @@ mod tests {
     fn test_inbox_write_captures_correct_account_id() {
         let account_id = test_account_id(42);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         let msg = test_message_entry(1, 0, 1000);
@@ -1016,7 +1033,7 @@ mod tests {
 
     #[test]
     fn test_writes_empty_initially() {
-        let state = create_test_genesis_state();
+        let state = create_test_base_layer();
         let indexer = IndexerState::new(state);
 
         assert!(indexer.writes().is_empty());
@@ -1028,7 +1045,7 @@ mod tests {
     fn test_into_parts_returns_inner_and_writes() {
         let account_id = test_account_id(1);
         let (state, serial) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Make a modification
@@ -1062,7 +1079,7 @@ mod tests {
 
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Update proof state directly
@@ -1098,7 +1115,7 @@ mod tests {
 
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Update inner state
@@ -1138,7 +1155,7 @@ mod tests {
     fn test_tracks_multiple_snark_state_updates() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Multiple proof state updates
@@ -1172,25 +1189,19 @@ mod tests {
         let account_id_2 = test_account_id(2);
 
         // Setup state with two snark accounts
-        let mut state = create_test_genesis_state();
+        let mut state = create_test_base_layer();
         let snark_state_1 = test_snark_account_state(1);
         let snark_state_2 = test_snark_account_state(2);
         state
             .create_new_account(
                 account_id_1,
-                NewAccountData::new(
-                    BitcoinAmount::from_sat(1000),
-                    AccountTypeState::Snark(snark_state_1),
-                ),
+                test_new_snark_account_data(&snark_state_1, BitcoinAmount::from_sat(1000)),
             )
             .unwrap();
         state
             .create_new_account(
                 account_id_2,
-                NewAccountData::new(
-                    BitcoinAmount::from_sat(2000),
-                    AccountTypeState::Snark(snark_state_2),
-                ),
+                test_new_snark_account_data(&snark_state_2, BitcoinAmount::from_sat(2000)),
             )
             .unwrap();
 
@@ -1244,7 +1255,7 @@ mod tests {
     fn test_is_empty_includes_state_updates() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Initially empty
@@ -1296,7 +1307,7 @@ mod tests {
     fn test_state_update_captures_inner_state_change() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         // Update proof state
