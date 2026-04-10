@@ -1241,7 +1241,18 @@ dependencies = [
  "itertools 0.13.0",
  "serde",
  "smallvec",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "ssz"
+version = "0.15.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
+dependencies = [
+ "itertools 0.13.0",
+ "smallvec",
+ "ssz_primitives 0.15.0",
  "thiserror 2.0.18",
 ]
 
@@ -1255,9 +1266,9 @@ dependencies = [
  "quote",
  "serde",
  "sizzle-parser",
- "ssz",
+ "ssz 0.14.0",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "ssz_types",
  "syn",
  "toml",
@@ -1286,6 +1297,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_primitives"
+version = "0.15.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
 name = "ssz_types"
 version = "0.14.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.14.0#952235f10c23882d8defabc6a35121c04878b85a"
@@ -1293,8 +1314,8 @@ dependencies = [
  "itertools 0.13.0",
  "serde",
  "serde_derive",
- "ssz",
- "ssz_primitives",
+ "ssz 0.14.0",
+ "ssz_primitives 0.14.0",
  "thiserror 2.0.18",
  "tree_hash",
 ]
@@ -1309,7 +1330,7 @@ dependencies = [
  "borsh",
  "num_enum",
  "serde",
- "ssz",
+ "ssz 0.15.0",
  "ssz_derive",
  "strata-codec",
  "strata-identifiers",
@@ -1325,7 +1346,7 @@ dependencies = [
  "arbitrary",
  "borsh",
  "serde",
- "ssz",
+ "ssz 0.15.0",
  "ssz_derive",
  "strata-crypto",
  "strata-identifiers",
@@ -1363,7 +1384,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "sha2",
- "ssz",
+ "ssz 0.15.0",
  "ssz_derive",
  "strata-identifiers",
  "thiserror 2.0.18",
@@ -1381,9 +1402,9 @@ dependencies = [
  "int-enum",
  "paste",
  "serde",
- "ssz",
+ "ssz 0.15.0",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "ssz_types",
  "strata-codec",
  "tree_hash",
@@ -1424,10 +1445,10 @@ dependencies = [
  "borsh",
  "hex",
  "serde",
- "ssz",
+ "ssz 0.14.0",
  "ssz_codegen",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "ssz_types",
  "thiserror 2.0.18",
  "tree_hash",
@@ -1616,8 +1637,8 @@ dependencies = [
  "digest",
  "sha2",
  "smallvec",
- "ssz",
- "ssz_primitives",
+ "ssz 0.14.0",
+ "ssz_primitives 0.14.0",
  "thiserror 2.0.18",
 ]
 
