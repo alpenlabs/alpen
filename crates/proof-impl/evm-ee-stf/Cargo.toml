@@ -7,9 +7,9 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-ol-bridge-types.workspace = true
 alpen-reth-evm.workspace = true
 alpen-reth-primitives.workspace = true
+ol-bridge-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-state.workspace = true
