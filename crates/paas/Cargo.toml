@@ -18,7 +18,7 @@ serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "macros"] }
 tracing.workspace = true
-uuid = { version = "1.11", features = ["v4", "serde"] }
+uuid = { version = "1.23", features = ["v4", "serde"] }
 zkaleido.workspace = true
 
 [dev-dependencies]
