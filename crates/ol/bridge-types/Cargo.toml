@@ -1,6 +1,6 @@
 [package]
 edition = "2021"
-name = "alpen-bridge-types"
+name = "ol-bridge-types"
 version = "0.3.0-alpha.1"
 
 [lints]

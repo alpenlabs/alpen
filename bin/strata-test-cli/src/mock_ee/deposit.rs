@@ -3,7 +3,7 @@
 //! Creates a Bitcoin transaction that injects a [`DepositLog`] into the ASM
 //! via the debug subprotocol's MockAsmLog mechanism (subprotocol ID 255, tx_type 1).
 
-use alpen_bridge_types::DepositDescriptor;
+use ol_bridge_types::DepositDescriptor;
 use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,

@@ -11,7 +11,7 @@ name = "strata-test-cli"
 path = "src/main.rs"
 
 [dependencies]
-alpen-bridge-types.workspace = true
+ol-bridge-types.workspace = true
 shrex.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true

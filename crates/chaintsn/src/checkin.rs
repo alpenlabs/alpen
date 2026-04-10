@@ -1,6 +1,6 @@
 //! L1 check-in logic.
 
-use alpen_bridge_types::{DepositDescriptor, DepositIntent};
+use ol_bridge_types::{DepositDescriptor, DepositIntent};
 use strata_asm_common::AsmManifest;
 use strata_asm_logs::{constants::DEPOSIT_LOG_TYPE_ID, DepositLog};
 use strata_ol_chain_types::L1Segment;

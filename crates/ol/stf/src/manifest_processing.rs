@@ -1,6 +1,6 @@
 //! ASM manifest processing.
 
-use alpen_bridge_types::DepositDescriptor;
+use ol_bridge_types::DepositDescriptor;
 use strata_acct_types::MsgPayload;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{

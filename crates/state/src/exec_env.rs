@@ -1,6 +1,6 @@
 //! Types relating to the state of an execution environment in the CL state.
 
-use alpen_bridge_types::DepositIntent;
+use ol_bridge_types::DepositIntent;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use strata_csm_types::BlobSpec;

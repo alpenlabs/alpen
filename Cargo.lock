@@ -1005,23 +1005,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-bridge-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "proptest",
- "serde",
- "ssz",
- "ssz_derive",
- "strata-bridge-types",
- "strata-codec",
- "strata-identifiers",
- "strata-primitives",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "alpen-chainspec"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1039,7 +1022,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "aes-gcm-siv",
  "alloy",
- "alpen-bridge-types",
  "alpen-reth-primitives",
  "argh",
  "argon2",
@@ -1056,6 +1038,7 @@ dependencies = [
  "indicatif",
  "keyring",
  "make_buf",
+ "ol-bridge-types",
  "rand_core 0.6.4",
  "reqwest 0.12.28",
  "serde",
@@ -7627,6 +7610,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "ol-bridge-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "proptest",
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-bridge-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-primitives",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -14391,8 +14391,8 @@ dependencies = [
 name = "strata-chaintsn"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-bridge-types",
  "bitcoin",
+ "ol-bridge-types",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "strata-asm-common",
@@ -14456,7 +14456,6 @@ name = "strata-client"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-rpc-types",
- "alpen-bridge-types",
  "anyhow",
  "argh",
  "async-trait",
@@ -14466,6 +14465,7 @@ dependencies = [
  "format_serde_error",
  "futures",
  "jsonrpsee",
+ "ol-bridge-types",
  "serde_json",
  "strata-asm-params",
  "strata-asm-proto-bridge-v1",
@@ -14957,7 +14957,6 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-eips",
  "alloy-rpc-types",
- "alpen-bridge-types",
  "alpen-reth-evm",
  "alpen-reth-node",
  "anyhow",
@@ -14966,6 +14965,7 @@ dependencies = [
  "jsonrpsee",
  "jsonrpsee-http-client",
  "mockall",
+ "ol-bridge-types",
  "rand 0.8.5",
  "reth-primitives",
  "reth-rpc-api",
@@ -15203,9 +15203,9 @@ dependencies = [
 name = "strata-ol-chainstate-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-bridge-types",
  "arbitrary",
  "borsh",
+ "ol-bridge-types",
  "strata-crypto",
  "strata-identifiers",
  "strata-primitives",
@@ -15458,7 +15458,7 @@ dependencies = [
 name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
- "alpen-bridge-types",
+ "ol-bridge-types",
  "ssz_primitives",
  "strata-acct-types",
  "strata-asm-common",
@@ -15650,10 +15650,10 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-eips",
- "alpen-bridge-types",
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "bincode",
+ "ol-bridge-types",
  "reth-chainspec",
  "reth-evm",
  "reth-evm-ethereum",
@@ -15756,9 +15756,9 @@ dependencies = [
 name = "strata-rpc-api"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-bridge-types",
  "bitcoin",
  "jsonrpsee",
+ "ol-bridge-types",
  "strata-checkpoint-types",
  "strata-common",
  "strata-csm-types",
@@ -15774,10 +15774,10 @@ dependencies = [
 name = "strata-rpc-types"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-bridge-types",
  "bitcoin",
  "hex",
  "jsonrpsee",
+ "ol-bridge-types",
  "serde",
  "serde_json",
  "strata-asm-proto-bridge-v1",
@@ -15948,9 +15948,9 @@ dependencies = [
 name = "strata-state"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-bridge-types",
  "arbitrary",
  "borsh",
+ "ol-bridge-types",
  "serde",
  "strata-asm-common",
  "strata-asm-stf",
@@ -16050,12 +16050,12 @@ dependencies = [
 name = "strata-test-cli"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-bridge-types",
  "argh",
  "bdk_bitcoind_rpc",
  "bdk_wallet",
  "hex",
  "musig2",
+ "ol-bridge-types",
  "secp256k1 0.29.1",
  "serde_json",
  "shrex",

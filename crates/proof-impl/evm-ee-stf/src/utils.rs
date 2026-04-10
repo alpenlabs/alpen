@@ -1,4 +1,4 @@
-use alpen_bridge_types::WithdrawalIntent;
+use ol_bridge_types::WithdrawalIntent;
 use alpen_reth_evm::address_to_subject;
 use strata_ol_chain_types::ExecSegment;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload, l1::BitcoinAmount};

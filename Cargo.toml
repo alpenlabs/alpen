@@ -17,7 +17,7 @@ members = [
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
   # Alpen-local ASM crates (not in the asm repo)
-  "crates/alpen-bridge-types",
+  "crates/ol/bridge-types",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -244,7 +244,7 @@ strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # Alpen-local ASM crates (not in the asm repo), to be eliminaed/re-adapted.
 # WIP
-alpen-bridge-types = { path = "crates/alpen-bridge-types" }
+ol-bridge-types = { path = "crates/ol/bridge-types" }
 
 # alpenlabs/asm (v0.1.0-rc2)
 strata-asm-bridge-msgs = { git = "https://github.com/alpenlabs/asm.git", tag = "v0.1.0-rc2" }

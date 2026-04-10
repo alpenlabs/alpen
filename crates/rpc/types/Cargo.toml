@@ -7,7 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-alpen-bridge-types.workspace = true
+ol-bridge-types.workspace = true
 strata-asm-proto-bridge-v1.workspace = true
 strata-bridge-types.workspace = true
 strata-btc-types.workspace = true

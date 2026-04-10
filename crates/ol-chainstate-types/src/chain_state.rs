@@ -1,6 +1,6 @@
 use std::io;
 
-use alpen_bridge_types::WithdrawalIntent;
+use ol_bridge_types::WithdrawalIntent;
 // use std::ops::Deref;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};

@@ -7,7 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-alpen-bridge-types.workspace = true
+ol-bridge-types.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true

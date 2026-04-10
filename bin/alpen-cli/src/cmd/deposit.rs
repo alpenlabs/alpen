@@ -1,7 +1,7 @@
 use std::{str::FromStr, time::Duration};
 
 use alloy::{primitives::Address as AlpenAddress, providers::WalletProvider};
-use alpen_bridge_types::DepositDescriptor;
+use ol_bridge_types::DepositDescriptor;
 use argh::FromArgs;
 use bdk_wallet::{
     bitcoin::{

@@ -1,7 +1,7 @@
 #![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use std::{collections::BTreeMap, sync::Arc};
 
-use alpen_bridge_types::{PublickeyTable, WithdrawalIntent};
+use ol_bridge_types::{PublickeyTable, WithdrawalIntent};
 use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::{future, TryFutureExt};
