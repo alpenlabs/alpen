@@ -538,8 +538,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 block_commitment,
                 account_state.balance(),
                 next_seq_no,
-                vec![], // updates - requires write batch analysis
-                vec![], // new_inbox_messages - requires write batch analysis
+                vec![], // TODO:(STR-3025)
+                vec![], // TODO:(STR-3025)
                 next_inbox_msg_idx,
             ));
         }
