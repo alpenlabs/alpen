@@ -40,7 +40,7 @@ impl AsmLogEntry {
             data: owned_msg
                 .to_vec()
                 .try_into()
-                .expect("ASM log message bytes must fit within SSZ max length"),
+                .map_err(|_| AsmManifestError::OverflowContainer("ASM log message bytes"))?,
         })
     }
 
