@@ -7,7 +7,7 @@ use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
 use strata_ee_chunk_runtime::ArchivedPrivateInput;
 use strata_evm_ee::EvmExecutionEnvironment;
-use zkaleido::ZkVmEnv;
+use zkaleido::ZkVmEnvSerde;
 
 mod program;
 
@@ -19,7 +19,7 @@ pub use program::{EeChunkProgram, EeChunkProofInput};
 /// verifies the chunk transition using the EVM execution environment, and
 /// commits the resulting [`strata_ee_chain_types::ChunkTransition`] as SSZ
 /// public output.
-pub fn process_ee_chunk(zkvm: &impl ZkVmEnv) {
+pub fn process_ee_chunk(zkvm: &impl ZkVmEnvSerde) {
     let genesis: Genesis = zkvm.read_serde();
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().unwrap());
 

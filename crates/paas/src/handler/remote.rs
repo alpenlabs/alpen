@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use strata_tasks::TaskExecutor;
 use tokio::{task, time::sleep};
 use tracing::info;
-use zkaleido::{ProofReceiptWithMetadata, ZkVmProgram, ZkVmRemoteProgram};
+use zkaleido::{ProofReceiptWithMetadata, RemoteProofStatus, ZkVmProgram, ZkVmRemoteProgram};
 
 use crate::{
     error::{ProverServiceError, ProverServiceResult},
@@ -185,10 +185,24 @@ where
                                 loop {
                                     sleep(interval).await;
 
-                                    match host.get_proof_if_ready(proof_id.clone()).await {
-                                        Ok(Some(proof)) => return Ok(proof),
-                                        Ok(None) => {
-                                            // Not ready yet, continue polling with backoff
+                                    match host.get_status(&proof_id).await {
+                                        Ok(RemoteProofStatus::Completed) => {
+                                            return host.get_proof(&proof_id).await.map_err(|e| {
+                                                ProverServiceError::TransientFailure(format!(
+                                                    "Failed to retrieve proof: {}",
+                                                    e
+                                                ))
+                                            });
+                                        }
+                                        Ok(RemoteProofStatus::Failed(reason)) => {
+                                            return Err(ProverServiceError::PermanentFailure(
+                                                format!("Remote proof failed: {reason}"),
+                                            ));
+                                        }
+                                        Ok(RemoteProofStatus::Requested)
+                                        | Ok(RemoteProofStatus::InProgress)
+                                        | Ok(RemoteProofStatus::Unknown) => {
+                                            // Not ready yet, continue polling with backoff.
                                             interval = (interval * 2).min(max_interval);
                                         }
                                         Err(e) => {

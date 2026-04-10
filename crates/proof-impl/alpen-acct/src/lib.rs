@@ -9,7 +9,7 @@ use strata_ee_acct_runtime::ArchivedEePrivateInput;
 use strata_evm_ee::EvmExecutionEnvironment;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::ArchivedPrivateInput as ArchivedUpdatePrivateInput;
-use zkaleido::ZkVmEnv;
+use zkaleido::ZkVmEnvSerde;
 
 mod program;
 
@@ -24,7 +24,7 @@ pub use program::{EeAcctProgram, EeAcctProofInput};
 ///
 /// The `chunk_predicate_key` is a compile-time constant provided by the
 /// guest binary, identifying the predicate used to verify chunk proofs.
-pub fn process_ee_acct_update(zkvm: &impl ZkVmEnv, chunk_predicate_key: &PredicateKey) {
+pub fn process_ee_acct_update(zkvm: &impl ZkVmEnvSerde, chunk_predicate_key: &PredicateKey) {
     let genesis: Genesis = zkvm.read_serde();
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().unwrap());
 

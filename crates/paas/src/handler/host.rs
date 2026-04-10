@@ -21,7 +21,8 @@
 use std::{error, fmt, sync::Arc};
 
 use zkaleido::{
-    ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram, ZkVmRemoteHost, ZkVmRemoteProgram,
+    ProofReceiptWithMetadata, RemoteProofStatus, ZkVmHost, ZkVmProgram, ZkVmRemoteHost,
+    ZkVmRemoteProgram, ZkVmRemoteProver,
 };
 
 use crate::{program::ProgramType, ZkVmBackend};
@@ -92,7 +93,7 @@ where
     pub async fn start_proving<Prog>(
         &self,
         input: &Prog::Input,
-    ) -> Result<String, Box<dyn error::Error + Send + Sync>>
+    ) -> Result<<R as ZkVmRemoteProver>::ProofId, Box<dyn error::Error + Send + Sync>>
     where
         Prog: ZkVmRemoteProgram,
     {
@@ -110,17 +111,29 @@ where
     ///
     /// Returns `Some(proof)` if ready, `None` if still computing.
     /// Only works with Remote hosts; panics if called on Native host.
-    pub async fn get_proof_if_ready(
+    pub async fn get_status(
         &self,
-        proof_id: String,
-    ) -> Result<Option<ProofReceiptWithMetadata>, Box<dyn error::Error + Send + Sync>> {
+        proof_id: &<R as ZkVmRemoteProver>::ProofId,
+    ) -> Result<RemoteProofStatus, Box<dyn error::Error + Send + Sync>> {
         match self {
-            Self::Remote(host) => host
-                .get_proof_if_ready(proof_id)
-                .await
-                .map_err(|e| e.into()),
+            Self::Remote(host) => host.get_status(proof_id).await.map_err(|e| e.into()),
             Self::Native(_) => {
-                panic!("get_proof_if_ready called on Native host (not applicable)")
+                panic!("get_status called on Native host (not applicable)")
+            }
+        }
+    }
+
+    /// Retrieve a completed proof from a remote backend.
+    ///
+    /// Only works with Remote hosts; panics if called on Native host.
+    pub async fn get_proof(
+        &self,
+        proof_id: &<R as ZkVmRemoteProver>::ProofId,
+    ) -> Result<ProofReceiptWithMetadata, Box<dyn error::Error + Send + Sync>> {
+        match self {
+            Self::Remote(host) => host.get_proof(proof_id).await.map_err(|e| e.into()),
+            Self::Native(_) => {
+                panic!("get_proof called on Native host (not applicable)")
             }
         }
     }
