@@ -350,7 +350,8 @@ mod test {
 
             [btcio.writer]
             write_poll_dur_ms = 200
-            fee_policy = "smart"
+            fee_policy = "mempool"
+            mempool_base_url = "https://mempool.space/signet"
             reveal_amount = 100
             bundle_interval_ms = 1_000
 
@@ -441,7 +442,8 @@ mod test {
 
             [btcio.writer]
             write_poll_dur_ms = 200
-            fee_policy = "smart"
+            fee_policy = "mempool"
+            mempool_base_url = "https://mempool.space/signet"
             reveal_amount = 100
             bundle_interval_ms = 1_000
 

@@ -263,8 +263,12 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_fee_rate_smart_uses_raw_estimate() {
         let client = Arc::new(TestBitcoinClient::new(1));
+        let config = WriterConfig {
+            fee_policy: FeePolicy::BitcoinD,
+            ..WriterConfig::default()
+        };
 
-        let fee_rate = resolve_fee_rate(client.as_ref(), &WriterConfig::default())
+        let fee_rate = resolve_fee_rate(client.as_ref(), &config)
             .await
             .expect("smart fee lookup should succeed");
 
