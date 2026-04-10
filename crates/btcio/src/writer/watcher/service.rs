@@ -10,10 +10,9 @@ use serde::Serialize;
 use strata_btc_types::{Buf32BitcoinExt, TxidExt};
 use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxStatus};
 use strata_primitives::buf::Buf32;
-use strata_service::{AsyncService, Response, Service, ServiceState, TickMsg};
+use strata_service::{AsyncService, Response, Service, ServiceState};
 use strata_status::StatusChannel;
 use strata_storage::ops::writer::EnvelopeDataOps;
-use tokio::sync::mpsc;
 use tracing::*;
 
 use crate::{
@@ -138,17 +137,14 @@ pub(crate) struct WatcherState<C: WatcherServiceContext> {
     pub(crate) ctx: C,
     pub(crate) envelope_cache: HashMap<u64, EnvelopeData>,
     pub(crate) curr_payloadidx: u64,
-    // Keeps the inner mpsc channel open so TickingInput never receives a closed signal.
-    _tick_guard: mpsc::Sender<()>,
 }
 
 impl<C: WatcherServiceContext> WatcherState<C> {
-    pub(crate) fn new(ctx: C, curr_payloadidx: u64, tick_guard: mpsc::Sender<()>) -> Self {
+    pub(crate) fn new(ctx: C, curr_payloadidx: u64) -> Self {
         Self {
             ctx,
             envelope_cache: HashMap::new(),
             curr_payloadidx,
-            _tick_guard: tick_guard,
         }
     }
 }
@@ -163,7 +159,7 @@ pub(crate) struct WatcherService<C>(PhantomData<C>);
 
 impl<C: WatcherServiceContext> Service for WatcherService<C> {
     type State = WatcherState<C>;
-    type Msg = TickMsg<()>;
+    type Msg = ();
     type Status = WatcherStatus;
 
     fn get_status(state: &Self::State) -> Self::Status {
@@ -185,87 +181,14 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 // wallet, and transition to PendingRevealTxSign awaiting the external
                 // signer's Schnorr signature on the reveal tx.
                 L1BundleStatus::Unsigned | L1BundleStatus::NeedsResign => {
-                    debug!(current_status=?payloadentry.status);
-                    match state
-                        .ctx
-                        .create_envelopes(state.curr_payloadidx, &payloadentry)
-                        .await
-                    {
-                        Ok(envelope) => {
-                            let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
-                            let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
-                            let sighash = envelope.sighash;
-
-                            let mut updated_entry = payloadentry.clone();
-                            updated_entry.commit_txid = cid;
-                            updated_entry.reveal_txid = rid;
-                            updated_entry.payload_signature = None;
-                            updated_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
-                            state
-                                .ctx
-                                .put_payload_entry(state.curr_payloadidx, updated_entry)
-                                .await?;
-
-                            state.envelope_cache.insert(state.curr_payloadidx, envelope);
-
-                            debug!(%sighash, "envelope built, awaiting signer");
-                        }
-                        Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
-                            // Just wait till we have enough utxos and let the status be
-                            // `Unsigned` or `NeedsResign`
-                            // Maybe send an alert
-                            error!(%required, %available, "Not enough utxos available to create commit/reveal transaction");
-                        }
-                        e => {
-                            e?;
-                        }
-                    }
+                    state.handle_unsigned_or_needs_resign(payloadentry).await?;
                 }
 
                 // Waiting for the external signer to provide the reveal signature.
                 // When the signature arrives (via RPC), complete the reveal tx and
                 // transition to Unpublished.
-                L1BundleStatus::PendingRevealTxSign(_sighash) => {
-                    let Some(sig) = &payloadentry.payload_signature else {
-                        trace!("waiting for signer to provide reveal signature");
-                        return Ok(Response::Continue);
-                    };
-                    let Some(envelope) = state.envelope_cache.remove(&state.curr_payloadidx) else {
-                        // Cache miss (e.g. restart) — reset to Unsigned to rebuild
-                        // envelope from scratch (new UTXOs, new sighash).
-                        // Safe: nothing has been broadcast yet.
-                        warn!("envelope not in cache, resetting to Unsigned");
-                        let mut updated_entry = payloadentry.clone();
-                        updated_entry.payload_signature = None;
-                        updated_entry.status = L1BundleStatus::Unsigned;
-                        state
-                            .ctx
-                            .put_payload_entry(state.curr_payloadidx, updated_entry)
-                            .await?;
-                        return Ok(Response::Continue);
-                    };
-                    match state
-                        .ctx
-                        .complete_reveal_and_broadcast(
-                            state.curr_payloadidx,
-                            &envelope,
-                            sig.as_ref(),
-                        )
-                        .await
-                    {
-                        Ok(_rid) => {
-                            let mut updated_entry = payloadentry.clone();
-                            updated_entry.status = L1BundleStatus::Unpublished;
-                            state
-                                .ctx
-                                .put_payload_entry(state.curr_payloadidx, updated_entry)
-                                .await?;
-                            debug!("reveal signed and stored for broadcast");
-                        }
-                        Err(e) => {
-                            error!(%e, "failed to attach reveal signature");
-                        }
-                    }
+                L1BundleStatus::PendingRevealTxSign(_) => {
+                    state.handle_pending_reveal_tx_sign(payloadentry).await?;
                 }
 
                 // If finalized, nothing to do, move on to process next entry
@@ -277,56 +200,7 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                 L1BundleStatus::Published
                 | L1BundleStatus::Confirmed
                 | L1BundleStatus::Unpublished => {
-                    trace!("Checking payloadentry's broadcast status");
-                    let commit_tx = state.ctx.get_tx_status(payloadentry.commit_txid).await?;
-                    let reveal_tx = state.ctx.get_tx_status(payloadentry.reveal_txid).await?;
-
-                    match (commit_tx, reveal_tx) {
-                        (Some(ctx), Some(rtx)) => {
-                            let new_status =
-                                determine_payload_next_status(&ctx.status, &rtx.status);
-                            debug!(?new_status, "The next status for payload");
-                            if matches!(
-                                new_status,
-                                L1BundleStatus::Confirmed | L1BundleStatus::Finalized
-                            ) {
-                                info!(
-                                    component = "btcio_writer",
-                                    payload_idx = state.curr_payloadidx,
-                                    commit_txid = %payloadentry.commit_txid,
-                                    reveal_txid = %payloadentry.reveal_txid,
-                                    payload_status = ?new_status,
-                                    commit_l1_status = ?ctx.status,
-                                    reveal_l1_status = ?rtx.status,
-                                    "payload advanced on L1"
-                                );
-                            }
-
-                            state.ctx.report_status(&payloadentry, &new_status).await;
-
-                            // Update payloadentry with new status
-                            let mut updated_entry = payloadentry.clone();
-                            updated_entry.status = new_status.clone();
-                            state
-                                .ctx
-                                .put_payload_entry(state.curr_payloadidx, updated_entry)
-                                .await?;
-
-                            if new_status == L1BundleStatus::Finalized {
-                                state.curr_payloadidx += 1;
-                            }
-                        }
-                        _ => {
-                            warn!("Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
-                            let mut updated_entry = payloadentry.clone();
-                            updated_entry.payload_signature = None;
-                            updated_entry.status = L1BundleStatus::Unsigned;
-                            state
-                                .ctx
-                                .put_payload_entry(state.curr_payloadidx, updated_entry)
-                                .await?;
-                        }
-                    }
+                    state.handle_broadcast_status(payloadentry).await?;
                 }
             }
         } else {
@@ -335,6 +209,152 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
         }
 
         Ok(Response::Continue)
+    }
+}
+
+impl<C: WatcherServiceContext> WatcherState<C> {
+    /// Builds envelope txs and transitions to `PendingRevealTxSign`.
+    ///
+    /// Signs the commit tx via wallet and caches the envelope. The reveal tx
+    /// awaits an external Schnorr signature before broadcast.
+    async fn handle_unsigned_or_needs_resign(
+        &mut self,
+        payloadentry: BundledPayloadEntry,
+    ) -> anyhow::Result<()> {
+        debug!(current_status=?payloadentry.status);
+        match self
+            .ctx
+            .create_envelopes(self.curr_payloadidx, &payloadentry)
+            .await
+        {
+            Ok(envelope) => {
+                let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+                let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+                let sighash = envelope.sighash;
+
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.commit_txid = cid;
+                updated_entry.reveal_txid = rid;
+                updated_entry.payload_signature = None;
+                updated_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+
+                self.envelope_cache.insert(self.curr_payloadidx, envelope);
+
+                debug!(%sighash, "envelope built, awaiting signer");
+            }
+            Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
+                // Just wait till we have enough utxos and let the status be
+                // `Unsigned` or `NeedsResign`
+                error!(%required, %available, "not enough utxos to create commit/reveal transaction");
+            }
+            e => {
+                e?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Completes the reveal tx and broadcasts both txs once the external sig arrives.
+    ///
+    /// On cache miss (e.g. restart), resets to `Unsigned` — safe because nothing
+    /// has been broadcast yet.
+    async fn handle_pending_reveal_tx_sign(
+        &mut self,
+        payloadentry: BundledPayloadEntry,
+    ) -> anyhow::Result<()> {
+        let Some(sig) = &payloadentry.payload_signature else {
+            trace!("waiting for signer to provide reveal signature");
+            return Ok(());
+        };
+        let Some(envelope) = self.envelope_cache.remove(&self.curr_payloadidx) else {
+            // Cache miss (e.g. restart) — reset to Unsigned to rebuild
+            // envelope from scratch (new UTXOs, new sighash).
+            // Safe: nothing has been broadcast yet.
+            warn!("envelope not in cache, resetting to Unsigned");
+            let mut updated_entry = payloadentry.clone();
+            updated_entry.payload_signature = None;
+            updated_entry.status = L1BundleStatus::Unsigned;
+            self.ctx
+                .put_payload_entry(self.curr_payloadidx, updated_entry)
+                .await?;
+            return Ok(());
+        };
+        match self
+            .ctx
+            .complete_reveal_and_broadcast(self.curr_payloadidx, &envelope, sig.as_ref())
+            .await
+        {
+            Ok(_rid) => {
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.status = L1BundleStatus::Unpublished;
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+                debug!("reveal signed and stored for broadcast");
+            }
+            Err(e) => {
+                error!(%e, "failed to attach reveal signature");
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks broadcast tx statuses and advances the payload state machine.
+    async fn handle_broadcast_status(
+        &mut self,
+        payloadentry: BundledPayloadEntry,
+    ) -> anyhow::Result<()> {
+        trace!("Checking payloadentry's broadcast status");
+        let commit_tx = self.ctx.get_tx_status(payloadentry.commit_txid).await?;
+        let reveal_tx = self.ctx.get_tx_status(payloadentry.reveal_txid).await?;
+
+        match (commit_tx, reveal_tx) {
+            (Some(ctx), Some(rtx)) => {
+                let new_status = determine_payload_next_status(&ctx.status, &rtx.status);
+                debug!(?new_status, "The next status for payload");
+                if matches!(
+                    new_status,
+                    L1BundleStatus::Confirmed | L1BundleStatus::Finalized
+                ) {
+                    info!(
+                        component = "btcio_writer",
+                        payload_idx = self.curr_payloadidx,
+                        commit_txid = %payloadentry.commit_txid,
+                        reveal_txid = %payloadentry.reveal_txid,
+                        payload_status = ?new_status,
+                        commit_l1_status = ?ctx.status,
+                        reveal_l1_status = ?rtx.status,
+                        "payload advanced on L1"
+                    );
+                }
+
+                self.ctx.report_status(&payloadentry, &new_status).await;
+
+                // Update payloadentry with new status
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.status = new_status.clone();
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+
+                if new_status == L1BundleStatus::Finalized {
+                    self.curr_payloadidx += 1;
+                }
+            }
+            _ => {
+                warn!("Corresponding commit/reveal entry for payloadentry not found in broadcast db. Sign and create transactions again.");
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.payload_signature = None;
+                updated_entry.status = L1BundleStatus::Unsigned;
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -359,7 +379,7 @@ async fn update_l1_status(
 
 /// Determine the status of the `PayloadEntry` based on the status of its commit and reveal
 /// transactions in bitcoin.
-pub(super) fn determine_payload_next_status(
+pub(crate) fn determine_payload_next_status(
     commit_status: &L1TxStatus,
     reveal_status: &L1TxStatus,
 ) -> L1BundleStatus {

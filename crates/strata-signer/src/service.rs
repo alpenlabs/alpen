@@ -16,7 +16,14 @@ use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
-use crate::{handlers::handle_duty, helpers::SequencerSk, input::SignerMsg};
+use crate::{handlers::handle_duty, helpers::SequencerSk};
+
+/// Message type for the signer service.
+///
+/// Either a regular poll tick (time to fetch duties) or a duty-resolution
+/// notification (success or failure) carrying the duty ID to evict from the
+/// in-flight set.
+pub(crate) type SignerMsg = TickMsg<DutyResolved>;
 
 /// Signals duty resolution (success or failure) back to the service loop.
 #[derive(Debug)]

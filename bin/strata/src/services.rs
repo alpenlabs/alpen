@@ -36,6 +36,7 @@ mod sequencer_services {
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
+    use strata_service::DumbTickHandle;
     use strata_storage::ops::{l1tx_broadcast, writer::Context};
     use tokio::sync::mpsc;
 
@@ -54,13 +55,15 @@ mod sequencer_services {
         }
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
-        let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), envelope_pubkey)?;
+        let (envelope_handle, watcher_handle) =
+            start_writer(nodectx, broadcast_handle.clone(), envelope_pubkey)?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
         Ok(Some(SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
+            watcher_handle,
         )))
     }
 
@@ -98,7 +101,7 @@ mod sequencer_services {
         nodectx: &NodeContext,
         broadcast_handle: Arc<L1BroadcastHandle>,
         envelope_pubkey: Option<[u8; 32]>,
-    ) -> Result<Arc<EnvelopeHandle>> {
+    ) -> Result<(Arc<EnvelopeHandle>, DumbTickHandle)> {
         let sequencer_address = nodectx
             .task_manager()
             .handle()
@@ -127,7 +130,7 @@ mod sequencer_services {
             }
             let ctx = Arc::new(ctx);
 
-            let _ = WatcherBuilder::new(
+            let (watcher_handle, _) = WatcherBuilder::new(
                 ctx,
                 writer_ops.clone(),
                 broadcast_handle,
@@ -144,7 +147,7 @@ mod sequencer_services {
             .launch(executor)
             .await?;
 
-            Ok(envelope_handle)
+            Ok((envelope_handle, watcher_handle))
         })
     }
 

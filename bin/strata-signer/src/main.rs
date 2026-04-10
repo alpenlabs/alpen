@@ -18,7 +18,7 @@ use strata_common::{
     logging,
     ws_client::{ManagedWsClient, WsClientConfig},
 };
-use strata_signer::builder::SignerBuilder;
+use strata_signer::SignerBuilder;
 use strata_tasks::TaskManager;
 use tokio::runtime::Builder;
 use tracing::info;

@@ -3,14 +3,14 @@
 use std::{sync::Arc, time::Duration};
 
 use strata_db_types::types::IntentEntry;
-use strata_service::{ServiceBuilder, ServiceMonitor};
+use strata_service::{ServiceBuilder, ServiceMonitor, TickingInput, TokioMpscInput};
 use strata_storage::ops::writer::EnvelopeDataOps;
 use strata_tasks::TaskExecutor;
-use tokio::{sync::mpsc, time::interval};
+use tokio::sync::mpsc;
 
-use crate::writer::{
-    bundler::get_initial_unbundled_entries,
-    bundler_service::{BundlerInput, BundlerService, BundlerState, BundlerStatus},
+use super::{
+    logic::get_initial_unbundled_entries,
+    service::{BundlerService, BundlerState, BundlerStatus},
 };
 
 #[expect(missing_debug_implementations, reason = "mpsc::Receiver lacks Debug")]
@@ -43,7 +43,7 @@ impl BundlerBuilder {
             ops: self.ops,
             unbundled,
         };
-        let input = BundlerInput::new(interval(self.bundle_interval), self.intent_rx);
+        let input = TickingInput::new(self.bundle_interval, TokioMpscInput::new(self.intent_rx));
 
         ServiceBuilder::<BundlerService, _>::new()
             .with_state(state)

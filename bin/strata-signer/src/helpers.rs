@@ -6,7 +6,7 @@ use bitcoin::bip32::Xpriv;
 use strata_crypto::keys::zeroizable::{ZeroizableXpriv, ZeroizedBuf32};
 use strata_key_derivation::sequencer::SequencerKeys;
 use strata_primitives::buf::Buf32;
-use strata_signer::helpers::SequencerSk;
+use strata_signer::SequencerSk;
 use tracing::debug;
 use zeroize::Zeroize;
 

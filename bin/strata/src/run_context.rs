@@ -15,6 +15,8 @@ use strata_node_context::{CommonContext, NodeContext};
 use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_checkpoint::OLCheckpointWorkerHandle;
 use strata_ol_mempool::MempoolHandle;
+#[cfg(feature = "sequencer")]
+use strata_service::DumbTickHandle;
 use strata_service::ServiceMonitor;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
@@ -108,6 +110,15 @@ pub(crate) struct SequencerServiceHandles {
 
     /// Handle for the block assembly service.
     blockasm_handle: Arc<BlockasmHandle>,
+
+    /// Handle for the L1 watcher service.
+    ///
+    /// Dropping this signals the watcher to stop gracefully.
+    #[expect(
+        dead_code,
+        reason = "held for drop semantics; signals watcher shutdown"
+    )]
+    watcher_handle: DumbTickHandle,
 }
 
 #[cfg(feature = "sequencer")]
@@ -117,11 +128,13 @@ impl SequencerServiceHandles {
         broadcast_handle: Arc<L1BroadcastHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
+        watcher_handle: DumbTickHandle,
     ) -> Self {
         Self {
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
+            watcher_handle,
         }
     }
 

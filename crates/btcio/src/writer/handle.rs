@@ -137,9 +137,7 @@ mod test {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
-    use crate::writer::{
-        test_utils::get_envelope_ops, watcher_service::determine_payload_next_status,
-    };
+    use crate::writer::{test_utils::get_envelope_ops, watcher::determine_payload_next_status};
 
     #[test]
     fn test_initialize_writer_state_no_last_payload_idx() {
