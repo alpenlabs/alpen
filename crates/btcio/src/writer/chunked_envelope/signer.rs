@@ -17,7 +17,6 @@ use std::sync::Arc;
 use bitcoin::consensus::encode::serialize as btc_serialize;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::{TxidExt, WtxidExt};
-use strata_config::btcio::FeePolicy;
 use strata_db_types::types::{
     ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, RevealTxMeta,
 };
@@ -27,7 +26,10 @@ use tracing::*;
 use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
 use crate::{
     broadcaster::L1BroadcastHandle,
-    writer::builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+    writer::{
+        builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+        fees::resolve_fee_rate,
+    },
 };
 
 fn format_reveal_refs(reveals: &[RevealTxMeta]) -> Vec<String> {
@@ -74,15 +76,9 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .map_err(|e| EnvelopeError::Other(e.into()))?
             .0;
 
-        let fee_rate = match ctx.config.fee_policy {
-            FeePolicy::Smart => {
-                ctx.client
-                    .estimate_smart_fee(1)
-                    .await
-                    .map_err(|e| EnvelopeError::Other(e.into()))?
-            }
-            FeePolicy::Fixed(val) => val,
-        };
+        let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
+            .await
+            .map_err(EnvelopeError::Other)?;
 
         let env_config = EnvelopeConfig::new(
             ctx.btcio_params.magic_bytes,

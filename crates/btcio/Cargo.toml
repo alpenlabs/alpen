@@ -37,6 +37,7 @@ tracing.workspace = true
 hex.workspace = true
 musig2 = { workspace = true, features = ["serde"] }
 proptest.workspace = true
+serde_json.workspace = true
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-state = { workspace = true, features = ["test_utils"] }
 strata-status.workspace = true

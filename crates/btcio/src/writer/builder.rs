@@ -24,13 +24,13 @@ use bitcoind_async_client::{
     traits::{Reader, Signer, Wallet},
 };
 use rand::{rngs::OsRng, RngCore};
-use strata_config::btcio::FeePolicy;
 use strata_csm_types::L1Payload;
 use strata_l1_envelope_fmt::{builder::EnvelopeScriptBuilder, errors::EnvelopeBuildError};
 use strata_l1_txfmt::{self, MagicBytes, ParseConfig, TxFmtError};
 use thiserror::Error;
 
 use super::context::WriterContext;
+use crate::writer::fees::resolve_fee_rate;
 
 pub(crate) const BITCOIN_DUST_LIMIT: u64 = 546;
 
@@ -126,10 +126,7 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         .await?
         .0;
 
-    let fee_rate = match ctx.config.fee_policy {
-        FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
-        FeePolicy::Fixed(val) => val,
-    };
+    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref()).await?;
     let mut env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),

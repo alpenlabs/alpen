@@ -28,15 +28,21 @@ pub struct WriterConfig {
     pub reveal_amount: u64,
     /// How often to bundle write intents.
     pub bundle_interval_ms: u64,
+    /// Base URL for mempool.space-compatible fee API.
+    pub mempool_base_url: Option<String>,
 }
 
 /// Definition of how fees are determined while creating l1 transactions.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum FeePolicy {
-    /// Use estimatesmartfee.
+    /// Use mempool.space explorer recommended fees endpoint.
     #[default]
-    Smart,
+    Mempool,
+
+    /// Use Bitcoin Core's `estimatesmartfee`.
+    BitcoinD,
+
     /// Fixed fee in sat/vB.
     Fixed(u64),
 }
@@ -52,9 +58,10 @@ impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             write_poll_dur_ms: 5_000,
-            fee_policy: FeePolicy::Smart,
+            fee_policy: FeePolicy::Mempool,
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
+            mempool_base_url: None,
         }
     }
 }
