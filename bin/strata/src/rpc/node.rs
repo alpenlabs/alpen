@@ -1,14 +1,17 @@
 //! OL RPC server implementation for a strata node.
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::ol_state_index::{AccountUpdateRecord, InboxMessageRecord};
+use strata_db_types::ol_state_index::InboxMessageRecord;
 use strata_identifiers::{
-    AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
+    AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
@@ -45,7 +48,7 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
 
 /// Convenient wrapper for account records.
 struct AccountRecords {
-    updates: Vec<AccountUpdateRecord>,
+    updates_by_block: HashMap<OLBlockCommitment, Vec<UpdateInputData>>,
     inbox: Vec<InboxMessageRecord>,
 }
 
@@ -213,20 +216,49 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         Ok(chain)
     }
 
-    /// Fetches per-epoch indexing records for the inclusive range
-    /// `[first_epoch, last_epoch]`. Missing rows become empty vecs.
-    /// Fetches per-epoch indexing records for the inclusive range
-    /// `[first_epoch, last_epoch]` and concatenates them into flat vecs.
-    /// Per-block filtering at the call site uses exact `block_commitment`
-    /// match, which intrinsically filters out records for blocks outside
-    /// the queried chain range.
+    /// Fetches per-(account, epoch) update and inbox records over
+    /// `[first_epoch, last_epoch]`. Updates are grouped by block commitment,
+    /// filtered to `block_commitments`. Out-of-chain and checkpoint-sync
+    /// records still advance the inbox cursor so in-chain slices stay accurate.
     async fn fetch_records_in_epoch_range(
         &self,
         account_id: AccountId,
         first_epoch: Epoch,
         last_epoch: Epoch,
+        block_commitments: &HashSet<OLBlockCommitment>,
     ) -> RpcResult<AccountRecords> {
-        let mut all_updates = Vec::new();
+        // Seed the cursor once. If the account isn't found in the prior epoch's
+        // terminal state — either because `first_epoch == 0` (no prior epoch
+        // to query) or because it didn't exist as a snark account at that
+        // point — start at 0. Both cases mean "no prior record of the account
+        // in queryable state, so its inbox starts at 0."
+        let mut cursor: u64 = if first_epoch == 0 {
+            0
+        } else {
+            let (_, prev_ol_state) = self
+                .get_toplevel_ol_state_for_epoch(first_epoch - 1)
+                .await?;
+            prev_ol_state
+                .get_account_state(&account_id)
+                .and_then(|s| s.as_snark_account().ok())
+                .map_or(0, |s| s.next_inbox_msg_idx())
+        };
+
+        // Walk records across all epochs in one pass. Out-of-chain and
+        // checkpoint-sync rows advance the cursor without emitting; in-chain
+        // records emit a `Pending` triple capturing the inbox slice they
+        // consumed. Inbox indexing is monotonic per account across epoch
+        // boundaries, so the cursor flows through without re-seeding.
+        struct Pending {
+            block_commitment: OLBlockCommitment,
+            seq_no: u64,
+            final_state_root: Hash,
+            extra_data: Vec<u8>,
+            cursor_start: u64,
+            cursor_end: u64,
+        }
+
+        let mut pending: Vec<Pending> = Vec::new();
         let mut all_inbox = Vec::new();
         for epoch in first_epoch..=last_epoch {
             if let Some(records) = self
@@ -235,7 +267,45 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 .await
                 .map_err(db_error)?
             {
-                all_updates.extend(records);
+                for r in records {
+                    let prev_cursor = cursor;
+                    let next_cursor = r.next_inbox_idx();
+                    cursor = next_cursor;
+
+                    // Checkpoint-sync rows: epoch-scoped, not block-scoped.
+                    let Some(meta) = r.update_meta() else {
+                        continue;
+                    };
+
+                    // Out-of-chain blocks: belong to a sibling/orphan that's
+                    // not on the queried canonical chain.
+                    let block_commitment = *meta.block_commitment();
+                    if !block_commitments.contains(&block_commitment) {
+                        continue;
+                    }
+
+                    // Block-attributed `DirectSet` (no `extra_data`) is not
+                    // produced by current write paths. Keep the soft fail in
+                    // case the invariant ever breaks.
+                    let extra_data = r
+                        .extra_data()
+                        .ok_or_else(|| {
+                            internal_error(format!(
+                                "update record for account {account_id} epoch {epoch} \
+                                 has no extra_data (DirectSet)"
+                            ))
+                        })?
+                        .to_vec();
+
+                    pending.push(Pending {
+                        block_commitment,
+                        seq_no: r.seq_no(),
+                        final_state_root: meta.final_state_root(),
+                        extra_data,
+                        cursor_start: prev_cursor,
+                        cursor_end: next_cursor,
+                    });
+                }
             }
             if let Some(records) = self
                 .provider
@@ -246,8 +316,59 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 all_inbox.extend(records);
             }
         }
+
+        // Single inbox fetch covering every emitted record's `[start, end)`.
+        // Slice locally per record. Skip the fetch entirely at genesis or
+        // when no records survived — message slicing is undefined there.
+        let mut updates_by_block: HashMap<OLBlockCommitment, Vec<UpdateInputData>> = HashMap::new();
+        if !pending.is_empty() && first_epoch != 0 {
+            let min_start = pending.iter().map(|p| p.cursor_start).min().unwrap_or(0);
+            let max_end = pending.iter().map(|p| p.cursor_end).max().unwrap_or(0);
+            let messages_in_range = if max_end > min_start {
+                self.provider
+                    .get_account_inbox_messages(account_id, min_start, max_end)
+                    .await
+                    .map_err(db_error)?
+            } else {
+                Vec::new()
+            };
+
+            for p in pending {
+                let local_start = (p.cursor_start - min_start) as usize;
+                let local_end = (p.cursor_end - min_start) as usize;
+                let messages = messages_in_range[local_start..local_end].to_vec();
+                updates_by_block
+                    .entry(p.block_commitment)
+                    .or_default()
+                    .push(UpdateInputData::new(
+                        p.seq_no,
+                        messages,
+                        UpdateStateData::new(
+                            ProofState::new(p.final_state_root, p.cursor_end),
+                            p.extra_data,
+                        ),
+                    ));
+            }
+        } else {
+            // Genesis epoch: no messages can have been consumed pre-genesis,
+            // so each record gets an empty `processed_messages` vec.
+            for p in pending {
+                updates_by_block
+                    .entry(p.block_commitment)
+                    .or_default()
+                    .push(UpdateInputData::new(
+                        p.seq_no,
+                        Vec::new(),
+                        UpdateStateData::new(
+                            ProofState::new(p.final_state_root, p.cursor_end),
+                            p.extra_data,
+                        ),
+                    ));
+            }
+        }
+
         Ok(AccountRecords {
-            updates: all_updates,
+            updates_by_block,
             inbox: all_inbox,
         })
     }
@@ -258,7 +379,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         &self,
         account_id: AccountId,
         cb: &ChainBlock,
-        block_updates: &[&AccountUpdateRecord],
+        block_updates: Vec<UpdateInputData>,
         block_inbox: &[&InboxMessageRecord],
     ) -> RpcResult<Option<RpcAccountBlockSummary>> {
         let block_commitment = OLBlockCommitment::new(cb.slot, cb.blkid);
@@ -290,25 +411,6 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             Err(_) => (0, 0),
         };
 
-        // Per-update `messages` is left empty here; populating it requires
-        // walking inbox indices across the chain, which the per-block view
-        // does not yet do.
-        let updates: Vec<UpdateInputData> = block_updates
-            .iter()
-            .filter_map(|r| {
-                let meta = r.update_meta()?;
-                let extra = r.extra_data()?.to_vec();
-                Some(UpdateInputData::new(
-                    r.seq_no(),
-                    Vec::new(),
-                    UpdateStateData::new(
-                        ProofState::new(meta.final_state_root(), r.next_inbox_idx()),
-                        extra,
-                    ),
-                ))
-            })
-            .collect();
-
         let new_inbox_messages: Vec<MessageEntry> = block_inbox
             .iter()
             .map(|r| {
@@ -326,7 +428,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             block_commitment,
             account_state.balance(),
             next_seq_no,
-            updates,
+            block_updates,
             new_inbox_messages,
             next_inbox_msg_idx,
         )))
@@ -577,7 +679,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         if start_slot > end_slot {
             return Err(invalid_params_error("start_slot must be <= end_slot"));
         }
-        if (end_slot - start_slot + 1) as usize > self.max_headers_range {
+        let requested_block_count = end_slot.saturating_sub(start_slot).saturating_add(1);
+        if requested_block_count as usize > self.max_headers_range {
             return Err(invalid_params_error(format!(
                 "Block range too big. Allowed range is {}",
                 self.max_headers_range
@@ -600,27 +703,20 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .last()
             .expect("non-empty chain blocks expected")
             .epoch;
+        let block_commitments: HashSet<OLBlockCommitment> = chain_blocks
+            .iter()
+            .map(|cb| OLBlockCommitment::new(cb.slot, cb.blkid))
+            .collect();
         let AccountRecords {
-            updates: all_updates,
+            mut updates_by_block,
             inbox: all_inbox,
         } = self
-            .fetch_records_in_epoch_range(account_id, first_epoch, last_epoch)
+            .fetch_records_in_epoch_range(account_id, first_epoch, last_epoch, &block_commitments)
             .await?;
 
-        // Index records by block_commitment so each block lookup is O(1)
-        // instead of an O(M) scan. Records without a block_commitment
-        // (checkpoint-sync update rows; inbox writes with no block tag)
-        // can never match a chain block, so they're dropped here.
-        let mut updates_by_block: HashMap<OLBlockCommitment, Vec<&AccountUpdateRecord>> =
-            HashMap::new();
-        for r in &all_updates {
-            if let Some(meta) = r.update_meta() {
-                updates_by_block
-                    .entry(*meta.block_commitment())
-                    .or_default()
-                    .push(r);
-            }
-        }
+        // Index inbox records by block_commitment so each block lookup is O(1)
+        // instead of an O(M) scan. Inbox writes with no block tag can never
+        // match a chain block, so they're dropped here.
         let mut inbox_by_block: HashMap<OLBlockCommitment, Vec<&InboxMessageRecord>> =
             HashMap::new();
         for r in &all_inbox {
@@ -632,10 +728,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         let mut summaries = Vec::with_capacity(chain_blocks.len());
         for cb in &chain_blocks {
             let commitment = OLBlockCommitment::new(cb.slot, cb.blkid);
-            let updates = updates_by_block
-                .get(&commitment)
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
+            let updates = updates_by_block.remove(&commitment).unwrap_or_default();
             let inbox = inbox_by_block
                 .get(&commitment)
                 .map(|v| v.as_slice())
