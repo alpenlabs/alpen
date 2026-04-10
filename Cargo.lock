@@ -13855,6 +13855,7 @@ dependencies = [
  "bitcoind-async-client",
  "format_serde_error",
  "jsonrpsee",
+ "proptest",
  "serde",
  "serde_json",
  "ssz",

@@ -1,14 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use strata_acct_types::{MessageEntry, MsgPayload};
+use proptest::prelude::*;
+use strata_acct_types::{MessageEntry, MsgPayload, TxEffects};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{DbError, DbResult, types::AccountExtraDataEntry};
 use strata_identifiers::*;
 use strata_ledger_types::*;
-use strata_ol_chain_types_new::*;
+use strata_ol_chain_types_new::{test_utils::transaction_payload_strategy, *};
 use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
@@ -18,10 +19,13 @@ use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
 };
-use strata_snark_acct_types::Seqno;
+use strata_snark_acct_types::{ProofState, Seqno, UpdateInputData, UpdateStateData};
 use strata_status::OLSyncStatus;
+use tokio::runtime::Builder;
 
-use super::OLRpcServer;
+use super::{
+    OLRpcServer, extract_account_activity_from_block, resolve_update_extra_data_for_block,
+};
 use crate::rpc::errors::{
     INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE, MEMPOOL_CAPACITY_ERROR_CODE, map_mempool_error_to_rpc,
 };
@@ -146,8 +150,13 @@ impl MockProvider {
         block: OLBlockCommitment,
     ) -> Self {
         let entry = AccountExtraDataEntry::new(extra_data, block);
-        self.account_extra_data
-            .insert((account_id, epoch), AccountExtraData::new(entry));
+        let key = (account_id, epoch);
+        if let Some(entries) = self.account_extra_data.get_mut(&key) {
+            entries.push(entry);
+        } else {
+            self.account_extra_data
+                .insert(key, AccountExtraData::new(entry));
+        }
         self
     }
 
@@ -334,6 +343,28 @@ fn make_block(slot: u64, epoch: u32, parent: OLBlockId) -> OLBlock {
     OLBlock::new(signed, body)
 }
 
+fn make_block_with_txs(
+    slot: u64,
+    epoch: Epoch,
+    parent: OLBlockId,
+    txs: Vec<OLTransaction>,
+) -> OLBlock {
+    let header = OLBlockHeader::new(
+        0,
+        0.into(),
+        slot,
+        epoch,
+        parent,
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+    let signed = SignedOLBlockHeader::new(header, Buf64::zero());
+    let tx_segment = OLTxSegment::new(txs).expect("tx segment");
+    let body = OLBlockBody::new_common(tx_segment);
+    OLBlock::new(signed, body)
+}
+
 fn genesis_ol_state() -> OLState {
     let params = OLParams::new_empty(test_l1_commitment());
     OLState::from_genesis_params(&params).expect("genesis state")
@@ -379,6 +410,78 @@ fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
 fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
     let gam = RpcGenericAccountMessage::new(HexBytes32::from(*target.inner()), HexBytes(payload));
     RpcOLTransaction::new_payload(RpcTransactionPayload::GenericAccountMessage(gam))
+}
+
+fn make_sau_tx(
+    target: AccountId,
+    seq_no: u64,
+    next_inbox_msg_idx: u64,
+    inner_state_tag: u8,
+    extra_data: Vec<u8>,
+    processed_messages: Vec<MessageEntry>,
+    effects: TxEffects,
+) -> OLTransaction {
+    let proof_state = SauTxProofState::new(next_inbox_msg_idx, fixed_buf32(inner_state_tag));
+    let update_data = SauTxUpdateData::new(seq_no, proof_state, extra_data);
+    let operation_data = SauTxOperationData::new(
+        update_data,
+        processed_messages,
+        SauTxLedgerRefs::new_empty(),
+    );
+    let payload = TransactionPayload::SnarkAccountUpdate(SauTxPayload::new(target, operation_data));
+    let tx_data = OLTransactionData::new(payload, effects);
+    OLTransaction::new(tx_data, TxProofs::new_empty())
+}
+
+/// Retargets a generated payload to the given account.
+fn retarget_payload(payload: TransactionPayload, target: AccountId) -> TransactionPayload {
+    match payload {
+        TransactionPayload::GenericAccountMessage(_) => {
+            TransactionPayload::GenericAccountMessage(GamTxPayload::new(target).expect("gam"))
+        }
+        TransactionPayload::SnarkAccountUpdate(sau) => TransactionPayload::SnarkAccountUpdate(
+            SauTxPayload::new(target, sau.operation().clone()),
+        ),
+    }
+}
+
+/// Generates an arbitrary OL transaction targeting either `account_id` or `other_account`,
+/// with a single effect message aimed at one of the two. Uses chain-types strategies for
+/// payload/constraint generation.
+fn arbitrary_tx_strategy(
+    account_id: AccountId,
+    other_account: AccountId,
+) -> impl Strategy<Value = OLTransaction> {
+    (
+        transaction_payload_strategy(),
+        any::<bool>(),
+        any::<bool>(),
+        any::<u64>(),
+        prop::collection::vec(any::<u8>(), 0..8),
+    )
+        .prop_map(
+            move |(payload, to_target, effect_to_target, effect_val, effect_data)| {
+                let target = if to_target { account_id } else { other_account };
+                let payload = retarget_payload(payload, target);
+                let effect_dest = if effect_to_target {
+                    account_id
+                } else {
+                    other_account
+                };
+                let mut effects = TxEffects::default();
+                effects.push_message(effect_dest, effect_val, effect_data);
+                let data = OLTransactionData::new(payload, effects);
+                OLTransaction::new(data, TxProofs::new_empty())
+            },
+        )
+}
+
+/// Returns the sender that `extract_account_activity_from_block` would derive for a tx.
+fn expected_sender(tx: &OLTransaction) -> AccountId {
+    match tx.payload() {
+        TransactionPayload::GenericAccountMessage(_) => strata_ol_stf::SEQUENCER_ACCT_ID,
+        TransactionPayload::SnarkAccountUpdate(p) => *p.target(),
+    }
 }
 
 fn test_epoch_commitment(epoch: Epoch, slot: u64, blkid_tag: u8) -> EpochCommitment {
@@ -1126,6 +1229,443 @@ async fn blocks_summaries_snark_vs_non_snark() {
     assert_eq!(empty.len(), 1);
     assert_eq!(empty[0].next_seq_no(), 0);
     assert_eq!(empty[0].next_inbox_msg_idx(), 0);
+}
+
+// ── get_blocks_summaries: activity extraction edge cases ──
+
+#[tokio::test]
+async fn blocks_summaries_empty_tx_segment_produces_no_activity() {
+    let account_id = test_account_id(1);
+    let block = make_block(0, 0, null_blkid());
+    let tip = OLBlockCommitment::new(0, block.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 5, 3));
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect("summaries");
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].updates().is_empty());
+    assert!(summaries[0].new_inbox_messages().is_empty());
+}
+
+#[test]
+fn extract_activity_none_tx_segment() {
+    let account_id = test_account_id(1);
+    let state = ol_state_with_snark_account(account_id, 0, 5, 3);
+    let account_state = state.get_account_state(account_id).unwrap().unwrap();
+
+    let (updates, inbox) = extract_account_activity_from_block(account_id, 0, None, account_state);
+    assert!(updates.is_empty());
+    assert!(inbox.is_empty());
+}
+
+// ── get_blocks_summaries: extra data resolution edge cases ──
+
+#[tokio::test]
+async fn blocks_summaries_extra_data_uses_tx_payload_when_no_index() {
+    let account_id = test_account_id(1);
+    let tx = make_sau_tx(
+        account_id,
+        3,
+        1,
+        0x63,
+        vec![0xDE, 0xAD],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let block = make_block_with_txs(0, 0, null_blkid(), vec![tx.clone()]);
+    let tip = OLBlockCommitment::new(0, block.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 4, 1));
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect("summaries");
+    let update: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let expected = match tx.payload() {
+        TransactionPayload::SnarkAccountUpdate(p) => p.operation().update().extra_data(),
+        _ => unreachable!(),
+    };
+    assert_eq!(update.extra_data(), expected);
+}
+
+#[tokio::test]
+async fn blocks_summaries_extra_data_prefers_index_over_tx_payload() {
+    let account_id = test_account_id(1);
+    let indexed = vec![0xF0, 0x0D];
+    let tx = make_sau_tx(
+        account_id,
+        6,
+        2,
+        0x66,
+        vec![0x01, 0x02],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let block = make_block_with_txs(0, 0, null_blkid(), vec![tx]);
+    let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            commitment,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 7, 2))
+        .with_account_extra_data(account_id, 0, indexed.clone(), commitment);
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect("summaries");
+    let update: UpdateInputData = summaries[0].updates()[0].clone().into();
+    assert_eq!(update.extra_data(), indexed.as_slice());
+}
+
+#[tokio::test]
+async fn blocks_summaries_extra_data_falls_back_for_non_matching_block() {
+    let account_id = test_account_id(1);
+    let tx = make_sau_tx(
+        account_id,
+        9,
+        2,
+        0x90,
+        vec![0xCA, 0xFE],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let block = make_block_with_txs(0, 0, null_blkid(), vec![tx.clone()]);
+    let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
+    let wrong_block = OLBlockCommitment::new(99, fixed_ol_block_id(0x99));
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            commitment,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 10, 2))
+        .with_account_extra_data(account_id, 0, vec![0xF0, 0x0D], wrong_block);
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect("summaries");
+    let update: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let expected = match tx.payload() {
+        TransactionPayload::SnarkAccountUpdate(p) => p.operation().update().extra_data(),
+        _ => unreachable!(),
+    };
+    assert_eq!(update.extra_data(), expected);
+}
+
+#[tokio::test]
+async fn blocks_summaries_extra_data_partial_mismatch_applies_available_entries() {
+    let account_id = test_account_id(1);
+    let tx1 = make_sau_tx(
+        account_id,
+        1,
+        1,
+        0xA1,
+        vec![0x01],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let tx2 = make_sau_tx(
+        account_id,
+        2,
+        2,
+        0xA2,
+        vec![0x02],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let block = make_block_with_txs(0, 0, null_blkid(), vec![tx1, tx2]);
+    let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            commitment,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 3, 2))
+        .with_account_extra_data(account_id, 0, vec![0xFE], commitment);
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 0)
+        .await
+        .expect("summaries");
+    let u0: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let u1: UpdateInputData = summaries[0].updates()[1].clone().into();
+    assert_eq!(u0.extra_data(), [0xFE].as_slice());
+    assert_eq!(u1.extra_data(), [0x02].as_slice());
+}
+
+#[tokio::test]
+async fn blocks_summaries_extra_data_cache_across_epoch_blocks() {
+    let account_id = test_account_id(1);
+    let epoch: Epoch = 7;
+    let b0_tx = make_sau_tx(
+        account_id,
+        21,
+        1,
+        0x21,
+        vec![0x11],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let b0 = make_block_with_txs(0, epoch, null_blkid(), vec![b0_tx]);
+    let b0c = OLBlockCommitment::new(0, b0.header().compute_blkid());
+
+    let b1_tx = make_sau_tx(
+        account_id,
+        22,
+        2,
+        0x22,
+        vec![0x22],
+        Vec::new(),
+        TxEffects::default(),
+    );
+    let b1 = make_block_with_txs(1, epoch, b0.header().compute_blkid(), vec![b1_tx]);
+    let b1c = OLBlockCommitment::new(1, b1.header().compute_blkid());
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            b1c,
+            epoch,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&b0, ol_state_with_snark_account(account_id, 0, 21, 1))
+        .with_block_and_state(&b1, ol_state_with_snark_account(account_id, 1, 22, 2))
+        .with_account_extra_data(account_id, epoch, vec![0xA0], b0c)
+        .with_account_extra_data(account_id, epoch, vec![0xA1], b1c);
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 1)
+        .await
+        .expect("summaries");
+    assert_eq!(summaries.len(), 2);
+    let u0: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let u1: UpdateInputData = summaries[1].updates()[0].clone().into();
+    assert_eq!(u0.extra_data(), [0xA0].as_slice());
+    assert_eq!(u1.extra_data(), [0xA1].as_slice());
+}
+
+// ── get_blocks_summaries: property tests ──
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, .. ProptestConfig::default() })]
+
+    /// Update count matches SAU txs targeting this account. Each update reflects its
+    /// source SAU fields. Inbox messages match effect messages destined for this account
+    /// with correct sender derivation (sequencer for GAM, target for SAU).
+    #[test]
+    fn blocks_summaries_reflects_block_txs_for_snark_account(
+        txs in prop::collection::vec(
+            arbitrary_tx_strategy(test_account_id(1), test_account_id(2)),
+            0..12
+        )
+    ) {
+        let account_id = test_account_id(1);
+        let block_epoch: Epoch = 5;
+        let block = make_block_with_txs(0, block_epoch, null_blkid(), txs.clone());
+        let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
+        let provider = MockProvider::new()
+            .with_sync_status(make_sync_status(commitment, block_epoch, false, EpochCommitment::null(), EpochCommitment::null(), EpochCommitment::null()))
+            .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 99, 99));
+        let rpc = make_rpc(provider);
+
+        let rt = Builder::new_current_thread().enable_all().build().unwrap();
+        let summaries = rt
+            .block_on(async { rpc.get_blocks_summaries(account_id, 0, 0).await })
+            .expect("summaries");
+        prop_assert_eq!(summaries.len(), 1);
+        let summary = &summaries[0];
+
+        // Collect SAU txs targeting this account from the input.
+        let target_saus: Vec<&SauTxPayload> = txs.iter().filter_map(|tx| match tx.payload() {
+            TransactionPayload::SnarkAccountUpdate(p) if *p.target() == account_id => Some(p),
+            _ => None,
+        }).collect();
+
+        // Update count matches SAU count targeting this account.
+        prop_assert_eq!(summary.updates().len(), target_saus.len());
+
+        // Each update reflects its source SAU fields.
+        for (rpc_update, sau) in summary.updates().iter().zip(target_saus.iter()) {
+            let update: UpdateInputData = rpc_update.clone().into();
+            let op = sau.operation();
+            prop_assert_eq!(update.seq_no(), op.update().seq_no());
+            prop_assert_eq!(update.extra_data(), op.update().extra_data());
+            prop_assert_eq!(
+                update.new_state().inner_state(),
+                op.update().proof_state().inner_state_root()
+            );
+            prop_assert_eq!(
+                update.new_state().next_inbox_msg_idx(),
+                op.update().proof_state().new_next_msg_idx()
+            );
+            let expected_msgs: Vec<_> = op.messages_iter().cloned().collect();
+            prop_assert_eq!(update.processed_messages(), expected_msgs.as_slice());
+        }
+
+        // Inbox messages match effect messages destined for this account.
+        let expected_inbox: Vec<_> = txs.iter()
+            .flat_map(|tx| {
+                let sender = expected_sender(tx);
+                tx.data().effects().messages_iter()
+                    .filter(|msg| msg.dest() == account_id)
+                    .map(move |msg| (sender, msg.payload().clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let actual_inbox = rpc_messages_to_entries(summary.new_inbox_messages());
+        prop_assert_eq!(actual_inbox.len(), expected_inbox.len());
+
+        for (actual, (exp_sender, exp_payload)) in actual_inbox.iter().zip(expected_inbox.iter()) {
+            prop_assert_eq!(actual.source, *exp_sender);
+            prop_assert_eq!(actual.incl_epoch(), block_epoch);
+            prop_assert_eq!(&actual.payload, exp_payload);
+        }
+    }
+
+    /// Non-snark accounts never collect inbox messages, regardless of what effect
+    /// messages target them. SAU updates targeting the account are still reported.
+    #[test]
+    fn blocks_summaries_non_snark_never_collects_inbox_but_reports_updates(
+        txs in prop::collection::vec(
+            arbitrary_tx_strategy(test_account_id(1), test_account_id(2)),
+            0..12
+        )
+    ) {
+        let account_id = test_account_id(1);
+        let block_epoch: Epoch = 12;
+        let block = make_block_with_txs(0, block_epoch, null_blkid(), txs.clone());
+        let commitment = OLBlockCommitment::new(0, block.header().compute_blkid());
+        let provider = MockProvider::new()
+            .with_sync_status(make_sync_status(commitment, block_epoch, false, EpochCommitment::null(), EpochCommitment::null(), EpochCommitment::null()))
+            .with_block_and_state(&block, ol_state_with_empty_account(account_id, 0));
+        let rpc = make_rpc(provider);
+
+        let rt = Builder::new_current_thread().enable_all().build().unwrap();
+        let summaries = rt
+            .block_on(async { rpc.get_blocks_summaries(account_id, 0, 0).await })
+            .expect("summaries");
+
+        prop_assert_eq!(summaries.len(), 1);
+        prop_assert!(summaries[0].new_inbox_messages().is_empty());
+
+        // SAU updates targeting this account are still collected even for non-snark.
+        let expected_update_count = txs.iter().filter(|tx| matches!(
+            tx.payload(),
+            TransactionPayload::SnarkAccountUpdate(p) if *p.target() == account_id
+        )).count();
+        prop_assert_eq!(summaries[0].updates().len(), expected_update_count);
+    }
+
+    /// When index entries match the block commitment, `resolve_update_extra_data_for_block`
+    /// overwrites each update's extra_data with the index value. When entries don't match,
+    /// the original tx payload extra_data is preserved.
+    #[test]
+    fn extra_data_resolved_from_matching_block(
+        sau_payloads in prop::collection::vec(
+            transaction_payload_strategy().prop_filter_map("SAU only", |p| match p {
+                TransactionPayload::SnarkAccountUpdate(sau) => Some(sau),
+                _ => None,
+            }),
+            1..6
+        ),
+        indexed_extra_datas in prop::collection::vec(
+            prop::collection::vec(any::<u8>(), 1..16),
+            0..8
+        ),
+        matching in any::<bool>(),
+    ) {
+        let commitment = OLBlockCommitment::new(0, fixed_ol_block_id(1));
+        let other_commitment = OLBlockCommitment::new(99, fixed_ol_block_id(99));
+
+        // Build updates from the generated SAU payloads (same way production code does).
+        let mut updates: Vec<UpdateInputData> = sau_payloads.iter().map(|sau| {
+            let op = sau.operation();
+            UpdateInputData::new(
+                op.update().seq_no(),
+                op.messages_iter().cloned().collect(),
+                UpdateStateData::new(
+                    ProofState::new(
+                        op.update().proof_state().inner_state_root(),
+                        op.update().proof_state().new_next_msg_idx(),
+                    ),
+                    op.update().extra_data().to_vec(),
+                ),
+            )
+        }).collect();
+        let original_extra_datas: Vec<Vec<u8>> = updates.iter()
+            .map(|u| u.extra_data().to_vec())
+            .collect();
+
+        // Build index entries — either matching or non-matching block commitment.
+        let entry_commitment = if matching { commitment } else { other_commitment };
+        let entries: Option<AccountExtraData> = if indexed_extra_datas.is_empty() {
+            None
+        } else {
+            let mut entries = AccountExtraData::new(
+                AccountExtraDataEntry::new(indexed_extra_datas[0].clone(), entry_commitment),
+            );
+            for ed in &indexed_extra_datas[1..] {
+                entries.push(AccountExtraDataEntry::new(ed.clone(), entry_commitment));
+            }
+            Some(entries)
+        };
+
+        resolve_update_extra_data_for_block(
+            test_account_id(1), 0, commitment, &mut updates, entries.as_ref(),
+        );
+
+        for (i, update) in updates.iter().enumerate() {
+            if matching && i < indexed_extra_datas.len() {
+                // Index was applied.
+                prop_assert_eq!(update.extra_data(), indexed_extra_datas[i].as_slice());
+            } else {
+                // Original tx payload preserved.
+                prop_assert_eq!(update.extra_data(), original_extra_datas[i].as_slice());
+            }
+        }
+    }
 }
 
 // ── get_acct_epoch_summary ──

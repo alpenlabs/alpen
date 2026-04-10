@@ -111,6 +111,8 @@ zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1
 ], optional = true }
 
 [dev-dependencies]
+proptest.workspace = true
+strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
 strata-ol-params.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-predicate.workspace = true
