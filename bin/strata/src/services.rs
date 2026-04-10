@@ -26,7 +26,7 @@ mod sequencer_services {
 
     use anyhow::{Result, anyhow};
     use strata_btcio::{
-        broadcaster::{L1BroadcastHandle, spawn_broadcaster_task},
+        broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
         writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     };
     use strata_config::EpochSealingConfig;
