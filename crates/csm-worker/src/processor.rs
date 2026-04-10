@@ -140,7 +140,7 @@ fn mark_ol_checkpoint_l1_observed(
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     let ol_checkpoint = state.storage.ol_checkpoint();
-    // TODO(csm-indexer): asm's CheckpointTipUpdate does not carry the originating
+    // TODO(STR-2549): asm's CheckpointTipUpdate does not carry the originating
     // checkpoint txid/wtxid. Use the L1 block hash as a deterministic, unique
     // placeholder until either (a) the asm log gains a txid field, or (b) CSM is
     // repurposed as an L1 indexer that scans the block for the envelope tx.
@@ -193,7 +193,7 @@ fn checkpoint_from_tip_update(
     asm_block: &L1BlockCommitment,
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
-    // TODO(csm-indexer): same placeholder as `mark_ol_checkpoint_l1_observed` —
+    // TODO(STR-2549): same placeholder as `mark_ol_checkpoint_l1_observed` —
     // see the rationale there. Use L1 block hash until the indexer / asm-side
     // txid field is in place.
     let placeholder_txid: Buf32 = (*asm_block.blkid()).into();
@@ -439,7 +439,7 @@ mod tests {
             .ol_checkpoint()
             .get_checkpoint_l1_ref_blocking(commitment)
             .expect("query l1 ref");
-        // TODO(csm-indexer): `CheckpointTipUpdate` does not carry the real
+        // TODO(STR-2549): `CheckpointTipUpdate` does not carry the real
         // envelope txid/wtxid — `mark_ol_checkpoint_l1_observed` uses the L1
         // block hash as a deterministic placeholder. Once the indexer lands
         // (or asm's tip update gains a txid field), restore the assertion to

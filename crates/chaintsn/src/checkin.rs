@@ -124,7 +124,7 @@ fn process_asm_logs<'s, S: StateAccessor>(
 ) -> Result<(), TsnError> {
     for log in manifest.logs() {
         match log.ty() {
-            // TODO(checkpoint-v1): wire up CHECKPOINT_TIP_UPDATE_LOG_TYPE handling.
+            // TODO(STR-2549): wire up CHECKPOINT_TIP_UPDATE_LOG_TYPE handling.
             // The v0 CheckpointUpdate path was removed when checkpoint-v0 was
             // retired. The v1 CheckpointTipUpdate carries less information
             // (tip + txid) than the v0 update did, so the equivalent
