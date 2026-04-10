@@ -160,7 +160,7 @@ impl CheckpointState {
 ///
 /// Consumes largest denominations first. Returns `Some(remaining_funds)` if the amount
 /// is exactly covered, `None` if it cannot be covered. Does not modify the input.
-
+///
 /// Note: this function may not play well in the multi-denomination setting and user-assigned
 /// withdrawals, because it prioritises the amount over the assigned operator.
 fn get_funds_after_withdrawal(
