@@ -1,8 +1,8 @@
 #![expect(deprecated, reason = "legacy old code is retained for compatibility")] // Don't know how to make clippy happy with precise line expects
 //! Macro trait def for the `strata_` RPC namespace using jsonrpsee.
-use ol_bridge_types::PublickeyTable;
 use bitcoin::Txid;
 use jsonrpsee::{core::RpcResult, proc_macros::rpc};
+use ol_bridge_types::PublickeyTable;
 use strata_checkpoint_types::EpochSummary;
 use strata_common::{Action, WorkerType};
 use strata_csm_types::{ClientState, ClientUpdateOutput};

@@ -1,9 +1,9 @@
 //! Chain data types relating to the CL's updating view of an execution
 //! environment's state.  For now the EVM EL is the only execution environment.
 
-use ol_bridge_types::{DepositIntent, WithdrawalIntent};
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
+use ol_bridge_types::{DepositIntent, WithdrawalIntent};
 use serde::{Deserialize, Serialize};
 use strata_csm_types::BlobSpec;
 use strata_identifiers::SubjectId;

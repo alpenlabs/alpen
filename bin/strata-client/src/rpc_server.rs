@@ -1,11 +1,11 @@
 #![expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use std::{collections::BTreeMap, sync::Arc};
 
-use ol_bridge_types::{PublickeyTable, WithdrawalIntent};
 use async_trait::async_trait;
 use bitcoin::{consensus::deserialize, hashes::Hash, Transaction as BTransaction, Txid};
 use futures::{future, TryFutureExt};
 use jsonrpsee::core::RpcResult;
+use ol_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_asm_txs_checkpoint::{CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};

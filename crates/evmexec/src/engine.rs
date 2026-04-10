@@ -8,9 +8,9 @@ use alloy_rpc_types::{
     },
     Withdrawal,
 };
-use ol_bridge_types::WithdrawalIntent;
 use alpen_reth_evm::{address_to_subject, constants::COINBASE_ADDRESS, subject_to_address};
 use alpen_reth_node::AlpenPayloadAttributes;
+use ol_bridge_types::WithdrawalIntent;
 use revm_primitives::B256;
 use strata_db_types::DbError;
 use strata_eectl::{
