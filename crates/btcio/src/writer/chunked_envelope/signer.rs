@@ -80,7 +80,6 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
                     .estimate_smart_fee(1)
                     .await
                     .map_err(|e| EnvelopeError::Other(e.into()))?
-                    * 2
             }
             FeePolicy::Fixed(val) => val,
         };
