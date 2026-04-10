@@ -93,7 +93,7 @@ async fn get_pending_payload_duties(
         if entry.status == L1BundleStatus::Finalized {
             break;
         }
-        if let L1BundleStatus::PendingPayloadSign(sighash) = entry.status {
+        if let L1BundleStatus::PendingRevealTxSign(sighash) = entry.status {
             if entry.payload_signature.is_none() {
                 duties.push(RevealTxSigningDuty::new(idx, sighash));
             }

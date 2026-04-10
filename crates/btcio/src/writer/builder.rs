@@ -110,22 +110,41 @@ pub enum EnvelopeError {
     Other(#[from] anyhow::Error),
 }
 
-/// Intermediate data from building unsigned envelope transactions.
+/// Intermediate data held in the watcher's in-memory cache between envelope creation and reveal
+/// broadcast.
 ///
-/// Held in memory by the watcher task. Lost on restart, which triggers a rebuild
-/// from `Unsigned` status.
+/// Lost on restart, which safely resets the state machine to `Unsigned` because neither
+/// transaction has been broadcast yet.
 #[derive(Debug, Clone)]
-pub struct UnsignedEnvelopeData {
-    /// The unsigned commit transaction.
+pub struct EnvelopeData {
+    /// The wallet-signed commit transaction (not yet broadcast).
     pub commit_tx: Transaction,
-    /// The unsigned reveal transaction (no witness yet).
+    /// The unsigned reveal transaction (no witness yet; needs external Schnorr sig).
     pub reveal_tx: Transaction,
-    /// The taproot script-spend sighash that needs to be signed.
+    /// The taproot script-spend sighash that the external signer must sign.
     pub sighash: Buf32,
     /// The reveal script used in the taproot leaf.
     pub reveal_script: ScriptBuf,
     /// The taproot spend info for constructing the witness.
     pub taproot_spend_info: TaprootSpendInfo,
+}
+
+impl EnvelopeData {
+    pub fn new(
+        commit_tx: Transaction,
+        reveal_tx: Transaction,
+        sighash: Buf32,
+        reveal_script: ScriptBuf,
+        taproot_spend_info: TaprootSpendInfo,
+    ) -> Self {
+        Self {
+            commit_tx,
+            reveal_tx,
+            sighash,
+            reveal_script,
+            taproot_spend_info,
+        }
+    }
 }
 
 // This is hacky solution. As `btcio` has `transaction builder` that `tx-parser` depends on. But
@@ -135,7 +154,7 @@ pub struct UnsignedEnvelopeData {
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<UnsignedEnvelopeData> {
+) -> anyhow::Result<EnvelopeData> {
     let network = ctx.client.network().await?;
     let utxos = ctx
         .client
@@ -161,13 +180,13 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 
 /// Builds unsigned envelope transactions (commit + reveal) and computes the sighash.
 ///
-/// Returns an [`UnsignedEnvelopeData`] containing the transactions and intermediate data
+/// Returns an [`EnvelopeData`] containing the transactions and intermediate data
 /// needed to attach the signature later via [`attach_reveal_signature`].
 pub fn create_envelope_transactions(
     env_config: &EnvelopeConfig,
     payload: &L1Payload,
     utxos: Vec<ListUnspentItem>,
-) -> Result<UnsignedEnvelopeData, EnvelopeError> {
+) -> Result<EnvelopeData, EnvelopeError> {
     let public_key = env_config
         .envelope_pubkey
         .ok_or_else(|| anyhow!("envelope_pubkey is required for single-envelope transactions"))?;
@@ -230,13 +249,7 @@ pub fn create_envelope_transactions(
     // Compute sighash for the reveal tx
     let sighash = compute_reveal_sighash(&reveal_tx, &output_to_reveal, &reveal_script)?;
 
-    Ok(UnsignedEnvelopeData {
-        commit_tx,
-        reveal_tx,
-        sighash,
-        reveal_script,
-        taproot_spend_info,
-    })
+    Ok(EnvelopeData::new(commit_tx, reveal_tx, sighash, reveal_script, taproot_spend_info))
 }
 
 /// Computes the taproot script-spend sighash for the reveal transaction.

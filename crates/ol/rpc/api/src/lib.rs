@@ -124,7 +124,7 @@ pub trait OLSequencerRpc {
     /// Complete payload envelope signing by submitting the reveal tx Schnorr signature.
     ///
     /// `expected_sighash` must match the sighash stored in the entry's
-    /// `PendingPayloadSign` status; the server rejects stale signatures from
+    /// `PendingRevealTxSign` status; the server rejects stale signatures from
     /// old tasks that raced with an envelope rebuild.
     #[method(name = "strataadmin_completePayloadSignature")]
     async fn complete_payload_signature(

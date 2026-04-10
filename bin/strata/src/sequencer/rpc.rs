@@ -189,7 +189,7 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             .ok_or_else(|| not_found_error(format!("payload entry {payload_idx} not found")))?;
 
         let stored_sighash = match &entry.status {
-            L1BundleStatus::PendingPayloadSign(h) => *h,
+            L1BundleStatus::PendingRevealTxSign(h) => *h,
             _ => {
                 return Err(internal_error(format!(
                     "payload {payload_idx} is not pending signature (status: {:?})",

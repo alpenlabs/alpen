@@ -18,6 +18,9 @@ use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::L1Height;
 use zkaleido::Proof;
 
+/// Taproot script-spend sighash for the reveal transaction.
+pub type Sighash = Buf32;
+
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct IntentEntry {
@@ -162,9 +165,9 @@ pub enum L1BundleStatus {
     /// yet.
     Unsigned,
 
-    /// The unsigned envelope has been built and is waiting for the external signer to provide
-    /// a Schnorr signature for the given sighash.
-    PendingPayloadSign(Buf32),
+    /// The envelope has been built and the commit tx signed; waiting for the external signer to
+    /// provide a Schnorr signature for the reveal tx sighash.
+    PendingRevealTxSign(Sighash),
 
     /// The commit-reveal transactions for payload are signed and waiting to be published
     Unpublished,
