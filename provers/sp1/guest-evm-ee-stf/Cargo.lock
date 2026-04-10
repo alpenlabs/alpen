@@ -1666,7 +1666,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1893,7 +1893,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60f8970a75c006bb2f8ae79c6768a116dd215fa8346a87aed99bf9d82ca43394"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -3919,7 +3919,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -4345,7 +4345,7 @@ dependencies = [
  "itertools 0.13.0",
  "serde",
  "smallvec",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "thiserror 2.0.18",
 ]
 
@@ -4361,7 +4361,7 @@ dependencies = [
  "sizzle-parser",
  "ssz",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "ssz_types",
  "syn 2.0.114",
  "toml",
@@ -4390,6 +4390,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ssz_primitives"
+version = "0.15.0"
+source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
+dependencies = [
+ "hex",
+ "rand 0.8.5",
+ "ruint",
+]
+
+[[package]]
 name = "ssz_types"
 version = "0.14.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.14.0#952235f10c23882d8defabc6a35121c04878b85a"
@@ -4398,7 +4408,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "ssz",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "thiserror 2.0.18",
  "tree_hash",
 ]
@@ -4442,7 +4452,7 @@ dependencies = [
  "ssz",
  "ssz_codegen",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.15.0",
  "ssz_types",
  "strata-codec",
  "strata-crypto",
@@ -4589,7 +4599,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.15.0",
  "ssz_types",
  "strata-codec",
  "tree_hash",
@@ -4670,7 +4680,7 @@ dependencies = [
  "ssz",
  "ssz_codegen",
  "ssz_derive",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "ssz_types",
  "thiserror 2.0.18",
  "tree_hash",
@@ -4845,7 +4855,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -5059,7 +5069,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "ssz",
- "ssz_primitives",
+ "ssz_primitives 0.14.0",
  "thiserror 2.0.18",
 ]
 
@@ -5286,15 +5296,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2f500e4d28234f72040990ec9d39e3a6b950f9f22d3dba18416c35882612bcb"
 dependencies = [
  "windows-targets",
-]
-
-[[package]]
-name = "windows-sys"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
-dependencies = [
- "windows-link",
 ]
 
 [[package]]
