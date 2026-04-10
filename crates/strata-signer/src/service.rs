@@ -18,6 +18,13 @@ use tracing::{debug, error, info, warn};
 
 use crate::{handlers::handle_duty, helpers::SequencerSk, input::SignerMsg};
 
+/// Signals duty resolution (success or failure) back to the service loop.
+#[derive(Debug)]
+pub(crate) struct DutyResolved {
+    pub(crate) duty_id: Buf32,
+    pub(crate) success: bool,
+}
+
 /// Status exposed by the signer service monitor.
 #[derive(Clone, Debug, Serialize)]
 pub struct SignerServiceStatus {
@@ -33,8 +40,8 @@ pub(crate) struct SignerServiceState {
     /// material.
     sequencer_key: SequencerSk,
     executor: TaskExecutor,
-    seen_duties: HashSet<Buf32>,
-    failed_tx: mpsc::Sender<Buf32>,
+    in_flight_duties: HashSet<Buf32>,
+    resolved_tx: mpsc::Sender<DutyResolved>,
     duties_processed: u64,
     duties_failed: u64,
 }
@@ -44,14 +51,14 @@ impl SignerServiceState {
         rpc: Arc<ManagedWsClient>,
         sequencer_key: SequencerSk,
         executor: TaskExecutor,
-        failed_tx: mpsc::Sender<Buf32>,
+        resolved_tx: mpsc::Sender<DutyResolved>,
     ) -> Self {
         Self {
             rpc,
             sequencer_key,
             executor,
-            seen_duties: HashSet::new(),
-            failed_tx,
+            in_flight_duties: HashSet::new(),
+            resolved_tx,
             duties_processed: 0,
             duties_failed: 0,
         }
@@ -84,10 +91,12 @@ impl AsyncService for SignerService {
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
             TickMsg::Tick => state.process_poll_tick().await,
-            TickMsg::Msg(duty_id) => {
-                warn!(%duty_id, "removing failed duty for retry");
-                state.seen_duties.remove(&duty_id);
-                state.duties_failed += 1;
+            TickMsg::Msg(DutyResolved { duty_id, success }) => {
+                state.in_flight_duties.remove(&duty_id);
+                if !success {
+                    warn!(%duty_id, "duty failed, will retry if requeued");
+                    state.duties_failed += 1;
+                }
             }
         }
         Ok(Response::Continue)
@@ -121,19 +130,19 @@ impl SignerServiceState {
             };
 
             let duty_id = duty.generate_id();
-            if self.seen_duties.contains(&duty_id) {
+            if self.in_flight_duties.contains(&duty_id) {
                 debug!(%duty_id, "skipping already seen duty");
                 continue;
             }
-            self.seen_duties.insert(duty_id);
+            self.in_flight_duties.insert(duty_id);
             self.duties_processed += 1;
 
             let rpc = self.rpc.clone();
             let sk = self.sequencer_key.clone();
-            let failed_tx = self.failed_tx.clone();
+            let resolved_tx = self.resolved_tx.clone();
             self.executor
                 .spawn_critical_async("handle_duty", async move {
-                    handle_duty(rpc, duty, sk, failed_tx).await;
+                    handle_duty(rpc, duty, sk, resolved_tx).await;
                     Ok(())
                 });
         }
@@ -154,16 +163,16 @@ mod tests {
     use super::*;
     use crate::helpers::SequencerSk;
 
-    fn make_state() -> (SignerServiceState, mpsc::Receiver<Buf32>) {
+    fn make_state() -> (SignerServiceState, mpsc::Receiver<DutyResolved>) {
         let rpc = Arc::new(ManagedWsClient::new_with_default_pool(WsClientConfig {
             url: "ws://127.0.0.1:1".to_string(),
         }));
         let sk: SequencerSk = Arc::new(ZeroizedBuf32::new([0u8; 32]));
         let executor = TaskManager::new(Handle::current()).create_executor();
-        let (failed_tx, failed_rx) = mpsc::channel(8);
+        let (resolved_tx, resolved_rx) = mpsc::channel(8);
         (
-            SignerServiceState::new(rpc, sk, executor, failed_tx),
-            failed_rx,
+            SignerServiceState::new(rpc, sk, executor, resolved_tx),
+            resolved_rx,
         )
     }
 
@@ -181,7 +190,7 @@ mod tests {
 
         state.process_duties(vec![duty.clone()]).await;
         assert_eq!(state.duties_processed, 1);
-        assert_eq!(state.seen_duties.len(), 1);
+        assert_eq!(state.in_flight_duties.len(), 1);
 
         // Same duty on next poll — must be skipped.
         state.process_duties(vec![duty]).await;
@@ -197,27 +206,49 @@ mod tests {
             .await;
 
         assert_eq!(state.duties_processed, 2);
-        assert_eq!(state.seen_duties.len(), 2);
+        assert_eq!(state.in_flight_duties.len(), 2);
     }
 
     #[tokio::test]
     async fn test_failed_duty_removed_for_retry() {
         let (mut state, _rx) = make_state();
-        let sighash = Buf32([1u8; 32]);
+        let duty_id = Buf32([1u8; 32]);
 
         state.process_duties(vec![payload_duty(1, [1u8; 32])]).await;
-        assert!(state.seen_duties.contains(&sighash));
+        assert!(state.in_flight_duties.contains(&duty_id));
         assert_eq!(state.duties_processed, 1);
 
         // Signal failure — duty must be evicted from seen set.
-        SignerService::process_input(&mut state, TickMsg::Msg(sighash))
-            .await
-            .unwrap();
-        assert!(!state.seen_duties.contains(&sighash));
+        SignerService::process_input(
+            &mut state,
+            TickMsg::Msg(DutyResolved { duty_id, success: false }),
+        )
+        .await
+        .unwrap();
+        assert!(!state.in_flight_duties.contains(&duty_id));
         assert_eq!(state.duties_failed, 1);
 
         // Same duty now re-dispatched.
         state.process_duties(vec![payload_duty(1, [1u8; 32])]).await;
         assert_eq!(state.duties_processed, 2);
+    }
+
+    #[tokio::test]
+    async fn test_successful_duty_removed_from_seen() {
+        let (mut state, _rx) = make_state();
+        let duty_id = Buf32([1u8; 32]);
+
+        state.process_duties(vec![payload_duty(1, [1u8; 32])]).await;
+        assert!(state.in_flight_duties.contains(&duty_id));
+
+        // Signal success — duty must be evicted so it can be re-processed if it reappears.
+        SignerService::process_input(
+            &mut state,
+            TickMsg::Msg(DutyResolved { duty_id, success: true }),
+        )
+        .await
+        .unwrap();
+        assert!(!state.in_flight_duties.contains(&duty_id));
+        assert_eq!(state.duties_failed, 0);
     }
 }

@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 use zeroize::Zeroize;
 
-use crate::helpers::SequencerSk;
+use crate::{helpers::SequencerSk, service::DutyResolved};
 
 #[derive(Debug, Error)]
 #[expect(clippy::enum_variant_names, reason = "pre-existing naming convention")]
@@ -37,7 +37,7 @@ pub(crate) async fn handle_duty(
     rpc: Arc<ManagedWsClient>,
     duty: Duty,
     sk: SequencerSk,
-    failed_tx: mpsc::Sender<Buf32>,
+    resolved_tx: mpsc::Sender<DutyResolved>,
 ) {
     let duty_id = duty.generate_id();
     debug!(%duty_id, %duty, "handling duty");
@@ -58,10 +58,11 @@ pub(crate) async fn handle_duty(
         } => complete_reveal_tx_duty(&rpc, payload_idx, sighash, sig).await,
     };
 
-    if let Err(err) = result {
+    let success = result.is_ok();
+    if let Err(err) = &result {
         error!(%duty_id, %err, "duty failed");
-        let _ = failed_tx.send(duty_id).await;
     }
+    let _ = resolved_tx.send(DutyResolved { duty_id, success }).await;
 }
 
 /// Outcome of synchronous signing — holds only the data needed for async submission.

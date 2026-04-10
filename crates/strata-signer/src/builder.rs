@@ -12,9 +12,8 @@ use crate::{
     service::{SignerService, SignerServiceState, SignerServiceStatus},
 };
 
-/// Capacity of the internal channel used to report failed duties back to the
-/// service for retry.
-const FAILED_DUTY_CHANNEL_CAPACITY: usize = 64;
+/// Capacity of the internal channel used to signal duty resolution (success or failure) back to the service.
+const RESOLVED_DUTY_CHANNEL_CAPACITY: usize = 64;
 
 /// Builder for the signer service.
 pub struct SignerBuilder {
@@ -49,11 +48,11 @@ impl SignerBuilder {
         self,
         executor: &TaskExecutor,
     ) -> anyhow::Result<ServiceMonitor<SignerServiceStatus>> {
-        let (failed_tx, failed_rx) = mpsc::channel(FAILED_DUTY_CHANNEL_CAPACITY);
+        let (resolved_tx, resolved_rx) = mpsc::channel(RESOLVED_DUTY_CHANNEL_CAPACITY);
 
         let state =
-            SignerServiceState::new(self.rpc, self.sequencer_key, executor.clone(), failed_tx);
-        let input = TickingInput::new(self.duty_poll_interval, TokioMpscInput::new(failed_rx));
+            SignerServiceState::new(self.rpc, self.sequencer_key, executor.clone(), resolved_tx);
+        let input = TickingInput::new(self.duty_poll_interval, TokioMpscInput::new(resolved_rx));
 
         ServiceBuilder::<SignerService, _>::new()
             .with_state(state)
