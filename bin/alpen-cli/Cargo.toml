@@ -39,7 +39,7 @@ bdk_wallet = { workspace = true, features = ["rusqlite"] }
 bip39 = { version = "2.0.0", features = ["all-languages"] }
 chrono.workspace = true
 colored = "2.2.0"
-config = { version = "0.14.0", default-features = false, features = ["toml"] }
+config = { version = "0.15.19", default-features = false, features = ["toml"] }
 dialoguer = "0.11.0"
 directories = "5.0.1"
 indicatif = { version = "0.17.8", features = ["improved_unicode", "tokio"] }
