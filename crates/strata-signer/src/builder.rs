@@ -12,7 +12,8 @@ use crate::{
     service::{SignerService, SignerServiceState, SignerServiceStatus},
 };
 
-/// Capacity of the internal channel used to signal duty resolution (success or failure) back to the service.
+/// Capacity of the internal channel used to signal duty resolution (success or failure) back to the
+/// service.
 const RESOLVED_DUTY_CHANNEL_CAPACITY: usize = 64;
 
 /// Builder for the signer service.

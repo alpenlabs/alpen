@@ -73,7 +73,9 @@ fn main() -> Result<()> {
         match &nodectx.params().rollup.cred_rule {
             strata_params::CredRule::SchnorrKey(key) => Some(key.0),
             strata_params::CredRule::Unchecked => {
-                return Err(anyhow!("sequencer requires CredRule::SchnorrKey, got Unchecked"));
+                return Err(anyhow!(
+                    "sequencer requires CredRule::SchnorrKey, got Unchecked"
+                ));
             }
         }
     } else {

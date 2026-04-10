@@ -221,7 +221,10 @@ mod tests {
         // Signal failure — duty must be evicted from seen set.
         SignerService::process_input(
             &mut state,
-            TickMsg::Msg(DutyResolved { duty_id, success: false }),
+            TickMsg::Msg(DutyResolved {
+                duty_id,
+                success: false,
+            }),
         )
         .await
         .unwrap();
@@ -244,7 +247,10 @@ mod tests {
         // Signal success — duty must be evicted so it can be re-processed if it reappears.
         SignerService::process_input(
             &mut state,
-            TickMsg::Msg(DutyResolved { duty_id, success: true }),
+            TickMsg::Msg(DutyResolved {
+                duty_id,
+                success: true,
+            }),
         )
         .await
         .unwrap();

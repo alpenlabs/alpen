@@ -249,7 +249,13 @@ pub fn create_envelope_transactions(
     // Compute sighash for the reveal tx
     let sighash = compute_reveal_sighash(&reveal_tx, &output_to_reveal, &reveal_script)?;
 
-    Ok(EnvelopeData::new(commit_tx, reveal_tx, sighash, reveal_script, taproot_spend_info))
+    Ok(EnvelopeData::new(
+        commit_tx,
+        reveal_tx,
+        sighash,
+        reveal_script,
+        taproot_spend_info,
+    ))
 }
 
 /// Computes the taproot script-spend sighash for the reveal transaction.

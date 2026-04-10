@@ -246,7 +246,11 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
                     };
                     match state
                         .ctx
-                        .complete_reveal_and_broadcast(state.curr_payloadidx, &envelope, sig.as_ref())
+                        .complete_reveal_and_broadcast(
+                            state.curr_payloadidx,
+                            &envelope,
+                            sig.as_ref(),
+                        )
                         .await
                     {
                         Ok(_rid) => {
