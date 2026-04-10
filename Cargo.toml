@@ -443,7 +443,7 @@ bitcoin = { version = "0.32.6", features = ["serde"] }
 bitcoin-bosd = { version = "0.9.0", default-features = false }
 bitcoind-async-client = { version = "0.10.1", features = ["29_0"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
-borsh = { version = "1.5.0", features = ["derive"] }
+borsh = { version = "1.6.1", features = ["derive"] }
 bytes = "1.11.1"
 cfg-if = "1.0.0"
 chrono = "0.4.38"
@@ -476,7 +476,7 @@ opentelemetry-otlp = { version = "0.26", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
 parking_lot = "0.12.3"
 paste = "1.0"
-proptest = "1.9.0"
+proptest = "1.11.0"
 rand = "0.8.5"
 rand_chacha = { version = "0.3.1", default-features = false }
 rand_core = { version = "0.6", default-features = false }
