@@ -21,6 +21,10 @@ where
 /// Errors that can occur while working with ASM manifest and log types.
 #[derive(Debug, Error)]
 pub enum AsmManifestError {
+    /// Data exceeded the maximum SSZ container length for the target field.
+    #[error("SSZ container overflow while encoding {0}")]
+    OverflowContainer(&'static str),
+
     /// Type ID of a decoded section did not match the expected type ID.
     #[error(transparent)]
     TypeIdMismatch(#[from] Mismatched<TypeId>),

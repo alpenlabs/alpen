@@ -5,7 +5,9 @@ use crate::{ExecInputs, ExecOutputs, OutputMessage, OutputTransfer, SubjectDepos
 impl ExecInputs {
     fn new(subject_deposits: Vec<SubjectDepositData>) -> Self {
         Self {
-            subject_deposits: subject_deposits.into(),
+            subject_deposits: subject_deposits
+                .try_into()
+                .expect("subject_deposits should not exceed capacity"),
         }
     }
 
@@ -48,8 +50,12 @@ impl ExecOutputs {
     fn new(output_transfers: Vec<OutputTransfer>, output_messages: Vec<OutputMessage>) -> Self {
         Self {
             // TODO propagate up the bounds checks here
-            output_transfers: output_transfers.into(),
-            output_messages: output_messages.into(),
+            output_transfers: output_transfers
+                .try_into()
+                .expect("output_transfers should not exceed capacity"),
+            output_messages: output_messages
+                .try_into()
+                .expect("output_messages should not exceed capacity"),
         }
     }
 
@@ -183,7 +189,9 @@ mod tests {
                 0..10
             )
             .prop_map(|deposits| ExecInputs {
-                subject_deposits: deposits.into()
+                subject_deposits: deposits
+                    .try_into()
+                    .expect("subject_deposits should not exceed capacity"),
             })
         );
 
@@ -263,8 +271,12 @@ mod tests {
             )
                 .prop_map(|(transfers, messages)| {
                     ExecOutputs {
-                        output_transfers: transfers.into(),
-                        output_messages: messages.into(),
+                        output_transfers: transfers
+                            .try_into()
+                            .expect("output_transfers should not exceed capacity"),
+                        output_messages: messages
+                            .try_into()
+                            .expect("output_messages should not exceed capacity"),
                     }
                 })
         );

@@ -3,7 +3,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_manifest_types::{AsmManifest, Hash32};
-use strata_merkle::{CompactMmr64, MerkleProof, Mmr, Sha256Hasher, error::MerkleError};
+use strata_merkle::{CompactMmr64, MerkleError, MerkleProof, Mmr, Sha256Hasher};
 
 /// Capacity of the ASM MMR as a power of 2.
 ///

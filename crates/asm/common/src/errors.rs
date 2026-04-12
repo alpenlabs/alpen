@@ -3,7 +3,7 @@ use borsh::io;
 pub use strata_asm_manifest_types::{AsmManifestError, AsmManifestResult, Mismatched};
 use strata_btc_verification::L1VerificationError;
 use strata_l1_txfmt::SubprotocolId;
-use strata_merkle::error::MerkleError;
+use strata_merkle::MerkleError;
 use thiserror::Error;
 
 use crate::aux::AuxError;

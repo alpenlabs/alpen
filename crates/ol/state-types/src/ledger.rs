@@ -18,8 +18,10 @@ impl TsnlLedgerAccountsTable {
     /// This reserves serials for system accounts with 0 values.
     pub fn new_empty() -> Self {
         Self {
-            accounts: Vec::new().into(),
-            serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize].into(),
+            accounts: Vec::new().try_into().expect("empty accounts should fit"),
+            serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize]
+                .try_into()
+                .expect("reserved serials should fit"),
         }
     }
 
@@ -101,7 +103,7 @@ impl TsnlLedgerAccountsTable {
         let entry = TsnlAccountEntry::new(id, acct_state);
         let mut accounts_vec: Vec<_> = self.accounts.iter().cloned().collect();
         accounts_vec.insert(insert_idx, entry);
-        self.accounts = accounts_vec.into();
+        self.accounts = accounts_vec.try_into().expect("accounts should fit");
 
         // Push new serial mapping
         self.serials.push(id).expect("serials list not full");

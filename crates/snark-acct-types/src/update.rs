@@ -12,7 +12,9 @@ impl UpdateStateData {
         Self {
             proof_state,
             // FIXME does this panic?
-            extra_data: extra_data.into(),
+            extra_data: extra_data
+                .try_into()
+                .expect("snark account extra data must fit within SSZ max length"),
         }
     }
 
@@ -30,7 +32,9 @@ impl UpdateInputData {
         Self {
             seq_no,
             // FIXME does this panic?
-            messages: messages.into(),
+            messages: messages
+                .try_into()
+                .expect("snark account messages must fit within SSZ max length"),
             update_state,
         }
     }
@@ -112,7 +116,9 @@ impl LedgerRefs {
     pub fn new(l1_header_refs: Vec<AccumulatorClaim>) -> Self {
         Self {
             // FIXME does this panic?
-            l1_header_refs: l1_header_refs.into(),
+            l1_header_refs: l1_header_refs
+                .try_into()
+                .expect("ledger refs must fit within SSZ max length"),
         }
     }
 
@@ -129,7 +135,9 @@ impl LedgerRefProofs {
     pub fn new(l1_headers_proofs: Vec<RawMerkleProof>) -> Self {
         Self {
             // FIXME does this panic?
-            l1_headers_proofs: l1_headers_proofs.into(),
+            l1_headers_proofs: l1_headers_proofs
+                .try_into()
+                .expect("ledger ref proofs must fit within SSZ max length"),
         }
     }
 
@@ -143,7 +151,9 @@ impl SnarkAccountUpdate {
         Self {
             operation,
             // FIXME does this panic?
-            update_proof: update_proof.into(),
+            update_proof: update_proof
+                .try_into()
+                .expect("update proof bytes must fit within SSZ max length"),
         }
     }
 
@@ -160,7 +170,9 @@ impl UpdateAccumulatorProofs {
     pub fn new(inbox_proofs: Vec<RawMerkleProof>, ledger_ref_proofs: LedgerRefProofs) -> Self {
         Self {
             // FIXME does this panic?
-            inbox_proofs: inbox_proofs.into(),
+            inbox_proofs: inbox_proofs
+                .try_into()
+                .expect("inbox proofs must fit within SSZ max length"),
             ledger_ref_proofs,
         }
     }

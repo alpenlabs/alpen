@@ -155,7 +155,9 @@ impl SauTxOperationData {
     ) -> Self {
         Self {
             update_data,
-            messages: messages.into(),
+            messages: messages
+                .try_into()
+                .expect("messages must fit within SSZ max length"),
             ledger_refs,
         }
     }
@@ -206,7 +208,9 @@ impl SauTxUpdateData {
         Self {
             seq_no,
             proof_state,
-            extra_data: extra_data.into(),
+            extra_data: extra_data
+                .try_into()
+                .expect("extra data must fit within SSZ max length"),
         }
     }
 
@@ -406,9 +410,13 @@ mod tests {
                             new_next_msg_idx: 0,
                             inner_state_root: [0u8; 32].into(),
                         },
-                        extra_data: vec![].into(),
+                        extra_data: Vec::new()
+                            .try_into()
+                            .expect("extra data must fit within SSZ max length"),
                     },
-                    messages: vec![].into(),
+                    messages: Vec::new()
+                        .try_into()
+                        .expect("messages must fit within SSZ max length"),
                     ledger_refs: SauTxLedgerRefs {
                         asm_history_proofs: ssz_types::Optional::None,
                     },
@@ -460,9 +468,13 @@ mod tests {
                                     new_next_msg_idx: 10,
                                     inner_state_root: [5u8; 32].into(),
                                 },
-                                extra_data: vec![].into(),
+                                extra_data: Vec::new()
+                                    .try_into()
+                                    .expect("extra data must fit within SSZ max length"),
                             },
-                            messages: vec![].into(),
+                            messages: Vec::new()
+                                .try_into()
+                                .expect("messages must fit within SSZ max length"),
                             ledger_refs: SauTxLedgerRefs {
                                 asm_history_proofs: ssz_types::Optional::None,
                             },

@@ -16,9 +16,12 @@ impl UpdateOutputs {
     /// Creates new update outputs.
     pub fn new(transfers: Vec<OutputTransfer>, messages: Vec<OutputMessage>) -> Self {
         Self {
-            // FIXME does this panic if the vecs are too large?
-            transfers: transfers.into(),
-            messages: messages.into(),
+            transfers: transfers
+                .try_into()
+                .expect("transfers should not exceed capacity"),
+            messages: messages
+                .try_into()
+                .expect("messages should not exceed capacity"),
         }
     }
 

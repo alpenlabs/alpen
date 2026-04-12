@@ -991,11 +991,11 @@ fn test_da_blob_size_limit() {
 }
 
 #[test]
-fn test_vk_size_truncates_to_predicate_limit() {
+fn test_vk_size_at_predicate_limit_roundtrips() {
     let mut da_state = DaAccumulatingState::new(TestState::new_with_serials(vec![]));
     let account_id = test_account_id(1);
-    let oversized_vk_len = MAX_CONDITION_LEN as usize + 10;
-    let snark_state = TestSnarkState::new(vec![0u8; oversized_vk_len]);
+    let vk_len = MAX_CONDITION_LEN as usize;
+    let snark_state = TestSnarkState::new(vec![0u8; vk_len]);
     let new_acct = NewAccountData::new(
         BitcoinAmount::from_sat(0),
         AccountTypeState::Snark(snark_state),
@@ -1012,13 +1012,17 @@ fn test_vk_size_truncates_to_predicate_limit() {
     assert_eq!(new_accounts.len(), 1);
     match &new_accounts[0].init.type_state {
         AccountTypeInit::Snark(init) => {
-            assert_eq!(
-                init.update_vk.as_slice().len(),
-                MAX_CONDITION_LEN as usize + 1
-            );
+            assert_eq!(init.update_vk.as_slice().len(), vk_len + 1);
         }
         _ => panic!("expected snark account init"),
     }
+}
+
+#[test]
+#[should_panic(expected = "valid length")]
+fn test_oversized_predicate_key_panics() {
+    let oversized_vk_len = MAX_CONDITION_LEN as usize + 1;
+    let _ = PredicateKey::new(PredicateTypeId::AlwaysAccept, vec![0u8; oversized_vk_len]);
 }
 
 #[test]

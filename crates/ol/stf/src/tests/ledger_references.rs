@@ -149,7 +149,9 @@ fn test_snark_update_with_invalid_ledger_reference() {
 
     // Create an invalid proof with wrong cohashes
     let invalid_proof = RawMerkleProof {
-        cohashes: vec![ssz_primitives::FixedBytes::<32>::from([0xff; 32])].into(),
+        cohashes: vec![ssz_primitives::FixedBytes::<32>::from([0xff; 32])]
+            .try_into()
+            .unwrap(),
     };
 
     // Create update with invalid ledger reference using SnarkUpdateBuilder
@@ -249,7 +251,9 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
                 // If no cohashes, add a bogus one
                 cohashes.push(ssz_primitives::FixedBytes::<32>::from([0xff; 32]));
             }
-            cohashes.into()
+            cohashes
+                .try_into()
+                .expect("Proof should not exceed capacity")
         },
     };
 

@@ -24,7 +24,11 @@ impl AsmLogEntry {
     ///
     /// This is the most basic constructor - logs are just bytes.
     pub fn from_raw(bytes: Vec<u8>) -> Self {
-        AsmLogEntry { data: bytes.into() }
+        AsmLogEntry {
+            data: bytes
+                .try_into()
+                .expect("ASM log entry bytes must fit within SSZ max length"),
+        }
     }
 
     /// Create an AsmLogEntry from SPS-52 message components.
@@ -33,7 +37,10 @@ impl AsmLogEntry {
     pub fn from_msg(ty: TypeId, body: Vec<u8>) -> AsmManifestResult<Self> {
         let owned_msg = OwnedMsg::new(ty, body)?;
         Ok(AsmLogEntry {
-            data: owned_msg.to_vec().into(),
+            data: owned_msg
+                .to_vec()
+                .try_into()
+                .map_err(|_| AsmManifestError::OverflowContainer("ASM log message bytes"))?,
         })
     }
 

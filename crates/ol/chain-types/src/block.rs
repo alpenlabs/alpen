@@ -266,7 +266,11 @@ mod tests {
 
         #[test]
         fn test_empty_segment() {
-            let segment = OLTxSegment { txs: vec![].into() };
+            let segment = OLTxSegment {
+                txs: Vec::new()
+                    .try_into()
+                    .expect("transactions must fit within SSZ max length"),
+            };
             let encoded = segment.as_ssz_bytes();
             let decoded = OLTxSegment::from_ssz_bytes(&encoded).unwrap();
             assert_eq!(segment, decoded);
@@ -338,7 +342,12 @@ mod tests {
         #[test]
         fn test_empty_body() {
             let body = OLBlockBody {
-                tx_segment: Some(OLTxSegment { txs: vec![].into() }).into(),
+                tx_segment: Some(OLTxSegment {
+                    txs: Vec::new()
+                        .try_into()
+                        .expect("transactions must fit within SSZ max length"),
+                })
+                .into(),
                 l1_update: Some(OLL1Update {
                     preseal_state_root: Buf32::zero(),
                     manifest_cont: OLL1ManifestContainer::new(vec![])
@@ -376,7 +385,12 @@ mod tests {
                     },
                 },
                 body: OLBlockBody {
-                    tx_segment: Some(OLTxSegment { txs: vec![].into() }).into(),
+                    tx_segment: Some(OLTxSegment {
+                        txs: Vec::new()
+                            .try_into()
+                            .expect("transactions must fit within SSZ max length"),
+                    })
+                    .into(),
                     l1_update: Some(OLL1Update {
                         preseal_state_root: Buf32::zero(),
                         manifest_cont: OLL1ManifestContainer::new(vec![])

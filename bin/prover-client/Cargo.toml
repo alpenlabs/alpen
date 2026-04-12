@@ -45,9 +45,9 @@ tracing.workspace = true
 sp1-sdk = { workspace = true, optional = true }
 sp1-verifier = { workspace = true, optional = true }
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }
-zkaleido-native-adapter.workspace = true
+zkaleido-native-adapter = { workspace = true, features = ["remote-prover"] }
 zkaleido-sp1-groth16-verifier = { workspace = true, optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc20", features = [
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
   "remote-prover",
 ], optional = true }
 

@@ -3,11 +3,11 @@
 //! This proof trait will be fully removed in the future.
 
 use strata_checkpoint_types::BatchInfo;
-use zkaleido::ZkVmEnv;
+use zkaleido::ZkVmEnvBorsh;
 
 pub mod program;
 
-pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnv) {
+pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnvBorsh) {
     let output: BatchInfo = zkvm.read_borsh();
     zkvm.commit_borsh(&output);
 }

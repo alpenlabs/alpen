@@ -8,13 +8,13 @@ pub mod utils;
 pub use primitives::{EvmBlockStfInput, EvmBlockStfOutput};
 use rsp_client_executor::io::EthClientExecutorInput;
 use utils::generate_exec_update;
-use zkaleido::ZkVmEnv;
+use zkaleido::{ZkVmEnvBorsh, ZkVmEnvSerde};
 
 use crate::executor::process_block;
 
 /// Processes a sequence of EL block transactions from the given `zkvm` environment, ensuring block
 /// hash continuity and committing the resulting updates.
-pub fn process_block_transaction_outer(zkvm: &impl ZkVmEnv) {
+pub fn process_block_transaction_outer(zkvm: &(impl ZkVmEnvBorsh + ZkVmEnvSerde)) {
     let num_blocks: u32 = zkvm.read_serde();
     assert!(num_blocks > 0, "At least one block is required.");
 

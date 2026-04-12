@@ -79,7 +79,9 @@ mod tests {
 
     fn claim_list_strategy() -> impl Strategy<Value = ClaimList> {
         prop::collection::vec(accumulator_claim_strategy(), 0..10).prop_map(|claims| ClaimList {
-            claims: claims.into(),
+            claims: claims
+                .try_into()
+                .expect("claims must fit within SSZ max length"),
         })
     }
 
@@ -89,28 +91,35 @@ mod tests {
                 .into_iter()
                 .map(|h| h.into())
                 .collect::<Vec<_>>()
-                .into(),
+                .try_into()
+                .expect("cohashes must fit within SSZ max length"),
         })
     }
 
     fn raw_merkle_proof_list_strategy() -> impl Strategy<Value = RawMerkleProofList> {
         prop::collection::vec(raw_merkle_proof_strategy(), 0..10).prop_map(|proofs| {
             RawMerkleProofList {
-                proofs: proofs.into(),
+                proofs: proofs
+                    .try_into()
+                    .expect("proofs must fit within SSZ max length"),
             }
         })
     }
 
     fn proof_satisfier_strategy() -> impl Strategy<Value = ProofSatisfier> {
         prop::collection::vec(any::<u8>(), 0..256).prop_map(|proof| ProofSatisfier {
-            proof: proof.into(),
+            proof: proof
+                .try_into()
+                .expect("proof bytes must fit within SSZ max length"),
         })
     }
 
     fn proof_satisfier_list_strategy() -> impl Strategy<Value = ProofSatisfierList> {
         prop::collection::vec(proof_satisfier_strategy(), 0..10).prop_map(|proofs| {
             ProofSatisfierList {
-                proofs: proofs.into(),
+                proofs: proofs
+                    .try_into()
+                    .expect("proof satisfiers must fit within SSZ max length"),
             }
         })
     }
