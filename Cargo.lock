@@ -1124,7 +1124,7 @@ dependencies = [
  "alloy-primitives",
  "alpen-ee-common",
  "alpen-reth-evm",
- "bitcoin-bosd",
+ "bitcoin-bosd 0.10.0",
  "eyre",
  "strata-acct-types",
  "strata-bridge-types",
@@ -2792,7 +2792,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2812,7 +2812,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2830,7 +2830,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2897,6 +2897,17 @@ dependencies = [
  "hex_lit",
  "secp256k1 0.29.1",
  "serde",
+]
+
+[[package]]
+name = "bitcoin-bosd"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94fb19ad225b5555a3c99796fe9c5d14b18eb0130eee5c39875bb642f173be6f"
+dependencies = [
+ "bitcoin",
+ "hex-conservative",
+ "secp256k1 0.29.1",
 ]
 
 [[package]]
@@ -3596,7 +3607,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -3690,9 +3701,9 @@ dependencies = [
 
 [[package]]
 name = "const-hex"
-version = "1.17.0"
+version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bb320cac8a0750d7f25280aa97b09c26edfe161164238ecbbb31092b079e735"
+checksum = "531185e432bb31db1ecda541e9e7ab21468d4d844ad7505e0546a49b4945d49b"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -4277,7 +4288,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.114",
 ]
 
 [[package]]
@@ -4561,7 +4572,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4874,7 +4885,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7415,7 +7426,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7581,7 +7592,7 @@ version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff32365de1b6743cb203b710788263c44a03de03802daf96092f2da4fe6ba4d7"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -8916,7 +8927,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12325,7 +12336,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12338,7 +12349,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12427,7 +12438,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs 0.26.11",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -14166,7 +14177,7 @@ dependencies = [
 name = "strata-asm-proto-checkpoint"
 version = "0.1.0"
 dependencies = [
- "bitcoin-bosd",
+ "bitcoin-bosd 0.10.0",
  "borsh",
  "ssz 0.15.0",
  "ssz_primitives 0.15.0",
@@ -14389,22 +14400,19 @@ dependencies = [
 [[package]]
 name = "strata-btc-types"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
 dependencies = [
  "arbitrary",
  "bitcoin",
- "bitcoin-bosd",
+ "bitcoin-bosd 0.9.0",
  "borsh",
  "num_enum 0.7.5",
- "proptest",
  "serde",
- "serde_json",
  "ssz 0.15.0",
  "ssz_derive 0.15.0",
  "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15)",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-test-utils",
- "strata-test-utils-ssz",
  "thiserror 2.0.18",
  "tree_hash 0.15.0",
 ]
@@ -14754,22 +14762,20 @@ dependencies = [
 [[package]]
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
 dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
  "hex",
  "musig2",
- "proptest",
  "rand 0.8.5",
  "secp256k1 0.29.1",
  "serde",
- "serde_json",
  "sha2",
  "ssz 0.15.0",
  "ssz_derive 0.15.0",
  "strata-identifiers",
- "strata-test-utils",
  "thiserror 2.0.18",
  "zeroize",
 ]
@@ -15134,9 +15140,9 @@ dependencies = [
 [[package]]
 name = "strata-identifiers"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
 dependencies = [
  "arbitrary",
- "bincode",
  "borsh",
  "const-hex",
  "hex",
@@ -15145,13 +15151,11 @@ dependencies = [
  "proptest",
  "schemars 1.2.0",
  "serde",
- "serde_json",
  "ssz 0.15.0",
  "ssz_derive 0.15.0",
  "ssz_primitives 0.15.0",
  "ssz_types 0.15.0",
  "strata-codec 0.1.0 (git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15)",
- "strata-test-utils-ssz",
  "tree_hash 0.15.0",
  "zeroize",
 ]
@@ -15745,7 +15749,7 @@ name = "strata-primitives"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
- "bitcoin-bosd",
+ "bitcoin-bosd 0.10.0",
  "borsh",
  "hex",
  "schemars 1.2.0",
@@ -16606,7 +16610,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
