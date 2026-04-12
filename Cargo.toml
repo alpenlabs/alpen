@@ -37,7 +37,6 @@ members = [
   "crates/asm/txs/test-utils",
   "crates/asm/txs/bridge-v1",
   "crates/asm/worker",
-  "crates/btc-types",
   "crates/btc-verification",
   "crates/btcio",
   "crates/chainexec",
@@ -52,7 +51,6 @@ members = [
   "crates/config",
   "crates/consensus-logic",
   "crates/csm-worker",
-  "crates/crypto",
   "crates/csm-types",
   "crates/da-framework",
   "crates/db/types",
@@ -65,7 +63,6 @@ members = [
   "crates/eectl",
   "crates/evm-ee",
   "crates/evmexec",
-  "crates/identifiers",
   "crates/key-derivation",
   "crates/ledger-types",
   "crates/mpt",
@@ -214,7 +211,6 @@ strata-asm-txs-checkpoint-v0 = { path = "crates/asm/txs/checkpoint-v0" }
 strata-asm-txs-test-utils = { path = "crates/asm/txs/test-utils" }
 strata-asm-worker = { path = "crates/asm/worker" }
 strata-bridge-types = { path = "crates/bridge-types" }
-strata-btc-types = { path = "crates/btc-types" }
 strata-btc-verification = { path = "crates/btc-verification" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
@@ -228,7 +224,6 @@ strata-codec-utils = { path = "crates/codec-utils" }
 strata-common = { path = "crates/common" }
 strata-config = { path = "crates/config" }
 strata-consensus-logic = { path = "crates/consensus-logic" }
-strata-crypto = { path = "crates/crypto", default-features = false }
 strata-csm-types = { path = "crates/csm-types" }
 strata-csm-worker = { path = "crates/csm-worker" }
 strata-da-framework = { path = "crates/da-framework" }
@@ -242,7 +237,6 @@ strata-ee-chunk-runtime = { path = "crates/ee-chunk-runtime" }
 strata-eectl = { path = "crates/eectl" }
 strata-evm-ee = { path = "crates/evm-ee" }
 strata-evmexec = { path = "crates/evmexec" }
-strata-identifiers = { path = "crates/identifiers" }
 strata-key-derivation = { path = "crates/key-derivation" }
 strata-ledger-types = { path = "crates/ledger-types" }
 strata-mpt = { path = "crates/mpt" }
@@ -296,10 +290,13 @@ strata-test-utils-ssz = { path = "crates/test-utils/ssz" }
 strata-zkvm-hosts = { path = "crates/zkvm/hosts" }
 
 # strata-common
+strata-btc-types = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
 strata-codec = { git = "https://github.com/alpenlabs/strata-common", features = [
   "derive",
 ], tag = "v0.1.0-alpha-rc15" }
 strata-codec-tests = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
+strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
