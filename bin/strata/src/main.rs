@@ -67,22 +67,9 @@ fn main() -> Result<()> {
     // Check for db consistency, external rpc clients reachable, etc.
     run_startup_checks(&nodectx)?;
 
-    // Extract the envelope pubkey from rollup params.
-    #[cfg(feature = "sequencer")]
-    let envelope_pubkey = if nodectx.config().client.is_sequencer {
-        let key = nodectx
-            .params()
-            .rollup
-            .cred_rule
-            .schnorr_key()
-            .ok_or_else(|| anyhow!("sequencer requires CredRule::SchnorrKey, got Unchecked"))?;
-        Some(key.0)
-    } else {
-        None
-    };
-
-    #[cfg(not(feature = "sequencer"))]
-    let envelope_pubkey: Option<[u8; 32]> = None;
+    // Extract the envelope pubkey from rollup params if configured.
+    let envelope_pubkey: Option<[u8; 32]> =
+        nodectx.params().rollup.cred_rule.schnorr_key().map(|k| k.0);
 
     // Start services, and do genesis if necessary.
     let (runctx, proof_notify) = start_strata_services(nodectx, envelope_pubkey)?;

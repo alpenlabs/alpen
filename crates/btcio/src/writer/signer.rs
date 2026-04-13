@@ -7,7 +7,10 @@ use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{
-    builder::{attach_reveal_signature, build_envelope_txs, EnvelopeData, EnvelopeError},
+    builder::{
+        attach_reveal_signature, build_and_sign_envelope_txs, build_envelope_txs, EnvelopeData,
+        EnvelopeError,
+    },
     context::WriterContext,
 };
 use crate::broadcaster::L1BroadcastHandle;
@@ -46,6 +49,45 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
 
         info!(%commit_txid, sighash = %envelope.sighash, "envelope built, commit signed");
         Ok(envelope)
+    }
+    .instrument(span)
+    .await
+}
+
+/// Builds envelope transactions, signs both in-process with a temporary keypair, and stores
+/// them in the broadcaster DB.
+///
+/// Used when `CredRule::Unchecked` is configured — no external signer is needed.
+/// Returns `(commit_txid, reveal_txid)`.
+pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wallet>(
+    payload_idx: u64,
+    payloadentry: &BundledPayloadEntry,
+    ctx: Arc<WriterContext<R>>,
+    broadcast_handle: &L1BroadcastHandle,
+) -> Result<(Buf32, Buf32), EnvelopeError> {
+    let span = debug_span!(
+        "btcio_payload_envelope_unchecked",
+        component = "btcio_writer_signer",
+        payload_idx,
+    );
+
+    async {
+        let envelope = build_and_sign_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
+
+        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        broadcast_handle
+            .put_tx_entry(cid, L1TxEntry::from_tx(&envelope.commit_tx))
+            .await
+            .map_err(|e| EnvelopeError::Other(e.into()))?;
+
+        let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+        broadcast_handle
+            .put_tx_entry(rid, L1TxEntry::from_tx(&envelope.reveal_tx))
+            .await
+            .map_err(|e| EnvelopeError::Other(e.into()))?;
+
+        info!(%cid, reveal_txid = %rid, "envelope signed and stored for broadcast");
+        Ok((cid, rid))
     }
     .instrument(span)
     .await
@@ -141,5 +183,40 @@ mod test {
 
         // Sighash should be non-zero
         assert_ne!(envelope.sighash, Buf32::zero());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sign_and_broadcast_payload_envelopes() {
+        let iops = get_envelope_ops();
+        let bcast_handle = get_broadcast_handle();
+        let ctx = get_writer_context();
+
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
+        let entry = BundledPayloadEntry::new_unsigned(payload);
+
+        iops.put_payload_entry_async(0, entry.clone())
+            .await
+            .unwrap();
+
+        let (cid, rid) = sign_and_broadcast_payload_envelopes(0, &entry, ctx, &bcast_handle)
+            .await
+            .unwrap();
+
+        // Both txids should be non-zero
+        assert_ne!(cid, Buf32::zero());
+        assert_ne!(rid, Buf32::zero());
+
+        // Both commit and reveal should be stored in broadcaster DB immediately
+        assert!(bcast_handle
+            .get_tx_entry_by_id_async(cid)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(bcast_handle
+            .get_tx_entry_by_id_async(rid)
+            .await
+            .unwrap()
+            .is_some());
     }
 }

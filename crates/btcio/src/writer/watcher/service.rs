@@ -21,7 +21,10 @@ use crate::{
     writer::{
         builder::{EnvelopeData, EnvelopeError},
         context::WriterContext,
-        signer::{complete_reveal_and_broadcast, create_payload_envelopes},
+        signer::{
+            complete_reveal_and_broadcast, create_payload_envelopes,
+            sign_and_broadcast_payload_envelopes,
+        },
     },
 };
 
@@ -37,11 +40,19 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         idx: u64,
         entry: BundledPayloadEntry,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    /// Returns `true` when the node is configured with an external signer
+    /// (`CredRule::SchnorrKey`). When `false`, the watcher signs in-process.
+    fn needs_external_signing(&self) -> bool;
     fn create_envelopes(
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
     ) -> impl Future<Output = Result<EnvelopeData, EnvelopeError>> + Send;
+    fn sign_and_broadcast(
+        &self,
+        idx: u64,
+        entry: &BundledPayloadEntry,
+    ) -> impl Future<Output = Result<(Buf32, Buf32), EnvelopeError>> + Send;
     fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
@@ -96,12 +107,30 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             .map_err(Into::into)
     }
 
+    fn needs_external_signing(&self) -> bool {
+        self.context.envelope_pubkey.is_some()
+    }
+
     async fn create_envelopes(
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
     ) -> Result<EnvelopeData, EnvelopeError> {
         create_payload_envelopes(idx, entry, self.context.clone()).await
+    }
+
+    async fn sign_and_broadcast(
+        &self,
+        idx: u64,
+        entry: &BundledPayloadEntry,
+    ) -> Result<(Buf32, Buf32), EnvelopeError> {
+        sign_and_broadcast_payload_envelopes(
+            idx,
+            entry,
+            self.context.clone(),
+            &self.broadcast_handle,
+        )
+        .await
     }
 
     async fn complete_reveal_and_broadcast(
@@ -213,47 +242,75 @@ impl<C: WatcherServiceContext> AsyncService for WatcherService<C> {
 }
 
 impl<C: WatcherServiceContext> WatcherState<C> {
-    /// Builds envelope txs and transitions to `PendingRevealTxSign`.
+    /// Builds envelope txs and transitions to `PendingRevealTxSign` or `Unpublished`.
     ///
-    /// Signs the commit tx via wallet and caches the envelope. The reveal tx
-    /// awaits an external Schnorr signature before broadcast.
+    /// When an external signer is configured (`needs_external_signing`), signs the commit tx
+    /// via wallet, caches the envelope, and waits for the reveal signature via RPC.
+    /// When no external signer is needed (`CredRule::Unchecked`), signs both in-process
+    /// and transitions directly to `Unpublished`.
     async fn handle_unsigned_or_needs_resign(
         &mut self,
         payloadentry: BundledPayloadEntry,
     ) -> anyhow::Result<()> {
         debug!(current_status=?payloadentry.status);
-        match self
-            .ctx
-            .create_envelopes(self.curr_payloadidx, &payloadentry)
-            .await
-        {
-            Ok(envelope) => {
-                let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
-                let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
-                let sighash = envelope.sighash;
 
-                let mut updated_entry = payloadentry.clone();
-                updated_entry.commit_txid = cid;
-                updated_entry.reveal_txid = rid;
-                updated_entry.payload_signature = None;
-                updated_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
-                self.ctx
-                    .put_payload_entry(self.curr_payloadidx, updated_entry)
-                    .await?;
+        if self.ctx.needs_external_signing() {
+            match self
+                .ctx
+                .create_envelopes(self.curr_payloadidx, &payloadentry)
+                .await
+            {
+                Ok(envelope) => {
+                    let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+                    let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+                    let sighash = envelope.sighash;
 
-                self.envelope_cache.insert(self.curr_payloadidx, envelope);
+                    let mut updated_entry = payloadentry.clone();
+                    updated_entry.commit_txid = cid;
+                    updated_entry.reveal_txid = rid;
+                    updated_entry.payload_signature = None;
+                    updated_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
+                    self.ctx
+                        .put_payload_entry(self.curr_payloadidx, updated_entry)
+                        .await?;
 
-                debug!(%sighash, "envelope built, awaiting signer");
+                    self.envelope_cache.insert(self.curr_payloadidx, envelope);
+
+                    debug!(%sighash, "envelope built, awaiting signer");
+                }
+                Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
+                    error!(%required, %available, "not enough utxos to create commit/reveal transaction");
+                }
+                e => {
+                    e?;
+                }
             }
-            Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
-                // Just wait till we have enough utxos and let the status be
-                // `Unsigned` or `NeedsResign`
-                error!(%required, %available, "not enough utxos to create commit/reveal transaction");
-            }
-            e => {
-                e?;
+        } else {
+            match self
+                .ctx
+                .sign_and_broadcast(self.curr_payloadidx, &payloadentry)
+                .await
+            {
+                Ok((cid, rid)) => {
+                    let mut updated_entry = payloadentry.clone();
+                    updated_entry.commit_txid = cid;
+                    updated_entry.reveal_txid = rid;
+                    updated_entry.status = L1BundleStatus::Unpublished;
+                    self.ctx
+                        .put_payload_entry(self.curr_payloadidx, updated_entry)
+                        .await?;
+
+                    debug!(%cid, reveal_txid = %rid, "envelope signed and queued for broadcast");
+                }
+                Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
+                    error!(%required, %available, "not enough utxos to create commit/reveal transaction");
+                }
+                e => {
+                    e?;
+                }
             }
         }
+
         Ok(())
     }
 
@@ -399,5 +456,237 @@ pub(crate) fn determine_payload_next_status(
         // If reveal has invalid inputs, these need resign because we can do nothing with just
         // commit tx confirmed. This should not occur in practice
         (_, L1TxStatus::InvalidInputs) => L1BundleStatus::NeedsResign,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+
+    use bitcoin::{
+        absolute::LockTime,
+        blockdata::{opcodes, script::Builder as ScriptBuilder},
+        hashes::Hash,
+        key::UntweakedKeypair,
+        secp256k1::{XOnlyPublicKey, SECP256K1},
+        taproot::TaprootBuilder,
+        transaction::Version,
+        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    };
+    use strata_csm_types::L1Payload;
+    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry};
+    use strata_l1_txfmt::TagData;
+    use strata_primitives::buf::{Buf32, Buf64};
+
+    use super::*;
+    use crate::{
+        broadcaster::L1BroadcastHandle,
+        writer::{
+            builder::{EnvelopeData, EnvelopeError},
+            signer::complete_reveal_and_broadcast,
+            test_utils::get_broadcast_handle,
+        },
+    };
+
+    fn minimal_envelope_data() -> EnvelopeData {
+        let keypair =
+            UntweakedKeypair::from_seckey_slice(SECP256K1, &[1u8; 32]).expect("valid key");
+        let pubkey = XOnlyPublicKey::from_keypair(&keypair).0;
+        // A single OP_TRUE leaf so control_block lookup succeeds in attach_reveal_signature
+        let reveal_script = ScriptBuilder::new()
+            .push_opcode(opcodes::OP_TRUE)
+            .into_script();
+        let taproot_spend_info = TaprootBuilder::new()
+            .add_leaf(0, reveal_script.clone())
+            .expect("valid leaf")
+            .finalize(SECP256K1, pubkey)
+            .expect("valid taproot");
+        let dummy_input = TxIn {
+            previous_output: OutPoint {
+                txid: Txid::all_zeros(),
+                vout: 0,
+            },
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::MAX,
+            witness: Witness::new(),
+        };
+        let commit_tx = Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![dummy_input.clone()],
+            output: vec![TxOut {
+                value: Amount::from_sat(1000),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+        let reveal_tx = Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![dummy_input],
+            output: vec![TxOut {
+                value: Amount::from_sat(546),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        };
+        EnvelopeData::new(
+            commit_tx,
+            reveal_tx,
+            Buf32([42u8; 32]),
+            reveal_script,
+            taproot_spend_info,
+        )
+    }
+
+    struct MockWatcherContext {
+        stored: Mutex<HashMap<u64, BundledPayloadEntry>>,
+        broadcast_handle: Arc<L1BroadcastHandle>,
+        external_signing: bool,
+    }
+
+    impl MockWatcherContext {
+        fn new(external_signing: bool) -> Self {
+            Self {
+                stored: Mutex::new(HashMap::new()),
+                broadcast_handle: get_broadcast_handle(),
+                external_signing,
+            }
+        }
+
+        fn get_stored(&self, idx: u64) -> Option<BundledPayloadEntry> {
+            self.stored.lock().unwrap().get(&idx).cloned()
+        }
+    }
+
+    impl WatcherServiceContext for MockWatcherContext {
+        async fn get_payload_entry(&self, idx: u64) -> anyhow::Result<Option<BundledPayloadEntry>> {
+            Ok(self.stored.lock().unwrap().get(&idx).cloned())
+        }
+
+        async fn put_payload_entry(
+            &self,
+            idx: u64,
+            entry: BundledPayloadEntry,
+        ) -> anyhow::Result<()> {
+            self.stored.lock().unwrap().insert(idx, entry);
+            Ok(())
+        }
+
+        fn needs_external_signing(&self) -> bool {
+            self.external_signing
+        }
+
+        async fn create_envelopes(
+            &self,
+            _idx: u64,
+            _entry: &BundledPayloadEntry,
+        ) -> Result<EnvelopeData, EnvelopeError> {
+            Ok(minimal_envelope_data())
+        }
+
+        async fn sign_and_broadcast(
+            &self,
+            _idx: u64,
+            _entry: &BundledPayloadEntry,
+        ) -> Result<(Buf32, Buf32), EnvelopeError> {
+            Ok((Buf32([1u8; 32]), Buf32([2u8; 32])))
+        }
+
+        async fn complete_reveal_and_broadcast(
+            &self,
+            idx: u64,
+            envelope: &EnvelopeData,
+            sig: &[u8; 64],
+        ) -> anyhow::Result<Buf32> {
+            complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
+                .await
+                .map_err(Into::into)
+        }
+
+        async fn get_tx_status(&self, _txid: Buf32) -> anyhow::Result<Option<L1TxEntry>> {
+            Ok(None)
+        }
+
+        async fn report_status(&self, _entry: &BundledPayloadEntry, _status: &L1BundleStatus) {}
+    }
+
+    fn test_unsigned_entry() -> BundledPayloadEntry {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
+        BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    #[tokio::test]
+    async fn test_unchecked_transitions_to_unpublished() {
+        let ctx = MockWatcherContext::new(false);
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unpublished);
+        assert_eq!(stored.commit_txid, Buf32([1u8; 32]));
+        assert_eq!(stored.reveal_txid, Buf32([2u8; 32]));
+        // No cache entry — ephemeral path does not use the envelope cache
+        assert!(state.envelope_cache.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_schnorr_key_transitions_to_pending_reveal_sign() {
+        let ctx = MockWatcherContext::new(true);
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        // Status should carry the sighash from minimal_envelope_data
+        assert!(
+            matches!(stored.status, L1BundleStatus::PendingRevealTxSign(s) if s == Buf32([42u8; 32]))
+        );
+        // Envelope is cached for the reveal sig step
+        assert!(state.envelope_cache.contains_key(&0));
+    }
+
+    #[tokio::test]
+    async fn test_schnorr_key_reveal_sig_transitions_to_unpublished() {
+        let ctx = MockWatcherContext::new(true);
+        let bcast_handle = ctx.broadcast_handle.clone();
+
+        let envelope = minimal_envelope_data();
+        let commit_txid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        let reveal_txid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+
+        // Set up entry already in PendingRevealTxSign with a signature present
+        let mut entry = test_unsigned_entry();
+        entry.status = L1BundleStatus::PendingRevealTxSign(Buf32([42u8; 32]));
+        entry.payload_signature = Some(Buf64([1u8; 64]));
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.envelope_cache.insert(0, envelope);
+
+        state.handle_pending_reveal_tx_sign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unpublished);
+        // Cache entry consumed
+        assert!(!state.envelope_cache.contains_key(&0));
+        // Both txs stored in broadcaster DB
+        assert!(bcast_handle
+            .get_tx_entry_by_id_async(commit_txid)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(bcast_handle
+            .get_tx_entry_by_id_async(reveal_txid)
+            .await
+            .unwrap()
+            .is_some());
     }
 }

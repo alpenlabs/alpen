@@ -155,14 +155,7 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<EnvelopeData> {
-    let network = ctx.client.network().await?;
-    let utxos = ctx
-        .client
-        .list_unspent(None, None, None, None, None)
-        .await?
-        .0;
-
-    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref()).await?;
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
     let envelope_pubkey = ctx
         .envelope_pubkey
         .ok_or_else(|| anyhow::anyhow!("envelope_pubkey is required for envelope transactions"))?;
@@ -176,6 +169,64 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     );
     create_envelope_transactions(&env_config, payload, utxos)
         .map_err(|e| anyhow::anyhow!(e.to_string()))
+}
+
+/// Builds envelope transactions using a temporary keypair and signs both commit and reveal
+/// in-process.
+///
+/// Used when `CredRule::Unchecked` is configured — no external signer is needed.
+pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
+    payload: &L1Payload,
+    ctx: &WriterContext<R>,
+) -> anyhow::Result<EnvelopeData> {
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
+    let keypair = generate_key_pair()?;
+    let pubkey = XOnlyPublicKey::from_keypair(&keypair).0;
+    let env_config = EnvelopeConfig::new(
+        ctx.btcio_params.magic_bytes(),
+        ctx.sequencer_address.clone(),
+        network,
+        fee_rate,
+        BITCOIN_DUST_LIMIT,
+        Some(pubkey),
+    );
+    let mut envelope = create_envelope_transactions(&env_config, payload, utxos)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    let signed_commit = ctx
+        .client
+        .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
+        .await?
+        .tx;
+    envelope.commit_tx = signed_commit;
+
+    let output_to_reveal = envelope.commit_tx.output[0].clone();
+    sign_reveal_transaction(
+        &mut envelope.reveal_tx,
+        &output_to_reveal,
+        &envelope.reveal_script,
+        &envelope.taproot_spend_info,
+        &keypair,
+    )?;
+
+    Ok(envelope)
+}
+
+/// Fetches the shared prerequisites for building envelope transactions.
+async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
+    ctx: &WriterContext<R>,
+) -> anyhow::Result<(Network, Vec<ListUnspentItem>, u64)> {
+    let network = ctx.client.network().await?;
+    let utxos = ctx
+        .client
+        .list_unspent(None, None, None, None, None)
+        .await?
+        .0;
+    let fee_rate = match ctx.config.fee_policy {
+        FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
+        FeePolicy::Fixed(val) => val,
+    };
+    Ok((network, utxos, fee_rate))
 }
 
 /// Builds unsigned envelope transactions (commit + reveal) and computes the sighash.
