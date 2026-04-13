@@ -8,7 +8,6 @@ use jsonrpsee::core::RpcResult;
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_txs_bridge_v1::BRIDGE_V1_SUBPROTOCOL_ID;
 use strata_asm_txs_checkpoint_v0::{CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE};
-use strata_ol_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_btcio::{broadcaster::L1BroadcastHandle, writer::EnvelopeHandle};
 use strata_checkpoint_types::{Checkpoint, EpochSummary, SignedCheckpoint};
 #[cfg(feature = "debug-utils")]
@@ -21,6 +20,7 @@ use strata_db_types::types::{
     CheckpointConfStatus, CheckpointProvingStatus, L1TxEntry, L1TxStatus,
 };
 use strata_l1_txfmt::TagData;
+use strata_ol_bridge_types::{PublickeyTable, WithdrawalIntent};
 use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::Params;

@@ -1,7 +1,6 @@
 use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
-use strata_ol_bridge_types::OperatorSelection;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::DecodedEeMessageData;
 use strata_ee_chain_types::{
@@ -9,6 +8,7 @@ use strata_ee_chain_types::{
     SubjectDepositData,
 };
 use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
+use strata_ol_bridge_types::OperatorSelection;
 use strata_ol_msg_types::{WithdrawalMsgData, DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID};
 use strata_snark_acct_runtime::InputMessage;
 use tracing::warn;

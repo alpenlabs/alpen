@@ -1,8 +1,8 @@
 use bitcoin::ScriptBuf;
 use strata_asm_common::TxInputRef;
-use strata_ol_bridge_types::WithdrawalIntent;
 use strata_checkpoint_types::{Checkpoint, SignedCheckpoint};
 use strata_l1_envelope_fmt::parser::parse_envelope_payload;
+use strata_ol_bridge_types::WithdrawalIntent;
 use strata_ol_chainstate_types::Chainstate;
 
 use crate::errors::{CheckpointTxError, CheckpointTxResult};

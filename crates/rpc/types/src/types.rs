@@ -7,7 +7,6 @@
 use bitcoin::{BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_bridge_v1::DepositEntry;
-use strata_ol_bridge_types::{OperatorBitmap, WithdrawalIntent};
 use strata_btc_types::{Buf32BitcoinExt, L1BlockIdBitcoinExt};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
@@ -16,6 +15,7 @@ use strata_csm_types::{CheckpointL1Ref, L1Status};
     reason = "legacy old code CheckpointConfStatus and CheckpointEntry are retained for compatibility"
 )]
 use strata_db_types::types::{CheckpointConfStatus, CheckpointEntry};
+use strata_ol_bridge_types::{OperatorBitmap, WithdrawalIntent};
 use strata_ol_chain_types::L2BlockId;
 pub use strata_primitives::serde_helpers::serde_hex_bytes::{HexBytes, HexBytes32, HexBytes64};
 use strata_primitives::{

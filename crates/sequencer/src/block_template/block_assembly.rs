@@ -1,10 +1,15 @@
 use std::{thread, time};
 
-use strata_asm_common::AsmManifest;
-use strata_asm_logs::{constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE, CheckpointTipUpdate};
+use strata_asm_common::{AsmLog, AsmManifest};
+use strata_asm_logs::{
+    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
+    CheckpointTipUpdate,
+};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::{context::StateAccessor, transition::process_block};
-use strata_checkpoint_types::Checkpoint;
+use strata_checkpoint_types::{BatchInfo, Checkpoint};
+use strata_codec::Codec;
+use strata_codec_utils::CodecSsz;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -21,7 +26,7 @@ use strata_ol_chain_types::{
 };
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};
-use strata_primitives::{buf::Buf32, L1Height};
+use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l1::BitcoinTxid, L1Height};
 use strata_state::exec_update::construct_ops_from_deposit_intents;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
@@ -262,12 +267,34 @@ fn prepare_l1_segment(
     }
 }
 
+/// Compatibility decoder for legacy checkpoint-v0 logs.
+///
+/// The upstream ASM logs crate no longer exports this type, but we still
+/// decode it here to preserve checkpoint-v0 ingestion during migration.
+#[derive(Debug, Clone, Codec)]
+struct CheckpointUpdate {
+    epoch_commitment: CodecSsz<EpochCommitment>,
+    batch_info: CodecSsz<BatchInfo>,
+    checkpoint_txid: CodecSsz<BitcoinTxid>,
+}
+
+impl AsmLog for CheckpointUpdate {
+    const TY: strata_msg_fmt::TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
+}
+
 /// Check if ASM manifest has the checkpoint acknowledgment we are expecting.
 fn has_expected_checkpoint(
     manifest: &AsmManifest,
     expected_checkpoint: Option<&Checkpoint>,
     _params: &RollupParams,
 ) -> bool {
+    // Must have expected checkpoint.
+    // Can be None before first checkpoint creation, where we dont care about this.
+    let Some(expected) = expected_checkpoint else {
+        return false;
+    };
+    let expected_epoch = expected.batch_info().epoch();
+
     // Look for checkpoint ack logs in the ASM manifest
     for log in manifest.logs() {
         // Try to parse as SPS-52 message
@@ -275,31 +302,32 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        // Check if this is a checkpoint ack log.
-        if msg.ty() != CHECKPOINT_TIP_UPDATE_LOG_TYPE {
-            continue;
-        }
-
-        // Try to decode checkpoint ack data
-        let Ok(ack_data) = log.try_into_log::<CheckpointTipUpdate>() else {
-            warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
-            continue;
-        };
-
-        // Must have expected checkpoint.
-        // Can be None before first checkpoint creation, where we dont care about this.
-        let Some(expected) = expected_checkpoint else {
-            continue;
-        };
-
-        // Check if the ack epoch matches our expected checkpoint
-        if ack_data.tip().epoch == expected.batch_info().epoch() {
-            // Found checkpoint ack for expected epoch. Should end current epoch.
-            debug!(
-                epoch = ack_data.tip().epoch,
-                "found checkpoint ack in ASM manifest"
-            );
-            return true;
+        match msg.ty() {
+            CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
+                let Ok(ack_data) = log.try_into_log::<CheckpointTipUpdate>() else {
+                    warn!(blockid = %manifest.blkid(), "failed to decode checkpoint tip update log");
+                    continue;
+                };
+                if ack_data.tip().epoch == expected_epoch {
+                    debug!(
+                        epoch = ack_data.tip().epoch,
+                        "found checkpoint ack in ASM manifest"
+                    );
+                    return true;
+                }
+            }
+            CHECKPOINT_UPDATE_LOG_TYPE => {
+                let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
+                    warn!(blockid = %manifest.blkid(), "failed to decode checkpoint update log");
+                    continue;
+                };
+                let epoch = ack_data.batch_info.inner().epoch();
+                if epoch == expected_epoch {
+                    debug!(epoch, "found checkpoint ack in ASM manifest");
+                    return true;
+                }
+            }
+            _ => {}
         }
     }
 
