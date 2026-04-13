@@ -7,19 +7,11 @@ edition = "2021"
 workspace = true
 
 [dependencies]
-# Strata service framework
+strata-prover-core.workspace = true
 strata-service.workspace = true
 strata-tasks.workspace = true
 
 anyhow.workspace = true
-async-trait.workspace = true
-borsh.workspace = true
 serde.workspace = true
-thiserror.workspace = true
-tokio = { workspace = true, features = ["sync", "time", "macros"] }
+tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
-uuid = { version = "1.11", features = ["v4", "serde"] }
-zkaleido = { workspace = true, features = ["remote-prover"] }
-
-[dev-dependencies]
-serde_json.workspace = true
