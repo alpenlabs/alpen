@@ -23,6 +23,7 @@ from common.datatool import (
     generate_asm_params,
     generate_ol_params,
     generate_rollup_params,
+    generate_rollup_params_unchecked,
 )
 from common.services import StrataProps, StrataService
 
@@ -57,6 +58,7 @@ class StrataFactory(flexitest.Factory):
         config_overrides: dict[str, object] | None = None,
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
+        use_unchecked_cred_rule: bool = False,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -69,6 +71,7 @@ class StrataFactory(flexitest.Factory):
             config_overrides: Additional config overrides (-o flag)
             ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
+            use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -102,7 +105,10 @@ class StrataFactory(flexitest.Factory):
                 f.write(sequencer_runtime_config.as_toml_string())
 
         # Generate rollup params via datatool (also produces keys used below).
-        params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
+        if use_unchecked_cred_rule:
+            params_data = generate_rollup_params_unchecked(datadir, bconfig, genesis_l1_height)
+        else:
+            params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
 
         # Generate or write OL params.
         if ol_params is not None:

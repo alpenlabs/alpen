@@ -5,7 +5,7 @@ from pathlib import Path
 
 from common.config.config import BitcoindConfig
 
-DEFAULT_OL_BLOCK_TIME_MS = 5_000
+DEFAULT_OL_BLOCK_TIME_MS = 1_000
 
 
 def run_datatool(
@@ -77,7 +77,7 @@ def get_operator_xprivs(datadir, operator_fname) -> list[str]:
 @dataclass
 class RollupParamsArtifacts:
     params_path: Path
-    sequencer_key_path: Path
+    sequencer_key_path: Path | None
     operator_keys: list[str]
 
 
@@ -96,6 +96,46 @@ def write_sequencer_runtime_config(
         )
     )
     return config_path
+
+
+def generate_rollup_params_unchecked(
+    datadir: Path,
+    bconfig: BitcoindConfig,
+    genesis_l1_height: int,
+    seq_fname: str = "sequencer_root_key",
+) -> RollupParamsArtifacts:
+    """Generates rollup params with ``CredRule::Unchecked``.
+
+    A sequencer key is generated for the signer to load (so it can fulfill
+    block signing duties), but the key is NOT embedded in the rollup params,
+    keeping the cred rule as ``Unchecked``.  ``SignRevealTx`` duties are
+    handled in-process and never reach the signer.
+    """
+    sequencer_key_path = datadir / seq_fname
+    ensure_priv_key(sequencer_key_path)
+    operator_xprivs = get_operator_xprivs(datadir, "bridge-operator_keys")
+    params_path = datadir / "rollup-params.json"
+
+    args = [
+        "genparams",
+        "--checkpoint-predicate",
+        "always-accept",
+        "--name",
+        "ALPN",
+        "--genesis-l1-height",
+        str(genesis_l1_height),
+        "-o",
+        str(params_path),
+    ]
+    for opkey in operator_xprivs:
+        args.extend(["--opkey", opkey])
+
+    run_datatool(args, bconfig)
+    return RollupParamsArtifacts(
+        params_path=params_path,
+        sequencer_key_path=sequencer_key_path,
+        operator_keys=operator_xprivs,
+    )
 
 
 def generate_rollup_params(
