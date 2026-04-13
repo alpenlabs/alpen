@@ -33,7 +33,7 @@ pub struct WriterConfig {
 }
 
 /// Definition of how fees are determined while creating l1 transactions.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FeePolicy {
     /// Use mempool explorer recommended fees endpoint.
