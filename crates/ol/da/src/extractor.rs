@@ -1,7 +1,7 @@
 //! Checkpoint transaction extraction helpers for OL DA payload consumption.
 
 use strata_checkpoint_types_ssz::TerminalHeaderComplement;
-use strata_identifiers::CheckpointL1Ref;
+use strata_csm_types::CheckpointL1Ref;
 
 use crate::{DaExtractorResult, OLDaPayloadV1};
 

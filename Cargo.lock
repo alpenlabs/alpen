@@ -15350,6 +15350,7 @@ dependencies = [
  "strata-asm-txs-checkpoint",
  "strata-checkpoint-types-ssz",
  "strata-codec",
+ "strata-csm-types",
  "strata-da-framework",
  "strata-identifiers",
  "strata-l1-txfmt",

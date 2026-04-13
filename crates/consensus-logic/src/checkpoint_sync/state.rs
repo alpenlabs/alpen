@@ -202,10 +202,11 @@ mod tests {
     use strata_btc_types::GenesisL1View;
     use strata_chain_worker_new::FinalizedCkptPayload;
     use strata_checkpoint_types::EpochSummary;
+    use strata_csm_types::CheckpointL1Ref;
     use strata_csm_worker::CsmWorkerStatus;
     use strata_db_types::DbResult;
     use strata_identifiers::{
-        Buf32, CheckpointL1Ref, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+        Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
     };
     use strata_l1_txfmt::MagicBytes;
     use strata_params::{CredRule, ProofPublishMode, RollupParams};

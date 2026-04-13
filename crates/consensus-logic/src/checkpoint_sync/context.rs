@@ -8,9 +8,10 @@ use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
 use strata_btc_types::{Buf32BitcoinExt, RawBitcoinTx};
 use strata_chain_worker_new::{ChainWorkerHandle, FinalizedCkptPayload};
 use strata_checkpoint_types::EpochSummary;
+use strata_csm_types::CheckpointL1Ref;
 use strata_csm_worker::CsmWorkerStatus;
 use strata_db_types::DbResult;
-use strata_identifiers::{CheckpointL1Ref, Epoch};
+use strata_identifiers::Epoch;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_da::{
     decode_ol_da_payload_bytes, DAExtractor, DaExtractorError, DaExtractorResult, ExtractedDA,
