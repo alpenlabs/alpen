@@ -76,7 +76,7 @@ This repository is composed of:
 - `bin/`: binary crates for various clients and CLIs
 - `crates/`: library crates, provides types and functionalities
 - `docker/`: supporting files for our dockerized applications
-- `functional-tests/`: end-to-end tests for various scenarios
+- `functional-tests/`: end-to-end functional tests
 - `provers/`: libraries and binaries related to zero-knowledge proofs
 - `tests/`: integration tests
 

@@ -75,7 +75,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build Cargo project
-        run: cargo build --locked -F debug-utils
+        run: cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-datatool --bin strata-test-cli
 
       - name: Run basic env in fntests
         env:
@@ -85,10 +85,10 @@ jobs:
           sudo apt-get install -y screen
           NEWPATH="$(realpath target/debug/)"
           export PATH="${NEWPATH}:${PATH}"
-          which strata-client
+          which strata
           cd functional-tests
-          screen -dmS basic_env uv run python entry.py -e basic
-          sleep 15  # Wait for the service to start
+          screen -dmS basic_env uv run python entry.py --keep-alive basic
+          sleep 20  # Wait for the service to start
 
       - name: Run tests
         id: runtests

@@ -1,210 +1,351 @@
 #!/usr/bin/env python3
-from gevent import monkey
+"""
+Functional test runner.
 
-# This is important for locust to work with flexitest.
-# Because of this line, ruff linter is disabled for the whole file :(
-# Currently, it's not possible to disable ruff for the block of code.
-monkey.patch_all()
+Usage:
+    ./entry.py                          # Run all tests
+    ./entry.py -t test_node_version     # Run specific test
+    ./entry.py -t tests/test_node_version.py  # Run specific test by path
+    ./entry.py tests/test_node_version.py     # Run specific test (positional)
+    ./entry.py -g bridge                # Run test group (directory-based)
+    ./entry.py -e basic                 # Keep-alive mode for debugging
+    ./entry.py --list                   # List all tests
+"""
 
 import argparse
-import json
+import logging
 import os
 import sys
-import types
 
 import flexitest
+from flexitest.runtime import load_candidate_modules, scan_dir_for_modules
 
-from envs import testenv
-from factory import factory
-from utils import *
-from utils.constants import TEST_DIR, DD_ROOT
+# Import environments
+from common.config import EpochSealingConfig, ServiceType
+from common.config.params import GenesisAccountData
+from common.keepalive import KEEP_ALIVE_TEST_NAME, load_keepalive_test
+from common.runtime import TestRuntimeWithLogging
+from common.test_logging import TestNameFilter
+from envconfigs.alpen_client import AlpenClientEnv
+from envconfigs.el_ol import EeOLEnv
+from envconfigs.strata import StrataEnvConfig
 
-KEEP_ALIVE_TEST_FILE: str = "keepalive_stub_test"
-KEEP_ALIVE_TEST_NAME: str = "KeepAliveEnvMockTest"
-
-# Initialize the parser with arguments.
-parser = argparse.ArgumentParser(prog="entry.py")
-parser.add_argument("-g", "--groups", nargs="*", help="Define the test groups to execute")
-parser.add_argument("-t", "--tests", nargs="*", help="Define individual tests to execute")
-parser.add_argument(
-    "-e",
-    "--env",
-    nargs="?",
-    help="""Special keep-alive mode.
-Spins up the whole environment as defined by the `env_name` passed as a parameter.
-Keeps alive all the services in the specified env until the execution is interrupted.
-Internally runs against a mock test that does nothing and just hangs.
-This mechanism can be used for local setup, fast prototyping and testing.""")
-parser.add_argument(
-    "--list-tests",
-    action="store_true",
-    help="List all available tests in JSON format for CI matrix generation")
+# Import factories
+from factories.alpen_client import AlpenClientFactory
+from factories.bitcoin import BitcoinFactory
+from factories.strata import StrataFactory
 
 
-def disabled_tests() -> list[str]:
+def disabled_tests() -> frozenset[str]:
     """
-    Helper to disable some tests.
-    Useful during debugging or when the test becomes flaky.
+    Tests to disable (e.g., flaky tests, work-in-progress).
+
+    Returns test names without .py extension.
+    Can be extended via DISABLED_TESTS env var (comma-separated).
     """
-    return frozenset([KEEP_ALIVE_TEST_FILE])
-
-def load_keepalive_mock_test(env_name):
-    # Read the test file as string.
-    with open(f"{TEST_DIR}/{KEEP_ALIVE_TEST_FILE}.py", "r") as f:
-        code_str = f.read()
-
-    # Dynamically replace with the passed `env_name`.
-    code_str = code_str.replace("{ENV}", env_name)
-
-    # Construct and load as a module.
-    module_name = "__keep_alive_dynamic_test_module__"
-    mod = types.ModuleType(module_name)
-    exec(code_str, mod.__dict__)
-    sys.modules[module_name] = mod
-
-    # Return the class object so it can be loaded by the runtime directly.
-    return getattr(mod, KEEP_ALIVE_TEST_NAME)
-
-
-def get_test_path_for_matrix(test_name, path, root_dir):
-    """
-    Converts a test module path to the format used in GitHub Actions matrix.
-    Returns the test identifier as used with -t flag (e.g., 'client_status' or 'bridge/bridge_test').
-    """
-    test_dir = os.path.join(root_dir, TEST_DIR)
-    # Get relative path from test_dir
-    rel_path = os.path.relpath(path, test_dir)
-    # Remove .py extension and convert to the format used in matrix
-    test_path = rel_path.removesuffix(".py")
-    return test_path
-
-
-def filter_tests(parsed_args, modules):
-    """
-    Filters test modules against parsed args supplied from the command line.
-    """
-    arg_groups = frozenset(parsed_args.groups or [])
-    # Extract filenames from the tests paths.
-    arg_tests = frozenset(
-        [os.path.split(t)[1].removesuffix(".py") for t in parsed_args.tests or []]
+    base_disabled = frozenset(
+        [
+            "keepalive_stub_test",
+            "revert_ol_state_fn",
+            "revert_checkpointed_block_fn",
+        ]
     )
 
-    filtered = dict()
+    env_disabled = os.getenv("DISABLED_TESTS", "")
+    if env_disabled:
+        env_set = frozenset(t.strip() for t in env_disabled.split(",") if t.strip())
+        return base_disabled | env_set
+
+    return base_disabled
+
+
+def setup_logging() -> None:
+    """Configure root logger with test name filter."""
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - [%(test_name)s] - %(name)s - %(levelname)s - %(message)s",
+    )
+    for handler in logging.root.handlers:
+        handler.addFilter(TestNameFilter())
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="entry.py",
+        description="Run functional tests",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s                          Run all tests
+  %(prog)s -t test_node_version     Run specific test
+  %(prog)s -t tests/test_node_version.py  Run specific test by path
+  %(prog)s tests/test_node_version.py     Run specific test (positional)
+  %(prog)s -t test_foo test_bar     Run multiple tests
+  %(prog)s -g bridge                Run all tests in bridge/ directory
+  %(prog)s -g prover bridge         Run tests in multiple groups
+  %(prog)s --keep-alive basic       Start 'basic' env and keep it alive (no tests run)
+  %(prog)s --list                   List all available tests
+        """,
+    )
+    parser.add_argument(
+        "-t",
+        "--tests",
+        nargs="*",
+        help="Run specific test(s) by name",
+    )
+    parser.add_argument(
+        "-g",
+        "--groups",
+        nargs="*",
+        help="Run test group(s) - tests organized by directory structure",
+    )
+    parser.add_argument(
+        "--keep-alive",
+        metavar="ENV",
+        help="Keep-alive mode: start ENV and keep it running (for debugging). Does NOT run tests.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List all available tests and exit",
+    )
+    parser.add_argument(
+        "tests_pos",
+        nargs="*",
+        help="Run specific test(s) by name or path (positional, optional)",
+    )
+    return parser.parse_args(argv[1:])
+
+
+def normalize_test_names(raw_tests: list[str]) -> frozenset[str]:
+    """
+    Normalize CLI test selectors.
+
+    Accepts bare names, filenames, or paths; strips directories and `.py`.
+    """
+    names: list[str] = []
+    for raw in raw_tests:
+        base = os.path.basename(raw)
+        name, _ = os.path.splitext(base)
+        if name:
+            names.append(name)
+    return frozenset(names)
+
+
+def filter_tests(
+    args: argparse.Namespace, modules: dict[str, str], test_dir: str
+) -> dict[str, str]:
+    """
+    Filter test modules based on command line arguments.
+
+    Args:
+        args: Parsed command line arguments
+        modules: Dict mapping test names to file paths
+        test_dir: Root test directory path
+
+    Returns:
+        Filtered dict of test names to paths
+    """
+    arg_groups = frozenset(args.groups or [])
+    # Normalize tests (accept bare names, filenames, or paths)
+    arg_tests = normalize_test_names((args.tests or []) + (args.tests_pos or []))
     disabled = disabled_tests()
-    for test, path in modules.items():
-        # Drop the prefix of the path before TEST_DIR
-        test_path_parts = os.path.normpath(path).split(os.path.sep)
-        # idx should never be None because TEST_DIR should be in the path.
-        idx = next((i for i, part in enumerate(test_path_parts) if part == TEST_DIR), None)
-        test_path_parts = test_path_parts[idx + 1 :]
-        # The "groups" the current test belongs to.
-        test_groups = frozenset(test_path_parts[:-1])
+
+    filtered = {}
+    for test_name, test_path in modules.items():
+        # Extract directory structure for grouping
+        test_path_parts = os.path.normpath(test_path).split(os.sep)
+
+        # Find the index of the test directory in the path
+        try:
+            test_dir_idx = next(
+                i for i, part in enumerate(test_path_parts) if part == os.path.basename(test_dir)
+            )
+        except StopIteration:
+            # If test_dir not in path, skip this test
+            continue
+
+        # Everything between test_dir and the file is a group
+        test_groups = frozenset(test_path_parts[test_dir_idx + 1 : -1])
 
         # Filtering logic:
-        # - check if the test is currently disabled
-        # - if groups or tests were specified (non-empty) as args, then check for exclusion.
-        take = test not in disabled
-        if arg_groups and not (arg_groups & test_groups):
-            take = False
-        if arg_tests and test not in arg_tests:
-            take = False
+        # 1. Skip disabled tests
+        if test_name in disabled:
+            continue
 
-        if take:
-            filtered[test] = path
+        # 2. If specific tests requested, only include those
+        if arg_tests and test_name not in arg_tests:
+            continue
+
+        # 3. If groups requested, only include tests in those groups
+        if arg_groups and not (arg_groups & test_groups):
+            continue
+
+        filtered[test_name] = test_path
 
     return filtered
 
-def main(argv):
-    """
-    The main entrypoint for running functional tests.
-    """
 
-    parsed_args = parser.parse_args(argv[1:])
+def list_tests(modules: dict[str, str], test_dir: str) -> None:
+    """
+    List all available tests with their groups.
+
+    Args:
+        modules: Dict mapping test names to file paths
+        test_dir: Root test directory path
+    """
+    disabled = disabled_tests()
+
+    # Group tests by directory
+    grouped_tests: dict[str, list[str]] = {}
+    ungrouped_tests: list[str] = []
+
+    for test_name, test_path in sorted(modules.items()):
+        test_path_parts = os.path.normpath(test_path).split(os.sep)
+
+        try:
+            test_dir_idx = next(
+                i for i, part in enumerate(test_path_parts) if part == os.path.basename(test_dir)
+            )
+        except StopIteration:
+            continue
+
+        groups = test_path_parts[test_dir_idx + 1 : -1]
+
+        if groups:
+            group_key = "/".join(groups)
+            if group_key not in grouped_tests:
+                grouped_tests[group_key] = []
+            status = " (disabled)" if test_name in disabled else ""
+            grouped_tests[group_key].append(f"  - {test_name}{status}")
+        else:
+            status = " (disabled)" if test_name in disabled else ""
+            ungrouped_tests.append(f"  - {test_name}{status}")
+
+    print("\nAvailable tests:")
+    print("=" * 60)
+
+    if ungrouped_tests:
+        print("\nRoot tests:")
+        for test in ungrouped_tests:
+            print(test)
+
+    for group, tests in sorted(grouped_tests.items()):
+        print(f"\nGroup: {group}")
+        for test in tests:
+            print(test)
+
+    print(f"\nTotal: {len(modules)} tests")
+    if disabled:
+        print(f"Disabled: {len(disabled)} tests")
+    print()
+
+
+def main(argv: list[str]) -> int:
+    """Main entry point."""
+    args = parse_args(argv)
+    setup_logging()
 
     root_dir = os.path.dirname(os.path.abspath(__file__))
+    test_dir = os.path.join(root_dir, "tests")
 
-    # Handle --list-tests flag
-    if parsed_args.list_tests:
-        test_dir = os.path.join(root_dir, TEST_DIR)
+    # Handle --list mode
+    if args.list:
         modules = flexitest.runtime.scan_dir_for_modules(test_dir)
-        disabled = disabled_tests()
-        test_list = []
-        for test_name, path in modules.items():
-            if test_name not in disabled:
-                test_path = get_test_path_for_matrix(test_name, path, root_dir)
-                test_list.append(test_path)
-        # Sort for consistent output
-        test_list.sort()
-        # Output as JSON array for GitHub Actions matrix
-        print(json.dumps(test_list))
+        list_tests(modules, test_dir)
         return 0
 
-    # Handle args and prepare tests accordingly.
-    is_keep_alive_execution = parsed_args.env is not None
-    if is_keep_alive_execution:
-        # In case of env option, we load the dynamically constructed keep-alive test
-        # and prepare it in the runtime manually.
-        # `Tests` will contain test class object (instead of test name).
-        tests = load_keepalive_mock_test(parsed_args.env)
-    else:
-        test_dir = os.path.join(root_dir, TEST_DIR)
-        modules = filter_tests(parsed_args, flexitest.runtime.scan_dir_for_modules(test_dir))
-        tests = flexitest.runtime.load_candidate_modules(modules)
-
-    btc_fac = factory.BitcoinFactory([12300 + i for i in range(100)])
-    seq_fac = factory.StrataFactory([12400 + i for i in range(100)])
-    fullnode_fac = factory.FullNodeFactory([12500 + i for i in range(100)])
-    reth_fac = factory.RethFactory([12600 + i for i in range(100 * 3)])
-    prover_client_fac = factory.ProverClientFactory([12900 + i for i in range(100 * 3)])
-    load_gen_fac = factory.LoadGeneratorFactory([13300 + i for i in range(100)])
-    seq_signer_fac = factory.StrataSequencerFactory()
-
-    factories = {
-        "bitcoin": btc_fac,
-        "sequencer": seq_fac,
-        "sequencer_signer": seq_signer_fac,
-        "fullnode": fullnode_fac,
-        "reth": reth_fac,
-        "prover_client": prover_client_fac,
-        "load_generator": load_gen_fac,
+    # Create factories
+    factories: dict[ServiceType, flexitest.Factory] = {
+        ServiceType.AlpenClient: AlpenClientFactory(range(30303, 30503)),
+        ServiceType.Bitcoin: BitcoinFactory(range(18443, 18543)),
+        ServiceType.Strata: StrataFactory(range(19443, 19543)),
     }
 
-    global_envs = {
-        # Basic env is the default env for all tests.
-        "basic": testenv.BasicEnvConfig(110),
-        # Operator lag is a test that checks if the bridge can handle operator lag.
-        # It is also useful for testing the reclaim path.
-        "operator_lag": testenv.BasicEnvConfig(110, message_interval=10 * 60 * 1_000),
-        # Devnet production env
-        "devnet": testenv.BasicEnvConfig(110, custom_chain="devnet"),
-        "hub1": testenv.HubNetworkEnvConfig(
-            110
-        ),  # TODO: Need to generate at least horizon blocks, based on params
-        "prover": testenv.BasicEnvConfig(110, rollup_settings=RollupParamsSettings.new_default().strict_mode()),
-        # crash tests migrated to functional-tests-new/tests/strata/
-        # Separate env with state diffs exex enabled.
-        "state_diffs": testenv.BasicEnvConfig(110, enable_state_diff_gen=True),
+    # Define global environments
+    #
+    # NOTE: "basic" is shared across every test that names it. flexitest
+    # reuses the same running services between those tests, so any test that
+    # restarts strata, mutates the bitcoin chain (invalidateblock,
+    # generatetoaddress), or depends on the L1 reader being caught up to a
+    # specific height MUST use a standalone env via
+    # `StrataEnvConfig(pre_generate_blocks=...)` instead. See
+    # tests/btcio/test_l1_connected.py and crash tests in tests/strata/ for
+    # examples and rationale.
+    global_envs: dict[str, flexitest.EnvConfig] = {
+        "basic": StrataEnvConfig(pre_generate_blocks=110),
+        "checkpoint": StrataEnvConfig(
+            pre_generate_blocks=110,
+            epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
+        ),
+        # OL isolated: strata + bitcoin, no EE, with a genesis snark account
+        "ol_isolated": StrataEnvConfig(
+            pre_generate_blocks=110,
+            genesis_accounts={
+                "00" * 31 + "42": GenesisAccountData(
+                    predicate="AlwaysAccept",
+                    inner_state="00" * 32,
+                    balance=0,
+                )
+            },
+            epoch_sealing=EpochSealingConfig(slots_per_epoch=5),
+            fund_test_cli_wallet=True,
+        ),
+        # Alpen-client (EE) environments
+        "alpen_ee": AlpenClientEnv(enable_l1_da=True),
+        "alpen_ee_discovery": AlpenClientEnv(
+            enable_discovery=True, pure_discovery=True, enable_l1_da=True
+        ),
+        "alpen_ee_multi": AlpenClientEnv(fullnode_count=3, enable_l1_da=True),
+        "alpen_ee_mesh": AlpenClientEnv(
+            fullnode_count=5,
+            enable_discovery=True,
+            pure_discovery=True,
+            mesh_bootnodes=True,
+            enable_l1_da=True,
+        ),
+        # Environments containing both ee and ol
+        "el_ol": EeOLEnv(pre_generate_blocks=110),
     }
 
-    setup_root_logger()
-    datadir_root = flexitest.create_datadir_in_workspace(os.path.join(root_dir, DD_ROOT))
-    rt = testenv.StrataTestRuntime(global_envs, datadir_root, factories)
+    # Set up test runtime
+    datadir = flexitest.create_datadir_in_workspace(os.path.join(root_dir, "_dd"))
+    runtime = TestRuntimeWithLogging(global_envs, datadir, factories)
 
-    if not is_keep_alive_execution:
-        rt.prepare_registered_tests()
-    else:
-        # Little hack.
-        # In the keep-alive execution, the `tests` actually contains the dynamically constructed
-        # test class object.
-        # So, we manually load it into the runtime and set the `tests` to run.
-        rt.prepare_test(KEEP_ALIVE_TEST_NAME, tests)
+    # Handle keep-alive mode
+    if args.keep_alive:
+        if args.keep_alive not in global_envs:
+            print(f"Error: Unknown environment '{args.keep_alive}'")
+            print(f"Available environments: {', '.join(global_envs.keys())}")
+            return 1
+
+        test_class = load_keepalive_test(args.keep_alive, test_dir)
+        runtime.prepare_test(KEEP_ALIVE_TEST_NAME, test_class)
         tests = [KEEP_ALIVE_TEST_NAME]
+    else:
+        # Discover and filter tests
+        modules = scan_dir_for_modules(test_dir)
+        filtered_modules = filter_tests(args, modules, test_dir)
 
-    results = rt.run_tests(tests)
-    rt.save_json_file("results.json", results)
+        if not filtered_modules:
+            print("No tests matched the specified filters.")
+            if args.tests or args.groups:
+                print("\nUse --list to see available tests and groups.")
+            return 1
+
+        tests = load_candidate_modules(filtered_modules)
+        runtime.prepare_registered_tests()
+
+    # Run tests
+    results = runtime.run_tests(tests)
+
+    # Save and display results
+    runtime.save_json_file("results.json", results)
     flexitest.dump_results(results)
-    # TODO(load): dump load test stats into separate file.
 
+    # Exit with error if any test failed
     flexitest.fail_on_error(results)
 
     return 0

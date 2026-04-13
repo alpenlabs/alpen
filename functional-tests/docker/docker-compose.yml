@@ -2,7 +2,7 @@ services:
   functional-tests:
     build:
       context: ../..
-      dockerfile: functional-tests-new/docker/Dockerfile
+      dockerfile: functional-tests/docker/Dockerfile
     volumes:
       # Persist test output/logs on host
       - ../_dd:/tests/_dd

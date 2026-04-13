@@ -1,176 +1,298 @@
-# Strata Functional Tests
+# Functional Tests - New Architecture
 
-Tests will be added here when we have more functionality to test.
+Clean, simple functional test suite for Strata.
 
-## Prerequisites
+## Philosophy
 
-### `bitcoind`
+**Explicit over implicit. Simple over clever.**
 
-Most tests depend upon `bitcoind` being available. The tests here execute
-this binary and then, perform various tests.
+- Tests explicitly start services they need
+- No magic setup, no hidden state
+- Clear error messages
+- Easy to debug
+
+## Quick Start
 
 ```bash
-# for macOS
-brew install bitcoin
+# Run all tests
+./run_tests.sh
+
+# Run specific test(s)
+./run_tests.sh -t test_node_version
+./run_tests.sh -t tests/test_node_version.py
+./run_tests.sh tests/test_node_version.py
+./run_tests.sh -t test_foo test_bar
+
+# Run test group (directory-based)
+./run_tests.sh -g bridge
+./run_tests.sh -g prover bridge
+
+# List available tests
+./run_tests.sh --list
+
+# Keep-alive mode for debugging (starts env and waits, no tests run)
+./run_tests.sh --keep-alive basic
+
+# Get help
+./run_tests.sh --help
 ```
 
-Note that in macOS, you may need to specifically add a firewall rule to allow incoming local `bitcoind` connections.
+## Structure
 
-```bash
-# for Linux (x86_64)
-curl -fsSLO --proto "=https" --tlsv1.2 https://bitcoincore.org/bin/bitcoin-core-29.0/bitcoin-29.0-x86_64-linux-gnu.tar.gz
-tar xzf bitcoin-29.0-x86_64-linux-gnu.tar.gz
-sudo install -m 0755 -t /usr/local/bin bitcoin-29.0/bin/*
-# remove the files, as we just copied it to /bin
-rm -rf bitcoin-29.0 bitcoin-29.0-x86_64-linux-gnu.tar.gz
+```
+common/       Core library (service, RPC, waiting)
+factories/    Service factories
+envconfigs/   Environment configs
+tests/        Test files
 ```
 
-```bash
-# check installed version
-bitcoind --version
+## Writing a Test
+
+```python
+import flexitest
+from common.base_test import StrataNodeTest
+from common.config import ServiceType
+
+@flexitest.register
+class TestExample(StrataNodeTest):
+    def __init__(self, ctx: flexitest.InitContext):
+        ctx.set_env("basic")  # Use basic environment
+
+    def run(self) -> bool:
+        # Access to runcontext is available via self.runctx
+        # (set automatically by BaseTest.main)
+
+        # Get services using ServiceType enum
+        bitcoin = self.get_service(ServiceType.Bitcoin)
+        strata = self.get_service(ServiceType.Strata)
+
+        # Create RPC clients
+        btc_rpc = bitcoin.create_rpc()
+        strata_rpc = strata.create_rpc()
+
+        # Wait for ready
+        self.wait_for_rpc_ready(strata_rpc)
+
+        # Do test logic
+        version = strata_rpc.strata_protocolVersion()
+        assert version == 1
+
+        return True
 ```
 
-### `uv`
+## Core Utilities
 
-> [!NOTE]
-> Make sure you have installed Python 3.10 or higher.
+### Waiting
 
-We use [`uv`](https://github.com/astral-sh/uv) for managing the test dependencies.
+```python
+# Simple condition wait
+self.wait_for(lambda: service.is_ready(), timeout=30)
 
-First, install `uv` following the instructions at <https://docs.astral.sh/uv/>.
+# Wait for RPC
+self.wait_for_rpc_ready(rpc, method="strata_protocolVersion")
 
-
-Check, that `uv` is installed:
-
-```bash
-uv --version
+# Custom wait
+from common.wait import wait_until
+wait_until(condition, error_with="Custom error", timeout=30, step=0.5)
 ```
 
-Now you can run tests with:
+### RPC Calls
 
-```bash
-uv run python entry.py
-````
+```python
+# Attribute style (uses __getattr__ for dynamic method dispatch)
+version = rpc.strata_protocolVersion()
+balance = rpc.eth_getBalance("0x123...", "latest")
 
-
-### Rosetta
-
-On macOS, you must have Rosetta emulation installed in order to compile the `solx` dependency:
-
-```bash
-# macOS only
-softwareupdate --install-rosetta
+# Explicit style
+version = rpc.call("strata_protocolVersion")
+balance = rpc.call("eth_getBalance", "0x123...", "latest")
 ```
 
-## Running tests
+### Service Access
 
-You can run all tests:
+```python
+from common.config import ServiceType
 
-```bash
-./run_test.sh
+# Get service from test (uses self.runctx internally)
+bitcoin = self.get_service(ServiceType.Bitcoin)
+
+# Access properties
+rpc_port = bitcoin.get_prop("rpc_port")
+datadir = bitcoin.get_prop("datadir")
+
+# Create RPC client
+rpc = bitcoin.create_rpc()
 ```
 
-You also can run a specific test:
+## Environment Configs
 
-```bash
-./run_test.sh -t tests/bridge/bridge_deposit_happy.py
+Environments define which services to start:
+
+```python
+# envconfigs/basic.py
+from common.config import ServiceType
+
+class BasicEnvConfig(flexitest.EnvConfig):
+    def init(self, ectx: flexitest.EnvContext):
+        btc_factory = ectx.get_factory(ServiceType.Bitcoin)
+        strata_factory = ectx.get_factory(ServiceType.Strata)
+
+        # Start Bitcoin
+        bitcoin = btc_factory.create_regtest()
+        bitcoin.wait_for_ready(timeout=10)
+
+        # Start Strata
+        strata = strata_factory.create_node(...)
+        strata.wait_for_ready(timeout=10)
+
+        return flexitest.LiveEnv({
+            ServiceType.Bitcoin: bitcoin,
+            ServiceType.Strata: strata,
+        })
 ```
 
-Or (shorter version),
+Use in tests:
 
-```bash
-./run_test.sh -t bridge/bridge_deposit_happy.py
+```python
+def __init__(self, ctx: flexitest.InitContext):
+    ctx.set_env("basic")
 ```
 
-Or, you can run a specific test group:
+## Factories
 
-```bash
-./run_test.sh -g bridge
+Factories create services. They should be dumb - just build command and start process.
+
+```python
+# factories/bitcoin.py
+from common.services import BitcoinServiceWrapper, BitcoinServiceProps
+
+class BitcoinFactory(flexitest.Factory):
+    @flexitest.with_ectx("ctx")
+    def create_regtest(self, **kwargs):
+        ctx: flexitest.EnvContext = kwargs["ctx"]
+
+        # Set up service directories and ports
+        datadir = ctx.make_service_dir(ServiceType.Bitcoin)
+        rpc_port = self.next_port()
+        logfile = os.path.join(datadir, "service.log")
+
+        # Build command
+        cmd = ["bitcoind", "-regtest", f"-rpcport={rpc_port}", ...]
+
+        # Create props (validated by dataclass)
+        props = BitcoinServiceProps(
+            rpc_port=rpc_port,
+            rpc_url=f"http://localhost:{rpc_port}",
+            datadir=datadir,
+        )
+
+        # Create service wrapper with RPC factory
+        svc = BitcoinServiceWrapper(
+            props, cmd, stdout=logfile,
+            rpc_factory=lambda: BitcoindClient(...)
+        )
+        svc.start()
+        return svc
 ```
 
-The full list of arguments for running tests can be viewed by:
+## Running Tests
+
+### Test Selection
+
+Tests can be filtered by name or group (directory structure):
 
 ```bash
-./run_test.sh -h
+# Run all tests
+./run_tests.sh
+
+# Run specific tests by name (basename; paths or positional are OK)
+./run_tests.sh -t test_node_version
+./run_tests.sh -t tests/test_node_version.py
+./run_tests.sh tests/test_node_version.py
+./run_tests.sh -t test_foo test_bar test_baz
+
+# Run tests by group (subdirectory under tests/)
+# Example: tests/bridge/test_deposit.py is in group "bridge"
+./run_tests.sh -g bridge
+./run_tests.sh -g prover bridge sync
+
+# Combine filters (tests OR groups)
+./run_tests.sh -t test_node_version -g bridge
+
+# List all available tests and groups
+./run_tests.sh --list
 ```
 
-## Running prover tasks
+### Keep-Alive Mode
+
+For debugging, start an environment and keep it running:
 
 ```bash
-PROVER_TEST=1 ./run_test.sh -g prover
+./run_tests.sh --keep-alive basic
 ```
 
-The test harness script will be extended with more functionality as we need it.
+This starts all services in the "basic" environment and keeps them alive until you press Ctrl+C. **No tests are run** - this is purely for debugging. Useful for:
+- Manual testing via RPC
+- Inspecting service state
+- Debugging service startup issues
 
-## Running with code coverage
+Service connection info will be printed on startup.
+
+### Disabling Tests
+
+Permanently disabled tests are defined in `entry.py` `disabled_tests()`. For temporary disabling (e.g., local debugging), use the `DISABLED_TESTS` environment variable:
 
 ```bash
-CI_COVERAGE=1 ./run_test.sh
+# Disable single test
+DISABLED_TESTS=test_flaky ./run_tests.sh
+
+# Disable multiple tests (comma-separated)
+DISABLED_TESTS=test_foo,test_bar,test_flaky ./run_tests.sh
+
+# Works with other flags
+DISABLED_TESTS=test_slow ./run_tests.sh -t test_fast test_slow
 ```
 
-Code coverage artifacts (`*.profraw` files) are generated in `target/llvm-cov-target/`.
-Binaries and other build artifacts are generated in `target/llvm-cov-target/debug`.
+The env var extends the base disabled list, so both are applied.
 
+## Debugging
 
-## Keep-alive env setup
+### Service Logs
 
-During development it's quite handy to have local services spin up quickly,
-instead of bothering with Docker's (build time is heavy if built from scratch).
+Logs are in test data directory:
 
-To do that, you can use the following command:
+```
+_dd/
+  <test_run_id>/        # Unique ID for each test run
+    <env_name>/         # Environment name (e.g., "basic")
+      bitcoin/service.log
+      <strata_service>/service.log  # e.g., strata_sequencer
+```
+
+Example: `_dd/9-13-wpbec/basic/bitcoin/service.log`
+
+### Test Logs
+
+Each test gets its own logger:
+
+```python
+self.info("Something happened")
+self.debug("Debug info")
+self.error("Error occurred")
+```
+
+Set log level with environment variable:
 ```bash
-./run_test.sh -e <env_name>
+LOG_LEVEL=DEBUG ./run_tests.sh
 ```
 
-For instance:
-```bash
-./run_test.sh -e basic
+### Common Issues
+
+**RPC not ready**: Increase timeout or check service logs
+```python
+self.wait_for_rpc_ready(rpc, timeout=60)
 ```
 
-As a result, services will be kept alive, so you can send RPCs and play around.
+**Service crashed**: Check `service.log` in datadir
 
-## Test Environment Configurations
-
-The functional tests support multiple environment configurations, each designed for specific testing scenarios:
-
-### **"basic"**
-- **Purpose**: Default environment for most tests
-- **Components**:
-  - Bitcoin regtest node
-  - Sequencer + Sequencer Signer
-  - Reth (Ethereum execution client)
-  - Prover Client
-- **Settings**: 110 pre-generated blocks, fast batch mode
-- **Use case**: Standard rollup functionality tests
-
-### **"load_reth"**
-- **Purpose**: Load testing with state diff generation
-- **Components**: Same as basic + Load Generator service
-- **Settings**: State diff generation enabled, load jobs (30/sec rate)
-- **Use case**: Performance testing, benchmarking
-
-### **"hub1"**
-- **Purpose**: Multi-node network testing
-- **Components**:
-  - Bitcoin regtest node
-  - **Sequencer node** + Sequencer Signer + Reth
-  - **Full node follower** + separate Reth instance
-  - Prover Client
-- **Use case**: Testing network synchronization, follower behavior
-
-### **"prover"**
-- **Purpose**: Testing with strict proof validation
-- **Components**: Same as basic
-- **Settings**: **Strict mode** (no proof timeout), proving enabled
-- **Use case**: Zero-knowledge proof validation tests
-
-### **Other environments**:
-- **"operator_lag"**: Tests operator delays (10min message interval)
-- **"devnet"**: Production devnet configuration
-- **"crash"**: For crash/recovery testing
-- **"state_diffs"**: State diff generation testing
-
-Each environment spins up the appropriate services and configures them for specific testing scenarios, from basic functionality to complex multi-node networks and performance testing.
-
-For more details on environment configurations, see [entry.py](entry.py).
-
+**Timeout errors**: Check exception message for last error and attempt count

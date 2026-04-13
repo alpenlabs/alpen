@@ -58,7 +58,7 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
         genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
         sequencer = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1,
+            genesis_l1.blk.height,
             is_sequencer=True,
             epoch_sealing_config=epoch_sealing_config,
         )
@@ -66,7 +66,7 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
 
         fullnode = strata_factory.create_node(
             bitcoind_config,
-            genesis_l1,
+            genesis_l1.blk.height,
             is_sequencer=False,
             config_overrides={"client.sync_endpoint": sequencer.props["rpc_url"]},
         )

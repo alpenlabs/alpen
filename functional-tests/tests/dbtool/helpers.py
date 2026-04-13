@@ -1,4 +1,4 @@
-"""Helpers for invoking strata-dbtool in functional-tests-new."""
+"""Helpers for invoking strata-dbtool in functional-tests."""
 
 import json
 import logging
