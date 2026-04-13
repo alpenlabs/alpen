@@ -9,6 +9,8 @@ use strata_config::btcio::{FeePolicy, WriterConfig};
 use tracing::warn;
 
 /// Represents the response from the mempool.space recommended fees endpoint.
+// TODO(STR-3038): once we update Alpen's mempool explorers we can use `api/v1/fees/precise`
+//                 for more granular sub-1 sat/vB fee rates if desired.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct MempoolRecommendedFees {
     #[serde(rename = "fastestFee")]
