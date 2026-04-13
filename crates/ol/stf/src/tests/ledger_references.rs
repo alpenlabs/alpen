@@ -30,7 +30,8 @@ fn test_snark_update_with_valid_ledger_reference() {
         test_l1_block_id(1),
         WtxidsRoot::from(Buf32::from([1u8; 32])),
         vec![], // No logs for simplicity
-    );
+    )
+    .expect("test manifest should be valid");
 
     // Get the manifest hash before execution
     let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
@@ -124,7 +125,8 @@ fn test_snark_update_with_invalid_ledger_reference() {
         test_l1_block_id(1),
         WtxidsRoot::from(Buf32::from([1u8; 32])),
         vec![],
-    );
+    )
+    .expect("test manifest should be valid");
 
     // Get the manifest hash before execution
     let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
@@ -218,7 +220,8 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
         test_l1_block_id(1),
         WtxidsRoot::from(Buf32::from([1u8; 32])),
         vec![],
-    );
+    )
+    .expect("test manifest should be valid");
     let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
 
     let block1_info = BlockInfo::new(1001000, 1, 0); // slot 1, epoch 0

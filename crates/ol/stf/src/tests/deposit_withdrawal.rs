@@ -56,7 +56,8 @@ fn test_snark_account_deposit_and_withdrawal() {
         test_l1_block_id(1),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![deposit_log],
-    );
+    )
+    .expect("test manifest should be valid");
 
     // Execute genesis block with the deposit manifest
     let genesis_info = BlockInfo::new_genesis(1000000);

@@ -25,6 +25,7 @@ use strata_ol_chain_types::{L2Block, L2BlockBundle, L2BlockId, L2Header};
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::Params;
 use strata_primitives::{
+    bitcoin_bosd::Descriptor,
     buf::Buf32,
     crypto::EvenPublicKey,
     epoch::EpochCommitment,
@@ -452,7 +453,10 @@ impl StrataApiServer for StrataRpcImpl {
             .map(|a| RpcWithdrawalAssignment {
                 deposit_idx: a.deposit_idx(),
                 amt: a.withdrawal_command().net_amount(),
-                destination: a.withdrawal_command().destination().clone(),
+                destination: Descriptor::from_bytes(
+                    &a.withdrawal_command().destination().to_bytes(),
+                )
+                .expect("ASM descriptor should deserialize into RPC descriptor"),
                 operator_idx: a.current_assignee(),
             })
             .collect::<Vec<RpcWithdrawalAssignment>>();

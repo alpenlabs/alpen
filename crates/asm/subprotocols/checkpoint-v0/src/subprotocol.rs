@@ -6,20 +6,23 @@
 //! NOTE: This implementation bridges the legacy checkpoint payload format with the new SPS-50
 //! envelope layout so we can reuse existing verification logic while moving toward SPS-62.
 
-use strata_asm_bridge_msgs::{BridgeIncomingMsg, WithdrawOutput};
+use bitcoin_bosd_asm::Descriptor as AsmDescriptor;
+use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData, logging,
 };
-use strata_asm_logs::CheckpointUpdate;
+use strata_asm_logs::CheckpointTipUpdate;
 use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
+use strata_bridge_types_asm::{OperatorSelection as AsmOperatorSelection, WithdrawOutput};
+use strata_checkpoint_types_ssz_asm::CheckpointTip;
 use strata_identifiers::L1BlockCommitment;
 use strata_params::CredRule;
-use strata_predicate::PredicateKey;
-use strata_primitives::{L1Height, buf::Buf32, l1::BitcoinTxid};
+use strata_predicate::{PredicateKey, PredicateTypeId};
+use strata_primitives::{L1Height, buf::Buf32};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -123,7 +126,7 @@ impl Subprotocol for CheckpointV0Subproto {
         for msg in msgs {
             match msg {
                 CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
-                    apply_sequencer_update(state, *new_key);
+                    apply_sequencer_update(state, new_key);
                 }
                 CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
                     apply_rollup_vk_update(state, new_predicate);
@@ -165,10 +168,12 @@ fn process_checkpoint_transaction_v0(
 
     // Forward each withdrawal message to the bridge subprotocol
     for intent in withdrawal_intents {
-        let output = WithdrawOutput::new(intent.destination().clone(), *intent.amt());
+        let destination = AsmDescriptor::from_bytes(&intent.destination().to_bytes())
+            .map_err(|err| CheckpointV0Error::ParsingError(err.to_string()))?;
+        let output = WithdrawOutput::new(destination, *intent.amt());
         let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
             output,
-            selected_operator: intent.selected_operator(),
+            selected_operator: AsmOperatorSelection::from_raw(intent.selected_operator().raw()),
         };
         relayer.relay_msg(&bridge_msg);
     }
@@ -180,20 +185,40 @@ fn process_checkpoint_transaction_v0(
         current_l1_height
     );
 
-    // Emit CheckpointUpdate log
-    let checkpoint_txid = BitcoinTxid::new(&tx.tx().compute_txid());
-    let checkpoint_update =
-        CheckpointUpdate::from_checkpoint(signed_checkpoint.checkpoint(), checkpoint_txid);
+    let batch_info = signed_checkpoint.checkpoint().batch_info();
+    let checkpoint_tip = CheckpointTip::new(
+        batch_info.epoch(),
+        batch_info.final_l1_block().height(),
+        *batch_info.final_l2_block(),
+    );
+    let checkpoint_tip_update = CheckpointTipUpdate::new(checkpoint_tip);
 
-    match AsmLogEntry::from_log(&checkpoint_update) {
+    match AsmLogEntry::from_log(&checkpoint_tip_update) {
         Ok(log_entry) => relayer.emit_log(log_entry),
-        Err(err) => logging::error!(error = ?err, "Failed to encode checkpoint update log"),
+        Err(err) => logging::error!(error = ?err, "Failed to encode checkpoint tip update log"),
     }
 
     Ok(true)
 }
 
-fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_key: Buf32) {
+fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_predicate: &PredicateKey) {
+    if new_predicate.id() != PredicateTypeId::Bip340Schnorr.as_u8() {
+        logging::warn!(
+            predicate_id = new_predicate.id(),
+            "Ignoring sequencer key update with non-BIP340 predicate"
+        );
+        return;
+    }
+
+    let Ok(new_key_bytes) = <[u8; 32]>::try_from(new_predicate.condition()) else {
+        logging::warn!(
+            condition_len = new_predicate.condition().len(),
+            "Ignoring sequencer key update with invalid BIP340 key length"
+        );
+        return;
+    };
+
+    let new_key = Buf32::from(new_key_bytes);
     let previous_rule = state.cred_rule.clone();
 
     if matches!(&previous_rule, CredRule::SchnorrKey(existing) if existing == &new_key) {
@@ -256,8 +281,11 @@ mod tests {
         let params = test_params();
         let mut state = CheckpointV0Subproto::init(&params);
 
-        let new_key = Buf32::from([42u8; 32]);
-        let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(new_key)];
+        let new_key_bytes = [42u8; 32];
+        let new_key = Buf32::from(new_key_bytes);
+        let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(
+            PredicateKey::new(PredicateTypeId::Bip340Schnorr, new_key_bytes.to_vec()),
+        )];
 
         let l1ref = L1BlockCommitment::default();
         CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1ref);

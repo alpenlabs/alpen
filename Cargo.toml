@@ -16,34 +16,16 @@ members = [
   "crates/alpen-ee/rpc/server",
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
-  "crates/asm/common",
-  "crates/asm/logs",
-  "crates/asm/params",
-  "crates/asm/msgs/bridge",
-  "crates/asm/msgs/checkpoint",
-  "crates/asm/stf",
-  "crates/asm/manifest-types",
   "crates/asm/spec",
   "crates/asm/spec-debug",
-  "crates/asm/subprotocols/bridge-v1",
-  "crates/asm/subprotocols/debug-v1",
-  "crates/asm/subprotocols/admin",
-  "crates/asm/txs/admin",
   "crates/asm/txs/checkpoint-v0",
-  "crates/asm/txs/checkpoint",
   "crates/asm/subprotocols/checkpoint-v0",
-  "crates/asm/subprotocols/checkpoint",
-  "crates/asm/txs/test-utils",
-  "crates/asm/txs/bridge-v1",
-  "crates/asm/worker",
-  "crates/btc-verification",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
   "crates/chain-worker",
   "crates/chain-worker-new",
   "crates/checkpoint-types",
-  "crates/checkpoint-types-ssz",
   "crates/cli-common",
   "crates/codec-utils",
   "crates/common",
@@ -112,7 +94,6 @@ members = [
   "crates/storage",
   "crates/storage-common",
   "crates/sync",
-  "crates/test-utils/btc",
   "crates/test-utils/btcio",
   "crates/test-utils/evm-ee",
   "crates/test-utils/l2",
@@ -188,35 +169,35 @@ alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
-strata-asm-bridge-msgs = { path = "crates/asm/msgs/bridge" }
-strata-asm-checkpoint-msgs = { path = "crates/asm/msgs/checkpoint" }
-strata-asm-common = { path = "crates/asm/common" }
-strata-asm-logs = { path = "crates/asm/logs" }
-strata-asm-manifest-types = { path = "crates/asm/manifest-types" }
-strata-asm-params = { path = "crates/asm/params" }
-strata-asm-proto-administration = { path = "crates/asm/subprotocols/admin" }
-strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
-strata-asm-proto-checkpoint = { path = "crates/asm/subprotocols/checkpoint" }
+strata-asm-bridge-msgs = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-checkpoint-msgs = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-common = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-logs = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-manifest-types = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-params = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-proto-administration = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-proto-bridge-v1 = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-asm-proto-checkpoint-v0 = { path = "crates/asm/subprotocols/checkpoint-v0" }
-strata-asm-proto-debug-v1 = { path = "crates/asm/subprotocols/debug-v1" }
+strata-asm-proto-debug-v1 = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-asm-spec = { path = "crates/asm/spec" }
 strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
-strata-asm-stf = { path = "crates/asm/stf" }
-strata-asm-txs-admin = { path = "crates/asm/txs/admin" }
-strata-asm-txs-bridge-v1 = { path = "crates/asm/txs/bridge-v1" }
-strata-asm-txs-checkpoint = { path = "crates/asm/txs/checkpoint" }
+strata-asm-stf = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-txs-admin = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-txs-bridge-v1 = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-txs-checkpoint = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-asm-txs-checkpoint-v0 = { path = "crates/asm/txs/checkpoint-v0" }
-strata-asm-txs-test-utils = { path = "crates/asm/txs/test-utils" }
-strata-asm-worker = { path = "crates/asm/worker" }
+strata-asm-txs-test-utils = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-asm-worker = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-bridge-types = { path = "crates/bridge-types" }
-strata-btc-verification = { path = "crates/btc-verification" }
+strata-btc-verification = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }
 strata-chainexec = { path = "crates/chainexec" }
 strata-chaintsn = { path = "crates/chaintsn" }
 strata-checkpoint-types = { path = "crates/checkpoint-types" }
-strata-checkpoint-types-ssz = { path = "crates/checkpoint-types-ssz" }
+strata-checkpoint-types-ssz = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-cli-common = { path = "crates/cli-common" }
 strata-codec-utils = { path = "crates/codec-utils" }
 strata-common = { path = "crates/common" }
@@ -280,7 +261,7 @@ strata-storage = { path = "crates/storage" }
 strata-storage-common = { path = "crates/storage-common" }
 strata-sync = { path = "crates/sync" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
-strata-test-utils-btc = { path = "crates/test-utils/btc" }
+strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
 strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
 strata-test-utils-l2 = { path = "crates/test-utils/l2" }

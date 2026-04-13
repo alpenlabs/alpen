@@ -11,6 +11,7 @@ use strata_asm_params::{
     SubprotocolInstance,
 };
 use strata_btc_types::BitcoinAmount;
+use strata_btc_verification::L1Anchor;
 use strata_crypto::{
     keys::compressed::CompressedPublicKey, threshold_signature::ThresholdConfig, EvenPublicKey,
 };
@@ -152,9 +153,15 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     };
 
     // Assemble ASM params.
+    let anchor = L1Anchor {
+        block: genesis_l1_view.blk,
+        next_target: genesis_l1_view.next_target,
+        epoch_start_timestamp: genesis_l1_view.epoch_start_timestamp,
+        network: ctx.bitcoin_network,
+    };
     let asm_params = AsmParams {
         magic,
-        l1_view: genesis_l1_view,
+        anchor,
         subprotocols: vec![
             SubprotocolInstance::Admin(admin),
             SubprotocolInstance::Checkpoint(checkpoint),

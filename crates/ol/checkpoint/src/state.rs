@@ -2,7 +2,8 @@
 
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::{
-    CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
+    CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
+    TerminalHeaderComplement,
 };
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_service::ServiceState;
@@ -162,11 +163,20 @@ fn build_checkpoint_payload<C: CheckpointWorkerContext>(
     let new_tip = CheckpointTip::new(summary.epoch(), l1_height, l2_commitment);
 
     let (state_bytes, ol_logs) = ctx.fetch_da_for_epoch(summary)?;
+    let ol_logs: Vec<CheckpointOLLog> = ol_logs
+        .into_iter()
+        .map(|log| CheckpointOLLog::new(log.account_serial(), log.payload().to_vec()))
+        .collect();
 
     let terminal_header = ctx
         .get_block_header(summary.terminal())?
         .ok_or_else(|| anyhow::anyhow!("missing terminal block for epoch summary {:?}", summary))?;
-    let terminal_header_complement = TerminalHeaderComplement::from_full_header(&terminal_header);
+    let terminal_header_complement = TerminalHeaderComplement::new(
+        terminal_header.timestamp(),
+        *terminal_header.parent_blkid(),
+        *terminal_header.body_root(),
+        *terminal_header.logs_root(),
+    );
 
     let sidecar = CheckpointSidecar::new(state_bytes, ol_logs, terminal_header_complement)?;
     let proof = ctx.get_proof(&commitment)?;
@@ -181,12 +191,11 @@ mod tests {
     use proptest::prelude::*;
     use strata_checkpoint_types::EpochSummary;
     use strata_checkpoint_types_ssz::{
-        CheckpointPayload, CheckpointTip,
-        test_utils::{checkpoint_sidecar_strategy, ol_logs_strategy, state_diff_strategy},
+        CheckpointPayload, CheckpointTip, test_utils::checkpoint_sidecar_strategy,
     };
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
-        Buf64, Epoch, OLBlockCommitment,
+        AccountSerial, Buf64, Epoch, OLBlockCommitment,
         test_utils::{buf32_strategy, l1_block_commitment_strategy, ol_block_commitment_strategy},
     };
     use strata_ol_chain_types_new::{
@@ -199,6 +208,21 @@ mod tests {
 
     use super::OLCheckpointServiceState;
     use crate::context::{CheckpointWorkerContext, CheckpointWorkerContextImpl, StateDiffRaw};
+
+    fn state_diff_strategy() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(any::<u8>(), 0..1024)
+    }
+
+    fn ol_logs_strategy() -> impl Strategy<Value = Vec<OLLog>> {
+        prop::collection::vec(
+            (
+                any::<u32>().prop_map(AccountSerial::from),
+                prop::collection::vec(any::<u8>(), 0..=512),
+            )
+                .prop_map(|(account_serial, payload)| OLLog::new(account_serial, payload)),
+            0..10,
+        )
+    }
 
     /// Test context that delegates everything to the real impl but stubs out
     /// `fetch_da_for_epoch` with provided DA data. This avoids needing a full
@@ -371,6 +395,7 @@ mod tests {
             let ol_block_mgr = storage.ol_block();
 
             let epoch: Epoch = 1;
+            let prev_terminal: OLBlockCommitment = prev_terminal;
             let terminal_slot = prev_terminal.slot().saturating_add(slot_offset);
             let terminal_header = OLBlockHeader::new(
                 1_700_000_000,

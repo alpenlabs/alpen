@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use bitcoind_async_client::{client::Client, traits::Reader};
-use strata_asm_worker::{WorkerContext, WorkerError, WorkerResult};
+use strata_asm_worker::{AsmState as WorkerAsmState, WorkerContext, WorkerError, WorkerResult};
 use strata_db_types::DbError;
 use strata_identifiers::Hash;
 use strata_primitives::prelude::*;
-use strata_state::asm_state::AsmState;
+use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_storage::{AsmStateManager, L1BlockManager, MmrIndexHandle};
 use tokio::runtime::Handle;
 use tracing::{self, error};
@@ -71,24 +71,28 @@ impl WorkerContext for AsmWorkerCtx {
         Err(WorkerError::MissingL1Block(*blockid))
     }
 
-    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, AsmState)>> {
-        self.asmman.fetch_most_recent_state().map_err(conv_db_err)
+    fn get_latest_asm_state(&self) -> WorkerResult<Option<(L1BlockCommitment, WorkerAsmState)>> {
+        self.asmman
+            .fetch_most_recent_state()
+            .map_err(conv_db_err)
+            .map(|state| state.map(|(block, state)| (block, storage_to_worker_state(state))))
     }
 
-    fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<AsmState> {
+    fn get_anchor_state(&self, blockid: &L1BlockCommitment) -> WorkerResult<WorkerAsmState> {
         self.asmman
             .get_state(*blockid)
             .map_err(conv_db_err)?
+            .map(storage_to_worker_state)
             .ok_or(WorkerError::MissingAsmState(*blockid.blkid()))
     }
 
     fn store_anchor_state(
         &self,
         blockid: &L1BlockCommitment,
-        state: &AsmState,
+        state: &WorkerAsmState,
     ) -> WorkerResult<()> {
         self.asmman
-            .put_state(*blockid, state.clone())
+            .put_state(*blockid, worker_to_storage_state(state))
             .map_err(conv_db_err)
     }
 
@@ -177,4 +181,12 @@ impl WorkerContext for AsmWorkerCtx {
 
 fn conv_db_err(_e: DbError) -> WorkerError {
     WorkerError::DbError
+}
+
+fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
+    WorkerAsmState::new(state.state().clone(), state.logs().clone())
+}
+
+fn worker_to_storage_state(state: &WorkerAsmState) -> StorageAsmState {
+    StorageAsmState::new(state.state().clone(), state.logs().clone())
 }

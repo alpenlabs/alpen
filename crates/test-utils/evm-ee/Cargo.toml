@@ -7,8 +7,10 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-common.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
+strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true
 strata-primitives.workspace = true
@@ -16,4 +18,5 @@ strata-proofimpl-evm-ee-stf.workspace = true
 strata-test-utils-btc.workspace = true
 strata-test-utils-l2.workspace = true
 
+bitcoin.workspace = true
 serde_json.workspace = true

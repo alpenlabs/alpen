@@ -24,7 +24,8 @@ fn genesis_block_components() -> BlockComponents {
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
-    );
+    )
+    .expect("test manifest should be valid");
     BlockComponents::new_manifests(vec![dummy_manifest])
 }
 
@@ -158,7 +159,8 @@ fn test_genesis_with_initial_transactions() {
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
-    );
+    )
+    .expect("test manifest should be valid");
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![gam_tx.clone()]).expect("tx segment should be within limits"),
         Some(
@@ -354,7 +356,8 @@ fn test_process_chain_with_multiple_epochs() {
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
-            );
+            )
+            .expect("test manifest should be valid");
             BlockComponents::new_manifests(vec![dummy_manifest])
         } else {
             BlockComponents::new_empty()
@@ -617,7 +620,8 @@ fn test_multi_block_chain_verification() {
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
-            );
+            )
+            .expect("test manifest should be valid");
             BlockComponents::new_manifests(vec![dummy_manifest])
         } else {
             BlockComponents::new_empty()
@@ -669,7 +673,8 @@ fn test_verify_block_with_transactions() {
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
-    );
+    )
+    .expect("test manifest should be valid");
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![gam_tx]).expect("tx segment should be within limits"),
         Some(
@@ -987,7 +992,8 @@ fn test_verify_rejects_mismatched_logs_root() {
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
-    );
+    )
+    .expect("test manifest should be valid");
     let genesis_components = BlockComponents::new(
         OLTxSegment::new(vec![gam_tx]).expect("tx segment should be within limits"),
         Some(

@@ -3,8 +3,10 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitcoin::{
+    hashes::Hash,
+    params::Params as BitcoinParams,
     secp256k1::{SecretKey, SECP256K1},
-    Amount, XOnlyPublicKey,
+    Amount, CompactTarget, XOnlyPublicKey,
 };
 use borsh::to_vec;
 use rand::{rngs::StdRng, SeedableRng};
@@ -18,9 +20,14 @@ use strata_ol_chain_types::{
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{CredRule, Params, ProofPublishMode, RollupParams, SyncParams};
 use strata_predicate::PredicateKey;
-use strata_primitives::buf::Buf64;
+use strata_primitives::{
+    buf::{Buf32, Buf64},
+    constants::TIMESTAMPS_FOR_MEDIAN,
+    l1::{BtcParams, GenesisL1View, L1BlockCommitment},
+    L1BlockId,
+};
 use strata_test_utils::ArbitraryGenerator;
-use strata_test_utils_btc::segment::BtcChainSegment;
+use strata_test_utils_btc::BtcMainnetSegment;
 
 /// Generates a sequence of L2 block bundles starting from an optional parent block.
 ///
@@ -94,9 +101,8 @@ pub fn gen_params() -> Params {
 
 fn gen_params_with_seed(seed: u64) -> Params {
     let opkey = make_dummy_operator_pubkeys_with_seed(seed);
-    let genesis_l1_view = BtcChainSegment::load()
-        .fetch_genesis_l1_view(40320)
-        .unwrap();
+    let segment = BtcMainnetSegment::load();
+    let genesis_l1_view = fetch_genesis_l1_view(&segment, 40_320);
     Params {
         rollup: RollupParams {
             magic_bytes: (*b"ALPN").into(),
@@ -128,6 +134,71 @@ fn gen_params_with_seed(seed: u64) -> Params {
             client_checkpoint_interval: 10,
         },
     }
+}
+
+fn fetch_genesis_l1_view(segment: &BtcMainnetSegment, block_height: u32) -> GenesisL1View {
+    let btc_params = BtcParams::from(BitcoinParams::from(bitcoin::Network::Bitcoin));
+    let interval = btc_params.difficulty_adjustment_interval() as u32;
+
+    let current_epoch_start_height = (block_height / interval) * interval;
+    let current_epoch_start_header = segment
+        .get_block_header_at(current_epoch_start_height)
+        .expect("missing epoch-start header in BTC fixture");
+
+    let block_header = segment
+        .get_block_header_at(block_height)
+        .expect("missing target header in BTC fixture");
+
+    let timestamps = fetch_block_timestamps_ascending(segment, block_height, TIMESTAMPS_FOR_MEDIAN);
+    let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps
+        .try_into()
+        .expect("timestamp fetch should return TIMESTAMPS_FOR_MEDIAN entries");
+
+    let block_id = L1BlockId::from(Buf32::from(
+        block_header.block_hash().as_raw_hash().to_byte_array(),
+    ));
+
+    let next_target =
+        if (block_height as u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
+            CompactTarget::from_next_work_required(
+                block_header.bits,
+                (block_header.time - current_epoch_start_header.time) as u64,
+                &btc_params,
+            )
+            .to_consensus()
+        } else {
+            block_header.target().to_compact_lossy().to_consensus()
+        };
+
+    GenesisL1View {
+        blk: L1BlockCommitment::new(block_height, block_id),
+        next_target,
+        epoch_start_timestamp: current_epoch_start_header.time,
+        last_11_timestamps: timestamps,
+    }
+}
+
+fn fetch_block_timestamps_ascending(
+    segment: &BtcMainnetSegment,
+    height: u32,
+    count: usize,
+) -> Vec<u32> {
+    let mut timestamps = Vec::with_capacity(count);
+
+    for i in 0..count {
+        let current_height = height.saturating_sub(i as u32);
+        if current_height < 1 {
+            timestamps.push(0);
+        } else {
+            let header = segment
+                .get_block_header_at(current_height)
+                .expect("missing historical header in BTC fixture");
+            timestamps.push(header.time);
+        }
+    }
+
+    timestamps.reverse();
+    timestamps
 }
 
 fn make_dummy_operator_pubkeys_with_seed(seed: u64) -> XOnlyPublicKey {

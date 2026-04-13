@@ -1,50 +1,27 @@
 //! # Strata ASM Specification
 //!
 //! This crate provides the Anchor State Machine (ASM) specification for the Strata protocol.
-//! The ASM specification defines which subprotocols are enabled, their genesis configurations,
-//! and protocol-level parameters like magic bytes.
 
-use strata_asm_common::{AsmSpec, Loader, Stage};
-use strata_asm_params::{
-    AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
-    SubprotocolInstance,
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, AsmSpec, ChainViewState, HeaderVerificationState,
+    SectionState, Stage, Subprotocol,
 };
-use strata_asm_proto_administration::AdministrationSubprotocol;
-use strata_asm_proto_bridge_v1::BridgeV1Subproto;
-use strata_asm_proto_checkpoint::subprotocol::CheckpointSubprotocol;
+use strata_asm_params::AsmParams;
+use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
+use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
+use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
 use strata_asm_proto_checkpoint_v0::{
     CheckpointV0InitConfig, CheckpointV0Subproto, CheckpointV0VerificationParams,
 };
-use strata_l1_txfmt::MagicBytes;
+use strata_btc_verification::HeaderVerificationState as NativeHeaderVerificationState;
 use strata_params::CredRule;
 
-/// ASM specification for the Strata protocol.
-///
-/// Implements the [`AsmSpec`] trait to define subprotocol processing order,
-/// magic bytes for L1 transaction filtering, and genesis configurations.
-#[derive(Debug)]
-pub struct StrataAsmSpec {
-    magic_bytes: MagicBytes,
-
-    // subproto init configs, which right now currently just contain the genesis data
-    checkpoint_v0_config: CheckpointV0InitConfig,
-    checkpoint_config: CheckpointInitConfig,
-    bridge_v1_config: BridgeV1InitConfig,
-    admin_config: AdministrationInitConfig,
-}
+/// Strata ASM specification.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct StrataAsmSpec;
 
 impl AsmSpec for StrataAsmSpec {
-    fn magic_bytes(&self) -> MagicBytes {
-        self.magic_bytes
-    }
-
-    fn load_subprotocols(&self, loader: &mut impl Loader) {
-        // TODO avoid clone?
-        loader.load_subprotocol::<AdministrationSubprotocol>(self.admin_config.clone());
-        loader.load_subprotocol::<CheckpointV0Subproto>(self.checkpoint_v0_config.clone());
-        loader.load_subprotocol::<CheckpointSubprotocol>(self.checkpoint_config.clone());
-        loader.load_subprotocol::<BridgeV1Subproto>(self.bridge_v1_config.clone());
-    }
+    type Params = AsmParams;
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
         stage.invoke_subprotocol::<AdministrationSubprotocol>();
@@ -52,61 +29,81 @@ impl AsmSpec for StrataAsmSpec {
         stage.invoke_subprotocol::<CheckpointSubprotocol>();
         stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
+
+    fn construct_genesis_state(&self, params: &Self::Params) -> AnchorState {
+        construct_genesis_state(params)
+    }
 }
 
 impl StrataAsmSpec {
     /// Creates a new ASM spec instance.
-    pub fn new(
-        magic_bytes: strata_l1_txfmt::MagicBytes,
-        checkpoint_v0_config: CheckpointV0InitConfig,
-        checkpoint_config: CheckpointInitConfig,
-        bridge_v1_config: BridgeV1InitConfig,
-        admin_config: AdministrationInitConfig,
-    ) -> Self {
-        Self {
-            magic_bytes,
-            checkpoint_v0_config,
-            checkpoint_config,
-            bridge_v1_config,
-            admin_config,
-        }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub fn from_asm_params(params: &AsmParams) -> Self {
-        let mut checkpoint_config = None;
-        let mut bridge_config = None;
-        let mut admin_config = None;
+    /// Builds the spec from params.
+    pub fn from_asm_params(_params: &AsmParams) -> Self {
+        Self
+    }
+}
 
-        for instance in &params.subprotocols {
-            match instance {
-                SubprotocolInstance::Checkpoint(cfg) => checkpoint_config = Some(cfg),
-                SubprotocolInstance::Bridge(cfg) => bridge_config = Some(cfg),
-                SubprotocolInstance::Admin(cfg) => admin_config = Some(cfg),
-            }
-        }
+/// Builds the genesis [`AnchorState`] from the given [`AsmParams`].
+pub fn construct_genesis_state(params: &AsmParams) -> AnchorState {
+    let genesis_admin_subprotocol_state = AdministrationSubprotoState::new(
+        params
+            .admin_config()
+            .expect("asm: missing Admin subprotocol config in params"),
+    );
+    let admin_subprotocol_section =
+        SectionState::from_state::<AdministrationSubprotocol>(&genesis_admin_subprotocol_state)
+            .expect("asm: Admin subprotocol genesis state fits section data capacity");
 
-        let ckpt = checkpoint_config.expect("AsmParams missing Checkpoint subprotocol");
-        let checkpoint_v0_config = CheckpointV0InitConfig {
-            verification_params: CheckpointV0VerificationParams {
-                genesis_l1_block: params.l1_view.blk,
-                cred_rule: CredRule::Unchecked, // FIXME: @PG
-                predicate: ckpt.checkpoint_predicate.clone(),
-            },
-        };
+    let checkpoint_config = params
+        .checkpoint_config()
+        .expect("asm: missing Checkpoint subprotocol config in params");
 
-        let bridge_v1_config = bridge_config
-            .expect("AsmParams missing Bridge subprotocol")
-            .clone();
-        let admin_config = admin_config
-            .expect("AsmParams missing Admin subprotocol")
-            .clone();
+    let checkpoint_v0_config = CheckpointV0InitConfig {
+        verification_params: CheckpointV0VerificationParams {
+            genesis_l1_block: params.anchor.block,
+            cred_rule: CredRule::Unchecked,
+            predicate: checkpoint_config.checkpoint_predicate.clone(),
+        },
+    };
+    let checkpoint_v0_state = CheckpointV0Subproto::init(&checkpoint_v0_config);
+    let checkpoint_v0_section =
+        SectionState::from_state::<CheckpointV0Subproto>(&checkpoint_v0_state)
+            .expect("asm: Checkpoint-v0 subprotocol genesis state fits section data capacity");
 
-        Self {
-            magic_bytes: params.magic,
-            checkpoint_v0_config,
-            checkpoint_config: ckpt.clone(),
-            bridge_v1_config,
-            admin_config,
-        }
+    let checkpoint_state = CheckpointState::init(checkpoint_config.clone());
+    let checkpoint_section = SectionState::from_state::<CheckpointSubprotocol>(&checkpoint_state)
+        .expect("asm: Checkpoint subprotocol genesis state fits section data capacity");
+
+    let genesis_bridge_subprotocol_state = BridgeV1State::new(
+        params
+            .bridge_config()
+            .expect("asm: missing Bridge subprotocol config in params"),
+    );
+    let bridge_subprotocol_section =
+        SectionState::from_state::<BridgeV1Subproto>(&genesis_bridge_subprotocol_state)
+            .expect("asm: Bridge subprotocol genesis state fits section data capacity");
+
+    let native_header_vs = NativeHeaderVerificationState::init(params.anchor.clone());
+    let history_accumulator = AsmHistoryAccumulatorState::new(params.anchor.block.height() as u64);
+    let chain_view = ChainViewState {
+        history_accumulator,
+        pow_state: HeaderVerificationState::from_native(native_header_vs),
+    };
+
+    AnchorState {
+        magic: AnchorState::magic_ssz(params.magic),
+        chain_view,
+        sections: vec![
+            admin_subprotocol_section,
+            checkpoint_v0_section,
+            checkpoint_section,
+            bridge_subprotocol_section,
+        ]
+        .try_into()
+        .expect("asm: genesis sections fit within capacity"),
     }
 }

@@ -7,18 +7,23 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+bitcoin-bosd-asm = { package = "bitcoin-bosd", version = "0.9.0" }
 strata-asm-bridge-msgs.workspace = true
 strata-asm-checkpoint-msgs.workspace = true
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-txs-checkpoint-v0.workspace = true
+strata-bridge-types-asm = { package = "strata-bridge-types", git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-checkpoint-types.workspace = true
+strata-checkpoint-types-ssz-asm = { package = "strata-checkpoint-types-ssz", git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-identifiers.workspace = true
 strata-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 
 borsh.workspace = true
+ssz.workspace = true
+ssz_derive.workspace = true
 thiserror.workspace = true
 
 [features]

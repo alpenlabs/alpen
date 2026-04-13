@@ -1,7 +1,7 @@
 use std::{thread, time};
 
 use strata_asm_common::AsmManifest;
-use strata_asm_logs::{constants::CHECKPOINT_UPDATE_LOG_TYPE, CheckpointUpdate};
+use strata_asm_logs::{constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE, CheckpointTipUpdate};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::{context::StateAccessor, transition::process_block};
 use strata_checkpoint_types::Checkpoint;
@@ -275,13 +275,13 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        // Check if this is a checkpoint ack log
-        if msg.ty() != CHECKPOINT_UPDATE_LOG_TYPE {
+        // Check if this is a checkpoint ack log.
+        if msg.ty() != CHECKPOINT_TIP_UPDATE_LOG_TYPE {
             continue;
         }
 
         // Try to decode checkpoint ack data
-        let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
+        let Ok(ack_data) = log.try_into_log::<CheckpointTipUpdate>() else {
             warn!(blockid = %manifest.blkid(), "failed to decode checkpoint ack log");
             continue;
         };
@@ -293,9 +293,12 @@ fn has_expected_checkpoint(
         };
 
         // Check if the ack epoch matches our expected checkpoint
-        if ack_data.epoch_commitment().epoch() == expected.batch_info().epoch() {
+        if ack_data.tip().epoch == expected.batch_info().epoch() {
             // Found checkpoint ack for expected epoch. Should end current epoch.
-            debug!(epoch = %ack_data.epoch_commitment(), "found checkpoint ack in ASM manifest");
+            debug!(
+                epoch = ack_data.tip().epoch,
+                "found checkpoint ack in ASM manifest"
+            );
             return true;
         }
     }

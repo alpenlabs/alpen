@@ -83,7 +83,8 @@ pub fn build_empty_chain(
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
-    );
+    )
+    .expect("genesis manifest should be valid");
     let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
     let genesis = execute_block(state, &genesis_info, None, genesis_components)?;
     blocks.push(genesis);
@@ -108,7 +109,8 @@ pub fn build_empty_chain(
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
-            );
+            )
+            .expect("dummy manifest should be valid");
             BlockComponents::new_manifests(vec![dummy_manifest])
         } else {
             BlockComponents::new_empty()
@@ -180,7 +182,8 @@ pub fn build_chain_with_transactions(
         L1BlockId::from(Buf32::from([0u8; 32])),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![],
-    );
+    )
+    .expect("genesis manifest should be valid");
     let genesis_info = BlockInfo::new_genesis(1_000_000);
     let genesis_components = BlockComponents::new_manifests(vec![genesis_manifest]);
     let genesis =
@@ -207,7 +210,8 @@ pub fn build_chain_with_transactions(
                 L1BlockId::from(Buf32::from([0u8; 32])),
                 WtxidsRoot::from(Buf32::from([0u8; 32])),
                 vec![],
-            );
+            )
+            .expect("dummy manifest should be valid");
             BlockComponents::new(
                 OLTxSegment::new(vec![make_gam_tx(gam_target)])
                     .expect("tx segment should be within limits"),

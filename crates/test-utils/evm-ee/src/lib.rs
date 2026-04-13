@@ -2,20 +2,26 @@
 
 use std::{fs::read_to_string, path::PathBuf};
 
+use bitcoin::hashes::Hash;
+use strata_asm_common::AsmManifest;
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::{context::StateAccessor, transition};
+use strata_identifiers::WtxidsRoot;
 use strata_ol_chain_types::{
     L1Segment, L2Block, L2BlockBody, L2BlockHeader, L2Header, SignedL2BlockHeader,
 };
 use strata_ol_chainstate_types::Chainstate;
-use strata_primitives::buf::{Buf32, Buf64};
+use strata_primitives::{
+    buf::{Buf32, Buf64},
+    L1BlockId, L1Height,
+};
 use strata_proofimpl_evm_ee_stf::{
     executor::process_block,
     primitives::{EvmEeProofInput, EvmEeProofOutput},
     utils::generate_exec_update,
     EvmBlockStfInput,
 };
-use strata_test_utils_btc::segment::BtcChainSegment;
+use strata_test_utils_btc::BtcMainnetSegment;
 use strata_test_utils_l2::{gen_params, get_genesis_chainstate};
 
 /// Represents a segment of EVM execution by holding inputs and outputs for
@@ -91,6 +97,7 @@ impl L2Segment {
         let mut blocks = Vec::new();
         let mut pre_states = Vec::new();
         let mut post_states = Vec::new();
+        let btc_segment = BtcMainnetSegment::load();
 
         let (prev_block_bundle, mut prev_chainstate) = get_genesis_chainstate(&params);
         let (mut prev_block, _) = prev_block_bundle.into_parts();
@@ -107,9 +114,7 @@ impl L2Segment {
                 let starting_height = genesis_height + 1;
                 let len: u32 = 3;
                 let new_height = starting_height + len - 1; // because inclusive
-                let manifests = BtcChainSegment::load()
-                    .get_block_manifests(starting_height, len as usize)
-                    .expect("fetch manifests");
+                let manifests = get_block_manifests(&btc_segment, starting_height, len as usize);
                 L1Segment::new(new_height, manifests)
             } else {
                 L1Segment::new_empty(genesis_height)
@@ -157,6 +162,30 @@ impl L2Segment {
             post_states,
         }
     }
+}
+
+fn get_block_manifests(
+    segment: &BtcMainnetSegment,
+    from_height: L1Height,
+    len: usize,
+) -> Vec<AsmManifest> {
+    (0..len)
+        .map(|i| get_block_manifest(segment, from_height + i as L1Height))
+        .collect()
+}
+
+fn get_block_manifest(segment: &BtcMainnetSegment, height: L1Height) -> AsmManifest {
+    let header = segment
+        .get_block_header_at(height)
+        .expect("missing BTC header fixture for manifest");
+    let blkid = L1BlockId::from(Buf32::from(
+        header.block_hash().as_raw_hash().to_byte_array(),
+    ));
+    let wtxs_root = WtxidsRoot::from(Buf32::from(
+        header.merkle_root.as_raw_hash().to_byte_array(),
+    ));
+    AsmManifest::new(height, blkid, wtxs_root, Vec::new())
+        .expect("manifests created from headers should be valid")
 }
 
 #[cfg(test)]

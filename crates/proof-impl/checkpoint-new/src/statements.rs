@@ -177,8 +177,12 @@ pub fn process_ol_stf_core(
     // preventing a malicious sequencer from posting valid proofs with mismatched
     // sidecar data (the L1 verifier reconstructs this hash from sidecar fields and
     // checks it against the proof).
-    let expected_terminal_header_complement =
-        TerminalHeaderComplement::from_full_header(&terminal_header);
+    let expected_terminal_header_complement = TerminalHeaderComplement::new(
+        terminal_header.timestamp(),
+        *terminal_header.parent_blkid(),
+        *terminal_header.body_root(),
+        *terminal_header.logs_root(),
+    );
     let terminal_header_complement_hash = expected_terminal_header_complement.compute_hash();
 
     // Compute the hash of all accumulated OL logs for the checkpoint claim

@@ -10,7 +10,7 @@ use strata_asm_params::AsmParams;
 use strata_asm_spec::StrataAsmSpec;
 #[cfg(feature = "debug-asm")]
 use strata_asm_spec_debug::DebugAsmSpec;
-use strata_asm_worker::{AsmWorkerHandle, AsmWorkerStatus};
+use strata_asm_worker::{AsmState as WorkerAsmState, AsmWorkerHandle, AsmWorkerStatus};
 use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
@@ -18,6 +18,7 @@ use strata_node_context::NodeContext;
 use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
+use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_status::StatusChannel;
 use strata_storage::{MmrId, NodeStorage};
 use strata_tasks::TaskExecutor;
@@ -204,7 +205,7 @@ fn spawn_csm_listener(
         .map(|(block, state)| AsmWorkerStatus {
             is_initialized: true,
             cur_block: Some(block),
-            cur_state: Some(state),
+            cur_state: Some(storage_to_worker_state(state)),
         })
         .collect();
 
@@ -311,9 +312,13 @@ pub fn spawn_asm_worker(
     // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()
         .with_context(context)
-        .with_asm_params(asm_params)
+        .with_params((*asm_params).clone())
         .with_asm_spec(asm_spec)
         .launch(executor)?;
 
     Ok(handle)
+}
+
+fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
+    WorkerAsmState::new(state.state().clone(), state.logs().clone())
 }

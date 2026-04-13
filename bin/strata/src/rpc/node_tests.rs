@@ -486,12 +486,15 @@ async fn checkpoint_info_returns_expected_l1_and_l2_ranges() {
         .with_block_and_state(&first_epoch_block, genesis_ol_state())
         .with_block_and_state(&mid_epoch_block, genesis_ol_state())
         .with_block_and_state(&terminal_block, genesis_ol_state())
-        .with_manifest(AsmManifest::new(
-            501,
-            L1BlockId::from(Buf32::from([0x61; 32])),
-            WtxidsRoot::default(),
-            vec![],
-        ))
+        .with_manifest(
+            AsmManifest::new(
+                501,
+                L1BlockId::from(Buf32::from([0x61; 32])),
+                WtxidsRoot::default(),
+                vec![],
+            )
+            .expect("test manifest should be valid"),
+        )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
 
     let rpc = make_rpc(provider);
@@ -566,12 +569,15 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
         .with_block_and_state(&first_epoch_block, genesis_ol_state())
         .with_block_and_state(&mid_epoch_block, genesis_ol_state())
         .with_block_and_state(&terminal_block, genesis_ol_state())
-        .with_manifest(AsmManifest::new(
-            501,
-            L1BlockId::from(Buf32::from([0x61; 32])),
-            WtxidsRoot::default(),
-            vec![],
-        ))
+        .with_manifest(
+            AsmManifest::new(
+                501,
+                L1BlockId::from(Buf32::from([0x61; 32])),
+                WtxidsRoot::default(),
+                vec![],
+            )
+            .expect("test manifest should be valid"),
+        )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
 
     let rpc = make_rpc(provider);
@@ -638,12 +644,10 @@ async fn checkpoint_info_returns_pending_when_observation_missing() {
         .with_block_and_state(&first_epoch_block, genesis_ol_state())
         .with_block_and_state(&mid_epoch_block, genesis_ol_state())
         .with_block_and_state(&terminal_block, genesis_ol_state())
-        .with_manifest(AsmManifest::new(
-            501,
-            fixed_l1_block_id(0x61),
-            WtxidsRoot::default(),
-            vec![],
-        ));
+        .with_manifest(
+            AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
+                .expect("test manifest should be valid"),
+        );
 
     let rpc = make_rpc(provider);
 
@@ -715,12 +719,10 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
         .with_block_and_state(&first_epoch_block, genesis_ol_state())
         .with_block_and_state(&mid_epoch_block, genesis_ol_state())
         .with_block_and_state(&terminal_block, genesis_ol_state())
-        .with_manifest(AsmManifest::new(
-            501,
-            fixed_l1_block_id(0x61),
-            WtxidsRoot::default(),
-            vec![],
-        ))
+        .with_manifest(
+            AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
+                .expect("test manifest should be valid"),
+        )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
 
     let rpc = make_rpc(provider);
@@ -775,12 +777,15 @@ async fn checkpoint_info_epoch_0_l1_range_from_genesis() {
         .with_epoch_summary(summary)
         .with_block_and_state(&first_block, genesis_ol_state())
         .with_block_and_state(&terminal_block, genesis_ol_state())
-        .with_manifest(AsmManifest::new(
-            TEST_GENESIS_L1_HEIGHT + 1,
-            l1_start_blkid,
-            WtxidsRoot::default(),
-            vec![],
-        ));
+        .with_manifest(
+            AsmManifest::new(
+                TEST_GENESIS_L1_HEIGHT + 1,
+                l1_start_blkid,
+                WtxidsRoot::default(),
+                vec![],
+            )
+            .expect("test manifest should be valid"),
+        );
 
     let rpc = make_rpc(provider);
 
@@ -853,12 +858,10 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
         .with_block_and_state(&first_epoch_block, genesis_ol_state())
         .with_block_and_state(&mid_epoch_block, genesis_ol_state())
         .with_block_and_state(&terminal_block, genesis_ol_state())
-        .with_manifest(AsmManifest::new(
-            501,
-            fixed_l1_block_id(0x61),
-            WtxidsRoot::default(),
-            vec![],
-        ))
+        .with_manifest(
+            AsmManifest::new(501, fixed_l1_block_id(0x61), WtxidsRoot::default(), vec![])
+                .expect("test manifest should be valid"),
+        )
         .with_checkpoint_l1_ref(cur_commitment, l1_ref);
 
     let rpc = make_rpc(provider);

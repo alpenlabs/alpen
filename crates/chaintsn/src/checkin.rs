@@ -2,13 +2,16 @@
 
 use strata_asm_common::AsmManifest;
 use strata_asm_logs::{
-    constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
-    CheckpointUpdate, DepositLog,
+    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
+    CheckpointTipUpdate, DepositLog,
 };
 use strata_bridge_types::{DepositDescriptor, DepositIntent};
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
-use strata_primitives::l1::{BitcoinAmount, L1BlockCommitment, L1Height};
+use strata_primitives::{
+    epoch::EpochCommitment,
+    l1::{BitcoinAmount, L1BlockCommitment, L1Height},
+};
 
 use crate::{
     context::{AuxProvider, ProviderError, ProviderResult, StateAccessor},
@@ -127,8 +130,8 @@ fn process_asm_logs<'s, S: StateAccessor>(
 ) -> Result<(), TsnError> {
     for log in manifest.logs() {
         match log.ty() {
-            Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
-                if let Ok(ckpt_update) = log.try_into_log::<CheckpointUpdate>() {
+            Some(CHECKPOINT_TIP_UPDATE_LOG_TYPE) => {
+                if let Ok(ckpt_update) = log.try_into_log::<CheckpointTipUpdate>() {
                     if let Err(e) = process_l1_checkpoint(state, &ckpt_update) {
                         warn!(%e, "failed to process L1 checkpoint");
                     }
@@ -152,10 +155,11 @@ fn process_asm_logs<'s, S: StateAccessor>(
 
 fn process_l1_checkpoint<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
-    ckpt_update: &CheckpointUpdate,
+    ckpt_update: &CheckpointTipUpdate,
 ) -> Result<(), OpError> {
     debug!(?ckpt_update, "observed l1 checkpoint");
-    let new_fin_epoch = ckpt_update.epoch_commitment();
+    let tip = ckpt_update.tip();
+    let new_fin_epoch = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     state.inner_mut().set_finalized_epoch(new_fin_epoch);
     Ok(())
 }

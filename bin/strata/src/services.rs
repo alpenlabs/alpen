@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use strata_btcio::reader::query::bitcoin_data_reader_task;
 use strata_chain_worker_new::start_chain_worker_service_from_ctx;
 use strata_consensus_logic::{
-    FcmContext, start_fcm_service,
+    AsmBlockSubmitter, FcmContext, start_fcm_service,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
 use strata_identifiers::OLBlockCommitment;
@@ -262,7 +262,7 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             Arc::new(nodectx.config().btcio.reader.clone()),
             rollup_to_btcio_params(nodectx.params().rollup()),
             nodectx.status_channel().as_ref().clone(),
-            asm_handle,
+            Arc::new(AsmBlockSubmitter::new(asm_handle)),
         ),
     );
 }

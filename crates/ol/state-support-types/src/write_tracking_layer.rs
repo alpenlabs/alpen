@@ -422,7 +422,8 @@ mod tests {
         let height = L1Height::from(100u32);
         let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
         let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
-        let manifest = AsmManifest::new(height, l1_blkid, wtxids_root, vec![]);
+        let manifest =
+            AsmManifest::new(height, l1_blkid, wtxids_root, vec![]).expect("valid test manifest");
 
         tracking.append_manifest(height, manifest);
 

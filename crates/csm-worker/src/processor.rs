@@ -2,12 +2,14 @@
 
 use std::sync::Arc;
 
-use strata_asm_common::AsmLogEntry;
+use strata_asm_common::{AsmLog, AsmLogEntry};
 use strata_asm_logs::{
-    CheckpointTipUpdate, CheckpointUpdate,
+    CheckpointTipUpdate,
     constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
 };
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
+use strata_codec::Codec;
+use strata_codec_utils::CodecSsz;
 use strata_csm_types::{
     CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint, SyncAction,
 };
@@ -16,6 +18,44 @@ use strata_primitives::prelude::*;
 use tracing::*;
 
 use crate::{state::CsmWorkerState, sync_actions::apply_action};
+
+/// Compatibility decoder for legacy checkpoint-v0 logs.
+///
+/// The upstream ASM logs crate no longer exports this type, but we still
+/// decode it here to preserve checkpoint-v0 ingestion during migration.
+#[derive(Debug, Clone, Codec)]
+struct CheckpointUpdate {
+    epoch_commitment: CodecSsz<EpochCommitment>,
+    batch_info: CodecSsz<BatchInfo>,
+    checkpoint_txid: CodecSsz<BitcoinTxid>,
+}
+
+impl CheckpointUpdate {
+    #[cfg(test)]
+    fn new(
+        epoch_commitment: EpochCommitment,
+        batch_info: BatchInfo,
+        checkpoint_txid: BitcoinTxid,
+    ) -> Self {
+        Self {
+            epoch_commitment: CodecSsz::new(epoch_commitment),
+            batch_info: CodecSsz::new(batch_info),
+            checkpoint_txid: CodecSsz::new(checkpoint_txid),
+        }
+    }
+
+    fn batch_info(&self) -> &BatchInfo {
+        self.batch_info.inner()
+    }
+
+    fn checkpoint_txid(&self) -> &BitcoinTxid {
+        self.checkpoint_txid.inner()
+    }
+}
+
+impl AsmLog for CheckpointUpdate {
+    const TY: strata_msg_fmt::TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
+}
 
 #[expect(deprecated, reason = "v0 checkpoint path is retained intentionally")]
 pub(crate) fn process_log(
@@ -133,8 +173,7 @@ fn process_checkpoint_tip_log(
 
     // v1 tip logs do not contain full batch transition details.
     // CSM only needs epoch progression for finalized-epoch signaling, so we
-    // synthesize a minimal checkpoint view from the tip while preserving
-    // txid/wtxid from the tip update log.
+    // synthesize a minimal checkpoint view from the tip.
     // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
     // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
@@ -210,8 +249,8 @@ fn mark_ol_checkpoint_l1_observed(
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     let ol_checkpoint = state.storage.ol_checkpoint();
-    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
-    // TODO(STR-2952): populate real checkpoint wtxid here.
+    // Upstream tip logs do not include txid/wtxid.
+    let checkpoint_txid = Buf32::zero();
     let checkpoint_wtxid = checkpoint_txid;
 
     let observation = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
@@ -269,9 +308,8 @@ fn checkpoint_from_tip_update(
     asm_block: &L1BlockCommitment,
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
-    // TODO(STR-2952): populate real checkpoint wtxid here.
-    // For now we mirror txid to preserve the required `CheckpointL1Ref` shape.
-    let checkpoint_txid = *checkpoint_tip_update.checkpoint_txid();
+    // Upstream tip logs do not include txid/wtxid.
+    let checkpoint_txid = Buf32::zero();
     let checkpoint_wtxid = checkpoint_txid;
     let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 
@@ -311,7 +349,7 @@ mod tests {
 
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{
-        CheckpointTipUpdate, CheckpointUpdate,
+        CheckpointTipUpdate,
         constants::{CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
     };
     use strata_checkpoint_types::BatchInfo;
@@ -330,7 +368,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::process_log;
+    use super::{CheckpointUpdate, process_log};
     use crate::state::CsmWorkerState;
 
     /// Helper to create a test CSM worker state
@@ -436,6 +474,7 @@ mod tests {
         let mut arbgen = ArbitraryGenerator::new();
         // Keep raw length below TypeId width so this remains typeless by construction.
         AsmLogEntry::from_raw(vec![arbgen.generate::<u8>()])
+            .expect("single-byte raw payload should produce typeless log")
     }
 
     #[test]
@@ -512,7 +551,7 @@ mod tests {
                 OLBlockId::from(Buf32::from([epoch as u8; 32])),
             );
             let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-            let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
+            let tip_update = CheckpointTipUpdate::new(tip);
             let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
             let result = process_log(&mut state, &log, &asm_block);
@@ -549,7 +588,7 @@ mod tests {
 
         let ol_tip = OLBlockCommitment::new(90, OLBlockId::from(Buf32::from([epoch as u8; 32])));
         let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-        let tip_update = CheckpointTipUpdate::new(tip, Buf32::from([epoch as u8; 32]));
+        let tip_update = CheckpointTipUpdate::new(tip);
         let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
 
         process_log(&mut state, &log, &asm_block).expect("tip log should process");
@@ -561,13 +600,13 @@ mod tests {
             .expect("query l1 ref");
         assert_eq!(
             observation.as_ref().map(|entry| entry.txid),
-            Some(Buf32::from([epoch as u8; 32])),
-            "l1 ref should persist checkpoint txid from v1 tip log"
+            Some(Buf32::zero()),
+            "l1 ref should persist placeholder checkpoint txid for v1 tip logs"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.wtxid),
-            Some(Buf32::from([epoch as u8; 32])),
-            "l1 ref should persist checkpoint wtxid from v1 tip log, which is same as txid(until STR-2952)"
+            Some(Buf32::zero()),
+            "l1 ref should persist placeholder checkpoint wtxid for v1 tip logs"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.l1_commitment),

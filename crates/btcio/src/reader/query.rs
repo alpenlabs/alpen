@@ -5,15 +5,11 @@ use std::{
 };
 
 use anyhow::bail;
-use bitcoin::{params, Block, BlockHash, CompactTarget};
+use bitcoin::{Block, BlockHash};
 use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
-use strata_btc_verification::{get_relative_difficulty_adjustment_height, HeaderVerificationState};
 use strata_config::btcio::ReaderConfig;
-use strata_primitives::{
-    constants::TIMESTAMPS_FOR_MEDIAN,
-    l1::{BtcParams, GenesisL1View, L1BlockCommitment, L1Height},
-};
+use strata_primitives::l1::{L1BlockCommitment, L1Height};
 use strata_state::BlockSubmitter;
 use strata_status::StatusChannel;
 use strata_storage::{L1BlockManager, NodeStorage};
@@ -300,142 +296,4 @@ async fn process_block<R: Reader>(
     let block_ev = L1Event::BlockData(block_data, state.epoch());
 
     Ok((block_ev, l1blkid))
-}
-
-/// Retrieves the timestamps for a specified number of blocks starting from the given block height,
-/// block’s timestamp. If a block height is less than 1 (i.e. there is no block), it inserts a
-/// placeholder value of 0. The resulting vector is then reversed so that timestamps are returned in
-/// ascending order (oldest first).
-async fn fetch_block_timestamps_ascending(
-    client: &impl Reader,
-    height: L1Height,
-    count: usize,
-) -> anyhow::Result<Vec<u32>> {
-    let mut timestamps = Vec::with_capacity(count);
-
-    for i in 0..count {
-        let current_height = height.saturating_sub(i as u32);
-        // If we've gone past block 1, push 0 as a placeholder.
-        if current_height < 1 {
-            timestamps.push(0);
-        } else {
-            let header = client.get_block_header_at(current_height as u64).await?;
-            timestamps.push(header.time);
-        }
-    }
-
-    timestamps.reverse();
-    Ok(timestamps)
-}
-
-pub async fn fetch_genesis_l1_view(
-    client: &impl Reader,
-    block_height: L1Height,
-) -> anyhow::Result<GenesisL1View> {
-    // Create BTC parameters based on the current network.
-    let network = client.network().await?;
-    let btc_params = BtcParams::from(params::Params::from(network));
-
-    // Get the difficulty adjustment block just before the given block height,
-    // representing the start of the current epoch.
-    let current_epoch_start_height =
-        get_relative_difficulty_adjustment_height(0, block_height, btc_params.inner());
-    let current_epoch_start_header = client
-        .get_block_header_at(current_epoch_start_height as u64)
-        .await?;
-
-    // Fetch the block header at the height
-    let block_header = client.get_block_header_at(block_height as u64).await?;
-
-    // Fetch timestamps
-    let timestamps =
-        fetch_block_timestamps_ascending(client, block_height, TIMESTAMPS_FOR_MEDIAN).await?;
-    let timestamps: [u32; TIMESTAMPS_FOR_MEDIAN] = timestamps.try_into().expect(
-        "fetch_block_timestamps_ascending should return exactly TIMESTAMPS_FOR_MEDIAN timestamps",
-    );
-
-    // Compute the block ID for the verified block.
-    let block_id = block_header.block_hash().to_l1_block_id();
-
-    // If (block_height + 1) is the start of the new epoch, we need to calculate the
-    // next_block_target, else next_block_target will be current block's target
-    let next_block_target =
-        if (block_height as u64 + 1).is_multiple_of(btc_params.difficulty_adjustment_interval()) {
-            CompactTarget::from_next_work_required(
-                block_header.bits,
-                (block_header.time - current_epoch_start_header.time) as u64,
-                &btc_params,
-            )
-            .to_consensus()
-        } else {
-            client
-                .get_block_header_at(block_height as u64)
-                .await?
-                .target()
-                .to_compact_lossy()
-                .to_consensus()
-        };
-
-    // Build the genesis L1 view structure.
-    let genesis_l1_view = GenesisL1View {
-        blk: L1BlockCommitment::new(block_height, block_id),
-        next_target: next_block_target,
-        epoch_start_timestamp: current_epoch_start_header.time,
-        last_11_timestamps: timestamps,
-    };
-
-    Ok(genesis_l1_view)
-}
-
-/// Returns the [`HeaderVerificationState`] after applying the given block height. This state can be
-/// used to verify the next block header.
-///
-/// This function assumes that `block_height` is valid and gathers all necessary
-/// blockchain data, such as difficulty adjustment headers, block timestamps, and target
-/// values, to compute the verification state.
-///
-/// It calculates the current and previous epoch adjustment headers, fetches the required
-/// timestamps (including a safe margin for potential reorg depth), and determines the next
-/// block's target.
-pub async fn fetch_verification_state(
-    client: &impl Reader,
-    block_height: L1Height,
-) -> anyhow::Result<HeaderVerificationState> {
-    // Create BTC parameters based on the current network.
-    let network = client.network().await?;
-    let genesis_l1_view = fetch_genesis_l1_view(client, block_height).await?;
-    // Build the header verification state structure.
-    let header_verification_state = HeaderVerificationState::new(network, &genesis_l1_view);
-
-    trace!(%block_height, ?header_verification_state, "HeaderVerificationState");
-
-    Ok(header_verification_state)
-}
-
-#[cfg(test)]
-mod test {
-    use strata_test_utils_btcio::{get_bitcoind_and_client, mine_blocks};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_fetch_timestamps() {
-        let (bitcoind, client) = get_bitcoind_and_client();
-        let _ = mine_blocks(&bitcoind, &client, 115, None).await.unwrap();
-
-        let ts = fetch_block_timestamps_ascending(&client, 15, 10)
-            .await
-            .unwrap();
-        assert!(ts.is_sorted());
-
-        let ts = fetch_block_timestamps_ascending(&client, 10, 10)
-            .await
-            .unwrap();
-        assert!(ts.is_sorted());
-
-        let ts = fetch_block_timestamps_ascending(&client, 5, 10)
-            .await
-            .unwrap();
-        assert!(ts.is_sorted());
-    }
 }

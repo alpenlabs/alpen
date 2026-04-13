@@ -42,6 +42,7 @@ strata-tasks.workspace = true
 zkaleido.workspace = true
 
 anyhow.workspace = true
+async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
