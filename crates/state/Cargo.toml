@@ -12,7 +12,7 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-stf.workspace = true
-strata-bridge-types.workspace = true
+strata-ol-bridge-types.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true

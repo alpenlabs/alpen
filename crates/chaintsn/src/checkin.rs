@@ -5,7 +5,7 @@ use strata_asm_logs::{
     constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
     CheckpointTipUpdate, DepositLog,
 };
-use strata_bridge_types::{DepositDescriptor, DepositIntent};
+use strata_ol_bridge_types::{DepositDescriptor, DepositIntent};
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
 use strata_primitives::{

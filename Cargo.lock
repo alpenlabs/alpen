@@ -1046,10 +1046,10 @@ dependencies = [
  "shrex",
  "sled",
  "strata-asm-txs-bridge-v1",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-cli-common",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-ol-bridge-types",
  "strata-params",
  "strata-primitives",
  "strata-test-utils-btcio 0.1.0",
@@ -1127,12 +1127,12 @@ dependencies = [
  "bitcoin-bosd 0.10.0",
  "eyre",
  "strata-acct-types",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-msg-fmt",
+ "strata-ol-bridge-types",
  "strata-ol-msg-types",
  "strata-snark-acct-runtime",
  "tracing",
@@ -1409,9 +1409,9 @@ dependencies = [
  "revm",
  "revm-primitives",
  "secp256k1 0.29.1",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-crypto",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-primitives",
 ]
 
@@ -1495,7 +1495,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-sol-types",
  "serde",
- "strata-bridge-types 0.3.0-alpha.1",
+ "strata-ol-bridge-types",
  "strata-primitives",
 ]
 
@@ -13937,7 +13937,7 @@ dependencies = [
  "ssz_derive",
  "strata-asm-common",
  "strata-asm-txs-bridge-v1",
- "strata-bridge-types 0.1.0",
+ "strata-bridge-types",
 ]
 
 [[package]]
@@ -14068,7 +14068,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-params",
  "strata-asm-txs-bridge-v1",
- "strata-bridge-types 0.1.0",
+ "strata-bridge-types",
  "strata-btc-types",
  "strata-codec",
  "strata-crypto",
@@ -14091,7 +14091,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-params",
  "strata-asm-txs-checkpoint",
- "strata-bridge-types 0.1.0",
+ "strata-bridge-types",
  "strata-btc-types",
  "strata-checkpoint-types-ssz",
  "strata-codec",
@@ -14114,10 +14114,10 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-txs-checkpoint-v0",
- "strata-bridge-types 0.1.0",
  "strata-checkpoint-types",
  "strata-checkpoint-types-ssz",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-params",
  "strata-predicate",
  "strata-primitives",
@@ -14136,7 +14136,7 @@ dependencies = [
  "strata-asm-bridge-msgs",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-bridge-types 0.1.0",
+ "strata-bridge-types",
  "strata-btc-types",
  "strata-identifiers",
  "strata-l1-txfmt",
@@ -14210,7 +14210,7 @@ dependencies = [
  "rand 0.8.5",
  "strata-asm-common",
  "strata-asm-txs-test-utils",
- "strata-bridge-types 0.1.0",
+ "strata-bridge-types",
  "strata-btc-types",
  "strata-codec",
  "strata-crypto",
@@ -14242,9 +14242,9 @@ dependencies = [
  "borsh",
  "ssz",
  "strata-asm-common",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-checkpoint-types",
  "strata-l1-envelope-fmt",
+ "strata-ol-bridge-types",
  "strata-ol-chainstate-types",
  "thiserror 2.0.18",
 ]
@@ -14297,22 +14297,6 @@ dependencies = [
  "ssz_derive",
  "strata-btc-types",
  "strata-identifiers",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "strata-bridge-types"
-version = "0.3.0-alpha.1"
-dependencies = [
- "arbitrary",
- "borsh",
- "proptest",
- "serde",
- "ssz",
- "ssz_derive",
- "strata-codec",
- "strata-identifiers",
- "strata-primitives",
  "thiserror 2.0.18",
 ]
 
@@ -14458,10 +14442,10 @@ dependencies = [
  "rand_core 0.6.4",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-btc-verification",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -14531,7 +14515,6 @@ dependencies = [
  "strata-asm-proto-bridge-v1",
  "strata-asm-txs-bridge-v1",
  "strata-asm-txs-checkpoint-v0",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-btcio",
  "strata-checkpoint-types",
  "strata-common",
@@ -14544,6 +14527,7 @@ dependencies = [
  "strata-eectl",
  "strata-evmexec",
  "strata-l1-txfmt",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -15046,9 +15030,9 @@ dependencies = [
  "reth-rpc-api",
  "reth-rpc-layer",
  "revm-primitives",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-db-types",
  "strata-eectl",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-ol-chainstate-types",
  "strata-params",
@@ -15236,6 +15220,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-bridge-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "proptest",
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-bridge-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-primitives",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "strata-ol-chain-types"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -15281,9 +15282,9 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "arbitrary",
  "borsh",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-crypto",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-primitives",
  "strata-state",
 ]
@@ -15537,12 +15538,12 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-codec",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
  "strata-msg-fmt",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-msg-types",
@@ -15740,7 +15741,7 @@ dependencies = [
  "rsp-client-executor",
  "serde",
  "serde_json",
- "strata-bridge-types 0.3.0-alpha.1",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -15834,11 +15835,11 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "bitcoin",
  "jsonrpsee",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-checkpoint-types",
  "strata-common",
  "strata-csm-types",
  "strata-db-types",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-rpc-types",
@@ -15856,12 +15857,11 @@ dependencies = [
  "serde",
  "serde_json",
  "strata-asm-proto-bridge-v1",
- "strata-bridge-types 0.1.0",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-btc-types",
  "strata-checkpoint-types",
  "strata-csm-types",
  "strata-db-types",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-primitives",
  "thiserror 2.0.18",
@@ -16031,9 +16031,9 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-stf",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-csm-types",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-primitives",
 ]
 
@@ -16142,13 +16142,13 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-manifest-types",
  "strata-asm-txs-bridge-v1",
- "strata-bridge-types 0.3.0-alpha.1",
  "strata-cli-common",
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-msg-fmt",
+ "strata-ol-bridge-types",
  "strata-ol-msg-types",
  "strata-ol-rpc-types",
  "strata-ol-stf",

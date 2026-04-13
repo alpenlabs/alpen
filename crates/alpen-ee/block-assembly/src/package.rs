@@ -1,7 +1,7 @@
 use alpen_ee_common::EnginePayload;
 use bitcoin_bosd::Descriptor;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
-use strata_bridge_types::OperatorSelection;
+use strata_ol_bridge_types::OperatorSelection;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::DecodedEeMessageData;
 use strata_ee_chain_types::{

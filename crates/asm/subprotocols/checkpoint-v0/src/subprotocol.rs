@@ -17,7 +17,7 @@ use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
-use strata_bridge_types_asm::{OperatorSelection as AsmOperatorSelection, WithdrawOutput};
+use strata_ol_bridge_types::{OperatorSelection, WithdrawOutput};
 use strata_checkpoint_types_ssz_asm::CheckpointTip;
 use strata_identifiers::L1BlockCommitment;
 use strata_params::CredRule;
@@ -173,7 +173,7 @@ fn process_checkpoint_transaction_v0(
         let output = WithdrawOutput::new(destination, *intent.amt());
         let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
             output,
-            selected_operator: AsmOperatorSelection::from_raw(intent.selected_operator().raw()),
+            selected_operator: OperatorSelection::from_raw(intent.selected_operator().raw()),
         };
         relayer.relay_msg(&bridge_msg);
     }

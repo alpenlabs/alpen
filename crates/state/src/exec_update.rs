@@ -4,7 +4,7 @@
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use strata_bridge_types::{DepositIntent, WithdrawalIntent};
+use strata_ol_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_csm_types::BlobSpec;
 use strata_identifiers::SubjectId;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload};

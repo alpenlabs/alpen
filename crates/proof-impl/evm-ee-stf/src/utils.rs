@@ -1,5 +1,5 @@
 use alpen_reth_evm::address_to_subject;
-use strata_bridge_types::WithdrawalIntent;
+use strata_ol_bridge_types::WithdrawalIntent;
 use strata_ol_chain_types::ExecSegment;
 use strata_primitives::{buf::Buf32, evm_exec::create_evm_extra_payload, l1::BitcoinAmount};
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateInput, UpdateOutput};
