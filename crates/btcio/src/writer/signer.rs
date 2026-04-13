@@ -69,12 +69,8 @@ pub(crate) async fn complete_reveal_and_broadcast(
     );
 
     async {
-        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
-        broadcast_handle
-            .put_tx_entry(cid, L1TxEntry::from_tx(&envelope.commit_tx))
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
-
+        // Attach the signature first so that any encoding failure aborts
+        // before anything is written to the broadcaster DB.
         let mut reveal_tx = envelope.reveal_tx.clone();
         attach_reveal_signature(
             &mut reveal_tx,
@@ -83,6 +79,12 @@ pub(crate) async fn complete_reveal_and_broadcast(
             signature,
         )
         .map_err(EnvelopeError::Other)?;
+
+        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        broadcast_handle
+            .put_tx_entry(cid, L1TxEntry::from_tx(&envelope.commit_tx))
+            .await
+            .map_err(|e| EnvelopeError::Other(e.into()))?;
 
         let rid: Buf32 = reveal_tx.compute_txid().to_buf32();
         broadcast_handle

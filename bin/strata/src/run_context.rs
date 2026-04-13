@@ -49,6 +49,10 @@ impl RunContext {
         self.common.asm_params()
     }
 
+    pub(crate) fn params(&self) -> &Arc<strata_params::Params> {
+        self.common.params()
+    }
+
     /// Returns the storage.
     pub(crate) fn storage(&self) -> &Arc<NodeStorage> {
         self.common.storage()

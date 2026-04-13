@@ -25,6 +25,8 @@ use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
+#[cfg(feature = "sequencer")]
+use strata_primitives::buf::Buf32;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
@@ -56,15 +58,23 @@ struct SeqRpcDeps {
 
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
+
+    /// Schnorr public key for verifying reveal-tx signatures submitted via RPC.
+    sequencer_pubkey: Option<Buf32>,
 }
 
 #[cfg(feature = "sequencer")]
 impl SeqRpcDeps {
     /// Creates a new [`SeqRpcDeps`] instance.
-    fn new(envelope_handle: Arc<EnvelopeHandle>, blockasm_handle: Arc<BlockasmHandle>) -> Self {
+    fn new(
+        envelope_handle: Arc<EnvelopeHandle>,
+        blockasm_handle: Arc<BlockasmHandle>,
+        sequencer_pubkey: Option<Buf32>,
+    ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
+            sequencer_pubkey,
         }
     }
 
@@ -84,9 +94,11 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
+        let sequencer_pubkey = runctx.params().rollup.cred_rule.schnorr_key().copied();
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
+            sequencer_pubkey,
         )
     });
 
@@ -175,6 +187,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
             deps.fcm_handle.clone(),
+            sequencer_deps.sequencer_pubkey,
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);
         module

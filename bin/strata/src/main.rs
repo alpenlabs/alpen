@@ -70,14 +70,13 @@ fn main() -> Result<()> {
     // Extract the envelope pubkey from rollup params.
     #[cfg(feature = "sequencer")]
     let envelope_pubkey = if nodectx.config().client.is_sequencer {
-        match &nodectx.params().rollup.cred_rule {
-            strata_params::CredRule::SchnorrKey(key) => Some(key.0),
-            strata_params::CredRule::Unchecked => {
-                return Err(anyhow!(
-                    "sequencer requires CredRule::SchnorrKey, got Unchecked"
-                ));
-            }
-        }
+        let key = nodectx
+            .params()
+            .rollup
+            .cred_rule
+            .schnorr_key()
+            .ok_or_else(|| anyhow!("sequencer requires CredRule::SchnorrKey, got Unchecked"))?;
+        Some(key.0)
     } else {
         None
     };

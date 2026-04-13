@@ -10,7 +10,7 @@ use strata_btcio::writer::EnvelopeHandle;
 use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;
 use strata_consensus_logic::{FcmServiceHandle, message::ForkChoiceMessage};
-use strata_crypto::hash;
+use strata_crypto::{hash, schnorr::verify_schnorr_sig};
 use strata_csm_types::{L1Payload, PayloadDest, PayloadIntent};
 use strata_db_types::types::L1BundleStatus;
 use strata_identifiers::{Epoch, OLBlockId};
@@ -40,6 +40,11 @@ pub(crate) struct OLSeqRpcServer {
 
     /// Fork choice manager handle.
     fcm_handle: Arc<FcmServiceHandle>,
+
+    /// Schnorr public key for verifying reveal-tx signatures.
+    ///
+    /// `None` when the sequencer runs with `CredRule::Unchecked` — verification is skipped.
+    sequencer_pubkey: Option<Buf32>,
 }
 
 impl OLSeqRpcServer {
@@ -49,12 +54,14 @@ impl OLSeqRpcServer {
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
+        sequencer_pubkey: Option<Buf32>,
     ) -> Self {
         Self {
             storage,
             blockasm_handle,
             envelope_handle,
             fcm_handle,
+            sequencer_pubkey,
         }
     }
 }
@@ -204,7 +211,17 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
             )));
         }
 
-        entry.payload_signature = Some(Buf64(sig.0));
+        let sig = Buf64(sig.0);
+        if self
+            .sequencer_pubkey
+            .is_some_and(|pk| !verify_schnorr_sig(&sig, &stored_sighash, &pk))
+        {
+            return Err(internal_error(format!(
+                "invalid signature for payload {payload_idx}"
+            )));
+        }
+
+        entry.payload_signature = Some(sig);
         l1_writer
             .put_payload_entry_async(payload_idx, entry)
             .await
