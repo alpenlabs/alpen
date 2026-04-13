@@ -10,19 +10,21 @@ use bitcoin_bosd_asm::Descriptor as AsmDescriptor;
 use strata_asm_bridge_msgs::BridgeIncomingMsg;
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
-    AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData, logging,
+    AsmLog, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
+    logging,
 };
-use strata_asm_logs::CheckpointTipUpdate;
+use strata_asm_logs::constants::CHECKPOINT_UPDATE_LOG_TYPE;
 use strata_asm_txs_checkpoint_v0::{
     CHECKPOINT_V0_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE,
     extract_signed_checkpoint_from_envelope, extract_withdrawal_messages,
 };
-use strata_ol_bridge_types::{OperatorSelection, WithdrawOutput};
-use strata_checkpoint_types_ssz_asm::CheckpointTip;
+use strata_checkpoint_types::{BatchInfo, Checkpoint};
+use strata_codec::Codec;
+use strata_codec_utils::CodecSsz;
 use strata_identifiers::L1BlockCommitment;
-use strata_params::CredRule;
-use strata_predicate::{PredicateKey, PredicateTypeId};
-use strata_primitives::{L1Height, buf::Buf32};
+use strata_msg_fmt::TypeId;
+use strata_ol_bridge_types::{OperatorSelection, WithdrawOutput};
+use strata_primitives::{L1Height, epoch::EpochCommitment, l1::BitcoinTxid};
 
 use crate::{
     error::{CheckpointV0Error, CheckpointV0Result},
@@ -38,6 +40,30 @@ use crate::{
 pub struct CheckpointV0InitConfig {
     /// Verification parameters for checkpoint validation
     pub verification_params: CheckpointV0VerificationParams,
+}
+
+/// V0 checkpoint log emitted by the checkpoint-v0 subprotocol.
+#[derive(Debug, Clone, Codec)]
+struct CheckpointUpdate {
+    epoch_commitment: CodecSsz<EpochCommitment>,
+    batch_info: CodecSsz<BatchInfo>,
+    checkpoint_txid: CodecSsz<BitcoinTxid>,
+}
+
+impl CheckpointUpdate {
+    fn from_checkpoint(checkpoint: &Checkpoint, checkpoint_txid: BitcoinTxid) -> Self {
+        let batch_info = checkpoint.batch_info();
+
+        Self {
+            epoch_commitment: CodecSsz::new(batch_info.get_epoch_commitment()),
+            batch_info: CodecSsz::new(batch_info.clone()),
+            checkpoint_txid: CodecSsz::new(checkpoint_txid),
+        }
+    }
+}
+
+impl AsmLog for CheckpointUpdate {
+    const TY: TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
 }
 
 /// Checkpoint v0 subprotocol implementation.
@@ -118,24 +144,7 @@ impl Subprotocol for CheckpointV0Subproto {
         }
     }
 
-    /// Process incoming administration upgrade messages for checkpoint v0.
-    ///
-    /// Handles configuration updates emitted by the administration subprotocol such as
-    /// sequencer key rotations and rollup verifying key refreshes.
-    fn process_msgs(state: &mut Self::State, msgs: &[Self::Msg], _l1ref: &L1BlockCommitment) {
-        for msg in msgs {
-            match msg {
-                CheckpointIncomingMsg::UpdateSequencerKey(new_key) => {
-                    apply_sequencer_update(state, new_key);
-                }
-                CheckpointIncomingMsg::UpdateCheckpointPredicate(new_predicate) => {
-                    apply_rollup_vk_update(state, new_predicate);
-                }
-                // Deposit tracking is handled by the new checkpoint subprotocol (ID=1).
-                CheckpointIncomingMsg::DepositProcessed(_) => {}
-            }
-        }
-    }
+    fn process_msgs(_state: &mut Self::State, _msgs: &[Self::Msg], _l1ref: &L1BlockCommitment) {}
 }
 
 /// Process a single checkpoint transaction (v0 implementation)
@@ -185,114 +194,15 @@ fn process_checkpoint_transaction_v0(
         current_l1_height
     );
 
-    let batch_info = signed_checkpoint.checkpoint().batch_info();
-    let checkpoint_tip = CheckpointTip::new(
-        batch_info.epoch(),
-        batch_info.final_l1_block().height(),
-        *batch_info.final_l2_block(),
+    let checkpoint_update = CheckpointUpdate::from_checkpoint(
+        signed_checkpoint.checkpoint(),
+        BitcoinTxid::from(tx.tx().compute_txid()),
     );
-    let checkpoint_tip_update = CheckpointTipUpdate::new(checkpoint_tip);
 
-    match AsmLogEntry::from_log(&checkpoint_tip_update) {
+    match AsmLogEntry::from_log(&checkpoint_update) {
         Ok(log_entry) => relayer.emit_log(log_entry),
-        Err(err) => logging::error!(error = ?err, "Failed to encode checkpoint tip update log"),
+        Err(err) => logging::error!(error = ?err, "Failed to encode checkpoint update log"),
     }
 
     Ok(true)
-}
-
-fn apply_sequencer_update(state: &mut CheckpointV0VerifierState, new_predicate: &PredicateKey) {
-    if new_predicate.id() != PredicateTypeId::Bip340Schnorr.as_u8() {
-        logging::warn!(
-            predicate_id = new_predicate.id(),
-            "Ignoring sequencer key update with non-BIP340 predicate"
-        );
-        return;
-    }
-
-    let Ok(new_key_bytes) = <[u8; 32]>::try_from(new_predicate.condition()) else {
-        logging::warn!(
-            condition_len = new_predicate.condition().len(),
-            "Ignoring sequencer key update with invalid BIP340 key length"
-        );
-        return;
-    };
-
-    let new_key = Buf32::from(new_key_bytes);
-    let previous_rule = state.cred_rule.clone();
-
-    if matches!(&previous_rule, CredRule::SchnorrKey(existing) if existing == &new_key) {
-        logging::info!("Sequencer key update received, key unchanged");
-        return;
-    }
-
-    match previous_rule {
-        CredRule::SchnorrKey(_) => {
-            state.update_sequencer_key(new_key);
-            logging::info!(new_key = %new_key, "Updated sequencer schnorr public key");
-        }
-        CredRule::Unchecked => {
-            logging::warn!(new_key = %new_key, "Received unchecked sequencer key update from administration");
-            state.update_sequencer_key(new_key);
-            logging::info!(new_key = %new_key, "Updated sequencer public key to unchecked CredRule");
-        }
-    }
-}
-
-fn apply_rollup_vk_update(state: &mut CheckpointV0VerifierState, new_predicate: &PredicateKey) {
-    let prev_kind = state.predicate.id();
-    let next_kind = new_predicate.id();
-
-    if prev_kind == next_kind {
-        logging::info!(kind = %next_kind, "Applying rollup verifying key update");
-    } else {
-        logging::info!(
-            previous = %prev_kind,
-            next = %next_kind,
-            "Switching rollup proving system"
-        );
-    }
-
-    state.update_predicate(new_predicate.clone());
-}
-
-#[cfg(test)]
-mod tests {
-    use strata_params::CredRule;
-    use strata_primitives::{buf::Buf32, l1::L1BlockCommitment};
-
-    use super::*;
-
-    fn test_params() -> CheckpointV0InitConfig {
-        let genesis_commitment = L1BlockCommitment::default();
-        let verification_params = CheckpointV0VerificationParams {
-            genesis_l1_block: genesis_commitment,
-            cred_rule: CredRule::Unchecked,
-            predicate: PredicateKey::always_accept(),
-        };
-
-        CheckpointV0InitConfig {
-            verification_params,
-        }
-    }
-
-    #[test]
-    fn process_msgs_updates_sequencer_key() {
-        let params = test_params();
-        let mut state = CheckpointV0Subproto::init(&params);
-
-        let new_key_bytes = [42u8; 32];
-        let new_key = Buf32::from(new_key_bytes);
-        let msgs = [CheckpointIncomingMsg::UpdateSequencerKey(
-            PredicateKey::new(PredicateTypeId::Bip340Schnorr, new_key_bytes.to_vec()),
-        )];
-
-        let l1ref = L1BlockCommitment::default();
-        CheckpointV0Subproto::process_msgs(&mut state, &msgs, &l1ref);
-
-        match &state.cred_rule {
-            CredRule::SchnorrKey(current) => assert_eq!(current, &new_key),
-            CredRule::Unchecked => panic!("sequencer key should switch to schnorr rule"),
-        }
-    }
 }
