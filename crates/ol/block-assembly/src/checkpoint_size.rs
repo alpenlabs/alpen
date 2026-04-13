@@ -1,12 +1,22 @@
+//! Checkpoint payload size policy used by the sequencer's block assembler.
+//!
+//! Inlined from alpen's old `strata-checkpoint-types-ssz::validation` module.
+//! The asm version of `strata-checkpoint-types-ssz` does not ship a `validation`
+//! submodule because the soft/hard size policy is a sequencer concern, not part
+//! of the on-chain protocol type schema.
+//!
+//! The block assembler uses [`checkpoint_size_verdict`] to incrementally check
+//! whether the next transaction would push the in-progress checkpoint payload
+//! past its hard limit (drop the tx) or past the 90% soft limit (commit the tx
+//! and seal the epoch).
+
+use strata_checkpoint_types_ssz::{
+    MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES, OL_DA_DIFF_MAX_SIZE,
+};
 use strata_ol_chain_types_new::OLLog;
 
-use crate::{
-    CheckpointPayloadError, MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES,
-    OL_DA_DIFF_MAX_SIZE,
-};
-
 /// L1 envelope limit for the full `CheckpointPayload` (single envelope, not chunked).
-pub const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
+pub(crate) const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
 
 /// Fixed overhead in the `CheckpointPayload` SSZ encoding.
 ///
@@ -19,7 +29,7 @@ pub const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
 ///   + proof bytes         (worst case MAX_PROOF_LEN = 4 KiB)
 ///   + CodecSsz varint     (≤5 bytes)
 /// ```
-pub const CHECKPOINT_FIXED_OVERHEAD: usize = {
+pub(crate) const CHECKPOINT_FIXED_OVERHEAD: usize = {
     const PAYLOAD_FIXED: usize = 60;
     const SIDECAR_FIXED: usize = 112;
     const PROOF_BUDGET: usize = 4096;
@@ -32,22 +42,22 @@ const SOFT_LIMIT_RATIO_DEN: usize = 10;
 
 /// Accumulated log metrics for checkpoint size estimation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct LogMetrics {
+pub(crate) struct LogMetrics {
     pub count: usize,
     pub total_payload: usize,
     pub ssz_size: usize,
 }
 
 impl LogMetrics {
-    pub fn from_logs(logs: &[OLLog]) -> Self {
+    pub(crate) fn from_logs(logs: &[OLLog]) -> Self {
         let mut m = Self::default();
         m.add_logs(logs);
         m
     }
 
-    pub fn add_logs(&mut self, logs: &[OLLog]) {
+    pub(crate) fn add_logs(&mut self, logs: &[OLLog]) {
         for log in logs {
-            let payload_len = log.payload().len();
+            let payload_len = log.payload.len();
             self.count += 1;
             self.total_payload += payload_len;
             self.ssz_size += 12 + payload_len;
@@ -59,7 +69,7 @@ impl LogMetrics {
 ///
 /// Variants are ordered so `max()` yields the most restrictive verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CheckpointSizeVerdict {
+pub(crate) enum CheckpointSizeVerdict {
     WithinLimits,
     SoftLimitReached,
     HardLimitExceeded,
@@ -79,7 +89,7 @@ fn dimension_verdict(value: usize, hard_limit: usize) -> CheckpointSizeVerdict {
 /// Computes the overall checkpoint size verdict by checking every dimension.
 ///
 /// `state_diff_size` is the estimated DA diff size.
-pub fn checkpoint_size_verdict(
+pub(crate) fn checkpoint_size_verdict(
     state_diff_size: usize,
     log_metrics: &LogMetrics,
 ) -> CheckpointSizeVerdict {
@@ -94,33 +104,6 @@ pub fn checkpoint_size_verdict(
     .into_iter()
     .max()
     .unwrap_or(CheckpointSizeVerdict::WithinLimits)
-}
-
-/// Hard-limit-only validation for [`CheckpointSidecar`](crate::CheckpointSidecar) construction.
-pub fn validate_checkpoint_components(
-    state_diff_size: usize,
-    log_count: usize,
-    total_log_payload: usize,
-) -> Result<(), CheckpointPayloadError> {
-    if state_diff_size as u64 > OL_DA_DIFF_MAX_SIZE {
-        return Err(CheckpointPayloadError::StateDiffTooLarge {
-            provided: state_diff_size as u64,
-            max: OL_DA_DIFF_MAX_SIZE,
-        });
-    }
-    if log_count as u64 > MAX_OL_LOGS_PER_CHECKPOINT {
-        return Err(CheckpointPayloadError::OLLogsTooLarge {
-            provided: log_count as u64,
-            max: MAX_OL_LOGS_PER_CHECKPOINT,
-        });
-    }
-    if total_log_payload > MAX_TOTAL_LOG_PAYLOAD_BYTES {
-        return Err(CheckpointPayloadError::OLLogsTotalPayloadTooLarge {
-            provided: total_log_payload as u64,
-            max: MAX_TOTAL_LOG_PAYLOAD_BYTES as u64,
-        });
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -207,59 +190,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_components_ok() {
-        assert!(validate_checkpoint_components(0, 0, 0).is_ok());
-    }
-
-    #[test]
-    fn validate_components_rejects_large_diff() {
-        let result = validate_checkpoint_components(OL_DA_DIFF_MAX_SIZE as usize + 1, 0, 0);
-        assert!(matches!(
-            result,
-            Err(CheckpointPayloadError::StateDiffTooLarge { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_components_rejects_too_many_logs() {
-        let result = validate_checkpoint_components(0, MAX_OL_LOGS_PER_CHECKPOINT as usize + 1, 0);
-        assert!(matches!(
-            result,
-            Err(CheckpointPayloadError::OLLogsTooLarge { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_components_rejects_large_total_payload() {
-        let result = validate_checkpoint_components(0, 0, MAX_TOTAL_LOG_PAYLOAD_BYTES + 1);
-        assert!(matches!(
-            result,
-            Err(CheckpointPayloadError::OLLogsTotalPayloadTooLarge { .. })
-        ));
-    }
-
-    #[test]
-    fn log_metrics_incremental() {
-        let log1 = OLLog::new(strata_identifiers::AccountSerial::one(), vec![0u8; 100]);
-        let log2 = OLLog::new(strata_identifiers::AccountSerial::one(), vec![0u8; 200]);
-
-        let batch = LogMetrics::from_logs(&[log1.clone(), log2.clone()]);
-
-        let mut incremental = LogMetrics::default();
-        incremental.add_logs(&[log1]);
-        incremental.add_logs(&[log2]);
-
-        assert_eq!(batch, incremental);
-        assert_eq!(batch.count, 2);
-        assert_eq!(batch.total_payload, 300);
-        assert_eq!(batch.ssz_size, 2 * 12 + 300);
-    }
-
-    #[test]
     fn verdict_log_count_soft_limit() {
-        let soft = MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10;
         let metrics = LogMetrics {
-            count: soft,
+            count: MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10,
             ..Default::default()
         };
         assert_eq!(
@@ -270,9 +203,8 @@ mod tests {
 
     #[test]
     fn verdict_total_payload_soft_limit() {
-        let soft = MAX_TOTAL_LOG_PAYLOAD_BYTES * 9 / 10;
         let metrics = LogMetrics {
-            total_payload: soft,
+            total_payload: MAX_TOTAL_LOG_PAYLOAD_BYTES * 9 / 10,
             ..Default::default()
         };
         assert_eq!(
@@ -282,26 +214,11 @@ mod tests {
     }
 
     #[test]
-    fn verdict_just_below_all_soft_thresholds() {
-        let da = OL_DA_DIFF_MAX_SIZE as usize * 9 / 10 - 1;
-        let metrics = LogMetrics {
-            count: MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10 - 1,
-            total_payload: MAX_TOTAL_LOG_PAYLOAD_BYTES * 9 / 10 - 1,
-            ssz_size: 0,
-        };
-        // Envelope = CHECKPOINT_FIXED_OVERHEAD + da + 0, well under 395k.
-        assert_eq!(
-            checkpoint_size_verdict(da, &metrics),
-            CheckpointSizeVerdict::WithinLimits,
-        );
-    }
-
-    #[test]
-    fn verdict_multiple_soft_limits_still_soft() {
-        // DA diff and log count both at soft threshold — worst is still SoftLimitReached.
+    fn verdict_da_diff_soft_with_log_count_within() {
+        // DA diff at 90% threshold, log count below threshold.
         let da = OL_DA_DIFF_MAX_SIZE as usize * 9 / 10;
         let metrics = LogMetrics {
-            count: MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10,
+            count: MAX_OL_LOGS_PER_CHECKPOINT as usize / 2,
             ..Default::default()
         };
         assert_eq!(

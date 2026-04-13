@@ -6,9 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use strata_checkpoint_types_ssz::{
-    MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES, OL_DA_DIFF_MAX_SIZE,
-};
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
@@ -26,6 +23,7 @@ use tracing::{debug, error, warn};
 use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
     MempoolProvider,
+    checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict},
     context::BlockAssemblyAnchorContext,
     da_tracker::AccumulatedDaData,
     error::BlockAssemblyError,
@@ -44,81 +42,6 @@ struct ProcessTransactionsOutput<S: IStateAccessor> {
     accumulated_da: AccumulatedDaData,
     /// Whether the estimated checkpoint payload is approaching the L1 envelope limit.
     checkpoint_size_limit_reached: bool,
-}
-
-/// L1 envelope limit for the full checkpoint payload (single envelope).
-const MAX_CHECKPOINT_PAYLOAD_SIZE: usize = 395_000;
-
-/// Fixed overhead in checkpoint payload encoding.
-const CHECKPOINT_FIXED_OVERHEAD: usize = {
-    const PAYLOAD_FIXED: usize = 60;
-    const SIDECAR_FIXED: usize = 112;
-    const PROOF_BUDGET: usize = 4096;
-    const CODEC_OVERHEAD: usize = 5;
-    PAYLOAD_FIXED + SIDECAR_FIXED + PROOF_BUDGET + CODEC_OVERHEAD
-};
-
-const SOFT_LIMIT_RATIO_NUM: usize = 9;
-const SOFT_LIMIT_RATIO_DEN: usize = 10;
-
-/// Accumulated OL log metrics for checkpoint size estimation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct LogMetrics {
-    count: usize,
-    total_payload: usize,
-    ssz_size: usize,
-}
-
-impl LogMetrics {
-    fn from_logs(logs: &[OLLog]) -> Self {
-        let mut metrics = Self::default();
-        metrics.add_logs(logs);
-        metrics
-    }
-
-    fn add_logs(&mut self, logs: &[OLLog]) {
-        for log in logs {
-            let payload_len = log.payload().len();
-            self.count += 1;
-            self.total_payload += payload_len;
-            self.ssz_size += 12 + payload_len;
-        }
-    }
-}
-
-/// Checkpoint-size verdict ordered by restrictiveness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum CheckpointSizeVerdict {
-    WithinLimits,
-    SoftLimitReached,
-    HardLimitExceeded,
-}
-
-fn dimension_verdict(value: usize, hard_limit: usize) -> CheckpointSizeVerdict {
-    if value >= hard_limit {
-        CheckpointSizeVerdict::HardLimitExceeded
-    } else if value >= hard_limit * SOFT_LIMIT_RATIO_NUM / SOFT_LIMIT_RATIO_DEN {
-        CheckpointSizeVerdict::SoftLimitReached
-    } else {
-        CheckpointSizeVerdict::WithinLimits
-    }
-}
-
-fn checkpoint_size_verdict(
-    state_diff_size: usize,
-    log_metrics: &LogMetrics,
-) -> CheckpointSizeVerdict {
-    let envelope_size = CHECKPOINT_FIXED_OVERHEAD + state_diff_size + log_metrics.ssz_size;
-
-    [
-        dimension_verdict(state_diff_size, OL_DA_DIFF_MAX_SIZE as usize),
-        dimension_verdict(log_metrics.count, MAX_OL_LOGS_PER_CHECKPOINT as usize),
-        dimension_verdict(log_metrics.total_payload, MAX_TOTAL_LOG_PAYLOAD_BYTES),
-        dimension_verdict(envelope_size, MAX_CHECKPOINT_PAYLOAD_SIZE),
-    ]
-    .into_iter()
-    .max()
-    .unwrap_or(CheckpointSizeVerdict::WithinLimits)
 }
 
 /// Maps an [`ExecError`] to a [`MempoolTxInvalidReason`].
