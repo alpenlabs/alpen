@@ -27,6 +27,8 @@ use crate::{
     task::{TaskResult, TaskStatus},
 };
 
+type WatcherMap<T> = HashMap<Vec<u8>, watch::Sender<Option<TaskResult<T>>>>;
+
 /// Single-proof-type prover.
 ///
 /// Generic over `H` (spec) only. The zkVM host type is erased inside
@@ -39,7 +41,7 @@ pub struct Prover<H: ProofSpec> {
     receipt_store: Option<Arc<dyn ReceiptStore>>,
     receipt_hook: Option<Arc<dyn ReceiptHook<H>>>,
     /// Watch channels for notifying waiters when tasks reach terminal states.
-    watchers: Arc<RwLock<HashMap<Vec<u8>, watch::Sender<Option<TaskResult<H::Task>>>>>>,
+    watchers: Arc<RwLock<WatcherMap<H::Task>>>,
     /// Whether we've run recovery on startup.
     recovered: AtomicBool,
 }
@@ -108,7 +110,7 @@ impl<H: ProofSpec> Prover<H> {
         &self,
         tasks: &[H::Task],
     ) -> ProverResult<Vec<TaskResult<H::Task>>> {
-        let mut receivers: Vec<(usize, watch::Receiver<Option<TaskResult<H::Task>>>)> = Vec::new();
+        let mut receivers: Vec<(usize, watch::Receiver<Option<TaskResult<_>>>)> = Vec::new();
         let mut results: Vec<Option<TaskResult<H::Task>>> = vec![None; tasks.len()];
 
         for (i, task) in tasks.iter().enumerate() {
@@ -372,7 +374,10 @@ impl<H: ProofSpec> Prover<H> {
 
         if let Some(ref cfg) = self.config.retry {
             if cfg.should_retry(new_count) {
-                warn!(retry_count = new_count, "transient failure, scheduling retry");
+                warn!(
+                    retry_count = new_count,
+                    "transient failure, scheduling retry"
+                );
                 let _ = self.task_store.update_status(
                     key,
                     TaskStatus::TransientFailure {
@@ -397,16 +402,11 @@ impl<H: ProofSpec> Prover<H> {
     }
 
     async fn notify(&self, key: &[u8], task: &H::Task) {
-        let result = self
-            .task_store
-            .get(key)
-            .and_then(|r| match r.status() {
-                TaskStatus::Completed => Some(TaskResult::completed(task.clone())),
-                TaskStatus::PermanentFailure { error } => {
-                    Some(TaskResult::failed(task.clone(), error))
-                }
-                _ => None,
-            });
+        let result = self.task_store.get(key).and_then(|r| match r.status() {
+            TaskStatus::Completed => Some(TaskResult::completed(task.clone())),
+            TaskStatus::PermanentFailure { error } => Some(TaskResult::failed(task.clone(), error)),
+            _ => None,
+        });
 
         if let Some(result) = result {
             if let Some(tx) = self.watchers.read().await.get(key) {

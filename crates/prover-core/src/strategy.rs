@@ -3,9 +3,9 @@
 //! Both are sync/blocking — called inside `spawn_blocking` by the prover.
 //! The `Host` type is captured at build time and erased via `dyn ProveStrategy<H>`.
 
-use std::sync::Arc;
 #[cfg(feature = "remote")]
 use std::time::Duration;
+use std::{fmt, sync::Arc};
 
 use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
 
@@ -27,8 +27,8 @@ pub struct ProveContext {
     persist_fn: Option<Box<dyn FnOnce(Vec<u8>) + Send>>,
 }
 
-impl std::fmt::Debug for ProveContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for ProveContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProveContext")
             .field("saved", &self.saved.as_ref().map(|s| s.len()))
             .finish()
@@ -36,10 +36,7 @@ impl std::fmt::Debug for ProveContext {
 }
 
 impl ProveContext {
-    pub fn new(
-        saved: Option<Vec<u8>>,
-        persist: impl FnOnce(Vec<u8>) + Send + 'static,
-    ) -> Self {
+    pub fn new(saved: Option<Vec<u8>>, persist: impl FnOnce(Vec<u8>) + Send + 'static) -> Self {
         Self {
             saved,
             persist_fn: Some(Box::new(persist)),
@@ -137,8 +134,7 @@ where
         input: &<H::Program as ZkVmProgram>::Input,
         mut ctx: ProveContext,
     ) -> ProverResult<ProofReceiptWithMetadata> {
-        use tokio::{runtime::Builder, task::LocalSet, time::sleep};
-        use zkaleido::RemoteProofStatus;
+        use tokio::{runtime::Builder, task::LocalSet};
 
         let rt = Builder::new_current_thread()
             .enable_all()
@@ -252,10 +248,9 @@ where
             .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
 
         // Verify output is well-formed.
-        let _ = <H::Program as ZkVmProgram>::process_output::<Host>(
-            receipt.receipt().public_values(),
-        )
-        .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
+        let _ =
+            <H::Program as ZkVmProgram>::process_output::<Host>(receipt.receipt().public_values())
+                .map_err(|e| ProverError::PermanentFailure(e.to_string()))?;
 
         Ok(receipt)
     }

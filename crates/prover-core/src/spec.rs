@@ -41,8 +41,16 @@ pub trait ProofSpec: Send + Sync + 'static {
     /// `Into<Vec<u8>>` / `TryFrom<Vec<u8>>` enable byte-key storage.
     /// The byte representation must be deterministic (same task produces same bytes),
     /// otherwise idempotent submit breaks. Borsh and bincode are deterministic.
-    type Task: Clone + Debug + Display + Eq + Hash + Send + Sync
-        + Into<Vec<u8>> + TryFrom<Vec<u8>> + 'static;
+    type Task: Clone
+        + Debug
+        + Display
+        + Eq
+        + Hash
+        + Send
+        + Sync
+        + Into<Vec<u8>>
+        + TryFrom<Vec<u8>>
+        + 'static;
 
     /// The zkaleido program to execute. Input must be `Send` for `spawn_blocking`.
     type Program: ZkVmProgram<Input: Send + Sync> + Send + Sync + 'static;

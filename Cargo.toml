@@ -110,7 +110,7 @@ members = [
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
   "bin/prover-perf",
-  "bin/strata",      # New binary
+  "bin/strata",                  # New binary
 
   # integration tests
   "bin/strata-test-cli",

@@ -115,12 +115,11 @@ impl TaskStore for SledTaskStore {
     }
 
     fn insert(&self, record: TaskRecord) -> ProverResult<()> {
-        if self
-            .tree
-            .contains_key(record.key())
-            .unwrap_or(false)
-        {
-            return Err(ProverError::TaskAlreadyExists(format!("{:?}", record.key())));
+        if self.tree.contains_key(record.key()).unwrap_or(false) {
+            return Err(ProverError::TaskAlreadyExists(format!(
+                "{:?}",
+                record.key()
+            )));
         }
         let stored = StoredRecord::from_record(&record);
         self.put_stored(record.key(), &stored)

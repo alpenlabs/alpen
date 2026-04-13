@@ -27,9 +27,10 @@ impl TaskStore for InMemoryTaskStore {
     fn insert(&self, record: TaskRecord) -> ProverResult<()> {
         let mut map = self.records.write().expect("lock");
         if map.contains_key(record.key()) {
-            return Err(ProverError::TaskAlreadyExists(
-                format!("{:?}", record.key()),
-            ));
+            return Err(ProverError::TaskAlreadyExists(format!(
+                "{:?}",
+                record.key()
+            )));
         }
         map.insert(record.key().to_vec(), record);
         Ok(())

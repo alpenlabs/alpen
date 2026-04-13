@@ -75,10 +75,7 @@ impl<H: ProofSpec> ProverHandle<H> {
     ///
     /// Only available if a [`ReceiptStore`](strata_prover_core::ReceiptStore) was
     /// provided to the builder. Returns `Err` if no store is configured.
-    pub fn get_receipt(
-        &self,
-        task: &H::Task,
-    ) -> ProverResult<Option<ProofReceiptWithMetadata>> {
+    pub fn get_receipt(&self, task: &H::Task) -> ProverResult<Option<ProofReceiptWithMetadata>> {
         self.prover.get_receipt(task)
     }
 
