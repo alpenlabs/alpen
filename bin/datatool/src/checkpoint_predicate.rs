@@ -1,3 +1,4 @@
+// TODO(STR-3064): remove VK_HASH_STR usage — compute VK hash from VK bytes at build time.
 //! Checkpoint predicate resolution based on enabled features and CLI overrides.
 
 use std::{error, fmt, str::FromStr};

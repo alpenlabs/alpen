@@ -421,22 +421,22 @@ impl MempoolTxData {
     }
 }
 
-/// Serializable task identifier for prover task persistence.
+/// Persisted task identifier for prover task storage.
 ///
 /// Uses [`ProofContext`] as the program key and stores backend as a compact
 /// discriminant: `0 = Native`, `1 = SP1`, `2 = Risc0`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub struct SerializableTaskId {
+pub struct PersistedTaskId {
     pub program: ProofContext,
     pub backend: u8,
 }
 
-/// Serializable task record for prover task persistence.
+/// Persisted task record for prover task storage.
 ///
 /// Timestamps are persisted as seconds since UNIX epoch.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct SerializableTaskRecord {
-    pub task_id: SerializableTaskId,
+pub struct PersistedTaskRecord {
+    pub task_id: PersistedTaskId,
     pub uuid: String,
     pub status: TaskStatus,
     pub created_at_secs: u64,

@@ -106,7 +106,7 @@ tracing.workspace = true
 zeroize = { workspace = true, optional = true }
 zkaleido = { workspace = true, optional = true }
 zkaleido-native-adapter = { workspace = true, optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc20", features = [
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
   "remote-prover",
 ], optional = true }
 

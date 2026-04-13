@@ -1,3 +1,4 @@
+// TODO(STR-3064): extract epoch block-fetching into a shared OL block manager utility.
 //! Input fetcher for checkpoint proofs.
 //!
 //! Reads OL state, blocks, and DA data directly from local [`NodeStorage`]
@@ -78,6 +79,8 @@ fn fetch_input_blocking(
 
     let terminal = summary.terminal();
     let prev_terminal = summary.prev_terminal();
+    let prev_terminal_slot = prev_terminal.slot();
+    let target_epoch = summary.epoch();
 
     // Get the parent block header (last block of the previous epoch).
     let parent_block = storage
@@ -109,6 +112,22 @@ fn fetch_input_blocking(
                     "block {cur_id:?} missing during epoch {epoch_index} chain traversal"
                 ))
             })?;
+
+        let block_header = block.header();
+        let block_slot = block_header.slot();
+        let block_epoch = block_header.epoch();
+        if block_slot <= prev_terminal_slot {
+            return Err(ProverError::StateNotFound(format!(
+                "block at slot {block_slot} is at or below prev terminal slot \
+                 {prev_terminal_slot} while collecting epoch {epoch_index}"
+            )));
+        }
+        if block_epoch != target_epoch {
+            return Err(ProverError::StateNotFound(format!(
+                "obtained block from different epoch while collecting epoch {epoch_index}: \
+                 expected {target_epoch}, got {block_epoch}"
+            )));
+        }
 
         let parent_id = *block.header().parent_blkid();
         blocks.push(block);

@@ -1,3 +1,4 @@
+// TODO(STR-3064): consolidate ProverBackend/ZkVmBackend with zkaleido::ZkVm.
 //! Host resolution for checkpoint proofs.
 //!
 //! Maps zkVM backends to the correct host instances for the checkpoint

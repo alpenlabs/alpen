@@ -43,6 +43,7 @@ use crate::run_context::RunContext;
 
 /// Interval used to retry failed proof tasks even when no new epoch notification
 /// is emitted.
+// TODO(STR-3064): make this configurable via ProverConfig.retry_interval.
 const PROVER_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Type alias for the checkpoint proof handler.
@@ -172,6 +173,7 @@ fn validate_backend_config(backend: ProverBackend) -> Result<()> {
 /// `last_payload_epoch` is the last epoch for which a checkpoint payload was
 /// already built (read from DB at startup). The runner resumes from the next
 /// epoch, avoiding redundant DB lookups for already-completed epochs.
+// TODO(STR-3064): split this into smaller helpers.
 fn spawn_checkpoint_runner(
     executor: &TaskExecutor,
     prover_handle: ProverHandle<CheckpointTask>,

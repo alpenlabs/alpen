@@ -33,8 +33,7 @@ use crate::{
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, SerializableTaskId,
-        SerializableTaskRecord,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskId, PersistedTaskRecord,
     },
     DbResult, RawMmrId,
 };
@@ -479,27 +478,19 @@ pub trait ProofDatabase: Send + Sync + 'static {
 /// These records back PaaS task idempotency and crash recovery.
 pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Retrieves a task record by task identifier.
-    fn get_task(&self, task_id: SerializableTaskId) -> DbResult<Option<SerializableTaskRecord>>;
+    fn get_task(&self, task_id: PersistedTaskId) -> DbResult<Option<PersistedTaskRecord>>;
 
     /// Retrieves a task identifier by UUID.
-    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<SerializableTaskId>>;
+    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<PersistedTaskId>>;
 
     /// Inserts a task record.
-    fn insert_task(
-        &self,
-        task_id: SerializableTaskId,
-        record: SerializableTaskRecord,
-    ) -> DbResult<()>;
+    fn insert_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
 
     /// Updates an existing task record.
-    fn update_task(
-        &self,
-        task_id: SerializableTaskId,
-        record: SerializableTaskRecord,
-    ) -> DbResult<()>;
+    fn update_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
 
     /// Lists all persisted task records.
-    fn list_all_tasks(&self) -> DbResult<Vec<(SerializableTaskId, SerializableTaskRecord)>>;
+    fn list_all_tasks(&self) -> DbResult<Vec<(PersistedTaskId, PersistedTaskRecord)>>;
 }
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast

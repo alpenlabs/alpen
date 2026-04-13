@@ -246,7 +246,10 @@ pub struct ProverConfig {
     /// The `sp1` feature must be enabled at compile time for `sp1` to work.
     pub backend: ProverBackend,
 
-    /// Number of prover workers for the selected backend.
+    /// Maximum number of concurrent proof tasks for the selected backend.
+    // TODO(STR-3064): the integrated prover submits epochs sequentially so this
+    // value is effectively unused. Consider removing it once `paas` supports
+    // defaulting unspecified backends to 0 workers (see also STR-1947).
     pub workers: usize,
 }
 

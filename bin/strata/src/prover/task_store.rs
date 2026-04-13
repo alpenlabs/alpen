@@ -9,7 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use strata_db_types::types::{SerializableTaskId, SerializableTaskRecord};
+use strata_db_types::types::{PersistedTaskId, PersistedTaskRecord};
 use strata_paas::{
     ProverServiceError, ProverServiceResult, TaskId, TaskRecord, TaskStatus, TaskStore, ZkVmBackend,
 };
@@ -20,7 +20,7 @@ use super::task::CheckpointTask;
 
 /// Persistent task store for checkpoint proof tasks.
 ///
-/// Maps [`CheckpointTask`] to the existing [`SerializableTaskId`] schema
+/// Maps [`CheckpointTask`] to the existing [`PersistedTaskId`] schema
 /// via commitment-aware proof context keys, sharing the same database instance
 /// as the proof storer.
 pub(crate) struct PersistentTaskStore {
@@ -32,8 +32,8 @@ impl PersistentTaskStore {
         Self { db }
     }
 
-    fn to_serializable_id(task_id: &TaskId<CheckpointTask>) -> SerializableTaskId {
-        SerializableTaskId {
+    fn to_persisted_id(task_id: &TaskId<CheckpointTask>) -> PersistedTaskId {
+        PersistedTaskId {
             program: ProofContext::CheckpointCommitment(task_id.program().commitment),
             backend: match task_id.backend() {
                 ZkVmBackend::Native => 0,
@@ -43,9 +43,7 @@ impl PersistentTaskStore {
         }
     }
 
-    fn from_serializable_id(
-        ser: &SerializableTaskId,
-    ) -> ProverServiceResult<TaskId<CheckpointTask>> {
+    fn from_persisted_id(ser: &PersistedTaskId) -> ProverServiceResult<TaskId<CheckpointTask>> {
         let backend = match ser.backend {
             0 => ZkVmBackend::Native,
             1 => ZkVmBackend::SP1,
@@ -70,11 +68,9 @@ impl PersistentTaskStore {
         ))
     }
 
-    fn to_serializable_record(
-        record: &TaskRecord<TaskId<CheckpointTask>>,
-    ) -> SerializableTaskRecord {
-        SerializableTaskRecord {
-            task_id: Self::to_serializable_id(record.task_id()),
+    fn to_persisted_record(record: &TaskRecord<TaskId<CheckpointTask>>) -> PersistedTaskRecord {
+        PersistedTaskRecord {
+            task_id: Self::to_persisted_id(record.task_id()),
             uuid: record.uuid().to_string(),
             status: record.status().clone(),
             created_at_secs: now_secs(),
@@ -82,11 +78,11 @@ impl PersistentTaskStore {
         }
     }
 
-    fn from_serializable_record(
-        ser: &SerializableTaskRecord,
+    fn from_persisted_record(
+        ser: &PersistedTaskRecord,
     ) -> ProverServiceResult<TaskRecord<TaskId<CheckpointTask>>> {
         Ok(TaskRecord::new(
-            Self::from_serializable_id(&ser.task_id)?,
+            Self::from_persisted_id(&ser.task_id)?,
             ser.uuid.clone(),
             ser.status.clone(),
         ))
@@ -95,7 +91,7 @@ impl PersistentTaskStore {
 
 impl TaskStore<CheckpointTask> for PersistentTaskStore {
     fn get_uuid(&self, task_id: &TaskId<CheckpointTask>) -> Option<String> {
-        let key = Self::to_serializable_id(task_id);
+        let key = Self::to_persisted_id(task_id);
         self.db.get_task(key).ok()?.map(|r| r.uuid)
     }
 
@@ -103,19 +99,19 @@ impl TaskStore<CheckpointTask> for PersistentTaskStore {
         &self,
         task_id: &TaskId<CheckpointTask>,
     ) -> Option<TaskRecord<TaskId<CheckpointTask>>> {
-        let key = Self::to_serializable_id(task_id);
+        let key = Self::to_persisted_id(task_id);
         let ser = self.db.get_task(key).ok()??;
-        Self::from_serializable_record(&ser).ok()
+        Self::from_persisted_record(&ser).ok()
     }
 
     fn get_task_by_uuid(&self, uuid: &str) -> Option<TaskRecord<TaskId<CheckpointTask>>> {
         let task_id_ser = self.db.get_task_id_by_uuid(uuid.to_string()).ok()??;
         let record = self.db.get_task(task_id_ser).ok()??;
-        Self::from_serializable_record(&record).ok()
+        Self::from_persisted_record(&record).ok()
     }
 
     fn insert_task(&self, record: TaskRecord<TaskId<CheckpointTask>>) -> ProverServiceResult<()> {
-        let key = Self::to_serializable_id(record.task_id());
+        let key = Self::to_persisted_id(record.task_id());
 
         if self
             .db
@@ -129,7 +125,7 @@ impl TaskStore<CheckpointTask> for PersistentTaskStore {
             )));
         }
 
-        let value = Self::to_serializable_record(&record);
+        let value = Self::to_persisted_record(&record);
         self.db
             .insert_task(key, value)
             .map_err(|e| ProverServiceError::Internal(anyhow::anyhow!("insert failed: {e}")))?;
@@ -141,7 +137,7 @@ impl TaskStore<CheckpointTask> for PersistentTaskStore {
         task_id: &TaskId<CheckpointTask>,
         status: TaskStatus,
     ) -> ProverServiceResult<()> {
-        let key = Self::to_serializable_id(task_id);
+        let key = Self::to_persisted_id(task_id);
 
         let mut record = self
             .db
@@ -169,7 +165,7 @@ impl TaskStore<CheckpointTask> for PersistentTaskStore {
             .unwrap_or_default()
             .into_iter()
             .filter(|(_, record)| filter(&record.status))
-            .filter_map(|(_, record)| Self::from_serializable_record(&record).ok())
+            .filter_map(|(_, record)| Self::from_persisted_record(&record).ok())
             .collect()
     }
 

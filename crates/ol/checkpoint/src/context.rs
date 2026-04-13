@@ -276,7 +276,8 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
     }
 
     /// Returns proof bytes for the given epoch.
-    ///
+    // TODO(STR-3064): move proof waiting to the service/runner layer using
+    // tokio::select! over a watch channel instead of blocking on Condvar here.
     /// The flow depends on whether a prover is configured:
     ///
     /// 1. No prover (`self.prover` is `None`): returns empty bytes.

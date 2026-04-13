@@ -1,3 +1,5 @@
+// TODO(STR-3064): may be removable after migrating checkpoint service to async
+// and replacing ProofNotify with a watch channel.
 //! Proof storage adapter for checkpoint proofs.
 //!
 //! Stores generated proof receipts using node storage proof manager and
