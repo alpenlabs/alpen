@@ -22,6 +22,7 @@ pub struct WriterConfig {
     pub write_poll_dur_ms: u64,
     /// How the fees for are determined.
     // FIXME: This should actually be a part of signer.
+    #[serde(flatten)]
     pub fee_policy: FeePolicy,
     /// How much amount(in sats) to send to reveal address. Must be above dust amount or else
     /// reveal transaction won't be accepted.
@@ -40,11 +41,23 @@ pub enum FeePolicy {
     #[default]
     MempoolExplorer,
 
-    /// Use Bitcoin Core's `estimatesmartfee`.
-    BitcoinD,
+    /// Use Bitcoin Core's `estimatesmartfee` and the target confirmation parameter is the provided
+    /// value.
+    #[serde(rename = "bitcoind")]
+    BitcoinD {
+        #[serde(
+            default = "default_bitcoind_conf_target",
+            rename = "bitcoind_conf_target"
+        )]
+        conf_target: u16,
+    },
 
     /// Fixed fee in sat/vB.
-    Fixed(u64),
+    #[serde(rename = "fixed")]
+    Fixed {
+        #[serde(rename = "fixed_fee_rate")]
+        fee_rate: u64,
+    },
 }
 
 /// Configuration for btcio broadcaster.
@@ -64,6 +77,10 @@ impl Default for WriterConfig {
             mempool_base_url: None,
         }
     }
+}
+
+const fn default_bitcoind_conf_target() -> u16 {
+    1
 }
 
 impl Default for ReaderConfig {

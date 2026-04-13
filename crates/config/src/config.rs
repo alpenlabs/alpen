@@ -561,4 +561,35 @@ mod test {
             Some("https://mempool.space/signet")
         );
     }
+    #[test]
+    fn test_writer_config_loads_bitcoind_conf_target() {
+        let config: WriterConfig = toml::from_str(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "bitcoind"
+            bitcoind_conf_target = 6
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+            "#,
+        )
+        .expect("writer config should parse");
+
+        assert_eq!(config.fee_policy, FeePolicy::BitcoinD { conf_target: 6 });
+    }
+
+    #[test]
+    fn test_writer_config_serializes_bitcoind_conf_target() {
+        let config = WriterConfig {
+            write_poll_dur_ms: 200,
+            fee_policy: FeePolicy::BitcoinD { conf_target: 6 },
+            reveal_amount: 100,
+            bundle_interval_ms: 1_000,
+            mempool_base_url: None,
+        };
+
+        let toml = toml::to_string(&config).expect("writer config should serialize");
+
+        assert!(toml.contains("fee_policy = \"bitcoind\""));
+        assert!(toml.contains("bitcoind_conf_target = 6"));
+    }
 }

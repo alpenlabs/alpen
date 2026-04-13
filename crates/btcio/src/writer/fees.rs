@@ -31,12 +31,12 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
     config: &WriterConfig,
 ) -> anyhow::Result<u64> {
     match &config.fee_policy {
-        FeePolicy::BitcoinD => client
-            .estimate_smart_fee(1)
+        FeePolicy::BitcoinD { conf_target } => client
+            .estimate_smart_fee(*conf_target)
             .await
             .context("failed to estimate smart fee"),
         FeePolicy::MempoolExplorer => resolve_mempool_fee_rate(client, config).await,
-        FeePolicy::Fixed(value) => Ok(*value),
+        FeePolicy::Fixed { fee_rate } => Ok(*fee_rate),
     }
 }
 
@@ -266,7 +266,7 @@ mod tests {
     async fn test_resolve_fee_rate_smart_uses_raw_estimate() {
         let client = Arc::new(TestBitcoinClient::new(1));
         let config = WriterConfig {
-            fee_policy: FeePolicy::BitcoinD,
+            fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
             ..WriterConfig::default()
         };
 

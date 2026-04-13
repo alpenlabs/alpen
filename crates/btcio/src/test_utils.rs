@@ -590,7 +590,7 @@ pub(crate) mod test_context {
             .require_network(Network::Regtest)
             .unwrap();
         let cfg = Arc::new(WriterConfig {
-            fee_policy: FeePolicy::BitcoinD,
+            fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
             ..WriterConfig::default()
         });
         let status_channel = StatusChannel::new(
