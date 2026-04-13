@@ -15600,17 +15600,12 @@ name = "strata-paas"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
- "borsh",
  "serde",
- "serde_json",
+ "strata-prover-core",
  "strata-service",
  "strata-tasks",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
- "uuid",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
 ]
 
 [[package]]
@@ -15767,52 +15762,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-prover-client"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alloy-rpc-types",
- "anyhow",
- "argh",
- "async-trait",
- "hex",
- "jsonrpsee",
- "serde",
- "serde_json",
- "sp1-sdk",
- "sp1-verifier",
- "strata-checkpoint-types",
- "strata-common",
- "strata-db-store-sled",
- "strata-db-types",
- "strata-paas",
- "strata-params",
- "strata-primitives",
- "strata-proofimpl-checkpoint",
- "strata-proofimpl-evm-ee-stf",
- "strata-prover-client-rpc-api",
- "strata-rpc-api",
- "strata-rpc-types",
- "strata-rpc-utils",
- "strata-sp1-guest-builder",
- "strata-tasks",
- "strata-zkvm-hosts",
- "thiserror 2.0.18",
- "tokio",
- "toml 0.5.11",
- "tracing",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
- "zkaleido-native-adapter",
- "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
- "zkaleido-sp1-host",
-]
-
-[[package]]
 name = "strata-prover-client-rpc-api"
 version = "0.3.0-alpha.1"
 dependencies = [
  "jsonrpsee",
  "strata-primitives",
  "strata-rpc-types",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+]
+
+[[package]]
+name = "strata-prover-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "borsh",
+ "futures",
+ "serde",
+ "sled",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
 ]
 
@@ -17495,7 +17466,6 @@ checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
- "serde_core",
  "wasm-bindgen",
 ]
 
@@ -18533,6 +18503,18 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc22#c084082b8f9e7f62406878313d25b9225f278188"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "borsh",
+ "serde",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "zkaleido"
+version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
 dependencies = [
  "arbitrary",
@@ -18557,9 +18539,7 @@ name = "zkaleido-native-adapter"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
 dependencies = [
- "async-trait",
  "bincode",
- "hex",
  "k256",
  "rand_core 0.6.4",
  "serde",
@@ -18599,7 +18579,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-host"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc22#c084082b8f9e7f62406878313d25b9225f278188"
 dependencies = [
  "async-trait",
  "bincode",
@@ -18607,7 +18587,7 @@ dependencies = [
  "sp1-prover",
  "sp1-sdk",
  "sp1-stark",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc22)",
 ]
 
 [[package]]
