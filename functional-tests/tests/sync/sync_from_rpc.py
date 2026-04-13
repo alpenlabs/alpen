@@ -22,17 +22,31 @@ class SyncFromRpcTest(testenv.StrataTestBase):
 
         # Initialize waiters
         seq_waiter = self.create_strata_waiter(seqrpc)
+        seq_reth_waiter = self.create_reth_waiter(seq_reth_rpc, timeout=60, interval=1.0)
+        fn_reth_waiter = self.create_reth_waiter(fullnode_reth_rpc, timeout=60, interval=1.0)
 
         # Pick a recent slot and make sure they're both the same.
-        seqss = seqrpc.strata_syncStatus()
+        seqss = seq_waiter.wait_until_chain_tip_exceeds(
+            FOLLOW_DIST - 1,
+            timeout=60,
+            msg=f"Timeout waiting for sequencer tip to exceed {FOLLOW_DIST - 1}",
+        )
         seq_tip_slot = seqss["tip_height"]
         check_slot = seq_tip_slot - FOLLOW_DIST
 
-        seq_headers = seqrpc.strata_getHeadersAtIdx(check_slot)
+        seq_headers, fn_headers = wait_until_with_value(
+            lambda: (
+                seqrpc.strata_getHeadersAtIdx(check_slot),
+                fnrpc.strata_getHeadersAtIdx(check_slot),
+            ),
+            lambda headers: len(headers[0]) > 0 and len(headers[1]) > 0,
+            error_with=f"missing headers at slot {check_slot}",
+            timeout=30,
+            step=1.0,
+        )
         logging.info(f"sequencer sees {seq_headers}")
         assert len(seq_headers) > 0, f"seq node missing headers at slot {check_slot}"
 
-        fn_headers = fnrpc.strata_getHeadersAtIdx(check_slot)
         logging.info(f"fn sees {fn_headers}")
         assert len(fn_headers) > 0, f"follower node missing headers at slot {check_slot}"
 
@@ -41,12 +55,21 @@ class SyncFromRpcTest(testenv.StrataTestBase):
         assert seq_hdr == fn_hdr, f"headers mismatched at slot {check_slot}"
 
         # Now *also* check the reth nodes.
-        last_blocknum = int(seq_reth_rpc.eth_blockNumber(), 16)
+        # Wait for enough EL blocks so the "older block" check below is always valid.
+        last_blocknum = seq_reth_waiter.wait_until_eth_block_at_least(
+            2,
+            message="sequencer EL did not reach block 2 in time",
+        )
 
         # test an older block because latest may not have been synced yet
         test_blocknum = last_blocknum - 1
 
-        assert test_blocknum > 0, "not enough blocks generated"
+        assert test_blocknum > 0, "not enough EL blocks generated"
+
+        fn_reth_waiter.wait_until_eth_block_at_least(
+            test_blocknum,
+            message=f"follower EL did not reach block {test_blocknum} in time",
+        )
 
         block_from_sequencer = seq_reth_rpc.eth_getBlockByNumber(hex(test_blocknum), False)
         assert block_from_sequencer, "sequencer EL client missing block"
@@ -64,7 +87,12 @@ class SyncFromRpcTest(testenv.StrataTestBase):
 
         # Check fullnode sees same checkpoint reference as sequencer
         epoch = 1
-        seq_waiter.wait_until_epoch_confirmed(epoch)
+        seq_waiter.wait_until_epoch_confirmed(
+            epoch,
+            timeout=60,
+            interval=2.0,
+            message=f"Timeout waiting for epoch {epoch} to be confirmed",
+        )
 
         # Wait for L1 reference to be available (checkpoint published to L1)
         def get_checkpoint_infos():
