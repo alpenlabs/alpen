@@ -23,7 +23,6 @@ members = [
   "crates/asm/msgs/checkpoint",
   "crates/asm/stf",
   "crates/asm/manifest-types",
-  "crates/asm/moho-program",
   "crates/asm/spec",
   "crates/asm/spec-debug",
   "crates/asm/subprotocols/bridge-v1",
@@ -194,7 +193,6 @@ strata-asm-checkpoint-msgs = { path = "crates/asm/msgs/checkpoint" }
 strata-asm-common = { path = "crates/asm/common" }
 strata-asm-logs = { path = "crates/asm/logs" }
 strata-asm-manifest-types = { path = "crates/asm/manifest-types" }
-strata-asm-moho-program-impl = { path = "crates/asm/moho-program" }
 strata-asm-params = { path = "crates/asm/params" }
 strata-asm-proto-administration = { path = "crates/asm/subprotocols/admin" }
 strata-asm-proto-bridge-v1 = { path = "crates/asm/subprotocols/bridge-v1" }
@@ -309,11 +307,6 @@ strata-tasks = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
-
-# moho
-moho-runtime-impl = { git = "https://github.com/alpenlabs/moho" }
-moho-runtime-interface = { git = "https://github.com/alpenlabs/moho" }
-moho-types = { git = "https://github.com/alpenlabs/moho" }
 
 # zkaleido
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
