@@ -11,13 +11,13 @@ use alloy_rpc_types::{
 use alpen_reth_evm::{address_to_subject, constants::COINBASE_ADDRESS, subject_to_address};
 use alpen_reth_node::AlpenPayloadAttributes;
 use revm_primitives::B256;
-use strata_bridge_types::WithdrawalIntent;
 use strata_db_types::DbError;
 use strata_eectl::{
     engine::{BlockStatus, ExecEngineCtl, L2BlockRef, PayloadStatus},
     errors::{EngineError, EngineResult},
     messages::{ExecPayloadData, PayloadEnv},
 };
+use strata_ol_bridge_types::WithdrawalIntent;
 use strata_ol_chain_types::{L2BlockBundle, L2BlockId};
 use strata_primitives::l1::BitcoinAmount;
 use strata_state::exec_update::{ELDepositData, ExecUpdate, Op, UpdateOutput};
@@ -445,8 +445,8 @@ mod tests {
     use alpen_reth_node::AlpenExecutionPayloadEnvelopeV4;
     use rand::{rngs::OsRng, Rng};
     use revm_primitives::{alloy_primitives::Bloom, Address, Bytes, FixedBytes, U256};
-    use strata_bridge_types::OperatorSelection;
     use strata_eectl::{errors::EngineResult, messages::PayloadEnv};
+    use strata_ol_bridge_types::OperatorSelection;
     use strata_ol_chain_types::{L2Block, L2BlockAccessory};
     use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 

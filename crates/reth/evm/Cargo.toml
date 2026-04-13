@@ -8,9 +8,9 @@ workspace = true
 
 [dependencies]
 alpen-reth-primitives.workspace = true
-strata-bridge-types.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
+strata-ol-bridge-types.workspace = true
 strata-primitives.workspace = true
 
 alloy-consensus.workspace = true

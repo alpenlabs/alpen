@@ -8,9 +8,9 @@ use bdk_wallet::{
     TxOrdering,
 };
 use strata_asm_logs::DepositLog;
-use strata_bridge_types::DepositDescriptor;
 use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use strata_l1_txfmt::{ParseConfig, TagDataRef};
+use strata_ol_bridge_types::DepositDescriptor;
 
 use crate::{
     bridge::types::BitcoinDConfig,

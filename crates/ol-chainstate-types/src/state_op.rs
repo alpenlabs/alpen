@@ -5,8 +5,8 @@
 //! entire in memory.
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_identifiers::{AccountSerial, Epoch};
+use strata_ol_bridge_types::{DepositIntent, WithdrawalIntent};
 use strata_primitives::{
     epoch::EpochCommitment,
     l2::{L2BlockCommitment, L2BlockId},

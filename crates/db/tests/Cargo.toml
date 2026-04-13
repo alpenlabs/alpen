@@ -23,8 +23,8 @@ strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-primitives.workspace = true
 strata-state.workspace = true
 strata-test-utils.workspace = true
-strata-test-utils-btc.workspace = true
 
 bitcoin.workspace = true
+hex.workspace = true
 proptest.workspace = true
 zkaleido.workspace = true

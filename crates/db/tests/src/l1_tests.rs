@@ -8,7 +8,8 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
     let idx = 1;
 
     // TODO maybe tweak this to make it a bit more realistic?
-    let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![]);
+    let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![])
+        .expect("generated test manifest should be valid");
 
     // Insert block data
     let res = db.put_block_data(mf.clone());
@@ -18,7 +19,8 @@ pub fn test_insert_into_empty_db(db: &impl L1Database) {
 
     // insert another block with arbitrary id
     let idx = 200_011;
-    let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![]);
+    let mf = AsmManifest::new(idx, arb.generate(), arb.generate(), vec![])
+        .expect("generated test manifest should be valid");
 
     // Insert block data
     let res = db.put_block_data(mf.clone());
@@ -32,7 +34,8 @@ pub fn test_insert_into_canonical_chain(db: &impl L1Database) {
     let mut blockids = Vec::new();
     for height in &heights {
         let mut arb = ArbitraryGenerator::new();
-        let mf = AsmManifest::new(*height, arb.generate(), arb.generate(), vec![]);
+        let mf = AsmManifest::new(*height, arb.generate(), arb.generate(), vec![])
+            .expect("generated test manifest should be valid");
         let blockid = *mf.blkid();
         db.put_block_data(mf).unwrap();
         assert!(db.set_canonical_chain_entry(*height, blockid).is_ok());
@@ -134,7 +137,8 @@ pub fn test_get_blockid_range(db: &impl L1Database) {
 fn insert_block_data(height: L1Height, db: &impl L1Database) -> AsmManifest {
     let mut arb = ArbitraryGenerator::new_with_size(1 << 12);
 
-    let mf = AsmManifest::new(height, arb.generate(), arb.generate(), vec![]);
+    let mf = AsmManifest::new(height, arb.generate(), arb.generate(), vec![])
+        .expect("generated test manifest should be valid");
 
     // Insert block data
     let res = db.put_block_data(mf.clone());

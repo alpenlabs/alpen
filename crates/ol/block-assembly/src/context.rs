@@ -391,6 +391,7 @@ mod tests {
             WtxidsRoot::from(Buf32::zero()),
             vec![],
         )
+        .expect("test manifest should be valid")
     }
 
     #[test]

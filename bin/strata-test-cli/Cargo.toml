@@ -16,13 +16,13 @@ strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
-strata-bridge-types.workspace = true
 strata-cli-common.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
+strata-ol-bridge-types.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-stf.workspace = true
 strata-primitives.workspace = true

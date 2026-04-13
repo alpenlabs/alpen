@@ -25,6 +25,7 @@ use strata_config::Config;
 use strata_consensus_logic::{
     genesis::{self, make_genesis_block},
     sync_manager::{self, SyncManager},
+    AsmBlockSubmitter,
 };
 use strata_db_store_sled::SledBackend;
 use strata_db_types::{
@@ -381,7 +382,7 @@ fn start_core_tasks(
             Arc::new(config.btcio.reader.clone()),
             btcio_params,
             status_channel.clone(),
-            sync_manager.get_asm_ctl(),
+            Arc::new(AsmBlockSubmitter::new(sync_manager.get_asm_ctl())),
         ),
     );
 

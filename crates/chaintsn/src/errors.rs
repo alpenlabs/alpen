@@ -1,5 +1,5 @@
-use strata_bridge_types::{DepositDescriptorError, OperatorIdx};
 use strata_btc_verification::L1VerificationError;
+use strata_ol_bridge_types::{DepositDescriptorError, OperatorIdx};
 use strata_primitives::l1::L1BlockId;
 use strata_state::prelude::*;
 use thiserror::Error;

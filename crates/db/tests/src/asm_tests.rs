@@ -1,20 +1,13 @@
+use bitcoin::Network;
 use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, AuxData, ChainViewState};
-use strata_btc_verification::HeaderVerificationState;
+use strata_btc_verification::L1Anchor;
 use strata_db_types::traits::AsmDatabase;
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::l1::{L1BlockCommitment, L1BlockId};
 use strata_state::asm_state::AsmState;
 
 pub fn test_get_asm(db: &impl AsmDatabase) {
-    let state = AsmState::new(
-        AnchorState {
-            chain_view: ChainViewState {
-                pow_state: HeaderVerificationState::default(),
-                history_accumulator: AsmHistoryAccumulatorState::new(0),
-            },
-            sections: vec![],
-        },
-        vec![],
-    );
+    let state = AsmState::new(make_anchor_state(), vec![]);
 
     db.put_asm_state(L1BlockCommitment::default(), state.clone())
         .expect("test insert");
@@ -25,6 +18,24 @@ pub fn test_get_asm(db: &impl AsmDatabase) {
 
     let update = db.get_asm_state(another_block).expect("test: get").unwrap();
     assert_eq!(update, state);
+}
+
+fn make_anchor_state() -> AnchorState {
+    let anchor = L1Anchor {
+        block: L1BlockCommitment::default(),
+        next_target: 0,
+        epoch_start_timestamp: 0,
+        network: Network::Bitcoin,
+    };
+
+    AnchorState {
+        magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
+        chain_view: ChainViewState {
+            pow_state: strata_asm_common::HeaderVerificationState::init(anchor),
+            history_accumulator: AsmHistoryAccumulatorState::new(0),
+        },
+        sections: Default::default(),
+    }
 }
 
 pub fn test_put_get_aux_data(db: &impl AsmDatabase) {

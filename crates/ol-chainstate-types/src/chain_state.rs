@@ -3,9 +3,9 @@ use std::io;
 // use std::ops::Deref;
 use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
-use strata_bridge_types::WithdrawalIntent;
 use strata_crypto::hash::compute_borsh_hash;
 use strata_identifiers::Epoch;
+use strata_ol_bridge_types::WithdrawalIntent;
 use strata_primitives::{
     buf::Buf32,
     epoch::EpochCommitment,

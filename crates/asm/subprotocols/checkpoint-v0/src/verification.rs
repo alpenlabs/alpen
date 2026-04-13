@@ -44,7 +44,7 @@ pub fn process_checkpoint_v0(
     }
     verify_checkpoint_proof(checkpoint, state)?;
 
-    state.update_with_checkpoint(checkpoint.clone(), current_l1_height);
+    state.update_with_checkpoint(epoch, current_l1_height);
     logging::info!(epoch, "Successfully verified checkpoint");
 
     Ok(())

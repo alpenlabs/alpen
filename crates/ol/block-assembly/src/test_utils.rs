@@ -7,13 +7,16 @@ use std::{
 };
 
 use async_trait::async_trait;
+use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload, tree_hash::TreeHash,
 };
-use strata_asm_common::{AnchorState, AsmHistoryAccumulatorState, ChainViewState};
+use strata_asm_common::{
+    AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
+};
 use strata_asm_manifest_types::AsmManifest;
-use strata_btc_verification::HeaderVerificationState;
+use strata_btc_verification::L1Anchor;
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{MmrId, errors::DbError};
@@ -21,6 +24,7 @@ use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot, test_utils::ol_block_commitment_strategy,
 };
+use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::{
     AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
 };
@@ -619,7 +623,8 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
             last_blkid,
             WtxidsRoot::from(Buf32::from([0u8; 32])),
             vec![],
-        );
+        )
+        .expect("test manifest should be valid");
 
         storage
             .l1()
@@ -637,15 +642,21 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
     let l1_commitment = L1BlockCommitment::new(end, last_blkid);
 
     // Create minimal ASM state for testing
-    let pow_state = HeaderVerificationState::default();
+    let pow_state = HeaderVerificationState::init(L1Anchor {
+        block: l1_commitment,
+        next_target: 0,
+        epoch_start_timestamp: 0,
+        network: Network::Bitcoin,
+    });
     let history_accumulator = AsmHistoryAccumulatorState::new(0);
     let chain_view = ChainViewState {
         pow_state,
         history_accumulator,
     };
     let anchor_state = AnchorState {
+        magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
         chain_view,
-        sections: vec![],
+        sections: Default::default(),
     };
     let asm_state = AsmState::new(anchor_state, vec![]);
 
@@ -775,7 +786,8 @@ impl TestEnvBuilder {
                     L1BlockId::from(Buf32::zero()),
                     WtxidsRoot::from(Buf32::zero()),
                     vec![],
-                );
+                )
+                .expect("test manifest should be valid");
                 let components = BlockComponents::new_manifests(vec![genesis_manifest]);
 
                 let block_context = BlockContext::new(&block_info, None);
@@ -849,6 +861,7 @@ fn create_deterministic_manifests(count: usize) -> Vec<AsmManifest> {
                 WtxidsRoot::from(Buf32::zero()),
                 vec![],
             )
+            .expect("test manifest should be valid")
         })
         .collect()
 }

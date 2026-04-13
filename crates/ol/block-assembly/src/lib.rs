@@ -2,6 +2,7 @@
 
 mod block_assembly;
 mod builder;
+mod checkpoint_size;
 mod command;
 mod context;
 #[cfg(test)]

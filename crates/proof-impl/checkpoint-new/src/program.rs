@@ -143,8 +143,12 @@ mod tests {
             hash::raw(&input.da_state_diff_bytes).into()
         );
         let terminal_header = input.blocks.last().expect("non-empty block list").header();
-        let terminal_header_complement =
-            TerminalHeaderComplement::from_full_header(terminal_header);
+        let terminal_header_complement = TerminalHeaderComplement::new(
+            terminal_header.timestamp(),
+            *terminal_header.parent_blkid(),
+            *terminal_header.body_root(),
+            *terminal_header.logs_root(),
+        );
         assert_eq!(
             *claim.terminal_header_complement_hash(),
             terminal_header_complement.compute_hash()

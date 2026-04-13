@@ -6,10 +6,10 @@
 mod bridge;
 mod bridge_ops;
 mod deposit;
-mod operator;
 
-// Re-export commonly used types
+// Re-export bridge types that are canonically defined in ASM.
+// Export OL-local bridge types that are not available in ASM.
 pub use bridge::PublickeyTable;
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
 pub use deposit::{DepositDescriptor, DepositDescriptorError};
-pub use operator::{OperatorIdx, OperatorSelection};
+pub use strata_bridge_types::*;

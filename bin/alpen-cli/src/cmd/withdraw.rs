@@ -8,8 +8,8 @@ use alpen_reth_primitives::WithdrawalCalldata;
 use argh::FromArgs;
 use bdk_wallet::{bitcoin::Address, KeychainKind};
 use indicatif::ProgressBar;
-use strata_bridge_types::OperatorSelection;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_ol_bridge_types::OperatorSelection;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
 use crate::{

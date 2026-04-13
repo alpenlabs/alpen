@@ -3,10 +3,10 @@
 use strata_acct_types::{BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest, logging::debug};
 use strata_asm_logs::DepositLog;
-use strata_bridge_types::DepositDescriptor;
 use strata_identifiers::{Buf32, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
+use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_state_types::OLSnarkAccountState;
 use strata_predicate::PredicateKey;
@@ -56,7 +56,8 @@ fn test_snark_account_deposit_and_withdrawal() {
         test_l1_block_id(1),
         WtxidsRoot::from(Buf32::from([0u8; 32])),
         vec![deposit_log],
-    );
+    )
+    .expect("test manifest should be valid");
 
     // Execute genesis block with the deposit manifest
     let genesis_info = BlockInfo::new_genesis(1000000);

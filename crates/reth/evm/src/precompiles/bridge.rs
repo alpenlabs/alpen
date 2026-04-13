@@ -86,7 +86,7 @@ fn validate_bosd(data: &[u8]) -> Result<(), PrecompileError> {
 
 #[cfg(test)]
 mod tests {
-    use strata_bridge_types::OperatorSelection;
+    use strata_ol_bridge_types::OperatorSelection;
 
     use super::*;
 

@@ -6,9 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use strata_checkpoint_types_ssz::validation::{
-    CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict,
-};
 use strata_config::SequencerConfig;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{Epoch, OLBlockCommitment, OLTxId, Slot};
@@ -26,6 +23,7 @@ use tracing::{debug, error, warn};
 use crate::{
     AccumulatorProofGenerator, BlockAssemblyResult, BlockAssemblyStateAccess, EpochSealingPolicy,
     MempoolProvider,
+    checkpoint_size::{CheckpointSizeVerdict, LogMetrics, checkpoint_size_verdict},
     context::BlockAssemblyAnchorContext,
     da_tracker::AccumulatedDaData,
     error::BlockAssemblyError,
@@ -766,7 +764,8 @@ mod tests {
             L1BlockId::from(Buf32::from([1u8; 32])),
             WtxidsRoot::from(Buf32::zero()),
             vec![],
-        );
+        )
+        .expect("test manifest should be valid");
         let manifest_hash = manifest.compute_hash().into();
         let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_header(manifest_hash);
@@ -855,7 +854,8 @@ mod tests {
             L1BlockId::from(Buf32::from([1u8; 32])),
             WtxidsRoot::from(Buf32::zero()),
             vec![],
-        );
+        )
+        .expect("test manifest should be valid");
         let manifest_hash = manifest.compute_hash().into();
         let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_header(manifest_hash);
@@ -1139,7 +1139,8 @@ mod tests {
             L1BlockId::from(Buf32::from([1u8; 32])),
             WtxidsRoot::from(Buf32::zero()),
             vec![],
-        );
+        )
+        .expect("test manifest should be valid");
         let manifest_hash = manifest.compute_hash().into();
         let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
         asm_mmr.add_header(manifest_hash);
