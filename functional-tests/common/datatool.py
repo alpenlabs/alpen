@@ -5,7 +5,7 @@ from pathlib import Path
 
 from common.config.config import BitcoindConfig
 
-DEFAULT_OL_BLOCK_TIME_MS = 1_000
+DEFAULT_OL_BLOCK_TIME_MS = 5_000
 
 
 def run_datatool(

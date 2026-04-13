@@ -80,7 +80,7 @@ class RelayerConfig:
 
 @dataclass
 class SequencerConfig:
-    ol_block_time_ms: int = field(default=1_000)
+    ol_block_time_ms: int = field(default=5_000)
     max_txs_per_block: int = field(default=100)
     block_template_ttl_secs: int = field(default=60)
 
