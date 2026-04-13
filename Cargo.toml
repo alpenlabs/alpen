@@ -243,7 +243,6 @@ strata-storage = { path = "crates/storage" }
 strata-storage-common = { path = "crates/storage-common" }
 strata-sync = { path = "crates/sync" }
 strata-test-utils = { path = "crates/test-utils/test-utils" }
-strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-test-utils-btcio = { path = "crates/test-utils/btcio" }
 strata-test-utils-evm-ee = { path = "crates/test-utils/evm-ee" }
 strata-test-utils-l2 = { path = "crates/test-utils/l2" }
@@ -288,6 +287,7 @@ strata-asm-worker = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0
 strata-bridge-types = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-btc-verification = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 strata-checkpoint-types-ssz = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
+strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", rev = "49c381ec0f3e11a32d3aa20a521ee49270662b21" }
 
 # sled wrapper
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
