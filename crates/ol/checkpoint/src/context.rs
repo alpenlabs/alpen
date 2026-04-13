@@ -133,7 +133,7 @@ impl Default for ProofNotify {
 ///
 /// When provided, the worker reads proofs from the proof DB and waits
 /// indefinitely for the prover to store them. The checkpoint predicate
-/// in [`AsmParams`] determines whether proofs are required; if the
+/// in `AsmParams` determines whether proofs are required; if the
 /// predicate rejects empty proofs (e.g. `Sp1Groth16`), there is no
 /// safe fallback, so the worker must wait for a real proof.
 #[derive(Debug)]
