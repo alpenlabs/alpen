@@ -555,7 +555,7 @@ mod test {
         )
         .expect("writer config should parse");
 
-        assert_eq!(config.fee_policy, FeePolicy::Mempool);
+        assert_eq!(config.fee_policy, FeePolicy::MempoolExplorer);
         assert_eq!(
             config.mempool_base_url.as_deref(),
             Some("https://mempool.space/signet")

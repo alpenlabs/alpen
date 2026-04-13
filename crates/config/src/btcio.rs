@@ -36,9 +36,9 @@ pub struct WriterConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum FeePolicy {
-    /// Use mempool.space explorer recommended fees endpoint.
+    /// Use mempool explorer recommended fees endpoint.
     #[default]
-    Mempool,
+    MempoolExplorer,
 
     /// Use Bitcoin Core's `estimatesmartfee`.
     BitcoinD,
@@ -58,7 +58,7 @@ impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             write_poll_dur_ms: 5_000,
-            fee_policy: FeePolicy::Mempool,
+            fee_policy: FeePolicy::MempoolExplorer,
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
             mempool_base_url: None,

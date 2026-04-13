@@ -33,7 +33,7 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
             .estimate_smart_fee(1)
             .await
             .context("failed to estimate smart fee"),
-        FeePolicy::Mempool => resolve_mempool_fee_rate(client, config).await,
+        FeePolicy::MempoolExplorer => resolve_mempool_fee_rate(client, config).await,
         FeePolicy::Fixed(value) => Ok(*value),
     }
 }
@@ -180,7 +180,7 @@ mod tests {
         .await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::Mempool,
+            fee_policy: FeePolicy::MempoolExplorer,
             mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
@@ -197,7 +197,7 @@ mod tests {
         let server = spawn_single_response_server("200 OK", "not-json").await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::Mempool,
+            fee_policy: FeePolicy::MempoolExplorer,
             mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
@@ -214,7 +214,7 @@ mod tests {
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::Mempool,
+            fee_policy: FeePolicy::MempoolExplorer,
             mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
@@ -230,7 +230,7 @@ mod tests {
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_missing() {
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::Mempool,
+            fee_policy: FeePolicy::MempoolExplorer,
             mempool_base_url: None,
             ..WriterConfig::default()
         };
@@ -248,7 +248,7 @@ mod tests {
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::Mempool,
+            fee_policy: FeePolicy::MempoolExplorer,
             mempool_base_url: Some("not a url".to_string()),
             ..WriterConfig::default()
         };
