@@ -2,7 +2,7 @@
 
 use std::{
     sync::{Arc, Condvar, Mutex},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use strata_checkpoint_types::EpochSummary;
@@ -12,7 +12,6 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
-use strata_params::ProofPublishMode;
 use strata_primitives::{
     nonempty_vec::NonEmptyVec,
     proof::{ProofContext, ProofKey, ProofZkVm},
@@ -85,8 +84,7 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
 /// The checkpoint worker sleeps on a [`Condvar`] that the proof storer
 /// signals immediately after writing a proof, so in practice the worker
 /// wakes up right away. This timeout is only a fallback in case a
-/// signal is missed (e.g. spurious wakeup). It also bounds how often
-/// the deadline is checked in [`ProofPublishMode::Timeout`] mode.
+/// signal is missed (e.g. spurious wakeup).
 const PROOF_WAIT_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Shared signal between the proof storer and the checkpoint worker.
@@ -133,17 +131,17 @@ impl Default for ProofNotify {
 
 /// Prover configuration for the checkpoint worker.
 ///
-/// When provided, the worker reads proofs from the proof DB and waits for
-/// the prover to store them, subject to [`ProofPublishMode`] semantics.
+/// When provided, the worker reads proofs from the proof DB and waits
+/// indefinitely for the prover to store them. The checkpoint predicate
+/// in [`AsmParams`] determines whether proofs are required; if the
+/// predicate rejects empty proofs (e.g. `Sp1Groth16`), there is no
+/// safe fallback, so the worker must wait for a real proof.
 #[derive(Debug)]
 pub struct ProverConfig {
     /// The zkVM backend the prover uses (determines the proof DB key).
     pub zkvm: ProofZkVm,
     /// Notifier shared with the proof storer wakes the worker on new proofs.
     pub notify: Arc<ProofNotify>,
-    /// Controls wait behavior: `Strict` waits indefinitely, `Timeout(secs)`
-    /// applies a deadline then falls back to empty proof.
-    pub publish_mode: ProofPublishMode,
 }
 
 /// Production context implementation.
@@ -283,9 +281,8 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
     /// 1. No prover (`self.prover` is `None`): returns empty bytes.
     /// 2. Prover configured: checks the proof DB first (handles restarts where the proof was
     ///    already stored). If not found, enters a wait loop where `ProofNotify::wait` blocks until
-    ///    the proof storer signals, then re-checks the DB. The loop respects `publish_mode`:
-    ///    - `Strict`: waits indefinitely until a proof appears.
-    ///    - `Timeout(secs)`: gives up after `secs` seconds and returns empty.
+    ///    the proof storer signals, then re-checks the DB. The loop waits indefinitely until a
+    ///    proof appears.
     fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
         let Some(prover) = &self.prover else {
             return Ok(Vec::new());
@@ -298,24 +295,9 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             return Ok(bytes);
         }
 
-        let deadline = match prover.publish_mode {
-            ProofPublishMode::Timeout(secs) => Some(Instant::now() + Duration::from_secs(secs)),
-            ProofPublishMode::Strict => None,
-        };
-
         // Wait loop: sleep on the condvar until the proof storer wakes us,
-        // then check DB. Repeat until proof is found or deadline expires.
+        // then check DB. Repeat until proof is found.
         loop {
-            if let Some(dl) = deadline
-                && Instant::now() >= dl
-            {
-                warn!(
-                    epoch = epoch_idx,
-                    "proof timeout reached; using empty proof"
-                );
-                return Ok(Vec::new());
-            }
-
             debug!(epoch = epoch_idx, "waiting for checkpoint proof...");
             prover.notify.wait();
 

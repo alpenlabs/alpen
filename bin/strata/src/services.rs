@@ -224,8 +224,8 @@ pub(crate) fn start_strata_services(
     // Start OL checkpoint service.
     // When an integrated prover is configured, the prover writes proofs to
     // the proof DB and signals ProofNotify to wake the checkpoint worker.
-    // The worker waits subject to proof_publish_mode (Strict = indefinite,
-    // Timeout = deadline). Without a prover, empty proofs are used immediately.
+    // The worker waits indefinitely for proofs. Without a prover, empty
+    // proofs are used immediately.
     let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
     let checkpoint_builder = OLCheckpointBuilder::new()
         .with_node_context(&nodectx)
@@ -244,12 +244,10 @@ pub(crate) fn start_strata_services(
             ProverBackend::Sp1 => ProofZkVm::SP1,
         };
         let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-        let publish_mode = nodectx.params().rollup().proof_publish_mode.clone();
 
         let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
             zkvm,
             notify: notify.clone(),
-            publish_mode,
         });
         (builder, Some(notify))
     } else {

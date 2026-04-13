@@ -21,8 +21,6 @@ use strata_config::{
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
-#[cfg(feature = "prover")]
-use strata_params::ProofPublishMode;
 use strata_params::{Params, RollupParams, SyncParams};
 #[cfg(feature = "prover")]
 use strata_predicate::PredicateTypeId;
@@ -165,7 +163,7 @@ pub(crate) fn resolve_and_validate_params(
     let rollup_params = load_rollup_params(path)?;
     rollup_params.check_well_formed()?;
     #[cfg(feature = "prover")]
-    validate_integrated_prover_compatibility(config, &rollup_params, asm_params)?;
+    validate_integrated_prover_compatibility(config, asm_params)?;
     #[cfg(not(feature = "prover"))]
     let _ = asm_params;
 
@@ -184,32 +182,22 @@ pub(crate) fn resolve_and_validate_params(
 #[cfg(feature = "prover")]
 fn validate_integrated_prover_compatibility(
     config: &Config,
-    rollup_params: &RollupParams,
     asm_params: &AsmParams,
 ) -> Result<(), InitError> {
     let checkpoint_predicate_type = checkpoint_predicate_type_from_asm_params(asm_params)?;
+    let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
 
-    // Cross-validate proof_publish_mode against checkpoint_predicate.
-    // These are both set at genesis but their interaction can cause chain stalls.
-    validate_proof_mode_predicate_compatibility(
-        &rollup_params.proof_publish_mode,
-        checkpoint_predicate_type,
-    )?;
-
-    // When the prover is not configured, validate that the network does not
-    // require proofs (Strict mode needs a prover to produce them).
+    // When the prover is not configured, validate that the checkpoint predicate
+    // does not require real proofs (e.g. Sp1Groth16 needs a prover to produce them).
     let Some(prover_config) = config.prover.as_ref() else {
-        if matches!(rollup_params.proof_publish_mode, ProofPublishMode::Strict) {
-            return Err(InitError::InvalidProverConfig(
-                "proof_publish_mode is Strict but no [prover] section is configured; \
-                 the node cannot produce checkpoints without a prover"
-                    .to_string(),
-            ));
+        if expected_backend.is_some() {
+            return Err(InitError::InvalidProverConfig(format!(
+                "checkpoint_predicate is {checkpoint_predicate_type} which requires a prover, \
+                 but no [prover] section is configured"
+            )));
         }
         return Ok(());
     };
-
-    let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
 
     if let Some(expected_backend) = expected_backend
         && prover_config.backend != expected_backend
@@ -264,39 +252,6 @@ fn expected_backend_for_checkpoint_predicate(
             "unsupported checkpoint predicate for integrated prover: {checkpoint_predicate_type}"
         ))),
     }
-}
-
-/// Validates that `proof_publish_mode` and `checkpoint_predicate` are compatible.
-///
-/// These are both genesis-level parameters, but their interaction can cause
-/// chain stalls if misconfigured:
-/// - `Timeout` + `Sp1Groth16`: empty proofs will be published but rejected by ASM.
-/// - `Strict` + `AlwaysAccept`: node blocks forever waiting for a proof that the ASM would accept
-///   without.
-#[cfg(feature = "prover")]
-fn validate_proof_mode_predicate_compatibility(
-    proof_publish_mode: &ProofPublishMode,
-    predicate_type: PredicateTypeId,
-) -> Result<(), InitError> {
-    if proof_publish_mode.allow_empty() && predicate_type == PredicateTypeId::Sp1Groth16 {
-        return Err(InitError::InvalidProverConfig(
-            "proof_publish_mode allows empty proofs but checkpoint_predicate is Sp1Groth16; \
-             empty checkpoints will be rejected by the ASM, causing chain stalls"
-                .to_string(),
-        ));
-    }
-
-    if matches!(proof_publish_mode, ProofPublishMode::Strict)
-        && predicate_type == PredicateTypeId::AlwaysAccept
-    {
-        warn!(
-            "proof_publish_mode is Strict but checkpoint_predicate is AlwaysAccept; \
-             the node will block until a proof is generated, but the ASM would accept \
-             empty proofs — consider using Timeout mode for development"
-        );
-    }
-
-    Ok(())
 }
 
 fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
