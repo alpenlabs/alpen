@@ -314,7 +314,7 @@ pub struct Config {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::btcio::{FeePolicy, WriterConfig};
+    use crate::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
 
     #[test]
     fn test_config_load() {
@@ -555,12 +555,40 @@ mod test {
         )
         .expect("writer config should parse");
 
-        assert_eq!(config.fee_policy, FeePolicy::MempoolExplorer);
+        assert_eq!(
+            config.fee_policy,
+            FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Fastest,
+            }
+        );
         assert_eq!(
             config.mempool_base_url.as_deref(),
             Some("https://mempool.space/signet")
         );
     }
+
+    #[test]
+    fn test_writer_config_loads_specific_mempool_policy() {
+        let config: WriterConfig = toml::from_str(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "mempool"
+            mempool_fee_policy = "economy"
+            mempool_base_url = "https://mempool.space/signet"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+            "#,
+        )
+        .expect("writer config should parse");
+
+        assert_eq!(
+            config.fee_policy,
+            FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Economy,
+            }
+        );
+    }
+
     #[test]
     fn test_writer_config_loads_bitcoind_conf_target() {
         let config: WriterConfig = toml::from_str(

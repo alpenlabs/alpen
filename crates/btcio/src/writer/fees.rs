@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context};
 use bitcoind_async_client::traits::Reader;
 use reqwest::Url;
 use serde::Deserialize;
-use strata_config::btcio::{FeePolicy, WriterConfig};
+use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
 use tracing::warn;
 
 /// Represents the response from the mempool.space recommended fees endpoint.
@@ -35,7 +35,9 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
             .estimate_smart_fee(*conf_target)
             .await
             .context("failed to estimate smart fee"),
-        FeePolicy::MempoolExplorer => resolve_mempool_fee_rate(client, config).await,
+        FeePolicy::MempoolExplorer { policy } => {
+            resolve_mempool_fee_rate(client, config, *policy).await
+        }
         FeePolicy::Fixed { fee_rate } => Ok(*fee_rate),
     }
 }
@@ -45,6 +47,7 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
 async fn resolve_mempool_fee_rate<R: Reader>(
     client: &R,
     config: &WriterConfig,
+    mempool_fee_policy: MempoolExplorerFeePolicy,
 ) -> anyhow::Result<u64> {
     let base_url = config
         .mempool_base_url
@@ -53,7 +56,13 @@ async fn resolve_mempool_fee_rate<R: Reader>(
     let url = mempool_recommended_fees_url(base_url)?;
 
     match fetch_mempool_recommended_fees(url).await {
-        Ok(fees) => Ok(fees.fastest_fee),
+        Ok(fees) => match mempool_fee_policy {
+            MempoolExplorerFeePolicy::Fastest => Ok(fees.fastest_fee),
+            MempoolExplorerFeePolicy::HalfHour => Ok(fees.half_hour_fee),
+            MempoolExplorerFeePolicy::Hour => Ok(fees.hour_fee),
+            MempoolExplorerFeePolicy::Economy => Ok(fees.economy_fee),
+            MempoolExplorerFeePolicy::Minimum => Ok(fees.minimum_fee),
+        },
         Err(err) => {
             warn!(
                 %base_url,
@@ -96,7 +105,7 @@ async fn fetch_mempool_recommended_fees(url: Url) -> anyhow::Result<MempoolRecom
 mod tests {
     use std::sync::Arc;
 
-    use strata_config::btcio::{FeePolicy, WriterConfig};
+    use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
@@ -182,7 +191,9 @@ mod tests {
         .await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer,
+            fee_policy: FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Fastest,
+            },
             mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
@@ -195,11 +206,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resolve_fee_rate_uses_selected_mempool_policy() {
+        let server = spawn_single_response_server(
+            "200 OK",
+            "{\"fastestFee\":7,\"halfHourFee\":6,\"hourFee\":5,\"economyFee\":4,\"minimumFee\":3}",
+        )
+        .await;
+        let client = TestBitcoinClient::new(1);
+        let config = WriterConfig {
+            fee_policy: FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Economy,
+            },
+            mempool_base_url: Some(server),
+            ..WriterConfig::default()
+        };
+
+        let fee_rate = resolve_fee_rate(&client, &config)
+            .await
+            .expect("mempool fee lookup should succeed");
+
+        assert_eq!(fee_rate, 4);
+    }
+
+    #[tokio::test]
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_invalid_json() {
         let server = spawn_single_response_server("200 OK", "not-json").await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer,
+            fee_policy: FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Fastest,
+            },
             mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
@@ -216,7 +252,9 @@ mod tests {
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer,
+            fee_policy: FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Fastest,
+            },
             mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
@@ -232,7 +270,9 @@ mod tests {
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_missing() {
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer,
+            fee_policy: FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Fastest,
+            },
             mempool_base_url: None,
             ..WriterConfig::default()
         };
@@ -250,7 +290,9 @@ mod tests {
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer,
+            fee_policy: FeePolicy::MempoolExplorer {
+                policy: MempoolExplorerFeePolicy::Fastest,
+            },
             mempool_base_url: Some("not a url".to_string()),
             ..WriterConfig::default()
         };

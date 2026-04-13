@@ -23,6 +23,8 @@ client_poll_dur_ms = 200
 [btcio.writer]
 write_poll_dur_ms = 200
 fee_policy = "mempool"
+# Optional when fee_policy = "mempool"
+# mempool_fee_policy = "economy"
 # Optional when fee_policy = "bitcoind"
 # bitcoind_conf_target = 6
 # Required when fee_policy = "fixed"

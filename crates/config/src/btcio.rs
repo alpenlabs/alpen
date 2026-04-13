@@ -34,12 +34,15 @@ pub struct WriterConfig {
 }
 
 /// Definition of how fees are determined while creating l1 transactions.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "fee_policy")]
 pub enum FeePolicy {
     /// Use mempool explorer recommended fees endpoint.
-    #[default]
-    MempoolExplorer,
+    #[serde(rename = "mempool")]
+    MempoolExplorer {
+        #[serde(default, rename = "mempool_fee_policy")]
+        policy: MempoolExplorerFeePolicy,
+    },
 
     /// Use Bitcoin Core's `estimatesmartfee` and the target confirmation parameter is the provided
     /// value.
@@ -60,6 +63,26 @@ pub enum FeePolicy {
     },
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MempoolExplorerFeePolicy {
+    /// Use the "fastest" fee estimate from mempool explorer.
+    #[default]
+    Fastest,
+
+    /// Use the "half hour" fee estimate from mempool explorer.
+    HalfHour,
+
+    /// Use the "hour" fee estimate from mempool explorer.
+    Hour,
+
+    /// Use the "economy" fee estimate from mempool explorer.
+    Economy,
+
+    /// Use the "minimum" fee estimate from mempool explorer.
+    Minimum,
+}
+
 /// Configuration for btcio broadcaster.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BroadcasterConfig {
@@ -71,10 +94,18 @@ impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             write_poll_dur_ms: 5_000,
-            fee_policy: FeePolicy::MempoolExplorer,
+            fee_policy: FeePolicy::default(),
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
             mempool_base_url: None,
+        }
+    }
+}
+
+impl Default for FeePolicy {
+    fn default() -> Self {
+        Self::MempoolExplorer {
+            policy: MempoolExplorerFeePolicy::default(),
         }
     }
 }
