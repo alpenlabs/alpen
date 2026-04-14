@@ -4,10 +4,13 @@ use std::time::SystemTime;
 
 use crate::{error::ProverResult, task::TaskStatus};
 
-/// A single task record in the store, keyed by opaque bytes (serialized `H::Task`).
+/// The mutable state associated with a stored task, separate from its key.
+///
+/// Splitting the key bytes from the value fields makes the dataflow
+/// explicit: storage backends store `TaskRecordData` against a `Vec<u8>`
+/// key, and [`TaskRecord`] is just the key-value pair surfaced to callers.
 #[derive(Debug, Clone)]
-pub struct TaskRecord {
-    key: Vec<u8>,
+pub struct TaskRecordData {
     status: TaskStatus,
     updated_at: SystemTime,
     retry_after: Option<SystemTime>,
@@ -15,19 +18,14 @@ pub struct TaskRecord {
     metadata: Option<Vec<u8>>,
 }
 
-impl TaskRecord {
-    pub fn new(key: Vec<u8>, status: TaskStatus) -> Self {
+impl TaskRecordData {
+    pub fn new(status: TaskStatus) -> Self {
         Self {
-            key,
             status,
             updated_at: SystemTime::now(),
             retry_after: None,
             metadata: None,
         }
-    }
-
-    pub fn key(&self) -> &[u8] {
-        &self.key
     }
 
     pub fn status(&self) -> &TaskStatus {
@@ -42,7 +40,7 @@ impl TaskRecord {
         self.metadata.as_deref()
     }
 
-    pub fn update_status(&mut self, status: TaskStatus) {
+    pub fn set_status(&mut self, status: TaskStatus) {
         self.status = status;
         self.updated_at = SystemTime::now();
     }
@@ -55,6 +53,50 @@ impl TaskRecord {
     pub fn set_metadata(&mut self, data: Option<Vec<u8>>) {
         self.metadata = data;
         self.updated_at = SystemTime::now();
+    }
+}
+
+/// A stored task: the opaque byte key plus its associated [`TaskRecordData`].
+#[derive(Debug, Clone)]
+pub struct TaskRecord {
+    key: Vec<u8>,
+    data: TaskRecordData,
+}
+
+impl TaskRecord {
+    pub fn new(key: Vec<u8>, status: TaskStatus) -> Self {
+        Self {
+            key,
+            data: TaskRecordData::new(status),
+        }
+    }
+
+    pub fn from_parts(key: Vec<u8>, data: TaskRecordData) -> Self {
+        Self { key, data }
+    }
+
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
+
+    pub fn data(&self) -> &TaskRecordData {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut TaskRecordData {
+        &mut self.data
+    }
+
+    pub fn status(&self) -> &TaskStatus {
+        self.data.status()
+    }
+
+    pub fn retry_after(&self) -> Option<SystemTime> {
+        self.data.retry_after()
+    }
+
+    pub fn metadata(&self) -> Option<&[u8]> {
+        self.data.metadata()
     }
 }
 

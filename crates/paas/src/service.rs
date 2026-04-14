@@ -7,6 +7,12 @@
 use std::{fmt, marker::PhantomData, sync::Arc, time::Duration};
 
 use strata_prover_core::{ProofSpec, Prover, ProverResult, TaskResult};
+
+/// Bounds a task payload must satisfy to travel over the paas command
+/// channel. Blanket-impl'd for every type that meets them, so
+/// `ProofSpec::Task` types satisfy it automatically.
+pub(crate) trait CmdTask: Clone + fmt::Debug + Send + Sync + 'static {}
+impl<T: Clone + fmt::Debug + Send + Sync + 'static> CmdTask for T {}
 use strata_service::{
     AsyncService, CommandCompletionSender, CommandHandle, Response, Service, ServiceBuilder,
     ServiceState, TickMsg, TickingInput, TokioMpscInput,
@@ -22,7 +28,7 @@ use crate::handle::ProverHandle;
 // ============================================================================
 
 #[derive(Debug)]
-pub(crate) enum Cmd<T: Clone + fmt::Debug + Send + Sync + 'static> {
+pub(crate) enum Cmd<T: CmdTask> {
     Submit {
         task: T,
         completion: CommandCompletionSender<ProverResult<()>>,
@@ -70,7 +76,7 @@ pub struct ProverServiceStatus {
 // Command handling
 // ============================================================================
 
-async fn handle_cmd<H: ProofSpec>(prover: &Prover<H>, cmd: Cmd<H::Task>) {
+async fn handle_cmd<H: ProofSpec>(prover: &Arc<Prover<H>>, cmd: Cmd<H::Task>) {
     match cmd {
         Cmd::Submit { task, completion } => {
             trace!(?task, "handling submit command");

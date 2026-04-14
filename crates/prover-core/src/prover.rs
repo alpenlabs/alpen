@@ -61,20 +61,10 @@ impl<H: ProofSpec> fmt::Debug for Prover<H> {
     }
 }
 
-impl<H: ProofSpec> Clone for Prover<H> {
-    fn clone(&self) -> Self {
-        Self {
-            spec: self.spec.clone(),
-            strategy: self.strategy.clone(),
-            config: self.config.clone(),
-            task_store: self.task_store.clone(),
-            receipt_store: self.receipt_store.clone(),
-            receipt_hook: self.receipt_hook.clone(),
-            watchers: self.watchers.clone(),
-            recovered: AtomicBool::new(self.recovered.load(Ordering::SeqCst)),
-        }
-    }
-}
+// Prover is never cloned directly. Spawning methods take `self: &Arc<Self>`
+// so background tasks hold a cheap Arc refcount instead of shallow-cloning
+// every field. External consumers go through ProverHandle, which already
+// stores an `Arc<Prover>`.
 
 // ============================================================================
 // Consumer API
@@ -82,7 +72,7 @@ impl<H: ProofSpec> Clone for Prover<H> {
 
 impl<H: ProofSpec> Prover<H> {
     /// Register a task and spawn background proving. Idempotent.
-    pub async fn submit(&self, task: H::Task) -> ProverResult<()> {
+    pub async fn submit(self: &Arc<Self>, task: H::Task) -> ProverResult<()> {
         let key: Vec<u8> = task.clone().into();
 
         // Idempotent: if already in store, skip.
@@ -93,7 +83,7 @@ impl<H: ProofSpec> Prover<H> {
         self.task_store
             .insert(TaskRecord::new(key.clone(), TaskStatus::Pending))?;
 
-        let prover = self.clone();
+        let prover = Arc::clone(self);
         tokio::spawn(async move {
             prover.run_task(task, key).await;
         });
@@ -102,7 +92,7 @@ impl<H: ProofSpec> Prover<H> {
     }
 
     /// Submit a task and block until it reaches a terminal state.
-    pub async fn execute(&self, task: H::Task) -> ProverResult<TaskResult<H::Task>> {
+    pub async fn execute(self: &Arc<Self>, task: H::Task) -> ProverResult<TaskResult<H::Task>> {
         self.submit(task.clone()).await?;
         let results = self.wait_for_tasks(slice::from_ref(&task)).await?;
         Ok(results.into_iter().next().expect("one result for one task"))
@@ -203,7 +193,7 @@ impl<H: ProofSpec> Prover<H> {
     }
 
     /// Scan for retriable tasks and re-spawn them. Called by PaaS on tick.
-    pub async fn tick(&self) {
+    pub async fn tick(self: &Arc<Self>) {
         if !self.recovered.swap(true, Ordering::SeqCst) {
             self.recover().await;
         }
@@ -218,7 +208,7 @@ impl<H: ProofSpec> Prover<H> {
         for record in retriable {
             let key = record.key().to_vec();
             if let Some(task) = decode_task_key::<H>(&key) {
-                let prover = self.clone();
+                let prover = Arc::clone(self);
                 tokio::spawn(async move {
                     prover.run_task(task, key).await;
                 });
@@ -230,7 +220,7 @@ impl<H: ProofSpec> Prover<H> {
     /// (Pending, Queued, or Proving). Before this change we only re-picked
     /// in-progress work, so a crash between `submit`'s db insert and the
     /// spawn would leave a task stuck in Pending forever.
-    async fn recover(&self) {
+    async fn recover(self: &Arc<Self>) {
         let unfinished = match self.task_store.list_unfinished() {
             Ok(v) => v,
             Err(e) => {
@@ -245,7 +235,7 @@ impl<H: ProofSpec> Prover<H> {
         for record in unfinished {
             let key = record.key().to_vec();
             if let Some(task) = decode_task_key::<H>(&key) {
-                let prover = self.clone();
+                let prover = Arc::clone(self);
                 tokio::spawn(async move {
                     prover.run_task(task, key).await;
                 });

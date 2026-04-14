@@ -43,7 +43,8 @@ impl TaskStore for InMemoryTaskStore {
             .write()
             .get_mut(key)
             .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?
-            .update_status(status);
+            .data_mut()
+            .set_status(status);
         Ok(())
     }
 
@@ -52,6 +53,7 @@ impl TaskStore for InMemoryTaskStore {
             .write()
             .get_mut(key)
             .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?
+            .data_mut()
             .set_retry_after(Some(when));
         Ok(())
     }
@@ -61,6 +63,7 @@ impl TaskStore for InMemoryTaskStore {
             .write()
             .get_mut(key)
             .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?
+            .data_mut()
             .set_metadata(Some(data));
         Ok(())
     }

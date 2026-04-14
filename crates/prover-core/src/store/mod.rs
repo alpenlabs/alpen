@@ -6,4 +6,4 @@ mod traits;
 pub use memory::InMemoryTaskStore;
 #[cfg(feature = "sled")]
 pub use sled_store::SledTaskStore;
-pub use traits::{TaskRecord, TaskStore};
+pub use traits::{TaskRecord, TaskRecordData, TaskStore};

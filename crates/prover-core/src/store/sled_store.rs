@@ -41,10 +41,11 @@ impl StoredRecord {
     fn into_record(self, key: Vec<u8>) -> TaskRecord {
         let mut r = TaskRecord::new(key, self.status);
         if let Some(secs) = self.retry_after_secs {
-            r.set_retry_after(Some(secs_to_system_time(secs)));
+            r.data_mut()
+                .set_retry_after(Some(secs_to_system_time(secs)));
         }
         if let Some(data) = self.metadata {
-            r.set_metadata(Some(data));
+            r.data_mut().set_metadata(Some(data));
         }
         r
     }

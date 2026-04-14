@@ -14,6 +14,36 @@ use zkaleido::ZkVmProgram;
 
 use crate::error::ProverResult;
 
+/// Capabilities every task identifier must satisfy: equality, hashing,
+/// human-readable formatting, deterministic byte encoding for storage
+/// keys, and the thread-safety bounds required by background spawning.
+///
+/// Blanket-impl'd for any type that meets the bounds, so user task
+/// types normally don't need to implement it explicitly.
+///
+/// Byte encoding contract: `Into<Vec<u8>> + TryFrom<Vec<u8>>` must be
+/// deterministic (same task → same bytes) and round-trip lossless,
+/// otherwise idempotent submit and crash recovery break. Borsh and
+/// bincode are deterministic; JSON is not.
+pub trait TaskKey:
+    Clone + Debug + Display + Eq + Hash + Send + Sync + Into<Vec<u8>> + TryFrom<Vec<u8>> + 'static
+{
+}
+
+impl<T> TaskKey for T where
+    T: Clone
+        + Debug
+        + Display
+        + Eq
+        + Hash
+        + Send
+        + Sync
+        + Into<Vec<u8>>
+        + TryFrom<Vec<u8>>
+        + 'static
+{
+}
+
 /// Specification for a proof type.
 ///
 /// Associates a domain task with a zkaleido program and defines how to
@@ -36,21 +66,9 @@ use crate::error::ProverResult;
 /// ```
 #[async_trait]
 pub trait ProofSpec: Send + Sync + 'static {
-    /// Identifies a unit of work (e.g. `Epoch`, `ChunkTask`).
-    ///
-    /// `Into<Vec<u8>>` / `TryFrom<Vec<u8>>` enable byte-key storage.
-    /// The byte representation must be deterministic (same task produces same bytes),
-    /// otherwise idempotent submit breaks. Borsh and bincode are deterministic.
-    type Task: Clone
-        + Debug
-        + Display
-        + Eq
-        + Hash
-        + Send
-        + Sync
-        + Into<Vec<u8>>
-        + TryFrom<Vec<u8>>
-        + 'static;
+    /// Identifies a unit of work (e.g. `Epoch`, `ChunkTask`). See
+    /// [`TaskKey`] for the bag of bounds a task identifier has to satisfy.
+    type Task: TaskKey;
 
     /// The zkaleido program to execute. Input must be `Send` for `spawn_blocking`.
     type Program: ZkVmProgram<Input: Send + Sync> + Send + Sync + 'static;
