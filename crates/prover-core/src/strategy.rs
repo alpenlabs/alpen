@@ -139,7 +139,7 @@ where
         let rt = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| ProverError::Internal(e.into()))?;
+            .map_err(|e| ProverError::Storage(format!("tokio runtime: {e}")))?;
 
         let local = LocalSet::new();
         let host = self.host.clone();

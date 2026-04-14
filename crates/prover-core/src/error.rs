@@ -1,4 +1,9 @@
 //! Error types.
+//!
+//! Variants are typed (no erased `anyhow::Error` wrapped inside the enum).
+//! Wrapping `anyhow` inside a `thiserror` enum muddies downcast behavior
+//! for callers — keep the library boundary typed and let applications
+//! decide whether to erase upstream.
 
 pub type ProverResult<T> = Result<T, ProverError>;
 
@@ -10,14 +15,26 @@ pub enum ProverError {
     #[error("task already exists: {0}")]
     TaskAlreadyExists(String),
 
+    #[error("no receipt store configured")]
+    NoReceiptStore,
+
     #[error("transient: {0}")]
     TransientFailure(String),
 
     #[error("permanent: {0}")]
     PermanentFailure(String),
 
-    #[error("{0}")]
-    Internal(#[from] anyhow::Error),
+    /// Backend IO failure (sled, filesystem, tokio runtime, ...).
+    #[error("storage: {0}")]
+    Storage(String),
+
+    /// Encode or decode of a stored record failed.
+    #[error("codec: {0}")]
+    Codec(String),
+
+    /// Service Framework command channel failure (send/recv/cancelled).
+    #[error("command channel: {0}")]
+    Command(String),
 }
 
 impl ProverError {

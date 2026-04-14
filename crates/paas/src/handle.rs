@@ -49,7 +49,7 @@ impl<H: ProofSpec> ProverHandle<H> {
                 completion: c,
             })
             .await
-            .map_err(|e| ProverError::Internal(e.into()))?
+            .map_err(|e| ProverError::Command(e.to_string()))?
     }
 
     /// Submit a task and block until it reaches a terminal state.
@@ -60,7 +60,7 @@ impl<H: ProofSpec> ProverHandle<H> {
                 completion: c,
             })
             .await
-            .map_err(|e| ProverError::Internal(e.into()))?
+            .map_err(|e| ProverError::Command(e.to_string()))?
     }
 
     /// Block until all tasks reach terminal states. Zero-poll, watch-channel based.

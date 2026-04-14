@@ -13,7 +13,7 @@ use strata_service::{
 };
 use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{info, trace};
 
 use crate::handle::ProverHandle;
 
@@ -73,12 +73,12 @@ pub struct ProverServiceStatus {
 async fn handle_cmd<H: ProofSpec>(prover: &Prover<H>, cmd: Cmd<H::Task>) {
     match cmd {
         Cmd::Submit { task, completion } => {
-            debug!("submit");
+            trace!(?task, "handling submit command");
             let result = prover.submit(task).await;
             completion.send(result).await;
         }
         Cmd::Execute { task, completion } => {
-            debug!("execute");
+            trace!(?task, "handling execute command");
             let result = prover.execute(task).await;
             completion.send(result).await;
         }
@@ -104,7 +104,7 @@ impl<H: ProofSpec> Service for CmdOnlySvc<H> {
 
     fn get_status(state: &Self::State) -> Self::Status {
         ProverServiceStatus {
-            task_count: state.prover.task_store().count(),
+            task_count: state.prover.task_store().count().unwrap_or(0),
         }
     }
 }
@@ -140,7 +140,7 @@ impl<H: ProofSpec> Service for TickingSvc<H> {
 
     fn get_status(state: &Self::State) -> Self::Status {
         ProverServiceStatus {
-            task_count: state.prover.task_store().count(),
+            task_count: state.prover.task_store().count().unwrap_or(0),
         }
     }
 }
@@ -155,7 +155,7 @@ impl<H: ProofSpec> AsyncService for TickingSvc<H> {
         match input {
             TickMsg::Msg(cmd) => handle_cmd(&state.prover, cmd).await,
             TickMsg::Tick => {
-                debug!("tick");
+                trace!("tick: scanning for retriable tasks");
                 state.prover.tick().await;
             }
         }
@@ -188,9 +188,16 @@ impl<H: ProofSpec> ProverServiceBuilder<H> {
     }
 
     /// Launch the service, returning a [`ProverHandle`] for consumer use.
+    ///
+    /// Fails fast if the prover is configured with a retry policy but no
+    /// `tick_interval` — in that configuration retries would silently never
+    /// fire, which is almost certainly a misconfiguration.
     pub async fn launch(self, executor: &TaskExecutor) -> anyhow::Result<ProverHandle<H>> {
         if self.prover.has_retry() && self.tick_interval.is_none() {
-            tracing::warn!("retry configured but no tick_interval — retries won't fire");
+            anyhow::bail!(
+                "ProverServiceBuilder: retry is configured but tick_interval is unset; \
+                 retries need a tick to fire — call .tick_interval(..) or drop the retry config"
+            );
         }
 
         let prover = Arc::new(self.prover);

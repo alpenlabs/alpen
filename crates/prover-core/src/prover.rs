@@ -11,7 +11,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use tokio::sync::{watch, RwLock};
+use parking_lot::Mutex;
+use tokio::sync::oneshot;
 use tracing::{error, info, info_span, warn, Instrument};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
@@ -27,7 +28,11 @@ use crate::{
     task::{TaskResult, TaskStatus},
 };
 
-type WatcherMap<T> = HashMap<Vec<u8>, watch::Sender<Option<TaskResult<T>>>>;
+/// One completion-notification sender per pending `wait_for_tasks` caller.
+///
+/// Each waiter receives a private `oneshot::Receiver`; [`Prover::notify`]
+/// drains and removes the entry when the task reaches a terminal state.
+type WatcherMap<T> = HashMap<Vec<u8>, Vec<oneshot::Sender<TaskResult<T>>>>;
 
 /// Single-proof-type prover.
 ///
@@ -40,8 +45,8 @@ pub struct Prover<H: ProofSpec> {
     task_store: Arc<dyn TaskStore>,
     receipt_store: Option<Arc<dyn ReceiptStore>>,
     receipt_hook: Option<Arc<dyn ReceiptHook<H>>>,
-    /// Watch channels for notifying waiters when tasks reach terminal states.
-    watchers: Arc<RwLock<WatcherMap<H::Task>>>,
+    /// Oneshot senders for notifying waiters when tasks reach terminal states.
+    watchers: Arc<Mutex<WatcherMap<H::Task>>>,
     /// Whether we've run recovery on startup.
     recovered: AtomicBool,
 }
@@ -81,7 +86,7 @@ impl<H: ProofSpec> Prover<H> {
         let key: Vec<u8> = task.clone().into();
 
         // Idempotent: if already in store, skip.
-        if self.task_store.get(&key).is_some() {
+        if self.task_store.get(&key)?.is_some() {
             return Ok(());
         }
 
@@ -105,72 +110,54 @@ impl<H: ProofSpec> Prover<H> {
 
     /// Block until all tasks reach terminal states.
     ///
-    /// Uses watch channels — zero polling, immediate notification.
+    /// Zero polling: each waiter receives a private `oneshot` receiver that
+    /// fires exactly once when the task reaches a terminal state. The
+    /// subscribe-or-observe-completion step is linearized against
+    /// [`Self::notify`] via the watchers mutex, so the wait cannot miss
+    /// completions that race with subscription.
     pub async fn wait_for_tasks(
         &self,
         tasks: &[H::Task],
     ) -> ProverResult<Vec<TaskResult<H::Task>>> {
-        let mut receivers: Vec<(usize, watch::Receiver<Option<TaskResult<_>>>)> = Vec::new();
         let mut results: Vec<Option<TaskResult<H::Task>>> = vec![None; tasks.len()];
+        let mut pending: Vec<(usize, oneshot::Receiver<TaskResult<H::Task>>)> = Vec::new();
 
         for (i, task) in tasks.iter().enumerate() {
             let key: Vec<u8> = task.clone().into();
-            if let Some(record) = self.task_store.get(&key) {
-                match record.status() {
-                    TaskStatus::Completed => {
-                        results[i] = Some(TaskResult::completed(task.clone()));
-                        continue;
-                    }
-                    TaskStatus::PermanentFailure { error } => {
-                        results[i] = Some(TaskResult::failed(task.clone(), error));
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
 
-            let rx = {
-                let mut w = self.watchers.write().await;
-                if let Some(tx) = w.get(&key) {
-                    tx.subscribe()
-                } else {
-                    let (tx, rx) = watch::channel(None);
-                    w.insert(key, tx);
-                    rx
-                }
-            };
-            receivers.push((i, rx));
-        }
-
-        if receivers.is_empty() {
-            return Ok(results.into_iter().map(|r| r.unwrap()).collect());
-        }
-
-        loop {
-            for (i, rx) in &receivers {
-                if results[*i].is_some() {
+            // Hold the watchers lock across the store check + subscribe so
+            // we cannot miss a notification that races with this decision.
+            let mut w = self.watchers.lock();
+            if let Some(record) = self.task_store.get(&key)? {
+                if let Some(r) = terminal_result(task, record.status()) {
+                    results[i] = Some(r);
                     continue;
                 }
-                if let Some(result) = rx.borrow().as_ref() {
-                    results[*i] = Some(result.clone());
+            }
+            let (tx, rx) = oneshot::channel();
+            w.entry(key).or_default().push(tx);
+            drop(w);
+
+            pending.push((i, rx));
+        }
+
+        for (i, rx) in pending {
+            // `rx.await` can only fail if the sender was dropped without
+            // sending — we never do that: `notify` drains the entry on
+            // completion, and the entry is only created here. Treat a dropped
+            // sender as a permanent-failure signal rather than panicking.
+            match rx.await {
+                Ok(result) => results[i] = Some(result),
+                Err(_) => {
+                    results[i] = Some(TaskResult::failed(
+                        tasks[i].clone(),
+                        "notification sender dropped".to_string(),
+                    ));
                 }
             }
-
-            if results.iter().all(|r| r.is_some()) {
-                return Ok(results.into_iter().map(|r| r.unwrap()).collect());
-            }
-
-            let futs: Vec<_> = receivers
-                .iter()
-                .filter(|(i, _)| results[*i].is_none())
-                .map(|(_, rx)| {
-                    let mut rx = rx.clone();
-                    Box::pin(async move { rx.changed().await })
-                })
-                .collect();
-            use futures::future::select_all;
-            let _ = select_all(futs).await;
         }
+
+        Ok(results.into_iter().map(|r| r.unwrap()).collect())
     }
 
     /// Get a receipt from the receipt store by task.
@@ -184,7 +171,7 @@ impl<H: ProofSpec> Prover<H> {
         let key: Vec<u8> = task.clone().into();
         self.receipt_store
             .as_ref()
-            .ok_or_else(|| ProverError::Internal(anyhow::anyhow!("no receipt store configured")))?
+            .ok_or(ProverError::NoReceiptStore)?
             .get(&key)
     }
 }
@@ -210,7 +197,7 @@ impl<H: ProofSpec> Prover<H> {
     pub fn get_status(&self, task: &H::Task) -> ProverResult<TaskStatus> {
         let key: Vec<u8> = task.clone().into();
         self.task_store
-            .get(&key)
+            .get(&key)?
             .map(|r| r.status().clone())
             .ok_or_else(|| ProverError::TaskNotFound(format!("{task}")))
     }
@@ -221,9 +208,16 @@ impl<H: ProofSpec> Prover<H> {
             self.recover().await;
         }
 
-        for record in self.task_store.list_retriable(SystemTime::now()) {
+        let retriable = match self.task_store.list_retriable(SystemTime::now()) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(%e, "failed to list retriable tasks");
+                return;
+            }
+        };
+        for record in retriable {
             let key = record.key().to_vec();
-            if let Some(task) = self.task_from_key(&key) {
+            if let Some(task) = decode_task_key::<H>(&key) {
                 let prover = self.clone();
                 tokio::spawn(async move {
                     prover.run_task(task, key).await;
@@ -232,30 +226,29 @@ impl<H: ProofSpec> Prover<H> {
         }
     }
 
+    /// Re-spawn every unfinished task on startup — anything not yet terminal
+    /// (Pending, Queued, or Proving). Before this change we only re-picked
+    /// in-progress work, so a crash between `submit`'s db insert and the
+    /// spawn would leave a task stuck in Pending forever.
     async fn recover(&self) {
-        let in_progress = self.task_store.list_in_progress();
-        if in_progress.is_empty() {
+        let unfinished = match self.task_store.list_unfinished() {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(%e, "failed to list unfinished tasks during recovery");
+                return;
+            }
+        };
+        if unfinished.is_empty() {
             return;
         }
-        info!(count = in_progress.len(), "recovering in-progress tasks");
-        for record in in_progress {
+        info!(count = unfinished.len(), "recovering unfinished tasks");
+        for record in unfinished {
             let key = record.key().to_vec();
-            if let Some(task) = self.task_from_key(&key) {
+            if let Some(task) = decode_task_key::<H>(&key) {
                 let prover = self.clone();
                 tokio::spawn(async move {
                     prover.run_task(task, key).await;
                 });
-            }
-        }
-    }
-
-    /// Deserialize a task from its storage key bytes.
-    fn task_from_key(&self, key: &[u8]) -> Option<H::Task> {
-        match H::Task::try_from(key.to_vec()) {
-            Ok(task) => Some(task),
-            Err(_) => {
-                warn!(key = ?key, "failed to deserialize task from key, skipping");
-                None
             }
         }
     }
@@ -279,7 +272,7 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(input) => input,
                 Err(e) => {
                     self.handle_error(&key, &e);
-                    self.notify(&key, &task).await;
+                    self.notify(&key, &task);
                     return;
                 }
             };
@@ -288,6 +281,8 @@ impl<H: ProofSpec> Prover<H> {
             let saved_metadata = self
                 .task_store
                 .get(&key)
+                .ok()
+                .flatten()
                 .and_then(|r| r.metadata().map(|m| m.to_vec()));
             let store = self.task_store.clone();
             let persist_key = key.clone();
@@ -303,7 +298,7 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(Err(e)) => {
                     error!(%e, "prove failed");
                     self.handle_error(&key, &e);
-                    self.notify(&key, &task).await;
+                    self.notify(&key, &task);
                     return;
                 }
                 Err(e) => {
@@ -314,7 +309,7 @@ impl<H: ProofSpec> Prover<H> {
                             error: e.to_string(),
                         },
                     );
-                    self.notify(&key, &task).await;
+                    self.notify(&key, &task);
                     return;
                 }
             };
@@ -324,7 +319,7 @@ impl<H: ProofSpec> Prover<H> {
                 if let Err(e) = store.put(&key, &receipt) {
                     error!(%e, "receipt store put failed");
                     self.handle_error(&key, &e);
-                    self.notify(&key, &task).await;
+                    self.notify(&key, &task);
                     return;
                 }
             }
@@ -334,7 +329,7 @@ impl<H: ProofSpec> Prover<H> {
                 if let Err(e) = hook.on_receipt(&task, &receipt).await {
                     error!(%e, "receipt hook failed");
                     self.handle_error(&key, &e);
-                    self.notify(&key, &task).await;
+                    self.notify(&key, &task);
                     return;
                 }
             }
@@ -342,7 +337,7 @@ impl<H: ProofSpec> Prover<H> {
             // 5. Done
             let _ = self.task_store.update_status(&key, TaskStatus::Completed);
             info!("task completed");
-            self.notify(&key, &task).await;
+            self.notify(&key, &task);
         }
         .instrument(span)
         .await;
@@ -365,6 +360,8 @@ impl<H: ProofSpec> Prover<H> {
         let current_count = self
             .task_store
             .get(key)
+            .ok()
+            .flatten()
             .and_then(|r| match r.status() {
                 TaskStatus::TransientFailure { retry_count, .. } => Some(*retry_count),
                 _ => None,
@@ -401,18 +398,53 @@ impl<H: ProofSpec> Prover<H> {
         );
     }
 
-    async fn notify(&self, key: &[u8], task: &H::Task) {
-        let result = self.task_store.get(key).and_then(|r| match r.status() {
-            TaskStatus::Completed => Some(TaskResult::completed(task.clone())),
-            TaskStatus::PermanentFailure { error } => Some(TaskResult::failed(task.clone(), error)),
-            _ => None,
-        });
-
-        if let Some(result) = result {
-            if let Some(tx) = self.watchers.read().await.get(key) {
-                let _ = tx.send(Some(result));
+    /// Fan out the terminal result to every pending waiter and remove the
+    /// watcher entry so the map does not grow unbounded.
+    ///
+    /// The watchers lock is held across the store read to linearize with
+    /// [`Self::wait_for_tasks`], which performs its
+    /// check-terminal-then-subscribe decision under the same lock.
+    fn notify(&self, key: &[u8], task: &H::Task) {
+        let mut w = self.watchers.lock();
+        let status = self
+            .task_store
+            .get(key)
+            .ok()
+            .flatten()
+            .map(|r| r.status().clone());
+        let Some(result) = status.as_ref().and_then(|s| terminal_result(task, s)) else {
+            return;
+        };
+        if let Some(senders) = w.remove(key) {
+            for tx in senders {
+                let _ = tx.send(result.clone());
             }
         }
+    }
+}
+
+/// Decode a storage key back into a typed task.
+///
+/// Logs and returns `None` on decode failure rather than panicking — a
+/// corrupt or schema-drifted key should not take down the prover.
+fn decode_task_key<H: ProofSpec>(key: &[u8]) -> Option<H::Task> {
+    match H::Task::try_from(key.to_vec()) {
+        Ok(task) => Some(task),
+        Err(_) => {
+            warn!(key = ?key, "failed to decode task key, skipping");
+            None
+        }
+    }
+}
+
+/// Map a task status to a terminal [`TaskResult`] if it represents one.
+fn terminal_result<T: Clone>(task: &T, status: &TaskStatus) -> Option<TaskResult<T>> {
+    match status {
+        TaskStatus::Completed => Some(TaskResult::completed(task.clone())),
+        TaskStatus::PermanentFailure { error } => {
+            Some(TaskResult::failed(task.clone(), error.clone()))
+        }
+        _ => None,
     }
 }
 
@@ -497,7 +529,7 @@ impl<H: ProofSpec> ProverBuilder<H> {
                 .unwrap_or_else(|| Arc::new(InMemoryTaskStore::new())),
             receipt_store: self.receipt_store,
             receipt_hook: self.receipt_hook,
-            watchers: Arc::new(RwLock::new(HashMap::new())),
+            watchers: Arc::new(Mutex::new(HashMap::new())),
             recovered: AtomicBool::new(false),
         }
     }

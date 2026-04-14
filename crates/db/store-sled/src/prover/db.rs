@@ -1,69 +1,16 @@
-use strata_db_types::{
-    DbResult,
-    errors::DbError,
-    traits::{ProofDatabase, ProverTaskDatabase},
-    types::{PersistedTaskId, PersistedTaskRecord},
-};
+use strata_db_types::{errors::DbError, traits::ProofDatabase, DbResult};
 use strata_primitives::proof::{ProofContext, ProofKey};
-use typed_sled::error::{self, Error};
 use zkaleido::ProofReceiptWithMetadata;
 
-use super::schemas::{PaasTaskTree, PaasUuidIndexTree, ProofDepsSchema, ProofSchema};
+use super::schemas::{ProofDepsSchema, ProofSchema};
 use crate::define_sled_database;
 
 define_sled_database!(
     pub struct ProofDBSled {
         proof_tree: ProofSchema,
         proof_deps_tree: ProofDepsSchema,
-        // PaaS task tracking trees
-        paas_task_tree: PaasTaskTree,
-        paas_uuid_index_tree: PaasUuidIndexTree,
     }
 );
-
-impl ProofDBSled {
-    /// Get task by TaskId
-    pub fn get_task(
-        &self,
-        task_id: &PersistedTaskId,
-    ) -> Result<Option<PersistedTaskRecord>, Error> {
-        self.paas_task_tree.get(task_id)
-    }
-
-    /// Get TaskId by UUID
-    pub fn get_task_id_by_uuid(&self, uuid: &str) -> Result<Option<PersistedTaskId>, Error> {
-        self.paas_uuid_index_tree.get(&uuid.to_string())
-    }
-
-    /// Insert a task record (both task tree and UUID index)
-    pub fn insert_task(
-        &self,
-        task_id: &PersistedTaskId,
-        record: &PersistedTaskRecord,
-    ) -> Result<(), Error> {
-        self.paas_task_tree.insert(task_id, record)?;
-        self.paas_uuid_index_tree.insert(&record.uuid, task_id)?;
-        Ok(())
-    }
-
-    /// Update task record
-    pub fn update_task(
-        &self,
-        task_id: &PersistedTaskId,
-        record: &PersistedTaskRecord,
-    ) -> Result<(), Error> {
-        self.paas_task_tree.insert(task_id, record)?;
-        Ok(())
-    }
-
-    /// List all tasks (helper to avoid private iterator types)
-    pub fn list_all_tasks(&self) -> Vec<(PersistedTaskId, PersistedTaskRecord)> {
-        self.paas_task_tree
-            .iter()
-            .filter_map(|result| result.ok())
-            .collect()
-    }
-}
 
 impl ProofDatabase for ProofDBSled {
     fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()> {
@@ -108,47 +55,6 @@ impl ProofDatabase for ProofDBSled {
         self.proof_deps_tree
             .compare_and_swap(proof_context, old, None)?;
         Ok(existed)
-    }
-}
-
-impl ProverTaskDatabase for ProofDBSled {
-    fn get_task(&self, task_id: PersistedTaskId) -> DbResult<Option<PersistedTaskRecord>> {
-        Ok(self.paas_task_tree.get(&task_id)?)
-    }
-
-    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<PersistedTaskId>> {
-        Ok(self.paas_uuid_index_tree.get(&uuid)?)
-    }
-
-    fn insert_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()> {
-        self.config.with_retry(
-            (&self.paas_task_tree, &self.paas_uuid_index_tree),
-            |(pt, pu)| {
-                if pt.contains_key(&task_id)? || pu.contains_key(&record.uuid)? {
-                    return Err(error::ConflictableTransactionError::Abort(Error::abort(
-                        DbError::EntryAlreadyExists,
-                    )));
-                }
-
-                pt.insert(&task_id, &record)?;
-                pu.insert(&record.uuid, &task_id)?;
-                Ok(())
-            },
-        )?;
-        Ok(())
-    }
-
-    fn update_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()> {
-        self.paas_task_tree.insert(&task_id, &record)?;
-        Ok(())
-    }
-
-    fn list_all_tasks(&self) -> DbResult<Vec<(PersistedTaskId, PersistedTaskRecord)>> {
-        Ok(self
-            .paas_task_tree
-            .iter()
-            .filter_map(|result| result.ok())
-            .collect())
     }
 }
 

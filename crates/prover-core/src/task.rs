@@ -1,9 +1,9 @@
 //! Task lifecycle types.
 
-use borsh::{BorshDeserialize, BorshSerialize};
+use serde::{Deserialize, Serialize};
 
 /// Status of a proof task in the lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,
@@ -30,6 +30,14 @@ impl TaskStatus {
 
     pub fn is_in_progress(&self) -> bool {
         matches!(self, Self::Queued | Self::Proving)
+    }
+
+    /// True for any status that should be re-spawned on startup recovery:
+    /// tasks that were submitted but never finished (Pending / Queued /
+    /// Proving). Transient failures are handled separately by the retry
+    /// scanner via [`Self::is_retriable`].
+    pub fn is_unfinished(&self) -> bool {
+        matches!(self, Self::Pending | Self::Queued | Self::Proving)
     }
 }
 

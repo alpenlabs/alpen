@@ -15765,11 +15765,10 @@ dependencies = [
 name = "strata-prover-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
- "borsh",
- "futures",
+ "parking_lot 0.12.5",
  "serde",
+ "serde_json",
  "sled",
  "thiserror 2.0.18",
  "tokio",

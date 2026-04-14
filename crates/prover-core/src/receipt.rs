@@ -4,9 +4,10 @@
 //! - [`ReceiptStore`]: generic byte-keyed persistence. Enables `get_receipt` on the PaaS handle.
 //! - [`ReceiptHook`]: domain-specific side effects after proving (e.g. write to ProofDB by epoch).
 
-use std::{collections::HashMap, sync::RwLock};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
+use parking_lot::RwLock;
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::{error::ProverResult, spec::ProofSpec};
@@ -53,12 +54,11 @@ impl ReceiptStore for InMemoryReceiptStore {
     fn put(&self, key: &[u8], receipt: &ProofReceiptWithMetadata) -> ProverResult<()> {
         self.receipts
             .write()
-            .expect("lock")
             .insert(key.to_vec(), receipt.clone());
         Ok(())
     }
 
     fn get(&self, key: &[u8]) -> ProverResult<Option<ProofReceiptWithMetadata>> {
-        Ok(self.receipts.read().expect("lock").get(key).cloned())
+        Ok(self.receipts.read().get(key).cloned())
     }
 }

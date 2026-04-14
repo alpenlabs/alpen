@@ -59,13 +59,19 @@ impl TaskRecord {
 }
 
 /// Persistence for task records. Keyed by opaque bytes, no generics.
+///
+/// All methods return [`ProverResult`] so backends can surface IO/decode
+/// errors to callers instead of silently discarding them.
 pub trait TaskStore: Send + Sync + 'static {
-    fn get(&self, key: &[u8]) -> Option<TaskRecord>;
+    fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>>;
     fn insert(&self, record: TaskRecord) -> ProverResult<()>;
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()>;
     fn set_retry_after(&self, key: &[u8], when: SystemTime) -> ProverResult<()>;
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()>;
-    fn list_retriable(&self, now: SystemTime) -> Vec<TaskRecord>;
-    fn list_in_progress(&self) -> Vec<TaskRecord>;
-    fn count(&self) -> usize;
+    fn list_retriable(&self, now: SystemTime) -> ProverResult<Vec<TaskRecord>>;
+    /// Every record that was submitted but hasn't reached a terminal state —
+    /// Pending, Queued, or Proving. Used by startup recovery to re-spawn
+    /// work that was interrupted by a crash before it completed.
+    fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>>;
+    fn count(&self) -> ProverResult<usize>;
 }

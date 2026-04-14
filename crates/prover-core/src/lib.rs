@@ -4,14 +4,14 @@
 //! The spec fetches inputs. Receipt storage and domain hooks are opt-in.
 //! The prover runs the zkVM program via the strategy.
 
-pub mod config;
-pub mod error;
-pub mod prover;
-pub mod receipt;
-pub mod spec;
-pub mod store;
-pub mod strategy;
-pub mod task;
+mod config;
+mod error;
+mod prover;
+mod receipt;
+mod spec;
+mod store;
+mod strategy;
+mod task;
 
 pub use config::{ProverConfig, RetryConfig};
 pub use error::{ProverError, ProverResult};
