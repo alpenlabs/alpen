@@ -6,10 +6,12 @@ use super::Formattable;
 
 /// Verifier run report. Stage commits extend this with stage-specific fields.
 #[derive(Debug, Serialize)]
-pub(crate) struct Report {}
+pub(crate) struct Report {
+    pub(crate) blocks_fetched: u64,
+}
 
 impl Formattable for Report {
     fn format_porcelain(&self) -> String {
-        "no stages executed".to_string()
+        format!("fetched blocks: {}", self.blocks_fetched)
     }
 }

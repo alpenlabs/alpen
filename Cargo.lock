@@ -4752,11 +4752,17 @@ name = "ee-da-verify"
 version = "0.3.0-alpha.1"
 dependencies = [
  "argh",
+ "bitcoin",
+ "bitcoind-async-client",
+ "futures",
  "serde",
  "serde_json",
  "strata-cli-common",
+ "strata-common",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "thiserror 2.0.18",
+ "tokio",
  "toml 0.5.11",
 ]
 
