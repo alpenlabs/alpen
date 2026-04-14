@@ -108,7 +108,7 @@ type BlobHash = Buf32;
 /// 35      2     total_chunks
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
-struct DaChunkHeader {
+pub struct DaChunkHeader {
     version: u8,
     blob_hash: BlobHash,
     chunk_index: u16,
@@ -116,6 +116,26 @@ struct DaChunkHeader {
 }
 
 impl DaChunkHeader {
+    /// Returns the chunk header encoding version.
+    pub fn version(&self) -> u8 {
+        self.version
+    }
+
+    /// Returns the SHA-256 blob hash this chunk belongs to.
+    pub fn blob_hash(&self) -> Buf32 {
+        self.blob_hash
+    }
+
+    /// Returns the chunk index within the blob.
+    pub fn chunk_index(&self) -> u16 {
+        self.chunk_index
+    }
+
+    /// Returns the total chunk count for this blob.
+    pub fn total_chunks(&self) -> u16 {
+        self.total_chunks
+    }
+
     /// Validates invariants and constructs a chunk header.
     ///
     /// Returns `None` if `total_chunks` is zero or `chunk_index >= total_chunks`.
@@ -160,13 +180,52 @@ fn encode_da_chunk(header: &DaChunkHeader, payload: &[u8]) -> Result<Vec<u8>, Co
     Ok(buf)
 }
 
-/// Decodes a DA chunk from envelope witness data into header + payload.
-fn decode_da_chunk(data: &[u8]) -> Result<(DaChunkHeader, &[u8]), CodecError> {
+/// Errors that can occur when parsing a DA chunk header from raw bytes.
+#[derive(Debug, thiserror::Error)]
+pub enum ChunkHeaderParseError {
+    #[error("data shorter than chunk header")]
+    TooShort,
+
+    #[error("failed decoding chunk header: {0}")]
+    Decode(#[from] CodecError),
+
+    #[error("unsupported chunk header version {version}")]
+    UnsupportedVersion { version: u8 },
+}
+
+impl ChunkHeaderParseError {
+    fn into_codec_error(self) -> CodecError {
+        match self {
+            Self::TooShort => CodecError::MalformedField("data shorter than chunk header"),
+            Self::Decode(e) => e,
+            Self::UnsupportedVersion { .. } => {
+                CodecError::MalformedField("unsupported chunk header version")
+            }
+        }
+    }
+}
+
+/// Parses a DA chunk header from raw `header ++ payload` bytes.
+///
+/// This parser validates header length and encoding version and is safe to call
+/// before full blob reassembly (for example, during reveal scanning).
+pub fn parse_chunk_header(data: &[u8]) -> Result<DaChunkHeader, ChunkHeaderParseError> {
     if data.len() < DA_CHUNK_HEADER_SIZE {
-        return Err(CodecError::MalformedField("data shorter than chunk header"));
+        return Err(ChunkHeaderParseError::TooShort);
     }
     let mut dec = BufDecoder::new(&data[..DA_CHUNK_HEADER_SIZE]);
     let header = DaChunkHeader::decode(&mut dec)?;
+    if header.version != DA_CHUNK_ENCODING_VERSION {
+        return Err(ChunkHeaderParseError::UnsupportedVersion {
+            version: header.version,
+        });
+    }
+    Ok(header)
+}
+
+/// Decodes a DA chunk from envelope witness data into header + payload.
+fn decode_da_chunk(data: &[u8]) -> Result<(DaChunkHeader, &[u8]), ChunkHeaderParseError> {
+    let header = parse_chunk_header(data)?;
     Ok((header, &data[DA_CHUNK_HEADER_SIZE..]))
 }
 
@@ -237,16 +296,15 @@ fn reassemble_from_da_chunks(encoded_chunks: &[Vec<u8>]) -> Result<Vec<u8>, Reas
     // Decode all chunks and reject unknown versions.
     let mut decoded: Vec<(DaChunkHeader, &[u8])> = Vec::with_capacity(encoded_chunks.len());
     for (i, enc) in encoded_chunks.iter().enumerate() {
-        let (header, payload) = decode_da_chunk(enc).map_err(|e| ReassemblyError::Decode {
-            index: i,
-            source: e,
-        })?;
-        if header.version != DA_CHUNK_ENCODING_VERSION {
-            return Err(ReassemblyError::UnsupportedVersion {
+        let (header, payload) = decode_da_chunk(enc).map_err(|e| match e {
+            ChunkHeaderParseError::UnsupportedVersion { version } => {
+                ReassemblyError::UnsupportedVersion { index: i, version }
+            }
+            other => ReassemblyError::Decode {
                 index: i,
-                version: header.version,
-            });
-        }
+                source: other.into_codec_error(),
+            },
+        })?;
         decoded.push((header, payload));
     }
 
@@ -328,6 +386,39 @@ mod tests {
         assert_eq!(encoded.len(), DA_CHUNK_HEADER_SIZE);
         let decoded: DaChunkHeader = decode_buf_exact(&encoded).unwrap();
         assert_eq!(header, decoded);
+    }
+
+    #[test]
+    fn parse_chunk_header_rejects_short_buffer() {
+        let err = parse_chunk_header(&[0xFF; 10]).unwrap_err();
+        assert!(matches!(err, ChunkHeaderParseError::TooShort));
+    }
+
+    #[test]
+    fn parse_chunk_header_rejects_unsupported_version() {
+        let mut encoded =
+            encode_to_vec(&DaChunkHeader::new(Buf32::from([0x11; 32]), 0, 1).unwrap()).unwrap();
+        encoded[0] = DA_CHUNK_ENCODING_VERSION + 1;
+
+        let err = parse_chunk_header(&encoded).unwrap_err();
+        assert!(matches!(
+            err,
+            ChunkHeaderParseError::UnsupportedVersion { version }
+            if version == DA_CHUNK_ENCODING_VERSION + 1
+        ));
+    }
+
+    #[test]
+    fn parse_chunk_header_parses_valid_header() {
+        let header = DaChunkHeader::new(Buf32::from([0xAB; 32]), 2, 5).unwrap();
+        let mut chunk = encode_to_vec(&header).unwrap();
+        chunk.extend_from_slice(&[1, 2, 3, 4]);
+
+        let parsed = parse_chunk_header(&chunk).unwrap();
+        assert_eq!(parsed.version(), header.version());
+        assert_eq!(parsed.blob_hash(), header.blob_hash());
+        assert_eq!(parsed.chunk_index(), header.chunk_index());
+        assert_eq!(parsed.total_chunks(), header.total_chunks());
     }
 
     #[test]
