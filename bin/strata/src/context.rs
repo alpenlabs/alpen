@@ -503,7 +503,12 @@ mod tests {
             &sequencer_config_path,
             r#"
                 [sequencer]
-                ol_block_time_ms = 5000
+                ol_block_time_ms = 5_000
+
+                [fee_model]
+                prover_fee_per_gas_wei = 15
+                da_overhead_multiplier_bps = 10_000
+                ol_overhead_wei = 0
             "#,
         )
         .unwrap();

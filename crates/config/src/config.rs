@@ -159,8 +159,39 @@ impl Default for SequencerConfig {
 pub struct SequencerRuntimeConfig {
     pub sequencer: SequencerConfig,
 
+    pub fee_model: SequencerFeeModelConfig,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epoch_sealing: Option<EpochSealingConfig>,
+}
+
+fn default_l1_fee_rate_source() -> L1FeeRateSourceConfig {
+    L1FeeRateSourceConfig::BtcioWriter
+}
+
+/// Configuration for the v1 L2 fee model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SequencerFeeModelConfig {
+    /// Static proving fee charged per unit of raw EVM gas.
+    pub prover_fee_per_gas_wei: u64,
+
+    /// Basis-points multiplier applied to the estimated DA fee.
+    pub da_overhead_multiplier_bps: u32,
+
+    /// Small additive fee charged for OL and infrastructure overhead.
+    pub ol_overhead_wei: u64,
+
+    /// Source used to resolve the current L1 fee rate.
+    #[serde(default = "default_l1_fee_rate_source")]
+    pub l1_fee_rate_source: L1FeeRateSourceConfig,
+}
+
+/// Source for the L1 fee rate used by the fee model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum L1FeeRateSourceConfig {
+    /// Reuse the btcio writer policy used for actual Bitcoin publication.
+    BtcioWriter,
 }
 
 /// Default slots per epoch for epoch sealing.
@@ -543,6 +574,11 @@ mod test {
             max_txs_per_block = 500
             block_template_ttl_secs = 120
 
+            [fee_model]
+            prover_fee_per_gas_wei = 15
+            da_overhead_multiplier_bps = 12_500
+            ol_overhead_wei = 42
+
             [epoch_sealing]
             policy = "FixedSlot"
             slots_per_epoch = 10
@@ -552,12 +588,60 @@ mod test {
         assert_eq!(config.sequencer.ol_block_time_ms, 3_000);
         assert_eq!(config.sequencer.max_txs_per_block, 500);
         assert_eq!(config.sequencer.block_template_ttl_secs, 120);
+        assert_eq!(config.fee_model.prover_fee_per_gas_wei, 15);
+        assert_eq!(config.fee_model.da_overhead_multiplier_bps, 12_500);
+        assert_eq!(config.fee_model.ol_overhead_wei, 42);
+        assert_eq!(
+            config.fee_model.l1_fee_rate_source,
+            L1FeeRateSourceConfig::BtcioWriter
+        );
 
         match config.epoch_sealing.as_ref().unwrap() {
             EpochSealingConfig::FixedSlot { slots_per_epoch } => {
                 assert_eq!(*slots_per_epoch, 10);
             }
         }
+    }
+
+    #[test]
+    fn test_sequencer_runtime_config_defaults_l1_fee_rate_source() {
+        let config: SequencerRuntimeConfig = toml::from_str(
+            r#"
+            [sequencer]
+            ol_block_time_ms = 3_000
+
+            [fee_model]
+            prover_fee_per_gas_wei = 15
+            da_overhead_multiplier_bps = 10_000
+            ol_overhead_wei = 0
+            "#,
+        )
+        .expect("sequencer runtime config should parse");
+
+        assert_eq!(
+            config.fee_model.l1_fee_rate_source,
+            L1FeeRateSourceConfig::BtcioWriter
+        );
+    }
+
+    #[test]
+    fn test_sequencer_runtime_config_requires_fee_model_fields() {
+        let error = toml::from_str::<SequencerRuntimeConfig>(
+            r#"
+            [sequencer]
+            ol_block_time_ms = 3_000
+
+            [fee_model]
+            da_overhead_multiplier_bps = 10_000
+            ol_overhead_wei = 0
+            "#,
+        )
+        .expect_err("missing prover fee must fail");
+
+        assert!(
+            error.to_string().contains("prover_fee_per_gas_wei"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]

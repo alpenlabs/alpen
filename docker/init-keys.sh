@@ -103,4 +103,9 @@ fi
 cat > "$SEQUENCER_CONFIG_FILE" <<EOF
 [sequencer]
 ol_block_time_ms = $OL_BLOCK_TIME_MS
+
+[fee_model]
+prover_fee_per_gas_wei = 15
+da_overhead_multiplier_bps = 10000
+ol_overhead_wei = 0
 EOF
