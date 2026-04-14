@@ -1267,6 +1267,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-da-tool"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "argh",
+ "bitcoin",
+ "serde",
+ "serde_json",
+ "strata-cli-common",
+ "strata-identifiers",
+ "terrors",
+ "toml 0.5.11",
+]
+
+[[package]]
 name = "alpen-ee-da-types"
 version = "0.3.0-alpha.1"
 dependencies = [
