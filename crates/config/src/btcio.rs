@@ -31,6 +31,10 @@ pub struct WriterConfig {
     pub bundle_interval_ms: u64,
     /// Base URL for mempool.space-compatible fee API.
     pub mempool_base_url: Option<String>,
+    /// Confirmation target passed to bitcoind's `estimatesmartfee` when the mempool explorer is
+    /// unreachable and the policy falls back to bitcoind.
+    #[serde(default = "default_bitcoind_conf_target")]
+    pub mempool_fallback_conf_target: u16,
 }
 
 /// Definition of how fees are determined while creating l1 transactions.
@@ -98,6 +102,7 @@ impl Default for WriterConfig {
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
             mempool_base_url: None,
+            mempool_fallback_conf_target: default_bitcoind_conf_target(),
         }
     }
 }

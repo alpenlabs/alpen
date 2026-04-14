@@ -608,11 +608,12 @@ mod test {
     #[test]
     fn test_writer_config_serializes_bitcoind_conf_target() {
         let config = WriterConfig {
-            write_poll_dur_ms: 200,
             fee_policy: FeePolicy::BitcoinD { conf_target: 6 },
+            write_poll_dur_ms: 200,
             reveal_amount: 100,
             bundle_interval_ms: 1_000,
             mempool_base_url: None,
+            ..WriterConfig::default()
         };
 
         let toml = toml::to_string(&config).expect("writer config should serialize");

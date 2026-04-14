@@ -119,6 +119,7 @@ async fn resolve_mempool_fee_rate<R: Reader>(
         .ok_or_else(|| anyhow!("mempool_base_url must be set when fee_policy = \"mempool\""))?;
 
     let explorer = MempoolExplorerClient::new(base_url)?;
+    let fallback_conf_target = config.mempool_fallback_conf_target;
 
     match explorer.fetch_recommended_fees().await {
         Ok(fees) => Ok(fees.select(mempool_fee_policy)),
@@ -126,10 +127,11 @@ async fn resolve_mempool_fee_rate<R: Reader>(
             warn!(
                 %base_url,
                 %err,
+                fallback_conf_target,
                 "mempool fee lookup failed, falling back to bitcoind's estimatesmartfee"
             );
             client
-                .estimate_smart_fee(1)
+                .estimate_smart_fee(fallback_conf_target)
                 .await
                 .context("failed to estimate smart fee after mempool fallback")
         }
