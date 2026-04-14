@@ -1,0 +1,23 @@
+[package]
+edition = "2021"
+name = "alpen-ee-da-tool"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "alpen-ee-da-tool"
+path = "src/main.rs"
+
+[dependencies]
+strata-cli-common.workspace = true
+strata-identifiers.workspace = true
+strata-l1-txfmt.workspace = true
+
+argh.workspace = true
+bitcoin.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+terrors.workspace = true
+toml.workspace = true
