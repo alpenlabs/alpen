@@ -23,6 +23,22 @@ debug-utils = [
   "strata-csm-worker/debug-utils",
   "strata-ol-sequencer?/debug-utils",
 ]
+prover = [
+  "dep:serde",
+  "dep:strata-ol-state-support-types",
+  "dep:strata-ol-stf",
+  "dep:strata-paas",
+  "dep:strata-predicate",
+  "dep:strata-proofimpl-checkpoint-new",
+  "dep:zkaleido",
+  "dep:zkaleido-native-adapter",
+]
+sp1 = [
+  "prover",
+  "dep:strata-zkvm-hosts",
+  "dep:zkaleido-sp1-host",
+  "strata-zkvm-hosts/sp1",
+]
 
 [dependencies]
 ssz.workspace = true
@@ -58,14 +74,20 @@ strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
+strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
+strata-ol-stf = { workspace = true, optional = true }
+strata-paas = { workspace = true, optional = true }
 strata-params.workspace = true
+strata-predicate = { workspace = true, optional = true }
 strata-primitives.workspace = true
+strata-proofimpl-checkpoint-new = { workspace = true, optional = true }
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 strata-tasks.workspace = true
+strata-zkvm-hosts = { workspace = true, optional = true }
 
 anyhow.workspace = true
 argh.workspace = true
@@ -74,6 +96,7 @@ bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 format_serde_error.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
+serde = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
@@ -81,6 +104,11 @@ tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 zeroize = { workspace = true, optional = true }
+zkaleido = { workspace = true, optional = true }
+zkaleido-native-adapter = { workspace = true, optional = true }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
+  "remote-prover",
+], optional = true }
 
 [dev-dependencies]
 strata-ol-params.workspace = true

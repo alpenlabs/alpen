@@ -1,3 +1,4 @@
+// TODO(STR-3064): remove VK_HASH_STR usage — compute VK hash from VK bytes at build time.
 //! Checkpoint predicate resolution based on enabled features and CLI overrides.
 
 use std::{error, fmt, str::FromStr};
@@ -91,10 +92,12 @@ fn resolve_default() -> PredicateKey {
 fn build_sp1_predicate() -> PredicateKey {
     use strata_predicate::PredicateTypeId;
     use strata_primitives::buf::Buf32;
-    use strata_sp1_guest_builder::GUEST_CHECKPOINT_VK_HASH_STR;
+    use strata_sp1_guest_builder::GUEST_CHECKPOINT_NEW_VK_HASH_STR;
     use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
 
-    let vk_buf32: Buf32 = GUEST_CHECKPOINT_VK_HASH_STR
+    // Integrated prover submits checkpoint-new proofs, so the predicate must be
+    // bound to the checkpoint-new program ID.
+    let vk_buf32: Buf32 = GUEST_CHECKPOINT_NEW_VK_HASH_STR
         .parse()
         .expect("invalid sp1 checkpoint verifier key hash");
     let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)

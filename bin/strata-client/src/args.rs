@@ -193,6 +193,7 @@ mod test {
             sequencer: None,
             epoch_sealing: None,
             logging: Default::default(),
+            prover: None,
         }
     }
 

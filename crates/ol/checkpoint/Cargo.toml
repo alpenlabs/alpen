@@ -16,6 +16,7 @@ strata-ol-chain-types-new.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
+strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-storage.workspace = true
@@ -23,6 +24,7 @@ strata-tasks.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+zkaleido-sp1-groth16-verifier.workspace = true
 
 [lints]
 workspace = true

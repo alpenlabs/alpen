@@ -29,6 +29,7 @@ futures.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+zkaleido.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

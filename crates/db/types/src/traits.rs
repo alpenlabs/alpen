@@ -33,7 +33,7 @@ use crate::{
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskId, PersistedTaskRecord,
     },
     DbResult, RawMmrId,
 };
@@ -59,6 +59,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
     fn prover_db(&self) -> Arc<impl ProofDatabase>;
+    fn prover_task_db(&self) -> Arc<impl ProverTaskDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
@@ -470,6 +471,26 @@ pub trait ProofDatabase: Send + Sync + 'static {
     /// Tries to delete dependencies of by its context, returning if it really
     /// existed or not.
     fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool>;
+}
+
+/// Database interface for persistent prover task records.
+///
+/// These records back PaaS task idempotency and crash recovery.
+pub trait ProverTaskDatabase: Send + Sync + 'static {
+    /// Retrieves a task record by task identifier.
+    fn get_task(&self, task_id: PersistedTaskId) -> DbResult<Option<PersistedTaskRecord>>;
+
+    /// Retrieves a task identifier by UUID.
+    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<PersistedTaskId>>;
+
+    /// Inserts a task record.
+    fn insert_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
+
+    /// Updates an existing task record.
+    fn update_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
+
+    /// Lists all persisted task records.
+    fn list_all_tasks(&self) -> DbResult<Vec<(PersistedTaskId, PersistedTaskRecord)>>;
 }
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast

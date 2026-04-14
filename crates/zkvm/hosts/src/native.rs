@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use strata_primitives::proof::ProofContext;
 use strata_proofimpl_checkpoint::program::CheckpointProgram;
+use strata_proofimpl_checkpoint_new::program::CheckpointProgram as CheckpointNewProgram;
 use strata_proofimpl_evm_ee_stf::program::EvmEeProgram;
 use zkaleido_native_adapter::NativeHost;
 
@@ -15,6 +16,7 @@ pub fn get_host(id: &ProofContext) -> Arc<NativeHost> {
     let native_host = match id {
         ProofContext::EvmEeStf(..) => EvmEeProgram::native_host(),
         ProofContext::Checkpoint(..) => CheckpointProgram::native_host(),
+        ProofContext::CheckpointCommitment(..) => CheckpointNewProgram::native_host(),
     };
     Arc::new(native_host)
 }

@@ -11,7 +11,7 @@ use strata_tasks::TaskExecutor;
 use tokio::sync::watch;
 
 use crate::{
-    context::CheckpointWorkerContextImpl, handle::OLCheckpointWorkerHandle,
+    ProverConfig, context::CheckpointWorkerContextImpl, handle::OLCheckpointWorkerHandle,
     service::OLCheckpointService, state::OLCheckpointServiceState,
 };
 
@@ -23,6 +23,7 @@ use crate::{
 pub struct OLCheckpointBuilder {
     storage: Option<Arc<NodeStorage>>,
     epoch_summary_rx: Option<watch::Receiver<Option<EpochCommitment>>>,
+    prover: Option<ProverConfig>,
 }
 
 impl OLCheckpointBuilder {
@@ -31,6 +32,7 @@ impl OLCheckpointBuilder {
         Self {
             storage: None,
             epoch_summary_rx: None,
+            prover: None,
         }
     }
 
@@ -49,6 +51,16 @@ impl OLCheckpointBuilder {
         self
     }
 
+    /// Set the prover configuration.
+    ///
+    /// When set, the checkpoint worker looks up proofs from the proof DB
+    /// and waits for the prover subject to the configured publish mode.
+    /// When absent, empty proofs are used.
+    pub fn with_prover(mut self, prover: ProverConfig) -> Self {
+        self.prover = Some(prover);
+        self
+    }
+
     /// Launch the OL checkpoint service and return a handle to it.
     pub fn launch(self, executor: &TaskExecutor) -> anyhow::Result<OLCheckpointWorkerHandle> {
         let storage = self
@@ -62,7 +74,10 @@ impl OLCheckpointBuilder {
         let input = TokioWatchInput::from_receiver(epoch_summary_rx);
         let input = SyncAsyncInput::new(input, runtime_handle);
 
-        let ctx = CheckpointWorkerContextImpl::new(storage);
+        let ctx = match self.prover {
+            Some(prover) => CheckpointWorkerContextImpl::with_prover(storage, prover),
+            None => CheckpointWorkerContextImpl::new(storage),
+        };
         let state = OLCheckpointServiceState::new(ctx);
         let builder = ServiceBuilder::<OLCheckpointService<CheckpointWorkerContextImpl>, _>::new()
             .with_state(state)

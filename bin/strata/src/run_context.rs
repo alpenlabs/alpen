@@ -62,6 +62,12 @@ impl RunContext {
         &self.service_handles.mempool_handle
     }
 
+    /// Returns the chain worker handle.
+    #[cfg(feature = "prover")]
+    pub(crate) fn chain_worker_handle(&self) -> &Arc<ChainWorkerHandle> {
+        &self.service_handles.chain_worker_handle
+    }
+
     /// Returns the fork choice manager handle.
     #[cfg(feature = "sequencer")]
     pub(crate) fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {

@@ -2,6 +2,7 @@ use std::fmt::{self, Display};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use strata_identifiers::EpochCommitment;
 
 use crate::EvmEeBlockCommitment;
 
@@ -27,8 +28,20 @@ pub enum ProofContext {
     /// Transition Function (STF) proof.
     EvmEeStf(EvmEeBlockCommitment, EvmEeBlockCommitment),
 
-    /// Identifier for a specific checkpoint being proven.
+    /// Checkpoint identified by epoch index only.
+    ///
+    /// Used by the standalone `prover-client` binary which only has an epoch
+    /// index from its RPC interface. Does not capture terminal block identity,
+    /// so it is not reorg-safe for same-epoch forks.
+    ///
+    /// Will be removed when the standalone prover-client is retired.
     Checkpoint(u64),
+
+    /// Checkpoint identified by full epoch commitment (epoch + terminal block).
+    ///
+    /// Reorg-safe: the terminal block hash is part of the key material, so
+    /// same-epoch forks produce distinct proof keys.
+    CheckpointCommitment(EpochCommitment),
 }
 
 /// Represents the ZkVm host used for proof generation.

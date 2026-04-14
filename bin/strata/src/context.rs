@@ -11,6 +11,10 @@ use bitcoin::Network;
 use bitcoind_async_client::{Auth, Client};
 use format_serde_error::SerdeError;
 use strata_asm_params::AsmParams;
+#[cfg(feature = "prover")]
+use strata_asm_params::SubprotocolInstance;
+#[cfg(feature = "prover")]
+use strata_config::ProverBackend;
 use strata_config::{
     BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
 };
@@ -18,6 +22,8 @@ use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
 use strata_params::{Params, RollupParams, SyncParams};
+#[cfg(feature = "prover")]
+use strata_predicate::PredicateTypeId;
 use strata_primitives::L1BlockCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{NodeStorage, create_node_storage};
@@ -47,24 +53,25 @@ pub(crate) fn init_node_context(
     config: Config,
     handle: Handle,
 ) -> Result<NodeContext, InitError> {
-    // Validate params
-    let params_path = args
-        .rollup_params
-        .as_ref()
-        .ok_or(InitError::MissingRollupParams)?;
-    let params = resolve_and_validate_params(params_path, &config)?;
-    let blockasm_config = config
-        .sequencer
-        .as_ref()
-        .map(load_block_assembly_config)
-        .transpose()?;
-
-    // Load ASM params
+    // Load ASM params first so integrated prover compatibility checks can use
+    // the same checkpoint predicate source that runtime ASM will enforce.
     let asm_params_path = args
         .asm_params
         .as_ref()
         .ok_or(InitError::MissingAsmParams)?;
     let asm_params = load_asm_params(asm_params_path)?;
+
+    // Validate params
+    let params_path = args
+        .rollup_params
+        .as_ref()
+        .ok_or(InitError::MissingRollupParams)?;
+    let params = resolve_and_validate_params(params_path, &config, &asm_params)?;
+    let blockasm_config = config
+        .sequencer
+        .as_ref()
+        .map(load_block_assembly_config)
+        .transpose()?;
 
     // Load OL params
     let ol_params_path = args.ol_params.as_ref().ok_or(InitError::MissingOLParams)?;
@@ -151,9 +158,14 @@ fn load_config_from_path(path: &Path) -> Result<toml::Value, InitError> {
 pub(crate) fn resolve_and_validate_params(
     path: &Path,
     config: &Config,
+    asm_params: &AsmParams,
 ) -> Result<Arc<Params>, InitError> {
     let rollup_params = load_rollup_params(path)?;
     rollup_params.check_well_formed()?;
+    #[cfg(feature = "prover")]
+    validate_integrated_prover_compatibility(config, asm_params)?;
+    #[cfg(not(feature = "prover"))]
+    let _ = asm_params;
 
     let params = Params {
         rollup: rollup_params,
@@ -165,6 +177,81 @@ pub(crate) fn resolve_and_validate_params(
     }
     .into();
     Ok(params)
+}
+
+#[cfg(feature = "prover")]
+fn validate_integrated_prover_compatibility(
+    config: &Config,
+    asm_params: &AsmParams,
+) -> Result<(), InitError> {
+    let checkpoint_predicate_type = checkpoint_predicate_type_from_asm_params(asm_params)?;
+    let expected_backend = expected_backend_for_checkpoint_predicate(checkpoint_predicate_type)?;
+
+    // When the prover is not configured, validate that the checkpoint predicate
+    // does not require real proofs (e.g. Sp1Groth16 needs a prover to produce them).
+    let Some(prover_config) = config.prover.as_ref() else {
+        if expected_backend.is_some() {
+            return Err(InitError::InvalidProverConfig(format!(
+                "checkpoint_predicate is {checkpoint_predicate_type} which requires a prover, \
+                 but no [prover] section is configured"
+            )));
+        }
+        return Ok(());
+    };
+
+    if let Some(expected_backend) = expected_backend
+        && prover_config.backend != expected_backend
+    {
+        return Err(InitError::InvalidProverConfig(format!(
+            "prover backend/predicate mismatch: config.prover.backend={:?}, \
+             checkpoint_predicate={checkpoint_predicate_type} expects {expected_backend:?}",
+            prover_config.backend,
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "prover")]
+fn checkpoint_predicate_type_from_asm_params(
+    asm_params: &AsmParams,
+) -> Result<PredicateTypeId, InitError> {
+    let checkpoint_subprotocol = asm_params
+        .subprotocols
+        .iter()
+        .find_map(|instance| match instance {
+            SubprotocolInstance::Checkpoint(cfg) => Some(cfg),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            InitError::InvalidProverConfig(
+                "AsmParams missing Checkpoint subprotocol; cannot validate integrated prover config"
+                    .to_string(),
+            )
+        })?;
+
+    let checkpoint_predicate_id = checkpoint_subprotocol.checkpoint_predicate.id();
+    PredicateTypeId::try_from(checkpoint_predicate_id).map_err(|e| {
+        InitError::InvalidProverConfig(format!(
+            "invalid AsmParams checkpoint predicate type id {checkpoint_predicate_id}: {e}"
+        ))
+    })
+}
+
+#[cfg(feature = "prover")]
+fn expected_backend_for_checkpoint_predicate(
+    checkpoint_predicate_type: PredicateTypeId,
+) -> Result<Option<ProverBackend>, InitError> {
+    match checkpoint_predicate_type {
+        // SP1 checkpoint predicates require SP1 proofs.
+        PredicateTypeId::Sp1Groth16 => Ok(Some(ProverBackend::Sp1)),
+        // AlwaysAccept ignores witness bytes, so proofs are optional.
+        PredicateTypeId::AlwaysAccept => Ok(None),
+        // Other predicate types are currently unsupported for integrated checkpoint proving.
+        _ => Err(InitError::InvalidProverConfig(format!(
+            "unsupported checkpoint predicate for integrated prover: {checkpoint_predicate_type}"
+        ))),
+    }
 }
 
 fn load_rollup_params(path: &Path) -> Result<RollupParams, InitError> {
@@ -311,7 +398,11 @@ mod tests {
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
+    #[cfg(feature = "prover")]
+    use strata_config::ProverBackend;
     use strata_config::SequencerConfig;
+    #[cfg(feature = "prover")]
+    use strata_predicate::PredicateTypeId;
 
     use super::{
         load_block_assembly_config, load_sequencer_runtime_config,
@@ -364,5 +455,30 @@ mod tests {
         })
         .unwrap_err();
         assert!(matches!(error, InitError::InvalidOlBlockTimeMs(0)));
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn accepts_matching_backend_for_sp1_predicate() {
+        let result =
+            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Sp1Groth16).unwrap();
+        assert_eq!(result, Some(ProverBackend::Sp1));
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn allows_any_backend_for_always_accept_predicate() {
+        let result =
+            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::AlwaysAccept)
+                .unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
+    fn rejects_unsupported_predicate_for_integrated_prover() {
+        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
+            .unwrap_err();
+        assert!(matches!(err, InitError::InvalidProverConfig(_)));
     }
 }

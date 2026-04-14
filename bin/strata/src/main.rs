@@ -25,6 +25,8 @@ mod errors;
 mod genesis;
 mod helpers;
 mod init_db;
+#[cfg(feature = "prover")]
+mod prover;
 mod rpc;
 mod run_context;
 #[cfg(feature = "sequencer")]
@@ -84,11 +86,23 @@ fn main() -> Result<()> {
     #[cfg(not(feature = "sequencer"))]
     let sequencer_sk: Option<[u8; 32]> = None;
 
-    // Start services, and do genesis if necessary
-    let runctx = start_strata_services(nodectx, sequencer_sk)?;
+    // Start services, and do genesis if necessary.
+    let (runctx, proof_notify) = start_strata_services(nodectx, sequencer_sk)?;
 
     // Start RPC.
     start_rpc(&runctx)?;
+
+    // Start the integrated prover when the feature is enabled and a [prover]
+    // section is present in the config. When absent, checkpoints use empty
+    // proofs (requires AlwaysAccept predicate and Timeout publish mode).
+    #[cfg(feature = "prover")]
+    if let Some(proof_notify) = proof_notify {
+        prover::start_prover_service(&runctx, runctx.executor(), proof_notify)?;
+    }
+
+    // Suppress unused variable warning when prover feature is disabled.
+    #[cfg(not(feature = "prover"))]
+    let _ = proof_notify;
 
     // Start sequencer signer if sequencer feature is enabled
     #[cfg(feature = "sequencer")]

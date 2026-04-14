@@ -46,7 +46,7 @@ use strata_db_types::{
         AccountDatabase, AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend,
         L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database, L1WriterDatabase,
         L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
-        ProofDatabase,
+        ProofDatabase, ProverTaskDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -195,6 +195,10 @@ impl DatabaseBackend for SledBackend {
         self.prover_db.clone()
     }
 
+    fn prover_task_db(&self) -> Arc<impl ProverTaskDatabase> {
+        self.prover_db.clone()
+    }
+
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase> {
         self.broadcast_db.clone()
     }
@@ -216,5 +220,10 @@ impl SledBackend {
     /// Get the MMR index database
     pub fn mmr_index_db(&self) -> Arc<MmrIndexDb> {
         self.mmr_index_db.clone()
+    }
+
+    /// Get the prover database with its concrete Sled-backed type.
+    pub fn prover_db(&self) -> Arc<ProofDBSled> {
+        self.prover_db.clone()
     }
 }

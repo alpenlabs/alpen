@@ -13855,6 +13855,7 @@ dependencies = [
  "bitcoind-async-client",
  "format_serde_error",
  "jsonrpsee",
+ "serde",
  "serde_json",
  "ssz",
  "strata-asm-common",
@@ -13889,21 +13890,29 @@ dependencies = [
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
+ "strata-ol-stf",
+ "strata-paas",
  "strata-params",
  "strata-predicate",
  "strata-primitives",
+ "strata-proofimpl-checkpoint-new",
  "strata-service",
  "strata-snark-acct-types",
  "strata-status",
  "strata-storage",
  "strata-tasks",
+ "strata-zkvm-hosts",
  "thiserror 2.0.18",
  "threadpool",
  "tokio",
  "toml 0.5.11",
  "tracing",
  "zeroize",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido-native-adapter",
+ "zkaleido-sp1-host",
 ]
 
 [[package]]
@@ -14802,7 +14811,6 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-ol-state-types",
- "strata-paas",
  "strata-primitives",
  "strata-state",
  "thiserror 2.0.18",
@@ -14860,6 +14868,7 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
  "strata-ol-state-types",
+ "strata-paas",
  "strata-primitives",
  "strata-state",
  "strata-storage-common",
@@ -15310,6 +15319,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
+ "strata-params",
  "strata-primitives",
  "strata-service",
  "strata-storage",
@@ -15318,6 +15328,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
+ "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
 ]
 
 [[package]]
@@ -16085,6 +16096,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
 ]
 
 [[package]]
@@ -16268,6 +16280,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "strata-primitives",
  "strata-proofimpl-checkpoint",
+ "strata-proofimpl-checkpoint-new",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",

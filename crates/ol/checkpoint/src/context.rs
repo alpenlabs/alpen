@@ -1,6 +1,9 @@
 //! Context trait for checkpoint worker dependencies.
 
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Condvar, Mutex},
+    time::Duration,
+};
 
 use strata_checkpoint_types::EpochSummary;
 use strata_checkpoint_types_ssz::CheckpointPayload;
@@ -9,8 +12,15 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
-use strata_primitives::nonempty_vec::NonEmptyVec;
+use strata_primitives::{
+    nonempty_vec::NonEmptyVec,
+    proof::{ProofContext, ProofKey, ProofZkVm},
+};
 use strata_storage::NodeStorage;
+use tracing::{debug, warn};
+use zkaleido_sp1_groth16_verifier::{
+    GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, VK_HASH_PREFIX_LENGTH,
+};
 
 pub(crate) type StateDiffRaw = Vec<u8>;
 
@@ -69,17 +79,141 @@ pub(crate) trait CheckpointWorkerContext: Send + Sync + 'static {
     ) -> anyhow::Result<(StateDiffRaw, Vec<OLLog>)>;
 }
 
-/// Production context implementation with v1 defaults.
+/// Safety-net interval for the proof wait loop.
 ///
-/// Uses empty DA, empty logs, and placeholder proof.
+/// The checkpoint worker sleeps on a [`Condvar`] that the proof storer
+/// signals immediately after writing a proof, so in practice the worker
+/// wakes up right away. This timeout is only a fallback in case a
+/// signal is missed (e.g. spurious wakeup).
+const PROOF_WAIT_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Shared signal between the proof storer and the checkpoint worker.
+///
+/// The proof storer calls `notify` after persisting a proof to the DB.
+/// The checkpoint worker blocks on `wait`, which returns as soon as
+/// the signal arrives (or after a safety-net timeout as a fallback).
+#[derive(Debug)]
+pub struct ProofNotify {
+    mu: Mutex<()>,
+    cv: Condvar,
+}
+
+impl ProofNotify {
+    /// Creates a new instance.
+    pub fn new() -> Self {
+        Self {
+            mu: Mutex::new(()),
+            cv: Condvar::new(),
+        }
+    }
+
+    /// Signals that a proof has been stored. Wakes the checkpoint worker.
+    pub fn notify(&self) {
+        let _guard = self.mu.lock().unwrap_or_else(|e| e.into_inner());
+        self.cv.notify_all();
+    }
+
+    /// Blocks until signaled or `PROOF_WAIT_INTERVAL` elapses.
+    fn wait(&self) {
+        let guard = self.mu.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = self
+            .cv
+            .wait_timeout(guard, PROOF_WAIT_INTERVAL)
+            .unwrap_or_else(|e| e.into_inner());
+    }
+}
+
+impl Default for ProofNotify {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Prover configuration for the checkpoint worker.
+///
+/// When provided, the worker reads proofs from the proof DB and waits
+/// indefinitely for the prover to store them. The checkpoint predicate
+/// in `AsmParams` determines whether proofs are required; if the
+/// predicate rejects empty proofs (e.g. `Sp1Groth16`), there is no
+/// safe fallback, so the worker must wait for a real proof.
+#[derive(Debug)]
+pub struct ProverConfig {
+    /// The zkVM backend the prover uses (determines the proof DB key).
+    pub zkvm: ProofZkVm,
+    /// Notifier shared with the proof storer wakes the worker on new proofs.
+    pub notify: Arc<ProofNotify>,
+}
+
+/// Production context implementation.
+///
+/// When a [`ProverConfig`] is set, reads proofs from the proof DB and waits
+/// for the prover to deliver them. Without it, returns empty proofs.
 pub(crate) struct CheckpointWorkerContextImpl {
     storage: Arc<NodeStorage>,
+    /// When present, a prover is running and `get_proof` waits for proofs.
+    /// When absent, `get_proof` returns empty immediately.
+    prover: Option<ProverConfig>,
 }
 
 impl CheckpointWorkerContextImpl {
-    /// Create a new context with the given storage.
+    /// Creates a new context without a prover.
+    ///
+    /// `get_proof` always returns empty bytes.
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            prover: None,
+        }
+    }
+
+    /// Creates a new context with an integrated prover.
+    pub(crate) fn with_prover(storage: Arc<NodeStorage>, prover: ProverConfig) -> Self {
+        Self {
+            storage,
+            prover: Some(prover),
+        }
+    }
+
+    /// Normalizes proof bytes for checkpoint payload encoding.
+    ///
+    /// SP1 Groth16 proofs persisted by the SP1 host include a 4-byte verifying-key hash prefix.
+    /// ASM checkpoint predicate verification expects the raw Groth16 witness bytes (128/256 bytes),
+    /// so strip that SP1 prefix when present.
+    fn payload_proof_bytes(key: &ProofKey, proof_bytes: &[u8]) -> Vec<u8> {
+        let prefixed_compressed_len = GROTH16_PROOF_COMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
+        let prefixed_uncompressed_len = GROTH16_PROOF_UNCOMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
+
+        if matches!(key.host(), ProofZkVm::SP1)
+            && (proof_bytes.len() == prefixed_compressed_len
+                || proof_bytes.len() == prefixed_uncompressed_len)
+        {
+            return proof_bytes[VK_HASH_PREFIX_LENGTH..].to_vec();
+        }
+
+        proof_bytes.to_vec()
+    }
+
+    /// Attempts to read a non-empty proof from the proof DB for the given epoch commitment.
+    ///
+    /// Returns `Ok(Some(bytes))` if a valid proof is found, `Ok(None)` if no
+    /// proof is available yet. Uses the prover's configured zkVM backend.
+    fn try_read_proof(
+        &self,
+        prover: &ProverConfig,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        let proof_key = ProofKey::new(ProofContext::CheckpointCommitment(commitment), prover.zkvm);
+        if let Some(receipt) = self.storage.proof().get_proof(proof_key)? {
+            let proof_bytes =
+                Self::payload_proof_bytes(&proof_key, receipt.receipt().proof().as_bytes());
+            if proof_bytes.is_empty() {
+                warn!(?proof_key, "empty proof receipt found");
+                return Ok(None);
+            }
+            debug!(?proof_key, "proof found for checkpoint");
+            return Ok(Some(proof_bytes));
+        }
+        Ok(None)
     }
 }
 
@@ -139,9 +273,38 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             .map_err(Into::into)
     }
 
-    fn get_proof(&self, _epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
-        // V1: empty placeholder proof
-        Ok(Vec::new())
+    /// Returns proof bytes for the given epoch.
+    // TODO(STR-3064): move proof waiting to the service/runner layer using
+    // tokio::select! over a watch channel instead of blocking on Condvar here.
+    /// The flow depends on whether a prover is configured:
+    ///
+    /// 1. No prover (`self.prover` is `None`): returns empty bytes.
+    /// 2. Prover configured: checks the proof DB first (handles restarts where the proof was
+    ///    already stored). If not found, enters a wait loop where `ProofNotify::wait` blocks until
+    ///    the proof storer signals, then re-checks the DB. The loop waits indefinitely until a
+    ///    proof appears.
+    fn get_proof(&self, epoch: &EpochCommitment) -> anyhow::Result<Vec<u8>> {
+        let Some(prover) = &self.prover else {
+            return Ok(Vec::new());
+        };
+
+        let epoch_idx = u64::from(epoch.epoch());
+
+        // Check DB first — proof may already exist (e.g. after restart).
+        if let Some(bytes) = self.try_read_proof(prover, *epoch)? {
+            return Ok(bytes);
+        }
+
+        // Wait loop: sleep on the condvar until the proof storer wakes us,
+        // then check DB. Repeat until proof is found.
+        loop {
+            debug!(epoch = epoch_idx, "waiting for checkpoint proof...");
+            prover.notify.wait();
+
+            if let Some(bytes) = self.try_read_proof(prover, *epoch)? {
+                return Ok(bytes);
+            }
+        }
     }
 
     fn get_block_header(

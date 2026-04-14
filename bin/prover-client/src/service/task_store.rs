@@ -5,7 +5,7 @@ use std::{
     time::{self, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use strata_db_store_sled::prover::{ProofDBSled, SerializableTaskId, SerializableTaskRecord};
+use strata_db_store_sled::prover::{PersistedTaskId, PersistedTaskRecord, ProofDBSled};
 use strata_paas::{
     ProverServiceError, ProverServiceResult, TaskId, TaskRecord, TaskStatus, TaskStore,
 };
@@ -24,8 +24,8 @@ impl SledTaskStore {
     }
 
     /// Convert from paas TaskId to serializable form
-    fn to_serializable_task_id(task_id: &TaskId<ProofTask>) -> SerializableTaskId {
-        SerializableTaskId {
+    fn to_persisted_task_id(task_id: &TaskId<ProofTask>) -> PersistedTaskId {
+        PersistedTaskId {
             program: task_id.program().0, // ProofTask wraps ProofContext
             backend: match task_id.backend() {
                 strata_paas::ZkVmBackend::Native => 0,
@@ -36,7 +36,7 @@ impl SledTaskStore {
     }
 
     /// Convert from serializable form to paas TaskId
-    fn from_serializable_task_id(ser: &SerializableTaskId) -> TaskId<ProofTask> {
+    fn from_persisted_task_id(ser: &PersistedTaskId) -> TaskId<ProofTask> {
         let backend = match ser.backend {
             0 => strata_paas::ZkVmBackend::Native,
             1 => strata_paas::ZkVmBackend::SP1,
@@ -55,9 +55,9 @@ impl SledTaskStore {
     }
 
     /// Convert from paas TaskRecord to serializable form
-    fn to_serializable_record(record: &TaskRecord<TaskId<ProofTask>>) -> SerializableTaskRecord {
-        SerializableTaskRecord {
-            task_id: Self::to_serializable_task_id(record.task_id()),
+    fn to_persisted_record(record: &TaskRecord<TaskId<ProofTask>>) -> PersistedTaskRecord {
+        PersistedTaskRecord {
+            task_id: Self::to_persisted_task_id(record.task_id()),
             uuid: record.uuid().to_string(),
             status: record.status().clone(),
             created_at_secs: Self::instant_to_secs(&record.created_at()),
@@ -66,11 +66,11 @@ impl SledTaskStore {
     }
 
     /// Convert from serializable form to paas TaskRecord
-    fn from_serializable_record(ser: &SerializableTaskRecord) -> TaskRecord<TaskId<ProofTask>> {
+    fn from_persisted_record(ser: &PersistedTaskRecord) -> TaskRecord<TaskId<ProofTask>> {
         // Note: created_at and updated_at from serialized record are lost here
         // This is a limitation - timestamps will be reset to current time
         TaskRecord::new(
-            Self::from_serializable_task_id(&ser.task_id),
+            Self::from_persisted_task_id(&ser.task_id),
             ser.uuid.clone(),
             ser.status.clone(),
         )
@@ -79,15 +79,15 @@ impl SledTaskStore {
 
 impl TaskStore<ProofTask> for SledTaskStore {
     fn get_uuid(&self, task_id: &TaskId<ProofTask>) -> Option<String> {
-        let key = Self::to_serializable_task_id(task_id);
+        let key = Self::to_persisted_task_id(task_id);
         let record = self.db.get_task(&key).ok()??;
-        Some(record.uuid) // SerializableTaskRecord has public uuid field
+        Some(record.uuid) // PersistedTaskRecord has public uuid field
     }
 
     fn get_task(&self, task_id: &TaskId<ProofTask>) -> Option<TaskRecord<TaskId<ProofTask>>> {
-        let key = Self::to_serializable_task_id(task_id);
+        let key = Self::to_persisted_task_id(task_id);
         let record = self.db.get_task(&key).ok()??;
-        Some(Self::from_serializable_record(&record))
+        Some(Self::from_persisted_record(&record))
     }
 
     fn get_task_by_uuid(&self, uuid: &str) -> Option<TaskRecord<TaskId<ProofTask>>> {
@@ -95,11 +95,11 @@ impl TaskStore<ProofTask> for SledTaskStore {
         let task_id_ser = self.db.get_task_id_by_uuid(uuid).ok()??;
         // Get full record from main tree
         let record = self.db.get_task(&task_id_ser).ok()??;
-        Some(Self::from_serializable_record(&record))
+        Some(Self::from_persisted_record(&record))
     }
 
     fn insert_task(&self, record: TaskRecord<TaskId<ProofTask>>) -> ProverServiceResult<()> {
-        let key = Self::to_serializable_task_id(record.task_id());
+        let key = Self::to_persisted_task_id(record.task_id());
 
         // Check for duplicate task_id
         if self
@@ -127,7 +127,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
             )));
         }
 
-        let value = Self::to_serializable_record(&record);
+        let value = Self::to_persisted_record(&record);
 
         // Insert into both trees
         self.db.insert_task(&key, &value).map_err(|e| {
@@ -142,9 +142,9 @@ impl TaskStore<ProofTask> for SledTaskStore {
         task_id: &TaskId<ProofTask>,
         status: TaskStatus,
     ) -> ProverServiceResult<()> {
-        let key = Self::to_serializable_task_id(task_id);
+        let key = Self::to_persisted_task_id(task_id);
 
-        // Get existing record (SerializableTaskRecord, not TaskRecord)
+        // Get existing record (PersistedTaskRecord, not TaskRecord)
         let mut record = self
             .db
             .get_task(&key)
@@ -153,7 +153,7 @@ impl TaskStore<ProofTask> for SledTaskStore {
                 ProverServiceError::TaskNotFound(format!("Task not found: {:?}", task_id))
             })?;
 
-        // Update status and timestamp (SerializableTaskRecord has direct field access)
+        // Update status and timestamp (PersistedTaskRecord has direct field access)
         record.status = status;
         record.updated_at_secs = Self::instant_to_secs(&time::Instant::now());
 
@@ -172,8 +172,8 @@ impl TaskStore<ProofTask> for SledTaskStore {
         self.db
             .list_all_tasks()
             .into_iter()
-            .filter(|(_key, record)| filter(&record.status)) // SerializableTaskRecord has public status field
-            .map(|(_key, record)| Self::from_serializable_record(&record))
+            .filter(|(_key, record)| filter(&record.status)) // PersistedTaskRecord has public status field
+            .map(|(_key, record)| Self::from_persisted_record(&record))
             .collect()
     }
 
