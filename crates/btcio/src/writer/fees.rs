@@ -1,12 +1,17 @@
 //! Module for resolving fee rates for transactions, supporting multiple fee policies including
 //! Bitcoin Core's `estimatesmartfee` and mempool.space's recommended fees endpoint.
 
+use std::sync::LazyLock;
+
 use anyhow::{anyhow, Context};
 use bitcoind_async_client::traits::Reader;
 use reqwest::Url;
 use serde::Deserialize;
 use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
 use tracing::warn;
+
+/// Shared HTTP client reused across mempool fee lookups for connection pooling.
+static SHARED_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 /// Represents the response from the mempool explorer recommended fees endpoint.
 // TODO(STR-3038): once we update Alpen's mempool explorers we can use `api/v1/fees/precise`
@@ -39,9 +44,10 @@ impl MempoolRecommendedFees {
 }
 
 /// HTTP client for querying a mempool explorer's fee estimation API.
+///
+/// Reuses a module-level [`reqwest::Client`] for connection pooling across calls.
 struct MempoolExplorerClient {
     base_url: Url,
-    http: reqwest::Client,
 }
 
 impl MempoolExplorerClient {
@@ -55,10 +61,7 @@ impl MempoolExplorerClient {
             url.set_path(&path);
         }
 
-        Ok(Self {
-            base_url: url,
-            http: reqwest::Client::new(),
-        })
+        Ok(Self { base_url: url })
     }
 
     /// Fetches the recommended fees from the mempool explorer.
@@ -68,7 +71,7 @@ impl MempoolExplorerClient {
             .join("api/v1/fees/recommended")
             .with_context(|| format!("invalid recommended-fees URL for base: {}", self.base_url))?;
 
-        self.http
+        SHARED_HTTP_CLIENT
             .get(url)
             .send()
             .await
