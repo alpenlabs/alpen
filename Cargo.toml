@@ -37,6 +37,7 @@ members = [
   "crates/ee-acct-types",
   "crates/ee-chain-types",
   "crates/ee-chunk-runtime",
+  "crates/ee-da-l1",
   "crates/eectl",
   "crates/evm-ee",
   "crates/evmexec",
@@ -160,6 +161,7 @@ alpen-reth-primitives = { path = "crates/reth/primitives" }
 alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 alpen-reth-witness = { path = "crates/reth/witness" }
+ee-da-l1 = { path = "crates/ee-da-l1" }
 strata-acct-types = { path = "crates/acct-types" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }

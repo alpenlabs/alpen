@@ -3,6 +3,7 @@
 
 mod cli;
 mod config;
+mod l1;
 mod output;
 
 use std::process::ExitCode;
@@ -15,10 +16,11 @@ use crate::{
     output::{output, Report},
 };
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let cli: Cli = argh::from_env();
     let format = cli.output_format.unwrap_or(OutputFormat::Porcelain);
-    match run(&cli).and_then(|report| output(&report, format)) {
+    match run(&cli).await.and_then(|report| output(&report, format)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
@@ -27,8 +29,9 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: &Cli) -> Result<Report, DisplayedError> {
-    let _config = VerifierConfig::load(&cli.config)
+async fn run(cli: &Cli) -> Result<Report, DisplayedError> {
+    let config = VerifierConfig::load(&cli.config)
         .user_error(format!("failed to load {}", cli.config.display()))?;
+    let _client = l1::create_ready_client(&config).await?;
     Ok(Report {})
 }
