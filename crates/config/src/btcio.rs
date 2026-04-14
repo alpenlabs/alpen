@@ -104,8 +104,8 @@ impl Default for WriterConfig {
 
 impl Default for FeePolicy {
     fn default() -> Self {
-        Self::MempoolExplorer {
-            policy: MempoolExplorerFeePolicy::default(),
+        Self::BitcoinD {
+            conf_target: default_bitcoind_conf_target(),
         }
     }
 }
