@@ -20,15 +20,34 @@ pub struct ReaderConfig {
 pub struct WriterConfig {
     /// How often to invoke the writer.
     pub write_poll_dur_ms: u64,
-    /// How the fees for are determined.
-    // FIXME: This should actually be a part of signer.
+    /// How the fees are determined.
     #[serde(flatten)]
-    pub fee_policy: FeePolicy,
+    pub l1_fee_policy: L1FeePolicyConfig,
     /// How much amount(in sats) to send to reveal address. Must be above dust amount or else
     /// reveal transaction won't be accepted.
     pub reveal_amount: u64,
     /// How often to bundle write intents.
     pub bundle_interval_ms: u64,
+}
+
+impl WriterConfig {
+    /// Returns the configured L1 fee policy.
+    pub fn fee_policy(&self) -> &FeePolicy {
+        &self.l1_fee_policy.fee_policy
+    }
+
+    /// Returns the configured mempool explorer base URL, if any.
+    pub fn mempool_base_url(&self) -> Option<&str> {
+        self.l1_fee_policy.mempool_base_url.as_deref()
+    }
+}
+
+/// Reusable configuration for resolving Bitcoin fee rates.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct L1FeePolicyConfig {
+    /// How fees are determined while creating L1 transactions.
+    #[serde(flatten)]
+    pub fee_policy: FeePolicy,
     /// Base URL for mempool.space-compatible fee API.
     pub mempool_base_url: Option<String>,
     /// Confirmation target passed to bitcoind's `estimatesmartfee` when the mempool explorer is
@@ -98,11 +117,9 @@ impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             write_poll_dur_ms: 5_000,
-            fee_policy: FeePolicy::default(),
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
-            mempool_base_url: None,
-            mempool_fallback_conf_target: default_bitcoind_conf_target(),
+            l1_fee_policy: L1FeePolicyConfig::default(),
         }
     }
 }

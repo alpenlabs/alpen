@@ -326,7 +326,7 @@ pub struct Config {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
+    use crate::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
 
     #[test]
     fn test_config_load() {
@@ -574,13 +574,13 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.fee_policy,
+            config.l1_fee_policy.fee_policy,
             FeePolicy::MempoolExplorer {
                 policy: MempoolExplorerFeePolicy::Fastest,
             }
         );
         assert_eq!(
-            config.mempool_base_url.as_deref(),
+            config.l1_fee_policy.mempool_base_url.as_deref(),
             Some("https://mempool.space/signet")
         );
     }
@@ -600,7 +600,7 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.fee_policy,
+            config.l1_fee_policy.fee_policy,
             FeePolicy::MempoolExplorer {
                 policy: MempoolExplorerFeePolicy::Economy,
             }
@@ -620,18 +620,23 @@ mod test {
         )
         .expect("writer config should parse");
 
-        assert_eq!(config.fee_policy, FeePolicy::BitcoinD { conf_target: 6 });
+        assert_eq!(
+            config.l1_fee_policy.fee_policy,
+            FeePolicy::BitcoinD { conf_target: 6 }
+        );
     }
 
     #[test]
     fn test_writer_config_serializes_bitcoind_conf_target() {
         let config = WriterConfig {
-            fee_policy: FeePolicy::BitcoinD { conf_target: 6 },
             write_poll_dur_ms: 200,
             reveal_amount: 100,
             bundle_interval_ms: 1_000,
-            mempool_base_url: None,
-            ..WriterConfig::default()
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::BitcoinD { conf_target: 6 },
+                mempool_base_url: None,
+                ..L1FeePolicyConfig::default()
+            },
         };
 
         let toml = toml::to_string(&config).expect("writer config should serialize");

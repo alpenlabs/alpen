@@ -574,8 +574,8 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
 pub(crate) mod test_context {
     use std::sync::Arc;
 
-    use bitcoin::{secp256k1::SecretKey, Address, Network};
-    use strata_config::btcio::{FeePolicy, WriterConfig};
+    use bitcoin::{Address, Network};
+    use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, WriterConfig};
     use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
     use strata_test_utils::ArbitraryGenerator;
@@ -590,7 +590,11 @@ pub(crate) mod test_context {
             .require_network(Network::Regtest)
             .unwrap();
         let cfg = Arc::new(WriterConfig {
-            fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+                mempool_base_url: None,
+                ..L1FeePolicyConfig::default()
+            },
             ..WriterConfig::default()
         });
         let status_channel = StatusChannel::new(

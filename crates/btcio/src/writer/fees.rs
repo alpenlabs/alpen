@@ -89,7 +89,7 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
     client: &R,
     config: &WriterConfig,
 ) -> anyhow::Result<u64> {
-    let fee_rate = match &config.fee_policy {
+    let fee_rate = match config.fee_policy() {
         FeePolicy::BitcoinD { conf_target } => client
             .estimate_smart_fee(*conf_target)
             .await
@@ -117,12 +117,11 @@ async fn resolve_mempool_fee_rate<R: Reader>(
     mempool_fee_policy: MempoolExplorerFeePolicy,
 ) -> anyhow::Result<u64> {
     let base_url = config
-        .mempool_base_url
-        .as_deref()
+        .mempool_base_url()
         .ok_or_else(|| anyhow!("mempool_base_url must be set when fee_policy = \"mempool\""))?;
 
     let explorer = MempoolExplorerClient::new(base_url)?;
-    let fallback_conf_target = config.mempool_fallback_conf_target;
+    let fallback_conf_target = config.l1_fee_policy.mempool_fallback_conf_target;
 
     match explorer.fetch_recommended_fees().await {
         Ok(fees) => Ok(fees.select(mempool_fee_policy)),
@@ -145,7 +144,9 @@ async fn resolve_mempool_fee_rate<R: Reader>(
 mod tests {
     use std::sync::Arc;
 
-    use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
+    use strata_config::btcio::{
+        FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig,
+    };
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
@@ -231,10 +232,13 @@ mod tests {
         .await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer {
-                policy: MempoolExplorerFeePolicy::Fastest,
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::MempoolExplorer {
+                    policy: MempoolExplorerFeePolicy::Fastest,
+                },
+                mempool_base_url: Some(server),
+                ..L1FeePolicyConfig::default()
             },
-            mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
 
@@ -255,10 +259,13 @@ mod tests {
         .await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer {
-                policy: MempoolExplorerFeePolicy::Economy,
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::MempoolExplorer {
+                    policy: MempoolExplorerFeePolicy::Economy,
+                },
+                mempool_base_url: Some(server),
+                ..L1FeePolicyConfig::default()
             },
-            mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
 
@@ -275,10 +282,13 @@ mod tests {
         let server = spawn_single_response_server("200 OK", "not-json").await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer {
-                policy: MempoolExplorerFeePolicy::Fastest,
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::MempoolExplorer {
+                    policy: MempoolExplorerFeePolicy::Fastest,
+                },
+                mempool_base_url: Some(server),
+                ..L1FeePolicyConfig::default()
             },
-            mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
 
@@ -295,10 +305,13 @@ mod tests {
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer {
-                policy: MempoolExplorerFeePolicy::Fastest,
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::MempoolExplorer {
+                    policy: MempoolExplorerFeePolicy::Fastest,
+                },
+                mempool_base_url: Some(server),
+                ..L1FeePolicyConfig::default()
             },
-            mempool_base_url: Some(server),
             ..WriterConfig::default()
         };
 
@@ -314,10 +327,13 @@ mod tests {
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_missing() {
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer {
-                policy: MempoolExplorerFeePolicy::Fastest,
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::MempoolExplorer {
+                    policy: MempoolExplorerFeePolicy::Fastest,
+                },
+                mempool_base_url: None,
+                ..L1FeePolicyConfig::default()
             },
-            mempool_base_url: None,
             ..WriterConfig::default()
         };
 
@@ -334,10 +350,13 @@ mod tests {
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
         let client = TestBitcoinClient::new(1);
         let config = WriterConfig {
-            fee_policy: FeePolicy::MempoolExplorer {
-                policy: MempoolExplorerFeePolicy::Fastest,
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::MempoolExplorer {
+                    policy: MempoolExplorerFeePolicy::Fastest,
+                },
+                mempool_base_url: Some("not a url".to_string()),
+                ..L1FeePolicyConfig::default()
             },
-            mempool_base_url: Some("not a url".to_string()),
             ..WriterConfig::default()
         };
 
@@ -352,7 +371,11 @@ mod tests {
     async fn test_resolve_fee_rate_smart_uses_raw_estimate() {
         let client = Arc::new(TestBitcoinClient::new(1));
         let config = WriterConfig {
-            fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+            l1_fee_policy: L1FeePolicyConfig {
+                fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+                mempool_base_url: None,
+                ..L1FeePolicyConfig::default()
+            },
             ..WriterConfig::default()
         };
 

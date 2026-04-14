@@ -62,7 +62,7 @@ use strata_btcio::{
     BtcioParams,
 };
 #[cfg(feature = "sequencer")]
-use strata_config::btcio::{FeePolicy, WriterConfig};
+use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, WriterConfig};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_predicate::PredicateKey;
@@ -568,7 +568,11 @@ fn main() {
                 // config file. For now, we hardcode to `BitcoinD` so that functional-tests can
                 // pass.
                 let writer_config = Arc::new(WriterConfig {
-                    fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+                    l1_fee_policy: L1FeePolicyConfig {
+                        fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+                        mempool_base_url: None,
+                        ..L1FeePolicyConfig::default()
+                    },
                     ..WriterConfig::default()
                 });
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
