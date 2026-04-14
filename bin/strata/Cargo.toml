@@ -42,6 +42,7 @@ sp1 = [
 
 [dependencies]
 ssz.workspace = true
+strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-txs-checkpoint = { workspace = true, optional = true }

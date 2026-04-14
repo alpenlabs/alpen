@@ -1,10 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
+use strata_acct_types::{MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::DbResult;
+use strata_db_types::{DbError, DbResult, types::AccountExtraDataEntry};
 use strata_identifiers::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
@@ -28,12 +29,13 @@ use crate::rpc::errors::{
 // -- Mock provider --
 
 type SubmitFn = Box<dyn Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync>;
+type InboxFetchFn = Box<dyn Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync>;
 
 struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
     canonical_slots: HashMap<u64, OLBlockCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLState>>,
-    epoch_commitments: HashMap<u64, EpochCommitment>,
+    epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
     account_extra_data: HashMap<(AccountId, Epoch), AccountExtraData>,
@@ -42,6 +44,7 @@ struct MockProvider {
     l1_tip_height: Option<L1Height>,
     sync_status: Option<OLSyncStatus>,
     submit_fn: SubmitFn,
+    inbox_fetch_fn: Option<InboxFetchFn>,
 }
 
 impl MockProvider {
@@ -59,6 +62,7 @@ impl MockProvider {
             l1_tip_height: None,
             sync_status: None,
             submit_fn: Box::new(|_| Ok(OLTxId::from(Buf32::from([0xAB; 32])))),
+            inbox_fetch_fn: None,
         }
     }
 
@@ -77,7 +81,7 @@ impl MockProvider {
         self
     }
 
-    fn with_epoch_commitment(mut self, epoch: u64, commitment: EpochCommitment) -> Self {
+    fn with_epoch_commitment(mut self, epoch: Epoch, commitment: EpochCommitment) -> Self {
         self.epoch_commitments.insert(epoch, commitment);
         self
     }
@@ -112,11 +116,69 @@ impl MockProvider {
         self
     }
 
+    fn with_snark_state_at_terminal(
+        self,
+        commitment: EpochCommitment,
+        account_id: AccountId,
+        seq_no: u64,
+        next_inbox_msg_idx: u64,
+    ) -> Self {
+        self.with_state_at(
+            commitment.to_block_commitment(),
+            ol_state_with_snark_account(
+                account_id,
+                commitment.last_slot(),
+                seq_no,
+                next_inbox_msg_idx,
+            ),
+        )
+    }
+
+    fn with_genesis_state_at_terminal(self, commitment: EpochCommitment) -> Self {
+        self.with_state_at(commitment.to_block_commitment(), genesis_ol_state())
+    }
+
+    fn with_account_extra_data(
+        mut self,
+        account_id: AccountId,
+        epoch: Epoch,
+        extra_data: Vec<u8>,
+        block: OLBlockCommitment,
+    ) -> Self {
+        let entry = AccountExtraDataEntry::new(extra_data, block);
+        self.account_extra_data
+            .insert((account_id, epoch), AccountExtraData::new(entry));
+        self
+    }
+
+    fn with_account_extra_data_at_terminal(
+        self,
+        account_id: AccountId,
+        epoch: Epoch,
+        extra_data: Vec<u8>,
+        commitment: EpochCommitment,
+    ) -> Self {
+        self.with_account_extra_data(
+            account_id,
+            epoch,
+            extra_data,
+            commitment.to_block_commitment(),
+        )
+    }
+
     fn with_submit_fn(
         mut self,
         f: impl Fn(OLTransaction) -> OLMempoolResult<OLTxId> + Send + Sync + 'static,
     ) -> Self {
         self.submit_fn = Box::new(f);
+        self
+    }
+
+    fn with_inbox_fetch_fn(
+        mut self,
+        f: impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static,
+    ) -> Self {
+        self.inbox_fetch_fn = Some(Box::new(f));
         self
     }
 }
@@ -140,7 +202,7 @@ impl OLRpcProvider for MockProvider {
 
     async fn get_canonical_epoch_commitment_at(
         &self,
-        epoch: u64,
+        epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>> {
         Ok(self.epoch_commitments.get(&epoch).copied())
     }
@@ -164,6 +226,23 @@ impl OLRpcProvider for MockProvider {
         key: (AccountId, Epoch),
     ) -> DbResult<Option<AccountExtraData>> {
         Ok(self.account_extra_data.get(&key).cloned())
+    }
+
+    async fn get_account_inbox_messages(
+        &self,
+        account_id: AccountId,
+        start_idx: u64,
+        end_idx_exclusive: u64,
+    ) -> DbResult<Vec<MessageEntry>> {
+        if let Some(fetch_fn) = &self.inbox_fetch_fn {
+            return fetch_fn(account_id, start_idx, end_idx_exclusive);
+        }
+
+        if end_idx_exclusive <= start_idx {
+            return Ok(Vec::new());
+        }
+
+        Ok(Vec::new())
     }
 
     async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>> {
@@ -260,7 +339,12 @@ fn genesis_ol_state() -> OLState {
     OLState::from_genesis_params(&params).expect("genesis state")
 }
 
-fn ol_state_with_snark_account(account_id: AccountId, seq_no: u64, slot: u64) -> OLState {
+fn ol_state_with_snark_account(
+    account_id: AccountId,
+    slot: u64,
+    seq_no: u64,
+    next_inbox_msg_idx: u64,
+) -> OLState {
     let mut state = genesis_ol_state();
     state.set_cur_slot(slot);
     let snark = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::zero());
@@ -269,7 +353,7 @@ fn ol_state_with_snark_account(account_id: AccountId, seq_no: u64, slot: u64) ->
     state
         .update_account(account_id, |acct| {
             let s = acct.as_snark_account_mut().unwrap();
-            s.set_proof_state_directly(Hash::zero(), 0, Seqno::from(seq_no));
+            s.set_proof_state_directly(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
         })
         .unwrap();
     state
@@ -286,6 +370,7 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: u64) -> OLState {
 const TEST_GENESIS_L1_HEIGHT: L1Height = 0;
 
 const TEST_MAX_HEADERS_RANGE: usize = 5000;
+const DEFAULT_NEXT_INBOX_MSG_IDX: u64 = 0;
 
 fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
     OLRpcServer::new(provider, TEST_GENESIS_L1_HEIGHT, TEST_MAX_HEADERS_RANGE)
@@ -294,6 +379,50 @@ fn make_rpc(provider: MockProvider) -> OLRpcServer<MockProvider> {
 fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
     let gam = RpcGenericAccountMessage::new(HexBytes32::from(*target.inner()), HexBytes(payload));
     RpcOLTransaction::new_payload(RpcTransactionPayload::GenericAccountMessage(gam))
+}
+
+fn test_epoch_commitment(epoch: Epoch, slot: u64, blkid_tag: u8) -> EpochCommitment {
+    EpochCommitment::new(epoch, slot, fixed_ol_block_id(blkid_tag))
+}
+
+fn make_message_entry(
+    source: AccountId,
+    incl_epoch: Epoch,
+    payload_value_sat: u64,
+    payload_buf: Vec<u8>,
+) -> MessageEntry {
+    let payload = MsgPayload::new(BitcoinAmount::from_sat(payload_value_sat), payload_buf);
+    MessageEntry::new(source, incl_epoch, payload)
+}
+
+fn rpc_messages_to_entries(messages: &[RpcMessageEntry]) -> Vec<MessageEntry> {
+    messages.iter().cloned().map(Into::into).collect()
+}
+
+fn inbox_fetch_expect_success(
+    expected_account_id: AccountId,
+    expected_start_idx: u64,
+    expected_end_idx_exclusive: u64,
+    messages_to_return: Vec<MessageEntry>,
+) -> impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static {
+    move |queried_account_id, start_idx, end_idx_exclusive| {
+        assert_eq!(queried_account_id, expected_account_id);
+        assert_eq!(start_idx, expected_start_idx);
+        assert_eq!(end_idx_exclusive, expected_end_idx_exclusive);
+        Ok(messages_to_return.clone())
+    }
+}
+
+fn inbox_fetch_panic(
+    message: &'static str,
+) -> impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static {
+    move |_, _, _| panic!("{message}")
+}
+
+fn inbox_fetch_error(
+    message: &'static str,
+) -> impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static {
+    move |_, _, _| Err(DbError::Other(message.into()))
 }
 
 // ── map_mempool_error_to_rpc ──
@@ -933,9 +1062,18 @@ async fn blocks_summaries_returns_ascending_order() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block0, ol_state_with_snark_account(account_id, 0, 0))
-        .with_block_and_state(&block1, ol_state_with_snark_account(account_id, 1, 1))
-        .with_block_and_state(&block2, ol_state_with_snark_account(account_id, 2, 2));
+        .with_block_and_state(
+            &block0,
+            ol_state_with_snark_account(account_id, 0, 0, DEFAULT_NEXT_INBOX_MSG_IDX),
+        )
+        .with_block_and_state(
+            &block1,
+            ol_state_with_snark_account(account_id, 1, 1, DEFAULT_NEXT_INBOX_MSG_IDX),
+        )
+        .with_block_and_state(
+            &block2,
+            ol_state_with_snark_account(account_id, 2, 2, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
     let rpc = make_rpc(provider);
 
     let summaries = rpc
@@ -957,7 +1095,7 @@ async fn blocks_summaries_snark_vs_non_snark() {
     let block = make_block(0, 0, null_blkid());
     let blkid = block.header().compute_blkid();
 
-    let mut state = ol_state_with_snark_account(snark_id, 42, 0);
+    let mut state = ol_state_with_snark_account(snark_id, 0, 42, DEFAULT_NEXT_INBOX_MSG_IDX);
     let empty_acct = NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Empty);
     state.create_new_account(empty_id, empty_acct).unwrap();
 
@@ -1054,7 +1192,10 @@ async fn epoch_summary_valid_snark_account() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 5, 20))
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 20, 5, DEFAULT_NEXT_INBOX_MSG_IDX),
+        )
         .with_epoch_commitment(1, epoch1_commit)
         .with_epoch_commitment(0, epoch0_commit);
     let rpc = make_rpc(provider);
@@ -1087,7 +1228,10 @@ async fn epoch_summary_epoch_zero_null_prev() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 0, 5))
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 5, 0, DEFAULT_NEXT_INBOX_MSG_IDX),
+        )
         .with_epoch_commitment(0, epoch0_commit);
     let rpc = make_rpc(provider);
 
@@ -1127,6 +1271,238 @@ async fn epoch_summary_non_snark_account() {
         .expect("non-snark");
     assert_eq!(summary.balance(), 0);
     assert!(summary.update_input().is_none());
+}
+
+#[tokio::test]
+async fn epoch_summary_returns_messages_from_mmr_range() {
+    let epoch = 2;
+    let account_id = test_account_id(11);
+    let prev_next_inbox_msg_idx = 2;
+    let cur_next_inbox_msg_idx = 5;
+    let prev_seq_no = 6;
+    let cur_seq_no = 7;
+
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 30, 0x61);
+    let epoch_commitment = test_epoch_commitment(epoch, 40, 0x62);
+    let expected_messages = vec![
+        make_message_entry(test_account_id(50), epoch, 3, vec![2, 6]),
+        make_message_entry(test_account_id(51), epoch, 4, vec![3, 9]),
+        make_message_entry(test_account_id(52), epoch, 5, vec![4, 12]),
+    ];
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(
+            epoch_commitment,
+            account_id,
+            cur_seq_no,
+            cur_next_inbox_msg_idx,
+        )
+        .with_snark_state_at_terminal(
+            prev_epoch_commitment,
+            account_id,
+            prev_seq_no,
+            prev_next_inbox_msg_idx,
+        )
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![2, 2, 5], epoch_commitment)
+        .with_inbox_fetch_fn(inbox_fetch_expect_success(
+            account_id,
+            prev_next_inbox_msg_idx,
+            cur_next_inbox_msg_idx,
+            expected_messages.clone(),
+        ));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let update = summary.update_input().expect("update input");
+    let returned_messages = rpc_messages_to_entries(&update.messages);
+
+    assert_eq!(returned_messages.len(), expected_messages.len());
+    for (actual, expected) in returned_messages.iter().zip(expected_messages.iter()) {
+        assert_eq!(actual.source(), expected.source());
+        assert_eq!(actual.incl_epoch(), expected.incl_epoch());
+        assert_eq!(actual.payload_value(), expected.payload_value());
+        assert_eq!(actual.payload_buf(), expected.payload_buf());
+    }
+}
+
+#[tokio::test]
+async fn epoch_summary_epoch_zero_has_no_messages() {
+    let epoch = 0;
+    let account_id = test_account_id(12);
+    let cur_next_inbox_msg_idx = 3;
+    let cur_seq_no = 3;
+
+    let epoch_commitment = test_epoch_commitment(epoch, 10, 0x63);
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_snark_state_at_terminal(
+            epoch_commitment,
+            account_id,
+            cur_seq_no,
+            cur_next_inbox_msg_idx,
+        )
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![0, 3], epoch_commitment)
+        .with_inbox_fetch_fn(inbox_fetch_panic("epoch 0 should not fetch inbox messages"));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let update = summary.update_input().expect("update input");
+    assert!(update.messages.is_empty());
+}
+
+#[tokio::test]
+async fn epoch_summary_no_idx_delta_returns_empty_messages() {
+    let epoch = 4;
+    let account_id = test_account_id(13);
+    let unchanged_next_inbox_msg_idx = 7;
+    let prev_seq_no = 8;
+    let cur_seq_no = 9;
+
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 50, 0x64);
+    let epoch_commitment = test_epoch_commitment(epoch, 60, 0x65);
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(
+            epoch_commitment,
+            account_id,
+            cur_seq_no,
+            unchanged_next_inbox_msg_idx,
+        )
+        .with_snark_state_at_terminal(
+            prev_epoch_commitment,
+            account_id,
+            prev_seq_no,
+            unchanged_next_inbox_msg_idx,
+        )
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![4, 7], epoch_commitment)
+        .with_inbox_fetch_fn(inbox_fetch_expect_success(
+            account_id,
+            unchanged_next_inbox_msg_idx,
+            unchanged_next_inbox_msg_idx,
+            Vec::new(),
+        ));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let update = summary.update_input().expect("update input");
+    assert!(update.messages.is_empty());
+}
+
+#[tokio::test]
+async fn epoch_summary_account_missing_in_prev_state_starts_from_zero() {
+    let epoch = 3;
+    let account_id = test_account_id(14);
+    let cur_next_inbox_msg_idx = 2;
+
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 20, 0x66);
+    let epoch_commitment = test_epoch_commitment(epoch, 30, 0x67);
+    let expected_messages = vec![
+        make_message_entry(test_account_id(50), epoch, 1, vec![0, 0]),
+        make_message_entry(test_account_id(51), epoch, 2, vec![1, 3]),
+    ];
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 4, cur_next_inbox_msg_idx)
+        .with_genesis_state_at_terminal(prev_epoch_commitment)
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![3], epoch_commitment)
+        .with_inbox_fetch_fn(inbox_fetch_expect_success(
+            account_id,
+            0,
+            cur_next_inbox_msg_idx,
+            expected_messages.clone(),
+        ));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let update = summary.update_input().expect("update input");
+    let returned_messages = rpc_messages_to_entries(&update.messages);
+
+    assert_eq!(returned_messages.len(), expected_messages.len());
+    for (actual, expected) in returned_messages.iter().zip(expected_messages.iter()) {
+        assert_eq!(actual.source(), expected.source());
+        assert_eq!(actual.incl_epoch(), expected.incl_epoch());
+        assert_eq!(actual.payload_value(), expected.payload_value());
+        assert_eq!(actual.payload_buf(), expected.payload_buf());
+    }
+}
+
+#[tokio::test]
+async fn epoch_summary_without_extra_data_skips_inbox_fetch() {
+    let epoch = 2;
+    let account_id = test_account_id(15);
+    let cur_next_inbox_msg_idx = 3;
+    let prev_next_inbox_msg_idx = 1;
+
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 30, 0x68);
+    let epoch_commitment = test_epoch_commitment(epoch, 40, 0x69);
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 8, cur_next_inbox_msg_idx)
+        .with_snark_state_at_terminal(
+            prev_epoch_commitment,
+            account_id,
+            7,
+            prev_next_inbox_msg_idx,
+        )
+        .with_inbox_fetch_fn(inbox_fetch_panic(
+            "inbox fetch should be skipped when account extra data is absent",
+        ));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    assert!(summary.update_input().is_none());
+}
+
+#[tokio::test]
+async fn epoch_summary_mmr_fetch_error_propagates() {
+    let epoch = 1;
+    let account_id = test_account_id(16);
+    let prev_next_inbox_msg_idx = 0;
+    let cur_next_inbox_msg_idx = 2;
+
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 10, 0x6A);
+    let epoch_commitment = test_epoch_commitment(epoch, 20, 0x6B);
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 4, cur_next_inbox_msg_idx)
+        .with_snark_state_at_terminal(
+            prev_epoch_commitment,
+            account_id,
+            3,
+            prev_next_inbox_msg_idx,
+        )
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![1, 0x10], epoch_commitment)
+        .with_inbox_fetch_fn(inbox_fetch_error("forced inbox fetch failure"));
+    let rpc = make_rpc(provider);
+
+    let result = rpc.get_acct_epoch_summary(account_id, epoch).await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code(), INTERNAL_ERROR_CODE);
 }
 
 // ── submit_transaction ──
@@ -1219,7 +1595,10 @@ async fn snark_account_state_latest_returns_state() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 7, 5));
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 5, 7, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
     let rpc = make_rpc(provider);
 
     let state = rpc
@@ -1249,7 +1628,10 @@ async fn snark_account_state_by_slot() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 3, 10));
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 10, 3, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
     let rpc = make_rpc(provider);
 
     let state = rpc
@@ -1341,7 +1723,10 @@ async fn snark_account_state_by_block_id() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block, ol_state_with_snark_account(account_id, 11, 8));
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(account_id, 8, 11, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
     let rpc = make_rpc(provider);
 
     let state = rpc

@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
@@ -38,7 +39,7 @@ pub trait OLRpcProvider: Send + Sync + 'static {
     /// Get the canonical epoch commitment for the given epoch.
     async fn get_canonical_epoch_commitment_at(
         &self,
-        epoch: u64,
+        epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>>;
 
     /// Get OL epoch summary by epoch commitment.
@@ -58,6 +59,15 @@ pub trait OLRpcProvider: Send + Sync + 'static {
         &self,
         key: (AccountId, Epoch),
     ) -> DbResult<Option<AccountExtraData>>;
+
+    /// Gets account inbox messages in `[start_idx, end_idx_exclusive)` from the account inbox MMR.
+    /// Returns an empty vector when `end_idx_exclusive <= start_idx`.
+    async fn get_account_inbox_messages(
+        &self,
+        account_id: AccountId,
+        start_idx: u64,
+        end_idx_exclusive: u64,
+    ) -> DbResult<Vec<MessageEntry>>;
 
     /// Get the epoch in which an account was created.
     async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;

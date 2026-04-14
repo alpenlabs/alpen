@@ -2,6 +2,7 @@
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
+use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
@@ -66,7 +67,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
     ) -> RpcResult<Option<(EpochCommitment, EpochSummary)>> {
         let Some(commitment) = self
             .provider
-            .get_canonical_epoch_commitment_at(epoch as u64)
+            .get_canonical_epoch_commitment_at(epoch)
             .await
             .map_err(db_error)?
         else {
@@ -117,6 +118,91 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             summary.epoch()
         )))
     }
+
+    async fn get_prev_epoch_commitment(&self, epoch: Epoch) -> RpcResult<EpochCommitment> {
+        if epoch == 0 {
+            return Ok(EpochCommitment::null());
+        }
+
+        self.provider
+            .get_canonical_epoch_commitment_at(epoch - 1)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
+            })
+    }
+
+    async fn get_prev_terminal_next_inbox_msg_idx(
+        &self,
+        account_id: AccountId,
+        prev_epoch_commitment: EpochCommitment,
+    ) -> RpcResult<u64> {
+        let prev_terminal_commitment = prev_epoch_commitment.to_block_commitment();
+        let prev_ol_state = self
+            .provider
+            .get_toplevel_ol_state(prev_terminal_commitment)
+            .await
+            .map_err(|e| {
+                error!(
+                    ?e,
+                    %prev_terminal_commitment,
+                    "Failed to get previous epoch OL state"
+                );
+                db_error(e)
+            })?
+            .ok_or_else(|| {
+                not_found_error(format!(
+                    "No OL state found for previous terminal block {prev_terminal_commitment}"
+                ))
+            })?;
+
+        let prev_next_inbox_msg_idx = prev_ol_state
+            .get_account_state(account_id)
+            .map_err(|e| {
+                error!(
+                    ?e,
+                    %account_id,
+                    %prev_terminal_commitment,
+                    "Failed to get account state from previous epoch OL state"
+                );
+                internal_error(format!("Account error: {e}"))
+            })?
+            .and_then(|account_state| account_state.as_snark_account().ok())
+            .map_or(0, |snark_state| snark_state.next_inbox_msg_idx());
+
+        Ok(prev_next_inbox_msg_idx)
+    }
+
+    async fn fetch_account_epoch_messages(
+        &self,
+        account_id: AccountId,
+        epoch: Epoch,
+        current_next_inbox_idx: Option<u64>,
+        prev_epoch_commitment: EpochCommitment,
+    ) -> RpcResult<Vec<MessageEntry>> {
+        // Epoch 0 is genesis-only in current flow: there is no prior terminal state and no
+        // collectable inbox updates, so messages are always empty.
+        if epoch == 0 {
+            return Ok(Vec::new());
+        }
+
+        let Some(end_idx_exclusive) = current_next_inbox_idx else {
+            return Ok(Vec::new());
+        };
+        if end_idx_exclusive == 0 {
+            return Ok(Vec::new());
+        }
+
+        let start_idx = self
+            .get_prev_terminal_next_inbox_msg_idx(account_id, prev_epoch_commitment)
+            .await?;
+
+        self.provider
+            .get_account_inbox_messages(account_id, start_idx, end_idx_exclusive)
+            .await
+            .map_err(db_error)
+    }
 }
 
 #[async_trait]
@@ -129,7 +215,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         // Get epoch commitments for the given epoch
         let epoch_commitment = self
             .provider
-            .get_canonical_epoch_commitment_at(epoch as u64)
+            .get_canonical_epoch_commitment_at(epoch)
             .await
             .map_err(|e| {
                 error!(?e, ?epoch, "Failed to get canonical epoch commitment");
@@ -168,28 +254,23 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         // Extract snark-specific data if applicable.
         // For non-snark accounts, these fields are zeroed since seqno and proof state
         // concepts don't apply to them.
-        let (next_seq_no, proof_state) = match account_state.as_snark_account() {
-            Ok(snark_state) => {
-                let seqno: u64 = *snark_state.seqno().inner();
-                let inner_state = snark_state.inner_state_root();
-                let next_inbox_idx = snark_state.next_inbox_msg_idx();
-                (seqno, ProofState::new(inner_state, next_inbox_idx))
-            }
-            Err(_) => (0, ProofState::new([0u8; 32].into(), 0)), // Non-snark account
-        };
+        let (next_seq_no, proof_state, current_next_inbox_idx) =
+            match account_state.as_snark_account() {
+                Ok(snark_state) => {
+                    let seqno: u64 = *snark_state.seqno().inner();
+                    let inner_state = snark_state.inner_state_root();
+                    let next_inbox_idx = snark_state.next_inbox_msg_idx();
+                    (
+                        seqno,
+                        ProofState::new(inner_state, next_inbox_idx),
+                        Some(next_inbox_idx),
+                    )
+                }
+                Err(_) => (0, ProofState::new([0u8; 32].into(), 0), None), // Non-snark account
+            };
 
         // Get previous epoch commitment if available
-        let prev_epoch_commitment = if epoch > 0 {
-            self.provider
-                .get_canonical_epoch_commitment_at((epoch - 1) as u64)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| {
-                    not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
-                })?
-        } else {
-            EpochCommitment::null()
-        };
+        let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
         let update = if let Some(extra_data) = self
             .provider
@@ -197,6 +278,15 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .await
             .map_err(db_error)?
         {
+            let messages = self
+                .fetch_account_epoch_messages(
+                    account_id,
+                    epoch,
+                    current_next_inbox_idx,
+                    prev_epoch_commitment,
+                )
+                .await?;
+
             let update = RpcUpdateInputData {
                 seq_no: next_seq_no,
                 proof_state: proof_state.into(),
@@ -207,7 +297,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     .into_parts()
                     .0
                     .into(),
-                messages: vec![], // TODO: Compute and fetch from mmr db
+                messages: messages.into_iter().map(Into::into).collect(),
             };
             Some(update)
         } else {
@@ -476,7 +566,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             })?;
 
         self.provider
-            .get_canonical_epoch_commitment_at(epoch as u64)
+            .get_canonical_epoch_commitment_at(epoch)
             .await
             .map_err(db_error)?
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
