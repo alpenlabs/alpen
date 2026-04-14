@@ -29,10 +29,6 @@ const BITCOIND_WARMING_UP: i32 = -28;
 
 /// Raw Bitcoin block data paired with its fetch metadata.
 #[derive(Debug, Clone)]
-#[expect(
-    dead_code,
-    reason = "Downstream stages consume the full block payload and metadata."
-)]
 pub(crate) struct L1BlockData {
     pub(crate) height: L1Height,
     pub(crate) hash: BlockHash,

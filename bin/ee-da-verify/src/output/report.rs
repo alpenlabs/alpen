@@ -2,16 +2,39 @@
 
 use serde::Serialize;
 
-use super::Formattable;
+use super::{helpers::porcelain_field, Formattable};
+use crate::l1::L1BlockRevealStats;
 
 /// Verifier run report. Stage commits extend this with stage-specific fields.
 #[derive(Debug, Serialize)]
 pub(crate) struct Report {
-    pub(crate) blocks_fetched: u64,
+    pub(crate) fetched_block_count: u64,
+    pub(crate) blocks_with_reveals: Vec<L1BlockRevealStats>,
 }
 
 impl Formattable for Report {
     fn format_porcelain(&self) -> String {
-        format!("fetched blocks: {}", self.blocks_fetched)
+        let blocks_with_reveals_count = self.blocks_with_reveals.len();
+        let reveals_found: u64 = self
+            .blocks_with_reveals
+            .iter()
+            .map(|block| block.reveals_found)
+            .sum();
+        let mut output = vec![
+            porcelain_field("fetched_block_count", self.fetched_block_count),
+            porcelain_field("blocks_with_reveals_count", blocks_with_reveals_count),
+            porcelain_field("reveals_found", reveals_found),
+        ];
+        for (index, block) in self.blocks_with_reveals.iter().enumerate() {
+            output.push(porcelain_field(
+                &format!("block_{index}.commitment"),
+                block.commitment,
+            ));
+            output.push(porcelain_field(
+                &format!("block_{index}.reveals_found"),
+                block.reveals_found,
+            ));
+        }
+        output.join("\n")
     }
 }

@@ -32,6 +32,15 @@ async fn main() -> ExitCode {
 async fn run(cli: &Cli) -> Result<Report, DisplayedError> {
     let config = VerifierConfig::load(&cli.config)?;
     let client = l1::create_ready_client(&config).await?;
-    let blocks_fetched = l1::count_blocks(&client, cli.start_height, cli.end_height).await?;
-    Ok(Report { blocks_fetched })
+    let scan_output = l1::collect_reveals(
+        &client,
+        cli.start_height,
+        cli.end_height,
+        config.magic_bytes,
+    )
+    .await?;
+    Ok(Report {
+        fetched_block_count: scan_output.fetched_block_count,
+        blocks_with_reveals: scan_output.blocks_with_reveals,
+    })
 }

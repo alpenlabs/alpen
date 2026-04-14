@@ -4751,15 +4751,18 @@ dependencies = [
 name = "ee-da-verify"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-ee-common",
  "argh",
  "bitcoin",
  "bitcoind-async-client",
  "futures",
+ "proptest",
  "serde",
  "serde_json",
  "strata-cli-common",
  "strata-common",
  "strata-identifiers",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "thiserror 2.0.18",
  "tokio",
