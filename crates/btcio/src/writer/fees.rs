@@ -8,7 +8,7 @@ use serde::Deserialize;
 use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
 use tracing::warn;
 
-/// Represents the response from the mempool.space recommended fees endpoint.
+/// Represents the response from the mempool explorer recommended fees endpoint.
 // TODO(STR-3038): once we update Alpen's mempool explorers we can use `api/v1/fees/precise`
 //                 for more granular sub-1 sat/vB fee rates if desired.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -23,6 +23,62 @@ pub(crate) struct MempoolRecommendedFees {
     economy_fee: u64,
     #[serde(rename = "minimumFee")]
     minimum_fee: u64,
+}
+
+impl MempoolRecommendedFees {
+    /// Selects the fee rate according to the given policy.
+    fn select(self, policy: MempoolExplorerFeePolicy) -> u64 {
+        match policy {
+            MempoolExplorerFeePolicy::Fastest => self.fastest_fee,
+            MempoolExplorerFeePolicy::HalfHour => self.half_hour_fee,
+            MempoolExplorerFeePolicy::Hour => self.hour_fee,
+            MempoolExplorerFeePolicy::Economy => self.economy_fee,
+            MempoolExplorerFeePolicy::Minimum => self.minimum_fee,
+        }
+    }
+}
+
+/// HTTP client for querying a mempool explorer's fee estimation API.
+struct MempoolExplorerClient {
+    base_url: Url,
+    http: reqwest::Client,
+}
+
+impl MempoolExplorerClient {
+    /// Creates a new client from a base URL string (e.g. `https://mempool.space/signet`).
+    fn new(base_url: &str) -> anyhow::Result<Self> {
+        let mut url = Url::parse(base_url)
+            .with_context(|| format!("invalid mempool_base_url: {base_url}"))?;
+
+        if !url.path().ends_with('/') {
+            let path = format!("{}/", url.path());
+            url.set_path(&path);
+        }
+
+        Ok(Self {
+            base_url: url,
+            http: reqwest::Client::new(),
+        })
+    }
+
+    /// Fetches the recommended fees from the mempool explorer.
+    async fn fetch_recommended_fees(&self) -> anyhow::Result<MempoolRecommendedFees> {
+        let url = self
+            .base_url
+            .join("api/v1/fees/recommended")
+            .with_context(|| format!("invalid recommended-fees URL for base: {}", self.base_url))?;
+
+        self.http
+            .get(url)
+            .send()
+            .await
+            .context("failed to call mempool recommended fees endpoint")?
+            .error_for_status()
+            .context("mempool recommended fees endpoint returned an error status")?
+            .json::<MempoolRecommendedFees>()
+            .await
+            .context("failed to decode mempool recommended fees response")
+    }
 }
 
 /// Resolves the fee rate to use for a transaction based on the provided configuration.
@@ -50,7 +106,7 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
     Ok(fee_rate * 2)
 }
 
-/// Resolves the fee rate using the mempool.space recommended fees endpoint, falling back to
+/// Resolves the fee rate using the mempool explorer recommended fees endpoint, falling back to
 /// Bitcoin Core's `estimatesmartfee` on failure.
 async fn resolve_mempool_fee_rate<R: Reader>(
     client: &R,
@@ -61,16 +117,11 @@ async fn resolve_mempool_fee_rate<R: Reader>(
         .mempool_base_url
         .as_deref()
         .ok_or_else(|| anyhow!("mempool_base_url must be set when fee_policy = \"mempool\""))?;
-    let url = mempool_recommended_fees_url(base_url)?;
 
-    match fetch_mempool_recommended_fees(url).await {
-        Ok(fees) => match mempool_fee_policy {
-            MempoolExplorerFeePolicy::Fastest => Ok(fees.fastest_fee),
-            MempoolExplorerFeePolicy::HalfHour => Ok(fees.half_hour_fee),
-            MempoolExplorerFeePolicy::Hour => Ok(fees.hour_fee),
-            MempoolExplorerFeePolicy::Economy => Ok(fees.economy_fee),
-            MempoolExplorerFeePolicy::Minimum => Ok(fees.minimum_fee),
-        },
+    let explorer = MempoolExplorerClient::new(base_url)?;
+
+    match explorer.fetch_recommended_fees().await {
+        Ok(fees) => Ok(fees.select(mempool_fee_policy)),
         Err(err) => {
             warn!(
                 %base_url,
@@ -85,30 +136,6 @@ async fn resolve_mempool_fee_rate<R: Reader>(
     }
 }
 
-fn mempool_recommended_fees_url(base_url: &str) -> anyhow::Result<Url> {
-    let mut url =
-        Url::parse(base_url).with_context(|| format!("invalid mempool_base_url: {base_url}"))?;
-
-    if !url.path().ends_with('/') {
-        let path = format!("{}/", url.path());
-        url.set_path(&path);
-    }
-
-    url.join("api/v1/fees/recommended")
-        .with_context(|| format!("invalid recommended-fees URL for base: {base_url}"))
-}
-
-async fn fetch_mempool_recommended_fees(url: Url) -> anyhow::Result<MempoolRecommendedFees> {
-    reqwest::get(url)
-        .await
-        .context("failed to call mempool recommended fees endpoint")?
-        .error_for_status()
-        .context("mempool recommended fees endpoint returned an error status")?
-        .json::<MempoolRecommendedFees>()
-        .await
-        .context("failed to decode mempool recommended fees response")
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -119,7 +146,7 @@ mod tests {
         net::TcpListener,
     };
 
-    use super::{mempool_recommended_fees_url, resolve_fee_rate, MempoolRecommendedFees};
+    use super::{resolve_fee_rate, MempoolExplorerClient, MempoolRecommendedFees};
     use crate::test_utils::TestBitcoinClient;
 
     async fn spawn_single_response_server(status_line: &'static str, body: &'static str) -> String {
@@ -177,17 +204,17 @@ mod tests {
     }
 
     #[test]
-    fn test_mempool_recommended_fees_url_handles_trailing_slash() {
+    fn test_mempool_explorer_client_normalizes_trailing_slash() {
         let without_slash =
-            mempool_recommended_fees_url("https://mempool.space/signet").expect("url should parse");
-        let with_slash = mempool_recommended_fees_url("https://mempool.space/signet/")
-            .expect("url should parse");
+            MempoolExplorerClient::new("https://mempool.space/signet").expect("url should parse");
+        let with_slash =
+            MempoolExplorerClient::new("https://mempool.space/signet/").expect("url should parse");
 
         assert_eq!(
-            without_slash.as_str(),
-            "https://mempool.space/signet/api/v1/fees/recommended"
+            without_slash.base_url.as_str(),
+            "https://mempool.space/signet/"
         );
-        assert_eq!(without_slash, with_slash);
+        assert_eq!(without_slash.base_url, with_slash.base_url);
     }
 
     #[tokio::test]
