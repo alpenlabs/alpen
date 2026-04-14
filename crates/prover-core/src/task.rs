@@ -1,9 +1,10 @@
 //! Task lifecycle types.
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 /// Status of a proof task in the lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,

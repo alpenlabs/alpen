@@ -6,6 +6,10 @@ edition = "2021"
 [lints]
 workspace = true
 
+[features]
+default = []
+remote = ["strata-prover-core/remote"]
+
 [dependencies]
 strata-prover-core.workspace = true
 strata-service.workspace = true

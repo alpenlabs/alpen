@@ -33,7 +33,7 @@ use crate::{
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskId, PersistedTaskRecord,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskRecord,
     },
     DbResult, RawMmrId,
 };
@@ -439,6 +439,34 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 
+/// Database interface backing [`strata_paas::TaskStore`] for the integrated
+/// prover service.
+///
+/// Keyed by the serialized `ProofSpec::Task` bytes — same contract as the
+/// in-memory `TaskStore`. All methods are synchronous and expected to be
+/// called through a blocking threadpool by the [`strata_storage`] manager.
+pub trait ProverTaskDatabase: Send + Sync + 'static {
+    /// Fetch a record by key. `None` if the key is absent.
+    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<PersistedTaskRecord>>;
+
+    /// Insert a new record. Fails with [`DbError::EntryAlreadyExists`] if
+    /// the key is already present — implementations must do this atomically
+    /// (e.g. `compare_and_swap(None, Some)`).
+    fn insert_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()>;
+
+    /// Upsert a record — overwrites any existing entry under the key.
+    fn put_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()>;
+
+    /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
+    fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>>;
+
+    /// All records whose status is not yet terminal (Pending / Queued / Proving).
+    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>>;
+
+    /// Number of records in the store.
+    fn count_tasks(&self) -> DbResult<usize>;
+}
+
 pub trait ProofDatabase: Send + Sync + 'static {
     /// Inserts a proof into the database.
     ///
@@ -471,26 +499,6 @@ pub trait ProofDatabase: Send + Sync + 'static {
     /// Tries to delete dependencies of by its context, returning if it really
     /// existed or not.
     fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool>;
-}
-
-/// Database interface for persistent prover task records.
-///
-/// These records back PaaS task idempotency and crash recovery.
-pub trait ProverTaskDatabase: Send + Sync + 'static {
-    /// Retrieves a task record by task identifier.
-    fn get_task(&self, task_id: PersistedTaskId) -> DbResult<Option<PersistedTaskRecord>>;
-
-    /// Retrieves a task identifier by UUID.
-    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<PersistedTaskId>>;
-
-    /// Inserts a task record.
-    fn insert_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
-
-    /// Updates an existing task record.
-    fn update_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
-
-    /// Lists all persisted task records.
-    fn list_all_tasks(&self) -> DbResult<Vec<(PersistedTaskId, PersistedTaskRecord)>>;
 }
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast

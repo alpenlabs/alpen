@@ -7,25 +7,16 @@
 //! section is present in the config.
 
 mod errors;
-mod host_resolver;
-mod input_fetcher;
-mod proof_storer;
-mod task;
-mod task_store;
+mod receipt_hook;
+mod spec;
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use strata_config::{ProverBackend, ProverConfig};
-use strata_identifiers::Epoch;
-use strata_paas::{
-    ProverHandle, ProverServiceBuilder, ProverServiceConfig, RemoteProofHandler, RetryConfig,
-    TaskResult, ZkVmBackend,
-};
-use strata_primitives::{
-    epoch::EpochCommitment,
-    proof::{ProofContext, ProofKey},
-};
+use strata_identifiers::{Epoch, EpochCommitment};
+use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
+use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use strata_proofimpl_checkpoint_new::program::CheckpointProgram;
 use strata_storage::ProofDbManager;
 use strata_tasks::TaskExecutor;
@@ -33,11 +24,8 @@ use tokio::{sync::watch, time};
 use tracing::{debug, info, warn};
 
 use self::{
-    host_resolver::{CheckpointHostResolver, backend_from_config},
-    input_fetcher::CheckpointInputFetcher,
-    proof_storer::CheckpointProofStorer,
-    task::{CheckpointTask, CheckpointVariant},
-    task_store::PersistentTaskStore,
+    receipt_hook::CheckpointReceiptHook,
+    spec::{CheckpointSpec, CheckpointTask},
 };
 use crate::run_context::RunContext;
 
@@ -46,23 +34,15 @@ use crate::run_context::RunContext;
 // TODO(STR-3064): make this configurable via ProverConfig.retry_interval.
 const PROVER_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Type alias for the checkpoint proof handler.
-type CheckpointHandler = RemoteProofHandler<
-    CheckpointTask,
-    CheckpointInputFetcher,
-    CheckpointProofStorer,
-    CheckpointHostResolver,
-    CheckpointProgram,
->;
-
 /// Starts the integrated prover service.
 ///
-/// Launches a paas prover service with a checkpoint handler and spawns
-/// a background runner that automatically proves new epochs as they complete.
+/// Launches a paas prover service for checkpoint proofs and spawns a
+/// background runner that submits proof tasks as new epochs complete.
 ///
 /// The caller must ensure that `config.prover` is `Some` before calling.
-/// `proof_notify` is shared with the checkpoint worker — the proof storer
-/// signals it after writing a proof so the checkpoint worker wakes immediately.
+/// `proof_notify` is shared with the checkpoint worker — the receipt hook
+/// signals it after writing a proof so the checkpoint worker wakes
+/// immediately.
 pub(crate) fn start_prover_service(
     runctx: &RunContext,
     executor: &Arc<TaskExecutor>,
@@ -75,52 +55,66 @@ pub(crate) fn start_prover_service(
         .expect("[prover] config section required when prover is enabled");
 
     validate_backend_config(prover_config.backend)?;
-    let backend = backend_from_config(prover_config.backend);
 
     let storage = runctx.storage().clone();
-    let proof_db = runctx.storage().proof().clone();
-    let prover_task_db = runctx.storage().prover_tasks().clone();
+    let proof_db = storage.proof().clone();
 
-    // Create paas components.
-    let fetcher = CheckpointInputFetcher::new(storage);
-    let storer = CheckpointProofStorer::new(proof_db.clone(), proof_notify);
-    let resolver = CheckpointHostResolver;
-    let handler: Arc<CheckpointHandler> = Arc::new(RemoteProofHandler::new(
-        fetcher,
-        storer,
-        resolver,
-        executor.as_ref().clone(),
-    ));
+    // Build the spec + hook. The backend choice is fixed here at build
+    // time rather than being part of task identity — the new paas erases
+    // the host type inside the prove strategy.
+    let spec = CheckpointSpec::new(storage.clone());
+    let zkvm = zkvm_for_backend(prover_config.backend);
+    let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify, zkvm);
 
-    // Explicitly zero all backends, then enable only the selected one.
-    // This is required because the paas ProverServiceBuilder defaults
-    // missing backends to 1 worker (unwrap_or(1) in builder.rs).
-    // TODO(STR-1947): ProverServiceConfig should default to 0 workers for
-    // unspecified backends, so callers only need to set the ones they want.
-    let worker_counts = HashMap::from([
-        (ZkVmBackend::Native, 0),
-        (ZkVmBackend::SP1, 0),
-        (ZkVmBackend::Risc0, 0),
-        (backend.clone(), prover_config.workers),
-    ]);
+    // Task store: the node's `ProverTaskDbManager` implements
+    // `strata_paas::TaskStore` directly, so the manager *is* the persistent
+    // task store — no extra adapter layer.
+    let task_store = runctx.storage().prover_tasks().clone();
 
-    let service_config = ProverServiceConfig::new(worker_counts);
+    // Pick native vs. remote strategy at build time.
+    let prover = match prover_config.backend {
+        ProverBackend::Native => ProverBuilder::new(spec)
+            .task_store(task_store)
+            .receipt_hook(hook)
+            .retry(RetryConfig::default())
+            .native(CheckpointProgram::native_host()),
+        #[cfg(feature = "sp1")]
+        ProverBackend::Sp1 => {
+            // prover-core's `.remote(host)` takes the host by value and
+            // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
+            // is Clone (only holds a SP1ProvingKey), so cloning from the
+            // shared static is fine.
+            let host: zkaleido_sp1_host::SP1Host =
+                (**strata_zkvm_hosts::sp1::CHECKPOINT_NEW_HOST).clone();
+            ProverBuilder::new(spec)
+                .task_store(task_store)
+                .receipt_hook(hook)
+                .retry(RetryConfig::default())
+                .remote(host)
+        }
+        #[cfg(not(feature = "sp1"))]
+        ProverBackend::Sp1 => {
+            // validate_backend_config rejects this at startup.
+            unreachable!(
+                "SP1 backend requested but sp1 feature is not enabled; \
+                 validate_backend_config should have caught this at startup"
+            )
+        }
+    };
 
-    // Build and launch prover service
-    let task_store = PersistentTaskStore::new(prover_task_db);
-    let handle: ProverHandle<CheckpointTask> = runctx
+    // Launch the service. `tick_interval` drives both startup recovery
+    // (re-spawning unfinished tasks) and the retry scanner.
+    let handle: ProverHandle<CheckpointSpec> = runctx
         .task_manager
         .handle()
         .block_on(
-            ProverServiceBuilder::<CheckpointTask>::new(service_config)
-                .with_task_store(task_store)
-                .with_retry_config(RetryConfig::default())
-                .with_handler(CheckpointVariant::Checkpoint, handler)
+            ProverServiceBuilder::new(prover)
+                .tick_interval(PROVER_RETRY_INTERVAL)
                 .launch(executor),
         )
         .context("failed to launch prover service")?;
 
-    info!(?backend, "prover service started");
+    info!(backend = ?prover_config.backend, "prover service started");
 
     // Resume from the last epoch that already has a checkpoint payload,
     // so we don't re-check every epoch from 1 on restart.
@@ -139,7 +133,7 @@ pub(crate) fn start_prover_service(
         executor,
         handle,
         epoch_rx,
-        backend,
+        zkvm,
         proof_db,
         runctx.storage().clone(),
         last_payload_epoch,
@@ -162,6 +156,15 @@ fn validate_backend_config(backend: ProverBackend) -> Result<()> {
     Ok(())
 }
 
+/// Map the config-level backend selection to the [`ProofZkVm`] used as part
+/// of the proof key in storage.
+fn zkvm_for_backend(backend: ProverBackend) -> ProofZkVm {
+    match backend {
+        ProverBackend::Native => ProofZkVm::Native,
+        ProverBackend::Sp1 => ProofZkVm::SP1,
+    }
+}
+
 /// Spawns a background task that watches for new epoch completions and
 /// submits proof tasks for each new epoch.
 ///
@@ -176,9 +179,9 @@ fn validate_backend_config(backend: ProverBackend) -> Result<()> {
 // TODO(STR-3064): split this into smaller helpers.
 fn spawn_checkpoint_runner(
     executor: &TaskExecutor,
-    prover_handle: ProverHandle<CheckpointTask>,
+    prover_handle: ProverHandle<CheckpointSpec>,
     mut epoch_rx: watch::Receiver<Option<EpochCommitment>>,
-    backend: ZkVmBackend,
+    zkvm: ProofZkVm,
     proof_db: Arc<ProofDbManager>,
     storage: Arc<strata_storage::NodeStorage>,
     last_payload_epoch: Option<Epoch>,
@@ -238,13 +241,6 @@ fn spawn_checkpoint_runner(
                 };
 
                 // Skip if proof already exists (idempotency after restart).
-                let task = CheckpointTask::new(commitment, backend.clone());
-                let zkvm = task.proof_zkvm().map_err(|e| {
-                    anyhow::anyhow!(
-                        "unsupported checkpoint backend at epoch {epoch}: backend={:?}, error={e}",
-                        task.backend
-                    )
-                })?;
                 let proof_key = ProofKey::new(ProofContext::CheckpointCommitment(commitment), zkvm);
                 if proof_db.get_proof(proof_key).ok().flatten().is_some() {
                     debug!(%epoch, "proof already exists, skipping");
@@ -254,8 +250,9 @@ fn spawn_checkpoint_runner(
 
                 info!(%epoch, "submitting checkpoint proof task");
 
-                match prover_handle.execute_task(task, backend.clone()).await {
-                    Ok(TaskResult::Completed { uuid }) => {
+                let task = CheckpointTask(commitment);
+                match prover_handle.execute(task).await {
+                    Ok(TaskResult::Completed { task: _ }) => {
                         // Re-check canonical commitment before advancing the
                         // cursor. If the epoch reorged while proving, keep the
                         // cursor at this epoch so we immediately reprove.
@@ -267,7 +264,6 @@ fn spawn_checkpoint_runner(
                             Ok(None) => {
                                 warn!(
                                     %epoch,
-                                    %uuid,
                                     "canonical commitment missing after proof completion; will retry epoch"
                                 );
                                 break;
@@ -275,7 +271,6 @@ fn spawn_checkpoint_runner(
                             Err(e) => {
                                 warn!(
                                     %epoch,
-                                    %uuid,
                                     %e,
                                     "failed to re-check canonical commitment after proof completion; will retry epoch"
                                 );
@@ -285,7 +280,6 @@ fn spawn_checkpoint_runner(
                         if latest_commitment != commitment {
                             warn!(
                                 %epoch,
-                                %uuid,
                                 proved_commitment = ?commitment,
                                 canonical_commitment = ?latest_commitment,
                                 "epoch commitment changed while proving; reproving epoch"
@@ -293,11 +287,11 @@ fn spawn_checkpoint_runner(
                             continue;
                         }
 
-                        info!(%epoch, %uuid, "checkpoint proof completed");
+                        info!(%epoch, "checkpoint proof completed");
                         next_epoch_to_prove += 1;
                     }
-                    Ok(TaskResult::Failed { uuid, error }) => {
-                        warn!(%epoch, %uuid, %error, "checkpoint proof failed, will retry");
+                    Ok(TaskResult::Failed { task: _, error }) => {
+                        warn!(%epoch, %error, "checkpoint proof failed, will retry");
                         break;
                     }
                     Err(e) => {

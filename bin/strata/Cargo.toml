@@ -24,17 +24,17 @@ debug-utils = [
   "strata-ol-sequencer?/debug-utils",
 ]
 prover = [
-  "dep:serde",
+  "dep:borsh",
   "dep:strata-ol-state-support-types",
   "dep:strata-ol-stf",
   "dep:strata-paas",
   "dep:strata-predicate",
   "dep:strata-proofimpl-checkpoint-new",
   "dep:zkaleido",
-  "dep:zkaleido-native-adapter",
 ]
 sp1 = [
   "prover",
+  "strata-paas/remote",
   "dep:strata-zkvm-hosts",
   "dep:zkaleido-sp1-host",
   "strata-zkvm-hosts/sp1",
@@ -95,9 +95,9 @@ argh.workspace = true
 async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
+borsh = { workspace = true, optional = true }
 format_serde_error.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
-serde = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true
@@ -106,7 +106,6 @@ toml.workspace = true
 tracing.workspace = true
 zeroize = { workspace = true, optional = true }
 zkaleido = { workspace = true, optional = true }
-zkaleido-native-adapter = { workspace = true, optional = true }
 zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
   "remote-prover",
 ], optional = true }

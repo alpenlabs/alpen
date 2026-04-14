@@ -1,14 +1,20 @@
-use strata_db_types::{errors::DbError, traits::ProofDatabase, DbResult};
+use strata_db_types::{
+    errors::DbError,
+    traits::{ProofDatabase, ProverTaskDatabase},
+    types::PersistedTaskRecord,
+    DbResult,
+};
 use strata_primitives::proof::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
-use super::schemas::{ProofDepsSchema, ProofSchema};
+use super::schemas::{ProofDepsSchema, ProofSchema, ProverTaskTree};
 use crate::define_sled_database;
 
 define_sled_database!(
     pub struct ProofDBSled {
         proof_tree: ProofSchema,
         proof_deps_tree: ProofDepsSchema,
+        prover_task_tree: ProverTaskTree,
     }
 );
 
@@ -55,6 +61,67 @@ impl ProofDatabase for ProofDBSled {
         self.proof_deps_tree
             .compare_and_swap(proof_context, old, None)?;
         Ok(existed)
+    }
+}
+
+impl ProverTaskDatabase for ProofDBSled {
+    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<PersistedTaskRecord>> {
+        Ok(self.prover_task_tree.get(&key)?)
+    }
+
+    fn insert_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()> {
+        // Matches the `put_proof` pattern: typed_sled's `compare_and_swap`
+        // collapses both CAS failure and IO into a single error, so we do
+        // the existence check before writing.
+        if self.prover_task_tree.get(&key)?.is_some() {
+            return Err(DbError::EntryAlreadyExists);
+        }
+        self.prover_task_tree
+            .compare_and_swap(key, None, Some(record))?;
+        Ok(())
+    }
+
+    fn put_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()> {
+        let old = self.prover_task_tree.get(&key)?;
+        self.prover_task_tree
+            .compare_and_swap(key, old, Some(record))?;
+        Ok(())
+    }
+
+    fn list_retriable(
+        &self,
+        now_secs: u64,
+    ) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>> {
+        let mut out = Vec::new();
+        for item in self.prover_task_tree.iter() {
+            let (key, record) = item?;
+            if record.status.is_retriable()
+                && record.retry_after_secs.is_some_and(|t| t <= now_secs)
+            {
+                out.push((key, record));
+            }
+        }
+        Ok(out)
+    }
+
+    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>> {
+        let mut out = Vec::new();
+        for item in self.prover_task_tree.iter() {
+            let (key, record) = item?;
+            if record.status.is_unfinished() {
+                out.push((key, record));
+            }
+        }
+        Ok(out)
+    }
+
+    fn count_tasks(&self) -> DbResult<usize> {
+        let mut n = 0;
+        for item in self.prover_task_tree.iter() {
+            item?;
+            n += 1;
+        }
+        Ok(n)
     }
 }
 

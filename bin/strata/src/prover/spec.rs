@@ -1,53 +1,79 @@
-// TODO(STR-3064): extract epoch block-fetching into a shared OL block manager utility.
-//! Input fetcher for checkpoint proofs.
+//! Proof specification for checkpoint proofs.
 //!
-//! Reads OL state, blocks, and DA data directly from local [`NodeStorage`]
-//! to construct [`CheckpointProverInput`] without RPC calls.
+//! Implements [`ProofSpec`] from `strata_prover_core`: identifies the task
+//! as an [`EpochCommitment`] and fetches the proof input from local
+//! [`NodeStorage`] without any RPC round-trip.
 
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
+use borsh::{BorshDeserialize, BorshSerialize};
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_stf::execute_block_batch;
-use strata_paas::InputFetcher;
-use strata_proofimpl_checkpoint_new::program::CheckpointProverInput;
+use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
+use strata_proofimpl_checkpoint_new::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
 use tokio::task::spawn_blocking;
 use tracing::debug;
 
-use super::{errors::ProverError, task::CheckpointTask};
+use super::errors::ProverError;
 
-/// Fetches checkpoint proof inputs from local node storage.
+/// Task identifier for checkpoint proofs.
 ///
-/// Reads the OL state snapshot, epoch blocks, and DA state diff for a given
-/// epoch directly from the node's storage managers.
+/// Newtype over [`EpochCommitment`] so we can attach the byte-encoding and
+/// display bounds that [`strata_paas::TaskKey`] requires without polluting
+/// the domain type.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub(crate) struct CheckpointTask(pub EpochCommitment);
+
+impl fmt::Display for CheckpointTask {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<CheckpointTask> for Vec<u8> {
+    fn from(task: CheckpointTask) -> Self {
+        borsh::to_vec(&task).expect("CheckpointTask borsh-serializable")
+    }
+}
+
+impl TryFrom<Vec<u8>> for CheckpointTask {
+    type Error = borsh::io::Error;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        borsh::from_slice(&bytes)
+    }
+}
+
+/// Proof specification for integrated checkpoint proving.
 #[derive(Clone)]
-pub(crate) struct CheckpointInputFetcher {
+pub(crate) struct CheckpointSpec {
     storage: Arc<NodeStorage>,
 }
 
-impl CheckpointInputFetcher {
+impl CheckpointSpec {
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
         Self { storage }
     }
 }
 
 #[async_trait]
-impl InputFetcher<CheckpointTask> for CheckpointInputFetcher {
-    type Input = CheckpointProverInput;
-    type Error = ProverError;
+impl ProofSpec for CheckpointSpec {
+    type Task = CheckpointTask;
+    type Program = CheckpointProgram;
 
-    async fn fetch_input(&self, program: &CheckpointTask) -> Result<Self::Input, Self::Error> {
-        let task_commitment = program.commitment;
-        let epoch = task_commitment.epoch;
-        let epoch_index = u64::from(epoch);
-        debug!(%epoch_index, "fetching checkpoint proof input");
-
+    async fn fetch_input(&self, task: &Self::Task) -> ProverResult<CheckpointProverInput> {
+        let commitment = task.0;
+        debug!(epoch = %commitment.epoch, "fetching checkpoint proof input");
         let storage = Arc::clone(&self.storage);
-        spawn_blocking(move || fetch_input_blocking(storage, task_commitment))
+        // All storage access is blocking; hop to a blocking thread so we
+        // don't stall the async runtime while reading blocks and state.
+        spawn_blocking(move || fetch_input_blocking(storage, commitment))
             .await
-            .map_err(|e| ProverError::InputFetchJoin(e.to_string()))?
+            .map_err(|e| PaasError::TransientFailure(format!("input fetch join: {e}")))?
+            .map_err(PaasError::from)
     }
 }
 

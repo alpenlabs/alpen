@@ -2,6 +2,7 @@
 
 use strata_db_types::DbError;
 use strata_identifiers::EpochCommitment;
+use strata_paas::ProverError as PaasError;
 
 /// Errors that can occur during proof input fetching.
 #[derive(Debug, thiserror::Error)]
@@ -30,17 +31,23 @@ pub(crate) enum ProverError {
     #[error("database error: {0}")]
     Database(#[from] DbError),
 
-    #[error("proof input task join failed: {0}")]
-    InputFetchJoin(String),
-
     #[error("DA state diff computation failed: {0}")]
     DaComputation(String),
-
-    #[error("unsupported zkVM backend: {0}")]
-    UnsupportedBackend(String),
 }
 
-/// Error wrapper for proof storage operations.
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub(crate) struct ProofStorageError(#[from] pub(crate) anyhow::Error);
+/// Classifies input-fetch failures as retriable or permanent for the paas
+/// service.
+///
+/// Stale commitments and missing epoch metadata reflect expected race
+/// conditions — the orchestration layer resubmits the canonical epoch on
+/// its next tick, so those retry. Anything else is treated as permanent.
+impl From<ProverError> for PaasError {
+    fn from(e: ProverError) -> Self {
+        match e {
+            ProverError::StaleTaskCommitment { .. }
+            | ProverError::EpochCommitmentNotFound(_)
+            | ProverError::EpochSummaryNotFound(_) => PaasError::TransientFailure(e.to_string()),
+            _ => PaasError::PermanentFailure(e.to_string()),
+        }
+    }
+}

@@ -50,6 +50,6 @@ pub(crate) mod components {
     /// ProofDatabase operations. Fields: proof_key, proof_context
     pub(crate) const STORAGE_PROOF: &str = "storage:proof";
 
-    /// ProverTaskDatabase operations. Fields: task_id, uuid
+    /// ProverTaskDatabase operations. Fields: key
     pub(crate) const STORAGE_PROVER_TASK: &str = "storage:prover_task";
 }

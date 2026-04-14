@@ -1,6 +1,6 @@
 //! Task storage trait.
 
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use crate::{error::ProverResult, task::TaskStatus};
 
@@ -116,4 +116,34 @@ pub trait TaskStore: Send + Sync + 'static {
     /// work that was interrupted by a crash before it completed.
     fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>>;
     fn count(&self) -> ProverResult<usize>;
+}
+
+/// Pass an `Arc<impl TaskStore>` straight into the builder: the wrapping Arc
+/// forwards every call to the inner store. Useful when the store is a
+/// shared storage manager held elsewhere in the application.
+impl<T: TaskStore + ?Sized> TaskStore for Arc<T> {
+    fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
+        (**self).get(key)
+    }
+    fn insert(&self, record: TaskRecord) -> ProverResult<()> {
+        (**self).insert(record)
+    }
+    fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
+        (**self).update_status(key, status)
+    }
+    fn set_retry_after(&self, key: &[u8], when: SystemTime) -> ProverResult<()> {
+        (**self).set_retry_after(key, when)
+    }
+    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+        (**self).set_metadata(key, data)
+    }
+    fn list_retriable(&self, now: SystemTime) -> ProverResult<Vec<TaskRecord>> {
+        (**self).list_retriable(now)
+    }
+    fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
+        (**self).list_unfinished()
+    }
+    fn count(&self) -> ProverResult<usize> {
+        (**self).count()
+    }
 }
