@@ -18,9 +18,9 @@ pub use error::{ProverError, ProverResult};
 pub use prover::{Prover, ProverBuilder};
 pub use receipt::{InMemoryReceiptStore, ReceiptHook, ReceiptStore};
 pub use spec::{ProofSpec, TaskKey};
-#[cfg(feature = "sled")]
-pub use store::SledTaskStore;
-pub use store::{InMemoryTaskStore, TaskRecord, TaskRecordData, TaskStore};
+pub use store::{
+    now_secs, InMemoryTaskStore, SecsSinceEpoch, TaskRecord, TaskRecordData, TaskStore,
+};
 pub use strategy::{ProveContext, ProveStrategy};
 pub use task::{TaskResult, TaskStatus};
 pub use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};

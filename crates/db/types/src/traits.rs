@@ -15,6 +15,7 @@ use strata_identifiers::{
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_paas::TaskRecordData;
 use strata_primitives::{
     nonempty_vec::NonEmptyVec,
     prelude::*,
@@ -33,7 +34,7 @@ use crate::{
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskRecord,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
     },
     DbResult, RawMmrId,
 };
@@ -447,21 +448,21 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
 /// called through a blocking threadpool by the [`strata_storage`] manager.
 pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Fetch a record by key. `None` if the key is absent.
-    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<PersistedTaskRecord>>;
+    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<TaskRecordData>>;
 
     /// Insert a new record. Fails with [`DbError::EntryAlreadyExists`] if
     /// the key is already present — implementations must do this atomically
     /// (e.g. `compare_and_swap(None, Some)`).
-    fn insert_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()>;
+    fn insert_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()>;
 
     /// Upsert a record — overwrites any existing entry under the key.
-    fn put_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()>;
+    fn put_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()>;
 
     /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
-    fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>>;
+    fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// All records whose status is not yet terminal (Pending / Queued / Proving).
-    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>>;
+    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// Number of records in the store.
     fn count_tasks(&self) -> DbResult<usize>;

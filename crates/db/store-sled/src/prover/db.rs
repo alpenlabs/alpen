@@ -1,9 +1,9 @@
 use strata_db_types::{
+    DbResult,
     errors::DbError,
     traits::{ProofDatabase, ProverTaskDatabase},
-    types::PersistedTaskRecord,
-    DbResult,
 };
+use strata_paas::TaskRecordData;
 use strata_primitives::proof::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -65,11 +65,11 @@ impl ProofDatabase for ProofDBSled {
 }
 
 impl ProverTaskDatabase for ProofDBSled {
-    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<PersistedTaskRecord>> {
+    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<TaskRecordData>> {
         Ok(self.prover_task_tree.get(&key)?)
     }
 
-    fn insert_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()> {
+    fn insert_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()> {
         // Matches the `put_proof` pattern: typed_sled's `compare_and_swap`
         // collapses both CAS failure and IO into a single error, so we do
         // the existence check before writing.
@@ -81,22 +81,19 @@ impl ProverTaskDatabase for ProofDBSled {
         Ok(())
     }
 
-    fn put_task(&self, key: Vec<u8>, record: PersistedTaskRecord) -> DbResult<()> {
+    fn put_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()> {
         let old = self.prover_task_tree.get(&key)?;
         self.prover_task_tree
             .compare_and_swap(key, old, Some(record))?;
         Ok(())
     }
 
-    fn list_retriable(
-        &self,
-        now_secs: u64,
-    ) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>> {
+    fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
             let (key, record) = item?;
-            if record.status.is_retriable()
-                && record.retry_after_secs.is_some_and(|t| t <= now_secs)
+            if record.status().is_retriable()
+                && record.retry_after_secs().is_some_and(|t| t <= now_secs)
             {
                 out.push((key, record));
             }
@@ -104,11 +101,11 @@ impl ProverTaskDatabase for ProofDBSled {
         Ok(out)
     }
 
-    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, PersistedTaskRecord)>> {
+    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
             let (key, record) = item?;
-            if record.status.is_unfinished() {
+            if record.status().is_unfinished() {
                 out.push((key, record));
             }
         }

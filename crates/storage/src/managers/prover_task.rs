@@ -3,18 +3,15 @@
 //! Wraps [`ProverTaskDatabase`] with a threadpool + instrumentation, and
 //! implements [`strata_paas::TaskStore`] directly so the integrated prover
 //! service can consume the manager as its persistent task store without
-//! any extra adapter. The conversion between
-//! [`strata_db_types::types::PersistedTaskRecord`] and
-//! [`strata_paas::TaskRecordData`] lives here.
+//! any extra adapter. The DB trait stores [`TaskRecordData`] verbatim, so
+//! this layer is a thin translation between the `(key, data)` split used
+//! by `TaskStore` and the `(key, record)` tuples used by the DB trait.
 
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::sync::Arc;
 
-use strata_db_types::{traits::ProverTaskDatabase, types::PersistedTaskRecord, errors::DbError};
+use strata_db_types::{errors::DbError, traits::ProverTaskDatabase};
 use strata_paas::{
-    ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore,
+    ProverError, ProverResult, SecsSinceEpoch, TaskRecord, TaskRecordData, TaskStatus, TaskStore,
 };
 use threadpool::ThreadPool;
 
@@ -35,44 +32,6 @@ impl ProverTaskDbManager {
     }
 }
 
-// ---- helpers ----------------------------------------------------------------
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-fn secs_to_system_time(secs: u64) -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(secs)
-}
-
-fn system_time_to_secs(t: SystemTime) -> u64 {
-    t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-}
-
-fn persisted_to_task_record(key: Vec<u8>, p: PersistedTaskRecord) -> TaskRecord {
-    let mut r = TaskRecord::new(key, p.status);
-    if let Some(secs) = p.retry_after_secs {
-        r.data_mut()
-            .set_retry_after(Some(secs_to_system_time(secs)));
-    }
-    if let Some(bytes) = p.metadata {
-        r.data_mut().set_metadata(Some(bytes));
-    }
-    r
-}
-
-fn data_to_persisted(data: &TaskRecordData) -> PersistedTaskRecord {
-    PersistedTaskRecord {
-        status: data.status().clone(),
-        updated_at_secs: now_secs(),
-        retry_after_secs: data.retry_after().map(system_time_to_secs),
-        metadata: data.metadata().map(|m| m.to_vec()),
-    }
-}
-
 fn db_err(e: DbError) -> ProverError {
     match e {
         DbError::EntryAlreadyExists => ProverError::TaskAlreadyExists(String::new()),
@@ -80,48 +39,39 @@ fn db_err(e: DbError) -> ProverError {
     }
 }
 
-// ---- TaskStore impl ---------------------------------------------------------
-
 impl TaskStore for ProverTaskDbManager {
     fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
         let stored = self.ops.get_task_blocking(key.to_vec()).map_err(db_err)?;
-        Ok(stored.map(|p| persisted_to_task_record(key.to_vec(), p)))
+        Ok(stored.map(|data| TaskRecord::from_parts(key.to_vec(), data)))
     }
 
     fn insert(&self, record: TaskRecord) -> ProverResult<()> {
-        let key = record.key().to_vec();
-        let persisted = data_to_persisted(record.data());
+        let (key, data) = (record.key().to_vec(), record.data().clone());
         self.ops
-            .insert_task_blocking(key, persisted)
+            .insert_task_blocking(key.clone(), data)
             .map_err(|e| match e {
-                DbError::EntryAlreadyExists => {
-                    ProverError::TaskAlreadyExists(format!("{:?}", record.key()))
-                }
+                DbError::EntryAlreadyExists => ProverError::TaskAlreadyExists(format!("{:?}", key)),
                 other => ProverError::Storage(other.to_string()),
             })
     }
 
     fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
-        self.modify(key, |p| p.status = status)
+        self.modify(key, |d| d.set_status(status))
     }
 
-    fn set_retry_after(&self, key: &[u8], when: SystemTime) -> ProverResult<()> {
-        let secs = system_time_to_secs(when);
-        self.modify(key, |p| p.retry_after_secs = Some(secs))
+    fn set_retry_after(&self, key: &[u8], when_secs: SecsSinceEpoch) -> ProverResult<()> {
+        self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
     fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
-        self.modify(key, |p| p.metadata = Some(data))
+        self.modify(key, |d| d.set_metadata(Some(data)))
     }
 
-    fn list_retriable(&self, now: SystemTime) -> ProverResult<Vec<TaskRecord>> {
-        let items = self
-            .ops
-            .list_retriable_blocking(system_time_to_secs(now))
-            .map_err(db_err)?;
+    fn list_retriable(&self, now_secs: SecsSinceEpoch) -> ProverResult<Vec<TaskRecord>> {
+        let items = self.ops.list_retriable_blocking(now_secs).map_err(db_err)?;
         Ok(items
             .into_iter()
-            .map(|(k, p)| persisted_to_task_record(k, p))
+            .map(|(k, d)| TaskRecord::from_parts(k, d))
             .collect())
     }
 
@@ -129,7 +79,7 @@ impl TaskStore for ProverTaskDbManager {
         let items = self.ops.list_unfinished_blocking().map_err(db_err)?;
         Ok(items
             .into_iter()
-            .map(|(k, p)| persisted_to_task_record(k, p))
+            .map(|(k, d)| TaskRecord::from_parts(k, d))
             .collect())
     }
 
@@ -142,17 +92,16 @@ impl ProverTaskDbManager {
     /// Read-modify-write helper; pure storage-level, not exposed publicly.
     fn modify<F>(&self, key: &[u8], f: F) -> ProverResult<()>
     where
-        F: FnOnce(&mut PersistedTaskRecord),
+        F: FnOnce(&mut TaskRecordData),
     {
-        let mut persisted = self
+        let mut data = self
             .ops
             .get_task_blocking(key.to_vec())
             .map_err(db_err)?
             .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?;
-        f(&mut persisted);
-        persisted.updated_at_secs = now_secs();
+        f(&mut data);
         self.ops
-            .put_task_blocking(key.to_vec(), persisted)
+            .put_task_blocking(key.to_vec(), data)
             .map_err(db_err)
     }
 }

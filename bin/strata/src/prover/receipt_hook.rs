@@ -4,8 +4,7 @@
 //! After the prover produces a receipt, this hook:
 //! 1. Writes the proof into the shared [`ProofDbManager`] keyed by
 //!    [`ProofContext::CheckpointCommitment`].
-//! 2. Signals [`ProofNotify`] so the checkpoint worker picks up the proof
-//!    immediately (no polling).
+//! 2. Signals [`ProofNotify`] so the checkpoint worker picks up the proof immediately (no polling).
 
 use std::sync::Arc;
 

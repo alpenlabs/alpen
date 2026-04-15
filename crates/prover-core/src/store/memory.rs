@@ -1,10 +1,10 @@
 //! In-memory task store. Default for tests and dev.
 
-use std::{collections::HashMap, time::SystemTime};
+use std::collections::HashMap;
 
 use parking_lot::RwLock;
 
-use super::traits::{TaskRecord, TaskStore};
+use super::traits::{SecsSinceEpoch, TaskRecord, TaskStore};
 use crate::{
     error::{ProverError, ProverResult},
     task::TaskStatus,
@@ -48,13 +48,13 @@ impl TaskStore for InMemoryTaskStore {
         Ok(())
     }
 
-    fn set_retry_after(&self, key: &[u8], when: SystemTime) -> ProverResult<()> {
+    fn set_retry_after(&self, key: &[u8], when_secs: SecsSinceEpoch) -> ProverResult<()> {
         self.records
             .write()
             .get_mut(key)
             .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?
             .data_mut()
-            .set_retry_after(Some(when));
+            .set_retry_after_secs(Some(when_secs));
         Ok(())
     }
 
@@ -68,12 +68,14 @@ impl TaskStore for InMemoryTaskStore {
         Ok(())
     }
 
-    fn list_retriable(&self, now: SystemTime) -> ProverResult<Vec<TaskRecord>> {
+    fn list_retriable(&self, now_secs: SecsSinceEpoch) -> ProverResult<Vec<TaskRecord>> {
         Ok(self
             .records
             .read()
             .values()
-            .filter(|r| r.status().is_retriable() && r.retry_after().is_some_and(|t| t <= now))
+            .filter(|r| {
+                r.status().is_retriable() && r.retry_after_secs().is_some_and(|t| t <= now_secs)
+            })
             .cloned()
             .collect())
     }

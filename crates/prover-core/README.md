@@ -216,10 +216,12 @@ is usually enough.
 
 ## Task persistence
 
-`TaskStore` handles task record persistence. Two implementations ship:
+`TaskStore` handles task record persistence. One implementation ships:
 
 - **`InMemoryTaskStore`** — default, for tests and dev.
-- **`SledTaskStore`** (behind the `sled` feature) — persistent, supports crash recovery.
+
+For production, implement `TaskStore` against your DB (records are borsh-friendly
+byte-keyed values; the node's storage manager implements the trait directly).
 
 Task records include an optional `metadata` field for strategy-specific state
 (e.g., a remote `ProofId` for resuming polls after a restart).
@@ -229,7 +231,6 @@ Task records include an optional `metadata` field for strategy-specific state
 | Feature | What it enables |
 |---------|----------------|
 | `remote` | `RemoteStrategy` and `ProverBuilder::remote()`. Pulls in `zkaleido/remote-prover`. |
-| `sled` | `SledTaskStore`. Pulls in `sled`. |
 
 ## What prover-core does
 
@@ -248,7 +249,7 @@ for retriable tasks passively — no background scheduler threads.
 their storage keys and re-spawns them. Remote proofs resume polling from the
 saved `ProofId` instead of re-submitting — no double compute, no double cost.
 
-**Persists state.** `TaskStore` (in-memory default, sled for production) tracks
+**Persists state.** `TaskStore` (in-memory default, consumer-provided for production) tracks
 task records. `ReceiptStore` (opt-in) persists proof receipts keyed by task.
 `ReceiptHook` (opt-in) fires typed callbacks after receipt storage for
 domain-specific side-writes.

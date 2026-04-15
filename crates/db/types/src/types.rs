@@ -15,7 +15,6 @@ use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::{Buf32, OLBlockCommitment, OLTxId};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
-use strata_paas::TaskStatus;
 use strata_primitives::L1Height;
 use zkaleido::Proof;
 
@@ -419,20 +418,6 @@ impl MempoolTxData {
             timestamp_micros,
         }
     }
-}
-
-/// Persisted form of a prover task record.
-///
-/// Byte-keyed (the key is the serialized `ProofSpec::Task`). This is the
-/// on-disk shape behind [`strata_paas::TaskRecordData`] — the manager
-/// layer owns the conversion. Timestamps are seconds since UNIX epoch so
-/// the layout is wall-clock and bincode/borsh stable.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct PersistedTaskRecord {
-    pub status: TaskStatus,
-    pub updated_at_secs: u64,
-    pub retry_after_secs: Option<u64>,
-    pub metadata: Option<Vec<u8>>,
 }
 
 /// Index into the L1 payload intent store.

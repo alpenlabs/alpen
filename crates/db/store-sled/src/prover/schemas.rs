@@ -1,4 +1,4 @@
-use strata_db_types::types::PersistedTaskRecord;
+use strata_paas::TaskRecordData;
 use strata_primitives::proof::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -18,5 +18,5 @@ define_table_with_default_codec!(
     /// Prover task store backing [`strata_paas::TaskStore`].
     ///
     /// Byte-keyed (the key is the serialized `ProofSpec::Task`).
-    (ProverTaskTree) Vec<u8> => PersistedTaskRecord
+    (ProverTaskTree) Vec<u8> => TaskRecordData
 );

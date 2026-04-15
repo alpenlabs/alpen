@@ -153,7 +153,7 @@ The spec stays identical. Only the builder call changes:
 ```rust
 let prover = ProverBuilder::new(spec)
     .receipt_store(sled_store)
-    .task_store(SledTaskStore::open(&db)?)
+    .task_store(persistent_task_store)
     .retry(RetryConfig::default())
     .remote(sp1_host);   // instead of .native(host)
 ```

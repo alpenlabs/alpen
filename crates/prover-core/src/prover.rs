@@ -8,7 +8,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use parking_lot::Mutex;
@@ -23,7 +23,7 @@ use crate::{
     error::{ProverError, ProverResult},
     receipt::{ReceiptHook, ReceiptStore},
     spec::ProofSpec,
-    store::{InMemoryTaskStore, TaskRecord, TaskStore},
+    store::{now_secs, InMemoryTaskStore, TaskRecord, TaskStore},
     strategy::{NativeStrategy, ProveContext, ProveStrategy},
     task::{TaskResult, TaskStatus},
 };
@@ -198,7 +198,7 @@ impl<H: ProofSpec> Prover<H> {
             self.recover().await;
         }
 
-        let retriable = match self.task_store.list_retriable(SystemTime::now()) {
+        let retriable = match self.task_store.list_retriable(now_secs()) {
             Ok(v) => v,
             Err(e) => {
                 warn!(%e, "failed to list retriable tasks");
@@ -375,7 +375,7 @@ impl<H: ProofSpec> Prover<H> {
                 let delay = Duration::from_secs(cfg.calculate_delay(new_count));
                 let _ = self
                     .task_store
-                    .set_retry_after(key, SystemTime::now() + delay);
+                    .set_retry_after(key, now_secs() + delay.as_secs());
                 return;
             }
         }

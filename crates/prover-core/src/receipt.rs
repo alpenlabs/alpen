@@ -52,9 +52,7 @@ impl InMemoryReceiptStore {
 
 impl ReceiptStore for InMemoryReceiptStore {
     fn put(&self, key: &[u8], receipt: &ProofReceiptWithMetadata) -> ProverResult<()> {
-        self.receipts
-            .write()
-            .insert(key.to_vec(), receipt.clone());
+        self.receipts.write().insert(key.to_vec(), receipt.clone());
         Ok(())
     }
 

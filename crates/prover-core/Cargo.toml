@@ -5,7 +5,6 @@ edition = "2021"
 
 [features]
 remote = ["zkaleido/remote-prover"]
-sled = ["dep:sled", "dep:serde_json"]
 
 [lints]
 workspace = true
@@ -15,8 +14,6 @@ async-trait.workspace = true
 borsh.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
-serde_json = { workspace = true, optional = true }
-sled = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "rt"] }
 tracing.workspace = true
