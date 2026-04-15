@@ -1,76 +1,19 @@
-//! Prove strategies: native and remote.
+//! Concrete [`ProveStrategy`](crate::ProveStrategy) impls: native and remote.
 //!
 //! Both are sync/blocking — called inside `spawn_blocking` by the prover.
-//! The `Host` type is captured at build time and erased via `dyn ProveStrategy<H>`.
+//! The `Host` type is captured at build time and erased via
+//! `dyn ProveStrategy<H>`.
 
+use std::sync::Arc;
 #[cfg(feature = "remote")]
 use std::time::Duration;
-use std::{fmt, sync::Arc};
 
 use zkaleido::{ProofReceiptWithMetadata, ZkVmHost, ZkVmProgram};
 
 use crate::{
     error::{ProverError, ProverResult},
-    spec::ProofSpec,
+    traits::{ProofSpec, ProveContext, ProveStrategy},
 };
-
-/// Context passed to [`ProveStrategy::prove`] for crash-recovery metadata.
-///
-/// Strategies that talk to remote provers (SP1, etc.) use this to:
-/// 1. Check `saved` for a proof ID from a prior crashed run
-/// 2. Call `persist()` right after `start_proving()` so the ID survives a crash
-///
-/// Strategies that don't need recovery (e.g. native) ignore this entirely.
-pub struct ProveContext {
-    /// Metadata from a prior run (e.g. serialized remote ProofId).
-    pub saved: Option<Vec<u8>>,
-    persist_fn: Option<Box<dyn FnOnce(Vec<u8>) + Send>>,
-}
-
-impl fmt::Debug for ProveContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProveContext")
-            .field("saved", &self.saved.as_ref().map(|s| s.len()))
-            .finish()
-    }
-}
-
-impl ProveContext {
-    pub fn new(saved: Option<Vec<u8>>, persist: impl FnOnce(Vec<u8>) + Send + 'static) -> Self {
-        Self {
-            saved,
-            persist_fn: Some(Box::new(persist)),
-        }
-    }
-
-    /// Persist metadata for crash recovery. Call this right after obtaining
-    /// a remote proof ID, before starting the poll loop.
-    pub fn persist(&mut self, data: Vec<u8>) {
-        if let Some(f) = self.persist_fn.take() {
-            f(data);
-        }
-    }
-
-    /// Empty context — no saved metadata, persist is a no-op.
-    pub fn empty() -> Self {
-        Self {
-            saved: None,
-            persist_fn: None,
-        }
-    }
-}
-
-/// Blocking prove operation. Called inside `spawn_blocking`.
-///
-/// Implementations capture the zkVM host internally. The `Host` type
-/// is erased when stored as `Arc<dyn ProveStrategy<H>>` in the prover.
-pub trait ProveStrategy<H: ProofSpec>: Send + Sync + 'static {
-    fn prove(
-        &self,
-        input: &<H::Program as ZkVmProgram>::Input,
-        ctx: ProveContext,
-    ) -> ProverResult<ProofReceiptWithMetadata>;
-}
 
 /// Native execution: `ZkVmProgram::prove` directly.
 pub(crate) struct NativeStrategy<Host> {

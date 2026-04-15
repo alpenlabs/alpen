@@ -457,7 +457,7 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// All records whose status is not yet terminal (Pending / Queued / Proving).
+    /// All records whose status is not yet terminal (Pending / Proving).
     fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
     /// Number of records in the store.

@@ -10,9 +10,7 @@
 use std::sync::Arc;
 
 use strata_db_types::{errors::DbError, traits::ProverTaskDatabase};
-use strata_paas::{
-    ProverError, ProverResult, SecsSinceEpoch, TaskRecord, TaskRecordData, TaskStatus, TaskStore,
-};
+use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore};
 use threadpool::ThreadPool;
 
 use crate::ops::prover_task::{Context, ProverTaskDbOps};
@@ -59,7 +57,7 @@ impl TaskStore for ProverTaskDbManager {
         self.modify(key, |d| d.set_status(status))
     }
 
-    fn set_retry_after(&self, key: &[u8], when_secs: SecsSinceEpoch) -> ProverResult<()> {
+    fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
         self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
@@ -67,7 +65,7 @@ impl TaskStore for ProverTaskDbManager {
         self.modify(key, |d| d.set_metadata(Some(data)))
     }
 
-    fn list_retriable(&self, now_secs: SecsSinceEpoch) -> ProverResult<Vec<TaskRecord>> {
+    fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
         let items = self.ops.list_retriable_blocking(now_secs).map_err(db_err)?;
         Ok(items
             .into_iter()

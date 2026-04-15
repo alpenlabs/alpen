@@ -1,13 +1,16 @@
-//! In-memory task store. Default for tests and dev.
+//! In-memory [`TaskStore`] and [`ReceiptStore`] impls for tests and dev.
+//!
+//! For prod, users implement their own [`TaskStore`] / [`ReceiptStore`].
 
 use std::collections::HashMap;
 
 use parking_lot::RwLock;
+use zkaleido::ProofReceiptWithMetadata;
 
-use super::traits::{SecsSinceEpoch, TaskRecord, TaskStore};
 use crate::{
     error::{ProverError, ProverResult},
-    task::TaskStatus,
+    task::{TaskRecord, TaskStatus},
+    traits::{ReceiptStore, TaskStore},
 };
 
 #[derive(Debug, Default)]
@@ -48,7 +51,7 @@ impl TaskStore for InMemoryTaskStore {
         Ok(())
     }
 
-    fn set_retry_after(&self, key: &[u8], when_secs: SecsSinceEpoch) -> ProverResult<()> {
+    fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
         self.records
             .write()
             .get_mut(key)
@@ -68,7 +71,7 @@ impl TaskStore for InMemoryTaskStore {
         Ok(())
     }
 
-    fn list_retriable(&self, now_secs: SecsSinceEpoch) -> ProverResult<Vec<TaskRecord>> {
+    fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
         Ok(self
             .records
             .read()
@@ -92,5 +95,27 @@ impl TaskStore for InMemoryTaskStore {
 
     fn count(&self) -> ProverResult<usize> {
         Ok(self.records.read().len())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct InMemoryReceiptStore {
+    receipts: RwLock<HashMap<Vec<u8>, ProofReceiptWithMetadata>>,
+}
+
+impl InMemoryReceiptStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl ReceiptStore for InMemoryReceiptStore {
+    fn put(&self, key: &[u8], receipt: &ProofReceiptWithMetadata) -> ProverResult<()> {
+        self.receipts.write().insert(key.to_vec(), receipt.clone());
+        Ok(())
+    }
+
+    fn get(&self, key: &[u8]) -> ProverResult<Option<ProofReceiptWithMetadata>> {
+        Ok(self.receipts.read().get(key).cloned())
     }
 }

@@ -32,7 +32,7 @@ pub enum ProverError {
     #[error("codec: {0}")]
     Codec(String),
 
-    /// Service Framework command channel failure (send/recv/cancelled).
+    /// Command channel failure (send/recv/cancelled).
     #[error("command channel: {0}")]
     Command(String),
 }

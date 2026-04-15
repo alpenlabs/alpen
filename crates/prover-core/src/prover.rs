@@ -12,7 +12,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use tokio::sync::oneshot;
+use tokio::{sync::oneshot, task::spawn_blocking};
 use tracing::{error, info, info_span, warn, Instrument};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
@@ -21,11 +21,10 @@ use zkaleido::ZkVmRemoteHost;
 use crate::{
     config::{ProverConfig, RetryConfig},
     error::{ProverError, ProverResult},
-    receipt::{ReceiptHook, ReceiptStore},
-    spec::ProofSpec,
-    store::{now_secs, InMemoryTaskStore, TaskRecord, TaskStore},
-    strategy::{NativeStrategy, ProveContext, ProveStrategy},
-    task::{TaskResult, TaskStatus},
+    in_memory::InMemoryTaskStore,
+    strategy::NativeStrategy,
+    task::{now_secs, TaskRecord, TaskResult, TaskStatus},
+    traits::{ProofSpec, ProveContext, ProveStrategy, ReceiptHook, ReceiptStore, TaskStore},
 };
 
 /// One completion-notification sender per pending `wait_for_tasks` caller.
@@ -37,7 +36,7 @@ type WatcherMap<T> = HashMap<Vec<u8>, Vec<oneshot::Sender<TaskResult<T>>>>;
 /// Single-proof-type prover.
 ///
 /// Generic over `H` (spec) only. The zkVM host type is erased inside
-/// the [`ProveStrategy`] — consumers never see it.
+/// the `ProveStrategy` — consumers never see it.
 pub struct Prover<H: ProofSpec> {
     spec: Arc<H>,
     strategy: Arc<dyn ProveStrategy<H>>,
@@ -167,7 +166,7 @@ impl<H: ProofSpec> Prover<H> {
 }
 
 // ============================================================================
-// Internal API (used by PaaS tick, not exposed on ProverHandle)
+// Internals - PaaS wiring + proving flow (not exposed on ProverHandle)
 // ============================================================================
 
 impl<H: ProofSpec> Prover<H> {
@@ -217,9 +216,9 @@ impl<H: ProofSpec> Prover<H> {
     }
 
     /// Re-spawn every unfinished task on startup — anything not yet terminal
-    /// (Pending, Queued, or Proving). Before this change we only re-picked
-    /// in-progress work, so a crash between `submit`'s db insert and the
-    /// spawn would leave a task stuck in Pending forever.
+    /// (Pending or Proving). Before this change we only re-picked in-progress
+    /// work, so a crash between `submit`'s db insert and the spawn would
+    /// leave a task stuck in Pending forever.
     async fn recover(self: &Arc<Self>) {
         let unfinished = match self.task_store.list_unfinished() {
             Ok(v) => v,
@@ -242,16 +241,8 @@ impl<H: ProofSpec> Prover<H> {
             }
         }
     }
-}
 
-// ============================================================================
-// Proving internals
-// ============================================================================
-
-impl<H: ProofSpec> Prover<H> {
     async fn run_task(&self, task: H::Task, key: Vec<u8>) {
-        use tokio::task::spawn_blocking;
-
         let span = info_span!("prove", task = %task);
 
         async {
