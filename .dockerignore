@@ -13,7 +13,7 @@ target/*
 
 # Ignore test-related files and directories
 test/
-functional-tests/_dd/
+functional-tests/
 **/_dd/
 
 # Ignore cache, temporary, and virtual environment files
