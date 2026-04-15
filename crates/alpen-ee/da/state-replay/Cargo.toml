@@ -1,0 +1,21 @@
+[package]
+edition = "2021"
+name = "alpen-ee-da-state-replay"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-ee-da-types.workspace = true
+alpen-reth-statediff = { workspace = true, features = ["chainspec", "serde"] }
+strata-identifiers.workspace = true
+
+alloy-primitives.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true
+strata-mpt.workspace = true
