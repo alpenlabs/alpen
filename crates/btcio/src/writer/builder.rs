@@ -222,10 +222,7 @@ async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
         .list_unspent(None, None, None, None, None)
         .await?
         .0;
-    let fee_rate = match ctx.config.fee_policy {
-        FeePolicy::Smart => ctx.client.estimate_smart_fee(1).await? * 2,
-        FeePolicy::Fixed(val) => val,
-    };
+    let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref()).await?;
     Ok((network, utxos, fee_rate))
 }
 
