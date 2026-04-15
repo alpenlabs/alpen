@@ -72,7 +72,9 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
 
             # Wait until tip epoch is finalized in sequencer and strata node
             strata_seq.wait_until_checkpoint_finalized(tip_epoch, btcrpc=btc_rpc)
+            logger.info(f"Epoch {next_epoch} finalized for strata sequencer")
             strata_node.wait_until_checkpoint_finalized(tip_epoch)
+            logger.info(f"Epoch {next_epoch} finalized for strata node")
 
             new_epochs_since_last = list(range(next_epoch, tip_epoch))
             logger.info(f"new epochs since last: {new_epochs_since_last}")

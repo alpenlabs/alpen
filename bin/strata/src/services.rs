@@ -36,7 +36,7 @@ mod sequencer_services {
     use strata_ol_block_assembly::{
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
-    use strata_ol_checkpoint::OLCheckpointBuilder;
+    use strata_ol_checkpoint::{OLCheckpointBuilder, ProofNotify};
     use strata_ol_mempool::MempoolHandle;
     use strata_primitives::EpochCommitment;
     use strata_storage::ops::l1tx_broadcast;
@@ -52,9 +52,9 @@ mod sequencer_services {
         nodectx: &NodeContext,
         epoch_summary_rx: watch::Receiver<Option<EpochCommitment>>,
         sequencer_sk: Option<[u8; 32]>,
-    ) -> Result<Option<SequencerServiceHandles>> {
+    ) -> Result<(Option<SequencerServiceHandles>, Option<Arc<ProofNotify>>)> {
         if !nodectx.config().client.is_sequencer {
-            return Ok(None);
+            return Ok((None, None));
         }
 
         // Start mempool service
@@ -65,20 +65,46 @@ mod sequencer_services {
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle.clone())?);
 
         // Start checkpoint service
-        let checkpoint_handle = Arc::new(
-            OLCheckpointBuilder::new()
-                .with_node_context(nodectx)
-                .with_epoch_summary_receiver(epoch_summary_rx)
-                .launch(nodectx.executor())?,
-        );
+        let checkpoint_builder = OLCheckpointBuilder::new()
+            .with_node_context(nodectx)
+            .with_epoch_summary_receiver(epoch_summary_rx);
 
-        Ok(Some(SequencerServiceHandles::new(
+        #[cfg(feature = "prover")]
+        let (checkpoint_builder, proof_notify): (
+            OLCheckpointBuilder,
+            Option<Arc<ProofNotify>>,
+        ) = if let Some(prover_config) = &nodectx.config().prover {
+            use strata_config::ProverBackend;
+            use strata_primitives::proof::ProofZkVm;
+
+            let zkvm = match prover_config.backend {
+                ProverBackend::Native => ProofZkVm::Native,
+                ProverBackend::Sp1 => ProofZkVm::SP1,
+            };
+            let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
+
+            let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
+                zkvm,
+                notify: notify.clone(),
+            });
+            (builder, Some(notify))
+        } else {
+            (checkpoint_builder, None)
+        };
+
+        #[cfg(not(feature = "prover"))]
+        let proof_notify: Option<Arc<ProofNotify>> = None;
+
+        let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
+
+        let handles = SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
             mempool_handle,
             checkpoint_handle,
-        )))
+        );
+        Ok((Some(handles), proof_notify))
     }
 
     pub(super) fn attach_service_handles(
@@ -245,39 +271,8 @@ pub(crate) fn start_strata_services(
     // The worker waits indefinitely for proofs. Without a prover, empty
     // proofs are used immediately.
     let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
-    let checkpoint_builder = OLCheckpointBuilder::new()
-        .with_node_context(&nodectx)
-        .with_epoch_summary_receiver(epoch_summary_rx);
 
-    #[cfg(feature = "prover")]
-    let (checkpoint_builder, proof_notify): (
-        OLCheckpointBuilder,
-        Option<Arc<strata_ol_checkpoint::ProofNotify>>,
-    ) = if let Some(prover_config) = &nodectx.config().prover {
-        use strata_config::ProverBackend;
-        use strata_primitives::proof::ProofZkVm;
-
-        let zkvm = match prover_config.backend {
-            ProverBackend::Native => ProofZkVm::Native,
-            ProverBackend::Sp1 => ProofZkVm::SP1,
-        };
-        let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-
-        let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
-            zkvm,
-            notify: notify.clone(),
-        });
-        (builder, Some(notify))
-    } else {
-        (checkpoint_builder, None)
-    };
-
-    #[cfg(not(feature = "prover"))]
-    let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
-
-    let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
-
-    let sequencer_handles =
+    let (sequencer_handles, proof_notify) =
         sequencer_services::start_if_enabled(&nodectx, epoch_summary_rx, sequencer_sk)?;
 
     let is_sequencer = nodectx.config().client.is_sequencer;
@@ -310,10 +305,6 @@ pub(crate) fn start_strata_services(
 
     let runctx = RunContext::from_node_ctx(nodectx, service_handles);
 
-    #[cfg(feature = "prover")]
-    return Ok((runctx, proof_notify));
-
-    #[cfg(not(feature = "prover"))]
     Ok((runctx, proof_notify))
 }
 

@@ -60,8 +60,10 @@ impl RunContext {
     }
 
     /// Returns the mempool handle.
+    #[expect(unused, reason = "will be used")]
+    #[cfg(feature = "sequencer")]
     pub(crate) fn mempool_handle(&self) -> &Arc<MempoolHandle> {
-        &self.service_handles.mempool_handle
+        self.service_handles.mempool_handle()
     }
 
     /// Returns the chain worker handle.
@@ -199,6 +201,15 @@ impl ServiceHandles {
             #[cfg(feature = "sequencer")]
             sequencer_handles: None,
         }
+    }
+
+    #[cfg(feature = "sequencer")]
+    pub(crate) fn mempool_handle(&self) -> &Arc<MempoolHandle> {
+        let seq = self
+            .sequencer_handles
+            .as_ref()
+            .expect("missing sequencer handles in sequencer mode");
+        seq.mempool_handle()
     }
 }
 

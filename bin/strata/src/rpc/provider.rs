@@ -8,7 +8,7 @@ use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{DbError, DbResult, MmrId};
+use strata_db_types::{DbError, DbResult, MmrId, types::AccountExtraData};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 #[cfg(feature = "sequencer")]

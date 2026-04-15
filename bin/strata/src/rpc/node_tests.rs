@@ -5,7 +5,7 @@ use strata_acct_types::{MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{DbResult, types::AccountExtraData};
+use strata_db_types::{DbError, DbResult, types::AccountExtraData};
 use strata_identifiers::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
@@ -144,9 +144,8 @@ impl MockProvider {
         account_id: AccountId,
         epoch: Epoch,
         extra_data: Vec<u8>,
-        block: OLBlockCommitment,
     ) -> Self {
-        let entry = NonEmptyVec::new(entry);
+        let entry = NonEmptyVec::new(extra_data);
         self.account_extra_data.insert((account_id, epoch), entry);
         self
     }
@@ -156,14 +155,8 @@ impl MockProvider {
         account_id: AccountId,
         epoch: Epoch,
         extra_data: Vec<u8>,
-        commitment: EpochCommitment,
     ) -> Self {
-        self.with_account_extra_data(
-            account_id,
-            epoch,
-            extra_data,
-            commitment.to_block_commitment(),
-        )
+        self.with_account_extra_data(account_id, epoch, extra_data)
     }
 
     fn with_submit_fn(
@@ -489,7 +482,7 @@ fn sequence_number_gap_maps_to_invalid_params() {
 
 #[test]
 fn database_error_maps_to_internal() {
-    let err = OLMempoolError::Database(strata_db_types::DbError::Other("test".into()));
+    let err = OLMempoolError::Database(DbError::Other("test".into()));
     assert_eq!(map_mempool_error_to_rpc(err).code(), INTERNAL_ERROR_CODE);
 }
 
@@ -1305,7 +1298,7 @@ async fn epoch_summary_returns_messages_from_mmr_range() {
             prev_seq_no,
             prev_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![2, 2, 5], epoch_commitment)
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![2, 2, 5])
         .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
             prev_next_inbox_msg_idx,
@@ -1346,7 +1339,7 @@ async fn epoch_summary_epoch_zero_has_no_messages() {
             cur_seq_no,
             cur_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![0, 3], epoch_commitment)
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![0, 3])
         .with_inbox_fetch_fn(inbox_fetch_panic("epoch 0 should not fetch inbox messages"));
     let rpc = make_rpc(provider);
 
@@ -1384,7 +1377,7 @@ async fn epoch_summary_no_idx_delta_returns_empty_messages() {
             prev_seq_no,
             unchanged_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![4, 7], epoch_commitment)
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![4, 7])
         .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
             unchanged_next_inbox_msg_idx,
@@ -1419,7 +1412,7 @@ async fn epoch_summary_account_missing_in_prev_state_starts_from_zero() {
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
         .with_snark_state_at_terminal(epoch_commitment, account_id, 4, cur_next_inbox_msg_idx)
         .with_genesis_state_at_terminal(prev_epoch_commitment)
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![3], epoch_commitment)
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![3])
         .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
             0,
@@ -1496,7 +1489,7 @@ async fn epoch_summary_mmr_fetch_error_propagates() {
             3,
             prev_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![1, 0x10], epoch_commitment)
+        .with_account_extra_data_at_terminal(account_id, epoch, vec![1, 0x10])
         .with_inbox_fetch_fn(inbox_fetch_error("forced inbox fetch failure"));
     let rpc = make_rpc(provider);
 
