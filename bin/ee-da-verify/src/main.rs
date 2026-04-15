@@ -5,6 +5,7 @@ mod cli;
 mod config;
 mod l1;
 mod output;
+mod replay;
 
 use std::process::ExitCode;
 
@@ -32,6 +33,19 @@ async fn main() -> ExitCode {
 async fn run(cli: &Cli) -> Result<Report, DisplayedError> {
     let config = VerifierConfig::load(&cli.config)
         .user_error(format!("failed to load {}", cli.config.display()))?;
-    let _client = l1::create_ready_client(&config).await?;
-    Ok(Report {})
+    let client = l1::create_ready_client(&config).await?;
+    let scan_output =
+        l1::collect_envelopes(&client, &config, cli.start_height, cli.end_height).await?;
+    let envelope_count = scan_output.envelopes.len() as u64;
+    let blobs = ee_da_l1::reassemble_da_blobs(scan_output.envelopes)
+        .internal_error("failed to reassemble DA blobs")?;
+    let replay_summary = replay::replay_blobs(&config.chain_spec, &blobs)?;
+
+    Ok(Report::new(
+        scan_output.stats,
+        envelope_count,
+        blobs.len() as u64,
+        replay_summary,
+        cli.expected_root,
+    ))
 }

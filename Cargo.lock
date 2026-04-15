@@ -4788,9 +4788,13 @@ dependencies = [
 name = "ee-da-verify"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-ee-common",
  "argh",
  "bitcoin",
  "bitcoind-async-client",
+ "ee-da-l1",
+ "ee-da-replay",
+ "futures",
  "serde",
  "serde_json",
  "strata-cli-common",
