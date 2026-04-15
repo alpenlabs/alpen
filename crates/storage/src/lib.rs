@@ -15,6 +15,7 @@ pub use managers::{
     asm::AsmStateManager,
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
+    checkpoint_proof::CheckpointProofDbManager,
     client_state::ClientStateManager,
     l1::L1BlockManager,
     l2::L2BlockManager,
@@ -23,7 +24,6 @@ pub use managers::{
     ol::OLBlockManager,
     ol_checkpoint::OLCheckpointManager,
     ol_state::OLStateManager,
-    proof::ProofDbManager,
     prover_task::ProverTaskDbManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
@@ -63,7 +63,7 @@ pub struct NodeStorage {
     mempool_db_manager: Arc<MempoolDbManager>,
     ol_state_manager: Arc<OLStateManager>,
     ol_checkpoint_manager: Arc<OLCheckpointManager>,
-    proof_manager: Arc<ProofDbManager>,
+    proof_manager: Arc<CheckpointProofDbManager>,
     prover_task_manager: Arc<ProverTaskDbManager>,
 }
 
@@ -153,7 +153,7 @@ impl NodeStorage {
         &self.ol_checkpoint_manager
     }
 
-    pub fn proof(&self) -> &Arc<ProofDbManager> {
+    pub fn checkpoint_proof(&self) -> &Arc<CheckpointProofDbManager> {
         &self.proof_manager
     }
 
@@ -183,7 +183,7 @@ pub fn create_node_storage(
     let ol_state_db = db.ol_state_db();
     let ol_checkpoint_db = db.ol_checkpoint_db();
     let mmr_index_db = db.mmr_index_db();
-    let proof_db = db.prover_db();
+    let proof_db = db.checkpoint_proof_db();
     let prover_task_db = db.prover_task_db();
 
     let account_genesis_manager = Arc::new(AccountManager::new(pool.clone(), account_genesis_db));
@@ -205,7 +205,7 @@ pub fn create_node_storage(
     let mempool_db_manager = Arc::new(MempoolDbManager::new(pool.clone(), mempool_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db.clone()));
     let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
-    let proof_manager = Arc::new(ProofDbManager::new(pool.clone(), proof_db));
+    let proof_manager = Arc::new(CheckpointProofDbManager::new(pool.clone(), proof_db));
     let prover_task_manager = Arc::new(ProverTaskDbManager::new(pool.clone(), prover_task_db));
 
     Ok(NodeStorage {

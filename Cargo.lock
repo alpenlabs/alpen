@@ -15329,6 +15329,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
  "zkaleido-sp1-groth16-verifier 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
 ]
 
@@ -16239,13 +16240,7 @@ dependencies = [
 name = "strata-zkvm-hosts"
 version = "0.3.0-alpha.1"
 dependencies = [
- "strata-primitives",
- "strata-proofimpl-checkpoint",
- "strata-proofimpl-checkpoint-new",
- "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
- "zkaleido-native-adapter",
  "zkaleido-sp1-host",
 ]
 

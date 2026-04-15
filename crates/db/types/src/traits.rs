@@ -16,11 +16,7 @@ use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_paas::TaskRecordData;
-use strata_primitives::{
-    nonempty_vec::NonEmptyVec,
-    prelude::*,
-    proof::{ProofContext, ProofKey},
-};
+use strata_primitives::{nonempty_vec::NonEmptyVec, prelude::*};
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -59,7 +55,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
-    fn prover_db(&self) -> Arc<impl ProofDatabase>;
+    fn checkpoint_proof_db(&self) -> Arc<impl CheckpointProofDatabase>;
     fn prover_task_db(&self) -> Arc<impl ProverTaskDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
@@ -468,38 +464,27 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
     fn count_tasks(&self) -> DbResult<usize>;
 }
 
-pub trait ProofDatabase: Send + Sync + 'static {
-    /// Inserts a proof into the database.
+/// Checkpoint-proof storage.
+///
+/// Keyed by [`EpochCommitment`] — the commitment whose checkpoint this
+/// proof attests to. Each proof kind has its own peer trait + manager
+/// (no shared enum, no opaque-byte scheme). Future EE chunk / EE acct
+/// proofs will be `EeChunkProofDatabase`, `EeAcctProofDatabase`, etc.
+pub trait CheckpointProofDatabase: Send + Sync + 'static {
+    /// Inserts a checkpoint proof for the given epoch.
     ///
     /// Returns `Ok(())` on success, or an error on failure.
-    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()>;
+    fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()>;
 
-    /// Retrieves a proof by its key.
+    /// Retrieves the checkpoint proof for the given epoch.
     ///
     /// Returns `Some(proof)` if found, or `None` if not.
-    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceiptWithMetadata>>;
+    fn get_proof(&self, epoch: EpochCommitment) -> DbResult<Option<ProofReceiptWithMetadata>>;
 
-    /// Deletes a proof by its key.
+    /// Deletes the checkpoint proof for the given epoch.
     ///
-    /// Tries to delete a proof by its key, returning if it really
-    /// existed or not.
-    fn del_proof(&self, proof_key: ProofKey) -> DbResult<bool>;
-
-    /// Inserts dependencies for a given [`ProofContext`] into the database.
-    ///
-    /// Returns `Ok(())` on success, or an error on failure.
-    fn put_proof_deps(&self, proof_context: ProofContext, deps: Vec<ProofContext>) -> DbResult<()>;
-
-    /// Retrieves proof dependencies by it's [`ProofContext`].
-    ///
-    /// Returns `Some(dependencies)` if found, or `None` if not.
-    fn get_proof_deps(&self, proof_context: ProofContext) -> DbResult<Option<Vec<ProofContext>>>;
-
-    /// Deletes dependencies for a given [`ProofContext`].
-    ///
-    /// Tries to delete dependencies of by its context, returning if it really
-    /// existed or not.
-    fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool>;
+    /// Tries to delete the proof, returning whether it really existed.
+    fn del_proof(&self, epoch: EpochCommitment) -> DbResult<bool>;
 }
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast

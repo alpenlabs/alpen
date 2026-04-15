@@ -1,65 +1,41 @@
 use strata_db_types::{
     DbResult,
     errors::DbError,
-    traits::{ProofDatabase, ProverTaskDatabase},
+    traits::{CheckpointProofDatabase, ProverTaskDatabase},
 };
+use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;
-use strata_primitives::proof::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
-use super::schemas::{ProofDepsSchema, ProofSchema, ProverTaskTree};
+use super::schemas::{CheckpointProofSchema, ProverTaskTree};
 use crate::define_sled_database;
 
 define_sled_database!(
     pub struct ProofDBSled {
-        proof_tree: ProofSchema,
-        proof_deps_tree: ProofDepsSchema,
+        checkpoint_proof_tree: CheckpointProofSchema,
         prover_task_tree: ProverTaskTree,
     }
 );
 
-impl ProofDatabase for ProofDBSled {
-    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()> {
-        if self.proof_tree.get(&proof_key)?.is_some() {
+impl CheckpointProofDatabase for ProofDBSled {
+    fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()> {
+        if self.checkpoint_proof_tree.get(&epoch)?.is_some() {
             return Err(DbError::EntryAlreadyExists);
         }
-
-        self.proof_tree
-            .compare_and_swap(proof_key, None, Some(proof))?;
+        self.checkpoint_proof_tree
+            .compare_and_swap(epoch, None, Some(proof))?;
         Ok(())
     }
 
-    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceiptWithMetadata>> {
-        Ok(self.proof_tree.get(proof_key)?)
+    fn get_proof(&self, epoch: EpochCommitment) -> DbResult<Option<ProofReceiptWithMetadata>> {
+        Ok(self.checkpoint_proof_tree.get(&epoch)?)
     }
 
-    fn del_proof(&self, proof_key: ProofKey) -> DbResult<bool> {
-        let old = self.proof_tree.get(&proof_key)?;
+    fn del_proof(&self, epoch: EpochCommitment) -> DbResult<bool> {
+        let old = self.checkpoint_proof_tree.get(&epoch)?;
         let existed = old.is_some();
-        self.proof_tree.compare_and_swap(proof_key, old, None)?;
-        Ok(existed)
-    }
-
-    fn put_proof_deps(&self, proof_context: ProofContext, deps: Vec<ProofContext>) -> DbResult<()> {
-        let old = self.proof_deps_tree.get(&proof_context)?;
-        if old.is_some() {
-            return Err(DbError::EntryAlreadyExists);
-        }
-
-        self.proof_deps_tree
-            .compare_and_swap(proof_context, old, Some(deps))?;
-        Ok(())
-    }
-
-    fn get_proof_deps(&self, proof_context: ProofContext) -> DbResult<Option<Vec<ProofContext>>> {
-        Ok(self.proof_deps_tree.get(&proof_context)?)
-    }
-
-    fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool> {
-        let old = self.proof_deps_tree.get(&proof_context)?;
-        let existed = old.is_some();
-        self.proof_deps_tree
-            .compare_and_swap(proof_context, old, None)?;
+        self.checkpoint_proof_tree
+            .compare_and_swap(epoch, old, None)?;
         Ok(existed)
     }
 }
@@ -70,9 +46,6 @@ impl ProverTaskDatabase for ProofDBSled {
     }
 
     fn insert_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()> {
-        // Matches the `put_proof` pattern: typed_sled's `compare_and_swap`
-        // collapses both CAS failure and IO into a single error, so we do
-        // the existence check before writing.
         if self.prover_task_tree.get(&key)?.is_some() {
             return Err(DbError::EntryAlreadyExists);
         }

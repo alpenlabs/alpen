@@ -1,17 +1,12 @@
+use strata_identifiers::EpochCommitment;
 use strata_paas::TaskRecordData;
-use strata_primitives::proof::{ProofContext, ProofKey};
 use zkaleido::ProofReceiptWithMetadata;
 
 use crate::define_table_with_default_codec;
 
 define_table_with_default_codec!(
-    /// A table to store ProofKey -> ProofReceiptWithMetadata mapping
-    (ProofSchema) ProofKey => ProofReceiptWithMetadata
-);
-
-define_table_with_default_codec!(
-    /// A table to store dependencies of a proof context
-    (ProofDepsSchema) ProofContext => Vec<ProofContext>
+    /// Checkpoint proofs keyed by the epoch commitment they attest to.
+    (CheckpointProofSchema) EpochCommitment => ProofReceiptWithMetadata
 );
 
 define_table_with_default_codec!(

@@ -16,9 +16,8 @@ use anyhow::{Context, Result};
 use strata_config::{ProverBackend, ProverConfig};
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
-use strata_primitives::proof::{ProofContext, ProofKey, ProofZkVm};
 use strata_proofimpl_checkpoint_new::program::CheckpointProgram;
-use strata_storage::ProofDbManager;
+use strata_storage::CheckpointProofDbManager;
 use strata_tasks::TaskExecutor;
 use tokio::{sync::watch, time};
 use tracing::{debug, info, warn};
@@ -57,14 +56,13 @@ pub(crate) fn start_prover_service(
     validate_backend_config(prover_config.backend)?;
 
     let storage = runctx.storage().clone();
-    let proof_db = storage.proof().clone();
+    let proof_db = storage.checkpoint_proof().clone();
 
     // Build the spec + hook. The backend choice is fixed here at build
     // time rather than being part of task identity — the new paas erases
     // the host type inside the prove strategy.
     let spec = CheckpointSpec::new(storage.clone());
-    let zkvm = zkvm_for_backend(prover_config.backend);
-    let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify, zkvm);
+    let hook = CheckpointReceiptHook::new(proof_db.clone(), proof_notify);
 
     // Task store: the node's `ProverTaskDbManager` implements
     // `strata_paas::TaskStore` directly, so the manager *is* the persistent
@@ -133,7 +131,6 @@ pub(crate) fn start_prover_service(
         executor,
         handle,
         epoch_rx,
-        zkvm,
         proof_db,
         runctx.storage().clone(),
         last_payload_epoch,
@@ -156,15 +153,6 @@ fn validate_backend_config(backend: ProverBackend) -> Result<()> {
     Ok(())
 }
 
-/// Map the config-level backend selection to the [`ProofZkVm`] used as part
-/// of the proof key in storage.
-fn zkvm_for_backend(backend: ProverBackend) -> ProofZkVm {
-    match backend {
-        ProverBackend::Native => ProofZkVm::Native,
-        ProverBackend::Sp1 => ProofZkVm::SP1,
-    }
-}
-
 /// Spawns a background task that watches for new epoch completions and
 /// submits proof tasks for each new epoch.
 ///
@@ -181,8 +169,7 @@ fn spawn_checkpoint_runner(
     executor: &TaskExecutor,
     prover_handle: ProverHandle<CheckpointSpec>,
     mut epoch_rx: watch::Receiver<Option<EpochCommitment>>,
-    zkvm: ProofZkVm,
-    proof_db: Arc<ProofDbManager>,
+    proof_db: Arc<CheckpointProofDbManager>,
     storage: Arc<strata_storage::NodeStorage>,
     last_payload_epoch: Option<Epoch>,
 ) {
@@ -241,8 +228,7 @@ fn spawn_checkpoint_runner(
                 };
 
                 // Skip if proof already exists (idempotency after restart).
-                let proof_key = ProofKey::new(ProofContext::CheckpointCommitment(commitment), zkvm);
-                if proof_db.get_proof(proof_key).ok().flatten().is_some() {
+                if proof_db.get_proof(&commitment).ok().flatten().is_some() {
                     debug!(%epoch, "proof already exists, skipping");
                     next_epoch_to_prove += 1;
                     continue;

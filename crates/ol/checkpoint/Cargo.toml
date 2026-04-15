@@ -24,6 +24,7 @@ strata-tasks.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+zkaleido.workspace = true
 zkaleido-sp1-groth16-verifier.workspace = true
 
 [lints]

@@ -235,18 +235,9 @@ pub(crate) fn start_strata_services(
     let (checkpoint_builder, proof_notify): (
         OLCheckpointBuilder,
         Option<Arc<strata_ol_checkpoint::ProofNotify>>,
-    ) = if let Some(prover_config) = &nodectx.config().prover {
-        use strata_config::ProverBackend;
-        use strata_primitives::proof::ProofZkVm;
-
-        let zkvm = match prover_config.backend {
-            ProverBackend::Native => ProofZkVm::Native,
-            ProverBackend::Sp1 => ProofZkVm::SP1,
-        };
+    ) = if nodectx.config().prover.is_some() {
         let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-
         let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
-            zkvm,
             notify: notify.clone(),
         });
         (builder, Some(notify))
