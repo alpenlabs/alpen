@@ -4,6 +4,7 @@ use std::{error::Error, fmt, fs, io, path::Path, str::FromStr};
 
 use bitcoin::secp256k1::XOnlyPublicKey;
 use serde::{de::Error as DeError, Deserialize, Deserializer};
+use strata_identifiers::AccountId;
 use strata_l1_txfmt::MagicBytes;
 use terrors::OneOf;
 use toml::de::Error as TomlError;
@@ -27,6 +28,22 @@ where
     XOnlyPublicKey::from_str(&value).map_err(DeError::custom)
 }
 
+/// Deserializes an optional 32-byte account id from hex.
+fn deserialize_optional_account_id<'de, D>(deserializer: D) -> Result<Option<AccountId>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let value = value.strip_prefix("0x").unwrap_or(&value);
+    let bytes = hex::decode(value).map_err(DeError::custom)?;
+    let account_id: [u8; 32] = bytes.try_into().map_err(|bytes: Vec<u8>| {
+        DeError::custom(format!("expected 32 bytes, got {}", bytes.len()))
+    })?;
+    Ok(Some(AccountId::new(account_id)))
+}
+
 /// Effective verifier configuration loaded from the config file.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct VerifierConfig {
@@ -43,6 +60,11 @@ pub(crate) struct VerifierConfig {
     pub(crate) sequencer_pubkey: XOnlyPublicKey,
 
     pub(crate) chain_spec: String,
+
+    pub(crate) ol_rpc_url: Option<String>,
+
+    #[serde(default, deserialize_with = "deserialize_optional_account_id")]
+    pub(crate) ee_snark_account_id: Option<AccountId>,
 }
 
 /// Invalid verifier config TOML or invalid typed field value.
@@ -84,6 +106,7 @@ mod tests {
     use std::{path::Path, str::FromStr};
 
     use bitcoin::secp256k1::XOnlyPublicKey;
+    use strata_identifiers::AccountId;
     use strata_l1_txfmt::MagicBytes;
 
     use super::VerifierConfig;
@@ -114,6 +137,28 @@ chain_spec = "dev"
             XOnlyPublicKey::from_str(TEST_SEQUENCER_PUBKEY).expect("valid test key")
         );
         assert_eq!(config.chain_spec, "dev");
+        assert_eq!(config.ol_rpc_url, None);
+        assert_eq!(config.ee_snark_account_id, None);
+    }
+
+    #[test]
+    fn parse_toml_succeeds_for_manifest_config() {
+        let config = VerifierConfig::parse_toml(
+            r#"
+bitcoind_url = "http://127.0.0.1:18443"
+bitcoind_rpc_user = "rpc_user"
+bitcoind_rpc_password = "rpc_password"
+magic_bytes = "ALPN"
+sequencer_pubkey = "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+chain_spec = "dev"
+ol_rpc_url = "http://127.0.0.1:8432"
+ee_snark_account_id = "0101010101010101010101010101010101010101010101010101010101010101"
+"#,
+        )
+        .expect("config must parse");
+
+        assert_eq!(config.ol_rpc_url, Some("http://127.0.0.1:8432".to_string()));
+        assert_eq!(config.ee_snark_account_id, Some(AccountId::new([1u8; 32])));
     }
 
     #[test]
