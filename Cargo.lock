@@ -4751,7 +4751,9 @@ dependencies = [
 name = "ee-da-verify"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-chainspec",
  "alpen-ee-common",
+ "alpen-reth-statediff",
  "argh",
  "bitcoin",
  "bitcoind-async-client",

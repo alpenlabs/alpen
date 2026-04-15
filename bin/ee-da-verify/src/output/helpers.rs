@@ -7,6 +7,7 @@ use std::{
 
 use serde::Serialize;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
+use strata_identifiers::ExecBlockCommitment;
 
 use super::Formattable;
 use crate::cli::OutputFormat;
@@ -14,6 +15,12 @@ use crate::cli::OutputFormat;
 /// Formats a single porcelain field as `key: value`.
 pub(crate) fn porcelain_field<T: Display>(key: &str, value: T) -> String {
     format!("{key}: {value}")
+}
+
+/// Renders an [`ExecBlockCommitment`] as `slot@blkid`, matching
+/// `L1BlockCommitment`'s `Display` convention.
+pub(crate) fn format_exec_block(commitment: ExecBlockCommitment) -> String {
+    format!("{}@{}", commitment.slot(), commitment.blkid())
 }
 
 /// Renders `data` to stdout in the requested format.

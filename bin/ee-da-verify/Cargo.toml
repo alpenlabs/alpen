@@ -11,7 +11,9 @@ name = "ee-da-verify"
 path = "src/main.rs"
 
 [dependencies]
+alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
+alpen-reth-statediff.workspace = true
 strata-cli-common.workspace = true
 strata-common = { workspace = true, features = ["async"] }
 strata-identifiers.workspace = true
