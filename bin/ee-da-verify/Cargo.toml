@@ -30,3 +30,4 @@ toml.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+strata-codec.workspace = true

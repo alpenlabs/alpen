@@ -8,15 +8,15 @@ use thiserror::Error;
 
 /// Parsed reveal data extracted from a single transaction.
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Walk and segment stages consume these fields.")
-)]
 pub(crate) struct RevealRecord {
     pub(crate) wtxid: Wtxid,
     pub(crate) prev_wtxid: [u8; 32],
     pub(crate) chunk_header: DaChunkHeader,
     pub(crate) chunk_bytes: Vec<u8>,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "Used only by scan's own order-preservation test.")
+    )]
     pub(crate) block_tx_index: usize,
 }
 

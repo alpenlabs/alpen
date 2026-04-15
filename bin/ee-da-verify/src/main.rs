@@ -45,9 +45,13 @@ async fn run(cli: &Cli) -> Result<Report, DisplayedError> {
     .await?;
     let envelopes = da::segment_reveals(scan_output.ordered_reveals)
         .internal_error("failed to segment reveal chain")?;
+    let envelope_count = envelopes.len() as u64;
+    let blobs =
+        da::reassemble_da_blobs(envelopes).internal_error("failed to reassemble DA blobs")?;
     Ok(Report {
         fetched_block_count: scan_output.fetched_block_count,
         blocks_with_reveals: scan_output.blocks_with_reveals,
-        envelope_count: envelopes.len() as u64,
+        envelope_count,
+        blobs_reassembled: blobs.len() as u64,
     })
 }
