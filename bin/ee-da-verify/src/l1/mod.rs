@@ -1,6 +1,7 @@
 mod client;
 pub(crate) mod fetch;
 pub(crate) mod scan;
+pub(crate) mod walk;
 
 #[cfg(test)]
 pub(crate) mod test_utils;
@@ -25,11 +26,15 @@ pub(crate) struct L1BlockRevealStats {
 pub(crate) struct L1ScanOutput {
     pub(crate) fetched_block_count: u64,
     pub(crate) blocks_with_reveals: Vec<L1BlockRevealStats>,
-    #[expect(dead_code, reason = "Consumed by the walker stage in the next commit.")]
-    pub(crate) reveals: Vec<RevealRecord>,
+    #[expect(
+        dead_code,
+        reason = "Consumed by the segmenter stage in the next commit."
+    )]
+    pub(crate) ordered_reveals: Vec<RevealRecord>,
 }
 
-/// Fetches blocks in the range, scans each for reveals, and collects the results.
+/// Fetches blocks in the range, scans each for reveals, and walks the
+/// global reveal chain so the returned reveals are in predecessor order.
 pub(crate) async fn collect_reveals(
     reader: &impl fetch::FetchReader,
     start_height: L1Height,
@@ -52,7 +57,7 @@ pub(crate) async fn collect_reveals(
     let mut stream = fetch::fetch_range(reader, start_height, end_height);
 
     while let Some(item) = stream.next().await {
-        let block_data = item.map_err(to_displayed_error)?;
+        let block_data = item.map_err(fetch_error_to_displayed)?;
         fetched_block_count += 1;
         let block_reveals = scan_block(&block_data.block, magic_bytes).map_err(|source| {
             DisplayedError::InternalError(
@@ -73,15 +78,19 @@ pub(crate) async fn collect_reveals(
         }
     }
 
+    let ordered_reveals = walk::walk_reveals(reveals).map_err(|source| {
+        DisplayedError::InternalError("failed to walk reveal chain".to_string(), Box::new(source))
+    })?;
+
     Ok(L1ScanOutput {
         fetched_block_count,
         blocks_with_reveals,
-        reveals,
+        ordered_reveals,
     })
 }
 
 /// Classifies a fetch error as user or internal.
-fn to_displayed_error(error: fetch::FetchError) -> DisplayedError {
+fn fetch_error_to_displayed(error: fetch::FetchError) -> DisplayedError {
     match error {
         fetch::FetchError::HeightOutOfRange { .. } => {
             DisplayedError::UserError("requested height out of range".to_string(), Box::new(error))

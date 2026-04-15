@@ -1,3 +1,4 @@
+use alpen_ee_common::parse_chunk_header;
 use bitcoin::{
     absolute::LockTime,
     block::{Header, Version},
@@ -89,6 +90,9 @@ pub(crate) fn build_block_with_txs(txs: Vec<Transaction>) -> Block {
 }
 
 /// Builds a v0 DA chunk payload (`header ++ payload`).
+///
+/// This helper intentionally round-trips through [`parse_chunk_header`] so test
+/// fixtures stay aligned with the production chunk-header parser contract.
 pub(crate) fn build_chunk_payload(
     blob_hash: [u8; 32],
     chunk_index: u16,
@@ -101,6 +105,12 @@ pub(crate) fn build_chunk_payload(
     payload.extend_from_slice(&chunk_index.to_be_bytes());
     payload.extend_from_slice(&total_chunks.to_be_bytes());
     payload.extend_from_slice(body);
+
+    let parsed = parse_chunk_header(&payload).expect("test chunk payload must have a valid header");
+    assert_eq!(parsed.chunk_index(), chunk_index);
+    assert_eq!(parsed.total_chunks(), total_chunks);
+    assert_eq!(parsed.blob_hash().as_ref(), blob_hash.as_slice());
+
     payload
 }
 
