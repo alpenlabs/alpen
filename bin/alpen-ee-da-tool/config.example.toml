@@ -4,3 +4,8 @@ bitcoind_rpc_password = "rpc_password"
 magic_bytes = "ALPN"
 sequencer_pubkey = "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
 chain_spec = "dev"
+
+# Optional: enable expected-root comparison through OL's Snark account update
+# manifest RPC. The dev EE Snark account id is [1u8; 32].
+# ol_rpc_url = "http://127.0.0.1:8432"
+# ee_snark_account_id = "0101010101010101010101010101010101010101010101010101010101010101"
