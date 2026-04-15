@@ -63,11 +63,13 @@ pub fn replay_blobs_from_snapshot(
         }
 
         let first_blob_block_num = first.evm_header.block_num;
-        if first_blob_block_num <= snapshot.last_applied_block_num() {
-            return Err(ReplayError::SnapshotBlockAnchorMismatch {
-                last_applied_block_num: snapshot.last_applied_block_num(),
-                first_blob_block_num,
-            });
+        if let Some(last_applied_block_num) = snapshot.last_applied_block_num() {
+            if first_blob_block_num <= last_applied_block_num {
+                return Err(ReplayError::SnapshotBlockAnchorMismatch {
+                    last_applied_block_num,
+                    first_blob_block_num,
+                });
+            }
         }
     }
 
@@ -80,6 +82,7 @@ fn replay_blobs_with_reconstructor(
 ) -> Result<ReplaySummary, ReplayError> {
     let mut previous_update_seq_no: Option<u64> = None;
     let mut previous_block_num: Option<u64> = None;
+    let mut per_blob_state_roots = Vec::with_capacity(blobs.len());
 
     for (blob_index, blob) in blobs.iter().enumerate() {
         if let Some(previous_update_seq_no) = previous_update_seq_no {
@@ -114,12 +117,17 @@ fn replay_blobs_with_reconstructor(
         reconstructor
             .apply_diff(&blob.state_diff)
             .map_err(|source| ReplayError::ApplyDiff { blob_index, source })?;
+        let state_root = reconstructor.compute_state_root_buf32();
+        per_blob_state_roots.push(state_root);
 
         previous_update_seq_no = Some(blob.update_seq_no);
         previous_block_num = Some(current_block_num);
     }
 
-    let final_state_root = reconstructor.compute_state_root_buf32();
+    let final_state_root = per_blob_state_roots
+        .last()
+        .copied()
+        .unwrap_or_else(|| reconstructor.compute_state_root_buf32());
     let final_reconstructor_prestate = reconstructor.to_prestate();
     let applied_evm_headers = blobs.iter().map(|blob| blob.evm_header).collect();
     let applied = match (blobs.first(), blobs.last()) {
@@ -130,6 +138,7 @@ fn replay_blobs_with_reconstructor(
     Ok(ReplaySummary::new(
         applied,
         applied_evm_headers,
+        per_blob_state_roots,
         final_state_root,
         final_reconstructor_prestate,
     ))
@@ -189,6 +198,11 @@ mod tests {
             summary.applied_evm_headers(),
             blobs.iter().map(|blob| blob.evm_header).collect::<Vec<_>>()
         );
+        assert_eq!(summary.per_blob_state_roots().len(), blobs.len());
+        assert_eq!(
+            summary.per_blob_state_roots().last().copied(),
+            Some(summary.final_state_root())
+        );
     }
 
     #[test]
@@ -196,7 +210,7 @@ mod tests {
         let snapshot = ReplayPreStateSnapshot::new(
             Buf32::from([0x42; 32]),
             5,
-            99,
+            Some(99),
             StateReconstructorPreState::default(),
             BTreeMap::new(),
         );
@@ -397,7 +411,7 @@ mod tests {
         ReplayPreStateSnapshot::new(
             prestate_state_root(&reconstructor_prestate),
             next_update_seq_no,
-            last_applied_block_num,
+            Some(last_applied_block_num),
             reconstructor_prestate,
             BTreeMap::new(),
         )

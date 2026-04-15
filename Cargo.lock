@@ -1304,20 +1304,35 @@ dependencies = [
 name = "alpen-ee-da-tool"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-chainspec",
+ "alpen-ee-config",
  "alpen-ee-da-l1-extraction",
+ "alpen-ee-da-state-replay",
  "alpen-ee-da-types",
+ "alpen-ee-genesis",
+ "alpen-reth-statediff",
  "argh",
  "bitcoin",
  "bitcoind-async-client",
  "futures",
+ "jsonrpsee",
  "serde",
  "serde_json",
+ "ssz",
+ "strata-acct-types",
  "strata-cli-common",
+ "strata-codec",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-ol-rpc-api",
+ "strata-ol-rpc-types",
  "terrors",
+ "thiserror 2.0.18",
  "tokio",
  "toml 0.5.11",
+ "tree_hash 0.16.0",
 ]
 
 [[package]]

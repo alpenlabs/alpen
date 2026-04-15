@@ -11,18 +11,33 @@ name = "alpen-ee-da-tool"
 path = "src/main.rs"
 
 [dependencies]
+alpen-chainspec.workspace = true
+alpen-ee-config.workspace = true
 alpen-ee-da-l1-extraction.workspace = true
+alpen-ee-da-state-replay.workspace = true
 alpen-ee-da-types.workspace = true
+alpen-ee-genesis.workspace = true
+alpen-reth-statediff = { workspace = true, features = ["chainspec"] }
+strata-acct-types.workspace = true
 strata-cli-common.workspace = true
+strata-codec.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
+strata-ol-rpc-api = { workspace = true, features = ["client"] }
+strata-ol-rpc-types.workspace = true
 
 argh.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 futures.workspace = true
+jsonrpsee = { workspace = true, features = ["http-client"] }
 serde.workspace = true
 serde_json.workspace = true
+ssz.workspace = true
 terrors.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
+tree_hash.workspace = true

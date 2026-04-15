@@ -55,6 +55,18 @@ pub(crate) struct Cli {
     #[argh(option)]
     pub(crate) expected_root: Option<Buf32>,
 
+    /// EVM chain spec selector or path.
+    #[argh(option, default = "\"dev\".to_string()")]
+    pub(crate) custom_chain: String,
+
+    /// optional replay pre-state snapshot JSON path.
+    #[argh(option, long = "snapshot", arg_name = "path")]
+    pub(crate) snapshot_path: Option<PathBuf>,
+
+    /// optional post-run replay snapshot JSON output path.
+    #[argh(option, long = "export-snapshot", arg_name = "path")]
+    pub(crate) export_snapshot_path: Option<PathBuf>,
+
     /// report output format (`porcelain` or `json`).
     #[argh(option)]
     pub(crate) output_format: Option<OutputFormat>,
@@ -62,7 +74,7 @@ pub(crate) struct Cli {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use argh::FromArgs;
     use strata_identifiers::Buf32;
@@ -89,6 +101,9 @@ mod tests {
         assert_eq!(cli.start_height, 100);
         assert_eq!(cli.end_height, 200);
         assert_eq!(cli.expected_root, None);
+        assert_eq!(cli.custom_chain, "dev");
+        assert_eq!(cli.snapshot_path, None);
+        assert_eq!(cli.export_snapshot_path, None);
         assert_eq!(cli.output_format, None);
     }
 
@@ -103,12 +118,27 @@ mod tests {
             "200",
             "--expected-root",
             "0x0101010101010101010101010101010101010101010101010101010101010101",
+            "--custom-chain",
+            "testnet",
+            "--snapshot",
+            "/tmp/pre-state.json",
+            "--export-snapshot",
+            "/tmp/post-state.json",
             "--output-format",
             "json",
         ])
         .expect("optional args must parse");
 
         assert_eq!(cli.expected_root, Some(Buf32::from([0x01u8; 32])));
+        assert_eq!(cli.custom_chain, "testnet");
+        assert_eq!(
+            cli.snapshot_path,
+            Some(PathBuf::from("/tmp/pre-state.json"))
+        );
+        assert_eq!(
+            cli.export_snapshot_path,
+            Some(PathBuf::from("/tmp/post-state.json"))
+        );
         assert_eq!(cli.output_format, Some(OutputFormat::Json));
     }
 

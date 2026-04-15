@@ -6,6 +6,7 @@ use alpen_ee_da_l1_extraction::{
 use alpen_ee_da_types::EE_DA_MAGIC_BYTES;
 use bitcoind_async_client::{traits::Reader, Auth, Client};
 use futures::StreamExt;
+use serde::Serialize;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_identifiers::L1Height;
 use strata_l1_txfmt::MagicBytes;
@@ -35,28 +36,49 @@ pub(crate) async fn create_ready_client(config: &VerifierConfig) -> Result<Clien
     Ok(client)
 }
 
+/// Aggregate stats from the bounded L1 scan stage.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct L1ScanStats {
+    pub(crate) fetched_block_count: u64,
+}
+
+/// Output of the bounded L1 scan stage.
+pub(crate) struct L1ScanOutput {
+    pub(crate) stats: L1ScanStats,
+    pub(crate) envelopes: Vec<ParsedEnvelope>,
+}
+
 /// Fetches blocks in the range and scans each for complete EE DA envelopes.
 pub(crate) async fn collect_envelopes(
     reader: &impl FetchReader,
     config: &VerifierConfig,
     start_height: L1Height,
     end_height: L1Height,
-) -> Result<Vec<ParsedEnvelope>, DisplayedError> {
+) -> Result<L1ScanOutput, DisplayedError> {
     let mut scanner =
         L1RangeScanner::new(MagicBytes::new(EE_DA_MAGIC_BYTES), config.sequencer_pubkey);
+    let mut fetched_block_count = 0u64;
     let mut stream =
         fetch_range(reader, start_height, end_height).user_error("invalid block range")?;
 
     while let Some(item) = stream.next().await {
         let block_data = item.map_err(map_fetch_error_to_displayed)?;
+        fetched_block_count += 1;
         scanner
             .ingest_block(block_data.block())
             .internal_error("failed to scan L1 block for EE DA envelopes")?;
     }
 
-    scanner
+    let envelopes = scanner
         .finish()
-        .internal_error("failed to scan L1 range for EE DA envelopes")
+        .internal_error("failed to scan L1 range for EE DA envelopes")?;
+
+    Ok(L1ScanOutput {
+        stats: L1ScanStats {
+            fetched_block_count,
+        },
+        envelopes,
+    })
 }
 
 fn map_fetch_error_to_displayed(error: FetchError) -> DisplayedError {

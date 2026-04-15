@@ -34,6 +34,8 @@ pub(crate) struct VerifierConfig {
     pub(crate) sequencer_pubkey: XOnlyPublicKey,
 
     pub(crate) ee_params: PathBuf,
+
+    pub(crate) ol_rpc_url: Option<String>,
 }
 
 /// Invalid verifier config TOML or invalid typed field value.
@@ -102,6 +104,24 @@ ee_params = "/tmp/ee-params.json"
             XOnlyPublicKey::from_str(TEST_SEQUENCER_PUBKEY).expect("valid test key")
         );
         assert_eq!(config.ee_params, Path::new("/tmp/ee-params.json"));
+        assert_eq!(config.ol_rpc_url, None);
+    }
+
+    #[test]
+    fn parse_toml_succeeds_for_expected_root_source_config() {
+        let config = VerifierConfig::parse_toml(
+            r#"
+bitcoind_url = "http://127.0.0.1:18443"
+bitcoind_rpc_user = "rpc_user"
+bitcoind_rpc_password = "rpc_password"
+sequencer_pubkey = "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+ee_params = "/tmp/ee-params.json"
+ol_rpc_url = "http://127.0.0.1:8432"
+"#,
+        )
+        .expect("config must parse");
+
+        assert_eq!(config.ol_rpc_url, Some("http://127.0.0.1:8432".to_string()));
     }
 
     #[test]

@@ -1,12 +1,20 @@
 //! Writes a report in porcelain or JSON.
 
-use std::io::{self, Write};
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
 
 use serde::Serialize;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use super::Formattable;
 use crate::cli::OutputFormat;
+
+/// Formats a single porcelain field as `key: value`.
+pub(crate) fn porcelain_field<T: Display>(key: &str, value: T) -> String {
+    format!("{key}: {value}")
+}
 
 /// Renders `data` to stdout in the requested format.
 pub(crate) fn output<T: Serialize + Formattable>(

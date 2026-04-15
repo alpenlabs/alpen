@@ -58,6 +58,8 @@ pub struct ReplaySummary {
     applied: Option<AppliedExecBlockRange>,
     #[serde(skip)]
     applied_evm_headers: Vec<EvmHeaderSummary>,
+    #[serde(skip)]
+    per_blob_state_roots: Vec<Buf32>,
     final_state_root: Buf32,
     #[serde(skip)]
     final_reconstructor_prestate: StateReconstructorPreState,
@@ -67,12 +69,14 @@ impl ReplaySummary {
     pub(crate) fn new(
         applied: Option<AppliedExecBlockRange>,
         applied_evm_headers: Vec<EvmHeaderSummary>,
+        per_blob_state_roots: Vec<Buf32>,
         final_state_root: Buf32,
         final_reconstructor_prestate: StateReconstructorPreState,
     ) -> Self {
         Self {
             applied,
             applied_evm_headers,
+            per_blob_state_roots,
             final_state_root,
             final_reconstructor_prestate,
         }
@@ -86,6 +90,11 @@ impl ReplaySummary {
     /// Returns the EVM header summaries for each applied DA blob.
     pub fn applied_evm_headers(&self) -> &[EvmHeaderSummary] {
         &self.applied_evm_headers
+    }
+
+    /// Returns the reconstructed execution state root after each applied blob.
+    pub fn per_blob_state_roots(&self) -> &[Buf32] {
+        &self.per_blob_state_roots
     }
 
     /// Returns the reconstructed final state root.
