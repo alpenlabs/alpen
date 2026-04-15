@@ -445,7 +445,14 @@ pub trait CompoundMember: Sized {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ContextlessDaWrite, DaRegister, encode_to_vec};
+    use proptest::prelude::*;
+    use strata_codec::decode_buf_exact;
+
+    use crate::{
+        ContextlessDaWrite, DaCounter, DaRegister,
+        counter_schemes::{CtrI64ByI8, CtrU64ByU8},
+        encode_to_vec,
+    };
 
     #[derive(Copy, Clone, Eq, PartialEq, Debug)]
     pub struct Point {
@@ -463,6 +470,28 @@ mod tests {
         DaPointDiff u16 => Point {
             x: register (i32),
             y: register (i32),
+        }
+    }
+
+    #[derive(Copy, Clone, Eq, PartialEq, Debug, Default)]
+    struct Metrics {
+        label: u16,
+        nonce: u64,
+        score: i64,
+    }
+
+    #[derive(Debug, Default)]
+    struct MetricsDiff {
+        label: DaRegister<u16>,
+        nonce: DaCounter<CtrU64ByU8>,
+        score: DaCounter<CtrI64ByI8>,
+    }
+
+    make_compound_impl! {
+        MetricsDiff u8 => Metrics {
+            label: register (u16),
+            nonce: counter (CtrU64ByU8),
+            score: counter (CtrI64ByI8),
         }
     }
 
@@ -532,6 +561,8 @@ mod tests {
 
     // Test type coercion feature
     mod coercion {
+        use strata_codec::{Codec, CodecError, Decoder, Encoder};
+
         use crate::{
             ContextlessDaWrite, DaCounter, DaRegister, counter_schemes::CtrU64ByU8,
             decode_buf_exact, encode_to_vec,
@@ -547,12 +578,12 @@ mod tests {
             }
         }
 
-        impl crate::Codec for WrappedI32 {
-            fn encode(&self, enc: &mut impl crate::Encoder) -> Result<(), crate::CodecError> {
+        impl Codec for WrappedI32 {
+            fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
                 self.0.encode(enc)
             }
 
-            fn decode(dec: &mut impl crate::Decoder) -> Result<Self, crate::CodecError> {
+            fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
                 Ok(Self(i32::decode(dec)?))
             }
         }
@@ -770,6 +801,58 @@ mod tests {
             assert_eq!(transfer.from, alice_id);
             assert_eq!(transfer.to, bob_id);
             assert_eq!(transfer.amount, 1000);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_compound_codec_roundtrip(
+            label in proptest::option::of(any::<u16>()),
+            nonce_delta in any::<u8>(),
+            score_delta in any::<i8>(),
+        ) {
+            let diff = MetricsDiff {
+                label: label.map_or_else(DaRegister::new_unset, DaRegister::new_set),
+                nonce: DaCounter::new_changed(nonce_delta),
+                score: DaCounter::new_changed(score_delta),
+            };
+
+            let encoded = encode_to_vec(&diff).expect("test: encode compound diff");
+            let decoded: MetricsDiff = decode_buf_exact(&encoded).expect("test: decode compound diff");
+
+            prop_assert_eq!(decoded.label.new_value().copied(), diff.label.new_value().copied());
+            prop_assert_eq!(decoded.nonce.diff().copied(), diff.nonce.diff().copied());
+            prop_assert_eq!(decoded.score.diff().copied(), diff.score.diff().copied());
+        }
+
+        #[test]
+        fn proptest_compound_apply_matches_after_decode(
+            start in (any::<u16>(), any::<u64>(), any::<i64>()),
+            label in proptest::option::of(any::<u16>()),
+            nonce_delta in any::<u8>(),
+            score_delta in any::<i8>(),
+        ) {
+            let diff = MetricsDiff {
+                label: label.map_or_else(DaRegister::new_unset, DaRegister::new_set),
+                nonce: DaCounter::new_changed(nonce_delta),
+                score: DaCounter::new_changed(score_delta),
+            };
+
+            let encoded = encode_to_vec(&diff).expect("test: encode compound diff");
+            let decoded: MetricsDiff = decode_buf_exact(&encoded).expect("test: decode compound diff");
+
+            let initial = Metrics {
+                label: start.0,
+                nonce: start.1,
+                score: start.2,
+            };
+            let mut applied_original = initial;
+            let mut applied_decoded = initial;
+
+            diff.apply(&mut applied_original).expect("test: apply original compound diff");
+            decoded.apply(&mut applied_decoded).expect("test: apply decoded compound diff");
+
+            prop_assert_eq!(applied_decoded, applied_original);
         }
     }
 }
