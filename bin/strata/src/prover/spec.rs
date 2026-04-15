@@ -7,7 +7,7 @@
 use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::{BorshDeserialize, BorshSerialize, io::Error as BorshIoError};
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_stf::execute_block_batch;
@@ -40,7 +40,7 @@ impl From<CheckpointTask> for Vec<u8> {
 }
 
 impl TryFrom<Vec<u8>> for CheckpointTask {
-    type Error = borsh::io::Error;
+    type Error = BorshIoError;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
         borsh::from_slice(&bytes)

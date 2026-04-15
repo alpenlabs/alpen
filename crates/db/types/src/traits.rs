@@ -441,12 +441,12 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
 ///
 /// Keyed by the serialized `ProofSpec::Task` bytes — same contract as the
 /// in-memory `TaskStore`. All methods are synchronous and expected to be
-/// called through a blocking threadpool by the [`strata_storage`] manager.
+/// called through a blocking threadpool by the `strata_storage` manager.
 pub trait ProverTaskDatabase: Send + Sync + 'static {
     /// Fetch a record by key. `None` if the key is absent.
     fn get_task(&self, key: Vec<u8>) -> DbResult<Option<TaskRecordData>>;
 
-    /// Insert a new record. Fails with [`DbError::EntryAlreadyExists`] if
+    /// Insert a new record. Fails with `DbError::EntryAlreadyExists` if
     /// the key is already present — implementations must do this atomically
     /// (e.g. `compare_and_swap(None, Some)`).
     fn insert_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()>;

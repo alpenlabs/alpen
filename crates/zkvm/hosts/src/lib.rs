@@ -1,4 +1,4 @@
-//! ZKVM host statics for the Alpen codebase.
+//! ZKVM host static instances for the Alpen codebase.
 //!
 //! Consumers pick a host at prover-build time via
 //! `ProverBuilder::.native(Program::native_host())` or `.remote(HOST.clone())`.

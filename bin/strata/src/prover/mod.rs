@@ -78,12 +78,12 @@ pub(crate) fn start_prover_service(
             .native(CheckpointProgram::native_host()),
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
+            use strata_zkvm_hosts::sp1::CHECKPOINT_NEW_HOST;
             // prover-core's `.remote(host)` takes the host by value and
             // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
             // is Clone (only holds a SP1ProvingKey), so cloning from the
             // shared static is fine.
-            let host: zkaleido_sp1_host::SP1Host =
-                (**strata_zkvm_hosts::sp1::CHECKPOINT_NEW_HOST).clone();
+            let host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_NEW_HOST).clone();
             ProverBuilder::new(spec)
                 .task_store(task_store)
                 .receipt_hook(hook)

@@ -103,7 +103,7 @@ impl<H: ProofSpec> Prover<H> {
     /// Zero polling: each waiter receives a private `oneshot` receiver that
     /// fires exactly once when the task reaches a terminal state. The
     /// subscribe-or-observe-completion step is linearized against
-    /// [`Self::notify`] via the watchers mutex, so the wait cannot miss
+    /// `Self::notify` via the watchers mutex, so the wait cannot miss
     /// completions that race with subscription.
     pub async fn wait_for_tasks(
         &self,
