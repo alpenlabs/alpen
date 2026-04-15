@@ -365,6 +365,7 @@ impl<'a, Q: DaQueueTarget> QueueView<'a, Q> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::{collection::vec, prelude::*};
     use strata_codec::BufDecoder;
 
     use super::*;
@@ -384,7 +385,7 @@ mod tests {
     }
 
     /// Mock queue target for testing.
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
     struct MockQueue {
         front: IncrTy,
         next: IncrTy,
@@ -424,6 +425,36 @@ mod tests {
         fn increment_front(&mut self, incr: IncrTy) {
             self.front += incr;
         }
+    }
+
+    fn base_queue_strategy() -> impl Strategy<Value = MockQueue> {
+        (
+            0u16..=(u16::MAX - 64),
+            0usize..=32,
+            vec(any::<u32>(), 0..=32),
+        )
+            .prop_flat_map(|(front, len, mut entries)| {
+                entries.truncate(len);
+                Just(MockQueue {
+                    front,
+                    next: front + (entries.len() as IncrTy),
+                    entries,
+                })
+            })
+    }
+
+    fn tail_strategy() -> impl Strategy<Value = Vec<u32>> {
+        vec(any::<u32>(), 0..=16)
+    }
+
+    fn valid_queue_write_strategy() -> impl Strategy<Value = (MockQueue, Vec<u32>, IncrTy)> {
+        (base_queue_strategy(), tail_strategy(), 0usize..=48).prop_flat_map(
+            |(base, tail, consume_hint)| {
+                let available = base.entries.len() + tail.len();
+                let consume = consume_hint.min(available) as IncrTy;
+                Just((base, tail, consume))
+            },
+        )
     }
 
     #[test]
@@ -920,5 +951,65 @@ mod tests {
         assert_eq!(view.len(), 1);
         assert_eq!(view.get(2), None);
         assert_eq!(view.get(3), Some(&40)); // only new entry visible
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_queue_compound_member_roundtrip(
+            tail in tail_strategy(),
+            incr_front in 0u16..=HEAD_WORD_INCR_MASK,
+        ) {
+            let queue = DaQueue::<MockQueue> { tail, incr_front };
+
+            let encoded = encode_set_cm_to_vec(&queue).expect("test: encode queue");
+            let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&encoded).expect("test: decode queue");
+
+            prop_assert_eq!(decoded.tail, queue.tail);
+            prop_assert_eq!(decoded.incr_front, queue.incr_front);
+        }
+
+        #[test]
+        fn proptest_queue_builder_roundtrip_preserves_apply(
+            (base, appended, consume_total) in valid_queue_write_strategy(),
+        ) {
+            let mut builder = DaQueueBuilder::from_source(base.clone());
+            for entry in &appended {
+                prop_assert!(builder.append_entry(*entry));
+            }
+            prop_assert_eq!(builder.add_front_incr(consume_total), (consume_total as usize) <= (base.entries.len() + appended.len()));
+
+            let write = builder.into_write().expect("test: builder into_write");
+            let encoded = encode_set_cm_to_vec(&write).expect("test: encode queue write");
+            let decoded: DaQueue<MockQueue> = decode_set_cm_from_vec(&encoded).expect("test: decode queue write");
+
+            let mut applied_original = base.clone();
+            let mut applied_decoded = base;
+            write.apply(&mut applied_original, &()).expect("test: apply original write");
+            decoded.apply(&mut applied_decoded, &()).expect("test: apply decoded write");
+
+            prop_assert_eq!(applied_decoded, applied_original);
+        }
+
+        #[test]
+        fn proptest_queue_builder_into_write_drops_consumed_new_entries(
+            base in base_queue_strategy(),
+            appended in tail_strategy(),
+            consume_hint in 0usize..=48,
+        ) {
+            let base_len = base.entries.len();
+            let consumed_total = consume_hint.min(base_len + appended.len());
+            let consumed_new = consumed_total.saturating_sub(base_len);
+
+            let mut builder = DaQueueBuilder::from_source(base.clone());
+            for entry in &appended {
+                prop_assert!(builder.append_entry(*entry));
+            }
+            prop_assert!(builder.add_front_incr(consumed_total as IncrTy));
+
+            let write = builder.into_write().expect("test: builder into_write");
+
+            prop_assert_eq!(write.incr_front, consumed_total as IncrTy);
+            prop_assert_eq!(write.tail, appended[consumed_new..].to_vec());
+        }
     }
 }
