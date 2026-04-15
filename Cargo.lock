@@ -14750,6 +14750,7 @@ dependencies = [
 name = "strata-da-framework"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "sha2",
  "strata-codec",
  "strata-merkle",
