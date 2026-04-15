@@ -146,6 +146,7 @@ impl<A: LinearAccumulator> CompoundMember for DaLinacc<A> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::{collection::vec, prelude::*};
     use strata_codec::BufDecoder;
     use strata_merkle::{CompactMmr64, MerkleHasher, Mmr, MmrState, Sha256Hasher};
 
@@ -169,6 +170,21 @@ mod tests {
         fn insert(&mut self, entry: &Self::EntryData) {
             let hash = Sha256Hasher::hash_leaf(entry);
             Mmr::<Sha256Hasher>::add_leaf(&mut self.0, hash).expect("test: insert should succeed");
+        }
+    }
+
+    #[derive(Debug, Default, Clone, PartialEq, Eq)]
+    struct RecordingAccumulator {
+        entries: Vec<u32>,
+    }
+
+    impl LinearAccumulator for RecordingAccumulator {
+        type InsertCnt = u8;
+        type EntryData = u32;
+        const MAX_INSERT: Self::InsertCnt = 8;
+
+        fn insert(&mut self, entry: &Self::EntryData) {
+            self.entries.push(*entry);
         }
     }
 
@@ -340,5 +356,63 @@ mod tests {
             peaks1, peaks2,
             "test: MMR peaks should be identical after sequential diffs"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_linear_acc_roundtrip(entries in vec(any::<u32>(), 0..=8)) {
+            let mut diff = DaLinacc::<RecordingAccumulator>::new();
+            for entry in &entries {
+                prop_assert!(diff.append_entry(*entry));
+            }
+
+            let mut encoded = Vec::new();
+            diff.encode_set(&mut encoded).expect("test: encode linear accumulator");
+            let mut decoder = BufDecoder::new(&encoded);
+            let decoded = DaLinacc::<RecordingAccumulator>::decode_set(&mut decoder)
+                .expect("test: decode linear accumulator");
+
+            prop_assert_eq!(decoded.new_entries(), entries.as_slice());
+        }
+
+        #[test]
+        fn proptest_linear_acc_apply_matches_after_decode(entries in vec(any::<u32>(), 0..=8)) {
+            let mut diff = DaLinacc::<RecordingAccumulator>::new();
+            for entry in &entries {
+                prop_assert!(diff.append_entry(*entry));
+            }
+
+            let mut encoded = Vec::new();
+            diff.encode_set(&mut encoded).expect("test: encode linear accumulator");
+            let mut decoder = BufDecoder::new(&encoded);
+            let decoded = DaLinacc::<RecordingAccumulator>::decode_set(&mut decoder)
+                .expect("test: decode linear accumulator");
+
+            let mut original_target = RecordingAccumulator::default();
+            let mut decoded_target = RecordingAccumulator::default();
+
+            diff.apply(&mut original_target, &()).expect("test: apply original linacc");
+            decoded.apply(&mut decoded_target, &()).expect("test: apply decoded linacc");
+
+            prop_assert_eq!(&decoded_target, &original_target);
+            prop_assert_eq!(decoded_target.entries, entries);
+        }
+
+        #[test]
+        fn proptest_linear_acc_respects_max_insert(
+            first_entries in vec(any::<u32>(), 0..=8),
+            extra_entry in any::<u32>(),
+        ) {
+            let mut diff = DaLinacc::<RecordingAccumulator>::new();
+            for entry in &first_entries {
+                prop_assert!(diff.append_entry(*entry));
+            }
+
+            prop_assert_eq!(diff.is_write_full(), first_entries.len() == RecordingAccumulator::MAX_INSERT as usize);
+            prop_assert_eq!(
+                diff.append_entry(extra_entry),
+                first_entries.len() < RecordingAccumulator::MAX_INSERT as usize
+            );
+        }
     }
 }
