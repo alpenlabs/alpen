@@ -27,7 +27,7 @@ client_poll_dur_ms = 200
 
 [btcio.writer]
 write_poll_dur_ms = 200
-fee_policy = "smart"
+fee_policy = "bitcoind"
 reveal_amount = 100
 bundle_interval_ms = 1000
 

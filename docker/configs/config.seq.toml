@@ -19,7 +19,14 @@ client_poll_dur_ms = 200
 
 [btcio.writer]
 write_poll_dur_ms = 200
-fee_policy = "smart"
+fee_policy = "mempool"
+# Optional when fee_policy = "mempool"
+# mempool_fee_policy = "economy"
+# Optional when fee_policy = "bitcoind"
+# bitcoind_conf_target = 6
+# Required when fee_policy = "fixed"
+# fixed_fee_rate = 5
+mempool_base_url = "https://mempool.space"
 reveal_amount = 100
 bundle_interval_ms = 1000
 

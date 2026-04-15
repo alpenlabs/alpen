@@ -62,7 +62,7 @@ use strata_btcio::{
     BtcioParams,
 };
 #[cfg(feature = "sequencer")]
-use strata_config::btcio::WriterConfig;
+use strata_config::btcio::{FeePolicy, WriterConfig};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_predicate::PredicateKey;
@@ -550,7 +550,13 @@ fn main() {
                     .map_err(|e| eyre::eyre!("starting broadcaster service: {e}"))?,
                 );
 
-                let writer_config = Arc::new(WriterConfig::default());
+                // TODO(STR-2982): support custom btcio.write configurations via CLI flags or TOML
+                // config file. For now, we hardcode to `BitcoinD` so that functional-tests can
+                // pass.
+                let writer_config = Arc::new(WriterConfig {
+                    fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
+                    ..WriterConfig::default()
+                });
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
                     btc_client,
                     writer_config,

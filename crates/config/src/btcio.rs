@@ -22,23 +22,69 @@ pub struct WriterConfig {
     pub write_poll_dur_ms: u64,
     /// How the fees for are determined.
     // FIXME: This should actually be a part of signer.
+    #[serde(flatten)]
     pub fee_policy: FeePolicy,
     /// How much amount(in sats) to send to reveal address. Must be above dust amount or else
     /// reveal transaction won't be accepted.
     pub reveal_amount: u64,
     /// How often to bundle write intents.
     pub bundle_interval_ms: u64,
+    /// Base URL for mempool.space-compatible fee API.
+    pub mempool_base_url: Option<String>,
+    /// Confirmation target passed to bitcoind's `estimatesmartfee` when the mempool explorer is
+    /// unreachable and the policy falls back to bitcoind.
+    #[serde(default = "default_bitcoind_conf_target")]
+    pub mempool_fallback_conf_target: u16,
 }
 
 /// Definition of how fees are determined while creating l1 transactions.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "fee_policy")]
 pub enum FeePolicy {
-    /// Use estimatesmartfee.
-    #[default]
-    Smart,
+    /// Use mempool explorer recommended fees endpoint.
+    #[serde(rename = "mempool")]
+    MempoolExplorer {
+        #[serde(default, rename = "mempool_fee_policy")]
+        policy: MempoolExplorerFeePolicy,
+    },
+
+    /// Use Bitcoin Core's `estimatesmartfee` and the target confirmation parameter is the provided
+    /// value.
+    #[serde(rename = "bitcoind")]
+    BitcoinD {
+        #[serde(
+            default = "default_bitcoind_conf_target",
+            rename = "bitcoind_conf_target"
+        )]
+        conf_target: u16,
+    },
+
     /// Fixed fee in sat/vB.
-    Fixed(u64),
+    #[serde(rename = "fixed")]
+    Fixed {
+        #[serde(rename = "fixed_fee_rate")]
+        fee_rate: u64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MempoolExplorerFeePolicy {
+    /// Use the "fastest" fee estimate from mempool explorer.
+    #[default]
+    Fastest,
+
+    /// Use the "half hour" fee estimate from mempool explorer.
+    HalfHour,
+
+    /// Use the "hour" fee estimate from mempool explorer.
+    Hour,
+
+    /// Use the "economy" fee estimate from mempool explorer.
+    Economy,
+
+    /// Use the "minimum" fee estimate from mempool explorer.
+    Minimum,
 }
 
 /// Configuration for btcio broadcaster.
@@ -52,11 +98,25 @@ impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             write_poll_dur_ms: 5_000,
-            fee_policy: FeePolicy::Smart,
+            fee_policy: FeePolicy::default(),
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
+            mempool_base_url: None,
+            mempool_fallback_conf_target: default_bitcoind_conf_target(),
         }
     }
+}
+
+impl Default for FeePolicy {
+    fn default() -> Self {
+        Self::BitcoinD {
+            conf_target: default_bitcoind_conf_target(),
+        }
+    }
+}
+
+const fn default_bitcoind_conf_target() -> u16 {
+    1
 }
 
 impl Default for ReaderConfig {
