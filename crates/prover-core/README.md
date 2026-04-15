@@ -93,18 +93,19 @@ impl ProofSpec for CheckpointSpec {
 That's the entire integration surface. No storage wiring, no host selection, no
 retry logic.
 
-### ProveStrategy — how proving actually happens
+### How proving actually happens
 
-The strategy is the bridge between prover-core and zkaleido's host layer. The host
-type is captured at build time and erased, so `Prover<S>` has no host type parameter.
+Internally, the prover bridges zkaleido's host layer through a crate-private
+`ProveStrategy` glue. The host type is captured at build time and erased, so
+`Prover<S>` has no host type parameter. Two strategies ship:
 
-Two built-in strategies:
-
-- **`NativeStrategy`** — calls `ZkVmProgram::prove()` directly. Good for tests, dev,
-  and local RISC0.
-- **`RemoteStrategy`** (behind the `remote` feature) — drives the async
+- **native** — calls `ZkVmProgram::prove()` directly. Good for tests, dev,
+  and local proving.
+- **remote** (behind the `remote` feature) — drives the async
   `start_proving` → poll `get_status` → `get_proof` cycle for backends like the
   SP1 network.
+
+Consumers never name the strategy type directly; they pick one via the builder.
 
 ### Adding a new host (e.g. RISC0 remote, custom backend)
 
@@ -115,8 +116,8 @@ entirely a zkaleido concern. The steps:
    for an async remote backend. This is where the actual zkVM integration lives:
    input preparation, proof generation, status polling, receipt retrieval.
 2. **Pass it to the builder** — `.native(your_host)` or `.remote(your_host)`.
-   That's it. prover-core erases the host type behind a `ProveStrategy` and the
-   rest of the system (specs, task lifecycle, PaaS) is completely unaware.
+   That's it. prover-core erases the host type internally and the rest of the
+   system (specs, task lifecycle, PaaS) is completely unaware.
 
 For example, a RISC0 remote prover would implement `ZkVmRemoteHost` with
 `start_proving` submitting to Bonsai, `get_status` polling the Bonsai API, and
