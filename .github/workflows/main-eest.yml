@@ -75,7 +75,7 @@ jobs:
           cache-on-failure: true
 
       - name: Build Cargo project
-        run: cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-datatool --bin strata-test-cli
+        run: cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-signer --bin strata-datatool --bin strata-test-cli
 
       - name: Run basic env in fntests
         env:
