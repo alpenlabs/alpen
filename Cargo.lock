@@ -4771,6 +4771,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ee-da-replay"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-chainspec",
+ "alpen-ee-common",
+ "alpen-reth-statediff",
+ "hex",
+ "proptest",
+ "serde",
+ "strata-identifiers",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ee-da-verify"
 version = "0.3.0-alpha.1"
 dependencies = [

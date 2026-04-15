@@ -1,0 +1,19 @@
+[package]
+edition = "2021"
+name = "ee-da-replay"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[dependencies]
+alpen-chainspec.workspace = true
+alpen-ee-common.workspace = true
+alpen-reth-statediff.workspace = true
+hex.workspace = true
+serde.workspace = true
+strata-identifiers.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
