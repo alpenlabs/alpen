@@ -1286,6 +1286,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "alpen-ee-da-state-replay"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alloy-primitives",
+ "alpen-ee-da-types",
+ "alpen-reth-statediff",
+ "proptest",
+ "serde",
+ "serde_json",
+ "strata-identifiers",
+ "strata-mpt",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "alpen-ee-da-tool"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1652,6 +1667,7 @@ dependencies = [
  "serde_json",
  "strata-codec",
  "strata-da-framework",
+ "strata-identifiers",
  "strata-mpt",
  "thiserror 2.0.18",
 ]

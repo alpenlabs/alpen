@@ -8,6 +8,7 @@ use revm_primitives::{alloy_primitives::Address, B256, U256};
 use rsp_mpt::EthereumState;
 use serde::{Deserialize, Serialize};
 use strata_da_framework::ContextlessDaWrite;
+use strata_identifiers::Buf32;
 #[cfg(feature = "chainspec")]
 use strata_mpt::KECCAK_EMPTY;
 use strata_mpt::{keccak, MptNode, StateAccount, EMPTY_ROOT};
@@ -323,6 +324,12 @@ impl StateReconstructor {
     /// Computes the current state root.
     pub fn compute_state_root(&self) -> B256 {
         self.state_trie.hash()
+    }
+
+    /// Computes the current state root as a [`Buf32`].
+    pub fn compute_state_root_buf32(&self) -> Buf32 {
+        let state_root: [u8; 32] = self.compute_state_root().into();
+        Buf32::from(state_root)
     }
 
     /// Computes the current storage root for an account.

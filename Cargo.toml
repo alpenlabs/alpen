@@ -10,6 +10,7 @@ members = [
   "crates/alpen-ee/da/l1-extraction",
   "crates/alpen-ee/da/provider",
   "crates/alpen-ee/da/runtime",
+  "crates/alpen-ee/da/state-replay",
   "crates/alpen-ee/da/types",
   "crates/alpen-ee/database",
   "crates/alpen-ee/engine",
@@ -138,6 +139,7 @@ alpen-ee-config = { path = "crates/alpen-ee/config" }
 alpen-ee-da-l1-extraction = { path = "crates/alpen-ee/da/l1-extraction" }
 alpen-ee-da-provider = { path = "crates/alpen-ee/da/provider" }
 alpen-ee-da-runtime = { path = "crates/alpen-ee/da/runtime" }
+alpen-ee-da-state-replay = { path = "crates/alpen-ee/da/state-replay" }
 alpen-ee-da-types = { path = "crates/alpen-ee/da/types" }
 alpen-ee-database = { path = "crates/alpen-ee/database", default-features = false }
 alpen-ee-engine = { path = "crates/alpen-ee/engine" }
