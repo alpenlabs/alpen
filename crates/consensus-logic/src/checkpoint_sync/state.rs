@@ -202,6 +202,7 @@ mod tests {
     use strata_btc_types::GenesisL1View;
     use strata_chain_worker_new::FinalizedCkptPayload;
     use strata_checkpoint_types::EpochSummary;
+    use strata_checkpoint_types_ssz::TerminalHeaderComplement;
     use strata_csm_types::CheckpointL1Ref;
     use strata_csm_worker::CsmWorkerStatus;
     use strata_db_types::DbResult;
@@ -209,6 +210,8 @@ mod tests {
         Buf32, Epoch, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
     };
     use strata_l1_txfmt::MagicBytes;
+    use strata_ol_da::{ExtractedDA, OLDaPayloadV1, StateDiff};
+    use strata_ol_state_types::test_utils::create_test_genesis_state;
     use strata_params::{CredRule, ProofPublishMode, RollupParams};
     use strata_predicate::PredicateKey;
     use strata_primitives::{EpochCommitment, L1Height};
@@ -312,7 +315,9 @@ mod tests {
         /// L1 reference for each finalized epoch's checkpoint tx.
         l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
         /// Present iff the epoch has been applied (DA executed by chain worker).
-        epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
+        /// Behind a `Mutex` so `apply_da` can synthesize a summary during a
+        /// catch-up test run without requiring `&mut self`.
+        epoch_summaries: Mutex<HashMap<EpochCommitment, EpochSummary>>,
         /// Collects sync statuses published during the test.
         published_statuses: Mutex<Vec<OLSyncStatus>>,
         /// Collects chain worker calls for assertion.
@@ -332,7 +337,7 @@ mod tests {
                 },
                 epoch_commitments: HashMap::new(),
                 l1_refs: HashMap::new(),
-                epoch_summaries: HashMap::new(),
+                epoch_summaries: Mutex::new(HashMap::new()),
                 published_statuses: Mutex::new(Vec::new()),
                 chain_worker_calls: Mutex::new(ChainWorkerCalls::default()),
             }
@@ -352,7 +357,7 @@ mod tests {
             self.epoch_commitments.insert(ec.epoch(), ec);
             self.l1_refs.insert(ec, l1_ref);
             if let Some(s) = summary {
-                self.epoch_summaries.insert(ec, s);
+                self.epoch_summaries.get_mut().unwrap().insert(ec, s);
             }
             self
         }
@@ -389,21 +394,28 @@ mod tests {
             &self,
             epoch: EpochCommitment,
         ) -> DbResult<Option<EpochSummary>> {
-            Ok(self.epoch_summaries.get(&epoch).copied())
+            Ok(self.epoch_summaries.lock().unwrap().get(&epoch).copied())
         }
 
         async fn extract_da_data(
             &self,
             _ckpt_ref: &CheckpointL1Ref,
         ) -> anyhow::Result<strata_ol_da::ExtractedDA> {
-            unimplemented!("not needed for scan/status tests")
+            let payload = OLDaPayloadV1::new(StateDiff::default());
+            let complement = TerminalHeaderComplement::new(
+                0,
+                OLBlockId::from(make_buf32(0)),
+                make_buf32(0),
+                make_buf32(0),
+            );
+            Ok(ExtractedDA::new(payload, complement))
         }
 
         async fn get_state_at(
             &self,
             _blkid: OLBlockCommitment,
         ) -> anyhow::Result<strata_ol_state_types::OLState> {
-            unimplemented!("not needed for scan/status tests")
+            Ok(create_test_genesis_state())
         }
 
         async fn fetch_asm_manifests_range(
@@ -411,7 +423,7 @@ mod tests {
             _start: L1Height,
             _end: L1Height,
         ) -> anyhow::Result<Vec<strata_asm_common::AsmManifest>> {
-            unimplemented!("not needed for scan/status tests")
+            Ok(vec![])
         }
 
         fn publish_ol_sync_status(&self, status: OLSyncStatus) {
@@ -426,11 +438,25 @@ mod tests {
         }
 
         async fn apply_da(&self, payload: &FinalizedCkptPayload) -> anyhow::Result<()> {
+            let epoch = payload.epoch();
             self.chain_worker_calls
                 .lock()
                 .unwrap()
                 .apply_da_epochs
-                .push(payload.epoch());
+                .push(epoch);
+
+            // Mimic the real chain worker: insert an epoch summary so that
+            // build_ol_sync_status can find it after apply_checkpoint runs.
+            let prev_epoch_num = epoch.epoch().saturating_sub(1);
+            let prev_ec = self
+                .epoch_commitments
+                .get(&prev_epoch_num)
+                .copied()
+                .unwrap_or(EpochCommitment::null());
+            let l1_ref = self.l1_refs.get(&epoch).expect("l1_ref for applied epoch");
+            let summary = make_epoch_summary(epoch.epoch(), epoch, prev_ec, l1_ref.block_height());
+            self.epoch_summaries.lock().unwrap().insert(epoch, summary);
+
             Ok(())
         }
 
@@ -500,16 +526,19 @@ mod tests {
 
     #[tokio::test]
     async fn scan_collects_unapplied_newest_first_stops_at_applied() {
+        // Applied prefix ends at epoch1 (epoch0 and epoch1 both have
+        // summaries), epoch2 and epoch3 are reorg-safe but not yet applied.
+        // Scan walks back from epoch3 and stops at the first applied epoch.
         let epoch0 = make_epoch(0, 0, 0x00);
         let epoch1 = make_epoch(1, 10, 0x01);
         let epoch2 = make_epoch(2, 20, 0x02);
         let epoch3 = make_epoch(3, 30, 0x03);
 
-        // epoch1 has summary (applied), epoch2 and epoch3 do not.
+        let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
         let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
 
         let ctx = MockCtx::new(3, 200)
-            .add_epoch(epoch0, make_l1_ref(100), None)
+            .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
             .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
             .add_epoch(epoch2, make_l1_ref(120), None)
             .add_epoch(epoch3, make_l1_ref(130), None);
@@ -633,6 +662,81 @@ mod tests {
 
         state.handle_new_client_state().await.unwrap();
         assert_eq!(state.inner.last_finalized_and_applied, Some(epoch1));
+    }
+
+    #[tokio::test]
+    async fn handle_errors_on_skipped_epoch_leaves_state_unchanged() {
+        // CSM advances finalized past a hole in the canonical chain: the
+        // applied prefix reaches epoch1 (epoch0 and epoch1 have summaries),
+        // CSM now reports epoch3 finalized, but epoch2 is missing from the db
+        // entirely. handle_new_client_state must surface the error, leave
+        // inner state on epoch1, and not touch the chain worker.
+        let epoch0 = make_epoch(0, 0, 0x00);
+        let epoch1 = make_epoch(1, 10, 0x01);
+        let epoch3 = make_epoch(3, 30, 0x03);
+
+        let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
+        let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
+
+        let ctx = MockCtx::new(3, 200)
+            .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+            .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
+            .add_epoch(epoch3, make_l1_ref(130), None)
+            .with_csm_finalized(Some(epoch3));
+        let inner = InnerState::new(Some(epoch1));
+        let mut state = CheckpointSyncState::new(ctx, inner);
+
+        let result = state.handle_new_client_state().await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("predecessor epoch 2 not found"));
+
+        // Inner state must not advance.
+        assert_eq!(state.inner.last_finalized_and_applied, Some(epoch1));
+
+        // No chain worker side effects must have occurred.
+        let calls = state.ctx.chain_worker_calls.lock().unwrap();
+        assert!(calls.apply_da_epochs.is_empty());
+        assert!(calls.safe_tips.is_empty());
+        assert!(calls.finalized_epochs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn handle_catches_up_across_skipped_csm_reports() {
+        // Applied prefix ends at epoch1. CSM advances finalized directly to
+        // epoch3, skipping epoch2 in a single report — but epoch2 is present
+        // in the canonical chain. checkpoint_sync must walk back, apply
+        // epoch2 then epoch3, and advance inner state to epoch3.
+        let epoch0 = make_epoch(0, 0, 0x00);
+        let epoch1 = make_epoch(1, 10, 0x01);
+        let epoch2 = make_epoch(2, 20, 0x02);
+        let epoch3 = make_epoch(3, 30, 0x03);
+
+        let summary0 = make_epoch_summary(0, epoch0, EpochCommitment::null(), 100);
+        let summary1 = make_epoch_summary(1, epoch1, epoch0, 110);
+
+        let ctx = MockCtx::new(3, 200)
+            .add_epoch(epoch0, make_l1_ref(100), Some(summary0))
+            .add_epoch(epoch1, make_l1_ref(110), Some(summary1))
+            .add_epoch(epoch2, make_l1_ref(120), None)
+            .add_epoch(epoch3, make_l1_ref(130), None)
+            .with_csm_finalized(Some(epoch3));
+        let inner = InnerState::new(Some(epoch1));
+        let mut state = CheckpointSyncState::new(ctx, inner);
+
+        state.handle_new_client_state().await.unwrap();
+
+        assert_eq!(state.inner.last_finalized_and_applied, Some(epoch3));
+
+        let calls = state.ctx.chain_worker_calls.lock().unwrap();
+        assert_eq!(calls.apply_da_epochs, vec![epoch2, epoch3]);
+        assert_eq!(calls.finalized_epochs, vec![epoch2, epoch3]);
+        assert_eq!(
+            calls.safe_tips,
+            vec![epoch2.to_block_commitment(), epoch3.to_block_commitment()]
+        );
     }
 
     #[tokio::test]

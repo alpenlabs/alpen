@@ -56,9 +56,11 @@ tracing.workspace = true
 
 [dev-dependencies]
 strata-asm-txs-test-utils.workspace = true
+strata-checkpoint-types-ssz.workspace = true
 strata-db-types = { workspace = true, features = ["stubs"] }
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-l1-envelope-fmt.workspace = true
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-test-utils-l2.workspace = true
 
 rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }
