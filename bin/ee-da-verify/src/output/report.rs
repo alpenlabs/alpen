@@ -10,6 +10,7 @@ use crate::l1::L1BlockRevealStats;
 pub(crate) struct Report {
     pub(crate) fetched_block_count: u64,
     pub(crate) blocks_with_reveals: Vec<L1BlockRevealStats>,
+    pub(crate) envelope_count: u64,
 }
 
 impl Formattable for Report {
@@ -24,6 +25,7 @@ impl Formattable for Report {
             porcelain_field("fetched_block_count", self.fetched_block_count),
             porcelain_field("blocks_with_reveals_count", blocks_with_reveals_count),
             porcelain_field("reveals_found", reveals_found),
+            porcelain_field("envelope_count", self.envelope_count),
         ];
         for (index, block) in self.blocks_with_reveals.iter().enumerate() {
             output.push(porcelain_field(

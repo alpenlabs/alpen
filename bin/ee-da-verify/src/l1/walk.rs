@@ -127,56 +127,14 @@ pub(crate) fn walk_reveals(reveals: Vec<RevealRecord>) -> Result<Vec<RevealRecor
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::parse_chunk_header;
     use bitcoin::hashes::Hash as _;
     use proptest::{collection, prelude::*};
 
-    use super::{walk_reveals, RevealRecord, WalkError};
-
-    fn build_chunk_payload(
-        blob_hash: [u8; 32],
-        chunk_index: u16,
-        total_chunks: u16,
-        body: &[u8],
-    ) -> Vec<u8> {
-        let mut payload = Vec::new();
-        payload.push(0);
-        payload.extend_from_slice(&blob_hash);
-        payload.extend_from_slice(&chunk_index.to_be_bytes());
-        payload.extend_from_slice(&total_chunks.to_be_bytes());
-        payload.extend_from_slice(body);
-        payload
-    }
-
-    fn valid_chunk_header_strategy() -> impl Strategy<Value = ([u8; 32], u16, u16)> {
-        (any::<[u8; 32]>(), 1u16..=u16::MAX).prop_flat_map(|(blob_hash, total_chunks)| {
-            (Just(blob_hash), 0u16..total_chunks, Just(total_chunks))
-        })
-    }
-
-    fn chunk_body_strategy(max_len: usize) -> impl Strategy<Value = Vec<u8>> {
-        collection::vec(any::<u8>(), 0..=max_len)
-    }
-
-    fn reveal_record(
-        wtxid_bytes: [u8; 32],
-        prev_wtxid: [u8; 32],
-        blob_hash: [u8; 32],
-        chunk_index: u16,
-        total_chunks: u16,
-        body: &[u8],
-        block_tx_index: usize,
-    ) -> RevealRecord {
-        let chunk_bytes = build_chunk_payload(blob_hash, chunk_index, total_chunks, body);
-        let chunk_header = parse_chunk_header(&chunk_bytes).expect("constructed payload is valid");
-        RevealRecord {
-            wtxid: bitcoin::Wtxid::from_byte_array(wtxid_bytes),
-            prev_wtxid,
-            chunk_header,
-            chunk_bytes,
-            block_tx_index,
-        }
-    }
+    use super::{walk_reveals, WalkError};
+    use crate::{
+        l1::scan::RevealRecord,
+        test_utils::{build_reveal_record, chunk_body_strategy, valid_chunk_header_strategy},
+    };
 
     fn build_linear_reveals(parts: &[([u8; 32], u16, u16, Vec<u8>)]) -> Vec<RevealRecord> {
         let mut prev = [0u8; 32];
@@ -185,7 +143,7 @@ mod tests {
         for (idx, (blob_hash, chunk_index, total_chunks, body)) in parts.iter().enumerate() {
             let mut wtxid_bytes = [0u8; 32];
             wtxid_bytes[31] = (idx as u8).saturating_add(1);
-            let reveal = reveal_record(
+            let reveal = build_reveal_record(
                 wtxid_bytes,
                 prev,
                 *blob_hash,
@@ -233,7 +191,7 @@ mod tests {
             body in chunk_body_strategy(16),
         ) {
             prop_assume!(first_prev != [0u8; 32]);
-            let tx = reveal_record(
+            let tx = build_reveal_record(
                 [1u8; 32],
                 first_prev,
                 blob_hash,
@@ -257,7 +215,7 @@ mod tests {
         ) {
             let (blob_hash0, chunk_index0, total_chunks0) = header0;
             let (blob_hash1, chunk_index1, total_chunks1) = header1;
-            let tx0 = reveal_record(
+            let tx0 = build_reveal_record(
                 [1u8; 32],
                 [0u8; 32],
                 blob_hash0,
@@ -266,7 +224,7 @@ mod tests {
                 &body0,
                 0,
             );
-            let tx1 = reveal_record(
+            let tx1 = build_reveal_record(
                 [2u8; 32],
                 [0u8; 32],
                 blob_hash1,
@@ -296,7 +254,7 @@ mod tests {
             prop_assume!(prev != [0u8; 32]);
             let tx0_wtxid = [1u8; 32];
             prop_assume!(prev != tx0_wtxid);
-            let tx0 = reveal_record(
+            let tx0 = build_reveal_record(
                 tx0_wtxid,
                 [0u8; 32],
                 blob_hash0,
@@ -305,7 +263,7 @@ mod tests {
                 &body0,
                 0,
             );
-            let tx1 = reveal_record(
+            let tx1 = build_reveal_record(
                 [2u8; 32],
                 prev,
                 blob_hash1,
@@ -334,7 +292,7 @@ mod tests {
             let (blob_hash1, chunk_index1, total_chunks1) = header1;
             let (blob_hash2, chunk_index2, total_chunks2) = header2;
             let tx0_wtxid = [1u8; 32];
-            let tx0 = reveal_record(
+            let tx0 = build_reveal_record(
                 tx0_wtxid,
                 [0u8; 32],
                 blob_hash0,
@@ -344,7 +302,7 @@ mod tests {
                 0,
             );
 
-            let tx1 = reveal_record(
+            let tx1 = build_reveal_record(
                 [2u8; 32],
                 tx0_wtxid,
                 blob_hash1,
@@ -353,7 +311,7 @@ mod tests {
                 &body1,
                 1,
             );
-            let tx2 = reveal_record(
+            let tx2 = build_reveal_record(
                 [3u8; 32],
                 tx0_wtxid,
                 blob_hash2,
@@ -379,7 +337,7 @@ mod tests {
         ) {
             let (blob_hash0, chunk_index0, total_chunks0) = header0;
             let (blob_hash1, chunk_index1, total_chunks1) = header1;
-            let tx0 = reveal_record(
+            let tx0 = build_reveal_record(
                 duplicate_wtxid,
                 [0u8; 32],
                 blob_hash0,
@@ -388,7 +346,7 @@ mod tests {
                 &body0,
                 0,
             );
-            let tx1 = reveal_record(
+            let tx1 = build_reveal_record(
                 duplicate_wtxid,
                 [9u8; 32],
                 blob_hash1,
@@ -414,9 +372,9 @@ mod tests {
 
         // Start chain is A->B. Reveal C is self-linked and disconnected from start.
         let reveals = vec![
-            reveal_record(a, [0u8; 32], [21u8; 32], 0, 1, &body, 0),
-            reveal_record(b, a, [22u8; 32], 0, 1, &body, 1),
-            reveal_record(c, c, [23u8; 32], 0, 1, &body, 2),
+            build_reveal_record(a, [0u8; 32], [21u8; 32], 0, 1, &body, 0),
+            build_reveal_record(b, a, [22u8; 32], 0, 1, &body, 1),
+            build_reveal_record(c, c, [23u8; 32], 0, 1, &body, 2),
         ];
 
         let err = walk_reveals(reveals).expect_err("disconnected segment must fail");

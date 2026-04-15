@@ -141,10 +141,12 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::l1::test_utils::{
-        append_linking_tag_output, build_block_with_txs, build_chunk_payload,
-        build_linking_tag_script, build_reveal_tx, chunk_body_strategy, magic_bytes_strategy,
-        prev_wtxid_strategy, valid_chunk_header_strategy,
+    use crate::{
+        l1::test_utils::{
+            append_linking_tag_output, build_block_with_txs, build_linking_tag_script,
+            build_reveal_tx, magic_bytes_strategy, prev_wtxid_strategy,
+        },
+        test_utils::{build_chunk_payload, chunk_body_strategy, valid_chunk_header_strategy},
     };
 
     fn test_magic() -> MagicBytes {

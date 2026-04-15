@@ -3,12 +3,16 @@
 
 mod cli;
 mod config;
+mod da;
 mod l1;
 mod output;
 
+#[cfg(test)]
+mod test_utils;
+
 use std::process::ExitCode;
 
-use strata_cli_common::errors::DisplayedError;
+use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
 use crate::{
     cli::{Cli, OutputFormat},
@@ -39,8 +43,11 @@ async fn run(cli: &Cli) -> Result<Report, DisplayedError> {
         config.magic_bytes,
     )
     .await?;
+    let envelopes = da::segment_reveals(scan_output.ordered_reveals)
+        .internal_error("failed to segment reveal chain")?;
     Ok(Report {
         fetched_block_count: scan_output.fetched_block_count,
         blocks_with_reveals: scan_output.blocks_with_reveals,
+        envelope_count: envelopes.len() as u64,
     })
 }

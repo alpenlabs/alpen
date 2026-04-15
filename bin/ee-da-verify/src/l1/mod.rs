@@ -26,10 +26,6 @@ pub(crate) struct L1BlockRevealStats {
 pub(crate) struct L1ScanOutput {
     pub(crate) fetched_block_count: u64,
     pub(crate) blocks_with_reveals: Vec<L1BlockRevealStats>,
-    #[expect(
-        dead_code,
-        reason = "Consumed by the segmenter stage in the next commit."
-    )]
     pub(crate) ordered_reveals: Vec<RevealRecord>,
 }
 
