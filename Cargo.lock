@@ -4758,6 +4758,7 @@ dependencies = [
  "bitcoin",
  "bitcoind-async-client",
  "futures",
+ "hex",
  "proptest",
  "serde",
  "serde_json",

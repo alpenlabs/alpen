@@ -7,7 +7,10 @@ use super::{
     helpers::{format_exec_block, porcelain_field},
     Formattable,
 };
-use crate::{l1::L1BlockRevealStats, state::AppliedExecBlockRange};
+use crate::{
+    l1::{L1BlockRevealStats, L1ScanStats},
+    state::{AppliedExecBlockRange, ReplaySummary},
+};
 
 /// Verifier run report. Stage commits extend this with stage-specific fields.
 #[derive(Debug, Serialize)]
@@ -18,6 +21,32 @@ pub(crate) struct Report {
     pub(crate) blobs_reassembled: u64,
     pub(crate) final_state_root: Buf32,
     pub(crate) applied_range: Option<AppliedExecBlockRange>,
+    pub(crate) expected_state_root: Option<Buf32>,
+    pub(crate) state_root_matches_expected: Option<bool>,
+}
+
+impl Report {
+    /// Assembles a `Report` from the pipeline stage outputs.
+    pub(crate) fn new(
+        scan_stats: L1ScanStats,
+        envelope_count: u64,
+        blobs_reassembled: u64,
+        replay_summary: ReplaySummary,
+        expected_state_root: Option<Buf32>,
+    ) -> Self {
+        let state_root_matches_expected =
+            expected_state_root.map(|expected| expected == replay_summary.final_state_root);
+        Self {
+            fetched_block_count: scan_stats.fetched_block_count,
+            blocks_with_reveals: scan_stats.blocks_with_reveals,
+            envelope_count,
+            blobs_reassembled,
+            final_state_root: replay_summary.final_state_root,
+            applied_range: replay_summary.applied,
+            expected_state_root,
+            state_root_matches_expected,
+        }
+    }
 }
 
 impl Formattable for Report {
@@ -46,6 +75,12 @@ impl Formattable for Report {
                 format_exec_block(range.last),
             ));
             output.push(porcelain_field("applied_range.count", range.count));
+        }
+        if let Some(expected) = self.expected_state_root {
+            output.push(porcelain_field("expected_state_root", expected));
+        }
+        if let Some(matches) = self.state_root_matches_expected {
+            output.push(porcelain_field("state_root_matches_expected", matches));
         }
         for (index, block) in self.blocks_with_reveals.iter().enumerate() {
             output.push(porcelain_field(

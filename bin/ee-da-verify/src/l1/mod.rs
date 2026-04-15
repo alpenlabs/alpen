@@ -22,10 +22,16 @@ pub(crate) struct L1BlockRevealStats {
     pub(crate) reveals_found: u64,
 }
 
-/// Output of the L1 scan stage.
-pub(crate) struct L1ScanOutput {
+/// Aggregate stats from the L1 scan stage (no raw reveals).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct L1ScanStats {
     pub(crate) fetched_block_count: u64,
     pub(crate) blocks_with_reveals: Vec<L1BlockRevealStats>,
+}
+
+/// Output of the L1 scan stage.
+pub(crate) struct L1ScanOutput {
+    pub(crate) stats: L1ScanStats,
     pub(crate) ordered_reveals: Vec<RevealRecord>,
 }
 
@@ -79,8 +85,10 @@ pub(crate) async fn collect_reveals(
     })?;
 
     Ok(L1ScanOutput {
-        fetched_block_count,
-        blocks_with_reveals,
+        stats: L1ScanStats {
+            fetched_block_count,
+            blocks_with_reveals,
+        },
         ordered_reveals,
     })
 }

@@ -49,12 +49,11 @@ async fn run(cli: &Cli) -> Result<Report, DisplayedError> {
     let blobs =
         da::reassemble_da_blobs(envelopes).internal_error("failed to reassemble DA blobs")?;
     let replay_summary = state::replay_reassembled_blobs(&config.chain_spec, &blobs)?;
-    Ok(Report {
-        fetched_block_count: scan_output.fetched_block_count,
-        blocks_with_reveals: scan_output.blocks_with_reveals,
+    Ok(Report::new(
+        scan_output.stats,
         envelope_count,
-        blobs_reassembled: blobs.len() as u64,
-        final_state_root: replay_summary.final_state_root,
-        applied_range: replay_summary.applied,
-    })
+        blobs.len() as u64,
+        replay_summary,
+        cli.expected_root,
+    ))
 }
