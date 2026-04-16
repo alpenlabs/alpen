@@ -27,6 +27,7 @@ strata-db-types.workspace = true
 strata-eectl.workspace = true
 strata-evmexec.workspace = true
 strata-l1-txfmt.workspace = true
+strata-logging.workspace = true
 strata-ol-bridge-types.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chainstate-types.workspace = true

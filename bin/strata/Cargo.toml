@@ -54,7 +54,7 @@ strata-checkpoint-types.workspace = true
 strata-checkpoint-types-ssz = { workspace = true, optional = true }
 strata-codec = { workspace = true, optional = true }
 strata-codec-utils = { workspace = true, optional = true }
-strata-common.workspace = true
+strata-common = { workspace = true, optional = true }
 strata-config.workspace = true
 strata-consensus-logic.workspace = true
 strata-crypto = { workspace = true, optional = true }
@@ -65,6 +65,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-key-derivation = { workspace = true, optional = true }
 strata-ledger-types.workspace = true
+strata-logging.workspace = true
 strata-node-context.workspace = true
 strata-ol-block-assembly = { workspace = true, optional = true }
 strata-ol-chain-types-new.workspace = true

@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
-use strata_common::logging;
 use strata_db_types as _;
+use strata_logging::{LoggingInitConfig, init_logging_from_config};
 #[cfg(test)]
 use strata_ol_state_types as _;
 #[cfg(test)]
@@ -123,7 +123,7 @@ fn main() -> Result<()> {
 fn init_logging(rt: &Handle, config: &strata_config::Config) {
     // Need to set the runtime context for async OTLP setup
     let _g = rt.enter();
-    logging::init_logging_from_config(logging::LoggingInitConfig {
+    init_logging_from_config(LoggingInitConfig {
         service_base_name: "strata-client",
         service_label: config.logging.service_label.as_deref(),
         otlp_url: config.logging.otlp_url.as_deref(),
