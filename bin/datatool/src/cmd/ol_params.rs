@@ -5,10 +5,12 @@ use std::fs;
 use strata_btc_types::BitcoinAmount;
 use strata_identifiers::AccountId;
 use strata_ol_params::{GenesisSnarkAccountData, OLParams};
-use strata_predicate::PredicateKey;
 use strata_primitives::Buf32;
 
-use crate::args::{CmdContext, SubcOlParams};
+use crate::{
+    acct_predicate::resolve_acct_predicate,
+    args::{CmdContext, SubcOlParams},
+};
 
 const ALPEN_EE_ACCOUNT_ID: AccountId = AccountId::new([1u8; 32]);
 
@@ -25,13 +27,20 @@ pub(super) fn exec(cmd: SubcOlParams, ctx: &mut CmdContext) -> anyhow::Result<()
         ctx,
     )?;
 
-    // TODO: handle EE accounts properly https://alpenlabs.atlassian.net/browse/STR-2367
     let mut ol_params = OLParams::new_empty(genesis_l1_view.blk);
 
+    let acct_predicate = resolve_acct_predicate(cmd.alpen_predicate)?;
+    let balance = BitcoinAmount::from_sat(cmd.alpen_balance.unwrap_or(0));
+    let inner_state = match cmd.alpen_inner_state {
+        Some(hex) => hex
+            .parse::<Buf32>()
+            .map_err(|e| anyhow::anyhow!("invalid alpen-inner-state hex: {e}"))?,
+        None => Buf32::zero(),
+    };
     let alpen_ee_account = GenesisSnarkAccountData {
-        predicate: PredicateKey::always_accept(),
-        inner_state: Buf32::zero(),
-        balance: BitcoinAmount::ZERO,
+        predicate: acct_predicate,
+        inner_state,
+        balance,
     };
     ol_params
         .accounts

@@ -7,7 +7,10 @@ use bitcoin::Network;
 use rand_core::OsRng;
 use strata_primitives::L1Height;
 
-use crate::{checkpoint_predicate::CheckpointPredicateOverride, util::resolve_network};
+use crate::{
+    acct_predicate::AcctPredicateOverride, checkpoint_predicate::CheckpointPredicateOverride,
+    util::resolve_network,
+};
 
 /// Args.
 #[derive(FromArgs)]
@@ -306,6 +309,24 @@ pub(crate) struct SubcOlParams {
         description = "path to JSON-serialized genesis L1 view (required when btc-client feature is disabled)"
     )]
     pub(crate) genesis_l1_view_file: Option<String>,
+
+    #[argh(
+        option,
+        description = "alpen snark account predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+    )]
+    pub(crate) alpen_predicate: Option<AcctPredicateOverride>,
+
+    #[argh(
+        option,
+        description = "alpen EE account initial balance in sats (default 0)"
+    )]
+    pub(crate) alpen_balance: Option<u64>,
+
+    #[argh(
+        option,
+        description = "alpen EE account inner state root as 64-char hex (default zero)"
+    )]
+    pub(crate) alpen_inner_state: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]

@@ -11,6 +11,7 @@ use strata_btc_verification as _;
 #[cfg(feature = "sp1-builder")]
 use zkaleido_sp1_groth16_verifier as _;
 
+mod acct_predicate;
 mod args;
 #[cfg(feature = "btc-client")]
 mod btc_client;
