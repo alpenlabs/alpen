@@ -380,10 +380,10 @@ fn main() {
             #[cfg(feature = "sequencer")]
             if ext.sequencer {
                 node_builder = node_builder.extend_rpc_modules({
-                    let storage = storage.clone();
                     let consensus_watcher = consensus_watcher.clone();
                     move |ctx| {
-                        let ee_rpc_server = EeRpcServer::new(storage, consensus_watcher);
+                        let provider = ctx.provider().clone();
+                        let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher);
                         ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
                         Ok(())
                     }
