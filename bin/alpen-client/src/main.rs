@@ -377,18 +377,15 @@ fn main() {
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
             }
 
-            #[cfg(feature = "sequencer")]
-            if ext.sequencer {
-                node_builder = node_builder.extend_rpc_modules({
-                    let consensus_watcher = consensus_watcher.clone();
-                    move |ctx| {
-                        let provider = ctx.provider().clone();
-                        let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher);
-                        ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
-                        Ok(())
-                    }
-                });
-            }
+            node_builder = node_builder.extend_rpc_modules({
+                let consensus_watcher = consensus_watcher.clone();
+                move |ctx| {
+                    let provider = ctx.provider().clone();
+                    let ee_rpc_server = EeRpcServer::new(provider, consensus_watcher);
+                    ctx.modules.merge_configured(ee_rpc_server.into_rpc())?;
+                    Ok(())
+                }
+            });
 
             let handle = node_builder.launch().await?;
 
