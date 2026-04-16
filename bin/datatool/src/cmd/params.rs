@@ -217,12 +217,12 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     })
 }
 
-struct BlockInfo {
-    blockhash: B256,
-    stateroot: B256,
+pub(super) struct BlockInfo {
+    pub(super) blockhash: B256,
+    pub(super) stateroot: B256,
 }
 
-fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
+pub(super) fn get_alpen_ee_genesis_block_info(genesis_json: &str) -> anyhow::Result<BlockInfo> {
     let genesis: Genesis = serde_json::from_str(genesis_json)?;
 
     let chain_spec = ChainSpec::from_genesis(genesis);

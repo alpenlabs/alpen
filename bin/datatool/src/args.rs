@@ -324,9 +324,15 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen EE account inner state root as 64-char hex (default zero)"
+        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config if both are provided (default zero)"
     )]
     pub(crate) alpen_inner_state: Option<String>,
+
+    #[argh(
+        option,
+        description = "path to EVM chain config JSON; used to compute inner state root from genesis block hash when --alpen-inner-state is not provided"
+    )]
+    pub(crate) alpen_chain_config: Option<PathBuf>,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
