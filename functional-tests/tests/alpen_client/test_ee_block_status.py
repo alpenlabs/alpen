@@ -10,8 +10,13 @@ from common.rpc import RpcError
 from common.services.alpen_client import AlpenClientService
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
+from common.wait import wait_until
 
 logger = logging.getLogger(__name__)
+
+# Fullnode OLTracker polls on an interval, so its consensus heads may lag the
+# sequencer by a few seconds. Wait this long for cross-node convergence.
+FULLNODE_SYNC_TIMEOUT = 15
 
 
 @flexitest.register
@@ -45,6 +50,43 @@ class TestEeBlockStatus(BaseTest):
             )
 
         return statuses
+
+    def wait_for_fullnode_match(
+        self,
+        alpen_fullnode: AlpenClientService,
+        block_hash: str,
+        expected_status: str,
+        timeout: int = FULLNODE_SYNC_TIMEOUT,
+    ) -> None:
+        """Poll the fullnode until its status for ``block_hash`` matches ``expected_status``.
+
+        Absorbs the OLTracker polling lag between sequencer and fullnode
+        without making the test flaky.
+        """
+        wait_until(
+            lambda: alpen_fullnode.get_block_status(block_hash) == expected_status,
+            error_with=(
+                f"Fullnode status for {block_hash} did not converge to "
+                f"{expected_status!r} within {timeout}s "
+                f"(last={alpen_fullnode.get_block_status(block_hash)!r})"
+            ),
+            timeout=timeout,
+        )
+
+    def assert_fullnode_matches_sequencer(
+        self,
+        alpen_seq: AlpenClientService,
+        alpen_fullnode: AlpenClientService,
+        alpen_rpc,
+        up_to_block: int,
+    ) -> None:
+        """Assert the fullnode converges to the sequencer's status for each block."""
+        for i in range(up_to_block + 1):
+            block = alpen_rpc.eth_getBlockByNumber(hex(i), False)
+            assert block is not None, f"Failed to get block {i}"
+            seq_status = alpen_seq.get_block_status(block["hash"])
+            self.wait_for_fullnode_match(alpen_fullnode, block["hash"], seq_status)
+            logger.info(f"  Block {i}: fullnode converged to {seq_status}")
 
     def main(self, ctx):
         alpen_seq: AlpenClientService = self.get_service(ServiceType.AlpenSequencer)
@@ -83,23 +125,24 @@ class TestEeBlockStatus(BaseTest):
         assert target_block is not None, f"Failed to get block {self.TARGET_BLOCK_NUMBER}"
         target_hash = target_block["hash"]
 
-        # Fullnode does not serve this method; expect JSON-RPC method-not-found.
+        # Fullnode must also serve the method (STR-3076). Unknown hash still errors.
         fullnode_rpc = alpen_fullnode.create_rpc()
         try:
-            fullnode_rpc.strataee_getBlockStatus(target_hash)
-            raise AssertionError(
-                f"Expected method-not-found on fullnode for block {self.TARGET_BLOCK_NUMBER}"
-            )
+            fullnode_rpc.strataee_getBlockStatus(fake_hash)
+            raise AssertionError("Expected error for non-existent block hash on fullnode")
         except RpcError as e:
             logger.info(
-                "Fullnode returned expected method-not-found: code=%s message=%s",
+                "Fullnode non-existent block returned expected error: code=%s message=%s",
                 e.code,
                 e.message,
             )
-            assert e.code == -32601, f"Expected method-not-found (-32601), got {e.code}"
+            assert e.code == -32602, f"Expected invalid params (-32602), got {e.code}"
 
         initial_status = alpen_seq.get_block_status(target_hash)
         logger.info(f"Block {self.TARGET_BLOCK_NUMBER} initial status: {initial_status}")
+
+        # Fullnode should converge to the same status for the target block.
+        self.wait_for_fullnode_match(alpen_fullnode, target_hash, initial_status)
 
         # Block 0 should be finalized.
         block_0 = alpen_rpc.eth_getBlockByNumber("0x0", False)
@@ -111,6 +154,10 @@ class TestEeBlockStatus(BaseTest):
             logger.info("Initial status consistency check:")
             self.assert_statuses_consistent(
                 alpen_seq, alpen_rpc, up_to_block=self.TARGET_BLOCK_NUMBER
+            )
+            logger.info("Initial fullnode parity check:")
+            self.assert_fullnode_matches_sequencer(
+                alpen_seq, alpen_fullnode, alpen_rpc, up_to_block=self.TARGET_BLOCK_NUMBER
             )
             logger.info(
                 "Block %s is already finalized at initial check; "
@@ -137,6 +184,11 @@ class TestEeBlockStatus(BaseTest):
                 f"Block {i} should be at least confirmed, got {statuses[i]}"
             )
 
+        logger.info("Post-confirmed fullnode parity check:")
+        self.assert_fullnode_matches_sequencer(
+            alpen_seq, alpen_fullnode, alpen_rpc, up_to_block=self.TARGET_BLOCK_NUMBER
+        )
+
         # Mine until target block is finalized.
         status = bitcoin.mine_until(
             check=lambda: alpen_seq.get_block_status(target_hash),
@@ -152,6 +204,11 @@ class TestEeBlockStatus(BaseTest):
         )
         for i in range(self.TARGET_BLOCK_NUMBER + 1):
             assert statuses[i] == "finalized", f"Block {i} should be finalized, got {statuses[i]}"
+
+        logger.info("Post-finalized fullnode parity check:")
+        self.assert_fullnode_matches_sequencer(
+            alpen_seq, alpen_fullnode, alpen_rpc, up_to_block=self.TARGET_BLOCK_NUMBER
+        )
 
         logger.info("Block status progression test passed")
         return True
