@@ -121,7 +121,7 @@ async fn resolve_mempool_fee_rate<R: Reader>(
         .ok_or_else(|| anyhow!("mempool_base_url must be set when fee_policy = \"mempool\""))?;
 
     let explorer = MempoolExplorerClient::new(base_url)?;
-    let fallback_conf_target = config.l1_fee_policy.mempool_fallback_conf_target;
+    let fallback_conf_target = config.mempool_fallback_conf_target();
 
     match explorer.fetch_recommended_fees().await {
         Ok(fees) => Ok(fees.select(mempool_fee_policy)),

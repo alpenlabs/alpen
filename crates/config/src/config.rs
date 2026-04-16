@@ -173,17 +173,54 @@ fn default_l1_fee_rate_source() -> L1FeeRateSourceConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SequencerFeeModelConfig {
     /// Static proving fee charged per unit of raw EVM gas.
-    pub prover_fee_per_gas_wei: u64,
+    pub(crate) prover_fee_per_gas_wei: u64,
 
     /// Basis-points multiplier applied to the estimated DA fee.
-    pub da_overhead_multiplier_bps: u32,
+    pub(crate) da_overhead_multiplier_bps: u32,
 
     /// Small additive fee charged for OL and infrastructure overhead.
-    pub ol_overhead_wei: u64,
+    pub(crate) ol_overhead_wei: u64,
 
     /// Source used to resolve the current L1 fee rate.
     #[serde(default = "default_l1_fee_rate_source")]
-    pub l1_fee_rate_source: L1FeeRateSourceConfig,
+    pub(crate) l1_fee_rate_source: L1FeeRateSourceConfig,
+}
+
+impl SequencerFeeModelConfig {
+    /// Creates a v1 L2 fee-model configuration.
+    pub fn new(
+        prover_fee_per_gas_wei: u64,
+        da_overhead_multiplier_bps: u32,
+        ol_overhead_wei: u64,
+        l1_fee_rate_source: L1FeeRateSourceConfig,
+    ) -> Self {
+        Self {
+            prover_fee_per_gas_wei,
+            da_overhead_multiplier_bps,
+            ol_overhead_wei,
+            l1_fee_rate_source,
+        }
+    }
+
+    /// Returns the proving fee charged per unit of raw EVM gas.
+    pub fn prover_fee_per_gas_wei(&self) -> u64 {
+        self.prover_fee_per_gas_wei
+    }
+
+    /// Returns the basis-points multiplier applied to the estimated DA fee.
+    pub fn da_overhead_multiplier_bps(&self) -> u32 {
+        self.da_overhead_multiplier_bps
+    }
+
+    /// Returns the additive OL and infrastructure overhead fee.
+    pub fn ol_overhead_wei(&self) -> u64 {
+        self.ol_overhead_wei
+    }
+
+    /// Returns the source used to resolve the current L1 fee rate.
+    pub fn l1_fee_rate_source(&self) -> L1FeeRateSourceConfig {
+        self.l1_fee_rate_source
+    }
 }
 
 /// Source for the L1 fee rate used by the fee model.
@@ -588,11 +625,11 @@ mod test {
         assert_eq!(config.sequencer.ol_block_time_ms, 3_000);
         assert_eq!(config.sequencer.max_txs_per_block, 500);
         assert_eq!(config.sequencer.block_template_ttl_secs, 120);
-        assert_eq!(config.fee_model.prover_fee_per_gas_wei, 15);
-        assert_eq!(config.fee_model.da_overhead_multiplier_bps, 12_500);
-        assert_eq!(config.fee_model.ol_overhead_wei, 42);
+        assert_eq!(config.fee_model.prover_fee_per_gas_wei(), 15);
+        assert_eq!(config.fee_model.da_overhead_multiplier_bps(), 12_500);
+        assert_eq!(config.fee_model.ol_overhead_wei(), 42);
         assert_eq!(
-            config.fee_model.l1_fee_rate_source,
+            config.fee_model.l1_fee_rate_source(),
             L1FeeRateSourceConfig::BtcioWriter
         );
 
@@ -619,7 +656,7 @@ mod test {
         .expect("sequencer runtime config should parse");
 
         assert_eq!(
-            config.fee_model.l1_fee_rate_source,
+            config.fee_model.l1_fee_rate_source(),
             L1FeeRateSourceConfig::BtcioWriter
         );
     }
@@ -658,13 +695,13 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.l1_fee_policy.fee_policy,
-            FeePolicy::MempoolExplorer {
+            config.l1_fee_policy.fee_policy(),
+            &FeePolicy::MempoolExplorer {
                 policy: MempoolExplorerFeePolicy::Fastest,
             }
         );
         assert_eq!(
-            config.l1_fee_policy.mempool_base_url.as_deref(),
+            config.l1_fee_policy.mempool_base_url(),
             Some("https://mempool.space/signet")
         );
     }
@@ -684,8 +721,8 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.l1_fee_policy.fee_policy,
-            FeePolicy::MempoolExplorer {
+            config.l1_fee_policy.fee_policy(),
+            &FeePolicy::MempoolExplorer {
                 policy: MempoolExplorerFeePolicy::Economy,
             }
         );
@@ -705,8 +742,8 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.l1_fee_policy.fee_policy,
-            FeePolicy::BitcoinD { conf_target: 6 }
+            config.l1_fee_policy.fee_policy(),
+            &FeePolicy::BitcoinD { conf_target: 6 }
         );
     }
 
@@ -716,11 +753,7 @@ mod test {
             write_poll_dur_ms: 200,
             reveal_amount: 100,
             bundle_interval_ms: 1_000,
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::BitcoinD { conf_target: 6 },
-                mempool_base_url: None,
-                ..L1FeePolicyConfig::default()
-            },
+            l1_fee_policy: L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target: 6 }),
         };
 
         let toml = toml::to_string(&config).expect("writer config should serialize");

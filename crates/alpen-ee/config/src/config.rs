@@ -90,13 +90,15 @@ impl AlpenEeConfig {
 
     /// Returns the resolved fee-model configuration, if one has been attached.
     pub fn fee_model(&self) -> Option<FeeModelConfig> {
-        self.fee_model.as_ref().map(|fee_model| FeeModelConfig {
-            prover_fee_per_gas_wei: u256_from_u64(fee_model.prover_fee_per_gas_wei),
-            da_overhead_multiplier_bps: fee_model.da_overhead_multiplier_bps,
-            ol_overhead_wei: u256_from_u64(fee_model.ol_overhead_wei),
-            l1_fee_rate_source: match fee_model.l1_fee_rate_source {
-                L1FeeRateSourceConfig::BtcioWriter => L1FeeRateSource::BtcioWriter,
-            },
+        self.fee_model.as_ref().map(|fee_model| {
+            FeeModelConfig::new(
+                u256_from_u64(fee_model.prover_fee_per_gas_wei()),
+                fee_model.da_overhead_multiplier_bps(),
+                u256_from_u64(fee_model.ol_overhead_wei()),
+                match fee_model.l1_fee_rate_source() {
+                    L1FeeRateSourceConfig::BtcioWriter => L1FeeRateSource::BtcioWriter,
+                },
+            )
         })
     }
 
@@ -140,17 +142,8 @@ mod tests {
             Some(7),
         )
         .with_fee_model_config(
-            SequencerFeeModelConfig {
-                prover_fee_per_gas_wei: 15,
-                da_overhead_multiplier_bps: 12_500,
-                ol_overhead_wei: 42,
-                l1_fee_rate_source: L1FeeRateSourceConfig::BtcioWriter,
-            },
-            L1FeePolicyConfig {
-                fee_policy: FeePolicy::BitcoinD { conf_target: 6 },
-                mempool_base_url: None,
-                ..L1FeePolicyConfig::default()
-            },
+            SequencerFeeModelConfig::new(15, 12_500, 42, L1FeeRateSourceConfig::BtcioWriter),
+            L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target: 6 }),
         );
 
         let fee_model = config.fee_model().expect("fee model must be attached");
@@ -159,13 +152,13 @@ mod tests {
             .expect("l1 fee policy must be attached");
 
         assert_eq!(config.db_retry_count(), 7);
-        assert_eq!(fee_model.prover_fee_per_gas_wei, u256_from_u64(15));
-        assert_eq!(fee_model.da_overhead_multiplier_bps, 12_500);
-        assert_eq!(fee_model.ol_overhead_wei, u256_from_u64(42));
-        assert_eq!(fee_model.l1_fee_rate_source, L1FeeRateSource::BtcioWriter);
+        assert_eq!(fee_model.prover_fee_per_gas_wei(), u256_from_u64(15));
+        assert_eq!(fee_model.da_overhead_multiplier_bps(), 12_500);
+        assert_eq!(fee_model.ol_overhead_wei(), u256_from_u64(42));
+        assert_eq!(fee_model.l1_fee_rate_source(), L1FeeRateSource::BtcioWriter);
         assert_eq!(
-            l1_fee_policy.fee_policy,
-            FeePolicy::BitcoinD { conf_target: 6 }
+            l1_fee_policy.fee_policy(),
+            &FeePolicy::BitcoinD { conf_target: 6 }
         );
     }
 }

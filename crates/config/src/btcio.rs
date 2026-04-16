@@ -31,14 +31,24 @@ pub struct WriterConfig {
 }
 
 impl WriterConfig {
+    /// Returns the configured L1 fee-policy configuration.
+    pub fn l1_fee_policy(&self) -> &L1FeePolicyConfig {
+        &self.l1_fee_policy
+    }
+
     /// Returns the configured L1 fee policy.
     pub fn fee_policy(&self) -> &FeePolicy {
-        &self.l1_fee_policy.fee_policy
+        self.l1_fee_policy.fee_policy()
     }
 
     /// Returns the configured mempool explorer base URL, if any.
     pub fn mempool_base_url(&self) -> Option<&str> {
-        self.l1_fee_policy.mempool_base_url.as_deref()
+        self.l1_fee_policy.mempool_base_url()
+    }
+
+    /// Returns the bitcoind fallback confirmation target used for mempool failures.
+    pub fn mempool_fallback_conf_target(&self) -> u16 {
+        self.l1_fee_policy.mempool_fallback_conf_target()
     }
 }
 
@@ -47,13 +57,50 @@ impl WriterConfig {
 pub struct L1FeePolicyConfig {
     /// How fees are determined while creating L1 transactions.
     #[serde(flatten)]
-    pub fee_policy: FeePolicy,
+    pub(crate) fee_policy: FeePolicy,
     /// Base URL for mempool.space-compatible fee API.
-    pub mempool_base_url: Option<String>,
+    pub(crate) mempool_base_url: Option<String>,
     /// Confirmation target passed to bitcoind's `estimatesmartfee` when the mempool explorer is
     /// unreachable and the policy falls back to bitcoind.
     #[serde(default = "default_bitcoind_conf_target")]
-    pub mempool_fallback_conf_target: u16,
+    pub(crate) mempool_fallback_conf_target: u16,
+}
+
+impl L1FeePolicyConfig {
+    /// Creates an L1 fee-policy configuration for the provided fee policy.
+    pub fn new(fee_policy: FeePolicy) -> Self {
+        Self {
+            fee_policy,
+            ..Self::default()
+        }
+    }
+
+    /// Returns how fees are determined while creating L1 transactions.
+    pub fn fee_policy(&self) -> &FeePolicy {
+        &self.fee_policy
+    }
+
+    /// Returns the configured mempool explorer base URL, if any.
+    pub fn mempool_base_url(&self) -> Option<&str> {
+        self.mempool_base_url.as_deref()
+    }
+
+    /// Returns the bitcoind fallback confirmation target used for mempool failures.
+    pub fn mempool_fallback_conf_target(&self) -> u16 {
+        self.mempool_fallback_conf_target
+    }
+
+    /// Sets the mempool explorer base URL.
+    pub fn with_mempool_base_url(mut self, mempool_base_url: impl Into<String>) -> Self {
+        self.mempool_base_url = Some(mempool_base_url.into());
+        self
+    }
+
+    /// Sets the bitcoind fallback confirmation target used for mempool failures.
+    pub fn with_mempool_fallback_conf_target(mut self, conf_target: u16) -> Self {
+        self.mempool_fallback_conf_target = conf_target;
+        self
+    }
 }
 
 /// Definition of how fees are determined while creating l1 transactions.

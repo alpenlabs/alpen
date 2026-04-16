@@ -25,38 +25,80 @@ pub enum L1FeeRateSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeModelConfig {
     /// Static proving fee charged per unit of raw EVM gas.
-    pub prover_fee_per_gas_wei: U256,
+    pub(crate) prover_fee_per_gas_wei: U256,
 
     /// Basis-points multiplier applied to estimated DA cost.
-    pub da_overhead_multiplier_bps: u32,
+    pub(crate) da_overhead_multiplier_bps: u32,
 
     /// Small additive fee charged for OL and infrastructure overhead.
-    pub ol_overhead_wei: U256,
+    pub(crate) ol_overhead_wei: U256,
 
     /// Source used to resolve the L1 fee rate.
-    pub l1_fee_rate_source: L1FeeRateSource,
+    pub(crate) l1_fee_rate_source: L1FeeRateSource,
 }
 
 /// Inputs required to quote fees for a transaction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeQuoteInputs {
     /// Estimated raw EVM gas for the transaction.
-    pub raw_evm_gas: u64,
+    pub(crate) raw_evm_gas: u64,
 
     /// Current base fee per gas in wei.
-    pub base_fee_per_gas: U256,
+    pub(crate) base_fee_per_gas: U256,
 
     /// Current priority fee per gas in wei.
-    pub priority_fee_per_gas: U256,
+    pub(crate) priority_fee_per_gas: U256,
 
     /// Resolved L1 fee rate in wei per byte of DA payload.
-    pub l1_fee_rate_wei_per_byte: U256,
+    pub(crate) l1_fee_rate_wei_per_byte: U256,
 
     /// Estimated diff size in bytes for the transaction.
-    pub diff_size_bytes: u64,
+    pub(crate) diff_size_bytes: u64,
 }
 
 impl FeeQuoteInputs {
+    /// Creates fee-quote inputs for a single transaction.
+    pub fn new(
+        raw_evm_gas: u64,
+        base_fee_per_gas: U256,
+        priority_fee_per_gas: U256,
+        l1_fee_rate_wei_per_byte: U256,
+        diff_size_bytes: u64,
+    ) -> Self {
+        Self {
+            raw_evm_gas,
+            base_fee_per_gas,
+            priority_fee_per_gas,
+            l1_fee_rate_wei_per_byte,
+            diff_size_bytes,
+        }
+    }
+
+    /// Returns the estimated raw EVM gas for the transaction.
+    pub fn raw_evm_gas(&self) -> u64 {
+        self.raw_evm_gas
+    }
+
+    /// Returns the current base fee per gas in wei.
+    pub fn base_fee_per_gas(&self) -> U256 {
+        self.base_fee_per_gas
+    }
+
+    /// Returns the current priority fee per gas in wei.
+    pub fn priority_fee_per_gas(&self) -> U256 {
+        self.priority_fee_per_gas
+    }
+
+    /// Returns the resolved L1 fee rate in wei per byte of DA payload.
+    pub fn l1_fee_rate_wei_per_byte(&self) -> U256 {
+        self.l1_fee_rate_wei_per_byte
+    }
+
+    /// Returns the estimated diff size in bytes for the transaction.
+    pub fn diff_size_bytes(&self) -> u64 {
+        self.diff_size_bytes
+    }
+
     /// Returns the total execution gas price in wei.
     pub fn execution_gas_price(&self) -> Result<U256, FeeModelError> {
         fee_add(
@@ -71,31 +113,71 @@ impl FeeQuoteInputs {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeBreakdown {
     /// Raw EVM gas used for execution and block accounting.
-    pub raw_evm_gas: u64,
+    pub(crate) raw_evm_gas: u64,
 
     /// Total execution gas price in wei.
-    pub execution_gas_price: U256,
+    pub(crate) execution_gas_price: U256,
 
     /// EVM execution fee in wei.
-    pub execution_fee: U256,
+    pub(crate) execution_fee: U256,
 
     /// Proving fee in wei.
-    pub prover_fee: U256,
+    pub(crate) prover_fee: U256,
 
     /// DA fee in wei.
-    pub da_fee: U256,
+    pub(crate) da_fee: U256,
 
     /// OL overhead fee in wei.
-    pub ol_overhead_fee: U256,
+    pub(crate) ol_overhead_fee: U256,
 
     /// Sum of all non-execution fees in wei.
-    pub non_execution_fee: U256,
+    pub(crate) non_execution_fee: U256,
 
     /// Total quoted fee in wei.
-    pub total_fee: U256,
+    pub(crate) total_fee: U256,
 }
 
 impl FeeBreakdown {
+    /// Returns the raw EVM gas used for execution and block accounting.
+    pub fn raw_evm_gas(&self) -> u64 {
+        self.raw_evm_gas
+    }
+
+    /// Returns the total execution gas price in wei.
+    pub fn execution_gas_price(&self) -> U256 {
+        self.execution_gas_price
+    }
+
+    /// Returns the EVM execution fee in wei.
+    pub fn execution_fee(&self) -> U256 {
+        self.execution_fee
+    }
+
+    /// Returns the proving fee in wei.
+    pub fn prover_fee(&self) -> U256 {
+        self.prover_fee
+    }
+
+    /// Returns the DA fee in wei.
+    pub fn da_fee(&self) -> U256 {
+        self.da_fee
+    }
+
+    /// Returns the OL overhead fee in wei.
+    pub fn ol_overhead_fee(&self) -> U256 {
+        self.ol_overhead_fee
+    }
+
+    /// Returns the sum of all non-execution fees in wei.
+    pub fn non_execution_fee(&self) -> U256 {
+        self.non_execution_fee
+    }
+
+    /// Returns the total quoted fee in wei.
+    pub fn total_fee(&self) -> U256 {
+        self.total_fee
+    }
+
     /// Converts fee amounts into a [`GasEquivalentQuote`] for budgeting.
     ///
     /// Uses ceiling division when converting non-execution wei into gas
@@ -117,11 +199,11 @@ impl FeeBreakdown {
             .checked_add(non_execution_gas)
             .ok_or(FeeModelError::GasEquivalentOverflow("total_gas"))?;
 
-        Ok(GasEquivalentQuote {
-            execution_gas: self.raw_evm_gas,
+        Ok(GasEquivalentQuote::new(
+            self.raw_evm_gas,
             non_execution_gas,
             total_gas,
-        })
+        ))
     }
 }
 
@@ -129,13 +211,13 @@ impl FeeBreakdown {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GasEquivalentQuote {
     /// Raw EVM execution gas.
-    pub execution_gas: u64,
+    pub(crate) execution_gas: u64,
 
     /// Additional budgeting gas equivalent for non-execution fees.
-    pub non_execution_gas: u64,
+    pub(crate) non_execution_gas: u64,
 
     /// Total budgeting gas.
-    pub total_gas: u64,
+    pub(crate) total_gas: u64,
 }
 
 /// Errors returned while computing fee quotes.
@@ -152,6 +234,41 @@ pub enum FeeModelError {
 }
 
 impl FeeModelConfig {
+    /// Creates a runtime configuration for the v1 fee model.
+    pub fn new(
+        prover_fee_per_gas_wei: U256,
+        da_overhead_multiplier_bps: u32,
+        ol_overhead_wei: U256,
+        l1_fee_rate_source: L1FeeRateSource,
+    ) -> Self {
+        Self {
+            prover_fee_per_gas_wei,
+            da_overhead_multiplier_bps,
+            ol_overhead_wei,
+            l1_fee_rate_source,
+        }
+    }
+
+    /// Returns the proving fee charged per unit of raw EVM gas.
+    pub fn prover_fee_per_gas_wei(&self) -> U256 {
+        self.prover_fee_per_gas_wei
+    }
+
+    /// Returns the basis-points multiplier applied to estimated DA cost.
+    pub fn da_overhead_multiplier_bps(&self) -> u32 {
+        self.da_overhead_multiplier_bps
+    }
+
+    /// Returns the additive OL and infrastructure overhead fee.
+    pub fn ol_overhead_wei(&self) -> U256 {
+        self.ol_overhead_wei
+    }
+
+    /// Returns the source used to resolve the L1 fee rate.
+    pub fn l1_fee_rate_source(&self) -> L1FeeRateSource {
+        self.l1_fee_rate_source
+    }
+
     /// Computes the v1 fee-model breakdown for the provided inputs.
     ///
     /// Returns a [`FeeBreakdown`] on success. The DA component rounds up
@@ -197,6 +314,31 @@ impl FeeModelConfig {
     }
 }
 
+impl GasEquivalentQuote {
+    fn new(execution_gas: u64, non_execution_gas: u64, total_gas: u64) -> Self {
+        Self {
+            execution_gas,
+            non_execution_gas,
+            total_gas,
+        }
+    }
+
+    /// Returns the raw EVM execution gas.
+    pub fn execution_gas(&self) -> u64 {
+        self.execution_gas
+    }
+
+    /// Returns the budgeting gas equivalent for non-execution fees.
+    pub fn non_execution_gas(&self) -> u64 {
+        self.non_execution_gas
+    }
+
+    /// Returns the total budgeting gas.
+    pub fn total_gas(&self) -> u64 {
+        self.total_gas
+    }
+}
+
 /// Checked `U256` addition that returns a [`FeeModelError::Overflow`] tagged
 /// with the calling field name on overflow.
 fn fee_add(lhs: U256, rhs: U256, field: &'static str) -> Result<U256, FeeModelError> {
@@ -219,61 +361,51 @@ mod tests {
 
     #[test]
     fn test_quote_computes_v1_fee_breakdown() {
-        let config = FeeModelConfig {
-            prover_fee_per_gas_wei: U256::from(3u8),
-            da_overhead_multiplier_bps: 12_500,
-            ol_overhead_wei: U256::from(7u8),
-            l1_fee_rate_source: L1FeeRateSource::BtcioWriter,
-        };
-        let inputs = FeeQuoteInputs {
-            raw_evm_gas: 100,
-            base_fee_per_gas: U256::from(10u8),
-            priority_fee_per_gas: U256::from(2u8),
-            l1_fee_rate_wei_per_byte: U256::from(5u8),
-            diff_size_bytes: 4,
-        };
+        let config = FeeModelConfig::new(
+            U256::from(3u8),
+            12_500,
+            U256::from(7u8),
+            L1FeeRateSource::BtcioWriter,
+        );
+        let inputs =
+            FeeQuoteInputs::new(100, U256::from(10u8), U256::from(2u8), U256::from(5u8), 4);
 
         let quote = config.quote(&inputs).expect("quote should compute");
 
-        assert_eq!(quote.execution_gas_price, U256::from(12u8));
-        assert_eq!(quote.execution_fee, U256::from(1_200u64));
-        assert_eq!(quote.prover_fee, U256::from(300u64));
-        assert_eq!(quote.da_fee, U256::from(25u8));
-        assert_eq!(quote.ol_overhead_fee, U256::from(7u8));
-        assert_eq!(quote.non_execution_fee, U256::from(332u64));
-        assert_eq!(quote.total_fee, U256::from(1_532u64));
+        assert_eq!(quote.execution_gas_price(), U256::from(12u8));
+        assert_eq!(quote.execution_fee(), U256::from(1_200u64));
+        assert_eq!(quote.prover_fee(), U256::from(300u64));
+        assert_eq!(quote.da_fee(), U256::from(25u8));
+        assert_eq!(quote.ol_overhead_fee(), U256::from(7u8));
+        assert_eq!(quote.non_execution_fee(), U256::from(332u64));
+        assert_eq!(quote.total_fee(), U256::from(1_532u64));
     }
 
     #[test]
     fn test_quote_supports_undercharge_and_overcharge_multipliers() {
-        let inputs = FeeQuoteInputs {
-            raw_evm_gas: 1,
-            base_fee_per_gas: U256::from(1u8),
-            priority_fee_per_gas: U256::ZERO,
-            l1_fee_rate_wei_per_byte: U256::from(4u8),
-            diff_size_bytes: 5,
-        };
+        let inputs = FeeQuoteInputs::new(1, U256::from(1u8), U256::ZERO, U256::from(4u8), 5);
 
-        let undercharge = FeeModelConfig {
-            prover_fee_per_gas_wei: U256::ZERO,
-            da_overhead_multiplier_bps: 5_000,
-            ol_overhead_wei: U256::ZERO,
-            l1_fee_rate_source: L1FeeRateSource::BtcioWriter,
-        };
-        let overcharge = FeeModelConfig {
-            da_overhead_multiplier_bps: 15_000,
-            ..undercharge.clone()
-        };
+        let undercharge =
+            FeeModelConfig::new(U256::ZERO, 5_000, U256::ZERO, L1FeeRateSource::BtcioWriter);
+        let overcharge = FeeModelConfig::new(
+            undercharge.prover_fee_per_gas_wei(),
+            15_000,
+            undercharge.ol_overhead_wei(),
+            undercharge.l1_fee_rate_source(),
+        );
 
         assert_eq!(
             undercharge
                 .quote(&inputs)
                 .expect("undercharge quote")
-                .da_fee,
+                .da_fee(),
             U256::from(10u8)
         );
         assert_eq!(
-            overcharge.quote(&inputs).expect("overcharge quote").da_fee,
+            overcharge
+                .quote(&inputs)
+                .expect("overcharge quote")
+                .da_fee(),
             U256::from(30u8)
         );
     }
@@ -283,71 +415,43 @@ mod tests {
         // raw_da_fee = 3 * 7 = 21
         // numerator  = 21 * 12_345 = 259_245
         // 259_245 / 10_000 = 25.9245 -> ceil 26.
-        let config = FeeModelConfig {
-            prover_fee_per_gas_wei: U256::ZERO,
-            da_overhead_multiplier_bps: 12_345,
-            ol_overhead_wei: U256::ZERO,
-            l1_fee_rate_source: L1FeeRateSource::BtcioWriter,
-        };
-        let inputs = FeeQuoteInputs {
-            raw_evm_gas: 1,
-            base_fee_per_gas: U256::from(1u8),
-            priority_fee_per_gas: U256::ZERO,
-            l1_fee_rate_wei_per_byte: U256::from(3u8),
-            diff_size_bytes: 7,
-        };
+        let config =
+            FeeModelConfig::new(U256::ZERO, 12_345, U256::ZERO, L1FeeRateSource::BtcioWriter);
+        let inputs = FeeQuoteInputs::new(1, U256::from(1u8), U256::ZERO, U256::from(3u8), 7);
 
         let quote = config.quote(&inputs).expect("quote should compute");
 
-        assert_eq!(quote.da_fee, U256::from(26u8));
+        assert_eq!(quote.da_fee(), U256::from(26u8));
     }
 
     #[test]
     fn test_gas_equivalent_quote_uses_ceil_division() {
-        let config = FeeModelConfig {
-            prover_fee_per_gas_wei: U256::from(3u8),
-            da_overhead_multiplier_bps: 12_500,
-            ol_overhead_wei: U256::from(7u8),
-            l1_fee_rate_source: L1FeeRateSource::BtcioWriter,
-        };
-        let inputs = FeeQuoteInputs {
-            raw_evm_gas: 100,
-            base_fee_per_gas: U256::from(10u8),
-            priority_fee_per_gas: U256::from(2u8),
-            l1_fee_rate_wei_per_byte: U256::from(5u8),
-            diff_size_bytes: 4,
-        };
+        let config = FeeModelConfig::new(
+            U256::from(3u8),
+            12_500,
+            U256::from(7u8),
+            L1FeeRateSource::BtcioWriter,
+        );
+        let inputs =
+            FeeQuoteInputs::new(100, U256::from(10u8), U256::from(2u8), U256::from(5u8), 4);
 
         let gas_quote = config
             .quote(&inputs)
             .and_then(|quote| quote.gas_equivalent_quote())
             .expect("gas-equivalent quote should compute");
 
-        assert_eq!(
-            gas_quote,
-            GasEquivalentQuote {
-                execution_gas: 100,
-                non_execution_gas: 28,
-                total_gas: 128,
-            }
-        );
+        assert_eq!(gas_quote, GasEquivalentQuote::new(100, 28, 128));
     }
 
     #[test]
     fn test_gas_equivalent_quote_rejects_non_zero_fee_with_zero_execution_price() {
-        let config = FeeModelConfig {
-            prover_fee_per_gas_wei: U256::ZERO,
-            da_overhead_multiplier_bps: 10_000,
-            ol_overhead_wei: U256::from(1u8),
-            l1_fee_rate_source: L1FeeRateSource::BtcioWriter,
-        };
-        let inputs = FeeQuoteInputs {
-            raw_evm_gas: 1,
-            base_fee_per_gas: U256::ZERO,
-            priority_fee_per_gas: U256::ZERO,
-            l1_fee_rate_wei_per_byte: U256::ZERO,
-            diff_size_bytes: 0,
-        };
+        let config = FeeModelConfig::new(
+            U256::ZERO,
+            10_000,
+            U256::from(1u8),
+            L1FeeRateSource::BtcioWriter,
+        );
+        let inputs = FeeQuoteInputs::new(1, U256::ZERO, U256::ZERO, U256::ZERO, 0);
 
         let error = config
             .quote(&inputs)
@@ -360,19 +464,9 @@ mod tests {
 
     #[test]
     fn test_quote_reports_overflow() {
-        let config = FeeModelConfig {
-            prover_fee_per_gas_wei: U256::MAX,
-            da_overhead_multiplier_bps: 10_000,
-            ol_overhead_wei: U256::ZERO,
-            l1_fee_rate_source: L1FeeRateSource::BtcioWriter,
-        };
-        let inputs = FeeQuoteInputs {
-            raw_evm_gas: 2,
-            base_fee_per_gas: U256::ZERO,
-            priority_fee_per_gas: U256::ZERO,
-            l1_fee_rate_wei_per_byte: U256::ZERO,
-            diff_size_bytes: 0,
-        };
+        let config =
+            FeeModelConfig::new(U256::MAX, 10_000, U256::ZERO, L1FeeRateSource::BtcioWriter);
+        let inputs = FeeQuoteInputs::new(2, U256::ZERO, U256::ZERO, U256::ZERO, 0);
 
         let error = config
             .quote(&inputs)

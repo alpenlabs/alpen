@@ -568,11 +568,7 @@ fn main() {
                 // config file. For now, we hardcode to `BitcoinD` so that functional-tests can
                 // pass.
                 let writer_config = Arc::new(WriterConfig {
-                    l1_fee_policy: L1FeePolicyConfig {
-                        fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
-                        mempool_base_url: None,
-                        ..L1FeePolicyConfig::default()
-                    },
+                    l1_fee_policy: L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target: 1 }),
                     ..WriterConfig::default()
                 });
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
