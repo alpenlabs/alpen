@@ -324,7 +324,7 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config if both are provided (default zero)"
+        description = "alpen EE account inner state root as 64-char hex; overrides --alpen-chain-config if both are provided"
     )]
     pub(crate) alpen_inner_state: Option<String>,
 

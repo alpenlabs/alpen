@@ -57,7 +57,7 @@ fn resolve_sp1_groth16() -> anyhow::Result<PredicateKey> {
     #[cfg(not(feature = "sp1-builder"))]
     {
         anyhow::bail!(
-            "--acct-predicate sp1-groth16 requires the binary to be built with -F sp1-builder"
+            "--alpen-predicate sp1-groth16 requires the binary to be built with -F sp1-builder"
         );
     }
 }
