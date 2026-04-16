@@ -241,10 +241,20 @@ impl Codec for SignedVarInt {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
-    use crate::{decode_buf_exact, encode_to_vec};
+    use crate::{boundary_u64_strategy, decode_buf_exact, encode_to_vec};
 
     const MAX_VARINT_BYTES: usize = 10;
+
+    fn signed_varint_strategy() -> impl Strategy<Value = SignedVarInt> {
+        (
+            prop_oneof![Just(true), Just(false)],
+            boundary_u64_strategy(),
+        )
+            .prop_map(|(positive, magnitude)| SignedVarInt::new(positive, magnitude))
+    }
 
     // UnsignedVarInt tests
 
@@ -503,6 +513,37 @@ mod tests {
                 mag,
                 expected_len
             );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_unsigned_varint_codec_roundtrip(value in boundary_u64_strategy()) {
+            let varint = UnsignedVarInt::new(value);
+
+            let encoded = encode_to_vec(&varint).expect("test: encode unsigned varint");
+            let decoded: UnsignedVarInt = decode_buf_exact(&encoded).expect("test: decode unsigned varint");
+
+            prop_assert_eq!(decoded, varint);
+        }
+
+        #[test]
+        fn proptest_signed_varint_codec_roundtrip(value in signed_varint_strategy()) {
+            let encoded = encode_to_vec(&value).expect("test: encode signed varint");
+            let decoded: SignedVarInt = decode_buf_exact(&encoded).expect("test: decode signed varint");
+
+            prop_assert_eq!(decoded, value);
+            if decoded.is_zero() {
+                prop_assert!(decoded.is_positive());
+            }
+        }
+
+        #[test]
+        fn proptest_signed_varint_zero_is_normalized(positive in any::<bool>()) {
+            let value = SignedVarInt::new(positive, 0);
+
+            prop_assert_eq!(value, SignedVarInt::ZERO);
+            prop_assert!(value.is_positive());
         }
     }
 }

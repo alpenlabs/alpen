@@ -336,14 +336,33 @@ pub mod counter_schemes {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+    use strata_codec::BufDecoder;
+
     use super::{
-        DaCounter,
+        DaCounter, DaCounterBuilder,
         counter_schemes::{CtrU64ByI16, CtrU64BySignedVarInt, CtrU64ByUnsignedVarInt},
     };
     use crate::{
-        ContextlessDaWrite, CounterScheme, SignedVarInt, UnsignedVarInt, decode_buf_exact,
-        encode_to_vec,
+        CompoundMember, ContextlessDaWrite, CounterScheme, DaBuilder, SignedVarInt, UnsignedVarInt,
+        boundary_u64_strategy, decode_buf_exact, encode_to_vec,
     };
+
+    fn signed_varint_strategy() -> impl Strategy<Value = SignedVarInt> {
+        (
+            prop_oneof![Just(true), Just(false)],
+            boundary_u64_strategy(),
+        )
+            .prop_map(|(positive, magnitude)| SignedVarInt::new(positive, magnitude))
+    }
+
+    fn encode_set_counter<S: CounterScheme>(counter: &DaCounter<S>) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        counter
+            .encode_set(&mut encoded)
+            .expect("test: encode counter via CompoundMember");
+        encoded
+    }
 
     #[test]
     fn test_counter_simple() {
@@ -461,5 +480,156 @@ mod tests {
         let d = ctr.diff().unwrap();
         assert!(d.is_positive());
         assert_eq!(d.magnitude(), 1_000_000_000_000u64);
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_counter_new_changed_normalizes_signed_zero(positive in any::<bool>()) {
+            let counter = DaCounter::<CtrU64BySignedVarInt>::new_changed(SignedVarInt::new(positive, 0));
+
+            prop_assert!(!counter.is_changed());
+            prop_assert_eq!(counter.diff(), None);
+        }
+
+        #[test]
+        fn proptest_counter_new_changed_normalizes_unsigned_zero(base in any::<u64>()) {
+            let mut counter = DaCounter::<CtrU64ByUnsignedVarInt>::new_changed(UnsignedVarInt::ZERO);
+            counter.set_diff(UnsignedVarInt::new(base.saturating_sub(base)));
+
+            prop_assert!(!counter.is_changed());
+            prop_assert_eq!(counter.diff(), None);
+        }
+
+        #[test]
+        fn proptest_counter_signed_compound_member_roundtrip(incr in signed_varint_strategy()) {
+            prop_assume!(!incr.is_zero());
+            let counter = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+
+            let encoded = encode_set_counter(&counter);
+            let mut decoder = BufDecoder::new(&encoded);
+            let decoded = DaCounter::<CtrU64BySignedVarInt>::decode_set(&mut decoder)
+                .expect("test: decode counter via CompoundMember");
+
+            prop_assert_eq!(
+                decoded.diff().copied().map(|diff| (diff.is_positive(), diff.magnitude())),
+                counter.diff().copied().map(|diff| (diff.is_positive(), diff.magnitude()))
+            );
+        }
+
+        #[test]
+        fn proptest_counter_unsigned_compound_member_roundtrip(incr in boundary_u64_strategy()) {
+            prop_assume!(incr != 0);
+            let counter = DaCounter::<CtrU64ByUnsignedVarInt>::new_changed(UnsignedVarInt::new(incr));
+
+            let encoded = encode_set_counter(&counter);
+            let mut decoder = BufDecoder::new(&encoded);
+            let decoded = DaCounter::<CtrU64ByUnsignedVarInt>::decode_set(&mut decoder)
+                .expect("test: decode counter via CompoundMember");
+
+            prop_assert_eq!(
+                decoded.diff().copied().map(UnsignedVarInt::inner),
+                counter.diff().copied().map(UnsignedVarInt::inner)
+            );
+        }
+
+        #[test]
+        fn proptest_counter_signed_compare_apply_reconstructs_target(
+            original in boundary_u64_strategy(),
+            next in boundary_u64_strategy(),
+        ) {
+            let incr = CtrU64BySignedVarInt::compare(original, next)
+                .expect("test: signed scheme compare is total");
+            let counter = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+            let mut applied = original;
+
+            counter.apply(&mut applied).expect("test: apply signed counter");
+
+            prop_assert_eq!(applied, next);
+        }
+
+        #[test]
+        fn proptest_counter_unsigned_compare_apply_reconstructs_target(
+            original in boundary_u64_strategy(),
+            next in boundary_u64_strategy(),
+        ) {
+            if next < original {
+                prop_assert!(CtrU64ByUnsignedVarInt::compare(original, next).is_none());
+            } else {
+                let incr = CtrU64ByUnsignedVarInt::compare(original, next)
+                    .expect("test: non-decreasing pair must produce an increment");
+                let counter = DaCounter::<CtrU64ByUnsignedVarInt>::new_changed(incr);
+                let mut applied = original;
+
+                counter.apply(&mut applied).expect("test: apply unsigned counter");
+
+                prop_assert_eq!(applied, next);
+            }
+        }
+
+        #[test]
+        fn proptest_counter_signed_saturation_matches_update(
+            base in boundary_u64_strategy(),
+            incr in signed_varint_strategy(),
+        ) {
+            let counter = DaCounter::<CtrU64BySignedVarInt>::new_changed(incr);
+            let mut applied = base;
+            counter.apply(&mut applied).expect("test: apply signed counter");
+
+            let expected = if incr.is_positive() {
+                base.saturating_add(incr.magnitude())
+            } else {
+                base.saturating_sub(incr.magnitude())
+            };
+
+            prop_assert_eq!(applied, expected);
+        }
+
+        #[test]
+        fn proptest_counter_unsigned_saturation_matches_update(
+            base in boundary_u64_strategy(),
+            incr in boundary_u64_strategy(),
+        ) {
+            let counter = DaCounter::<CtrU64ByUnsignedVarInt>::new_changed(UnsignedVarInt::new(incr));
+            let mut applied = base;
+            counter.apply(&mut applied).expect("test: apply unsigned counter");
+
+            prop_assert_eq!(applied, base.saturating_add(incr));
+        }
+
+        #[test]
+        fn proptest_counter_builder_signed_roundtrip(
+            original in boundary_u64_strategy(),
+            next in boundary_u64_strategy(),
+        ) {
+            let mut builder = DaCounterBuilder::<CtrU64BySignedVarInt>::from_source(original);
+            builder.set(next).expect("test: signed builder set");
+
+            let counter = builder.into_write().expect("test: build signed counter");
+            let mut applied = original;
+            counter.apply(&mut applied).expect("test: apply built counter");
+
+            prop_assert_eq!(applied, next);
+            prop_assert_eq!(counter.is_changed(), original != next);
+        }
+
+        #[test]
+        fn proptest_counter_builder_unsigned_respects_bounds(
+            original in boundary_u64_strategy(),
+            next in boundary_u64_strategy(),
+        ) {
+            let mut builder = DaCounterBuilder::<CtrU64ByUnsignedVarInt>::from_source(original);
+            let set_result = builder.set(next);
+
+            if next < original {
+                prop_assert!(set_result.is_err());
+            } else {
+                set_result.expect("test: unsigned builder set");
+                let counter = builder.into_write().expect("test: build unsigned counter");
+                let mut applied = original;
+                counter.apply(&mut applied).expect("test: apply built counter");
+
+                prop_assert_eq!(applied, next);
+            }
+        }
     }
 }
