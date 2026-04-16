@@ -1318,7 +1318,8 @@ dependencies = [
  "alpen-ee-rpc-api",
  "async-trait",
  "jsonrpsee",
- "strata-acct-types",
+ "reth-node-builder",
+ "reth-provider",
  "tokio",
 ]
 
