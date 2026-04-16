@@ -155,6 +155,29 @@ mod tests {
     use super::{resolve_fee_rate, MempoolExplorerClient, MempoolRecommendedFees};
     use crate::test_utils::TestBitcoinClient;
 
+    fn writer_config(l1_fee_policy: L1FeePolicyConfig) -> WriterConfig {
+        WriterConfig {
+            l1_fee_policy,
+            ..WriterConfig::default()
+        }
+    }
+
+    fn mempool_writer_config(
+        policy: MempoolExplorerFeePolicy,
+        base_url: Option<String>,
+    ) -> WriterConfig {
+        let mut l1_fee_policy = L1FeePolicyConfig::new(FeePolicy::MempoolExplorer { policy });
+        if let Some(base_url) = base_url {
+            l1_fee_policy = l1_fee_policy.with_mempool_base_url(base_url);
+        }
+
+        writer_config(l1_fee_policy)
+    }
+
+    fn bitcoind_writer_config(conf_target: u16) -> WriterConfig {
+        writer_config(L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target }))
+    }
+
     async fn spawn_single_response_server(status_line: &'static str, body: &'static str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -231,16 +254,7 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::MempoolExplorer {
-                    policy: MempoolExplorerFeePolicy::Fastest,
-                },
-                mempool_base_url: Some(server),
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, Some(server));
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -258,16 +272,7 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::MempoolExplorer {
-                    policy: MempoolExplorerFeePolicy::Economy,
-                },
-                mempool_base_url: Some(server),
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Economy, Some(server));
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -281,16 +286,7 @@ mod tests {
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_invalid_json() {
         let server = spawn_single_response_server("200 OK", "not-json").await;
         let client = TestBitcoinClient::new(1);
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::MempoolExplorer {
-                    policy: MempoolExplorerFeePolicy::Fastest,
-                },
-                mempool_base_url: Some(server),
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, Some(server));
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -304,16 +300,7 @@ mod tests {
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_http_error() {
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
         let client = TestBitcoinClient::new(1);
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::MempoolExplorer {
-                    policy: MempoolExplorerFeePolicy::Fastest,
-                },
-                mempool_base_url: Some(server),
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, Some(server));
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -326,16 +313,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_missing() {
         let client = TestBitcoinClient::new(1);
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::MempoolExplorer {
-                    policy: MempoolExplorerFeePolicy::Fastest,
-                },
-                mempool_base_url: None,
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, None);
 
         let err = resolve_fee_rate(&client, &config)
             .await
@@ -349,16 +327,10 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
         let client = TestBitcoinClient::new(1);
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::MempoolExplorer {
-                    policy: MempoolExplorerFeePolicy::Fastest,
-                },
-                mempool_base_url: Some("not a url".to_string()),
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = mempool_writer_config(
+            MempoolExplorerFeePolicy::Fastest,
+            Some("not a url".to_string()),
+        );
 
         let err = resolve_fee_rate(&client, &config)
             .await
@@ -370,14 +342,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_fee_rate_smart_uses_raw_estimate() {
         let client = Arc::new(TestBitcoinClient::new(1));
-        let config = WriterConfig {
-            l1_fee_policy: L1FeePolicyConfig {
-                fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
-                mempool_base_url: None,
-                ..L1FeePolicyConfig::default()
-            },
-            ..WriterConfig::default()
-        };
+        let config = bitcoind_writer_config(1);
 
         let fee_rate = resolve_fee_rate(client.as_ref(), &config)
             .await
