@@ -1,12 +1,16 @@
-//! High-level manager for prover task record database access.
+//! High-level manager for the prover task store.
+//!
+//! Wraps [`ProverTaskDatabase`] with a threadpool + instrumentation, and
+//! implements [`strata_paas::TaskStore`] directly so the integrated prover
+//! service can consume the manager as its persistent task store without
+//! any extra adapter. The DB trait stores [`TaskRecordData`] verbatim, so
+//! this layer is a thin translation between the `(key, data)` split used
+//! by `TaskStore` and the `(key, record)` tuples used by the DB trait.
 
 use std::sync::Arc;
 
-use strata_db_types::{
-    traits::ProverTaskDatabase,
-    types::{PersistedTaskId, PersistedTaskRecord},
-    DbResult,
-};
+use strata_db_types::{errors::DbError, traits::ProverTaskDatabase};
+use strata_paas::{ProverError, ProverResult, TaskRecord, TaskRecordData, TaskStatus, TaskStore};
 use threadpool::ThreadPool;
 
 use crate::ops::prover_task::{Context, ProverTaskDbOps};
@@ -24,32 +28,78 @@ impl ProverTaskDbManager {
         let ops = Context::new(db).into_ops(pool);
         Self { ops }
     }
+}
 
-    pub fn get_task(&self, task_id: PersistedTaskId) -> DbResult<Option<PersistedTaskRecord>> {
-        self.ops.get_task_blocking(task_id)
+fn db_err(e: DbError) -> ProverError {
+    match e {
+        DbError::EntryAlreadyExists => ProverError::TaskAlreadyExists(String::new()),
+        other => ProverError::Storage(other.to_string()),
+    }
+}
+
+impl TaskStore for ProverTaskDbManager {
+    fn get(&self, key: &[u8]) -> ProverResult<Option<TaskRecord>> {
+        let stored = self.ops.get_task_blocking(key.to_vec()).map_err(db_err)?;
+        Ok(stored.map(|data| TaskRecord::from_parts(key.to_vec(), data)))
     }
 
-    pub fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<PersistedTaskId>> {
-        self.ops.get_task_id_by_uuid_blocking(uuid)
+    fn insert(&self, record: TaskRecord) -> ProverResult<()> {
+        let (key, data) = (record.key().to_vec(), record.data().clone());
+        self.ops
+            .insert_task_blocking(key.clone(), data)
+            .map_err(|e| match e {
+                DbError::EntryAlreadyExists => ProverError::TaskAlreadyExists(format!("{:?}", key)),
+                other => ProverError::Storage(other.to_string()),
+            })
     }
 
-    pub fn insert_task(
-        &self,
-        task_id: PersistedTaskId,
-        record: PersistedTaskRecord,
-    ) -> DbResult<()> {
-        self.ops.insert_task_blocking(task_id, record)
+    fn update_status(&self, key: &[u8], status: TaskStatus) -> ProverResult<()> {
+        self.modify(key, |d| d.set_status(status))
     }
 
-    pub fn update_task(
-        &self,
-        task_id: PersistedTaskId,
-        record: PersistedTaskRecord,
-    ) -> DbResult<()> {
-        self.ops.update_task_blocking(task_id, record)
+    fn set_retry_after(&self, key: &[u8], when_secs: u64) -> ProverResult<()> {
+        self.modify(key, |d| d.set_retry_after_secs(Some(when_secs)))
     }
 
-    pub fn list_all_tasks(&self) -> DbResult<Vec<(PersistedTaskId, PersistedTaskRecord)>> {
-        self.ops.list_all_tasks_blocking()
+    fn set_metadata(&self, key: &[u8], data: Vec<u8>) -> ProverResult<()> {
+        self.modify(key, |d| d.set_metadata(Some(data)))
+    }
+
+    fn list_retriable(&self, now_secs: u64) -> ProverResult<Vec<TaskRecord>> {
+        let items = self.ops.list_retriable_blocking(now_secs).map_err(db_err)?;
+        Ok(items
+            .into_iter()
+            .map(|(k, d)| TaskRecord::from_parts(k, d))
+            .collect())
+    }
+
+    fn list_unfinished(&self) -> ProverResult<Vec<TaskRecord>> {
+        let items = self.ops.list_unfinished_blocking().map_err(db_err)?;
+        Ok(items
+            .into_iter()
+            .map(|(k, d)| TaskRecord::from_parts(k, d))
+            .collect())
+    }
+
+    fn count(&self) -> ProverResult<usize> {
+        self.ops.count_tasks_blocking().map_err(db_err)
+    }
+}
+
+impl ProverTaskDbManager {
+    /// Read-modify-write helper; pure storage-level, not exposed publicly.
+    fn modify<F>(&self, key: &[u8], f: F) -> ProverResult<()>
+    where
+        F: FnOnce(&mut TaskRecordData),
+    {
+        let mut data = self
+            .ops
+            .get_task_blocking(key.to_vec())
+            .map_err(db_err)?
+            .ok_or_else(|| ProverError::TaskNotFound(format!("{:?}", key)))?;
+        f(&mut data);
+        self.ops
+            .put_task_blocking(key.to_vec(), data)
+            .map_err(db_err)
     }
 }

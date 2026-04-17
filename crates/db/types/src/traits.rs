@@ -15,11 +15,8 @@ use strata_identifiers::{
 use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
-use strata_primitives::{
-    nonempty_vec::NonEmptyVec,
-    prelude::*,
-    proof::{ProofContext, ProofKey},
-};
+use strata_paas::TaskRecordData;
+use strata_primitives::{nonempty_vec::NonEmptyVec, prelude::*};
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -33,7 +30,7 @@ use crate::{
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData, PersistedTaskId, PersistedTaskRecord,
+        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
     },
     DbResult, RawMmrId,
 };
@@ -58,7 +55,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn checkpoint_db(&self) -> Arc<impl CheckpointDatabase>;
     fn ol_checkpoint_db(&self) -> Arc<impl OLCheckpointDatabase>;
     fn writer_db(&self) -> Arc<impl L1WriterDatabase>;
-    fn prover_db(&self) -> Arc<impl ProofDatabase>;
+    fn checkpoint_proof_db(&self) -> Arc<impl CheckpointProofDatabase>;
     fn prover_task_db(&self) -> Arc<impl ProverTaskDatabase>;
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
@@ -439,58 +436,55 @@ pub trait L1WriterDatabase: Send + Sync + 'static {
     fn del_intent_entries_from_idx(&self, start_idx: u64) -> DbResult<Vec<u64>>;
 }
 
-pub trait ProofDatabase: Send + Sync + 'static {
-    /// Inserts a proof into the database.
-    ///
-    /// Returns `Ok(())` on success, or an error on failure.
-    fn put_proof(&self, proof_key: ProofKey, proof: ProofReceiptWithMetadata) -> DbResult<()>;
+/// Database interface backing [`strata_paas::TaskStore`] for the integrated
+/// prover service.
+///
+/// Keyed by the serialized `ProofSpec::Task` bytes — same contract as the
+/// in-memory `TaskStore`. All methods are synchronous and expected to be
+/// called through a blocking threadpool by the `strata_storage` manager.
+pub trait ProverTaskDatabase: Send + Sync + 'static {
+    /// Fetch a record by key. `None` if the key is absent.
+    fn get_task(&self, key: Vec<u8>) -> DbResult<Option<TaskRecordData>>;
 
-    /// Retrieves a proof by its key.
-    ///
-    /// Returns `Some(proof)` if found, or `None` if not.
-    fn get_proof(&self, proof_key: &ProofKey) -> DbResult<Option<ProofReceiptWithMetadata>>;
+    /// Insert a new record. Fails with `DbError::EntryAlreadyExists` if
+    /// the key is already present — implementations must do this atomically
+    /// (e.g. `compare_and_swap(None, Some)`).
+    fn insert_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()>;
 
-    /// Deletes a proof by its key.
-    ///
-    /// Tries to delete a proof by its key, returning if it really
-    /// existed or not.
-    fn del_proof(&self, proof_key: ProofKey) -> DbResult<bool>;
+    /// Upsert a record — overwrites any existing entry under the key.
+    fn put_task(&self, key: Vec<u8>, record: TaskRecordData) -> DbResult<()>;
 
-    /// Inserts dependencies for a given [`ProofContext`] into the database.
-    ///
-    /// Returns `Ok(())` on success, or an error on failure.
-    fn put_proof_deps(&self, proof_context: ProofContext, deps: Vec<ProofContext>) -> DbResult<()>;
+    /// All records where `status` is retriable and `retry_after_secs <= now_secs`.
+    fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Retrieves proof dependencies by it's [`ProofContext`].
-    ///
-    /// Returns `Some(dependencies)` if found, or `None` if not.
-    fn get_proof_deps(&self, proof_context: ProofContext) -> DbResult<Option<Vec<ProofContext>>>;
+    /// All records whose status is not yet terminal (Pending / Proving).
+    fn list_unfinished(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>>;
 
-    /// Deletes dependencies for a given [`ProofContext`].
-    ///
-    /// Tries to delete dependencies of by its context, returning if it really
-    /// existed or not.
-    fn del_proof_deps(&self, proof_context: ProofContext) -> DbResult<bool>;
+    /// Number of records in the store.
+    fn count_tasks(&self) -> DbResult<usize>;
 }
 
-/// Database interface for persistent prover task records.
+/// Checkpoint-proof storage.
 ///
-/// These records back PaaS task idempotency and crash recovery.
-pub trait ProverTaskDatabase: Send + Sync + 'static {
-    /// Retrieves a task record by task identifier.
-    fn get_task(&self, task_id: PersistedTaskId) -> DbResult<Option<PersistedTaskRecord>>;
+/// Keyed by [`EpochCommitment`] — the commitment whose checkpoint this
+/// proof attests to. Each proof kind has its own peer trait + manager
+/// (no shared enum, no opaque-byte scheme). Future EE chunk / EE acct
+/// proofs will be `EeChunkProofDatabase`, `EeAcctProofDatabase`, etc.
+pub trait CheckpointProofDatabase: Send + Sync + 'static {
+    /// Inserts a checkpoint proof for the given epoch.
+    ///
+    /// Returns `Ok(())` on success, or an error on failure.
+    fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()>;
 
-    /// Retrieves a task identifier by UUID.
-    fn get_task_id_by_uuid(&self, uuid: String) -> DbResult<Option<PersistedTaskId>>;
+    /// Retrieves the checkpoint proof for the given epoch.
+    ///
+    /// Returns `Some(proof)` if found, or `None` if not.
+    fn get_proof(&self, epoch: EpochCommitment) -> DbResult<Option<ProofReceiptWithMetadata>>;
 
-    /// Inserts a task record.
-    fn insert_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
-
-    /// Updates an existing task record.
-    fn update_task(&self, task_id: PersistedTaskId, record: PersistedTaskRecord) -> DbResult<()>;
-
-    /// Lists all persisted task records.
-    fn list_all_tasks(&self) -> DbResult<Vec<(PersistedTaskId, PersistedTaskRecord)>>;
+    /// Deletes the checkpoint proof for the given epoch.
+    ///
+    /// Tries to delete the proof, returning whether it really existed.
+    fn del_proof(&self, epoch: EpochCommitment) -> DbResult<bool>;
 }
 
 /// A trait encapsulating the provider and store traits for interacting with the broadcast

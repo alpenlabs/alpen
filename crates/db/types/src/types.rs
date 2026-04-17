@@ -15,8 +15,7 @@ use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
 use strata_identifiers::{Buf32, OLBlockCommitment, OLTxId};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
-use strata_paas::TaskStatus;
-use strata_primitives::{proof::ProofContext, L1Height};
+use strata_primitives::L1Height;
 use zkaleido::Proof;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
@@ -419,28 +418,6 @@ impl MempoolTxData {
             timestamp_micros,
         }
     }
-}
-
-/// Persisted task identifier for prover task storage.
-///
-/// Uses [`ProofContext`] as the program key and stores backend as a compact
-/// discriminant: `0 = Native`, `1 = SP1`, `2 = Risc0`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
-pub struct PersistedTaskId {
-    pub program: ProofContext,
-    pub backend: u8,
-}
-
-/// Persisted task record for prover task storage.
-///
-/// Timestamps are persisted as seconds since UNIX epoch.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct PersistedTaskRecord {
-    pub task_id: PersistedTaskId,
-    pub uuid: String,
-    pub status: TaskStatus,
-    pub created_at_secs: u64,
-    pub updated_at_secs: u64,
 }
 
 /// Index into the L1 payload intent store.

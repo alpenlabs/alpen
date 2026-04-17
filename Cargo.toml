@@ -63,6 +63,7 @@ members = [
   "crates/ol/stf",
   "crates/ol-chainstate-types",
   "crates/paas",
+  "crates/prover-core",
   "crates/params",
   "crates/primitives",
   "crates/proof-impl/checkpoint",
@@ -81,7 +82,6 @@ members = [
   "crates/rpc/api",
   "crates/rpc/open-rpc",
   "crates/rpc/open-rpc-macros",
-  "crates/rpc/prover-client-api",
   "crates/rpc/types",
   "crates/rpc/utils",
   "crates/sequencer",
@@ -109,7 +109,6 @@ members = [
   "bin/alpen-client",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
-  "bin/prover-client",
   "bin/prover-perf",
   "bin/strata",                  # New binary
 
@@ -122,7 +121,6 @@ members = [
 
 default-members = [
   "bin/datatool",
-  "bin/prover-client",
   "bin/alpen-reth",
   "bin/alpen-client",
   "bin/strata-client",
@@ -228,7 +226,7 @@ strata-proofimpl-alpen-chunk = { path = "crates/proof-impl/alpen-chunk" }
 strata-proofimpl-checkpoint = { path = "crates/proof-impl/checkpoint" }
 strata-proofimpl-checkpoint-new = { path = "crates/proof-impl/checkpoint-new" }
 strata-proofimpl-evm-ee-stf = { path = "crates/proof-impl/evm-ee-stf" }
-strata-prover-client-rpc-api = { path = "crates/rpc/prover-client-api" }
+strata-prover-core = { path = "crates/prover-core" }
 strata-rpc-api = { path = "crates/rpc/api" }
 strata-rpc-types = { path = "crates/rpc/types" }
 strata-rpc-utils = { path = "crates/rpc/utils" }

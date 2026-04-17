@@ -1,0 +1,20 @@
+[package]
+name = "strata-prover-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+remote = ["zkaleido/remote-prover"]
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+borsh.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "rt"] }
+tracing.workspace = true
+zkaleido.workspace = true

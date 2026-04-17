@@ -43,10 +43,10 @@ use strata_db_types::{
     DbResult,
     chainstate::ChainstateDatabase,
     traits::{
-        AccountDatabase, AsmDatabase, CheckpointDatabase, ClientStateDatabase, DatabaseBackend,
-        L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database, L1WriterDatabase,
-        L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
-        ProofDatabase, ProverTaskDatabase,
+        AccountDatabase, AsmDatabase, CheckpointDatabase, CheckpointProofDatabase,
+        ClientStateDatabase, DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase,
+        L1Database, L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase,
+        OLCheckpointDatabase, OLStateDatabase, ProverTaskDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -191,7 +191,7 @@ impl DatabaseBackend for SledBackend {
         self.writer_db.clone()
     }
 
-    fn prover_db(&self) -> Arc<impl ProofDatabase> {
+    fn checkpoint_proof_db(&self) -> Arc<impl CheckpointProofDatabase> {
         self.prover_db.clone()
     }
 

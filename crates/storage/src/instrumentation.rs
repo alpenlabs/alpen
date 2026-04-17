@@ -47,9 +47,9 @@ pub(crate) mod components {
     /// AccountGenesisDatabase operations. Fields: account_id, epoch
     pub(crate) const STORAGE_ACCOUNT_GENESIS: &str = "storage:account_genesis";
 
-    /// ProofDatabase operations. Fields: proof_key, proof_context
-    pub(crate) const STORAGE_PROOF: &str = "storage:proof";
+    /// CheckpointProofDatabase operations. Fields: epoch
+    pub(crate) const STORAGE_CHECKPOINT_PROOF: &str = "storage:checkpoint_proof";
 
-    /// ProverTaskDatabase operations. Fields: task_id, uuid
+    /// ProverTaskDatabase operations. Fields: key
     pub(crate) const STORAGE_PROVER_TASK: &str = "storage:prover_task";
 }

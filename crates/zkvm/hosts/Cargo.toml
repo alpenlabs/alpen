@@ -7,19 +7,11 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-zkaleido.workspace = true
-zkaleido-native-adapter.workspace = true
-
 # sp1
 strata-sp1-guest-builder = { path = "../../../provers/sp1", optional = true }
 zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
   "remote-prover",
 ], optional = true }
-
-strata-primitives.workspace = true
-strata-proofimpl-checkpoint.workspace = true
-strata-proofimpl-checkpoint-new.workspace = true
-strata-proofimpl-evm-ee-stf.workspace = true
 
 [features]
 default = []

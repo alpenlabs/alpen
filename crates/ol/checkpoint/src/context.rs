@@ -12,12 +12,10 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
-use strata_primitives::{
-    nonempty_vec::NonEmptyVec,
-    proof::{ProofContext, ProofKey, ProofZkVm},
-};
+use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
+use zkaleido::{ProofReceiptWithMetadata, ZkVm};
 use zkaleido_sp1_groth16_verifier::{
     GROTH16_PROOF_COMPRESSED_SIZE, GROTH16_PROOF_UNCOMPRESSED_SIZE, VK_HASH_PREFIX_LENGTH,
 };
@@ -138,8 +136,6 @@ impl Default for ProofNotify {
 /// safe fallback, so the worker must wait for a real proof.
 #[derive(Debug)]
 pub struct ProverConfig {
-    /// The zkVM backend the prover uses (determines the proof DB key).
-    pub zkvm: ProofZkVm,
     /// Notifier shared with the proof storer wakes the worker on new proofs.
     pub notify: Arc<ProofNotify>,
 }
@@ -178,12 +174,14 @@ impl CheckpointWorkerContextImpl {
     ///
     /// SP1 Groth16 proofs persisted by the SP1 host include a 4-byte verifying-key hash prefix.
     /// ASM checkpoint predicate verification expects the raw Groth16 witness bytes (128/256 bytes),
-    /// so strip that SP1 prefix when present.
-    fn payload_proof_bytes(key: &ProofKey, proof_bytes: &[u8]) -> Vec<u8> {
+    /// so strip that SP1 prefix when present. The producing backend is read off the receipt's
+    /// metadata rather than carried in the proof key.
+    fn payload_proof_bytes(receipt: &ProofReceiptWithMetadata) -> Vec<u8> {
+        let proof_bytes = receipt.receipt().proof().as_bytes();
         let prefixed_compressed_len = GROTH16_PROOF_COMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
         let prefixed_uncompressed_len = GROTH16_PROOF_UNCOMPRESSED_SIZE + VK_HASH_PREFIX_LENGTH;
 
-        if matches!(key.host(), ProofZkVm::SP1)
+        if matches!(receipt.metadata().zkvm(), ZkVm::SP1)
             && (proof_bytes.len() == prefixed_compressed_len
                 || proof_bytes.len() == prefixed_uncompressed_len)
         {
@@ -196,21 +194,15 @@ impl CheckpointWorkerContextImpl {
     /// Attempts to read a non-empty proof from the proof DB for the given epoch commitment.
     ///
     /// Returns `Ok(Some(bytes))` if a valid proof is found, `Ok(None)` if no
-    /// proof is available yet. Uses the prover's configured zkVM backend.
-    fn try_read_proof(
-        &self,
-        prover: &ProverConfig,
-        commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<Vec<u8>>> {
-        let proof_key = ProofKey::new(ProofContext::CheckpointCommitment(commitment), prover.zkvm);
-        if let Some(receipt) = self.storage.proof().get_proof(proof_key)? {
-            let proof_bytes =
-                Self::payload_proof_bytes(&proof_key, receipt.receipt().proof().as_bytes());
+    /// proof is available yet.
+    fn try_read_proof(&self, commitment: EpochCommitment) -> anyhow::Result<Option<Vec<u8>>> {
+        if let Some(receipt) = self.storage.checkpoint_proof().get_proof(&commitment)? {
+            let proof_bytes = Self::payload_proof_bytes(&receipt);
             if proof_bytes.is_empty() {
-                warn!(?proof_key, "empty proof receipt found");
+                warn!(%commitment, "empty proof receipt found");
                 return Ok(None);
             }
-            debug!(?proof_key, "proof found for checkpoint");
+            debug!(%commitment, "proof found for checkpoint");
             return Ok(Some(proof_bytes));
         }
         Ok(None)
@@ -291,7 +283,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         let epoch_idx = u64::from(epoch.epoch());
 
         // Check DB first — proof may already exist (e.g. after restart).
-        if let Some(bytes) = self.try_read_proof(prover, *epoch)? {
+        if let Some(bytes) = self.try_read_proof(*epoch)? {
             return Ok(bytes);
         }
 
@@ -301,7 +293,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
             debug!(epoch = epoch_idx, "waiting for checkpoint proof...");
             prover.notify.wait();
 
-            if let Some(bytes) = self.try_read_proof(prover, *epoch)? {
+            if let Some(bytes) = self.try_read_proof(*epoch)? {
                 return Ok(bytes);
             }
         }

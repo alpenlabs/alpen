@@ -3,7 +3,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use strata_primitives::proof::ProofContext;
 #[cfg(feature = "sp1-builder")]
 use strata_sp1_guest_builder::*;
 use zkaleido_sp1_host::SP1Host;
@@ -43,16 +42,3 @@ define_host!(
     GUEST_CHECKPOINT_NEW_ELF,
     "guest-checkpoint-new.elf"
 );
-
-/// Returns a cloned Arc to the appropriate `SP1Host` instance based on the given [`ProofContext`].
-///
-/// This function maps the `ProofContext` variant to its corresponding static [`SP1Host`]
-/// instance, allowing for efficient host selection for different proof types. The Arc is
-/// cloned cheaply (only incrementing reference count).
-pub fn get_host(id: &ProofContext) -> Arc<SP1Host> {
-    match id {
-        ProofContext::EvmEeStf(..) => Arc::clone(&EVM_EE_STF_HOST),
-        ProofContext::Checkpoint(..) => Arc::clone(&CHECKPOINT_HOST),
-        ProofContext::CheckpointCommitment(..) => Arc::clone(&CHECKPOINT_NEW_HOST),
-    }
-}

@@ -46,7 +46,6 @@ pub mod indexed;
 pub mod l1;
 pub mod nonempty_vec;
 pub mod prelude;
-pub mod proof;
 pub mod serde_helpers;
 pub mod sorted_vec;
 pub mod utils;
