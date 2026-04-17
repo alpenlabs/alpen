@@ -5,11 +5,11 @@ mod genesis;
 mod gossip;
 #[cfg(feature = "sequencer")]
 mod header_summary;
-#[cfg(feature = "sequencer")]
-mod noop_prover;
 mod ol_client;
 #[cfg(feature = "sequencer")]
 mod payload_builder;
+#[cfg(feature = "sequencer")]
+mod prover;
 mod rpc_client;
 
 #[cfg(feature = "sequencer")]
@@ -76,9 +76,22 @@ mod sequencer_imports {
     pub(super) use strata_tasks::TaskManager;
     pub(super) use tokio::{runtime::Handle, sync::oneshot};
 
+    pub(super) use alpen_reth_witness::RangeWitnessExtractor;
+    pub(super) use strata_paas::{
+        ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
+    };
+    #[cfg(feature = "sp1")]
+    pub(super) use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST};
+    #[cfg(feature = "sp1")]
+    pub(super) use zkaleido_sp1_host::SP1Host;
+
     pub(super) use crate::{
-        header_summary::RethHeaderSummaryProvider, noop_prover::NoopProver,
+        header_summary::RethHeaderSummaryProvider,
         payload_builder::AlpenRethPayloadEngine,
+        prover::{
+            AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, EeBatchProofDbManager,
+            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver, RangeWitnessFn,
+        },
     };
 }
 
@@ -261,10 +274,6 @@ fn main() {
                 )
             };
             let ol_client = Arc::new(ol_client);
-
-            // TODO: real prover interface
-            #[cfg(feature = "sequencer")]
-            let batch_prover = Arc::new(NoopProver);
 
             // Fetch the genesis epoch commitment from the OL client once at startup.
             let genesis_epoch = ol_client
@@ -587,6 +596,108 @@ fn main() {
                     .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
 
                 info!(target: "alpen-client", "btcio DA pipeline started");
+
+                // EE chunk + acct paas provers. Both use SP1 remote
+                // proving (production); native is dev-only via the
+                // proofimpl crates' `native_host()` for tests.
+                //
+                // Storage layout (sled-backed, own sled db under
+                // `<datadir>/sled` — fully separate from OL's; the
+                // prover trees live alongside the EE node trees):
+                //   - `task_store` — shared across both provers; task
+                //     keys carry a kind tag (`b'c'`/`b'a'`) so chunk
+                //     and batch entries don't collide in one tree.
+                //   - `chunk_receipts` — chunk prover writes (via paas
+                //     auto-store); acct `fetch_input` reads back.
+                //   - `batch_proofs` — outer-proof store keyed by
+                //     `BatchId`; outer hook writes, OL submission reads.
+                //
+                // All backed by `EeProverDbSled`; see
+                // `alpen_ee_database::sleddb::prover_db` for schemas.
+                let prover_db = dbs.prover_db();
+                let task_store: Arc<dyn TaskStore> =
+                    Arc::new(EeProverTaskDbManager::new(prover_db.clone()));
+                let chunk_receipts: Arc<dyn ReceiptStore> =
+                    Arc::new(EeChunkReceiptStore::new(prover_db.clone()));
+                let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
+                let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
+
+                // Chunk-spanning witness extractor.
+                //
+                // Suboptimal: the extractor re-executes every block in the
+                // chunk at proof time just to discover the read set and
+                // build the sparse pre-state. Ideally the witness should
+                // be pre-computed and persisted when the chunk is sealed
+                // (e.g. via a dedicated exex or as part of the chunk
+                // builder), so `fetch_input` only reads it back. That
+                // requires the chunk builder (not yet implemented) to
+                // trigger witness assembly. Until then, on-demand
+                // extraction is the pragmatic path.
+                //
+                // The closure erases the generic reth provider type so
+                // `ChunkSpec` stays non-generic.
+                let range_witness_fn: Arc<RangeWitnessFn> = {
+                    let extractor = Arc::new(RangeWitnessExtractor::new(
+                        node.provider.clone(),
+                        node.evm_config.clone(),
+                    ));
+                    Arc::new(move |start, end| extractor.extract_range_witness(start, end))
+                };
+
+                let chunk_host: SP1Host =
+                    (**ALPEN_CHUNK_HOST).clone();
+                let genesis = {
+                    use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
+                    ext.custom_chain.genesis().config.clone().into_rsp()
+                };
+                let chunk_prover = ProverBuilder::new(ChunkSpec::new(
+                    batch_storage_dyn.clone(),
+                    storage.clone(),
+                    genesis.clone(),
+                    range_witness_fn,
+                ))
+                .task_store(task_store.clone())
+                .receipt_store(chunk_receipts.clone())
+                .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
+                .retry(RetryConfig::default())
+                .remote(chunk_host);
+
+                let acct_host: SP1Host =
+                    (**ALPEN_ACCT_HOST).clone();
+                let acct_prover = ProverBuilder::new(AcctSpec::new(
+                    chunk_receipts.clone(),
+                    batch_storage_dyn.clone(),
+                    storage.clone(),
+                    genesis,
+                ))
+                .task_store(task_store)
+                .receipt_hook(AcctReceiptHook::new(
+                    batch_storage_dyn.clone(),
+                    batch_proofs.clone(),
+                ))
+                .retry(RetryConfig::default())
+                .remote(acct_host);
+
+                let prover_tick = Duration::from_secs(5);
+                let chunk_handle = ProverServiceBuilder::new(chunk_prover)
+                    .tick_interval(prover_tick)
+                    .launch(&btcio_executor)
+                    .await
+                    .map_err(|e| eyre::eyre!("launching chunk prover service: {e}"))?;
+                let acct_handle = ProverServiceBuilder::new(acct_prover)
+                    .tick_interval(prover_tick)
+                    .launch(&btcio_executor)
+                    .await
+                    .map_err(|e| eyre::eyre!("launching acct prover service: {e}"))?;
+
+                let batch_prover = Arc::new(PaasBatchProver::new(
+                    chunk_handle,
+                    acct_handle,
+                    batch_storage_dyn,
+                    batch_proofs,
+                ));
+
+                info!(target: "alpen-client", "EE chunk + acct paas provers started (SP1 remote)");
 
                 let (batch_lifecycle_handle, batch_lifecycle_task) = create_batch_lifecycle_task(
                     None,
