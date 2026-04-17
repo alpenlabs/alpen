@@ -7,7 +7,7 @@ edition = "2024"
 workspace = true
 
 [dependencies]
-bitcoin-bosd-asm = { package = "bitcoin-bosd", version = "0.9.0" }
+bitcoin-bosd.workspace = true
 strata-asm-bridge-msgs.workspace = true
 strata-asm-checkpoint-msgs.workspace = true
 strata-asm-common.workspace = true
