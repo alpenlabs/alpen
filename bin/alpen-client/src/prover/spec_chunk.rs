@@ -8,14 +8,21 @@
 
 use std::{fmt, sync::Arc};
 
+use alloy_consensus::Header;
 use alloy_primitives::B256;
-use alpen_ee_common::{BatchStorage, ChunkId};
+use alloy_rlp::Decodable as _;
+use alpen_ee_common::{BatchStorage, ChunkId, ExecBlockStorage};
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_witness::RangeWitnessData;
 use async_trait::async_trait;
+use reth_primitives_traits::Block as _;
 use rsp_primitives::genesis::Genesis;
 use strata_acct_types::Hash;
-use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage, OutputTransfer};
+use strata_codec::encode_to_vec;
+use strata_ee_acct_types::{ExecBlock, ExecHeader};
+use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer};
+use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
+use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
 
@@ -133,10 +140,116 @@ impl ProofSpec for ChunkSpec {
     type Program = EeChunkProgram;
 
     async fn fetch_input(&self, task: &Self::Task) -> ProverResult<EeChunkProofInput> {
-        let _ = (&self.batch_storage, &self.storage, &self.genesis, &self.range_witness_fn);
-        Err(PaasError::TransientFailure(format!(
-            "ChunkSpec::fetch_input not implemented yet ({task})"
-        )))
+        let chunk_id = task.0;
+
+        // 1. Read the chunk's block list.
+        let (chunk, _status) = self
+            .batch_storage
+            .get_chunk_by_id(chunk_id)
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_chunk_by_id({chunk_id:?}): {e}")))?
+            .ok_or_else(|| {
+                PaasError::TransientFailure(format!("chunk {chunk_id:?} not in storage"))
+            })?;
+
+        let block_hashes: Vec<Hash> = chunk.blocks_iter().collect();
+        if block_hashes.is_empty() {
+            return Err(PaasError::PermanentFailure(format!(
+                "chunk {chunk_id:?} has no blocks"
+            )));
+        }
+
+        let first_block_hash = B256::from(block_hashes[0].0);
+        let last_block_hash = B256::from(block_hashes.last().unwrap().0);
+
+        // 2. Extract chunk-spanning witness via RangeWitnessExtractor.
+        //
+        //    Produces a single sparse `EvmPartialState` covering the union
+        //    of all blocks' read sets, projected onto the pre-chunk state,
+        //    plus the alloy Blocks for `EvmBlock` encoding.
+        //
+        //    Suboptimal: re-executes blocks on every call. Should be
+        //    pre-computed at chunk sealing time once the chunk builder
+        //    exists — see comment in main.rs.
+        let range_fn = self.range_witness_fn.clone();
+        let range_data: RangeWitnessData = tokio::task::spawn_blocking(move || {
+            (range_fn)(first_block_hash, last_block_hash)
+        })
+        .await
+        .map_err(|e| PaasError::TransientFailure(format!("witness extraction join: {e}")))?
+        .map_err(|e| PaasError::TransientFailure(format!("witness extraction: {e}")))?;
+
+        let raw_partial_pre_state = range_data.raw_partial_pre_state;
+
+        // 3. Parent header — decode from the range data's alloy RLP and
+        //    re-encode through EvmHeader for strata_codec compat (the
+        //    guest expects the varint length prefix).
+        let parent_header = Header::decode(&mut range_data.raw_prev_header.as_slice()).map_err(|e| {
+                PaasError::PermanentFailure(format!("decode range prev header: {e}"))
+            })?;
+        let parent_evm_header = EvmHeader::new(parent_header);
+        let parent_blkid: Hash = parent_evm_header.compute_block_id();
+        let raw_prev_header = encode_to_vec(&parent_evm_header)
+            .map_err(|e| PaasError::PermanentFailure(format!("encode prev header: {e}")))?;
+
+        // 4. Build RawBlockData per block from ExecBlockRecord (inputs/outputs)
+        //    + range witness blocks (EvmBlock encoding).
+        let mut block_datas: Vec<RawBlockData> = Vec::with_capacity(block_hashes.len());
+        let mut aggregated_inputs = ExecInputs::new_empty();
+        let mut aggregated_outputs = ExecOutputs::new_empty();
+        let mut tip_blkid = parent_blkid;
+
+        for (block_hash, alloy_block) in block_hashes.iter().zip(&range_data.blocks) {
+            // Authoritative inputs/outputs from ExecBlockRecord.
+            let record = self
+                .storage
+                .get_exec_block(*block_hash)
+                .await
+                .map_err(|e| PaasError::Storage(format!("get_exec_block({block_hash:?}): {e}")))?
+                .ok_or_else(|| {
+                    PaasError::TransientFailure(format!(
+                        "ExecBlockRecord missing for {block_hash:?} in chunk {chunk_id:?}"
+                    ))
+                })?;
+            let block_inputs = record.package().inputs().clone();
+            let block_outputs = record.package().outputs().clone();
+
+            // EvmBlock from the range witness's alloy Block.
+            let evm_header = EvmHeader::new(alloy_block.header.clone());
+            let body = EvmBlockBody::from_alloy_body(alloy_block.body().clone());
+            let block = EvmBlock::new(evm_header, body);
+            tip_blkid = block.get_header().compute_block_id();
+
+            extend_exec_inputs(&mut aggregated_inputs, &block_inputs);
+            extend_exec_outputs(&mut aggregated_outputs, &block_outputs);
+
+            block_datas.push(
+                RawBlockData::from_block::<EvmExecutionEnvironment>(
+                    &block,
+                    block_inputs,
+                    block_outputs,
+                )
+                .map_err(|e| {
+                    PaasError::PermanentFailure(format!("encode block {block_hash:?}: {e}"))
+                })?,
+            );
+        }
+
+        let chunk_transition =
+            ChunkTransition::new(parent_blkid, tip_blkid, aggregated_inputs, aggregated_outputs);
+
+        let raw_chunk = RawChunkData::new(block_datas, parent_blkid);
+        let private_input = PrivateInput::new(
+            chunk_transition,
+            raw_chunk,
+            raw_prev_header,
+            raw_partial_pre_state,
+        );
+
+        Ok(EeChunkProofInput {
+            genesis: self.genesis.clone(),
+            private_input,
+        })
     }
 }
 
