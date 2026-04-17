@@ -6,7 +6,7 @@ version = "0.1.0"
 [workspace]
 
 [dependencies]
-strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc15", features = [
+strata-predicate = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc16", features = [
   "sp1-groth16",
 ] }
 strata-proofimpl-alpen-acct = { path = "../../../crates/proof-impl/alpen-acct" }

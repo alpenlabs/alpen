@@ -6,8 +6,8 @@
 //! NOTE: This implementation bridges the legacy checkpoint payload format with the new SPS-50
 //! envelope layout so we can reuse existing verification logic while moving toward SPS-62.
 
-use bitcoin_bosd_asm::Descriptor as AsmDescriptor;
-use strata_asm_bridge_msgs::BridgeIncomingMsg;
+use bitcoin_bosd::Descriptor;
+use strata_asm_bridge_msgs::{BridgeIncomingMsg, DispatchWithdrawalPayload};
 use strata_asm_checkpoint_msgs::CheckpointIncomingMsg;
 use strata_asm_common::{
     AsmLog, AsmLogEntry, MsgRelayer, Subprotocol, SubprotocolId, TxInputRef, VerifiedAuxData,
@@ -177,13 +177,14 @@ fn process_checkpoint_transaction_v0(
 
     // Forward each withdrawal message to the bridge subprotocol
     for intent in withdrawal_intents {
-        let destination = AsmDescriptor::from_bytes(&intent.destination().to_bytes())
+        let destination = Descriptor::from_bytes(&intent.destination().to_bytes())
             .map_err(|err| CheckpointV0Error::ParsingError(err.to_string()))?;
         let output = WithdrawOutput::new(destination, *intent.amt());
-        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal {
+        let payload = DispatchWithdrawalPayload {
             output,
             selected_operator: OperatorSelection::from_raw(intent.selected_operator().raw()),
         };
+        let bridge_msg = BridgeIncomingMsg::DispatchWithdrawal(payload);
         relayer.relay_msg(&bridge_msg);
     }
 

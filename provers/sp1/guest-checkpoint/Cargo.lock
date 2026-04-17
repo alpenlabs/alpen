@@ -1331,7 +1331,7 @@ dependencies = [
 [[package]]
 name = "strata-btc-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -1366,7 +1366,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.18",
@@ -1375,7 +1375,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "quote",
  "syn",
@@ -1384,7 +1384,7 @@ dependencies = [
 [[package]]
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -1404,7 +1404,7 @@ dependencies = [
 [[package]]
 name = "strata-identifiers"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -1425,7 +1425,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -1451,7 +1451,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "borsh",
  "hex",
