@@ -10,5 +10,5 @@ mod storage;
 
 pub use error::{DbError, DbResult};
 pub use init::{init_db_storage, EeDatabases};
-pub use sleddb::{BroadcastDbOps, ChunkedEnvelopeOps};
+pub use sleddb::{BroadcastDbOps, ChunkedEnvelopeOps, EeProverDbSled};
 pub use storage::EeNodeStorage;
