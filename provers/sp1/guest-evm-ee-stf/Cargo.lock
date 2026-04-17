@@ -536,9 +536,9 @@ dependencies = [
  "reth-primitives",
  "revm",
  "revm-primitives",
- "strata-bridge-types",
  "strata-crypto",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-primitives",
 ]
 
@@ -548,7 +548,7 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-sol-types",
  "serde",
- "strata-bridge-types",
+ "strata-ol-bridge-types",
  "strata-primitives",
 ]
 
@@ -4939,10 +4939,16 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strata-asm-common"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
 dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-asm-manifest-types",
  "strata-btc-types",
  "strata-btc-verification",
@@ -4952,11 +4958,15 @@ dependencies = [
  "strata-msg-fmt",
  "thiserror 2.0.18",
  "tracing",
+ "tree_hash",
+ "tree_hash_derive",
+ "zkaleido-logging",
 ]
 
 [[package]]
 name = "strata-asm-manifest-types"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
 dependencies = [
  "borsh",
  "serde",
@@ -4977,32 +4987,37 @@ dependencies = [
 [[package]]
 name = "strata-asm-stf"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
 dependencies = [
  "bitcoin",
+ "ssz_types",
  "strata-asm-common",
+ "strata-btc-verification",
  "strata-identifiers",
  "strata-l1-txfmt",
 ]
 
 [[package]]
 name = "strata-bridge-types"
-version = "0.3.0-alpha.1"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
 dependencies = [
  "arbitrary",
+ "bitcoin-bosd 0.10.0",
+ "bitvec",
  "borsh",
  "serde",
  "ssz",
  "ssz_derive",
- "strata-codec",
+ "strata-btc-types",
  "strata-identifiers",
- "strata-primitives",
  "thiserror 2.0.18",
 ]
 
 [[package]]
 name = "strata-btc-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5022,11 +5037,14 @@ dependencies = [
 [[package]]
 name = "strata-btc-verification"
 version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
 dependencies = [
  "arbitrary",
  "bitcoin",
  "borsh",
  "serde",
+ "ssz",
+ "ssz_derive",
  "strata-btc-types",
  "strata-crypto",
  "strata-identifiers",
@@ -5051,7 +5069,7 @@ dependencies = [
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.18",
@@ -5060,7 +5078,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -5069,7 +5087,7 @@ dependencies = [
 [[package]]
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5102,7 +5120,7 @@ dependencies = [
 [[package]]
 name = "strata-identifiers"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -5123,7 +5141,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5135,21 +5153,44 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.2.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "borsh",
  "digest 0.10.7",
  "serde",
  "sha2",
+ "ssz",
+ "ssz_codegen",
+ "ssz_derive",
+ "ssz_primitives",
+ "ssz_types",
  "strata-codec",
  "thiserror 2.0.18",
+ "tree_hash",
+ "tree_hash_derive",
 ]
 
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "strata-ol-bridge-types"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "arbitrary",
+ "borsh",
+ "serde",
+ "ssz",
+ "ssz_derive",
+ "strata-bridge-types",
+ "strata-codec",
+ "strata-identifiers",
+ "strata-primitives",
  "thiserror 2.0.18",
 ]
 
@@ -5186,7 +5227,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc15#9e46374e50aa4a5b059e53b81395d9733a958434"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
 dependencies = [
  "borsh",
  "hex",
@@ -5235,7 +5276,7 @@ dependencies = [
  "revm-primitives",
  "rsp-client-executor",
  "serde",
- "strata-bridge-types",
+ "strata-ol-bridge-types",
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
@@ -5254,9 +5295,9 @@ dependencies = [
  "serde",
  "strata-asm-common",
  "strata-asm-stf",
- "strata-bridge-types",
  "strata-csm-types",
  "strata-identifiers",
+ "strata-ol-bridge-types",
  "strata-primitives",
 ]
 
@@ -6118,6 +6159,14 @@ dependencies = [
  "serde",
  "ssz",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "zkaleido-logging"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+dependencies = [
+ "tracing",
 ]
 
 [[package]]
