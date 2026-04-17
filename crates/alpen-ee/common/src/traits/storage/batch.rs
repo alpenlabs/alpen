@@ -81,6 +81,15 @@ pub trait BatchStorage: Send + Sync {
         batch_id: BatchId,
         chunks: Vec<ChunkId>,
     ) -> Result<(), StorageError>;
+
+    /// Get the chunk-id list previously set for a batch.
+    ///
+    /// Returns `None` if `set_batch_chunks` has never been called for
+    /// `batch_id`. Used by the prover to fan out chunk-proof tasks.
+    async fn get_batch_chunks(
+        &self,
+        batch_id: BatchId,
+    ) -> Result<Option<Vec<ChunkId>>, StorageError>;
 }
 
 /// Macro to instantiate all BatchStorage tests for a given storage setup.

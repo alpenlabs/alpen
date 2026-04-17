@@ -335,6 +335,16 @@ impl BatchStorage for EeNodeStorage {
             .await
             .map_err(Into::into)
     }
+
+    async fn get_batch_chunks(
+        &self,
+        batch_id: BatchId,
+    ) -> Result<Option<Vec<ChunkId>>, StorageError> {
+        self.ops
+            .get_batch_chunks_async(batch_id)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]

@@ -172,6 +172,19 @@ pub trait ReceiptStore: Send + Sync + 'static {
     fn get(&self, key: &[u8]) -> ProverResult<Option<ProofReceiptWithMetadata>>;
 }
 
+/// Pass an `Arc<impl ReceiptStore>` straight into the builder: the wrapping
+/// Arc forwards every call to the inner store. Useful when the store is
+/// shared across multiple provers (e.g. a chunk prover writes, an acct
+/// prover reads from the same instance).
+impl<T: ReceiptStore + ?Sized> ReceiptStore for Arc<T> {
+    fn put(&self, key: &[u8], receipt: &ProofReceiptWithMetadata) -> ProverResult<()> {
+        (**self).put(key, receipt)
+    }
+    fn get(&self, key: &[u8]) -> ProverResult<Option<ProofReceiptWithMetadata>> {
+        (**self).get(key)
+    }
+}
+
 /// Domain-specific hook called after a receipt is stored.
 ///
 /// Gets the typed task (not just key bytes), so it can write to domain-specific

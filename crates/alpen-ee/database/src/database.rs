@@ -112,6 +112,9 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Set or update batch-chunk association.
     fn set_batch_chunks(&self, batch_id: BatchId, chunks: Vec<ChunkId>) -> DbResult<()>;
+
+    /// Get the chunk-id list previously set for a batch.
+    fn get_batch_chunks(&self, batch_id: BatchId) -> DbResult<Option<Vec<ChunkId>>>;
 }
 
 pub(crate) mod ops {
@@ -155,6 +158,7 @@ pub(crate) mod ops {
             get_chunk_by_idx(idx: u64) => Option<(Chunk, ChunkStatus)>;
             get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
             set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
+            get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
         }
     }
 }
