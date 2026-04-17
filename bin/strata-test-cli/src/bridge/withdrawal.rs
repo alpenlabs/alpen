@@ -13,9 +13,10 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 
 use super::types::BitcoinDConfig;
 use crate::{
+    btc::new_bitcoind_client,
     constants::MAGIC_BYTES,
     error::Error,
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    taproot::{sync_wallet, taproot_wallet},
 };
 
 /// Creates a withdrawal fulfillment transaction (CLI wrapper)

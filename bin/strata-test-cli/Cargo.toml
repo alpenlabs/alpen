@@ -16,6 +16,7 @@ strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-asm-txs-bridge-v1 = { workspace = true, features = ["test-utils"] }
+strata-btcio.workspace = true
 strata-cli-common.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
@@ -30,6 +31,8 @@ strata-snark-acct-types.workspace = true
 
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
+bitcoin.workspace = true
+bitcoind-async-client.workspace = true
 musig2.workspace = true
 secp256k1.workspace = true
 ssz.workspace = true
