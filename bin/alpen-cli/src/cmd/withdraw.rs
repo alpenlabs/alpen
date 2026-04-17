@@ -24,8 +24,8 @@ use crate::{
     signet::SignetWallet,
 };
 
-/// Withdraws BTC from Alpen to signet. The amount must be a positive integer
-/// multiple of the bridge denomination (currently 1 BTC). Defaults to 1 BTC.
+/// Withdraws BTC from Alpen to signet. The amount must be a positive
+/// multiple of the bridge denomination configured in params.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "withdraw")]
 pub struct WithdrawArgs {
