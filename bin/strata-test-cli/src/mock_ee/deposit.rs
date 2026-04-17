@@ -15,8 +15,9 @@ use strata_ol_bridge_types::DepositDescriptor;
 
 use crate::{
     bridge::types::BitcoinDConfig,
+    btc::new_bitcoind_client,
     constants::MAGIC_BYTES,
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    taproot::{sync_wallet, taproot_wallet},
 };
 
 /// Debug subprotocol ID (u8::MAX = 255).

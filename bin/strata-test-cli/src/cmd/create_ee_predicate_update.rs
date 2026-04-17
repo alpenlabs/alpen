@@ -37,8 +37,9 @@ use strata_l1_txfmt::ParseConfig;
 use strata_predicate::PredicateKey;
 
 use crate::{
+    btc::new_bitcoind_client,
     constants::{MAGIC_BYTES, NETWORK},
-    taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
+    taproot::{sync_wallet, taproot_wallet},
 };
 
 /// Create and broadcast an EE predicate admin update.

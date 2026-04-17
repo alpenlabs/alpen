@@ -7,8 +7,8 @@ use super::{
     create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs, get_address::GetAddressArgs,
-    musig_aggregate_pks::MusigAggregatePksArgs, sign_schnorr_sig::SignSchnorrSigArgs,
-    xonlypk_to_descriptor::XonlypkToDescriptorArgs,
+    musig_aggregate_pks::MusigAggregatePksArgs, post_ee_da_envelope::PostEeDaEnvelopeArgs,
+    sign_schnorr_sig::SignSchnorrSigArgs, xonlypk_to_descriptor::XonlypkToDescriptorArgs,
 };
 
 /// CLI utilities for Strata functional tests
@@ -59,4 +59,7 @@ pub enum Commands {
 
     /// Convert an X-only public key to a BOSD descriptor
     XonlypkToDescriptor(XonlypkToDescriptorArgs),
+
+    /// Broadcast one chunked EE DA envelope with caller-supplied chunk bytes
+    PostEeDaEnvelope(PostEeDaEnvelopeArgs),
 }
