@@ -13,10 +13,20 @@ use zkaleido_native_adapter::NativeHost;
 use crate::process_ee_acct_update;
 
 /// Host-side input for the EE account update proof.
+///
+/// Note: the chunk predicate key (VK of the chunk SP1 program) is NOT
+/// part of this input. The acct guest receives it at compile time via
+/// `vks::GUEST_ALPEN_CHUNK_VK_CONDITION`, baked by `provers/sp1/build.rs`
+/// from the chunk program's Groth16 VK. This is intentional — a
+/// host-supplied key would let a malicious prover bypass chunk proof
+/// verification. See `provers/sp1/guest-alpen-acct/src/main.rs` for the
+/// guest-side construction path.
+///
+/// For native testing, the key lives on [`EeAcctProgram::new`] and is
+/// passed into the `NativeHost` closure directly.
 #[derive(Debug)]
 pub struct EeAcctProofInput {
     pub genesis: Genesis,
-    pub chunk_predicate_key: PredicateKey,
     pub ee_private_input: EePrivateInput,
     pub update_private_input: UpdatePrivateInput,
 }
@@ -139,16 +149,16 @@ mod tests {
 
         // Use Mainnet genesis (valid ChainSpec, not used with zero chunks).
         let genesis = Genesis::Mainnet;
-        let predicate_key = PredicateKey::always_accept();
 
         let proof_input = EeAcctProofInput {
             genesis,
-            chunk_predicate_key: predicate_key.clone(),
             ee_private_input,
             update_private_input,
         };
 
-        let program = EeAcctProgram::new(predicate_key);
+        // Native host uses always_accept — no real Groth16 verification
+        // in native mode (no chunks to verify in this test anyway).
+        let program = EeAcctProgram::new(PredicateKey::always_accept());
         let result = program
             .execute(&proof_input)
             .expect("native execution should succeed");
