@@ -103,7 +103,7 @@ class TestEePredicateFullnodeSync(BaseTest):
         late_join_start_hash = ee_fullnode_0.get_block_by_number(late_join_start_height)["hash"]
 
         _, sequencer_pubkey = generate_sequencer_keypair()
-        factory = AlpenClientFactory(range(30700, 30800))
+        factory = AlpenClientFactory(range(31003, 31103))
         fn0_enode = ee_fullnode_0.get_enode()
 
         tmpdir = tempfile.mkdtemp(prefix="alpen_fullnode_after_vk_rotation_")

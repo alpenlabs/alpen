@@ -84,7 +84,7 @@ class TestFullnodeSync(AlpenClientTest):
         ee_fullnode_0 = self.get_service(ServiceType.AlpenFullNode)
 
         _, pubkey = generate_sequencer_keypair()
-        factory = AlpenClientFactory(range(30600, 30700))
+        factory = AlpenClientFactory(range(30903, 31003))
 
         # Wait for initial sync
         logger.info("Waiting for initial sync...")
