@@ -17,9 +17,8 @@ use strata_btcio::{
     writer::start_envelope_task,
     BtcioParams,
 };
-use strata_common::{
-    logging,
-    retry::{policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES},
+use strata_common::retry::{
+    policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
 use strata_config::Config;
 use strata_consensus_logic::{
@@ -34,6 +33,7 @@ use strata_db_types::{
 };
 use strata_eectl::engine::{ExecEngineCtl, L2BlockRef};
 use strata_evmexec::{engine::RpcExecEngineCtl, EngineRpcClient};
+use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_params::{Params, ProofPublishMode};
 use strata_rpc_api::{
     StrataAdminApiServer, StrataApiServer, StrataDebugApiServer, StrataSequencerApiServer,
@@ -208,7 +208,7 @@ fn main_inner(args: Args) -> anyhow::Result<()> {
 fn init_logging(rt: &Handle, config: &Config) {
     // Need to set the runtime context for async OTLP setup
     let _g = rt.enter();
-    logging::init_logging_from_config(logging::LoggingInitConfig {
+    init_logging_from_config(LoggingInitConfig {
         service_base_name: "strata-client",
         service_label: config.logging.service_label.as_deref(),
         otlp_url: config.logging.otlp_url.as_deref(),

@@ -21,7 +21,7 @@ use duty_fetcher::duty_fetcher_worker;
 use errors::{AppError, Result};
 use helpers::load_seqkey;
 use rpc_client::rpc_client;
-use strata_common::logging;
+use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_tasks::TaskManager;
 use tokio::{
     runtime::{Builder, Handle},
@@ -92,7 +92,7 @@ fn get_config(args: Args) -> Result<Config> {
 fn init_logging(rt: &Handle, config: &Config) {
     // Need to set the runtime context for async OTLP setup
     let _g = rt.enter();
-    logging::init_logging_from_config(logging::LoggingInitConfig {
+    init_logging_from_config(LoggingInitConfig {
         service_base_name: "strata-sequencer",
         service_label: config.logging.service_label.as_deref(),
         otlp_url: config.logging.otlp_url.as_deref(),

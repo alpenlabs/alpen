@@ -15,6 +15,7 @@ strata-checkpoint-types.workspace = true
 strata-common.workspace = true
 strata-crypto.workspace = true
 strata-key-derivation.workspace = true
+strata-logging.workspace = true
 strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-rpc-api = { workspace = true, features = ["client"] }
