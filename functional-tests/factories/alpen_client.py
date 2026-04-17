@@ -11,7 +11,7 @@ from pathlib import Path
 import flexitest
 
 from common.config import EeDaConfig
-from common.config.constants import DEFAULT_EE_BLOCK_TIME_MS
+from common.config.constants import DEFAULT_DA_MAGIC_BYTES, DEFAULT_EE_BLOCK_TIME_MS
 from common.services import AlpenClientProps, AlpenClientService
 
 
@@ -161,6 +161,8 @@ class AlpenClientFactory(flexitest.Factory):
 
         http_url = f"http://127.0.0.1:{http_port}"
 
+        magic_bytes = da_config.magic_bytes if da_config is not None else DEFAULT_DA_MAGIC_BYTES
+        genesis_l1_height = da_config.genesis_l1_height if da_config is not None else None
         props: AlpenClientProps = {
             "http_port": http_port,
             "http_url": http_url,
@@ -168,6 +170,11 @@ class AlpenClientFactory(flexitest.Factory):
             "datadir": str(datadir),
             "mode": "sequencer",
             "enode": None,  # Will be populated after start
+            "chain_spec": custom_chain,
+            "magic_bytes": magic_bytes,
+            "genesis_l1_height": genesis_l1_height,
+            "sequencer_pubkey": sequencer_pubkey,
+            "sequencer_privkey": sequencer_privkey,
         }
 
         # Set environment variable for sequencer private key
@@ -301,6 +308,11 @@ class AlpenClientFactory(flexitest.Factory):
             "datadir": str(datadir),
             "mode": "fullnode",
             "enode": None,
+            "chain_spec": custom_chain,
+            "magic_bytes": DEFAULT_DA_MAGIC_BYTES,
+            "genesis_l1_height": None,
+            "sequencer_pubkey": sequencer_pubkey,
+            "sequencer_privkey": None,
         }
 
         svc = AlpenClientService(

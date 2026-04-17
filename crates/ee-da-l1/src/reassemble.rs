@@ -1,6 +1,7 @@
 //! Reassembles parsed EE DA envelopes into decoded DA blobs.
 
-use alpen_ee_common::{reassemble_da_blob, DaBlob, ReassemblyError};
+use alpen_ee_common::{reassemble_da_blob, DaBlob};
+use strata_codec::CodecError;
 use thiserror::Error;
 
 use crate::ParsedEnvelope;
@@ -9,7 +10,7 @@ use crate::ParsedEnvelope;
 #[derive(Debug, Error)]
 pub enum ReassembleError {
     #[error("blob reassembly failed at envelope {0}: {1}")]
-    Envelope(usize, #[source] ReassemblyError),
+    Envelope(usize, #[source] CodecError),
 }
 
 /// Reassembles parsed envelope chunks into decoded DA blobs.
@@ -29,8 +30,9 @@ pub fn reassemble_da_blobs(
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{prepare_da_chunks, ReassemblyError};
+    use alpen_ee_common::prepare_da_chunks;
     use proptest::{collection, prelude::*};
+    use strata_codec::CodecError;
 
     use super::{reassemble_da_blobs, ReassembleError};
     use crate::test_utils::{
@@ -62,10 +64,13 @@ mod tests {
             let blobs = reassemble_da_blobs(envelopes).expect("reassembly succeeds");
             prop_assert_eq!(blobs.len(), expected_blobs.len());
             prop_assert_eq!(
-                blobs.iter().map(|blob| blob.batch_id).collect::<Vec<_>>(),
+                blobs
+                    .iter()
+                    .map(|blob| (blob.update_seq_no, blob.evm_header.block_num))
+                    .collect::<Vec<_>>(),
                 expected_blobs
                     .iter()
-                    .map(|blob| blob.batch_id)
+                    .map(|blob| (blob.update_seq_no, blob.evm_header.block_num))
                     .collect::<Vec<_>>()
             );
         }
@@ -88,7 +93,7 @@ mod tests {
 
             let err = reassemble_da_blobs(envelopes).expect_err("empty envelope must fail");
             match err {
-                ReassembleError::Envelope(index, ReassemblyError::Empty) => {
+                ReassembleError::Envelope(index, CodecError::MalformedField(_)) => {
                     prop_assert_eq!(index, valid_prefix_block_nums.len());
                 }
                 other => prop_assert!(false, "unexpected error: {other}"),

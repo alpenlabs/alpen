@@ -1,4 +1,4 @@
-use alpen_ee_common::{BatchId, DaBlob, EvmHeaderSummary};
+use alpen_ee_common::{DaBlob, EvmHeaderSummary};
 use bitcoin::{
     absolute::LockTime,
     block::{Header, Version},
@@ -140,7 +140,7 @@ pub(crate) fn chunk_body_strategy(max_len: usize) -> impl Strategy<Value = Vec<u
 
 pub(crate) fn make_test_blob(block_num: u64) -> DaBlob {
     DaBlob {
-        batch_id: test_batch_id(block_num),
+        update_seq_no: block_num,
         evm_header: test_evm_header(block_num),
         state_diff: Default::default(),
     }
@@ -165,12 +165,6 @@ pub(crate) fn multi_chunk_bytecode_len_strategy() -> impl Strategy<Value = usize
 pub(crate) fn build_parsed_envelope_from_chunk_bytes(chunks: Vec<Vec<u8>>) -> ParsedEnvelope {
     let txid = Txid::from_byte_array(synthetic_txid_bytes(&chunks));
     ParsedEnvelope::new(txid, chunks)
-}
-
-fn test_batch_id(block_num: u64) -> BatchId {
-    let prev_block = hash_from_block_num(block_num, 0x11);
-    let last_block = hash_from_block_num(block_num, 0x22);
-    BatchId::from_parts(prev_block.into(), last_block.into())
 }
 
 fn test_evm_header(block_num: u64) -> EvmHeaderSummary {
@@ -213,10 +207,4 @@ fn synthetic_txid_bytes(chunks: &[Vec<u8>]) -> [u8; 32] {
         seed.extend_from_slice(chunk);
     }
     sha256::Hash::hash(&seed).to_byte_array()
-}
-
-fn hash_from_block_num(block_num: u64, tag: u8) -> [u8; 32] {
-    let mut hash = [tag; 32];
-    hash[24..].copy_from_slice(&block_num.to_be_bytes());
-    hash
 }

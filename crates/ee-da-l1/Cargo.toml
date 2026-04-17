@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 alpen-ee-common.workspace = true
 strata-common = { workspace = true, features = ["async"] }
+strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
@@ -20,5 +21,4 @@ thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-strata-codec.workspace = true
 tokio.workspace = true

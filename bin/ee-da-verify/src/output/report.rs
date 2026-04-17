@@ -68,16 +68,8 @@ impl Formattable for Report {
                 range.first_block_num(),
             ));
             output.push(porcelain_field(
-                "applied_range.first_block_hash",
-                range.first_block_hash(),
-            ));
-            output.push(porcelain_field(
                 "applied_range.last_block_num",
                 range.last_block_num(),
-            ));
-            output.push(porcelain_field(
-                "applied_range.last_block_hash",
-                range.last_block_hash(),
             ));
             output.push(porcelain_field("applied_range.count", range.count()));
         }

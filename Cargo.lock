@@ -4774,10 +4774,8 @@ dependencies = [
 name = "ee-da-replay"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alpen-chainspec",
  "alpen-ee-common",
  "alpen-reth-statediff",
- "hex",
  "proptest",
  "serde",
  "strata-identifiers",

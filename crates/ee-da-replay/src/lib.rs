@@ -1,6 +1,5 @@
 //! Replays decoded EE DA blobs into reconstructed execution state.
 
-use alpen_chainspec::chain_value_parser;
 use alpen_ee_common::DaBlob;
 use alpen_reth_statediff::{ReconstructError, StateReconstructor};
 use serde::Serialize;
@@ -11,9 +10,7 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AppliedExecBlockRange {
     first_block_num: u64,
-    first_block_hash: Buf32,
     last_block_num: u64,
-    last_block_hash: Buf32,
     count: usize,
 }
 
@@ -21,9 +18,7 @@ impl AppliedExecBlockRange {
     fn new(first: &DaBlob, last: &DaBlob, count: usize) -> Self {
         Self {
             first_block_num: first.evm_header.block_num,
-            first_block_hash: Buf32::from(blob_last_block_hash(first)),
             last_block_num: last.evm_header.block_num,
-            last_block_hash: Buf32::from(blob_last_block_hash(last)),
             count,
         }
     }
@@ -33,19 +28,9 @@ impl AppliedExecBlockRange {
         self.first_block_num
     }
 
-    /// Returns the first applied EVM block hash.
-    pub fn first_block_hash(&self) -> Buf32 {
-        self.first_block_hash
-    }
-
     /// Returns the last applied EVM block number.
     pub fn last_block_num(&self) -> u64 {
         self.last_block_num
-    }
-
-    /// Returns the last applied EVM block hash.
-    pub fn last_block_hash(&self) -> Buf32 {
-        self.last_block_hash
     }
 
     /// Returns the number of DA blobs applied.
@@ -86,12 +71,14 @@ pub enum ReplayError {
     #[error("invalid chain spec '{chain_spec}': {message}")]
     InvalidChainSpec { chain_spec: String, message: String },
 
-    #[error(
-        "first blob anchor mismatch: expected genesis prev_block {expected_prev_block}, got {actual_prev_block}"
-    )]
-    FirstBlobAnchorMismatch {
-        expected_prev_block: String,
-        actual_prev_block: String,
+    #[error("first blob has update_seq_no {actual}, expected {expected}")]
+    FirstUpdateSeqNoMismatch { expected: u64, actual: u64 },
+
+    #[error("blob {blob_index} has update_seq_no {actual}, expected {expected}")]
+    NonConsecutiveUpdateSeqNo {
+        blob_index: usize,
+        expected: u64,
+        actual: u64,
     },
 
     #[error(
@@ -101,15 +88,6 @@ pub enum ReplayError {
         blob_index: usize,
         previous_block_num: u64,
         current_block_num: u64,
-    },
-
-    #[error(
-        "blob {blob_index} linkage mismatch: expected prev_block {expected_prev_block}, got {actual_prev_block}"
-    )]
-    BatchLinkageMismatch {
-        blob_index: usize,
-        expected_prev_block: String,
-        actual_prev_block: String,
     },
 
     #[error("failed applying state diff for blob {blob_index}: {source}")]
@@ -130,28 +108,27 @@ pub fn replay_blobs(chain_spec: &str, blobs: &[DaBlob]) -> Result<ReplaySummary,
     })?;
 
     if let Some(first_blob) = blobs.first() {
-        let genesis_anchor = resolve_genesis_anchor(chain_spec).map_err(|message| {
-            ReplayError::InvalidChainSpec {
-                chain_spec: chain_spec.to_owned(),
-                message,
-            }
-        })?;
-        let first_prev_block = blob_prev_block_hash(first_blob);
-        if first_prev_block != genesis_anchor {
-            return Err(ReplayError::FirstBlobAnchorMismatch {
-                expected_prev_block: bytes_to_hex(genesis_anchor),
-                actual_prev_block: bytes_to_hex(first_prev_block),
+        if first_blob.update_seq_no != 0 {
+            return Err(ReplayError::FirstUpdateSeqNoMismatch {
+                expected: 0,
+                actual: first_blob.update_seq_no,
             });
         }
     }
 
+    let mut expected_update_seq_no = 0u64;
     let mut previous_block_num = None;
-    let mut previous_last_block = None;
 
     for (blob_index, blob) in blobs.iter().enumerate() {
-        let current_block_num = blob.evm_header.block_num;
-        let current_prev_block = blob_prev_block_hash(blob);
+        if blob.update_seq_no != expected_update_seq_no {
+            return Err(ReplayError::NonConsecutiveUpdateSeqNo {
+                blob_index,
+                expected: expected_update_seq_no,
+                actual: blob.update_seq_no,
+            });
+        }
 
+        let current_block_num = blob.evm_header.block_num;
         if let Some(previous_block_num) = previous_block_num {
             if current_block_num <= previous_block_num {
                 return Err(ReplayError::NonIncreasingBlockNumber {
@@ -162,22 +139,14 @@ pub fn replay_blobs(chain_spec: &str, blobs: &[DaBlob]) -> Result<ReplaySummary,
             }
         }
 
-        if let Some(expected_prev_block) = previous_last_block {
-            if current_prev_block != expected_prev_block {
-                return Err(ReplayError::BatchLinkageMismatch {
-                    blob_index,
-                    expected_prev_block: bytes_to_hex(expected_prev_block),
-                    actual_prev_block: bytes_to_hex(current_prev_block),
-                });
-            }
-        }
-
         reconstructor
             .apply_diff(&blob.state_diff)
             .map_err(|source| ReplayError::ApplyDiff { blob_index, source })?;
 
+        expected_update_seq_no = expected_update_seq_no
+            .checked_add(1)
+            .expect("number of DA blobs fits in u64");
         previous_block_num = Some(current_block_num);
-        previous_last_block = Some(blob_last_block_hash(blob));
     }
 
     let state_root_bytes: [u8; 32] = reconstructor.state_root().into();
@@ -190,26 +159,9 @@ pub fn replay_blobs(chain_spec: &str, blobs: &[DaBlob]) -> Result<ReplaySummary,
     Ok(ReplaySummary::new(applied, final_state_root))
 }
 
-fn resolve_genesis_anchor(chain_spec: &str) -> Result<[u8; 32], String> {
-    let chain_spec = chain_value_parser(chain_spec).map_err(|error| error.to_string())?;
-    Ok(chain_spec.genesis_hash().into())
-}
-
-fn blob_prev_block_hash(blob: &DaBlob) -> [u8; 32] {
-    blob.batch_id.prev_block().into()
-}
-
-fn blob_last_block_hash(blob: &DaBlob) -> [u8; 32] {
-    blob.batch_id.last_block().into()
-}
-
-fn bytes_to_hex(bytes: [u8; 32]) -> String {
-    format!("0x{}", hex::encode(bytes))
-}
-
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{BatchId, DaBlob, EvmHeaderSummary};
+    use alpen_ee_common::{DaBlob, EvmHeaderSummary};
     use proptest::{collection, prelude::*};
 
     use super::{replay_blobs, ReplayError};
@@ -228,14 +180,17 @@ mod tests {
 
     proptest! {
         #[test]
-        fn replay_blobs_applies_valid_linked_sequence(
+        fn replay_blobs_applies_valid_sequence(
             start in 0u64..=(u64::MAX - MAX_SEQUENCE_INCREMENT_SUM),
             increments in collection::vec(1u64..=MAX_SEQUENCE_INCREMENT, 1..=MAX_SEQUENCE_LEN),
         ) {
             let block_numbers = make_block_numbers(start, &increments);
-            let genesis_anchor =
-                super::resolve_genesis_anchor(TEST_CHAIN_SPEC).expect("chain spec must parse");
-            let blobs = make_linked_blobs(genesis_anchor, &block_numbers);
+            let blobs = block_numbers
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, block_num)| test_blob(index as u64, block_num))
+                .collect::<Vec<_>>();
 
             let summary = replay_blobs(TEST_CHAIN_SPEC, &blobs).expect("replay must succeed");
             let applied = summary.applied().expect("applied range must be populated");
@@ -249,15 +204,10 @@ mod tests {
             first_block_num in any::<u64>(),
             non_increase in 0u64..=3,
         ) {
-            let genesis_anchor =
-                super::resolve_genesis_anchor(TEST_CHAIN_SPEC).expect("chain spec must parse");
-            let first_last = hash_from_seed(1);
-            let second_last = hash_from_seed(2);
             let second_block_num = first_block_num.saturating_sub(non_increase);
-
             let blobs = vec![
-                test_blob(genesis_anchor, first_last, first_block_num),
-                test_blob(first_last, second_last, second_block_num),
+                test_blob(0, first_block_num),
+                test_blob(1, second_block_num),
             ];
 
             let err = replay_blobs(TEST_CHAIN_SPEC, &blobs).expect_err("replay must fail");
@@ -270,25 +220,19 @@ mod tests {
         }
 
         #[test]
-        fn replay_blobs_rejects_batch_linkage_mismatch(
+        fn replay_blobs_rejects_non_consecutive_update_seq_no(
             first_block_num in 0u64..=(u64::MAX - MAX_LINKAGE_STEP),
             step in 1u64..=MAX_LINKAGE_STEP,
-            wrong_prev in any::<[u8; 32]>(),
+            bad_seq_no in prop_oneof![Just(0u64), 2u64..=10],
         ) {
-            let genesis_anchor =
-                super::resolve_genesis_anchor(TEST_CHAIN_SPEC).expect("chain spec must parse");
-            let first_last = hash_from_seed(1);
-            let second_last = hash_from_seed(2);
-            prop_assume!(wrong_prev != first_last);
-
             let blobs = vec![
-                test_blob(genesis_anchor, first_last, first_block_num),
-                test_blob(wrong_prev, second_last, first_block_num + step),
+                test_blob(0, first_block_num),
+                test_blob(bad_seq_no, first_block_num + step),
             ];
 
             let err = replay_blobs(TEST_CHAIN_SPEC, &blobs).expect_err("replay must fail");
             match err {
-                ReplayError::BatchLinkageMismatch { blob_index, .. } => {
+                ReplayError::NonConsecutiveUpdateSeqNo { blob_index, .. } => {
                     prop_assert_eq!(blob_index, 1);
                 }
                 other => prop_assert!(false, "unexpected error: {other}"),
@@ -296,27 +240,26 @@ mod tests {
         }
 
         #[test]
-        fn replay_blobs_rejects_first_blob_anchor_mismatch(
+        fn replay_blobs_rejects_first_update_seq_no_mismatch(
             block_num in any::<u64>(),
-            wrong_anchor in any::<[u8; 32]>(),
+            first_seq_no in 1u64..=10,
         ) {
-            let genesis_anchor =
-                super::resolve_genesis_anchor(TEST_CHAIN_SPEC).expect("chain spec must parse");
-            prop_assume!(wrong_anchor != genesis_anchor);
-
-            let blobs = vec![test_blob(wrong_anchor, hash_from_seed(0), block_num)];
+            let blobs = vec![test_blob(first_seq_no, block_num)];
             let err = replay_blobs(TEST_CHAIN_SPEC, &blobs).expect_err("replay must fail");
             match err {
-                ReplayError::FirstBlobAnchorMismatch { .. } => {}
+                ReplayError::FirstUpdateSeqNoMismatch { expected, actual } => {
+                    prop_assert_eq!(expected, 0);
+                    prop_assert_eq!(actual, first_seq_no);
+                }
                 other => prop_assert!(false, "unexpected error: {other}"),
             }
         }
     }
 
-    fn test_blob(prev_block: [u8; 32], last_block: [u8; 32], block_num: u64) -> DaBlob {
+    fn test_blob(update_seq_no: u64, block_num: u64) -> DaBlob {
         let gas_used = block_num % 1_000;
         DaBlob {
-            batch_id: BatchId::from_parts(prev_block.into(), last_block.into()),
+            update_seq_no,
             evm_header: EvmHeaderSummary {
                 block_num,
                 timestamp: block_num,
@@ -328,12 +271,6 @@ mod tests {
         }
     }
 
-    fn hash_from_seed(seed: u64) -> [u8; 32] {
-        let mut hash = [0u8; 32];
-        hash[24..].copy_from_slice(&seed.to_be_bytes());
-        hash
-    }
-
     fn make_block_numbers(start: u64, increments: &[u64]) -> Vec<u64> {
         let mut block_numbers = Vec::with_capacity(increments.len());
         let mut current = start;
@@ -342,18 +279,5 @@ mod tests {
             block_numbers.push(current);
         }
         block_numbers
-    }
-
-    fn make_linked_blobs(genesis_anchor: [u8; 32], block_numbers: &[u64]) -> Vec<DaBlob> {
-        let mut blobs = Vec::with_capacity(block_numbers.len());
-        let mut prev_block = genesis_anchor;
-
-        for (index, block_num) in block_numbers.iter().enumerate() {
-            let last_block = hash_from_seed(index as u64);
-            blobs.push(test_blob(prev_block, last_block, *block_num));
-            prev_block = last_block;
-        }
-
-        blobs
     }
 }
