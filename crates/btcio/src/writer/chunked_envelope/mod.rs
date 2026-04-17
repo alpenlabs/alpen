@@ -6,4 +6,5 @@ mod context;
 mod handle;
 mod signer;
 
+pub use builder::{build_chunked_envelope_txs, ChunkedEnvelopeTxs};
 pub use handle::{create_chunked_envelope_task, ChunkedEnvelopeHandle};
