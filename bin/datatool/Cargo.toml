@@ -16,6 +16,7 @@ strata-asm-params.workspace = true
 strata-btc-types.workspace = true
 strata-btc-verification.workspace = true
 strata-crypto.workspace = true
+strata-ee-acct-types.workspace = true
 strata-identifiers.workspace = true
 strata-key-derivation.workspace = true
 strata-l1-txfmt.workspace = true
@@ -24,7 +25,6 @@ strata-ol-params.workspace = true
 strata-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
-strata-ee-acct-types.workspace = true
 strata-snark-acct-runtime.workspace = true
 
 sp1-verifier = { workspace = true, optional = true }
