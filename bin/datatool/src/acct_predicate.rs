@@ -1,0 +1,91 @@
+//! Account predicate resolution for the Alpen EE snark account.
+
+use std::{error, fmt, str::FromStr};
+
+use strata_predicate::PredicateKey;
+
+/// CLI override for the account predicate type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AcctPredicateOverride {
+    AlwaysAccept,
+    Sp1Groth16,
+}
+
+#[derive(Debug)]
+pub(crate) struct ParseAcctPredicateError(String);
+
+impl fmt::Display for ParseAcctPredicateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "invalid account predicate type '{}', expected 'always-accept' or 'sp1-groth16'",
+            self.0
+        )
+    }
+}
+
+impl error::Error for ParseAcctPredicateError {}
+
+impl FromStr for AcctPredicateOverride {
+    type Err = ParseAcctPredicateError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "always-accept" => Ok(Self::AlwaysAccept),
+            "sp1-groth16" => Ok(Self::Sp1Groth16),
+            _ => Err(ParseAcctPredicateError(s.to_owned())),
+        }
+    }
+}
+
+pub(crate) fn resolve_acct_predicate(
+    override_val: Option<AcctPredicateOverride>,
+) -> anyhow::Result<PredicateKey> {
+    match override_val {
+        Some(AcctPredicateOverride::AlwaysAccept) => Ok(PredicateKey::always_accept()),
+        Some(AcctPredicateOverride::Sp1Groth16) => resolve_sp1_groth16(),
+        None => Ok(resolve_default()),
+    }
+}
+
+fn resolve_sp1_groth16() -> anyhow::Result<PredicateKey> {
+    #[cfg(feature = "sp1-builder")]
+    {
+        Ok(build_sp1_predicate())
+    }
+
+    #[cfg(not(feature = "sp1-builder"))]
+    {
+        anyhow::bail!(
+            "--alpen-predicate sp1-groth16 requires the binary to be built with -F sp1-builder"
+        );
+    }
+}
+
+fn resolve_default() -> PredicateKey {
+    #[cfg(feature = "sp1-builder")]
+    {
+        build_sp1_predicate()
+    }
+
+    #[cfg(not(feature = "sp1-builder"))]
+    {
+        PredicateKey::always_accept()
+    }
+}
+
+#[cfg(feature = "sp1-builder")]
+fn build_sp1_predicate() -> PredicateKey {
+    use strata_predicate::PredicateTypeId;
+    use strata_primitives::buf::Buf32;
+    use strata_sp1_guest_builder::GUEST_ALPEN_ACCT_VK_HASH_STR;
+    use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
+
+    let vk_buf32: Buf32 = GUEST_ALPEN_ACCT_VK_HASH_STR
+        .parse()
+        .expect("invalid sp1 alpen-acct verifier key hash");
+    let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)
+        .expect("Failed to load SP1 Groth16 verifier");
+    let condition_bytes = sp1_verifier.vk.to_uncompressed_bytes();
+    PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
+}
