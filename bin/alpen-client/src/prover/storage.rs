@@ -2,14 +2,13 @@
 //!
 //! Three managers, all wrapping the shared [`EeProverDbSled`]:
 //!
-//! - [`EeProverTaskDbManager`] — impls `paas::TaskStore`. Shared across
-//!   chunk + acct provers via the kind-tagged task-key encoding (see
-//!   `CHUNK_TASK_TAG` / `BATCH_TASK_TAG`).
-//! - [`EeChunkReceiptStore`] — impls `paas::ReceiptStore`. The chunk
-//!   prover writes here; the acct `fetch_input` reads from here.
-//! - [`EeBatchProofDbManager`] — typed API keyed by [`BatchId`]; the
-//!   outer (acct) prover writes here via its `ReceiptHook`, and the
-//!   `BatchProver::get_proof(proof_id)` lookup is served from here.
+//! - [`EeProverTaskDbManager`] — impls `paas::TaskStore`. Shared across chunk + acct provers via
+//!   the kind-tagged task-key encoding (see `CHUNK_TASK_TAG` / `BATCH_TASK_TAG`).
+//! - [`EeChunkReceiptStore`] — impls `paas::ReceiptStore`. The chunk prover writes here; the acct
+//!   `fetch_input` reads from here.
+//! - [`EeBatchProofDbManager`] — typed API keyed by [`BatchId`]; the outer (acct) prover writes
+//!   here via its `ReceiptHook`, and the `BatchProver::get_proof(proof_id)` lookup is served from
+//!   here.
 //!
 //! Parallels the OL pattern (`strata_storage::managers::{ProverTaskDbManager,
 //! CheckpointProofDbManager}`) but lives in its own sled instance

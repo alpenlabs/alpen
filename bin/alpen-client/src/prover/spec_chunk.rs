@@ -20,19 +20,21 @@ use rsp_primitives::genesis::Genesis;
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{ExecBlock, ExecHeader};
-use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer};
+use strata_ee_chain_types::{
+    ChunkTransition, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer,
+};
 use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
+use tokio::task;
 
 /// Type-erased range witness extractor.
 ///
 /// Wraps [`alpen_reth_witness::RangeWitnessExtractor`] behind a closure
 /// so `ChunkSpec` doesn't have to be generic over the reth provider.
 /// Constructed in `main.rs` from the launched node's provider + evm config.
-pub(crate) type RangeWitnessFn =
-    dyn Fn(B256, B256) -> eyre::Result<RangeWitnessData> + Send + Sync;
+pub(crate) type RangeWitnessFn = dyn Fn(B256, B256) -> eyre::Result<RangeWitnessData> + Send + Sync;
 
 /// Chunk-id-shaped task identifier for paas.
 ///
@@ -107,10 +109,10 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// Chunk proof specification.
 ///
 /// Two data sources per chunk:
-/// - [`RangeWitnessExtractor`] (via [`RangeWitnessFn`]) — chunk-spanning
-///   sparse pre-state + per-block alloy Blocks (for `EvmBlock` encoding).
-/// - [`ExecBlockStorage`] — per-block `ExecBlockRecord` for authoritative
-///   `ExecInputs` / `ExecOutputs`.
+/// - `RangeWitnessExtractor` (via [`RangeWitnessFn`]) — chunk-spanning sparse pre-state + per-block
+///   alloy Blocks (for `EvmBlock` encoding).
+/// - `ExecBlockStorage` — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
+///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
@@ -172,21 +174,18 @@ impl ProofSpec for ChunkSpec {
         //    pre-computed at chunk sealing time once the chunk builder
         //    exists — see comment in main.rs.
         let range_fn = self.range_witness_fn.clone();
-        let range_data: RangeWitnessData = tokio::task::spawn_blocking(move || {
-            (range_fn)(first_block_hash, last_block_hash)
-        })
-        .await
-        .map_err(|e| PaasError::TransientFailure(format!("witness extraction join: {e}")))?
-        .map_err(|e| PaasError::TransientFailure(format!("witness extraction: {e}")))?;
+        let range_data: RangeWitnessData =
+            task::spawn_blocking(move || (range_fn)(first_block_hash, last_block_hash))
+                .await
+                .map_err(|e| PaasError::TransientFailure(format!("witness extraction join: {e}")))?
+                .map_err(|e| PaasError::TransientFailure(format!("witness extraction: {e}")))?;
 
         let raw_partial_pre_state = range_data.raw_partial_pre_state;
 
-        // 3. Parent header — decode from the range data's alloy RLP and
-        //    re-encode through EvmHeader for strata_codec compat (the
-        //    guest expects the varint length prefix).
-        let parent_header = Header::decode(&mut range_data.raw_prev_header.as_slice()).map_err(|e| {
-                PaasError::PermanentFailure(format!("decode range prev header: {e}"))
-            })?;
+        // 3. Parent header — decode from the range data's alloy RLP and re-encode through EvmHeader
+        //    for strata_codec compat (the guest expects the varint length prefix).
+        let parent_header = Header::decode(&mut range_data.raw_prev_header.as_slice())
+            .map_err(|e| PaasError::PermanentFailure(format!("decode range prev header: {e}")))?;
         let parent_evm_header = EvmHeader::new(parent_header);
         let parent_blkid: Hash = parent_evm_header.compute_block_id();
         let raw_prev_header = encode_to_vec(&parent_evm_header)
@@ -235,8 +234,12 @@ impl ProofSpec for ChunkSpec {
             );
         }
 
-        let chunk_transition =
-            ChunkTransition::new(parent_blkid, tip_blkid, aggregated_inputs, aggregated_outputs);
+        let chunk_transition = ChunkTransition::new(
+            parent_blkid,
+            tip_blkid,
+            aggregated_inputs,
+            aggregated_outputs,
+        );
 
         let raw_chunk = RawChunkData::new(block_datas, parent_blkid);
         let private_input = PrivateInput::new(

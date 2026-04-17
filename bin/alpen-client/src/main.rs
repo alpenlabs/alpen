@@ -73,15 +73,14 @@ use tracing::{error, info};
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
     pub(super) use alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
-    pub(super) use strata_tasks::TaskManager;
-    pub(super) use tokio::{runtime::Handle, sync::oneshot};
-
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
     };
+    pub(super) use strata_tasks::TaskManager;
     #[cfg(feature = "sp1")]
     pub(super) use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST};
+    pub(super) use tokio::{runtime::Handle, sync::oneshot};
     #[cfg(feature = "sp1")]
     pub(super) use zkaleido_sp1_host::SP1Host;
 
@@ -604,13 +603,12 @@ fn main() {
                 // Storage layout (sled-backed, own sled db under
                 // `<datadir>/sled` — fully separate from OL's; the
                 // prover trees live alongside the EE node trees):
-                //   - `task_store` — shared across both provers; task
-                //     keys carry a kind tag (`b'c'`/`b'a'`) so chunk
-                //     and batch entries don't collide in one tree.
-                //   - `chunk_receipts` — chunk prover writes (via paas
-                //     auto-store); acct `fetch_input` reads back.
-                //   - `batch_proofs` — outer-proof store keyed by
-                //     `BatchId`; outer hook writes, OL submission reads.
+                //   - `task_store` — shared across both provers; task keys carry a kind tag
+                //     (`b'c'`/`b'a'`) so chunk and batch entries don't collide in one tree.
+                //   - `chunk_receipts` — chunk prover writes (via paas auto-store); acct
+                //     `fetch_input` reads back.
+                //   - `batch_proofs` — outer-proof store keyed by `BatchId`; outer hook writes, OL
+                //     submission reads.
                 //
                 // All backed by `EeProverDbSled`; see
                 // `alpen_ee_database::sleddb::prover_db` for schemas.
@@ -644,8 +642,7 @@ fn main() {
                     Arc::new(move |start, end| extractor.extract_range_witness(start, end))
                 };
 
-                let chunk_host: SP1Host =
-                    (**ALPEN_CHUNK_HOST).clone();
+                let chunk_host: SP1Host = (**ALPEN_CHUNK_HOST).clone();
                 let genesis = {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
                     ext.custom_chain.genesis().config.clone().into_rsp()
@@ -662,8 +659,7 @@ fn main() {
                 .retry(RetryConfig::default())
                 .remote(chunk_host);
 
-                let acct_host: SP1Host =
-                    (**ALPEN_ACCT_HOST).clone();
+                let acct_host: SP1Host = (**ALPEN_ACCT_HOST).clone();
                 let acct_prover = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),

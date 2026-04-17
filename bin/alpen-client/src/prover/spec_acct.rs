@@ -8,26 +8,25 @@
 //! DA witnesses are stubbed (`LedgerRefs::new_empty()`) per the EE
 //! account update doc's "Open Questions" section. See
 //! `experimental/evgeniy/ee-da-wiring.md` for the bridge plan.
-//!
 
 use std::{fmt, sync::Arc};
 
 use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage, Storage};
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
+use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
-use rsp_primitives::genesis::Genesis;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
-use strata_snark_acct_runtime::Coinput;
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
-use strata_snark_acct_types::{OutputMessage, OutputTransfer};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore};
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
-use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
-use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
+use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
+use strata_snark_acct_types::{
+    LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
+};
 
 use super::ChunkTask;
 
@@ -139,8 +138,8 @@ impl ProofSpec for AcctSpec {
             )));
         }
 
-        // 2. Batch metadata. The first block is the one immediately after
-        //    `prev_block`; we resolve it via the FIRST chunk's parent_blkid.
+        // 2. Batch metadata. The first block is the one immediately after `prev_block`; we resolve
+        //    it via the FIRST chunk's parent_blkid.
         let (batch, _status) = self
             .batch_storage
             .get_batch_by_id(batch_id)
@@ -165,9 +164,11 @@ impl ProofSpec for AcctSpec {
         //    the check below would fire as TransientFailure. The fix
         //    would be a local EeAccountState projection that walks
         //    sequenced-but-unposted batches forward from the OL tip.
-        let acct_at_epoch = self.storage.best_ee_account_state().await.map_err(|e| {
-            PaasError::Storage(format!("best_ee_account_state: {e}"))
-        })?;
+        let acct_at_epoch = self
+            .storage
+            .best_ee_account_state()
+            .await
+            .map_err(|e| PaasError::Storage(format!("best_ee_account_state: {e}")))?;
         let acct_at_epoch = acct_at_epoch.ok_or_else(|| {
             PaasError::TransientFailure(
                 "no EE account state available yet (genesis not loaded?)".to_string(),
@@ -249,12 +250,7 @@ impl ProofSpec for AcctSpec {
                         .outputs()
                         .output_messages()
                         .iter()
-                        .map(|m| {
-                            OutputMessage::new(
-                                m.dest(),
-                                m.payload().clone(),
-                            )
-                        }),
+                        .map(|m| OutputMessage::new(m.dest(), m.payload().clone())),
                 )
                 .map_err(|_| {
                     PaasError::PermanentFailure("UpdateOutputs messages overflow".to_string())
@@ -321,9 +317,8 @@ impl ProofSpec for AcctSpec {
 
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.
 fn decode_chunk_transition(ci: &ChunkInput) -> ProverResult<ChunkTransition> {
-    ci.try_decode_chunk_transition().map_err(|e| {
-        PaasError::PermanentFailure(format!("decode chunk transition: {e:?}"))
-    })
+    ci.try_decode_chunk_transition()
+        .map_err(|e| PaasError::PermanentFailure(format!("decode chunk transition: {e:?}")))
 }
 
 /// Collect [`ChunkInput`]s for a batch by reading per-chunk receipts from

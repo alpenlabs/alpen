@@ -2,15 +2,13 @@
 //!
 //! Three concerns, all backed by trees on the alpen-client sled
 //! instance (separate from OL's):
-//! - **Shared prover task store** (`prover_task_tree`) — chunk and
-//!   acct provers share one physical tree; key-prefixing on the
-//!   caller side disambiguates.
-//! - **Chunk proof receipts** (`chunk_receipt_tree`) — keyed by task
-//!   bytes; the acct `fetch_input` reads these to assemble chunk
-//!   inputs.
-//! - **Acct proof receipts** (`acct_proof_tree` + `acct_proof_id_index_tree`)
-//!   — keyed by [`BatchId`], with a secondary index from `ProofId` so
-//!   `BatchProver::get_proof(proof_id)` is an O(1) lookup.
+//! - **Shared prover task store** (`prover_task_tree`) — chunk and acct provers share one physical
+//!   tree; key-prefixing on the caller side disambiguates.
+//! - **Chunk proof receipts** (`chunk_receipt_tree`) — keyed by task bytes; the acct `fetch_input`
+//!   reads these to assemble chunk inputs.
+//! - **Acct proof receipts** (`acct_proof_tree` + `acct_proof_id_index_tree`) — keyed by
+//!   [`BatchId`], with a secondary index from `ProofId` so `BatchProver::get_proof(proof_id)` is an
+//!   O(1) lookup.
 //!
 //! This crate provides the low-level DB; the paas-facing managers
 //! (`TaskStore` / `ReceiptStore` impls, typed `BatchProof` API) live
@@ -20,11 +18,7 @@ use std::sync::Arc;
 
 use alpen_ee_common::{BatchId, ProofId};
 use strata_db_store_sled::SledDbConfig;
-use strata_db_types::{
-    errors::DbError,
-    traits::ProverTaskDatabase,
-    DbResult,
-};
+use strata_db_types::{errors::DbError, traits::ProverTaskDatabase, DbResult};
 use strata_paas::TaskRecordData;
 use typed_sled::{SledDb, SledTree};
 use zkaleido::ProofReceiptWithMetadata;
@@ -45,7 +39,10 @@ pub struct EeProverDbSled {
     chunk_receipt_tree: SledTree<ChunkProofReceiptSchema>,
     acct_proof_tree: SledTree<AcctProofReceiptSchema>,
     acct_proof_id_index_tree: SledTree<AcctProofIdIndexSchema>,
-    #[expect(dead_code, reason = "kept for parity with other sled DBs; config-driven retries TBD")]
+    #[expect(
+        dead_code,
+        reason = "kept for parity with other sled DBs; config-driven retries TBD"
+    )]
     config: SledDbConfig,
 }
 
@@ -92,10 +89,7 @@ impl EeProverDbSled {
         Ok(())
     }
 
-    pub fn get_acct_proof(
-        &self,
-        batch_id: BatchId,
-    ) -> DbResult<Option<ProofReceiptWithMetadata>> {
+    pub fn get_acct_proof(&self, batch_id: BatchId) -> DbResult<Option<ProofReceiptWithMetadata>> {
         let db_id: DBBatchId = batch_id.into();
         Ok(self.acct_proof_tree.get(&db_id)?)
     }
