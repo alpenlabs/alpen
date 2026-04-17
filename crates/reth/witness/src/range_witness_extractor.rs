@@ -32,7 +32,11 @@ pub struct RangeWitnessData {
     pub end_block_hash: B256,
     /// Serialized `EvmPartialState` (via `strata_codec`).
     pub raw_partial_pre_state: Vec<u8>,
+    /// RLP-encoded parent header (alloy format).
     pub raw_prev_header: Vec<u8>,
+    /// Alloy blocks in range order (start..=end). Available for callers
+    /// that need per-block header/body data (e.g. `RawBlockData` encoding).
+    pub blocks: Vec<reth_primitives::Block>,
 }
 
 /// Extracts witness data for block ranges.
@@ -93,7 +97,8 @@ where
         let start_state_root = prev_block.header.state_root;
 
         // 1. Execute all blocks to discover accessed state
-        let accessed = self.execute_blocks_for_accessed_state(start_block_num, end_block_num)?;
+        let (accessed, blocks) =
+            self.execute_blocks_for_accessed_state(start_block_num, end_block_num)?;
 
         // 2. Get providers for pre-range and post-range states
         let pre_state_provider = self
@@ -126,6 +131,7 @@ where
             end_block_hash,
             raw_partial_pre_state,
             raw_prev_header,
+            blocks,
         })
     }
 
@@ -133,8 +139,9 @@ where
         &self,
         start_block: u64,
         end_block: u64,
-    ) -> Result<AccumulatedState> {
+    ) -> Result<(AccumulatedState, Vec<reth_primitives::Block>)> {
         let mut acc = AccumulatedState::default();
+        let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
 
         for blk_num in start_block..=end_block {
             let block = self
@@ -142,7 +149,7 @@ where
                 .block_by_number(blk_num)?
                 .ok_or_else(|| eyre!("block {} not found", blk_num))?;
 
-            let sealed = block.seal_slow();
+            let sealed = block.clone().seal_slow();
             let recovered = sealed.try_recover()?;
 
             // Get history at parent block for this execution
@@ -156,9 +163,10 @@ where
             let _output = executor.execute(&recovered)?;
 
             acc.merge(&cache_provider.get_accessed_state());
+            blocks.push(block);
         }
 
-        Ok(acc)
+        Ok((acc, blocks))
     }
 
     fn build_ethereum_state<P>(
