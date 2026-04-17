@@ -162,12 +162,12 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
     }
 
     fn set_update_vk(&mut self, new_vk: PredicateKey) {
-        // NOTE: predicate-key updates are intentionally NOT pushed to
-        // `self.writes`. They are observable via the ASM log that drove the
-        // mutation, so DA consumers can replay logs to reconstruct the new vk.
-        // Revisit if a future indexer needs DA-level tracking of vk rotations.
+        let update = PredicateKeyUpdate::new(self.account_id, new_vk.clone());
+
         self.inner.set_update_vk(new_vk);
         self.modified = true;
+
+        self.writes.push_predicate_key_update(update);
     }
 }
 
@@ -512,6 +512,7 @@ mod tests {
     use strata_ledger_types::{
         AccountTypeState, Coin, IAccountState, IAccountStateMut, IStateAccessor, NewAccountData,
     };
+    use strata_predicate::PredicateKey;
     use strata_snark_acct_types::Seqno;
 
     use super::*;
@@ -1261,6 +1262,34 @@ mod tests {
         // No longer empty
         let (_, writes) = indexer.into_parts();
         assert!(!writes.is_empty());
+    }
+
+    #[test]
+    fn test_tracks_predicate_key_update() {
+        let account_id = test_account_id(1);
+        let (state, _) =
+            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+        let mut indexer = IndexerState::new(state);
+
+        let new_vk = PredicateKey::never_accept();
+        indexer
+            .update_account(account_id, |acct| {
+                acct.as_snark_account_mut()
+                    .unwrap()
+                    .set_update_vk(new_vk.clone());
+            })
+            .unwrap();
+
+        let (inner, writes) = indexer.into_parts();
+
+        // The write should be tracked regardless of what triggered the update.
+        assert_eq!(writes.predicate_key_updates().len(), 1);
+        assert_eq!(writes.predicate_key_updates()[0].account_id(), account_id);
+        assert_eq!(writes.predicate_key_updates()[0].new_vk(), &new_vk);
+
+        // And the inner state should reflect the new vk.
+        let account = inner.get_account_state(account_id).unwrap().unwrap();
+        assert_eq!(account.as_snark_account().unwrap().update_vk(), &new_vk);
     }
 
     #[test]

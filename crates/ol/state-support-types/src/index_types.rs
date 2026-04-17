@@ -8,6 +8,7 @@
 use strata_acct_types::{AccountId, Hash, MessageEntry};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::L1Height;
+use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
 // ============================================================================
@@ -208,6 +209,34 @@ impl SnarkAcctStateUpdate {
 }
 
 // ============================================================================
+// Predicate key update tracking
+// ============================================================================
+
+/// A tracked update to a snark account's predicate (update) verification key.
+#[derive(Clone, Debug)]
+pub struct PredicateKeyUpdate {
+    /// The account whose predicate key was updated.
+    account_id: AccountId,
+
+    /// The new predicate key.
+    new_vk: PredicateKey,
+}
+
+impl PredicateKeyUpdate {
+    pub fn new(account_id: AccountId, new_vk: PredicateKey) -> Self {
+        Self { account_id, new_vk }
+    }
+
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+
+    pub fn new_vk(&self) -> &PredicateKey {
+        &self.new_vk
+    }
+}
+
+// ============================================================================
 // Manifest tracking
 // ============================================================================
 
@@ -233,6 +262,7 @@ pub struct IndexerWrites {
     inbox_messages: Vec<InboxMessageWrite>,
     manifests: Vec<ManifestWrite>,
     snark_acct_state_updates: Vec<SnarkAcctStateUpdate>,
+    predicate_key_updates: Vec<PredicateKeyUpdate>,
 }
 
 impl IndexerWrites {
@@ -256,6 +286,11 @@ impl IndexerWrites {
         self.snark_acct_state_updates.push(update);
     }
 
+    /// Records a predicate key update.
+    pub fn push_predicate_key_update(&mut self, update: PredicateKeyUpdate) {
+        self.predicate_key_updates.push(update);
+    }
+
     /// Returns all tracked inbox message writes.
     pub fn inbox_messages(&self) -> &[InboxMessageWrite] {
         &self.inbox_messages
@@ -271,11 +306,17 @@ impl IndexerWrites {
         &self.snark_acct_state_updates
     }
 
+    /// Returns all tracked predicate key updates.
+    pub fn predicate_key_updates(&self) -> &[PredicateKeyUpdate] {
+        &self.predicate_key_updates
+    }
+
     /// Returns true if no writes have been tracked.
     pub fn is_empty(&self) -> bool {
         self.inbox_messages.is_empty()
             && self.manifests.is_empty()
             && self.snark_acct_state_updates.is_empty()
+            && self.predicate_key_updates.is_empty()
     }
 
     /// Extends this collection with writes from another.
@@ -284,5 +325,7 @@ impl IndexerWrites {
         self.manifests.extend(other.manifests);
         self.snark_acct_state_updates
             .extend(other.snark_acct_state_updates);
+        self.predicate_key_updates
+            .extend(other.predicate_key_updates);
     }
 }
