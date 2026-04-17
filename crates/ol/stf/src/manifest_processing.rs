@@ -15,6 +15,7 @@ use strata_msg_fmt::Msg;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_msg_types::DepositMsgData;
+use tracing::warn;
 
 use crate::{
     account_processing,
@@ -130,6 +131,7 @@ fn process_deposit_log<S: IStateAccessor>(
     // Parse the raw destination bytes into account serial + subject.
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
         // Malformed destination descriptor, skip this deposit.
+        warn!(amount = %deposit.amount, "dropping deposit with malformed destination descriptor");
         return Ok(());
     };
 
@@ -142,6 +144,7 @@ fn process_deposit_log<S: IStateAccessor>(
         //
         // TODO make this actually do something more sophisticated to make loss
         // of funds less likely
+        warn!(?acct_serial, amount = %deposit.amount, "dropping deposit for unknown account serial");
         return Ok(());
     };
 
@@ -179,20 +182,38 @@ fn process_ee_predicate_key_update<S: IStateAccessor>(
     state: &mut S,
     data: &EePredicateKeyUpdate,
 ) -> ExecResult<()> {
-    // Resolve the account serial. Silently skip if not found, matching the
-    // deposit handler convention.
-    let Some(acct_id) = state.find_account_id_by_serial(data.account())? else {
+    let acct_serial = data.account();
+
+    // Resolve the account serial. Skip if not found, matching the deposit
+    // handler convention. ASM manifests cannot be rejected without halting
+    // checkpoint progress, so we log and continue.
+    let Some(acct_id) = state.find_account_id_by_serial(acct_serial)? else {
+        warn!(
+            ?acct_serial,
+            "dropping ee predicate key update for unknown account serial"
+        );
         return Ok(());
     };
 
     let new_vk = data.new_predicate().clone();
-    state.update_account(acct_id, |astate| {
-        // Silently skip if the target is not a snark account; non-snark
-        // accounts have no predicate key to update.
+    let applied = state.update_account(acct_id, |astate| {
+        // Skip if the target is not a snark account; non-snark accounts have
+        // no predicate key to update.
         if let Ok(snark) = astate.as_snark_account_mut() {
             snark.set_update_vk(new_vk);
+            true
+        } else {
+            false
         }
     })?;
+
+    if !applied {
+        warn!(
+            ?acct_serial,
+            ?acct_id,
+            "dropping ee predicate key update for non-snark account"
+        );
+    }
 
     Ok(())
 }
