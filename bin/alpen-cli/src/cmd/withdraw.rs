@@ -6,7 +6,10 @@ use alloy::{
 };
 use alpen_reth_primitives::WithdrawalCalldata;
 use argh::FromArgs;
-use bdk_wallet::{bitcoin::Address, KeychainKind};
+use bdk_wallet::{
+    bitcoin::{Address, Amount},
+    KeychainKind,
+};
 use indicatif::ProgressBar;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_ol_bridge_types::OperatorSelection;
@@ -21,13 +24,19 @@ use crate::{
     signet::SignetWallet,
 };
 
-/// Withdraws 10 BTC from Alpen to signet
+/// Withdraws BTC from Alpen to signet. The amount must be a positive
+/// multiple of the bridge denomination configured in params.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "withdraw")]
 pub struct WithdrawArgs {
     /// the signet address to send funds to. defaults to a new internal wallet address
     #[argh(positional)]
     address: Option<String>,
+
+    /// amount to withdraw in sats (must be a positive multiple of the denomination).
+    /// defaults to one denomination unit.
+    #[argh(option)]
+    amount: Option<u64>,
 
     /// selected operator index for withdrawal assignment
     #[argh(option)]
@@ -77,7 +86,8 @@ pub async fn withdraw(
         }
     };
 
-    let bridge_out_amount = settings.params.deposit_amount;
+    let denomination = settings.params.deposit_amount;
+    let bridge_out_amount = resolve_withdrawal_amount(args.amount, denomination)?;
     println!("Bridging out {} to {address}", bridge_out_amount);
 
     let bosd: Descriptor = address
@@ -115,4 +125,65 @@ pub async fn withdraw(
     );
 
     Ok(())
+}
+
+/// Resolves the withdrawal amount from an optional user-provided value and the denomination.
+///
+/// Returns the validated amount, or a [`DisplayedError`] if the amount is invalid.
+fn resolve_withdrawal_amount(
+    amount_sats: Option<u64>,
+    denomination: Amount,
+) -> Result<Amount, DisplayedError> {
+    match amount_sats {
+        Some(sats) => {
+            if sats == 0 || !sats.is_multiple_of(denomination.to_sat()) {
+                return Err(DisplayedError::UserError(
+                    format!("Amount must be a positive multiple of {denomination}"),
+                    Box::new(()),
+                ));
+            }
+            Ok(Amount::from_sat(sats))
+        }
+        None => Ok(denomination),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DENOM: Amount = Amount::from_sat(100_000_000); // 1 BTC
+
+    #[test]
+    fn test_none_defaults_to_denomination() {
+        let result = resolve_withdrawal_amount(None, DENOM).unwrap();
+        assert_eq!(result, DENOM);
+    }
+
+    #[test]
+    fn test_exact_denomination_accepted() {
+        let result = resolve_withdrawal_amount(Some(100_000_000), DENOM).unwrap();
+        assert_eq!(result, Amount::from_sat(100_000_000));
+    }
+
+    #[test]
+    fn test_exact_multiple_accepted() {
+        let result = resolve_withdrawal_amount(Some(300_000_000), DENOM).unwrap();
+        assert_eq!(result, Amount::from_sat(300_000_000));
+    }
+
+    #[test]
+    fn test_zero_rejected() {
+        assert!(resolve_withdrawal_amount(Some(0), DENOM).is_err());
+    }
+
+    #[test]
+    fn test_non_multiple_rejected() {
+        assert!(resolve_withdrawal_amount(Some(150_000_000), DENOM).is_err());
+    }
+
+    #[test]
+    fn test_below_denomination_rejected() {
+        assert!(resolve_withdrawal_amount(Some(50_000_000), DENOM).is_err());
+    }
 }
