@@ -87,8 +87,7 @@ pub async fn withdraw(
     };
 
     let denomination = settings.params.deposit_amount;
-    let bridge_out_amount = resolve_withdrawal_amount(args.amount, denomination)
-        .map_err(|msg| DisplayedError::UserError(msg, Box::new(())))?;
+    let bridge_out_amount = resolve_withdrawal_amount(args.amount, denomination)?;
     println!("Bridging out {} to {address}", bridge_out_amount);
 
     let bosd: Descriptor = address
@@ -130,16 +129,17 @@ pub async fn withdraw(
 
 /// Resolves the withdrawal amount from an optional user-provided value and the denomination.
 ///
-/// Returns the validated amount, or an error message if the amount is invalid.
+/// Returns the validated amount, or a [`DisplayedError`] if the amount is invalid.
 fn resolve_withdrawal_amount(
     amount_sats: Option<u64>,
     denomination: Amount,
-) -> Result<Amount, String> {
+) -> Result<Amount, DisplayedError> {
     match amount_sats {
         Some(sats) => {
             if sats == 0 || !sats.is_multiple_of(denomination.to_sat()) {
-                return Err(format!(
-                    "Amount must be a positive multiple of {denomination}"
+                return Err(DisplayedError::UserError(
+                    format!("Amount must be a positive multiple of {denomination}"),
+                    Box::new(()),
                 ));
             }
             Ok(Amount::from_sat(sats))
