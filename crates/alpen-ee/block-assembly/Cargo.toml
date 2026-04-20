@@ -15,6 +15,7 @@ strata-ee-acct-runtime.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-msg-fmt.workspace = true
+strata-identifiers.workspace = true
 strata-ol-bridge-types.workspace = true
 strata-ol-msg-types.workspace = true
 strata-snark-acct-runtime.workspace = true
@@ -26,5 +27,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 alpen-ee-common = { workspace = true, features = ["test-utils"] }
-alloy-primitives.workspace = true
+alpen-reth-node.workspace = true
+alloy-rpc-types-engine.workspace = true
+async-trait.workspace = true
 strata-ee-acct-runtime = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["macros"] }

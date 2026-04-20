@@ -1122,8 +1122,11 @@ name = "alpen-ee-block-assembly"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-primitives",
+ "alloy-rpc-types-engine",
  "alpen-ee-common",
  "alpen-reth-evm",
+ "alpen-reth-node",
+ "async-trait",
  "bitcoin-bosd 0.10.0",
  "eyre",
  "strata-acct-types",
@@ -1131,10 +1134,12 @@ dependencies = [
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
+ "strata-identifiers",
  "strata-msg-fmt",
  "strata-ol-bridge-types",
  "strata-ol-msg-types",
  "strata-snark-acct-runtime",
+ "tokio",
  "tracing",
 ]
 

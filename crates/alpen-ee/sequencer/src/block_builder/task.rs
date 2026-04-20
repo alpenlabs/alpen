@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use alpen_ee_block_assembly::{build_next_exec_block, BlockAssemblyInputs, BlockAssemblyOutputs};
+use alpen_ee_block_assembly::{
+    assemble_next_exec_block_record, AssembleExecBlockInputs, AssembledExecBlock,
+};
 use alpen_ee_common::{
     Clock, EnginePayload, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage,
     PayloadBuilderEngine, SystemClock,
 };
 use alpen_ee_exec_chain::ExecChainHandle;
 use eyre::Context;
-use strata_acct_types::{Hash, MessageEntry};
-use strata_ee_acct_types::EeAccountState;
-use strata_ee_chain_types::ExecBlockPackage;
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_acct_types::Hash;
+use strata_identifiers::OLBlockId;
 use thiserror::Error;
 use tracing::{debug, error, warn};
 
@@ -54,47 +54,6 @@ fn validate_blocktime_constraint(
 /// Determines whether inbox messages should be fetched based on OL block state.
 fn should_fetch_inbox_messages(last_local_ol_blkid: &OLBlockId, best_ol_blkid: &OLBlockId) -> bool {
     last_local_ol_blkid != best_ol_blkid
-}
-
-/// Constructs BlockAssemblyInputs from the current state.
-fn create_block_assembly_inputs<'a>(
-    last_local_block: &ExecBlockRecord,
-    inbox_messages: &'a [MessageEntry],
-    timestamp_ms: u64,
-    config: &BlockBuilderConfig,
-) -> BlockAssemblyInputs<'a> {
-    BlockAssemblyInputs {
-        account_state: last_local_block.account_state().clone(),
-        inbox_messages,
-        parent_exec_blkid: last_local_block.package().exec_blkid(),
-        timestamp_ms,
-        max_deposits_per_block: config.max_deposits_per_block(),
-        bridge_gateway_account_id: config.bridge_gateway_account_id(),
-    }
-}
-
-/// Creates an ExecBlockRecord from block assembly outputs.
-#[expect(clippy::too_many_arguments, reason = "too many args")]
-fn create_next_exec_block_record(
-    package: ExecBlockPackage,
-    account_state: EeAccountState,
-    last_blocknum: u64,
-    best_ol_block: OLBlockCommitment,
-    timestamp_ms: u64,
-    parent_blockhash: Hash,
-    next_inbox_msg_idx: u64,
-    messages: Vec<MessageEntry>,
-) -> ExecBlockRecord {
-    ExecBlockRecord::new(
-        package,
-        account_state,
-        last_blocknum + 1,
-        best_ol_block,
-        timestamp_ms,
-        parent_blockhash,
-        next_inbox_msg_idx,
-        messages,
-    )
 }
 
 pub async fn block_builder_task<
@@ -254,75 +213,31 @@ async fn build_next_block(
         (vec![], last_local_block.next_inbox_msg_idx())
     };
 
-    // build next block
-    let block_assembly_inputs =
-        create_block_assembly_inputs(&last_local_block, &inbox_messages, timestamp_ms, config);
-
-    let BlockAssemblyOutputs {
-        package,
+    let AssembledExecBlock {
+        record,
         payload,
-        account_state,
-    } = build_next_exec_block(block_assembly_inputs, payload_builder)
-        .await
-        .context("build_next_block: failed to build exec block")?;
+        blockhash,
+    } = assemble_next_exec_block_record(
+        AssembleExecBlockInputs {
+            parent_record: &last_local_block,
+            inbox_messages,
+            next_inbox_msg_idx,
+            best_ol_block,
+            timestamp_ms,
+            max_deposits_per_block: config.max_deposits_per_block(),
+            bridge_gateway_account_id: config.bridge_gateway_account_id(),
+        },
+        payload_builder,
+    )
+    .await
+    .context("build_next_block: failed to assemble exec block")?;
 
-    let blockhash = package.exec_blkid();
-    let parent_blockhash = last_local_block.package().exec_blkid();
-    let block = create_next_exec_block_record(
-        package,
-        account_state,
-        last_local_block.blocknum(),
-        best_ol_block,
-        timestamp_ms,
-        parent_blockhash,
-        next_inbox_msg_idx,
-        inbox_messages,
-    );
-
-    Ok((block, payload, blockhash))
+    Ok((record, payload, blockhash))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
-
-    use strata_acct_types::BitcoinAmount;
-    use strata_ee_chain_types::{ExecBlockCommitment, ExecInputs, ExecOutputs};
-    use strata_identifiers::Buf32;
-
     use super::*;
-
-    /// Helper to create an OLBlockCommitment with a given slot.
-    fn make_ol_block(slot: u64) -> OLBlockCommitment {
-        let mut blkid_bytes = [0u8; 32];
-        blkid_bytes[0..8].copy_from_slice(&slot.to_le_bytes());
-        OLBlockCommitment::new(slot, OLBlockId::from(Buf32::from(blkid_bytes)))
-    }
-
-    /// Helper to create a test ExecBlockRecord.
-    fn make_exec_block_record(
-        blocknum: u64,
-        timestamp_ms: u64,
-        ol_block: OLBlockCommitment,
-    ) -> ExecBlockRecord {
-        let hash = Hash::from(Buf32::new([blocknum as u8; 32]));
-        let package = ExecBlockPackage::new(
-            ExecBlockCommitment::new(hash, hash),
-            ExecInputs::new_empty(),
-            ExecOutputs::new_empty(),
-        );
-        let account_state = EeAccountState::new(hash, BitcoinAmount::ZERO, vec![], vec![]);
-        ExecBlockRecord::new(
-            package,
-            account_state,
-            blocknum,
-            ol_block,
-            timestamp_ms,
-            Hash::default(),
-            0,
-            vec![],
-        )
-    }
 
     mod validate_blocktime_constraint_tests {
         use super::*;
@@ -344,38 +259,6 @@ mod tests {
                 result,
                 Err(BlockBuilderError::BlocktimeConstraintViolated)
             ));
-        }
-    }
-
-    mod create_block_assembly_inputs_tests {
-        use strata_acct_types::{AccountId, MsgPayload};
-
-        use super::*;
-
-        #[test]
-        fn preserves_message_order() {
-            // Message order matters for deterministic block assembly
-            let ol_block = make_ol_block(10);
-            let exec_record = make_exec_block_record(5, 5000, ol_block);
-            let config = BlockBuilderConfig::default();
-
-            let msg1 = MessageEntry::new(
-                AccountId::new([1u8; 32]),
-                0,
-                MsgPayload::new(BitcoinAmount::from_sat(100), vec![]),
-            );
-            let msg2 = MessageEntry::new(
-                AccountId::new([2u8; 32]),
-                0,
-                MsgPayload::new(BitcoinAmount::from_sat(200), vec![]),
-            );
-            let messages = vec![msg1.clone(), msg2.clone()];
-
-            let inputs = create_block_assembly_inputs(&exec_record, &messages, 6000, &config);
-
-            assert_eq!(inputs.inbox_messages.len(), 2);
-            assert_eq!(inputs.inbox_messages[0].source(), msg1.source());
-            assert_eq!(inputs.inbox_messages[1].source(), msg2.source());
         }
     }
 }
