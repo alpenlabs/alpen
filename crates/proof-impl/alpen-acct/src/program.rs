@@ -108,7 +108,7 @@ mod tests {
     use strata_ee_acct_runtime::EePrivateInput;
     use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
     use strata_identifiers::Hash;
-    use strata_predicate::PredicateKey;
+    use strata_predicate::{PredicateKey, PredicateTypeId};
     use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
     use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
 
@@ -156,9 +156,14 @@ mod tests {
             update_private_input,
         };
 
-        // Native host uses always_accept — no real Groth16 verification
-        // in native mode (no chunks to verify in this test anyway).
-        let program = EeAcctProgram::new(PredicateKey::always_accept());
+        // Predicate is carried through but never evaluated in this
+        // zero-chunks test; either `always_accept` or a real Schnorr
+        // key would work. Using `Bip340Schnorr` to exercise the
+        // non-trivial path.
+        let program = EeAcctProgram::new(PredicateKey::new(
+            PredicateTypeId::Bip340Schnorr,
+            vec![0u8; 32],
+        ));
         let result = program
             .execute(&proof_input)
             .expect("native execution should succeed");

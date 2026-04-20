@@ -76,10 +76,8 @@ zkaleido.workspace = true
 zkaleido-sp1-host = { workspace = true, optional = true }
 
 
-alloy-consensus.workspace = true
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
-alloy-rlp.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
 async-trait.workspace = true
 clap.workspace = true

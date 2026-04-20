@@ -8,9 +8,7 @@
 
 use std::{fmt, sync::Arc};
 
-use alloy_consensus::Header;
 use alloy_primitives::B256;
-use alloy_rlp::Decodable as _;
 use alpen_ee_common::{BatchStorage, ChunkId, ExecBlockStorage};
 use alpen_ee_database::EeNodeStorage;
 use alpen_reth_witness::RangeWitnessData;
@@ -62,8 +60,8 @@ impl fmt::Display for ChunkTask {
 /// (same `(prev, last)` pair) can't collide.
 pub(crate) const CHUNK_TASK_TAG: u8 = b'c';
 
-/// Tag byte + `prev_block (32B) || last_block (32B)`.
-const CHUNK_TASK_BYTES: usize = 1 + 64;
+/// Tag byte + the underlying `ChunkId`'s bytes.
+const CHUNK_TASK_BYTES: usize = 1 + size_of::<ChunkId>();
 
 impl From<ChunkTask> for Vec<u8> {
     fn from(task: ChunkTask) -> Self {
@@ -182,11 +180,9 @@ impl ProofSpec for ChunkSpec {
 
         let raw_partial_pre_state = range_data.raw_partial_pre_state;
 
-        // 3. Parent header — decode from the range data's alloy RLP and re-encode through EvmHeader
-        //    for strata_codec compat (the guest expects the varint length prefix).
-        let parent_header = Header::decode(&mut range_data.raw_prev_header.as_slice())
-            .map_err(|e| PaasError::PermanentFailure(format!("decode range prev header: {e}")))?;
-        let parent_evm_header = EvmHeader::new(parent_header);
+        // 3. Parent header — wrap in `EvmHeader` and encode via `strata_codec` for the guest
+        //    (expects the varint length prefix).
+        let parent_evm_header = EvmHeader::new(range_data.prev_header);
         let parent_blkid: Hash = parent_evm_header.compute_block_id();
         let raw_prev_header = encode_to_vec(&parent_evm_header)
             .map_err(|e| PaasError::PermanentFailure(format!("encode prev header: {e}")))?;

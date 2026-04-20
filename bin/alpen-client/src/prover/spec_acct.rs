@@ -5,9 +5,8 @@
 //! `ReceiptStore`) and the prior batch's end-state, then assembles
 //! `ee_acct_runtime::PrivateInput` + `snark_acct_runtime::PrivateInput`.
 //!
-//! DA witnesses are stubbed (`LedgerRefs::new_empty()`) per the EE
-//! account update doc's "Open Questions" section. See
-//! `experimental/evgeniy/ee-da-wiring.md` for the bridge plan.
+//! DA witnesses are stubbed (`LedgerRefs::new_empty()`) — see the EE
+//! account update doc's "Open Questions" section.
 
 use std::{fmt, sync::Arc};
 
@@ -46,7 +45,8 @@ impl fmt::Display for BatchTask {
 /// needs a discriminator.
 pub(crate) const BATCH_TASK_TAG: u8 = b'a';
 
-const BATCH_TASK_BYTES: usize = 1 + 64;
+/// Tag byte + the underlying `BatchId`'s bytes.
+const BATCH_TASK_BYTES: usize = 1 + size_of::<BatchId>();
 
 impl From<BatchTask> for Vec<u8> {
     fn from(task: BatchTask) -> Self {

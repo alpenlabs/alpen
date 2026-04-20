@@ -32,8 +32,10 @@ pub struct RangeWitnessData {
     pub end_block_hash: B256,
     /// Serialized `EvmPartialState` (via `strata_codec`).
     pub raw_partial_pre_state: Vec<u8>,
-    /// RLP-encoded parent header (alloy format).
-    pub raw_prev_header: Vec<u8>,
+    /// Parent of `start_block` (block before the range). Callers that
+    /// need a specific on-wire encoding should encode from here rather
+    /// than receiving pre-serialized bytes.
+    pub prev_header: Header,
     /// Alloy blocks in range order (start..=end). Available for callers
     /// that need per-block header/body data (e.g. `RawBlockData` encoding).
     pub blocks: Vec<reth_primitives::Block>,
@@ -124,13 +126,11 @@ where
         let raw_partial_pre_state = encode_to_vec(&partial_state)
             .map_err(|e| eyre!("failed to encode partial state: {e}"))?;
 
-        let raw_prev_header = alloy_rlp::encode(&prev_block.header);
-
         Ok(RangeWitnessData {
             start_block_hash,
             end_block_hash,
             raw_partial_pre_state,
-            raw_prev_header,
+            prev_header: prev_block.header,
             blocks,
         })
     }
