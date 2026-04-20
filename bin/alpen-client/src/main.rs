@@ -23,14 +23,13 @@ use alpen_ee_common::{
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
-#[cfg(feature = "sequencer")]
 use alpen_ee_exec_chain::{
     build_exec_chain_consensus_forwarder_task, build_exec_chain_task,
     init_exec_chain_state_from_storage,
 };
-#[cfg(feature = "sequencer")]
-use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
-use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
+use alpen_ee_genesis::{
+    ensure_batch_genesis, ensure_finalized_exec_chain_genesis, ensure_genesis_ee_account_state,
+};
 use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
 use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
@@ -243,7 +242,8 @@ fn main() {
                 .num_threads(8)
                 .thread_name("ee-db-pool".into())
                 .build();
-            let storage: Arc<_> = dbs.node_storage(db_pool.clone()).into();
+            let storage: Arc<alpen_ee_database::EeNodeStorage> =
+                Arc::new(dbs.node_storage(db_pool.clone()));
 
             let ol_client = if ext.dummy_ol_client {
                 use strata_identifiers::Buf32;
@@ -290,30 +290,19 @@ fn main() {
                     .await
                     .context("ol chain tracker state initialization should not fail")?;
 
-            #[cfg(feature = "sequencer")]
             let exec_chain_state = init_exec_chain_state_from_storage(storage.as_ref())
                 .await
                 .context("exec chain state initialization should not fail")?;
 
-            let initial_preconf_head = {
-                #[cfg(feature = "sequencer")]
-                {
-                    if ext.sequencer {
-                        exec_chain_state.tip_blocknumhash()
-                    } else {
-                        // In non-sequencer mode, we only have the hash from OL tracker.
-                        // Use block number 0 as initial value; it will be updated by gossip.
-                        let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
-                        BlockNumHash::new(hash, 0)
-                    }
-                }
-                #[cfg(not(feature = "sequencer"))]
-                {
-                    // In non-sequencer mode, we only have the hash from OL tracker.
-                    // Use block number 0 as initial value; it will be updated by gossip.
-                    let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
-                    BlockNumHash::new(hash, 0)
-                }
+            let initial_preconf_head = if ext.sequencer {
+                exec_chain_state.tip_blocknumhash()
+            } else {
+                // On fullnodes the exec-chain tip starts at genesis and will advance
+                // as the ExEx re-execution task (STR-3076) persists records; seed the
+                // preconf head from the OL tracker's best known EE block so gossip
+                // / engine control have a sensible starting value before then.
+                let hash = ol_tracker_state.best_ee_state().last_exec_blkid();
+                BlockNumHash::new(hash, 0)
             };
 
             let batch_builder_state = init_batch_builder_state(storage.as_ref())
@@ -425,6 +414,13 @@ fn main() {
             let gossip_task =
                 create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
 
+            // Build the exec-chain tracker. Always-on so fullnodes can maintain
+            // exec-chain state once records start flowing in from the ExEx
+            // re-execution task (STR-3076). On sequencer nodes the block-builder
+            // task below feeds it directly.
+            let (exec_chain_handle, exec_chain_task) =
+                build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+
             // Spawn critical tasks
             node.task_executor
                 .spawn_critical("ol_tracker_task", ol_tracker_task);
@@ -432,6 +428,15 @@ fn main() {
                 .spawn_critical("engine_control", engine_control_task);
             node.task_executor
                 .spawn_critical("gossip_task", gossip_task);
+            node.task_executor
+                .spawn_critical("exec_chain", exec_chain_task);
+            node.task_executor.spawn_critical(
+                "exec_chain_consensus_forwarder",
+                build_exec_chain_consensus_forwarder_task(
+                    exec_chain_handle.clone(),
+                    consensus_watcher,
+                ),
+            );
 
             #[cfg(feature = "sequencer")]
             let mut btcio_shutdown_signal = None;
@@ -451,9 +456,6 @@ fn main() {
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
                 ));
-
-                let (exec_chain_handle, exec_chain_task) =
-                    build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
 
                 let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
                     ol_chain_tracker_state,
@@ -609,15 +611,6 @@ fn main() {
                     ext.genesis_l1_height,
                 );
 
-                node.task_executor
-                    .spawn_critical("exec_chain", exec_chain_task);
-                node.task_executor.spawn_critical(
-                    "exec_chain_consensus_forwarder",
-                    build_exec_chain_consensus_forwarder_task(
-                        exec_chain_handle.clone(),
-                        consensus_watcher,
-                    ),
-                );
                 node.task_executor
                     .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
                 node.task_executor.spawn_critical(
@@ -860,7 +853,6 @@ async fn ensure_genesis<TStorage: Storage + ExecBlockStorage + BatchStorage>(
     storage: &TStorage,
 ) -> eyre::Result<()> {
     ensure_genesis_ee_account_state(config, genesis_epoch, storage).await?;
-    #[cfg(feature = "sequencer")]
     ensure_finalized_exec_chain_genesis(config, genesis_epoch.to_block_commitment(), storage)
         .await?;
     #[cfg(feature = "sequencer")]
