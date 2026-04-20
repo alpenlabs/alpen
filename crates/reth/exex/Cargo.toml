@@ -7,7 +7,10 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+alpen-ee-common.workspace = true
 alpen-reth-db.workspace = true
+alpen-reth-evm.workspace = true
+alpen-reth-node.workspace = true
 alpen-reth-statediff.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
@@ -16,9 +19,12 @@ alloy-eips.workspace = true
 alloy-genesis.workspace = true
 alloy-primitives.workspace = true
 alloy-rpc-types.workspace = true
+alloy-rpc-types-engine.workspace = true
+async-trait.workspace = true
 eyre.workspace = true
 futures-util.workspace = true
 reth-chainspec.workspace = true
+reth-ethereum-engine-primitives.workspace = true
 reth-evm.workspace = true
 reth-exex.workspace = true
 reth-node-api.workspace = true
@@ -33,3 +39,4 @@ rsp-primitives.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+reth-primitives-traits.workspace = true
