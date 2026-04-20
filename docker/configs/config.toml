@@ -45,3 +45,7 @@ secret = "configs/jwt.fn.hex"
 refresh_interval = 10
 stale_duration = 10
 relay_misc = true
+
+[prover]
+backend = "sp1"
+workers = 1

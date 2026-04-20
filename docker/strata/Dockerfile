@@ -29,20 +29,27 @@ FROM chef AS builder
 COPY rust-toolchain.toml ./
 RUN rustup toolchain install
 
+# Optional comma-separated cargo features (e.g. "prover,sp1").
+# Applied to both `cargo chef cook` and `cargo build` so the cached dependency
+# layer matches the final build.
+ARG CARGO_FEATURES=""
+
 # Bring in the recipe from planner
 COPY --from=planner /app/recipe.json recipe.json
 
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release --recipe-path recipe.json \
+      ${CARGO_FEATURES:+--features "$CARGO_FEATURES"}
 
 COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
-    cargo build --locked --release --bin strata && \
+    cargo build --locked --release --bin strata \
+      ${CARGO_FEATURES:+--features "$CARGO_FEATURES"} && \
     install -m 0555 /app/target/release/strata /usr/local/bin/strata
 
 
