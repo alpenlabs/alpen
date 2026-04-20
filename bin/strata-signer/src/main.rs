@@ -14,10 +14,8 @@ use args::Args;
 use config::SignerConfig;
 use constants::SHUTDOWN_TIMEOUT_MS;
 use helpers::load_seqkey;
-use strata_common::{
-    logging,
-    ws_client::{ManagedWsClient, WsClientConfig},
-};
+use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
+use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_signer::SignerBuilder;
 use strata_tasks::TaskManager;
 use tokio::runtime::Builder;
@@ -40,7 +38,7 @@ fn main() -> anyhow::Result<()> {
 
     // Init logging. Need runtime context for async OTLP setup.
     let _g = handle.enter();
-    logging::init_logging_from_config(logging::LoggingInitConfig {
+    init_logging_from_config(LoggingInitConfig {
         service_base_name: "strata-signer",
         service_label: config.logging.service_label.as_deref(),
         otlp_url: config.logging.otlp_url.as_deref(),
