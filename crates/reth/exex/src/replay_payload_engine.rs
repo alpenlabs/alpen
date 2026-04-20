@@ -33,32 +33,28 @@ use alpen_reth_node::AlpenBuiltPayload;
 use async_trait::async_trait;
 use eyre::{eyre, Context};
 use reth_ethereum_engine_primitives::{BlobSidecars, EthBuiltPayload};
-use reth_primitives::{EthPrimitives, Receipt, SealedBlock, TransactionSigned};
-use reth_provider::{
-    providers::{BlockchainProvider, ProviderNodeTypes},
-    BlockHashReader, BlockNumReader, BlockReader, ReceiptProvider,
-};
+use reth_primitives::{Receipt, SealedBlock, TransactionSigned};
+use reth_provider::{BlockHashReader, BlockNumReader, BlockReader, ReceiptProvider};
 
 /// Reconstructs [`AlpenBuiltPayload`]s from blocks Reth has already imported.
 ///
-/// Instantiated with a [`BlockchainProvider`] backed by `EthPrimitives`; on
-/// the fullnode this comes from `ctx.provider().clone()` inside the
-/// re-execution ExEx.
+/// Generic over any provider that reads canonical blocks and receipts; on the
+/// fullnode this is `ctx.provider().clone()` inside the re-execution ExEx.
 #[derive(Debug, Clone)]
-pub struct RethReplayPayloadEngine<N: ProviderNodeTypes> {
-    provider: BlockchainProvider<N>,
+pub struct RethReplayPayloadEngine<P> {
+    provider: P,
 }
 
-impl<N: ProviderNodeTypes> RethReplayPayloadEngine<N> {
-    pub fn new(provider: BlockchainProvider<N>) -> Self {
+impl<P> RethReplayPayloadEngine<P> {
+    pub fn new(provider: P) -> Self {
         Self { provider }
     }
 }
 
 #[async_trait]
-impl<N> ExecutionEngine for RethReplayPayloadEngine<N>
+impl<P> ExecutionEngine for RethReplayPayloadEngine<P>
 where
-    N: ProviderNodeTypes<Primitives = EthPrimitives> + Send + Sync + 'static,
+    P: Send + Sync + 'static,
 {
     type TEnginePayload = AlpenBuiltPayload;
 
@@ -82,9 +78,15 @@ where
 }
 
 #[async_trait]
-impl<N> PayloadBuilderEngine for RethReplayPayloadEngine<N>
+impl<P> PayloadBuilderEngine for RethReplayPayloadEngine<P>
 where
-    N: ProviderNodeTypes<Primitives = EthPrimitives> + Send + Sync + 'static,
+    P: BlockReader<Block = reth_ethereum_primitives::Block, Receipt = Receipt>
+        + ReceiptProvider<Receipt = Receipt>
+        + BlockNumReader
+        + BlockHashReader
+        + Send
+        + Sync
+        + 'static,
 {
     async fn build_payload(
         &self,

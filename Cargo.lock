@@ -1431,7 +1431,9 @@ dependencies = [
  "alloy-primitives",
  "alloy-rpc-types",
  "alloy-rpc-types-engine",
+ "alpen-ee-block-assembly",
  "alpen-ee-common",
+ "alpen-ee-exec-chain",
  "alpen-reth-db",
  "alpen-reth-evm",
  "alpen-reth-node",
@@ -1441,6 +1443,7 @@ dependencies = [
  "futures-util",
  "reth-chainspec",
  "reth-ethereum-engine-primitives",
+ "reth-ethereum-primitives",
  "reth-evm",
  "reth-exex",
  "reth-node-api",
@@ -1453,7 +1456,9 @@ dependencies = [
  "revm-primitives",
  "rsp-mpt",
  "rsp-primitives",
+ "strata-acct-types",
  "strata-proofimpl-evm-ee-stf",
+ "tokio",
  "tracing",
 ]
 

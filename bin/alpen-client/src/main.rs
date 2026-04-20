@@ -14,7 +14,7 @@ mod rpc_client;
 
 #[cfg(feature = "sequencer")]
 use std::future::Future;
-use std::{env, process, sync::Arc, thread, time::Duration};
+use std::{env, num::NonZero, process, sync::Arc, thread, time::Duration};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{
@@ -39,6 +39,7 @@ use alpen_ee_sequencer::{
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
 #[cfg(feature = "sequencer")]
 use alpen_reth_exex::StateDiffGenerator;
+use alpen_reth_exex::{EeRecordGenerator, EeRecordGeneratorConfig};
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
@@ -337,6 +338,12 @@ fn main() {
             let consensus_watcher = ol_tracker.consensus_watcher();
             let status_watcher = ol_tracker.ol_status_watcher();
 
+            // Build the exec-chain tracker up front so the re-execution ExEx
+            // (STR-3076) can capture its handle in the install_exex closure.
+            // Spawn happens after `node_builder.launch()`.
+            let (exec_chain_handle, exec_chain_task) =
+                build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+
             let mut node_builder = builder
                 .node(AlpenEthereumNode::new(node_args))
                 // Register Alpen gossip RLPx subprotocol
@@ -364,6 +371,40 @@ fn main() {
                     |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
                 });
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
+            }
+
+            // Install the EE record generator ExEx on fullnodes. Reacts to
+            // Reth's canonical-chain notifications and writes an ExecBlockRecord
+            // per imported block so `best_finalized_block` advances and
+            // ExecBlockStorage-backed RPCs work on fullnodes (STR-3076).
+            // Gated off on sequencers because the block-builder path already
+            // writes records there — double-writing would race on
+            // save_exec_block and waste CPU re-executing just-built blocks.
+            if !ext.sequencer {
+                let ee_record_storage = storage.clone();
+                let ee_record_ol_client = ol_client.clone();
+                let ee_record_exec_chain_handle = exec_chain_handle.clone();
+                let ee_record_ol_status_rx = status_watcher.clone();
+                let ee_record_consensus_rx = consensus_watcher.clone();
+                let ee_record_config = EeRecordGeneratorConfig {
+                    // Must match the sequencer's `BlockBuilderConfig` defaults
+                    // — see `crates/alpen-ee/sequencer/src/block_builder/config.rs`.
+                    max_deposits_per_block: NonZero::new(16).expect("16 is always NonZero"),
+                    bridge_gateway_account_id: AccountId::special(1),
+                };
+                node_builder = node_builder.install_exex("ee_record", move |ctx| async move {
+                    Ok(EeRecordGenerator::new(
+                        ctx,
+                        ee_record_storage,
+                        ee_record_ol_client,
+                        ee_record_exec_chain_handle,
+                        ee_record_ol_status_rx,
+                        ee_record_consensus_rx,
+                        ee_record_config,
+                    )
+                    .start())
+                });
+                info!(target: "alpen-client", "installed EeRecordGenerator exex for fullnode");
             }
 
             node_builder = node_builder.extend_rpc_modules({
@@ -413,13 +454,6 @@ fn main() {
             // Create gossip task for broadcasting new blocks
             let gossip_task =
                 create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
-
-            // Build the exec-chain tracker. Always-on so fullnodes can maintain
-            // exec-chain state once records start flowing in from the ExEx
-            // re-execution task (STR-3076). On sequencer nodes the block-builder
-            // task below feeds it directly.
-            let (exec_chain_handle, exec_chain_task) =
-                build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
 
             // Spawn critical tasks
             node.task_executor
