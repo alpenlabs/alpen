@@ -16109,7 +16109,6 @@ dependencies = [
  "async-trait",
  "borsh",
  "futures",
- "metrics",
  "strata-common",
  "strata-consensus-logic",
  "strata-db-types",
