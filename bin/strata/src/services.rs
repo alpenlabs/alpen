@@ -22,12 +22,12 @@ use crate::{
 
 #[cfg(feature = "sequencer")]
 mod sequencer_services {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use anyhow::{Result, anyhow};
     use strata_btcio::{
         broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
-        writer::{EnvelopeHandle, start_envelope_task},
+        writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     };
     use strata_config::EpochSealingConfig;
     use strata_db_types::traits::DatabaseBackend;
@@ -36,7 +36,9 @@ mod sequencer_services {
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
-    use strata_storage::ops::l1tx_broadcast;
+    use strata_service::DumbTickHandle;
+    use strata_storage::ops::{l1tx_broadcast, writer::Context};
+    use tokio::sync::mpsc;
 
     use crate::{
         helpers::generate_sequencer_address,
@@ -46,20 +48,22 @@ mod sequencer_services {
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
         mempool_handle: Arc<MempoolHandle>,
-        sequencer_sk: Option<[u8; 32]>,
+        envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
         }
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
-        let envelope_handle = start_writer(nodectx, broadcast_handle.clone(), sequencer_sk)?;
+        let (envelope_handle, watcher_handle) =
+            start_writer(nodectx, broadcast_handle.clone(), envelope_pubkey)?;
         let blockasm_handle = Arc::new(start_block_assembly(nodectx, mempool_handle)?);
 
         Ok(Some(SequencerServiceHandles::new(
             broadcast_handle,
             envelope_handle,
             blockasm_handle,
+            watcher_handle,
         )))
     }
 
@@ -96,27 +100,55 @@ mod sequencer_services {
     fn start_writer(
         nodectx: &NodeContext,
         broadcast_handle: Arc<L1BroadcastHandle>,
-        sequencer_sk: Option<[u8; 32]>,
-    ) -> Result<Arc<EnvelopeHandle>> {
+        envelope_pubkey: Option<[u8; 32]>,
+    ) -> Result<(Arc<EnvelopeHandle>, DumbTickHandle)> {
         let sequencer_address = nodectx
             .task_manager()
             .handle()
             .block_on(generate_sequencer_address(nodectx.bitcoin_client()))?;
 
         let writer_db = nodectx.storage().db().writer_db();
+        let config = Arc::new(nodectx.config().btcio.writer.clone());
+        let btcio_params = super::rollup_to_btcio_params(nodectx.params().rollup());
+        let executor = nodectx.executor();
 
-        start_envelope_task(
-            nodectx.executor(),
-            nodectx.bitcoin_client().clone(),
-            Arc::new(nodectx.config().btcio.writer.clone()),
-            super::rollup_to_btcio_params(nodectx.params().rollup()),
-            sequencer_address,
-            writer_db,
-            nodectx.status_channel().as_ref().clone(),
-            nodectx.storage().pool().clone(),
-            broadcast_handle,
-            sequencer_sk,
-        )
+        nodectx.task_manager().handle().block_on(async {
+            let writer_ops =
+                Arc::new(Context::new(writer_db).into_ops(nodectx.storage().pool().clone()));
+            let (intent_tx, intent_rx) = mpsc::channel(64);
+            let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
+
+            let mut ctx = WriterContext::new(
+                btcio_params,
+                config.clone(),
+                sequencer_address,
+                nodectx.bitcoin_client().clone(),
+                nodectx.status_channel().as_ref().clone(),
+            );
+            if let Some(pk) = &envelope_pubkey {
+                ctx = ctx.with_envelope_pubkey(pk);
+            }
+            let ctx = Arc::new(ctx);
+
+            let (watcher_handle, _) = WatcherBuilder::new(
+                ctx,
+                writer_ops.clone(),
+                broadcast_handle,
+                Duration::from_millis(config.write_poll_dur_ms),
+            )
+            .launch(executor)
+            .await?;
+
+            let _ = BundlerBuilder::new(
+                writer_ops,
+                Duration::from_millis(config.bundle_interval_ms),
+                intent_rx,
+            )
+            .launch(executor)
+            .await?;
+
+            Ok((envelope_handle, watcher_handle))
+        })
     }
 
     /// Starts the OL block assembly service.
@@ -197,7 +229,7 @@ pub(crate) type OptionalProofNotify = Option<Arc<strata_ol_checkpoint::ProofNoti
 /// wake the checkpoint worker immediately after storing a proof.
 pub(crate) fn start_strata_services(
     nodectx: NodeContext,
-    sequencer_sk: Option<[u8; 32]>,
+    envelope_pubkey: Option<[u8; 32]>,
 ) -> Result<(RunContext, OptionalProofNotify)> {
     // Start Asm worker
     let asm_handle = Arc::new(spawn_asm_worker_with_ctx(&nodectx)?);
@@ -251,7 +283,7 @@ pub(crate) fn start_strata_services(
     let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
 
     let sequencer_handles =
-        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), sequencer_sk)?;
+        sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;
 
     let fcm_ctx =
         FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());

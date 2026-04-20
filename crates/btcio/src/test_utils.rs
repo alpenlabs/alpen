@@ -574,13 +574,13 @@ pub fn create_checkpoint_envelope_tx(address: &str, l1_payload: L1Payload) -> Tr
 pub(crate) mod test_context {
     use std::sync::Arc;
 
-    use bitcoin::{Address, Network};
+    use bitcoin::{secp256k1::SecretKey, Address, Network};
     use strata_config::btcio::{FeePolicy, WriterConfig};
     use strata_l1_txfmt::MagicBytes;
     use strata_status::StatusChannel;
     use strata_test_utils::ArbitraryGenerator;
 
-    use crate::{test_utils::TestBitcoinClient, writer::context::WriterContext, BtcioParams};
+    use crate::{test_utils::TestBitcoinClient, writer::WriterContext, BtcioParams};
 
     pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
         let client = Arc::new(TestBitcoinClient::new(1));
@@ -605,7 +605,10 @@ pub(crate) mod test_context {
             MagicBytes::new(*b"ALPN"), // magic_bytes
             0,                         // genesis_l1_height
         );
-        let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel);
+        let sk = SecretKey::from_slice(&[0x01; 32]).unwrap();
+        let (pubkey, _) = sk.x_only_public_key(super::SECP256K1);
+        let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel)
+            .with_envelope_pubkey(&pubkey.serialize());
         Arc::new(ctx)
     }
 }

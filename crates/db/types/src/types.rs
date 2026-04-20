@@ -12,11 +12,14 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
-use strata_identifiers::{Buf32, OLBlockCommitment, OLTxId};
+use strata_identifiers::{Buf32, Buf64, OLBlockCommitment, OLTxId};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::L1Height;
 use zkaleido::Proof;
+
+/// Taproot script-spend sighash for the reveal transaction.
+pub type Sighash = Buf32;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
@@ -62,6 +65,10 @@ pub struct BundledPayloadEntry {
     pub commit_txid: Buf32,
     pub reveal_txid: Buf32,
     pub status: L1BundleStatus,
+    /// Schnorr signature provided by the external signer for envelope reveal tx.
+    ///
+    /// Populated when the signer calls `complete_payload_signature` RPC.
+    pub payload_signature: Option<Buf64>,
 }
 
 impl BundledPayloadEntry {
@@ -76,6 +83,7 @@ impl BundledPayloadEntry {
             commit_txid,
             reveal_txid,
             status,
+            payload_signature: None,
         }
     }
 
@@ -156,6 +164,10 @@ pub enum L1BundleStatus {
     /// The payload has not been signed yet, i.e commit-reveal transactions have not been created
     /// yet.
     Unsigned,
+
+    /// The envelope has been built and the commit tx signed; waiting for the external signer to
+    /// provide a Schnorr signature for the reveal tx sighash.
+    PendingRevealTxSign(Sighash),
 
     /// The commit-reveal transactions for payload are signed and waiting to be published
     Unpublished,

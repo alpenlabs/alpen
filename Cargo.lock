@@ -4288,7 +4288,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -13885,7 +13885,6 @@ dependencies = [
  "strata-btcio",
  "strata-chain-worker-new",
  "strata-checkpoint-types",
- "strata-checkpoint-types-ssz",
  "strata-codec",
  "strata-codec-utils 0.1.0",
  "strata-common",
@@ -13897,7 +13896,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
- "strata-key-derivation",
  "strata-ledger-types",
  "strata-logging",
  "strata-node-context",
@@ -13929,7 +13927,6 @@ dependencies = [
  "tokio",
  "toml 0.5.11",
  "tracing",
- "zeroize",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
  "zkaleido-sp1-host",
 ]
@@ -15239,6 +15236,7 @@ dependencies = [
  "strata-btc-verification",
  "strata-checkpoint-types-ssz",
  "strata-codec",
+ "strata-common",
  "strata-config",
  "strata-crypto",
  "strata-db-store-sled",
@@ -15965,6 +15963,48 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "strata-signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jsonrpsee",
+ "serde",
+ "strata-common",
+ "strata-crypto",
+ "strata-ol-rpc-api",
+ "strata-ol-rpc-types",
+ "strata-ol-sequencer",
+ "strata-primitives",
+ "strata-service",
+ "strata-tasks",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "strata-signer-bin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argh",
+ "bitcoin",
+ "serde",
+ "strata-common",
+ "strata-crypto",
+ "strata-key-derivation",
+ "strata-logging",
+ "strata-primitives",
+ "strata-signer",
+ "strata-tasks",
+ "tokio",
+ "toml 0.5.11",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]

@@ -67,27 +67,12 @@ fn main() -> Result<()> {
     // Check for db consistency, external rpc clients reachable, etc.
     run_startup_checks(&nodectx)?;
 
-    // Load sequencer key early so it can be shared with both the envelope writer
-    // (for SPS-51 taproot authentication) and the duty executor (for block signing).
-    #[cfg(feature = "sequencer")]
-    let sequencer_key = if nodectx.config().client.is_sequencer {
-        let path = args
-            .sequencer_key
-            .as_ref()
-            .ok_or_else(|| anyhow!("--sequencer-key is required when --sequencer is set"))?;
-        Some(sequencer::load_seqkey(path)?)
-    } else {
-        None
-    };
-
-    #[cfg(feature = "sequencer")]
-    let sequencer_sk = sequencer_key.as_ref().map(|k| k.sk.0);
-
-    #[cfg(not(feature = "sequencer"))]
-    let sequencer_sk: Option<[u8; 32]> = None;
+    // Extract the envelope pubkey from rollup params if configured.
+    let envelope_pubkey: Option<[u8; 32]> =
+        nodectx.params().rollup.cred_rule.schnorr_key().map(|k| k.0);
 
     // Start services, and do genesis if necessary.
-    let (runctx, proof_notify) = start_strata_services(nodectx, sequencer_sk)?;
+    let (runctx, proof_notify) = start_strata_services(nodectx, envelope_pubkey)?;
 
     // Start RPC.
     start_rpc(&runctx)?;
@@ -104,10 +89,10 @@ fn main() -> Result<()> {
     #[cfg(not(feature = "prover"))]
     let _ = proof_notify;
 
-    // Start sequencer signer if sequencer feature is enabled
+    // Start block producer if running as sequencer.
     #[cfg(feature = "sequencer")]
     let _sequencer_monitor = if runctx.config().client.is_sequencer {
-        Some(sequencer::start_sequencer_signer(&runctx, &args)?)
+        Some(sequencer::start_block_producer(&runctx)?)
     } else {
         None
     };

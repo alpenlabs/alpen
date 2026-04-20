@@ -31,6 +31,9 @@ pub enum Expiry {
 
     /// Duty expires after a specific checkpoint is finalized on bitcoin
     CheckpointFinalized(Epoch),
+
+    /// Duty never expires. Lifecycle managed externally.
+    Never,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +43,9 @@ pub enum Duty {
 
     /// Duty to sign checkpoint
     SignCheckpoint(CheckpointSigningDuty),
+
+    /// Duty to sign the reveal transaction of a payload envelope.
+    SignRevealTx(RevealTxSigningDuty),
 }
 
 impl Duty {
@@ -48,6 +54,7 @@ impl Duty {
         match self {
             Self::SignBlock(_) => Expiry::NextBlock,
             Self::SignCheckpoint(d) => Expiry::CheckpointFinalized(d.checkpoint.new_tip().epoch),
+            Self::SignRevealTx(_) => Expiry::Never,
         }
     }
 
@@ -59,6 +66,7 @@ impl Duty {
                 let encoded = c.checkpoint.as_ssz_bytes();
                 hash::raw(&encoded)
             }
+            Self::SignRevealTx(p) => p.sighash,
         }
     }
 }
@@ -73,16 +81,23 @@ impl fmt::Display for Duty {
                     duty.slot(),
                     duty.template.epoch(),
                     duty.target_timestamp(),
-                    if duty.is_ready() { "yes" } else { "no" }
+                    duty.is_ready()
                 )
             }
             Self::SignCheckpoint(duty) => {
                 write!(
                     f,
-                    "SignCheckpoint(epoch: {}, l1_height: {}, l2_slot: {})",
+                    "SignCheckpoint(epoch: {}, l1_height: {}, ol_slot: {})",
                     duty.epoch(),
                     duty.checkpoint.new_tip().l1_height,
                     duty.checkpoint.new_tip().l2_commitment.slot
+                )
+            }
+            Self::SignRevealTx(duty) => {
+                write!(
+                    f,
+                    "SignRevealTx(idx: {}, sighash: {})",
+                    duty.payload_idx, duty.sighash
                 )
             }
         }
@@ -144,6 +159,24 @@ impl BlockSigningDuty {
             Some(std::time::Duration::from_millis(
                 self.target_timestamp() - now,
             ))
+        }
+    }
+}
+
+/// A duty to sign the reveal transaction of a payload envelope.
+#[derive(Debug, Clone)]
+pub struct RevealTxSigningDuty {
+    /// Index of the payload entry in the writer DB.
+    pub payload_idx: u64,
+    /// Taproot script-spend sighash to sign.
+    pub sighash: Buf32,
+}
+
+impl RevealTxSigningDuty {
+    pub fn new(payload_idx: u64, sighash: Buf32) -> Self {
+        Self {
+            payload_idx,
+            sighash,
         }
     }
 }

@@ -1,0 +1,25 @@
+[package]
+name = "strata-signer"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+strata-common.workspace = true
+strata-crypto.workspace = true
+strata-ol-rpc-api = { workspace = true, features = ["client"] }
+strata-ol-rpc-types.workspace = true
+strata-ol-sequencer.workspace = true
+strata-primitives.workspace = true
+strata-service.workspace = true
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+jsonrpsee.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+zeroize.workspace = true

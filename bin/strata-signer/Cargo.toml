@@ -1,0 +1,30 @@
+[package]
+name = "strata-signer-bin"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "strata-signer"
+path = "src/main.rs"
+
+[dependencies]
+strata-signer = { path = "../../crates/strata-signer" }
+
+strata-common.workspace = true
+strata-crypto.workspace = true
+strata-key-derivation.workspace = true
+strata-logging.workspace = true
+strata-primitives.workspace = true
+strata-tasks.workspace = true
+
+anyhow.workspace = true
+argh.workspace = true
+bitcoin.workspace = true
+serde.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+zeroize.workspace = true

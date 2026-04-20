@@ -138,6 +138,16 @@ pub enum CredRule {
     SchnorrKey(Buf32),
 }
 
+impl CredRule {
+    /// Returns the Schnorr key if the variant is [`CredRule::SchnorrKey`], otherwise `None`.
+    pub fn schnorr_key(&self) -> Option<&Buf32> {
+        match self {
+            Self::SchnorrKey(key) => Some(key),
+            Self::Unchecked => None,
+        }
+    }
+}
+
 /// Client sync parameters that are used to make the network work but don't
 /// strictly have to be pre-agreed.  These have to do with grace periods in
 /// message delivery and whatnot.

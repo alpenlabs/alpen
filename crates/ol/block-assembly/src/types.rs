@@ -41,6 +41,8 @@ impl FullBlockTemplate {
 
     /// Accepts signature and finalizes the template into a signed [`OLBlock`].
     pub fn complete_block_template(self, completion: BlockCompletionData) -> OLBlock {
+        #[cfg(feature = "debug-utils")]
+        strata_common::check_bail_trigger(strata_common::BAIL_DUTY_SIGN_BLOCK);
         let FullBlockTemplate { header, body } = self;
         let BlockCompletionData { signature } = completion;
         let signed_header = SignedOLBlockHeader::new(header, signature);

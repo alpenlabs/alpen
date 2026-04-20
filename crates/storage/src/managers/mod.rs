@@ -13,3 +13,4 @@ pub(crate) mod ol;
 pub(crate) mod ol_checkpoint;
 pub(crate) mod ol_state;
 pub(crate) mod prover_task;
+pub(crate) mod writer;

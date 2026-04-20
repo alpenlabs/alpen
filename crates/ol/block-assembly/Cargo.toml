@@ -11,6 +11,7 @@ ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-manifest-types.workspace = true
 strata-checkpoint-types-ssz.workspace = true
+strata-common = { workspace = true, optional = true }
 strata-config.workspace = true
 strata-crypto.workspace = true
 strata-db-types.workspace = true
@@ -38,6 +39,7 @@ tokio = { workspace = true, features = ["rt"] }
 tracing.workspace = true
 
 [features]
+debug-utils = ["dep:strata-common", "strata-common/debug-utils"]
 jsonschema = ["dep:schemars", "strata-identifiers/jsonschema"]
 
 [dev-dependencies]

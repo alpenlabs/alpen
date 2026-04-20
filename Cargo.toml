@@ -109,6 +109,7 @@ members = [
   "bin/alpen-client",
   "bin/alpen-reth",
   "bin/strata-sequencer-client",
+  "bin/strata-signer",
   "bin/prover-perf",
   "bin/strata",                  # New binary
 
@@ -127,6 +128,7 @@ default-members = [
   "bin/strata",
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",
+  "bin/strata-signer",
   "bin/alpen-cli",
   "bin/strata-test-cli",
 ]

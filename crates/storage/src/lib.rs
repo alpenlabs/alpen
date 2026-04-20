@@ -25,6 +25,7 @@ pub use managers::{
     ol_checkpoint::OLCheckpointManager,
     ol_state::OLStateManager,
     prover_task::ProverTaskDbManager,
+    writer::L1WriterManager,
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
@@ -65,6 +66,7 @@ pub struct NodeStorage {
     ol_checkpoint_manager: Arc<OLCheckpointManager>,
     proof_manager: Arc<CheckpointProofDbManager>,
     prover_task_manager: Arc<ProverTaskDbManager>,
+    l1_writer_manager: Arc<L1WriterManager>,
 }
 
 impl Clone for NodeStorage {
@@ -86,6 +88,7 @@ impl Clone for NodeStorage {
             ol_checkpoint_manager: self.ol_checkpoint_manager.clone(),
             proof_manager: self.proof_manager.clone(),
             prover_task_manager: self.prover_task_manager.clone(),
+            l1_writer_manager: self.l1_writer_manager.clone(),
         }
     }
 }
@@ -160,6 +163,10 @@ impl NodeStorage {
     pub fn prover_tasks(&self) -> &Arc<ProverTaskDbManager> {
         &self.prover_task_manager
     }
+
+    pub fn l1_writer(&self) -> &Arc<L1WriterManager> {
+        &self.l1_writer_manager
+    }
 }
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
@@ -207,6 +214,7 @@ pub fn create_node_storage(
     let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
     let proof_manager = Arc::new(CheckpointProofDbManager::new(pool.clone(), proof_db));
     let prover_task_manager = Arc::new(ProverTaskDbManager::new(pool.clone(), prover_task_db));
+    let l1_writer_manager = Arc::new(L1WriterManager::new(pool.clone(), db.writer_db()));
 
     Ok(NodeStorage {
         db,
@@ -225,5 +233,6 @@ pub fn create_node_storage(
         ol_checkpoint_manager,
         proof_manager,
         prover_task_manager,
+        l1_writer_manager,
     })
 }

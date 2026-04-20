@@ -1,12 +1,13 @@
 use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_db_types::types::L1BundleStatus;
 use strata_ol_block_assembly::{BlockAssemblyError, BlockasmHandle};
 use strata_primitives::OLBlockId;
 use strata_storage::NodeStorage;
 use tracing::debug;
 
-use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error};
+use crate::{BlockSigningDuty, CheckpointSigningDuty, Duty, Error, RevealTxSigningDuty};
 
-/// Extract sequencer duties
+/// Extract sequencer duties.
 pub async fn extract_duties(
     blockasm: &BlockasmHandle,
     tip_blkid: OLBlockId,
@@ -37,6 +38,11 @@ pub async fn extract_duties(
             .map(CheckpointSigningDuty::new)
             .map(Duty::SignCheckpoint),
     );
+
+    // Payload signing duties
+    let pending_payloads = get_pending_payload_duties(node_storage).await?;
+    duties.extend(pending_payloads.into_iter().map(Duty::SignRevealTx));
+
     Ok(duties)
 }
 
@@ -68,4 +74,31 @@ async fn get_earliest_unsigned_checkpoint(
         .get_checkpoint_payload_entry_async(commitment)
         .await
         .map_err(Into::into)
+}
+
+/// Gets payload entries pending an external signature.
+async fn get_pending_payload_duties(
+    node_storage: &NodeStorage,
+) -> Result<Vec<RevealTxSigningDuty>, Error> {
+    let l1_writer = node_storage.l1_writer();
+
+    let mut idx = l1_writer.get_next_payload_idx_async().await?;
+    let mut duties = vec![];
+
+    while idx > 0 {
+        idx -= 1;
+        let Some(entry) = l1_writer.get_payload_entry_by_idx_async(idx).await? else {
+            break;
+        };
+        if entry.status == L1BundleStatus::Finalized {
+            break;
+        }
+        if let L1BundleStatus::PendingRevealTxSign(sighash) = entry.status {
+            if entry.payload_signature.is_none() {
+                duties.push(RevealTxSigningDuty::new(idx, sighash));
+            }
+        }
+    }
+
+    Ok(duties)
 }

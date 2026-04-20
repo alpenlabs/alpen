@@ -120,4 +120,17 @@ pub trait OLSequencerRpc {
 
     #[method(name = "strataadmin_completeCheckpointSignature")]
     async fn complete_checkpoint_signature(&self, epoch: Epoch, sig: HexBytes64) -> RpcResult<()>;
+
+    /// Complete payload envelope signing by submitting the reveal tx Schnorr signature.
+    ///
+    /// `expected_sighash` must match the sighash stored in the entry's
+    /// `PendingRevealTxSign` status; the server rejects stale signatures from
+    /// old tasks that raced with an envelope rebuild.
+    #[method(name = "strataadmin_completePayloadSignature")]
+    async fn complete_payload_signature(
+        &self,
+        payload_idx: u64,
+        expected_sighash: HexBytes32,
+        sig: HexBytes64,
+    ) -> RpcResult<()>;
 }

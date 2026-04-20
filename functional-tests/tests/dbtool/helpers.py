@@ -525,14 +525,17 @@ def restart_sequencer_after_revert(
     strata_service: Any,
     old_tip: int,
     *,
+    signer_service: Any | None = None,
     target_epoch: int | None = None,
     rpc_timeout: int = 30,
     wait_timeout: int = 60,
     epoch_wait_timeout: int = 120,
     error_with: str = "Sequencer did not resume after OL state revert",
 ) -> tuple[Any, int]:
-    """Restart sequencer and wait for tip progression."""
+    """Restart sequencer (and signer if provided) and wait for tip progression."""
     strata_service.start()
+    if signer_service is not None:
+        signer_service.start()
     rpc = strata_service.wait_for_rpc_ready(timeout=rpc_timeout)
     new_tip = wait_for_tip_exceeds(
         strata_service,

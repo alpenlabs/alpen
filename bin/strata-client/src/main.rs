@@ -14,7 +14,7 @@ use strata_asm_params::AsmParams;
 use strata_btcio::{
     broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
     reader::query::bitcoin_data_reader_task,
-    writer::start_envelope_task,
+    writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     BtcioParams,
 };
 use strata_common::retry::{
@@ -43,7 +43,11 @@ use strata_sequencer::{
     checkpoint::{checkpoint_expiry_worker, checkpoint_worker, CheckpointHandle},
 };
 use strata_status::StatusChannel;
-use strata_storage::{create_node_storage, ops::l1tx_broadcast, NodeStorage};
+use strata_storage::{
+    create_node_storage,
+    ops::{l1tx_broadcast, writer::Context},
+    NodeStorage,
+};
 use strata_sync::{self, L2SyncContext, RpcSyncPeer};
 use strata_tasks::{ShutdownSignal, TaskExecutor, TaskManager};
 use tokio::{
@@ -429,18 +433,39 @@ fn start_sequencer_tasks(
 
     // Start envelope tasks
     let btcio_params = rollup_to_btcio_params(params.rollup());
-    let envelope_handle = start_envelope_task(
-        executor,
-        bitcoin_client,
-        Arc::new(btcio_cfg.writer.clone()),
-        btcio_params,
-        sequencer_bitcoin_address,
-        writer_db,
-        status_channel.clone(),
-        pool.clone(),
-        broadcast_handle.clone(),
-        None,
-    )?;
+    let writer_config = Arc::new(btcio_cfg.writer.clone());
+    let envelope_handle = executor.handle().block_on(async {
+        let writer_ops = Arc::new(Context::new(writer_db).into_ops(pool.clone()));
+        let (intent_tx, intent_rx) = mpsc::channel(64);
+        let envelope_handle = Arc::new(EnvelopeHandle::new(writer_ops.clone(), intent_tx));
+
+        let ctx = Arc::new(WriterContext::new(
+            btcio_params,
+            writer_config.clone(),
+            sequencer_bitcoin_address,
+            bitcoin_client,
+            status_channel.clone(),
+        ));
+
+        let _ = WatcherBuilder::new(
+            ctx,
+            writer_ops.clone(),
+            broadcast_handle.clone(),
+            Duration::from_millis(writer_config.write_poll_dur_ms),
+        )
+        .launch(executor)
+        .await?;
+
+        let _ = BundlerBuilder::new(
+            writer_ops,
+            Duration::from_millis(writer_config.bundle_interval_ms),
+            intent_rx,
+        )
+        .launch(executor)
+        .await?;
+
+        anyhow::Ok(envelope_handle)
+    })?;
 
     let template_manager_handle = start_template_manager_task(&ctx, executor);
 

@@ -66,16 +66,6 @@ pub(crate) struct Args {
     #[argh(option, description = "rpc port")]
     pub rpc_port: Option<u16>,
 
-    #[cfg(feature = "sequencer")]
-    /// Path to sequencer root key (required with `--sequencer`).
-    #[argh(option, short = 'k', description = "path to sequencer root key")]
-    pub sequencer_key: Option<PathBuf>,
-
-    #[cfg(feature = "sequencer")]
-    /// Poll interval for duties in ms.
-    #[argh(option, short = 'i', description = "poll interval for duties in ms")]
-    pub duty_poll_interval: Option<u64>,
-
     /// Other generic overrides to the config toml.
     /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000 -o exec.reth.rpc_url=http://reth`
     #[argh(option, short = 'o', description = "generic config overrides")]

@@ -111,7 +111,7 @@ jobs:
       - name: Build Cargo project
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
-        run: cargo build --locked -F sequencer -F debug-utils -F test-mode -F debug-asm --bin strata --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
+        run: cargo build --locked -F sequencer -F debug-utils -F test-mode -F debug-asm --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
 
       - name: Run functional tests
         id: funcTestsRun
