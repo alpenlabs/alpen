@@ -44,4 +44,8 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+alpen-ee-common = { workspace = true, features = ["test-utils"] }
+mockall.workspace = true
 reth-primitives-traits.workspace = true
+strata-identifiers.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }

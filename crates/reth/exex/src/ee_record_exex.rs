@@ -239,9 +239,34 @@ where
         Ok(highest)
     }
 
+    /// Process one reverted chain: delete the exec-block record for each
+    /// no-longer-canonical block. Iterates from highest to lowest so that if
+    /// we hit a finalized block (deep reorg), the shallower unfinalized ones
+    /// have already been cleaned up before we bail.
+    async fn revert(&self, chain: &Chain) -> eyre::Result<()> {
+        let blocks = chain.blocks();
+        let hashes: Vec<Hash> = chain
+            .range()
+            .rev()
+            .filter_map(|num| blocks.get(&num).map(|block| Hash::from(block.hash().0)))
+            .collect();
+        delete_reverted_records(self.storage.as_ref(), hashes).await
+    }
+
     pub async fn start(mut self) -> eyre::Result<()> {
         debug!("ee_record_exex: starting");
         while let Some(notification) = self.ctx.notifications.try_next().await? {
+            // Reverted path first: Reth tells us what's no longer canonical
+            // BEFORE we write records for the new canonical path, so the
+            // parent lookup in `commit` always starts from a clean base.
+            if let Some(reverted) = notification.reverted_chain() {
+                if let Err(err) = self.revert(&reverted).await {
+                    error!(
+                        ?err,
+                        "ee_record_exex: revert failed; deep reorg likely past finalized tip"
+                    );
+                }
+            }
             if let Some(committed_chain) = notification.committed_chain() {
                 match self.commit(&committed_chain).await {
                     Ok(Some(finished_height)) => {
@@ -260,5 +285,149 @@ where
             }
         }
         Ok(())
+    }
+}
+
+/// Delete reverted exec-block records from storage.
+///
+/// Pure helper so reorg handling is testable without constructing a Reth
+/// [`Chain`]. Iterates `hashes` in the order supplied (caller passes
+/// highest-first), calling [`ExecBlockStorage::delete_exec_block`] for each.
+///
+/// `delete_exec_block` is idempotent for unknown hashes but errors if the
+/// block is already finalized in storage. Hitting that error means a deep
+/// reorg past the OL-finalized tip, which this ExEx doesn't yet handle (same
+/// boundary as `exec_chain_tracker_task`'s `unimplemented!("deep reorg")`).
+/// We propagate the error so the caller can log it; any already-deleted
+/// shallower blocks stay deleted.
+pub(crate) async fn delete_reverted_records<S>(
+    storage: &S,
+    hashes: impl IntoIterator<Item = Hash>,
+) -> eyre::Result<()>
+where
+    S: ExecBlockStorage + ?Sized,
+{
+    for hash in hashes {
+        storage
+            .delete_exec_block(hash)
+            .await
+            .map_err(|err| eyre::eyre!("delete_exec_block({hash}) failed: {err}"))?;
+        debug!(?hash, "ee_record_exex: reverted record");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alpen_ee_common::{MockExecBlockStorage, StorageError};
+    use mockall::{predicate::eq, Sequence};
+    use strata_acct_types::Hash as AcctHash;
+    use strata_identifiers::Buf32;
+
+    use super::*;
+
+    fn hash_from_u8(value: u8) -> AcctHash {
+        AcctHash::from(Buf32::new([value; 32]))
+    }
+
+    #[tokio::test]
+    async fn deletes_each_reverted_hash() {
+        // Happy path: every reverted block is unfinalized; delete succeeds
+        // for each. This is the common Reth-reorg case on a fullnode where
+        // OL finality has not yet caught up.
+        let h2 = hash_from_u8(2);
+        let h3 = hash_from_u8(3);
+        let mut mock = MockExecBlockStorage::new();
+
+        mock.expect_delete_exec_block()
+            .with(eq(h3))
+            .times(1)
+            .returning(|_| Ok(()));
+        mock.expect_delete_exec_block()
+            .with(eq(h2))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        // Caller supplies highest-first.
+        delete_reverted_records(&mock, [h3, h2])
+            .await
+            .expect("unfinalized revert succeeds");
+    }
+
+    #[tokio::test]
+    async fn propagates_finalized_delete_error() {
+        // Deep reorg: the only block in the revert range is already
+        // finalized. `delete_exec_block` returns `CannotDeleteFinalizedBlock`;
+        // the helper must surface it rather than silently swallow. This
+        // matches the `unimplemented!("deep reorg")` boundary in
+        // exec_chain_tracker_task.
+        let h = hash_from_u8(1);
+        let mut mock = MockExecBlockStorage::new();
+
+        mock.expect_delete_exec_block()
+            .with(eq(h))
+            .times(1)
+            .returning(move |_| {
+                Err(StorageError::CannotDeleteFinalizedBlock(format!(
+                    "{h}"
+                )))
+            });
+
+        let err = delete_reverted_records(&mock, [h])
+            .await
+            .expect_err("finalized delete must error");
+        assert!(err.to_string().contains("delete_exec_block"));
+    }
+
+    #[tokio::test]
+    async fn processes_highest_first_then_bails_on_finalized() {
+        // Mixed revert: highest block is unfinalized, next one down is
+        // finalized. The helper must process in order and bail on the
+        // finalized one — the unfinalized shallow block stays deleted, the
+        // finalized one stays in storage. Without this order guarantee a
+        // deep reorg could leak reverted records above the finalized tip.
+        let h1 = hash_from_u8(1);
+        let h2 = hash_from_u8(2);
+        let mut mock = MockExecBlockStorage::new();
+        let mut seq = Sequence::new();
+
+        mock.expect_delete_exec_block()
+            .with(eq(h2))
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(|_| Ok(()));
+        mock.expect_delete_exec_block()
+            .with(eq(h1))
+            .times(1)
+            .in_sequence(&mut seq)
+            .returning(move |_| {
+                Err(StorageError::CannotDeleteFinalizedBlock(format!(
+                    "{h1}"
+                )))
+            });
+
+        let result = delete_reverted_records(&mock, [h2, h1]).await;
+        assert!(result.is_err(), "finalized delete should surface error");
+        // The mock's `.times(1)` assertion on both calls covers the "h2 was
+        // processed before the h1 error" invariant on drop.
+    }
+
+    #[tokio::test]
+    async fn idempotent_for_unknown_hashes() {
+        // Reverted chain can legitimately include blocks we never saw (ExEx
+        // started mid-reorg). `delete_exec_block` is documented as
+        // idempotent for unknown hashes; the helper must not spuriously
+        // fail.
+        let unknown = hash_from_u8(99);
+        let mut mock = MockExecBlockStorage::new();
+
+        mock.expect_delete_exec_block()
+            .with(eq(unknown))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        delete_reverted_records(&mock, [unknown])
+            .await
+            .expect("unknown-hash revert is idempotent");
     }
 }
