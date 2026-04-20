@@ -39,7 +39,7 @@ jobs:
         # The directories `bin` and `docker` must contain the subdirectories in the
         # matrix below.
         program:
-          [strata-sequencer-client, alpen-reth, prover-client]
+          [alpen-reth, prover-client]
     outputs:
       program: ${{ matrix.program }}
       sp1_value: ${{ steps.extract-sp1-value.outputs.sp1_value }}
@@ -171,7 +171,6 @@ jobs:
           # update sequencer tags
           yq eval -i ".client.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
           yq eval -i ".reth.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
-          yq eval -i ".sequencerSigner.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_NODES"
 
           # update prover tags
           yq eval -i ".proverClient.image.tag = \"$SHORT_TAG\"" "$VALUES_FILE_PROVER"
