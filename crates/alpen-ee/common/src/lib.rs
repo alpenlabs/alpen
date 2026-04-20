@@ -12,7 +12,7 @@ pub use traits::{
     engine::{EnginePayload, ExecutionEngine, ExecutionEngineError, PayloadBuilderEngine},
     ol_client::{
         chain_status_checked, get_inbox_messages_checked, OLAccountStateView, OLBlockData,
-        OLClient, OLClientError, SequencerOLClient,
+        OLClient, OLClientError, OLInboxClient,
     },
     prover::{BatchProver, ProofGenerationStatus},
     storage::{
@@ -24,7 +24,7 @@ pub use traits::{
 #[cfg(feature = "test-utils")]
 pub use traits::{
     da::{MockBatchDaProvider, MockDaBlobSource},
-    ol_client::{MockOLClient, MockSequencerOLClient},
+    ol_client::{MockOLClient, MockOLInboxClient},
     prover::MockBatchProver,
     storage::{
         batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,

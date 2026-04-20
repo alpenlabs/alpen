@@ -1,6 +1,6 @@
 use alpen_ee_common::{
     OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    OLInboxClient,
 };
 use async_trait::async_trait;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
@@ -165,7 +165,7 @@ impl OLClient for RpcOLClient {
 }
 
 #[async_trait]
-impl SequencerOLClient for RpcOLClient {
+impl OLInboxClient for RpcOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
         <Self as OLClient>::chain_status(self).await
     }

@@ -1,11 +1,11 @@
-use alpen_ee_common::{get_inbox_messages_checked, ExecBlockStorage, SequencerOLClient};
+use alpen_ee_common::{get_inbox_messages_checked, ExecBlockStorage, OLInboxClient};
 use eyre::eyre;
 use tracing::error;
 
 use crate::OLChainTrackerState;
 
 /// Initializes tracker state by syncing from local storage and the OL client.
-pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: SequencerOLClient>(
+pub async fn init_ol_chain_tracker_state<TStorage: ExecBlockStorage, TClient: OLInboxClient>(
     storage: &TStorage,
     ol_client: &TClient,
 ) -> eyre::Result<OLChainTrackerState> {
@@ -92,7 +92,7 @@ mod tests {
 
     mod init_ol_chain_tracker_state_tests {
         use alpen_ee_common::{
-            MockExecBlockStorage, MockSequencerOLClient, OLChainStatus, OLClientError,
+            MockExecBlockStorage, MockOLInboxClient, OLChainStatus, OLClientError,
         };
 
         use super::*;
@@ -118,7 +118,7 @@ mod tests {
 
         /// Sets up mock OL client to return the given chain status.
         fn setup_mock_client_chain_status(
-            mock_client: &mut MockSequencerOLClient,
+            mock_client: &mut MockOLInboxClient,
             status: OLChainStatus,
         ) {
             mock_client
@@ -129,7 +129,7 @@ mod tests {
 
         /// Sets up mock OL client to return inbox messages for the given block data.
         fn setup_mock_client_inbox_messages(
-            mock_client: &mut MockSequencerOLClient,
+            mock_client: &mut MockOLInboxClient,
             block_data: Vec<alpen_ee_common::OLBlockData>,
         ) {
             mock_client
@@ -159,7 +159,7 @@ mod tests {
             let block_data = vec![make_block_data(finalized_block, vec![], 0)];
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             setup_mock_client_chain_status(&mut mock_client, chain_status);
@@ -197,7 +197,7 @@ mod tests {
             let chain_status = make_chain_status(remote_finalized);
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             setup_mock_client_chain_status(&mut mock_client, chain_status);
@@ -228,7 +228,7 @@ mod tests {
             // Expected: Error "finalized block missing"
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mock_client = MockSequencerOLClient::new();
+            let mock_client = MockOLInboxClient::new();
 
             mock_storage
                 .expect_best_finalized_block()
@@ -259,7 +259,7 @@ mod tests {
             let chain_status = make_chain_status(remote_finalized);
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             setup_mock_client_chain_status(&mut mock_client, chain_status);
@@ -298,7 +298,7 @@ mod tests {
             let chain_status = make_chain_status(remote_finalized);
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             setup_mock_client_chain_status(&mut mock_client, chain_status);
@@ -323,7 +323,7 @@ mod tests {
             let exec_record = create_mock_exec_record(local_finalized);
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             mock_client
@@ -355,7 +355,7 @@ mod tests {
             let chain_status = make_chain_status(remote_finalized);
 
             let mut mock_storage = MockExecBlockStorage::new();
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
 
             setup_mock_storage_finalized(&mut mock_storage, exec_record);
             setup_mock_client_chain_status(&mut mock_client, chain_status);

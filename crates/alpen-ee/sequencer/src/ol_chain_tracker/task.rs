@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alpen_ee_common::{
-    get_inbox_messages_checked, ExecBlockStorage, OLBlockData, OLFinalizedStatus, SequencerOLClient,
+    get_inbox_messages_checked, ExecBlockStorage, OLBlockData, OLFinalizedStatus, OLInboxClient,
 };
 use eyre::eyre;
 use strata_identifiers::OLBlockCommitment;
@@ -23,10 +23,7 @@ pub(crate) enum OLChainTrackerQuery {
     },
 }
 
-pub(crate) async fn ol_chain_tracker_task<
-    TClient: SequencerOLClient,
-    TStorage: ExecBlockStorage,
->(
+pub(crate) async fn ol_chain_tracker_task<TClient: OLInboxClient, TStorage: ExecBlockStorage>(
     mut chainstatus_rx: watch::Receiver<OLFinalizedStatus>,
     mut query_rx: mpsc::Receiver<OLChainTrackerQuery>,
     mut state: OLChainTrackerState,
@@ -73,7 +70,7 @@ fn handle_chain_query(state: &OLChainTrackerState, query: OLChainTrackerQuery) {
 async fn handle_chain_update(
     ol_finalized_status: OLFinalizedStatus,
     state: &mut OLChainTrackerState,
-    client: &impl SequencerOLClient,
+    client: &impl OLInboxClient,
     storage: &impl ExecBlockStorage,
 ) {
     // compare latest finalized block with local chain segment using db. get extend, revert info
@@ -126,7 +123,7 @@ enum TrackAction {
 async fn track_ol_state(
     state: &OLChainTrackerState,
     ol_finalized_status: OLFinalizedStatus,
-    ol_client: &impl SequencerOLClient,
+    ol_client: &impl OLInboxClient,
 ) -> eyre::Result<TrackAction> {
     let best_ol_block = state.best_block();
     // We only care about finalized ol blocks to use as inputs to block assembly.
@@ -200,7 +197,7 @@ async fn handle_state_pruning(
 
 #[cfg(test)]
 mod tests {
-    use alpen_ee_common::{MockExecBlockStorage, MockSequencerOLClient, OLClientError};
+    use alpen_ee_common::{MockExecBlockStorage, MockOLInboxClient, OLClientError};
 
     use super::*;
     use crate::ol_chain_tracker::test_utils::{
@@ -231,7 +228,7 @@ mod tests {
             let state = OLChainTrackerState::new_empty(block, 0);
             let ol_status = make_finalized_status(block);
 
-            let mock_client = MockSequencerOLClient::new();
+            let mock_client = MockOLInboxClient::new();
 
             let result = track_ol_state(&state, ol_status, &mock_client)
                 .await
@@ -258,7 +255,7 @@ mod tests {
             let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
-            let mock_client = MockSequencerOLClient::new();
+            let mock_client = MockOLInboxClient::new();
 
             let result = track_ol_state(&state, ol_status, &mock_client)
                 .await
@@ -285,7 +282,7 @@ mod tests {
             let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
-            let mock_client = MockSequencerOLClient::new();
+            let mock_client = MockOLInboxClient::new();
 
             let result = track_ol_state(&state, ol_status, &mock_client)
                 .await
@@ -318,7 +315,7 @@ mod tests {
             let ol_blocks = create_ol_block_chain(10, 4); // slots 10, 11, 12, 13
             let block_data = create_block_data_chain(&ol_blocks, 0);
 
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
             mock_client
                 .expect_get_inbox_messages()
                 .withf(|min, max| *min == 10 && *max == 13)
@@ -366,7 +363,7 @@ mod tests {
                 make_block_data(make_block(13), vec![], 0),
             ];
 
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
             mock_client
                 .expect_get_inbox_messages()
                 .times(1)
@@ -400,7 +397,7 @@ mod tests {
             let state = OLChainTrackerState::new_empty(local_block, 0);
             let ol_status = make_finalized_status(remote_block);
 
-            let mut mock_client = MockSequencerOLClient::new();
+            let mut mock_client = MockOLInboxClient::new();
             mock_client
                 .expect_get_inbox_messages()
                 .times(1)

@@ -59,13 +59,15 @@ pub struct OLAccountStateView {
     pub proof_state: ProofState,
 }
 
-/// Client interface for sequencer-specific OL chain interactions.
+/// Client interface for OL chain interactions that read inbox messages and
+/// submit account updates.
 ///
-/// Extends the base OL client functionality with methods needed by the sequencer
-/// to read inbox messages and submit state updates to the OL chain.
+/// Extends the base OL client functionality with the methods needed to consume
+/// inbox messages (required by every node that re-executes EE blocks) and to
+/// submit account updates to the OL chain (sequencer-only in practice).
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
-pub trait SequencerOLClient {
+pub trait OLInboxClient {
     /// Returns the current status of the OL chain.
     ///
     /// Includes the tip block commitment and confirmed/finalized epoch commitments.
@@ -97,11 +99,11 @@ pub trait SequencerOLClient {
 
 /// Retrieves inbox messages with validation checks.
 ///
-/// This is a checked version of [`SequencerOLClient::get_inbox_messages`] that validates:
+/// This is a checked version of [`OLInboxClient::get_inbox_messages`] that validates:
 /// - The slot range is valid (`min_slot <= max_slot`)
 /// - The returned message count matches the expected number of slots
 pub async fn get_inbox_messages_checked(
-    client: &impl SequencerOLClient,
+    client: &impl OLInboxClient,
     min_slot: u64,
     max_slot: u64,
 ) -> Result<Vec<OLBlockData>, OLClientError> {

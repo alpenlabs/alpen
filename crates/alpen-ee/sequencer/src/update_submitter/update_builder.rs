@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use alpen_ee_common::{
-    Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, ProofId, SequencerOLClient,
+    Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef, OLInboxClient, ProofId,
 };
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
@@ -20,7 +20,7 @@ pub(super) async fn build_update_from_batch(
     batch: &Batch,
     da_refs: &[L1DaBlockRef],
     proof_id: &ProofId,
-    ol_client: &impl SequencerOLClient,
+    ol_client: &impl OLInboxClient,
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
     genesis_l1_height: L1Height,
@@ -66,7 +66,7 @@ pub(super) async fn build_update_from_batch(
 
 async fn fetch_l1_header_commitments_by_height(
     da_refs: &[L1DaBlockRef],
-    ol_client: &impl SequencerOLClient,
+    ol_client: &impl OLInboxClient,
 ) -> Result<HashMap<L1Height, Hash>> {
     let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
     heights.sort_unstable();

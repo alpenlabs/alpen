@@ -2,7 +2,7 @@
 
 use alpen_ee_common::{
     OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    OLInboxClient,
 };
 use async_trait::async_trait;
 use strata_identifiers::{Epoch, EpochCommitment, Hash, L1Height, OLTxId};
@@ -47,11 +47,11 @@ impl OLClient for OLClientKind {
 }
 
 #[async_trait]
-impl SequencerOLClient for OLClientKind {
+impl OLInboxClient for OLClientKind {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
         match self {
-            Self::Rpc(client) => <RpcOLClient as SequencerOLClient>::chain_status(client).await,
-            Self::Dummy(client) => <DummyOLClient as SequencerOLClient>::chain_status(client).await,
+            Self::Rpc(client) => <RpcOLClient as OLInboxClient>::chain_status(client).await,
+            Self::Dummy(client) => <DummyOLClient as OLInboxClient>::chain_status(client).await,
         }
     }
 

@@ -6,7 +6,7 @@
 
 use alpen_ee_common::{
     OLAccountStateView, OLBlockData, OLChainStatus, OLClient, OLClientError, OLEpochSummary,
-    SequencerOLClient,
+    OLInboxClient,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
@@ -70,7 +70,7 @@ impl OLClient for DummyOLClient {
 }
 
 #[async_trait]
-impl SequencerOLClient for DummyOLClient {
+impl OLInboxClient for DummyOLClient {
     async fn chain_status(&self) -> Result<OLChainStatus, OLClientError> {
         <Self as OLClient>::chain_status(self).await
     }
