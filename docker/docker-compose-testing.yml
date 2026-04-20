@@ -1,8 +1,3 @@
-x-base-client: &base-client
-  image: "strata-client:latest"
-  networks:
-    - strata_network
-
 x-base-reth: &base-reth
   image: "alpen-reth:latest"
   networks:
@@ -55,22 +50,6 @@ services:
     profiles:
       - fullnode
 
-  sequencer:
-    <<: *base-client
-    container_name: strata_sequencer
-    ports:
-      - 8432:8432
-    environment:
-      CONFIG_PATH: "configs/config.seq.toml"
-      PARAM_PATH: "configs/params.json"
-    volumes:
-      - ./.data/data-sequencer:/app/data
-      - ./configs:/app/configs
-      - ./configs/sequencer.key:/app/sequencer.key
-    depends_on:
-      - bitcoind
-      - reth
-
   sequencer-signer:
     image: "strata-sequencer-client:latest"
     networks:
@@ -108,27 +87,6 @@ services:
       "--bitcoind-password","rpcpassword",
       "--enable-checkpoint-runner", "true"
     ]
-
-  fullnode:
-    <<: *base-client
-    container_name: strata_fullnode
-    ports:
-      - 8433:8432
-    environment:
-      CONFIG_PATH: "configs/config.fn.toml"
-      PARAM_PATH: "configs/params.json"
-    volumes:
-      - ./.data/data-fullnode:/app/data
-      - ./configs:/app/configs
-      # need to wait for sequencer to start
-    entrypoint: /bin/sh -c "sleep 10 && /app/entrypoint.sh \"$@\"" --
-    command: ["--reth-jwtsecret", "configs/jwt.fn.hex"]
-    depends_on:
-      - bitcoind
-      - reth-fn
-      - sequencer
-    profiles:
-      - fullnode
 
   bitcoind:
     build:

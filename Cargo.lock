@@ -14532,59 +14532,6 @@ name = "strata-cli-common"
 version = "0.3.0-alpha.1"
 
 [[package]]
-name = "strata-client"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alloy-rpc-types",
- "anyhow",
- "argh",
- "async-trait",
- "bitcoin",
- "bitcoind-async-client",
- "borsh",
- "format_serde_error",
- "futures",
- "jsonrpsee",
- "serde_json",
- "strata-asm-params",
- "strata-asm-proto-bridge-v1",
- "strata-asm-txs-bridge-v1",
- "strata-asm-txs-checkpoint-v0",
- "strata-btcio",
- "strata-checkpoint-types",
- "strata-common",
- "strata-config",
- "strata-consensus-logic",
- "strata-crypto",
- "strata-csm-types",
- "strata-db-store-sled",
- "strata-db-types",
- "strata-eectl",
- "strata-evmexec",
- "strata-l1-txfmt",
- "strata-logging",
- "strata-ol-bridge-types",
- "strata-ol-chain-types",
- "strata-ol-chainstate-types",
- "strata-params",
- "strata-primitives",
- "strata-rpc-api",
- "strata-rpc-types",
- "strata-rpc-utils",
- "strata-sequencer",
- "strata-status",
- "strata-storage",
- "strata-sync",
- "strata-tasks",
- "thiserror 2.0.18",
- "threadpool",
- "tokio",
- "toml 0.5.11",
- "tracing",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
-]
-
-[[package]]
 name = "strata-codec"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"

@@ -104,7 +104,6 @@ members = [
   # binaries listed separately
   "bin/datatool",
   "bin/alpen-cli",
-  "bin/strata-client",
   "bin/strata-dbtool",
   "bin/alpen-client",
   "bin/alpen-reth",
@@ -124,7 +123,6 @@ default-members = [
   "bin/datatool",
   "bin/alpen-reth",
   "bin/alpen-client",
-  "bin/strata-client",
   "bin/strata",
   "bin/strata-dbtool",
   "bin/strata-sequencer-client",

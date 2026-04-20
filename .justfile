@@ -230,8 +230,8 @@ fmt-func-tests: ensure-uv activate-uv
 lint-check-ws:
     cargo clippy \
         --workspace \
-        --bin "strata-client" \
         --lib \
+        --bins \
         --examples \
         --tests \
         --benches \
@@ -244,8 +244,8 @@ lint-check-ws:
 lint-fix-ws:
     cargo clippy \
         --workspace \
-        --bin "strata-client" \
         --lib \
+        --bins \
         --examples \
         --tests \
         --benches \
