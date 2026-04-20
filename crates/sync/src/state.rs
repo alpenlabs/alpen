@@ -34,6 +34,7 @@ impl L2SyncState {
             .max_by_key(|bc| bc.slot())
             .expect("sync: picking new tip");
 
+        metrics::gauge!("strata_l2_sync_tip_slot").set(self.tip_block.slot() as f64);
         Ok(())
     }
 
@@ -42,6 +43,7 @@ impl L2SyncState {
         epoch: EpochCommitment,
     ) -> Result<(), L2SyncError> {
         self.tracker.update_finalized_epoch(&epoch)?;
+        metrics::gauge!("strata_l2_finalized_slot").set(epoch.last_slot() as f64);
         Ok(())
     }
 

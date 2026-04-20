@@ -49,8 +49,22 @@ fn main() -> Result<()> {
         .build()
         .map_err(InitError::RuntimeBuild)?;
 
-    // Initialize logging
+    // Install Prometheus metrics recorder before logging so the MetricsLayer
+    // can record from the very first spans. Bind to loopback only. Operators
+    // who need remote scraping can front it with a reverse proxy.
+    if let Some(port) = config.logging.metrics_port {
+        metrics_exporter_prometheus::PrometheusBuilder::new()
+            .with_http_listener(([127, 0, 0, 1], port))
+            .install()
+            .map_err(|e| anyhow!("failed to install Prometheus metrics exporter: {e}"))?;
+    }
+
+    // Initialize logging (MetricsLayer is only added when a recorder is installed).
     init_logging(rt.handle(), &config);
+
+    if config.logging.metrics_port.is_some() {
+        info!("Prometheus metrics endpoint started");
+    }
 
     // Validate sequencer flag isn't used when sequencer feature is disabled.
     #[cfg(not(feature = "sequencer"))]
@@ -116,5 +130,6 @@ fn init_logging(rt: &Handle, config: &strata_config::Config) {
         log_file_prefix: config.logging.log_file_prefix.as_deref(),
         json_format: config.logging.json_format,
         default_log_prefix: "alpen",
+        enable_metrics_layer: config.logging.metrics_port.is_some(),
     });
 }

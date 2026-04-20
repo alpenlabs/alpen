@@ -284,6 +284,10 @@ pub struct LoggingConfig {
     /// Use JSON format for logs instead of compact format.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub json_format: Option<bool>,
+
+    /// Port for the Prometheus `/metrics` HTTP endpoint. Disabled if not set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
