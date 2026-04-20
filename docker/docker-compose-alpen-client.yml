@@ -45,6 +45,8 @@ services:
     build:
       context: ..
       dockerfile: docker/strata/Dockerfile
+      args:
+        CARGO_FEATURES: ${CARGO_FEATURES:-}
     image: strata:latest
     container_name: alpen_strata
     user: "0:0"

@@ -39,7 +39,9 @@ services:
   strata:
     build:
       context: ..
-      dockerfile: docker/strata/Dockerfile    
+      dockerfile: docker/strata/Dockerfile
+      args:
+        CARGO_FEATURES: ${CARGO_FEATURES:-}
     user: "0:0"
     depends_on:
       - bitcoind
