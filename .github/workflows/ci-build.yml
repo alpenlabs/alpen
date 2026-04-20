@@ -138,7 +138,7 @@ jobs:
           # the CARGO_FEATURES build arg (#1663).
           BUILD_ARGS=()
           if [ "$PROGRAM" = "strata" ]; then
-            BUILD_ARGS+=( --build-arg "CARGO_FEATURES=sp1" )
+            BUILD_ARGS+=( --build-arg "CARGO_FEATURES=sp1,prover" )
           fi
 
           docker buildx build \
