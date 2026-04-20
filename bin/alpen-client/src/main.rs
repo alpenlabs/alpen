@@ -77,6 +77,8 @@ mod sequencer_imports {
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
     };
+    pub(super) use strata_proofimpl_alpen_acct::EeAcctProgram;
+    pub(super) use strata_proofimpl_alpen_chunk::EeChunkProgram;
     pub(super) use strata_tasks::TaskManager;
     #[cfg(feature = "sp1")]
     pub(super) use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST};
@@ -642,12 +644,12 @@ fn main() {
                     Arc::new(move |start, end| extractor.extract_range_witness(start, end))
                 };
 
-                let chunk_host: SP1Host = (**ALPEN_CHUNK_HOST).clone();
                 let genesis = {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
                     ext.custom_chain.genesis().config.clone().into_rsp()
                 };
-                let chunk_prover = ProverBuilder::new(ChunkSpec::new(
+
+                let chunk_builder = ProverBuilder::new(ChunkSpec::new(
                     batch_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
@@ -656,11 +658,9 @@ fn main() {
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
                 .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
-                .retry(RetryConfig::default())
-                .remote(chunk_host);
+                .retry(RetryConfig::default());
 
-                let acct_host: SP1Host = (**ALPEN_ACCT_HOST).clone();
-                let acct_prover = ProverBuilder::new(AcctSpec::new(
+                let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
                     storage.clone(),
@@ -671,8 +671,41 @@ fn main() {
                     batch_storage_dyn.clone(),
                     batch_proofs.clone(),
                 ))
-                .retry(RetryConfig::default())
-                .remote(acct_host);
+                .retry(RetryConfig::default());
+
+                // Dev/test escape hatch: use zkaleido NativeHost instead of
+                // the SP1 remote host. This skips real Groth16 proving and
+                // the need for compiled guest ELFs — only safe for
+                // functional tests. For native acct, the chunk predicate
+                // key is always-accept since native mode does not verify
+                // chunk receipts.
+                let (chunk_prover, acct_prover) = if ext.dev_native_prover {
+                    info!(
+                        target: "alpen-client",
+                        "EE chunk + acct provers: native host (dev/test only)"
+                    );
+                    let chunk = chunk_builder.native(EeChunkProgram::native_host());
+                    let acct_program = EeAcctProgram::new(PredicateKey::always_accept());
+                    let acct = acct_builder.native(acct_program.native_host());
+                    (chunk, acct)
+                } else {
+                    #[cfg(feature = "sp1")]
+                    {
+                        let chunk_host: SP1Host = (**ALPEN_CHUNK_HOST).clone();
+                        let acct_host: SP1Host = (**ALPEN_ACCT_HOST).clone();
+                        (
+                            chunk_builder.remote(chunk_host),
+                            acct_builder.remote(acct_host),
+                        )
+                    }
+                    #[cfg(not(feature = "sp1"))]
+                    {
+                        return Err(eyre::eyre!(
+                            "remote SP1 prover is not compiled in; pass --dev-native-prover \
+                             or build with the `sp1` feature"
+                        ));
+                    }
+                };
 
                 let prover_tick = Duration::from_secs(5);
                 let chunk_handle = ProverServiceBuilder::new(chunk_prover)
@@ -864,6 +897,15 @@ pub struct AdditionalConfig {
     /// Lower values seal batches more frequently (useful for testing).
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
+
+    /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
+    /// instead of the SP1 remote host.
+    ///
+    /// Dev/test only: skips real Groth16 proving and the compiled guest
+    /// ELFs. Functional tests enable this so the sequencer can start
+    /// without the SP1 prover ELFs present on disk.
+    #[arg(long, default_value_t = false)]
+    pub dev_native_prover: bool,
 }
 
 /// Run node with logging
