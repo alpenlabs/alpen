@@ -14,7 +14,7 @@ use reth_evm::{
     execute::{BasicBlockExecutor, Executor},
     ConfigureEvm,
 };
-use reth_primitives::EthPrimitives;
+use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
 use reth_provider::{BlockReader, StateProvider, StateProviderFactory};
 use reth_revm::{db::CacheDB, state::Bytecode};
@@ -36,9 +36,12 @@ pub struct RangeWitnessData {
     /// need a specific on-wire encoding should encode from here rather
     /// than receiving pre-serialized bytes.
     pub prev_header: Header,
-    /// Alloy blocks in range order (start..=end). Available for callers
-    /// that need per-block header/body data (e.g. `RawBlockData` encoding).
-    pub blocks: Vec<reth_primitives::Block>,
+    /// Blocks in range order (start..=end). Available for callers
+    /// that need per-block header/body data (e.g. `RawBlockData`
+    /// encoding). [`Block`] is reth's type alias for
+    /// `alloy_consensus::Block`, specialized to the reth transaction
+    /// type.
+    pub blocks: Vec<Block>,
 }
 
 /// Extracts witness data for block ranges.
@@ -50,7 +53,7 @@ pub struct RangeWitnessExtractor<F, E> {
 
 impl<F, E> RangeWitnessExtractor<F, E>
 where
-    F: StateProviderFactory + BlockReader<Block = reth_primitives::Block>,
+    F: StateProviderFactory + BlockReader<Block = Block>,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone,
 {
     pub fn new(provider_factory: F, evm_config: E) -> Self {
@@ -139,7 +142,7 @@ where
         &self,
         start_block: u64,
         end_block: u64,
-    ) -> Result<(AccumulatedState, Vec<reth_primitives::Block>)> {
+    ) -> Result<(AccumulatedState, Vec<Block>)> {
         let mut acc = AccumulatedState::default();
         let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
 
