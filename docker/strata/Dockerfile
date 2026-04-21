@@ -53,10 +53,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
     install -m 0555 /app/target/release/strata /usr/local/bin/strata
 
 # Build strata-datatool with sp1-docker-builder so the image carries its own
-# datatool binary AND the byte-reproducible SP1 guest ELFs used by the
+# datatool binary AND the byte-reproducible SP1 guest ELF used by the
 # runtime prover. sp1-docker-builder spawns a pinned Succinct toolchain
 # container during compilation, so the build host needs Docker socket
 # access — see the PR description for the required CI buildx config.
+#
+# strata only reads guest-checkpoint-new.elf at runtime. The other guest
+# ELFs (guest-alpen-acct, guest-alpen-chunk, guest-checkpoint,
+# guest-evm-ee-stf) are inputs to datatool during params generation but
+# aren't loaded by the strata binary, so we don't ship them in this image.
 RUN --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,target=/app/target \
@@ -65,7 +70,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
       --features sp1-docker-builder && \
     install -m 0555 /app/target/release/strata-datatool /usr/local/bin/strata-datatool && \
     mkdir -p /app/elfs/sp1 && \
-    find /app/provers/sp1 -name '*.elf' -path '*/release/*' \
+    find /app/provers/sp1 -name 'guest-checkpoint-new.elf' -path '*/release/*' \
       -type f -exec cp -v {} /app/elfs/sp1/ \;
 
 
