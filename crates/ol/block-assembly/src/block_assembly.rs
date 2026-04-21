@@ -1643,6 +1643,203 @@ mod tests {
         );
     }
 
+    /// Tests duplicate submission of the exact same tx (same txid, same seq_no).
+    /// First execution succeeds, duplicate replay in the same block is rejected.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_duplicate_seq_no_same_tx_second_rejected() {
+        let account_id = test_account_id(1);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .build();
+        let txid = tx.compute_txid();
+
+        let mempool = env.mempool();
+        mempool.add_transaction(txid, tx.clone());
+        mempool.add_transaction(txid, tx);
+
+        let result = env
+            .generate_block_template()
+            .await
+            .expect("block generation should succeed");
+
+        let (template, failed_txs, _da) = result.into_parts();
+        let txs = template.body().tx_segment().expect("tx segment").txs();
+        assert_eq!(txs.len(), 1, "duplicate replay should not be included");
+        assert_eq!(
+            failed_txs.len(),
+            1,
+            "one duplicate should be reported failed"
+        );
+        assert_eq!(
+            failed_txs[0].0, txid,
+            "failed duplicate should reference replayed txid"
+        );
+    }
+
+    /// Tests same-account duplicate seq_no across two different txs.
+    /// First tx succeeds, second tx with same seq_no is rejected.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_duplicate_seq_no_different_tx_second_rejected() {
+        let account_id = test_account_id(1);
+        let receiver = test_account_id(2);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE))
+            .with_account(TestAccount::new(receiver, 0));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let tx1 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .build();
+        let tx1_id = tx1.compute_txid();
+        let tx2 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_outputs(vec![(receiver, 1)])
+            .build();
+        let tx2_id = tx2.compute_txid();
+
+        let mempool = env.mempool();
+        mempool.add_transaction(tx1_id, tx1);
+        mempool.add_transaction(tx2_id, tx2);
+
+        let result = env
+            .generate_block_template()
+            .await
+            .expect("block generation should succeed");
+
+        let (template, failed_txs, _da) = result.into_parts();
+        let txs = template.body().tx_segment().expect("tx segment").txs();
+        assert_eq!(txs.len(), 1, "only first seq_no=0 tx should be included");
+        assert_eq!(txs[0].compute_txid(), tx1_id);
+        assert_eq!(failed_txs.len(), 1, "second tx should be reported failed");
+        assert_eq!(failed_txs[0].0, tx2_id);
+    }
+
+    /// Tests reverse ordering: seq_no=1 before seq_no=0.
+    /// First tx fails, second tx succeeds against unchanged account state.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_reverse_order_seq_one_then_zero() {
+        let account_id = test_account_id(1);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let tx_seq1 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .build();
+        let tx_seq1_id = tx_seq1.compute_txid();
+        let tx_seq0 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .build();
+        let tx_seq0_id = tx_seq0.compute_txid();
+
+        let mempool = env.mempool();
+        mempool.add_transaction(tx_seq1_id, tx_seq1);
+        mempool.add_transaction(tx_seq0_id, tx_seq0);
+
+        let result = env
+            .generate_block_template()
+            .await
+            .expect("block generation should succeed");
+
+        let (template, failed_txs, _da) = result.into_parts();
+        let txs = template.body().tx_segment().expect("tx segment").txs();
+        assert_eq!(txs.len(), 1, "only seq_no=0 tx should be included");
+        assert_eq!(txs[0].compute_txid(), tx_seq0_id);
+        assert_eq!(failed_txs.len(), 1, "seq_no=1 should be reported failed");
+        assert_eq!(failed_txs[0].0, tx_seq1_id);
+    }
+
+    /// Tests seq gap behavior: seq_no=0 then seq_no=2 in the same block.
+    /// The gap transaction must be rejected.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_seq_gap_zero_then_two_second_rejected() {
+        let account_id = test_account_id(1);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let tx_seq0 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .build();
+        let tx_seq0_id = tx_seq0.compute_txid();
+        let tx_seq2 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(2)
+            .build();
+        let tx_seq2_id = tx_seq2.compute_txid();
+
+        let mempool = env.mempool();
+        mempool.add_transaction(tx_seq0_id, tx_seq0);
+        mempool.add_transaction(tx_seq2_id, tx_seq2);
+
+        let result = env
+            .generate_block_template()
+            .await
+            .expect("block generation should succeed");
+
+        let (template, failed_txs, _da) = result.into_parts();
+        let txs = template.body().tx_segment().expect("tx segment").txs();
+        assert_eq!(txs.len(), 1, "gap tx should not be included");
+        assert_eq!(txs[0].compute_txid(), tx_seq0_id);
+        assert_eq!(failed_txs.len(), 1, "gap tx should be reported failed");
+        assert_eq!(failed_txs[0].0, tx_seq2_id);
+    }
+
+    /// Tests seq chain continuity across blocks when transactions are split one-per-block.
+    /// This models `max_txs_per_block=1` execution behavior.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_seq_chain_across_blocks_when_split_one_per_block() {
+        let account_id = test_account_id(1);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let tx_seq0 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .build();
+        let tx_seq0_id = tx_seq0.compute_txid();
+        let tx_seq1 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .build();
+        let tx_seq1_id = tx_seq1.compute_txid();
+
+        // Build block 1 with seq_no=0.
+        let output1 = env
+            .construct_block(vec![(tx_seq0_id, tx_seq0)])
+            .await
+            .expect("block 1 should construct");
+        let included1 = included_txids(&output1.template);
+        assert_eq!(included1.len(), 1);
+        let parent_da_2 = output1.accumulated_da.clone();
+        let _current_commitment = env.persist(&output1).await;
+
+        // Build block 2 with seq_no=1 against the state produced by block 1.
+        let output2 = env
+            .construct_block_with_da(vec![(tx_seq1_id, tx_seq1)], parent_da_2)
+            .await
+            .expect("block 2 should construct");
+        let included2 = included_txids(&output2.template);
+        assert_eq!(included2.len(), 1);
+    }
+
     /// Tests that tx with seq_no=1 fails if tx with seq_no=0 is not present.
     /// Only tx2 (seq_no=1) submitted - should fail during execution because account has seq_no=0.
     #[tokio::test(flavor = "multi_thread")]

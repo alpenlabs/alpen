@@ -1126,6 +1126,12 @@ impl TestStorageFixtureBuilder {
         self
     }
 
+    /// Adds multiple configured account fixtures.
+    pub(crate) fn with_accounts(mut self, accounts: impl IntoIterator<Item = TestAccount>) -> Self {
+        self.accounts.extend(accounts);
+        self
+    }
+
     /// Stores L1 manifests in ASM storage for block's L1 update fetching.
     pub(crate) fn with_l1_manifest_height_range(mut self, range: RangeInclusive<L1Height>) -> Self {
         self.l1_manifest_height_range = Some(range);
@@ -1429,6 +1435,11 @@ pub(crate) fn included_txids(template: &FullBlockTemplate) -> Vec<OLTxId> {
         .iter()
         .map(OLTransaction::compute_txid)
         .collect()
+}
+
+/// Returns post-state root committed in the block template header.
+pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
+    *template.header().state_root()
 }
 
 /// Returns decoded withdrawal intent logs from accumulated DA logs.
