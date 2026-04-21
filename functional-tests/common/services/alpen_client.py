@@ -123,7 +123,7 @@ class AlpenClientService(RpcService):
         Returns one of: "pending", "confirmed", "finalized".
         """
         rpc = self.create_rpc()
-        result = rpc.strataee_getBlockStatus(block_hash)
+        result = rpc.alpen_getBlockStatus(block_hash)
         return result["status"]
 
     def get_peers(self) -> list[dict]:
