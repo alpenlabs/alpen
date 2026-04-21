@@ -9,9 +9,10 @@ workspace = true
 [dependencies]
 alpen-ee-common.workspace = true
 alpen-ee-rpc-api.workspace = true
-strata-acct-types.workspace = true
 
 alloy-primitives.workspace = true
 async-trait.workspace = true
 jsonrpsee = { workspace = true, features = ["server"] }
+reth-node-builder.workspace = true
+reth-provider.workspace = true
 tokio.workspace = true

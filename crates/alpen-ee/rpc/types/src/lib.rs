@@ -16,7 +16,7 @@ pub enum BlockStatus {
     Finalized,
 }
 
-/// Response for `strataee_getBlockStatus`.
+/// Response for `alpen_getBlockStatus`.
 ///
 /// Reserved for forward-compatible expansion; additional fields may be added without changing the
 /// method signature.
