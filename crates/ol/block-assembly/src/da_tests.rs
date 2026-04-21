@@ -3,24 +3,21 @@
 //! Tests that verify DA is correctly accumulated during block assembly,
 //! reset at epoch boundaries, and rolled back on failed transactions.
 
-use std::sync::Arc;
+use std::{iter, sync::Arc};
 
 use strata_identifiers::{Buf64, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
-use strata_storage::NodeStorage;
 
 use crate::{
-    AccumulatorProofGenerator, EpochSealingPolicy,
-    block_assembly::{calculate_block_slot_and_epoch, construct_block},
     context::BlockAssemblyAnchorContext,
     da_tracker::{AccumulatedDaData, rebuild_accumulated_da_upto},
     test_utils::{
-        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, StorageInboxMmr, TestEnvBuilder,
-        create_test_block_assembly_context, generate_message_entries,
-        insert_inbox_messages_into_storage_state, test_account_id,
+        DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
+        TestStorageFixtureBuilder, assemble_block_with_txs, generate_message_entries,
+        included_txids, test_account_id,
     },
     types::BlockGenerationConfig,
 };
@@ -34,79 +31,39 @@ fn finalize_da_to_bytes(accumulator: EpochDaAccumulator, state: OLState) -> Vec<
         .expect("should produce a blob")
 }
 
-/// Builds blocks from `start_commitment` up to (not including) `target_slot`, threading DA.
+/// Builds blocks from the env parent commitment up to (not including) `target_slot`, threading DA.
 /// Returns `(final_commitment, accumulated_da, Vec<(block, post_state)>)`.
-async fn build_blocks_with_da_and_artifacts<C, E>(
-    start_commitment: OLBlockCommitment,
+async fn build_blocks_with_da_and_artifacts(
+    env: &mut TestEnv,
     target_slot: u64,
-    ctx: &C,
-    storage: &NodeStorage,
-    epoch_sealing_policy: &E,
 ) -> (
     OLBlockCommitment,
     AccumulatedDaData,
     Vec<(OLBlock, OLState)>,
-)
-where
-    C: BlockAssemblyAnchorContext<State = OLState> + AccumulatorProofGenerator,
-    E: EpochSealingPolicy,
-{
-    let mut current_commitment = start_commitment;
+) {
+    let mut current_commitment = env.parent_commitment();
     let mut accumulated_da = AccumulatedDaData::new_empty();
     let mut artifacts = Vec::new();
 
     let start_slot = if current_commitment.is_null() {
         0
     } else {
-        start_commitment.slot() + 1
+        current_commitment.slot() + 1
     };
 
     for slot in start_slot..target_slot {
-        let config = BlockGenerationConfig::new(current_commitment);
-
-        let parent_state = ctx
-            .fetch_state_for_tip(config.parent_block_commitment())
+        let output = env
+            .construct_block_with_da(iter::empty(), accumulated_da)
             .await
-            .unwrap_or_else(|e| panic!("Failed to fetch parent state at slot {slot}: {e:?}"))
-            .unwrap_or_else(|| panic!("Missing parent state at slot {slot}"));
-
-        let (block_slot, block_epoch) = calculate_block_slot_and_epoch(
-            &config.parent_block_commitment(),
-            parent_state.as_ref(),
-        );
-
-        let output = construct_block(
-            ctx,
-            epoch_sealing_policy,
-            &config,
-            parent_state,
-            block_slot,
-            block_epoch,
-            vec![],
-            accumulated_da,
-        )
-        .await
-        .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
+            .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
 
         let header = output.template.header();
-        let new_commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
-
         let signed_header = SignedOLBlockHeader::new(header.clone(), Buf64::zero());
         let block = OLBlock::new(signed_header, output.template.body().clone());
+        let post_state = output.post_state.clone();
+        let new_commitment = env.persist(&output).await;
 
-        storage
-            .ol_block()
-            .put_block_data_async(block.clone())
-            .await
-            .unwrap_or_else(|e| panic!("Failed to store block at slot {slot}: {e:?}"));
-
-        storage
-            .ol_state()
-            .put_toplevel_ol_state_async(new_commitment, output.post_state.clone())
-            .await
-            .unwrap_or_else(|e| panic!("Failed to store state at slot {slot}: {e:?}"));
-
-        artifacts.push((block, output.post_state));
+        artifacts.push((block, post_state));
         accumulated_da = output.accumulated_da;
         current_commitment = new_commitment;
     }
@@ -114,32 +71,20 @@ where
     (current_commitment, accumulated_da, artifacts)
 }
 
-/// Collects stored blocks for an epoch by walking forward from start_slot to end_slot (exclusive).
-fn collect_blocks_from_artifacts(artifacts: &[(OLBlock, OLState)]) -> Vec<&OLBlock> {
-    artifacts.iter().map(|(block, _)| block).collect()
-}
-
 /// Core correctness: DA accumulated incrementally during block assembly must produce
 /// the same encoded blob as DA rebuilt by replaying those same blocks.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_da_incremental_matches_replay() {
-    let env = TestEnvBuilder::new()
+    let env_builder = TestStorageFixtureBuilder::new()
         .with_parent_slot(0)
-        .with_asm_manifests(&[1, 2, 3])
-        .build()
-        .await;
-
-    let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+        .with_l1_manifest_height_range(1..=3);
+    let (fixture, parent_commitment) = env_builder.build_fixture().await;
+    let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
     // Build blocks 1..5, threading DA through each.
-    let (_final_commitment, incremental_da, artifacts) = build_blocks_with_da_and_artifacts(
-        env.parent_commitment,
-        5,
-        &ctx,
-        env.storage.as_ref(),
-        &env.epoch_sealing_policy,
-    )
-    .await;
+    let start_commitment = env.parent_commitment();
+    let (_final_commitment, incremental_da, artifacts) =
+        build_blocks_with_da_and_artifacts(&mut env, 5).await;
 
     // Get the post-state of the last block for finalization.
     let (_, last_post_state) = artifacts.last().unwrap();
@@ -150,18 +95,24 @@ async fn test_da_incremental_matches_replay() {
 
     // Replay: use DaAccumulatingState to re-execute all blocks.
     // Get parent state of first block (genesis post-state).
-    let genesis_state = ctx
-        .fetch_state_for_tip(env.parent_commitment)
+    let genesis_state = env
+        .ctx()
+        .fetch_state_for_tip(start_commitment)
         .await
         .unwrap()
         .unwrap();
 
-    let blocks: Vec<&OLBlock> = collect_blocks_from_artifacts(&artifacts);
+    let blocks: Vec<&OLBlock> = artifacts.iter().map(|(block, _)| block).collect();
     let first_parent_header = artifacts[0].0.header();
 
     // Get the parent header (genesis header) from storage.
     let parent_blkid = *first_parent_header.parent_blkid();
-    let parent_block = ctx.fetch_ol_block(parent_blkid).await.unwrap().unwrap();
+    let parent_block = env
+        .ctx()
+        .fetch_ol_block(parent_blkid)
+        .await
+        .unwrap()
+        .unwrap();
     let parent_header: &OLBlockHeader = parent_block.header();
 
     let owned_blocks: Vec<OLBlock> = blocks.into_iter().cloned().collect();
@@ -190,47 +141,33 @@ async fn test_da_incremental_matches_replay() {
 /// accumulated data, proving that epoch DA is scoped correctly.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_da_resets_at_epoch_boundary() {
-    let env = TestEnvBuilder::new()
+    let env_builder = TestStorageFixtureBuilder::new()
         .with_parent_slot(0)
-        .with_asm_manifests(&[1, 2, 3])
-        .build()
-        .await;
-
-    let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+        .with_l1_manifest_height_range(1..=3);
+    let (fixture, parent_commitment) = env_builder.build_fixture().await;
+    let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
     // Build blocks 1..10 (slots before the terminal block), threading DA.
     let (pre_terminal_commitment, epoch1_da, _epoch1_artifacts) =
-        build_blocks_with_da_and_artifacts(
-            env.parent_commitment,
-            10,
-            &ctx,
-            env.storage.as_ref(),
-            &env.epoch_sealing_policy,
-        )
-        .await;
+        build_blocks_with_da_and_artifacts(&mut env, 10).await;
 
     // Epoch 1 DA accumulator should have slot changes from blocks 1-9.
     let (epoch1_acc, _) = epoch1_da.clone().into_parts();
-    let epoch1_pre_terminal_state = ctx
+    let epoch1_pre_terminal_state = env
+        .ctx()
         .fetch_state_for_tip(pre_terminal_commitment)
         .await
         .unwrap()
         .unwrap();
-    let epoch1_blob = finalize_da_to_bytes(epoch1_acc, (*epoch1_pre_terminal_state).clone());
+    let epoch1_blob =
+        finalize_da_to_bytes(epoch1_acc, Arc::unwrap_or_clone(epoch1_pre_terminal_state));
 
     // Build terminal block (slot 10) with epoch 1 DA.
     let config = BlockGenerationConfig::new(pre_terminal_commitment);
-    let (block_slot, block_epoch) = calculate_block_slot_and_epoch(
-        &pre_terminal_commitment,
-        epoch1_pre_terminal_state.as_ref(),
-    );
-    let terminal_output = construct_block(
-        &ctx,
-        &env.epoch_sealing_policy,
+    let terminal_output = assemble_block_with_txs(
+        env.ctx(),
+        env.epoch_sealing_policy(),
         &config,
-        epoch1_pre_terminal_state,
-        block_slot,
-        block_epoch,
         vec![],
         epoch1_da,
     )
@@ -238,38 +175,14 @@ async fn test_da_resets_at_epoch_boundary() {
     .expect("terminal block construction should succeed");
 
     // Store terminal block so we can build on it.
-    let terminal_header = terminal_output.template.header();
-    let terminal_commitment =
-        OLBlockCommitment::new(terminal_header.slot(), terminal_header.compute_blkid());
-    let signed = SignedOLBlockHeader::new(terminal_header.clone(), Buf64::zero());
-    let terminal_block = OLBlock::new(signed, terminal_output.template.body().clone());
-    env.storage
-        .ol_block()
-        .put_block_data_async(terminal_block)
-        .await
-        .unwrap();
-    env.storage
-        .ol_state()
-        .put_toplevel_ol_state_async(terminal_commitment, terminal_output.post_state.clone())
-        .await
-        .unwrap();
+    env.persist(&terminal_output).await;
 
     // Build slot 11 (first block of epoch 2) with FRESH empty DA.
-    let config_11 = BlockGenerationConfig::new(terminal_commitment);
-    let parent_state_11 = ctx
-        .fetch_state_for_tip(terminal_commitment)
-        .await
-        .unwrap()
-        .unwrap();
-    let (slot_11, epoch_11) =
-        calculate_block_slot_and_epoch(&terminal_commitment, parent_state_11.as_ref());
-    let epoch2_output = construct_block(
-        &ctx,
-        &env.epoch_sealing_policy,
+    let config_11 = BlockGenerationConfig::new(env.parent_commitment());
+    let epoch2_output = assemble_block_with_txs(
+        env.ctx(),
+        env.epoch_sealing_policy(),
         &config_11,
-        parent_state_11,
-        slot_11,
-        epoch_11,
         vec![],
         AccumulatedDaData::new_empty(),
     )
@@ -299,30 +212,18 @@ async fn test_da_resets_at_epoch_boundary() {
 async fn test_da_rollback_on_failed_tx() {
     let valid_account = test_account_id(1);
     let invalid_account = test_account_id(2);
-
-    let env = TestEnvBuilder::new()
-        .with_parent_slot(0)
-        .with_asm_manifests(&[1, 2, 3])
-        .with_account(valid_account, DEFAULT_ACCOUNT_BALANCE)
-        .with_account(invalid_account, DEFAULT_ACCOUNT_BALANCE)
-        .build()
-        .await;
-
-    // Setup inbox messages for valid account only.
     let source_account = test_account_id(3);
     let messages = generate_message_entries(2, source_account);
-    let mut inbox_mmr = StorageInboxMmr::new(&env.storage, valid_account);
-    inbox_mmr.add_messages(messages.clone());
 
-    insert_inbox_messages_into_storage_state(
-        env.storage.as_ref(),
-        env.parent_commitment,
-        valid_account,
-        &messages,
-    )
-    .await;
-
-    let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+    let env_builder = TestStorageFixtureBuilder::new()
+        .with_parent_slot(0)
+        .with_l1_manifest_height_range(1..=3)
+        .with_account(
+            TestAccount::new(valid_account, DEFAULT_ACCOUNT_BALANCE).with_inbox(messages.clone()),
+        )
+        .with_account(TestAccount::new(invalid_account, DEFAULT_ACCOUNT_BALANCE));
+    let (fixture, parent_commitment) = env_builder.build_fixture().await;
+    let env = TestEnv::from_fixture(fixture, parent_commitment);
 
     // Build the valid tx once and clone for reuse.
     let valid_tx = MempoolSnarkTxBuilder::new(valid_account)
@@ -338,57 +239,27 @@ async fn test_da_rollback_on_failed_tx() {
         .build();
     let invalid_txid = invalid_tx.compute_txid();
 
-    let parent_state = ctx
-        .fetch_state_for_tip(env.parent_commitment)
+    let output_both = env
+        .construct_block_with_da(
+            vec![(valid_txid, valid_tx), (invalid_txid, invalid_tx)],
+            AccumulatedDaData::new_empty(),
+        )
         .await
-        .unwrap()
-        .unwrap();
-
-    let config = BlockGenerationConfig::new(env.parent_commitment);
-    let (block_slot, block_epoch) =
-        calculate_block_slot_and_epoch(&env.parent_commitment, parent_state.as_ref());
-
-    // Build block with both valid + invalid txs.
-    let output_both = construct_block(
-        &ctx,
-        &env.epoch_sealing_policy,
-        &config,
-        parent_state.clone(),
-        block_slot,
-        block_epoch,
-        vec![(valid_txid, valid_tx), (invalid_txid, invalid_tx)],
-        AccumulatedDaData::new_empty(),
-    )
-    .await
-    .expect("block construction should succeed");
+        .expect("block construction should succeed");
 
     // Verify only valid tx was included.
-    let txs = output_both
-        .template
-        .body()
-        .tx_segment()
-        .expect("should have txs")
-        .txs();
-    assert_eq!(txs.len(), 1, "only valid tx should be included");
+    let included = included_txids(&output_both.template);
     assert_eq!(
-        txs[0].target(),
-        Some(valid_account),
-        "included tx should target valid account"
+        included,
+        vec![valid_txid],
+        "only valid tx should be included"
     );
 
     // Build a reference block with only the valid tx (same tx object via clone).
-    let output_valid_only = construct_block(
-        &ctx,
-        &env.epoch_sealing_policy,
-        &config,
-        parent_state,
-        block_slot,
-        block_epoch,
-        vec![(valid_txid, valid_tx_clone)],
-        AccumulatedDaData::new_empty(),
-    )
-    .await
-    .expect("valid-only block construction should succeed");
+    let output_valid_only = env
+        .construct_block(vec![(valid_txid, valid_tx_clone)])
+        .await
+        .expect("valid-only block construction should succeed");
 
     // Finalize both DA accumulators and compare.
     let (acc_both, _) = output_both.accumulated_da.into_parts();
@@ -410,23 +281,15 @@ async fn test_da_rollback_on_failed_tx() {
 /// parent header instead of the actual epoch boundary block's header.
 #[tokio::test(flavor = "multi_thread")]
 async fn test_rebuild_da_matches_incremental() {
-    let env = TestEnvBuilder::new()
+    let env_builder = TestStorageFixtureBuilder::new()
         .with_parent_slot(0)
-        .with_asm_manifests(&[1, 2, 3])
-        .build()
-        .await;
-
-    let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+        .with_l1_manifest_height_range(1..=3);
+    let (fixture, parent_commitment) = env_builder.build_fixture().await;
+    let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
     // Build blocks 1..5, threading DA incrementally.
-    let (final_commitment, incremental_da, artifacts) = build_blocks_with_da_and_artifacts(
-        env.parent_commitment,
-        5,
-        &ctx,
-        env.storage.as_ref(),
-        &env.epoch_sealing_policy,
-    )
-    .await;
+    let (final_commitment, incremental_da, artifacts) =
+        build_blocks_with_da_and_artifacts(&mut env, 5).await;
 
     let (_, last_post_state) = artifacts.last().unwrap();
 
@@ -436,7 +299,7 @@ async fn test_rebuild_da_matches_incremental() {
 
     // Rebuild DA from scratch using the production code path.
     let epoch = artifacts[0].0.header().epoch();
-    let rebuilt_da = rebuild_accumulated_da_upto(final_commitment, epoch, &ctx)
+    let rebuilt_da = rebuild_accumulated_da_upto(final_commitment, epoch, env.ctx())
         .await
         .expect("rebuild_accumulated_da_upto should succeed");
 

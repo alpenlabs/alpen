@@ -740,51 +740,39 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
 #[cfg(test)]
 mod tests {
     use strata_acct_types::*;
-    use strata_asm_manifest_types::AsmManifest;
-    use strata_codec::encode_to_vec;
-    use strata_identifiers::{Buf32, Buf64, L1BlockId, L1Height, OLBlockId, WtxidsRoot};
-    use strata_msg_fmt::{Msg, OwnedMsg};
-    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLBlock, OLLog, SignedOLBlockHeader};
-    use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-    use strata_ol_state_types::OLState;
-    use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
-    use strata_snark_acct_types::OutputMessage;
-    use strata_storage::NodeStorage;
+    use strata_identifiers::{Buf32, L1Height, OLBlockId};
+    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
 
     use super::*;
     use crate::test_utils::*;
 
-    #[test]
-    fn test_l1_header_proof_gen_success() {
-        let storage = create_test_storage();
-
-        // Insert an ASM manifest hash into storage MMR and state MMR.
-        let manifest = AsmManifest::new(
-            1,
-            L1BlockId::from(Buf32::from([1u8; 32])),
-            WtxidsRoot::from(Buf32::zero()),
-            vec![],
-        )
-        .expect("test manifest should be valid");
-        let manifest_hash = manifest.compute_hash().into();
-        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
-        asm_mmr.add_header(manifest_hash);
-
-        // Create state with snark account
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_proof_gen_success() {
         let account_id = test_account_id(1);
-        let mut state = create_test_genesis_state();
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-        state.append_manifest(manifest.height(), manifest);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let l1_claim = fixture
+            .l1_header_ref(1)
+            .expect("claim for L1 height 1 should exist");
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(asm_mmr.claims())
+            .with_l1_claims(vec![l1_claim])
             .build();
 
-        let ctx = create_test_context(storage.clone());
+        let ctx = create_test_context(fixture.storage().clone());
 
         // Convert transaction (generates accumulator proofs).
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
 
         assert!(
             result.is_ok(),
@@ -802,29 +790,29 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_inbox_proof_gen_success() {
-        let storage = create_test_storage();
-        let mut state = create_test_genesis_state();
-
-        // Create account
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_proof_gen_success() {
         let account_id = test_account_id(1);
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-
-        // Use StorageInboxMmr to populate inbox messages
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
-        inbox_mmr.add_messages(messages.clone());
-        insert_inbox_messages_into_state(&mut state, account_id, &messages);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
 
         // Create tx using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
             .with_processed_messages(messages.clone())
             .build();
 
-        let ctx = create_test_context(storage.clone());
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
 
         assert!(
             result.is_ok(),
@@ -844,43 +832,38 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_l1_header_claim_hash_mismatch() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_claim_hash_mismatch() {
+        let account_id = test_account_id(1);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let seeded_claim = fixture
+            .l1_header_ref(1)
+            .expect("claim for L1 height 1 should exist");
 
-        // Insert a deterministic ASM manifest hash into storage MMR and state MMR.
-        let manifest = AsmManifest::new(
-            1,
-            L1BlockId::from(Buf32::from([1u8; 32])),
-            WtxidsRoot::from(Buf32::zero()),
-            vec![],
-        )
-        .expect("test manifest should be valid");
-        let manifest_hash = manifest.compute_hash().into();
-        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
-        asm_mmr.add_header(manifest_hash);
-
-        // Create claim with correct MMR index but WRONG hash (deterministic to guarantee mismatch)
+        // Create claim with correct MMR index but wrong hash.
         let wrong_hash = test_hash(99);
         assert_ne!(
             wrong_hash,
-            asm_mmr.hashes()[0],
-            "Test setup: wrong_hash should differ from actual hash"
+            seeded_claim.entry_hash(),
+            "test setup: wrong hash should differ from seeded claim hash"
         );
-
-        let mmr_idx = asm_mmr.indices()[0];
-        let invalid_claims = vec![AccumulatorClaim::new(mmr_idx, wrong_hash)];
-
-        let account_id = test_account_id(1);
-        let mut state = create_test_genesis_state();
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-        state.append_manifest(manifest.height(), manifest);
+        let invalid_claims = vec![AccumulatorClaim::new(seeded_claim.idx(), wrong_hash)];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
             .with_l1_claims(invalid_claims)
             .build();
-        let ctx = create_test_context(storage.clone());
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
@@ -890,30 +873,37 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_l1_header_claim_missing_index() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_claim_missing_index() {
+        // Seed one L1 header so we can reuse its hash with a missing index.
+        let account_id = test_account_id(1);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let seeded_claim = fixture
+            .l1_header_ref(1)
+            .expect("claim for L1 height 1 should exist");
 
-        // Use StorageAsmMmr with random hashes
-        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
-        asm_mmr.add_random_headers(1);
-
-        // Create claim with non-existent index (index 999 doesn't exist)
+        // Create claim with non-existent index.
         let nonexistent_index = 999u64;
         let invalid_claims = vec![AccumulatorClaim::new(
             nonexistent_index,
-            asm_mmr.hashes()[0],
+            seeded_claim.entry_hash(),
         )];
-
-        let account_id = test_account_id(1);
-        let mut state = create_test_genesis_state();
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
             .with_l1_claims(invalid_claims)
             .build();
-        let ctx = create_test_context(storage.clone());
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
 
         assert!(result.is_err(), "Should fail with nonexistent index");
         let err = result.unwrap_err();
@@ -928,27 +918,31 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_l1_header_claim_empty_mmr() {
-        // Setup storage WITHOUT any L1 headers in ASM MMR
-        let storage = create_test_storage();
-
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_claim_empty_mmr() {
         // Create claim for MMR index 0 with arbitrary hash (MMR is empty)
         let arbitrary_hash = test_hash(42);
         let invalid_claims = vec![AccumulatorClaim::new(0, arbitrary_hash)];
 
-        // Create state with snark account
         let account_id = test_account_id(1);
-        let mut state = create_test_genesis_state();
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
+        let fixture_builder =
+            TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
             .with_l1_claims(invalid_claims)
             .build();
 
-        let ctx = create_test_context(storage.clone());
+        let ctx = create_test_context(fixture.storage().clone());
         // Conversion should fail with an index/range DB error.
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -1025,20 +1019,21 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_inbox_claim_missing_index() {
-        let storage = create_test_storage();
-        let mut state = create_test_genesis_state();
-
-        // Create account
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_claim_missing_index() {
         let account_id = test_account_id(1);
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-
-        // Use StorageInboxMmr to add only 1 message
         let source_account = test_account_id(2);
         let messages = generate_message_entries(1, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
-        inbox_mmr.add_messages(messages.clone());
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
 
         // Create transaction claiming to process messages at indices [5, 6]
         // which don't exist (only index 0 exists)
@@ -1048,10 +1043,8 @@ mod tests {
             .with_new_msg_idx(7) // Claims next_inbox_msg_idx = 7 after processing
             .build();
 
-        insert_inbox_messages_into_state(&mut state, account_id, &messages);
-
-        let ctx = create_test_context(storage.clone());
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
 
         assert!(
             result.is_err(),
@@ -1071,20 +1064,21 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_inbox_claim_invalid_msg_idx() {
-        let storage = create_test_storage();
-        let mut state = create_test_genesis_state();
-
-        // Create account
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_claim_invalid_msg_idx() {
         let account_id = test_account_id(1);
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-
-        // Use StorageInboxMmr to add 2 messages
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
-        inbox_mmr.add_messages(messages.clone());
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
 
         // Account has next_inbox_msg_idx = 0 on-chain
         // Create transaction claiming WRONG new next_inbox_msg_idx
@@ -1094,10 +1088,8 @@ mod tests {
             .with_new_msg_idx(10) // Wrong! Should be 2
             .build();
 
-        insert_inbox_messages_into_state(&mut state, account_id, &messages);
-
-        let ctx = create_test_context(storage.clone());
-        let result = add_accumulator_proofs(&ctx, &state, mempool_tx);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx);
 
         assert!(
             result.is_err(),
@@ -1124,43 +1116,36 @@ mod tests {
     /// Verifies that when both inbox proofs and L1 header proofs are present,
     /// the accumulator proofs are ordered: L1 headers first, then inbox proofs.
     /// This must match the verification order in snark-acct-sys verification.rs.
-    #[test]
-    fn test_proof_ordering_l1_headers_before_inbox() {
-        let storage = create_test_storage();
-        let mut state = create_test_genesis_state();
-
-        // Create account
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_proof_ordering_l1_headers_before_inbox() {
         let account_id = test_account_id(1);
-        add_snark_account_to_state(&mut state, account_id, 1, 100_000);
-
-        // Add L1 header to storage and state MMRs
-        let manifest = AsmManifest::new(
-            1,
-            L1BlockId::from(Buf32::from([1u8; 32])),
-            WtxidsRoot::from(Buf32::zero()),
-            vec![],
-        )
-        .expect("test manifest should be valid");
-        let manifest_hash = manifest.compute_hash().into();
-        let mut asm_mmr = StorageAsmMmr::new(storage.as_ref());
-        asm_mmr.add_header(manifest_hash);
-        state.append_manifest(manifest.height(), manifest);
-
-        // Add inbox messages to storage and state
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(storage.as_ref(), account_id);
-        inbox_mmr.add_messages(messages.clone());
-        insert_inbox_messages_into_state(&mut state, account_id, &messages);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_l1_header_refs([1])
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let l1_claims = vec![
+            fixture
+                .l1_header_ref(1)
+                .expect("claim for L1 height 1 should exist"),
+        ];
 
         // Create tx with BOTH L1 claims and inbox messages
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(asm_mmr.claims())
+            .with_l1_claims(l1_claims.clone())
             .with_processed_messages(messages.clone())
             .build();
 
-        let ctx = create_test_context(storage.clone());
-        let tx = add_accumulator_proofs(&ctx, &state, mempool_tx)
+        let ctx = create_test_context(fixture.storage().clone());
+        let tx = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx)
             .expect("proof generation should succeed");
         let tx_proofs = tx.proofs();
 
@@ -1168,7 +1153,7 @@ mod tests {
         let acc_proofs = tx_proofs
             .accumulator_proofs()
             .expect("should have accumulator proofs");
-        let n_l1 = asm_mmr.claims().len();
+        let n_l1 = l1_claims.len();
         let n_inbox = messages.len();
         assert_eq!(
             acc_proofs.proofs().len(),
@@ -1274,76 +1259,22 @@ mod tests {
 
     // Helper to build blocks from start_commitment up to (but not including) target_slot.
     // Stores blocks and states so subsequent blocks can find their parent.
-    async fn build_blocks_to_slot<C, E>(
-        start_commitment: OLBlockCommitment,
-        target_slot: u64,
-        ctx: &C,
-        storage: &NodeStorage,
-        epoch_sealing_policy: &E,
-    ) -> OLBlockCommitment
-    where
-        C: BlockAssemblyAnchorContext<State = OLState> + AccumulatorProofGenerator,
-        E: EpochSealingPolicy,
-    {
-        let mut current_commitment = start_commitment;
+    async fn build_blocks_to_slot(env: &mut TestEnv, target_slot: u64) -> OLBlockCommitment {
+        let mut current_commitment = env.parent_commitment();
 
         let start_slot = if current_commitment.is_null() {
             0
         } else {
-            start_commitment.slot() + 1
+            env.parent_commitment().slot() + 1
         };
 
         for slot in start_slot..target_slot {
-            let config = BlockGenerationConfig::new(current_commitment);
-
-            // Fetch parent state
-            let parent_state = ctx
-                .fetch_state_for_tip(config.parent_block_commitment())
+            let output = env
+                .construct_empty_block()
                 .await
-                .unwrap_or_else(|e| panic!("Failed to fetch parent state at slot {slot}: {e:?}"))
-                .unwrap_or_else(|| panic!("Missing parent state at slot {slot}"));
+                .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
 
-            // Calculate slot and epoch
-            let (block_slot, block_epoch) = calculate_block_slot_and_epoch(
-                &config.parent_block_commitment(),
-                parent_state.as_ref(),
-            );
-
-            // Construct block (no mempool txs for helper)
-            let output = construct_block(
-                ctx,
-                epoch_sealing_policy,
-                &config,
-                parent_state,
-                block_slot,
-                block_epoch,
-                vec![],
-                AccumulatedDaData::new_empty(),
-            )
-            .await
-            .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
-
-            // Create commitment from header
-            let header = output.template.header();
-            let new_commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
-
-            // Store block (with dummy signature)
-            let signed_header = SignedOLBlockHeader::new(header.clone(), Buf64::zero());
-            let block = OLBlock::new(signed_header, output.template.body().clone());
-            storage
-                .ol_block()
-                .put_block_data_async(block)
-                .await
-                .unwrap_or_else(|e| panic!("Failed to store block at slot {slot}: {e:?}"));
-
-            // Store post-state at new commitment
-            storage
-                .ol_state()
-                .put_toplevel_ol_state_async(new_commitment, output.post_state)
-                .await
-                .unwrap_or_else(|e| panic!("Failed to store state at slot {slot}: {e:?}"));
-
-            current_commitment = new_commitment;
+            current_commitment = env.persist(&output).await;
         }
 
         current_commitment
@@ -1352,40 +1283,22 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[should_panic(expected = "generate_block_template_inner called with null parent")]
     async fn test_block_assembly_panics_on_null_parent() {
-        let env = TestEnvBuilder::new().build().await;
+        let env_builder = TestStorageFixtureBuilder::new();
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
-
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let _ = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await;
+        let _ = env.generate_block_template().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_non_terminal_block_at_slot_1() {
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .build()
-            .await;
+            .with_l1_manifest_height_range(1..=3);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(env.storage);
-
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let result = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await;
+        let result = env.generate_block_template().await;
         assert!(
             result.is_ok(),
             "Block generation should succeed: {:?}",
@@ -1399,28 +1312,21 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_block_template_fallback_timestamp_uses_milliseconds() {
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .build()
-            .await;
+            .with_l1_manifest_height_range(1..=3);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(env.storage);
-        let config = BlockGenerationConfig::new(env.parent_commitment);
         let before = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
 
-        let result = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("block generation should succeed");
+        let result = env
+            .generate_block_template()
+            .await
+            .expect("block generation should succeed");
 
         let after = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -1436,32 +1342,15 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_terminal_block_at_slot_10() {
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .build()
-            .await;
+            .with_l1_manifest_height_range(1..=3);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
 
-        let current_commitment = build_blocks_to_slot(
-            env.parent_commitment,
-            10,
-            &ctx,
-            env.storage.as_ref(),
-            &env.epoch_sealing_policy,
-        )
-        .await;
-
-        let config = BlockGenerationConfig::new(current_commitment);
-        let result = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await;
+        let result = env.generate_block_template().await;
         assert!(
             result.is_ok(),
             "Block generation should succeed: {:?}",
@@ -1477,34 +1366,19 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_terminal_block_manifest_boundary_from_last_l1_height() {
         // Set last_l1_height to 2, but only provide manifests starting at 3.
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
-            .with_claim_manifests(2)
-            .with_asm_manifests(&[3, 4])
-            .build()
-            .await;
+            .with_l1_header_refs([1, 2])
+            .with_l1_manifest_height_range(3..=4);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
 
-        let current_commitment = build_blocks_to_slot(
-            env.parent_commitment,
-            10,
-            &ctx,
-            env.storage.as_ref(),
-            &env.epoch_sealing_policy,
-        )
-        .await;
-
-        let config = BlockGenerationConfig::new(current_commitment);
-        let result = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let result = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         let block_template = result.into_template();
         check_terminal_block_with_manifests(&block_template, &[3, 4]);
@@ -1512,32 +1386,15 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_non_terminal_block_at_slot_11() {
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .build()
-            .await;
+            .with_l1_manifest_height_range(1..=3);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(env.storage.clone());
+        let _current_commitment = build_blocks_to_slot(&mut env, 11).await;
 
-        let current_commitment = build_blocks_to_slot(
-            env.parent_commitment,
-            11,
-            &ctx,
-            env.storage.as_ref(),
-            &env.epoch_sealing_policy,
-        )
-        .await;
-
-        let config = BlockGenerationConfig::new(current_commitment);
-        let result = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await;
+        let result = env.generate_block_template().await;
         assert!(
             result.is_ok(),
             "Block generation should succeed: {:?}",
@@ -1553,18 +1410,16 @@ mod tests {
     async fn test_valid_tx_included_in_block() {
         // Setup env with snark account (seq_no=0 initially)
         let account_id = test_account_id(1);
-        let env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account_id, DEFAULT_ACCOUNT_BALANCE)
-            .build()
-            .await;
-
-        // Setup inbox MMR with real messages using StorageInboxMmr
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account_id);
-        inbox_mmr.add_messages(messages.clone());
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(
+                TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE).with_inbox(messages.clone()),
+            );
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         // Create tx and add to mock provider
         let valid_tx = MempoolSnarkTxBuilder::new(account_id)
@@ -1573,40 +1428,22 @@ mod tests {
             .build();
         let txid = valid_tx.compute_txid();
 
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        let mempool = env.mempool_arc();
 
-        insert_inbox_messages_into_storage_state(
-            env.storage.as_ref(),
-            env.parent_commitment,
-            account_id,
-            &messages,
-        )
-        .await;
         mempool.add_transaction(txid, valid_tx);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Assert: tx included in block
-        let txs = output
-            .template()
-            .body()
-            .tx_segment()
-            .expect("Should have tx segment")
-            .txs();
-        assert_eq!(txs.len(), 1, "Block should contain 1 transaction");
+        let included = included_txids(output.template());
+        assert_eq!(included.len(), 1, "Block should contain 1 transaction");
         assert_eq!(
-            txs[0].target(),
-            Some(account_id),
-            "Included tx should target the expected account"
+            included,
+            vec![txid],
+            "Included tx should be the submitted tx"
         );
     }
 
@@ -1638,19 +1475,25 @@ mod tests {
         // Setup env with two snark accounts
         let account1 = test_account_id(1);
         let account2 = test_account_id(2);
-        let env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
-            .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
-            .build()
-            .await;
-
-        // Generate messages and insert into account1's inbox MMR using StorageInboxMmr
         let source_account = test_account_id(3);
         let real_messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account1);
-        inbox_mmr.add_messages(real_messages.clone());
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(
+                TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE)
+                    .with_inbox(real_messages.clone()),
+            )
+            .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
+            .with_expected_inbox_message_indices([(account1, vec![0, 1])]);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        assert_eq!(
+            env.inbox_message_claims_for_account(account1).len(),
+            real_messages.len(),
+            "fixture should expose inbox message claims for seeded messages"
+        );
 
         // Valid tx for account1: messages exist in MMR, proof generation succeeds
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
@@ -1670,46 +1513,20 @@ mod tests {
         let invalid_txid = invalid_tx.compute_txid();
 
         // Build block
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
-
-        insert_inbox_messages_into_storage_state(
-            env.storage.as_ref(),
-            env.parent_commitment,
-            account1,
-            &real_messages,
-        )
-        .await;
+        let mempool = env.mempool();
         mempool.add_transaction(valid_txid, valid_tx);
         mempool.add_transaction(invalid_txid, invalid_tx);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Assert: block has 1 transaction (valid included, invalid rejected)
-        let txs = output
-            .template()
-            .body()
-            .tx_segment()
-            .expect("Should have tx segment")
-            .txs();
         assert_eq!(
-            txs.len(),
-            1,
-            "Block should contain 1 tx (valid included, invalid rejected)"
-        );
-        // Verify the included tx is for account1 (the valid one)
-        assert_eq!(
-            txs[0].target(),
-            Some(account1),
-            "Included tx should be from account1 (valid tx)"
+            included_txids(output.template()),
+            vec![valid_txid],
+            "Block should contain only the valid tx"
         );
     }
 
@@ -1718,19 +1535,20 @@ mod tests {
         // Setup env with two snark accounts and manifests in both state and storage MMRs
         let account1 = test_account_id(1);
         let account2 = test_account_id(2);
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1) // Start from slot 1 instead of genesis to avoid genesis manifest conflicts
-            .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
-            .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
-            .with_claim_manifests(2)
-            .build()
-            .await;
+            .with_account(TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE))
+            .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
+            .with_l1_header_refs([1, 2])
+            .with_expected_l1_header_ref_indices([(1, 0), (2, 1)]);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        // Valid tx for account1: L1 header claims exist in both MMRs (using MMR leaf index)
-        let valid_claims = vec![AccumulatorClaim::new(
-            env.manifests[0].mmr_idx,
-            env.manifests[0].hash,
-        )];
+        // Valid tx for account1: L1 header claims exist in both MMRs for the requested L1 height.
+        let valid_claims = vec![
+            env.l1_header_ref(1)
+                .expect("claim for L1 height 1 should exist"),
+        ];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
             .with_seq_no(0)
             .with_l1_claims(valid_claims)
@@ -1739,8 +1557,14 @@ mod tests {
 
         // Invalid tx for account2: non-existent MMR index (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
-        let missing_height = env.manifests.last().unwrap().mmr_idx + 100;
-        let invalid_claims = vec![AccumulatorClaim::new(missing_height, fake_hash)];
+        let max_seeded_idx = env
+            .l1_header_refs()
+            .iter()
+            .map(|(_, claim)| claim.idx())
+            .max()
+            .expect("seeded claims");
+        let missing_idx = max_seeded_idx + 100;
+        let invalid_claims = vec![AccumulatorClaim::new(missing_idx, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
             .with_l1_claims(invalid_claims)
@@ -1748,38 +1572,20 @@ mod tests {
         let invalid_txid = invalid_tx.compute_txid();
 
         // Build block
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        let mempool = env.mempool();
         mempool.add_transaction(valid_txid, valid_tx);
         mempool.add_transaction(invalid_txid, invalid_tx);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Assert: block has 1 transaction (valid included, invalid rejected)
-        let txs = output
-            .template()
-            .body()
-            .tx_segment()
-            .expect("Should have tx segment")
-            .txs();
         assert_eq!(
-            txs.len(),
-            1,
-            "Block should contain 1 tx (valid included, invalid rejected)"
-        );
-        // Verify the included tx is for account1 (the valid one)
-        assert_eq!(
-            txs[0].target(),
-            Some(account1),
-            "Included tx should be from account1 (valid tx)"
+            included_txids(output.template()),
+            vec![valid_txid],
+            "Block should contain only the valid tx"
         );
     }
 
@@ -1789,18 +1595,16 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_sequential_seq_no_both_succeed() {
         let account_id = test_account_id(1);
-        let env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account_id, DEFAULT_ACCOUNT_BALANCE)
-            .build()
-            .await;
-
-        // Setup inbox MMR with messages for both txs using StorageInboxMmr
         let source_account = test_account_id(2);
         let messages = generate_message_entries(4, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account_id);
-        inbox_mmr.add_messages(messages.clone());
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(
+                TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE).with_inbox(messages.clone()),
+            );
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         // tx1: seq_no=0, processes messages[0..2]
         let tx1_messages = messages[0..2].to_vec();
@@ -1820,38 +1624,20 @@ mod tests {
         let tx2_id = tx2.compute_txid();
 
         // Build block
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        let mempool = env.mempool();
 
-        insert_inbox_messages_into_storage_state(
-            env.storage.as_ref(),
-            env.parent_commitment,
-            account_id,
-            &messages,
-        )
-        .await;
         mempool.add_transaction(tx1_id, tx1);
         mempool.add_transaction(tx2_id, tx2);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Assert: both txs included (tx2 succeeds because it sees tx1's seq_no increment)
-        let txs = output
-            .template()
-            .body()
-            .tx_segment()
-            .expect("Should have tx segment")
-            .txs();
+        let included = included_txids(output.template());
         assert_eq!(
-            txs.len(),
+            included.len(),
             2,
             "Block should contain both txs (tx2 sees tx1's state changes)"
         );
@@ -1862,18 +1648,16 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_dependent_tx_fails_without_predecessor() {
         let account_id = test_account_id(1);
-        let env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account_id, DEFAULT_ACCOUNT_BALANCE)
-            .build()
-            .await;
-
-        // Setup inbox MMR with messages using StorageInboxMmr
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr = StorageInboxMmr::new(&env.storage, account_id);
-        inbox_mmr.add_messages(messages.clone());
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(
+                TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE).with_inbox(messages.clone()),
+            );
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         // Only submit tx with seq_no=1 (no seq_no=0 predecessor)
         // Block assembly will reject during execution because account has seq_no=0
@@ -1883,33 +1667,20 @@ mod tests {
             .build();
         let txid = tx.compute_txid();
 
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        let mempool = env.mempool();
 
-        insert_inbox_messages_into_storage_state(
-            env.storage.as_ref(),
-            env.parent_commitment,
-            account_id,
-            &messages,
-        )
-        .await;
         mempool.add_transaction(txid, tx);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Block should have no txs - the seq_no=1 tx is rejected during execution
-        let tx_segment = output.template().body().tx_segment();
-        let tx_count = tx_segment.map(|seg| seg.txs().len()).unwrap_or(0);
+        let included = included_txids(output.template());
         assert_eq!(
-            tx_count, 0,
+            included.len(),
+            0,
             "Block should be empty - tx with seq_no=1 rejected when account has seq_no=0"
         );
     }
@@ -1921,23 +1692,22 @@ mod tests {
     async fn test_independent_tx_succeeds_when_other_fails() {
         let account1 = test_account_id(1);
         let account2 = test_account_id(2);
-        let env = TestEnvBuilder::new()
-            .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account1, DEFAULT_ACCOUNT_BALANCE)
-            .with_account(account2, DEFAULT_ACCOUNT_BALANCE)
-            .build()
-            .await;
-
-        // Setup inbox MMRs for both accounts using StorageInboxMmr
         let source_account = test_account_id(3);
         let account1_messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr1 = StorageInboxMmr::new(&env.storage, account1);
-        inbox_mmr1.add_messages(account1_messages.clone());
-
         let account2_messages = generate_message_entries(2, source_account);
-        let mut inbox_mmr2 = StorageInboxMmr::new(&env.storage, account2);
-        inbox_mmr2.add_messages(account2_messages.clone());
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(
+                TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE)
+                    .with_inbox(account1_messages.clone()),
+            )
+            .with_account(
+                TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE)
+                    .with_inbox(account2_messages.clone()),
+            );
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         // tx1: account1 claims fake message at index 100, but MMR only has indices 0-1
         let fake_message = generate_message_entries(1, test_account_id(99))
@@ -1958,40 +1728,22 @@ mod tests {
         let tx2_id = tx2.compute_txid();
 
         // Build block
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage.clone());
+        let mempool = env.mempool();
 
-        insert_inbox_messages_into_storage_state(
-            env.storage.as_ref(),
-            env.parent_commitment,
-            account1,
-            &account1_messages,
-        )
-        .await;
-        insert_inbox_messages_into_storage_state(
-            env.storage.as_ref(),
-            env.parent_commitment,
-            account2,
-            &account2_messages,
-        )
-        .await;
         mempool.add_transaction(tx1_id, tx1);
         mempool.add_transaction(tx2_id, tx2);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Assert: tx2 included, tx1 rejected
-        let tx_segment = output.template().body().tx_segment();
-        let tx_count = tx_segment.map(|seg| seg.txs().len()).unwrap_or(0);
-        assert_eq!(tx_count, 1, "Block should contain tx2 only");
+        assert_eq!(
+            included_txids(output.template()),
+            vec![tx2_id],
+            "Block should contain tx2 only"
+        );
 
         // Assert: tx1 removed (ConsensusInvalid), tx2 still in mempool (included txs not
         // auto-removed)
@@ -2014,14 +1766,14 @@ mod tests {
         let account3 = test_account_id(3);
 
         // Setup with custom balances: account1 has 10000 sats, account2 has 0 sats
-        let env = TestEnvBuilder::new()
+        let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
-            .with_asm_manifests(&[1, 2, 3])
-            .with_account(account1, 10000)
-            .with_account(account2, 0)
-            .with_account(account3, 0)
-            .build()
-            .await;
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(TestAccount::new(account1, 10000))
+            .with_account(TestAccount::new(account2, 0))
+            .with_account(TestAccount::new(account3, 0));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         // tx1: account1 sends 1000 sats to account2
         let tx1 = MempoolSnarkTxBuilder::new(account1)
@@ -2038,32 +1790,21 @@ mod tests {
         let tx2_id = tx2.compute_txid();
 
         // Build block
-        let (ctx, mempool) = create_test_block_assembly_context(env.storage);
+        let mempool = env.mempool();
         mempool.add_transaction(tx1_id, tx1);
         mempool.add_transaction(tx2_id, tx2);
 
-        let config = BlockGenerationConfig::new(env.parent_commitment);
-        let output = generate_block_template_inner(
-            &ctx,
-            &env.epoch_sealing_policy,
-            &env.sequencer_config,
-            config,
-            AccumulatedDaData::new_empty(),
-        )
-        .await
-        .expect("Block generation should succeed");
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("Block generation should succeed");
 
         // Assert: both txs included
         // tx1 executes first, transferring 1000 to account2
         // tx2 executes second, account2 now has 1000 and can send 500
-        let txs = output
-            .template()
-            .body()
-            .tx_segment()
-            .expect("Should have tx segment")
-            .txs();
+        let included = included_txids(output.template());
         assert_eq!(
-            txs.len(),
+            included.len(),
             2,
             "Block should contain both txs (tx2 sees tx1's balance transfer)"
         );
@@ -2078,44 +1819,38 @@ mod tests {
     /// pre-fill the block output buffer to near capacity and verify that even a
     /// small tx triggers the soft-break when it would push past the limit.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_tx_deferred_when_logs_would_overflow_remaining_budget() {
+    async fn test_log_overflow_defers_tx() {
         let account_id = test_account_id(1);
-        let storage = create_test_storage();
-        let mut parent_state = create_test_genesis_state();
-        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(storage);
-        let parent_header = create_test_parent_header();
+        let parent_state = env
+            .ctx()
+            .fetch_state_for_tip(env.parent_commitment())
+            .await
+            .expect("fetch parent state")
+            .expect("parent state exists");
+        let parent_block = env
+            .ctx()
+            .fetch_ol_block(env.parent_commitment().blkid)
+            .await
+            .expect("fetch parent block")
+            .expect("parent block exists");
+        let parent_header = parent_block.header().clone();
         let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
-        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
-
-        let withdrawal_msg_data = WithdrawalMsgData::new(
-            DEFAULT_OPERATOR_FEE,
-            b"bc1qlogcapoverflow".to_vec(),
-            u32::MAX,
-        )
-        .expect("valid withdrawal data");
-        let encoded_withdrawal_body =
-            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
-        let withdrawal_msg =
-            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
-        let withdrawal_payload_data = withdrawal_msg.to_vec();
+        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
 
         // Create a tx with 5 withdrawal messages (= 5 logs).
-        let output_messages: Vec<_> = (0..5)
-            .map(|_| {
-                let payload = MsgPayload::new(
-                    BitcoinAmount::from_sat(100_000_000),
-                    withdrawal_payload_data.clone(),
-                );
-                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
-            })
-            .collect();
-
-        let tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_seq_no(0)
-            .with_output_messages(output_messages)
+        let withdrawal_dest = b"bc1qlogcapoverflow".to_vec();
+        let tx = (0..5)
+            .fold(
+                MempoolSnarkTxBuilder::new(account_id).with_seq_no(0),
+                |builder, _| builder.with_withdrawal(100_000_000, withdrawal_dest.clone()),
+            )
             .build();
         let txid = tx.compute_txid();
 
@@ -2128,10 +1863,10 @@ mod tests {
             .expect("pre-fill should succeed");
 
         let out = process_transactions(
-            &ctx,
+            env.ctx(),
             &block_context,
             &output_buffer,
-            &parent_state,
+            parent_state.as_ref(),
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
@@ -2154,53 +1889,45 @@ mod tests {
     /// Uses `process_transactions` directly with a pre-filled output buffer so
     /// that realistic message counts (≤ 255 per tx) can trigger the overflow.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_block_full_log_overflow_tx_not_reported_invalid_and_kept_in_mempool() {
+    async fn test_log_overflow_tx_skipped_not_invalid() {
         let account_id = test_account_id(8);
-        let storage = create_test_storage();
-        let mut parent_state = create_test_genesis_state();
-        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(storage);
-        let parent_header = create_test_parent_header();
+        let parent_state = env
+            .ctx()
+            .fetch_state_for_tip(env.parent_commitment())
+            .await
+            .expect("fetch parent state")
+            .expect("parent state exists");
+        let parent_block = env
+            .ctx()
+            .fetch_ol_block(env.parent_commitment().blkid)
+            .await
+            .expect("fetch parent block")
+            .expect("parent block exists");
+        let parent_header = parent_block.header().clone();
         let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
-        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
-
-        let withdrawal_msg_data =
-            WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, b"bc1qlogcapfull".to_vec(), u32::MAX)
-                .expect("valid withdrawal data");
-        let encoded_withdrawal_body =
-            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
-        let withdrawal_msg =
-            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
-        let withdrawal_payload_data = withdrawal_msg.to_vec();
+        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
 
         // First tx: 10 withdrawal messages = 10 logs.
-        let fill_messages: Vec<_> = (0..10)
-            .map(|_| {
-                let payload = MsgPayload::new(
-                    BitcoinAmount::from_sat(100_000_000),
-                    withdrawal_payload_data.clone(),
-                );
-                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
-            })
-            .collect();
-        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
-            .with_seq_no(0)
-            .with_output_messages(fill_messages)
+        let withdrawal_dest = b"bc1qlogcapfull".to_vec();
+        let tx_fill = (0..10)
+            .fold(
+                MempoolSnarkTxBuilder::new(account_id).with_seq_no(0),
+                |builder, _| builder.with_withdrawal(100_000_000, withdrawal_dest.clone()),
+            )
             .build();
         let tx_fill_id = tx_fill.compute_txid();
 
         // Second tx: 1 withdrawal message = 1 log.
         let tx_overflow = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(1)
-            .with_output_messages(vec![{
-                let payload = MsgPayload::new(
-                    BitcoinAmount::from_sat(100_000_000),
-                    withdrawal_payload_data.clone(),
-                );
-                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
-            }])
+            .with_withdrawal(100_000_000, withdrawal_dest)
             .build();
         let tx_overflow_id = tx_overflow.compute_txid();
 
@@ -2213,10 +1940,10 @@ mod tests {
             .expect("pre-fill should succeed");
 
         let out = process_transactions(
-            &ctx,
+            env.ctx(),
             &block_context,
             &output_buffer,
-            &parent_state,
+            parent_state.as_ref(),
             accumulated_batch,
             vec![(tx_fill_id, tx_fill), (tx_overflow_id, tx_overflow)],
             AccumulatedDaData::new_empty(),
@@ -2234,39 +1961,34 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_process_transactions_soft_breaks_when_log_cap_already_reached() {
+    async fn test_log_cap_soft_break() {
         let account_id = test_account_id(7);
-        let storage = create_test_storage();
-        let mut parent_state = create_test_genesis_state();
-        add_snark_account_to_state(&mut parent_state, account_id, 1, DEFAULT_ACCOUNT_BALANCE);
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let (ctx, _mempool) = create_test_block_assembly_context(storage);
-        let parent_header = create_test_parent_header();
+        let parent_state = env
+            .ctx()
+            .fetch_state_for_tip(env.parent_commitment())
+            .await
+            .expect("fetch parent state")
+            .expect("parent state exists");
+        let parent_block = env
+            .ctx()
+            .fetch_ol_block(env.parent_commitment().blkid)
+            .await
+            .expect("fetch parent block")
+            .expect("parent block exists");
+        let parent_header = parent_block.header().clone();
         let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
-        let accumulated_batch = WriteBatch::new_from_state(&parent_state);
-
-        let withdrawal_msg_data = WithdrawalMsgData::new(
-            DEFAULT_OPERATOR_FEE,
-            b"bc1qlogcapreached".to_vec(),
-            u32::MAX,
-        )
-        .expect("valid withdrawal data");
-        let encoded_withdrawal_body =
-            encode_to_vec(&withdrawal_msg_data).expect("encode withdrawal body");
-        let withdrawal_msg =
-            OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body).expect("msg format");
-        let withdrawal_payload_data = withdrawal_msg.to_vec();
+        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_output_messages(vec![{
-                let payload = MsgPayload::new(
-                    BitcoinAmount::from_sat(100_000_000),
-                    withdrawal_payload_data.clone(),
-                );
-                OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
-            }])
+            .with_withdrawal(100_000_000, b"bc1qlogcapreached".to_vec())
             .build();
         let txid = tx.compute_txid();
 
@@ -2280,10 +2002,10 @@ mod tests {
             .expect("pre-filling up to the cap should succeed");
 
         let out = process_transactions(
-            &ctx,
+            env.ctx(),
             &block_context,
             &output_buffer,
-            &parent_state,
+            parent_state.as_ref(),
             accumulated_batch,
             vec![(txid, tx)],
             AccumulatedDaData::new_empty(),
