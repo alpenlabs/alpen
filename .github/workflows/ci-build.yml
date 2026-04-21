@@ -148,10 +148,12 @@ jobs:
       - name: Build strata-datatool + SP1 guest ELFs
         if: matrix.program == 'strata'
         run: |
-          # sp1-docker-builder runs the guest compilation inside a pinned
-          # Succinct container and needs host Docker access; GHA runners
-          # provide that out of the box.
-          cargo build --bin strata-datatool --features sp1-docker-builder --release
+          # sp1-builder uses the host rustc; matches the existing
+          # prover-client CI pattern in cd.yml. We'd prefer sp1-docker-builder
+          # for byte-reproducible ELFs, but the pinned Succinct toolchain
+          # container currently ships rustc 1.88 while alpen workspace deps
+          # require rustc >=1.91. Revisit once Succinct updates.
+          cargo build --bin strata-datatool --features sp1-builder --release
 
           mkdir -p docker/strata/artifacts/elfs/sp1
           install -m 0755 target/release/strata-datatool docker/strata/artifacts/strata-datatool
@@ -185,6 +187,31 @@ jobs:
             --push \
             -t "${FULL_IMAGE}" \
             -f "${DOCKERFILE_PATH}" .
+
+          echo "Successfully pushed: ${FULL_IMAGE}"
+
+      # --- Publish strata-datatool as its own image ---------------------------
+      # Reuses the binary already staged at docker/strata/artifacts/ for the
+      # strata image. Consumers (generate-params.yml, other pipelines) can
+      # `docker run` this image directly instead of extracting the binary
+      # from the larger strata image.
+      - name: Build and push strata-datatool image
+        if: matrix.program == 'strata'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
+          COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
+        run: |
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/strata-datatool:${SHORT_TAG}"
+
+          docker buildx build \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --push \
+            -t "${FULL_IMAGE}" \
+            -f docker/strata-datatool/Dockerfile .
 
           echo "Successfully pushed: ${FULL_IMAGE}"
 
