@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
+use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ExecBlockStorage};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
 use tokio::time;
@@ -77,7 +77,7 @@ async fn seal_batch<P: BatchPolicy>(
 
     let prev_block = state.prev_batch_end();
     let (inner_blocks, last_block) = state.accumulator_mut().drain_for_batch();
-    let inner_blocks = inner_blocks.into_iter().map(|b| b.hash()).collect();
+    let inner_blocks: Vec<Hash> = inner_blocks.into_iter().map(|b| b.hash()).collect();
 
     let batch_idx = state.next_batch_idx();
     let batch = Batch::new(
@@ -85,7 +85,7 @@ async fn seal_batch<P: BatchPolicy>(
         prev_block.hash(),
         last_block.hash(),
         last_block.blocknum(),
-        inner_blocks,
+        inner_blocks.clone(),
     )
     .map_err(|err| eyre!(err))?;
     let batch_id = batch.id();
@@ -98,6 +98,30 @@ async fn seal_batch<P: BatchPolicy>(
     );
 
     batch_storage.save_next_batch(batch).await?;
+
+    // One chunk per batch, spanning the whole batch.
+    //
+    // TODO(STR-1369): replace with a real chunking/batching policy
+    // (e.g. sub-batch chunker driven by prover cost). Today the PAAS
+    // chunk + acct provers only need the chunk records to exist and
+    // be linked to the batch — cardinality is a policy knob.
+    let next_chunk_idx = batch_storage
+        .get_latest_chunk()
+        .await?
+        .map(|(c, _)| c.idx() + 1)
+        .unwrap_or(0);
+    let chunk = Chunk::new(
+        next_chunk_idx,
+        prev_block.hash(),
+        last_block.hash(),
+        inner_blocks,
+    );
+    let chunk_id = chunk.id();
+    batch_storage.save_next_chunk(chunk).await?;
+    batch_storage
+        .set_batch_chunks(batch_id, vec![chunk_id])
+        .await?;
+
     state.advance_batch(last_block);
 
     Ok(Some(batch_id))
