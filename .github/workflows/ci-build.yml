@@ -120,6 +120,51 @@ jobs:
         with:
           mask-password: "true"
 
+      # --- strata-only: pre-build datatool + SP1 guest ELFs on the runner ----
+      # The strata image ships its own strata-datatool binary plus the
+      # runtime ELF (guest-checkpoint-new.elf) baked in. Both are produced
+      # here with --features sp1-docker-builder so they're byte-reproducible
+      # across environments, then placed into docker/strata/artifacts/ for
+      # docker build to COPY into the runtime stage.
+      - name: Set up Rust toolchain (strata)
+        if: matrix.program == 'strata'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (strata datatool)
+        if: matrix.program == 'strata'
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: strata-datatool-sp1-docker-builder
+          cache-on-failure: true
+
+      - name: Install SP1 toolchain (strata)
+        if: matrix.program == 'strata'
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
+          ~/.sp1/bin/sp1up
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+          cargo prove --version
+
+      - name: Build strata-datatool + SP1 guest ELFs
+        if: matrix.program == 'strata'
+        run: |
+          # sp1-docker-builder runs the guest compilation inside a pinned
+          # Succinct container and needs host Docker access; GHA runners
+          # provide that out of the box.
+          cargo build --bin strata-datatool --features sp1-docker-builder --release
+
+          mkdir -p docker/strata/artifacts/elfs/sp1
+          install -m 0755 target/release/strata-datatool docker/strata/artifacts/strata-datatool
+
+          # strata only reads guest-checkpoint-new.elf at runtime. The other
+          # guest ELFs are embedded inside the datatool binary (via
+          # strata-sp1-guest-builder's build script) and re-emitted by
+          # `datatool genparams --elf-dir` during params generation.
+          find provers/sp1 -name 'guest-checkpoint-new.elf' -path '*/release/*' \
+            -type f -exec cp -v {} docker/strata/artifacts/elfs/sp1/ \;
+
+          ls -la docker/strata/artifacts/ docker/strata/artifacts/elfs/sp1/
+
       # --- Build and push via Buildx ------------------------------------------
       - name: Build and push Docker image
         env:

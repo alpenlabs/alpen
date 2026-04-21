@@ -273,3 +273,6 @@ provers/sp1/proofs/
 
 # Docker env
 docker/prover-client/prover-client.env
+
+# Build artifacts staged into the docker build context by ci-build.yml
+docker/strata/artifacts/

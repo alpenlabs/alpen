@@ -52,27 +52,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/git \
       ${CARGO_FEATURES:+--features "$CARGO_FEATURES"} && \
     install -m 0555 /app/target/release/strata /usr/local/bin/strata
 
-# Build strata-datatool with sp1-docker-builder so the image carries its own
-# datatool binary AND the byte-reproducible SP1 guest ELF used by the
-# runtime prover. sp1-docker-builder spawns a pinned Succinct toolchain
-# container during compilation, so the build host needs Docker socket
-# access — see the PR description for the required CI buildx config.
-#
-# strata only reads guest-checkpoint-new.elf at runtime. The other guest
-# ELFs (guest-alpen-acct, guest-alpen-chunk, guest-checkpoint,
-# guest-evm-ee-stf) are inputs to datatool during params generation but
-# aren't loaded by the strata binary, so we don't ship them in this image.
-RUN --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=private,target=/app/target \
-    --mount=type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock \
-    cargo build --locked --release --bin strata-datatool \
-      --features sp1-docker-builder && \
-    install -m 0555 /app/target/release/strata-datatool /usr/local/bin/strata-datatool && \
-    mkdir -p /app/elfs/sp1 && \
-    find /app/provers/sp1 -name 'guest-checkpoint-new.elf' -path '*/release/*' \
-      -type f -exec cp -v {} /app/elfs/sp1/ \;
-
 
 # ---- runtime ----
 FROM debian:13-slim AS runtime
@@ -95,8 +74,12 @@ RUN mkdir -p /app/data /app/.cache /app/.local/share && \
     chown -R alpen:alpen /app
 
 COPY --from=builder /usr/local/bin/strata /usr/local/bin/strata
-COPY --from=builder /usr/local/bin/strata-datatool /usr/local/bin/strata-datatool
-COPY --from=builder /app/elfs /app/elfs
+# strata-datatool + the SP1 guest ELF are built on the CI runner with
+# --features sp1-docker-builder (matches the prover-client pattern in
+# cd.yml). At docker build time they live in the build context under
+# docker/strata/artifacts/. Regeneration steps live in ci-build.yml.
+COPY docker/strata/artifacts/strata-datatool /usr/local/bin/strata-datatool
+COPY docker/strata/artifacts/elfs /app/elfs
 COPY docker/strata/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/strata-datatool /usr/local/bin/entrypoint.sh
