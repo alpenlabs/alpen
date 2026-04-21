@@ -1035,6 +1035,15 @@ impl TestEnv {
             .await
     }
 
+    /// Constructs an empty block using current parent commitment and explicit parent DA.
+    pub(crate) async fn construct_empty_block_with_da(
+        &self,
+        parent_da: AccumulatedDaData,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+        self.construct_block_with_da(iter::empty::<(OLTxId, OLTransaction)>(), parent_da)
+            .await
+    }
+
     /// Constructs a block directly from explicit txs and parent DA using current parent commitment.
     pub(crate) async fn construct_block_with_da(
         &self,
@@ -1059,8 +1068,7 @@ impl TestEnv {
     ) -> OLBlockCommitment {
         let header = output.template.header().clone();
         let commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
-        let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
-        let block = OLBlock::new(signed_header, output.template.body().clone());
+        let (block, post_state) = block_and_post_state_from_output(output);
 
         self.storage()
             .ol_block()
@@ -1069,13 +1077,23 @@ impl TestEnv {
             .expect("store assembled block");
         self.storage()
             .ol_state()
-            .put_toplevel_ol_state_async(commitment, output.post_state.clone())
+            .put_toplevel_ol_state_async(commitment, post_state)
             .await
             .expect("store assembled post-state");
 
         self.parent_commitment = commitment;
         commitment
     }
+}
+
+/// Converts assembled output into persisted artifacts: `(OLBlock, post_state)`.
+pub(crate) fn block_and_post_state_from_output(
+    output: &ConstructBlockOutput<OLState>,
+) -> (OLBlock, OLState) {
+    let header = output.template.header().clone();
+    let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
+    let block = OLBlock::new(signed_header, output.template.body().clone());
+    (block, output.post_state.clone())
 }
 
 /// Builder for seeded storage fixtures used by block assembly tests.

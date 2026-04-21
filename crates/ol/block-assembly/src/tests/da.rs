@@ -3,10 +3,10 @@
 //! Tests that verify DA is correctly accumulated during block assembly,
 //! reset at epoch boundaries, and rolled back on failed transactions.
 
-use std::{iter, sync::Arc};
+use std::sync::Arc;
 
-use strata_identifiers::{Buf64, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
+use strata_identifiers::OLBlockCommitment;
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
@@ -16,10 +16,9 @@ use crate::{
     da_tracker::{AccumulatedDaData, rebuild_accumulated_da_upto},
     test_utils::{
         DEFAULT_ACCOUNT_BALANCE, MempoolSnarkTxBuilder, TestAccount, TestEnv,
-        TestStorageFixtureBuilder, assemble_block_with_txs, generate_message_entries,
+        TestStorageFixtureBuilder, block_and_post_state_from_output, generate_message_entries,
         included_txids, test_account_id,
     },
-    types::BlockGenerationConfig,
 };
 
 /// Finalizes an accumulator against the given state and returns the encoded DA blob bytes.
@@ -53,14 +52,10 @@ async fn build_blocks_with_da_and_artifacts(
 
     for slot in start_slot..target_slot {
         let output = env
-            .construct_block_with_da(iter::empty(), accumulated_da)
+            .construct_empty_block_with_da(accumulated_da)
             .await
             .unwrap_or_else(|e| panic!("Block construction at slot {slot} failed: {e:?}"));
-
-        let header = output.template.header();
-        let signed_header = SignedOLBlockHeader::new(header.clone(), Buf64::zero());
-        let block = OLBlock::new(signed_header, output.template.body().clone());
-        let post_state = output.post_state.clone();
+        let (block, post_state) = block_and_post_state_from_output(&output);
         let new_commitment = env.persist(&output).await;
 
         artifacts.push((block, post_state));
@@ -163,31 +158,19 @@ async fn test_da_resets_at_epoch_boundary() {
         finalize_da_to_bytes(epoch1_acc, Arc::unwrap_or_clone(epoch1_pre_terminal_state));
 
     // Build terminal block (slot 10) with epoch 1 DA.
-    let config = BlockGenerationConfig::new(pre_terminal_commitment);
-    let terminal_output = assemble_block_with_txs(
-        env.ctx(),
-        env.epoch_sealing_policy(),
-        &config,
-        vec![],
-        epoch1_da,
-    )
-    .await
-    .expect("terminal block construction should succeed");
+    let terminal_output = env
+        .construct_empty_block_with_da(epoch1_da)
+        .await
+        .expect("terminal block construction should succeed");
 
     // Store terminal block so we can build on it.
     env.persist(&terminal_output).await;
 
     // Build slot 11 (first block of epoch 2) with FRESH empty DA.
-    let config_11 = BlockGenerationConfig::new(env.parent_commitment());
-    let epoch2_output = assemble_block_with_txs(
-        env.ctx(),
-        env.epoch_sealing_policy(),
-        &config_11,
-        vec![],
-        AccumulatedDaData::new_empty(),
-    )
-    .await
-    .expect("epoch 2 block construction should succeed");
+    let epoch2_output = env
+        .construct_empty_block_with_da(AccumulatedDaData::new_empty())
+        .await
+        .expect("epoch 2 block construction should succeed");
 
     // Epoch 2 DA should only contain slot 11's changes, not epoch 1's.
     let (epoch2_acc, epoch2_logs) = epoch2_output.accumulated_da.into_parts();
