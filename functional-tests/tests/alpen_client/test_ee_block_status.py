@@ -1,4 +1,4 @@
-"""Test strataee_getBlockStatus RPC for EE block finality progression."""
+"""Test alpen_getBlockStatus RPC for EE block finality progression."""
 
 import logging
 
@@ -109,7 +109,7 @@ class TestEeBlockStatus(BaseTest):
         # Non-existent block should error
         fake_hash = "0x" + "00" * 32
         try:
-            alpen_rpc.strataee_getBlockStatus(fake_hash)
+            alpen_rpc.alpen_getBlockStatus(fake_hash)
             raise AssertionError("Expected error for non-existent block hash")
         except RpcError as e:
             logger.info(
@@ -128,7 +128,7 @@ class TestEeBlockStatus(BaseTest):
         # Fullnode must also serve the method (STR-3076). Unknown hash still errors.
         fullnode_rpc = alpen_fullnode.create_rpc()
         try:
-            fullnode_rpc.strataee_getBlockStatus(fake_hash)
+            fullnode_rpc.alpen_getBlockStatus(fake_hash)
             raise AssertionError("Expected error for non-existent block hash on fullnode")
         except RpcError as e:
             logger.info(

@@ -15,7 +15,7 @@ This test exercises that contract end-to-end with a restart in the middle:
 4. Start it again (restart must NOT fail with "MissingGenesisBlock" or
    similar — `init_exec_chain_state_from_storage` must see the genesis
    record and any unfinalized records the ExEx wrote).
-5. Verify the fullnode still answers `strataee_getBlockStatus` for
+5. Verify the fullnode still answers `alpen_getBlockStatus` for
    historical blocks and still converges with the sequencer as the chain
    progresses.
 
@@ -142,7 +142,7 @@ class TestFullnodeExecRecordsPersist(BaseTest):
         alpen_fullnode.wait_for_ready(timeout=60)
 
         # After restart the fullnode must catch up to at least where it was,
-        # and keep serving strataee_getBlockStatus for historical blocks. Use
+        # and keep serving alpen_getBlockStatus for historical blocks. Use
         # the existing RPC as the observable — if the ExEx were broken in a
         # way that corrupted exec-chain state on replay, OLTracker-based
         # status replies would not help because the record pipeline would

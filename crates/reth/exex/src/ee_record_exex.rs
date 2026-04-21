@@ -367,11 +367,7 @@ mod tests {
         mock.expect_delete_exec_block()
             .with(eq(h))
             .times(1)
-            .returning(move |_| {
-                Err(StorageError::CannotDeleteFinalizedBlock(format!(
-                    "{h}"
-                )))
-            });
+            .returning(move |_| Err(StorageError::CannotDeleteFinalizedBlock(format!("{h}"))));
 
         let err = delete_reverted_records(&mock, [h])
             .await
@@ -400,11 +396,7 @@ mod tests {
             .with(eq(h1))
             .times(1)
             .in_sequence(&mut seq)
-            .returning(move |_| {
-                Err(StorageError::CannotDeleteFinalizedBlock(format!(
-                    "{h1}"
-                )))
-            });
+            .returning(move |_| Err(StorageError::CannotDeleteFinalizedBlock(format!("{h1}"))));
 
         let result = delete_reverted_records(&mock, [h2, h1]).await;
         assert!(result.is_err(), "finalized delete should surface error");
