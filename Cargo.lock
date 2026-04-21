@@ -15127,7 +15127,7 @@ dependencies = [
 [[package]]
 name = "strata-logging"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?rev=8aaa27a6b251a6f232e02765a43577cf2020f423#8aaa27a6b251a6f232e02765a43577cf2020f423"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc17#7c96e1633abf4d58774f9748260abaf26932df86"
 dependencies = [
  "metrics",
  "opentelemetry 0.26.0",

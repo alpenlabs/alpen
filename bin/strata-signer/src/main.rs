@@ -46,6 +46,7 @@ fn main() -> anyhow::Result<()> {
         log_file_prefix: config.logging.log_file_prefix.as_deref(),
         json_format: config.logging.json_format,
         default_log_prefix: "signer",
+        enable_metrics_layer: false,
     });
 
     // Load sequencer key. Raw bytes are zeroized inside load_seqkey before it returns.
