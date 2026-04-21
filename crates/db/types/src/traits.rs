@@ -28,6 +28,7 @@ use crate::types::CheckpointEntry;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
+    ol_state_index::{AccountEpochRecord, CommonEpochRecord, EpochIndexingData},
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
         L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
@@ -688,6 +689,42 @@ pub trait AccountDatabase: Send + Sync + 'static {
         &self,
         key: (AccountId, Epoch),
     ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
+}
+
+/// Database for storing OL state indexing data at epoch granularity.
+///
+/// Indexing data captures enough information to reconstruct snark account
+/// inner states and answer per-account, per-epoch activity queries without
+/// replaying blocks. The schema is account-type-agnostic: any account may
+/// produce any kind of indexing record.
+///
+/// Writes go through the single atomic entrypoint [`apply_epoch_indexing`],
+/// which persists an [`EpochIndexingData`] as one logical unit. Staging for
+/// full-node block-level aggregation is an implementation concern of the
+/// producer and is not part of this trait.
+///
+/// [`apply_epoch_indexing`]: OLStateIndexingDatabase::apply_epoch_indexing
+pub trait OLStateIndexingDatabase: Send + Sync + 'static {
+    /// Atomically persists an epoch's indexing data.
+    ///
+    /// Writes the common record, all per-account records, and creation-epoch
+    /// index entries for any newly-created accounts in a single transaction.
+    fn apply_epoch_indexing(&self, data: EpochIndexingData) -> DbResult<()>;
+
+    /// Returns the common indexing record for the given epoch.
+    fn get_common_epoch_record(&self, epoch: Epoch) -> DbResult<Option<CommonEpochRecord>>;
+
+    /// Returns the per-account indexing record for the given account and epoch.
+    ///
+    /// Returns `None` when the account had no indexed activity in the epoch.
+    fn get_account_epoch_record(
+        &self,
+        acct: AccountId,
+        epoch: Epoch,
+    ) -> DbResult<Option<AccountEpochRecord>>;
+
+    /// Returns the epoch in which an account was created.
+    fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;
 }
 
 /// Database interface for OL mempool transactions.
