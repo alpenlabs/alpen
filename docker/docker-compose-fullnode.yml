@@ -18,25 +18,6 @@ services:
     networks:
       - strata_network
 
-  client:
-    platform: linux/amd64
-    image: public.ecr.aws/r1l9t0r6/testnet1/strata-client:latest
-    environment:
-      CONFIG_PATH: /app/configs/config.fn.toml
-      PARAM_PATH: /app/configs/params.json
-      RUST_LOG: ${RUST_LOG:-info}
-    container_name: strata_client
-    ports:
-      - "8432:8432"
-    volumes:
-      - ./data/data-strata:/app/data
-      - ./configs:/app/configs
-    depends_on:
-      - bitcoind
-      - reth
-    networks:
-      - strata_network
-
   bitcoind:
     image: public.ecr.aws/s6b4k6i9/strata/signet:latest
     environment:
