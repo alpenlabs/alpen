@@ -1,7 +1,7 @@
 //! DA scheme implementations for OL state.
 
 use strata_da_framework::DaWrite;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::*;
 
 use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 
@@ -9,7 +9,7 @@ use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 #[derive(Debug, Default)]
 pub struct OLDaSchemeV1;
 
-impl<S: IStateAccessor> DaScheme<S> for OLDaSchemeV1 {
+impl<S: IStateAccessorMut> DaScheme<S> for OLDaSchemeV1 {
     type Diff = OLDaPayloadV1;
 
     /// Applies an [`OLDaPayloadV1`] to the OL state accumulator.

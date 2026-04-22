@@ -80,11 +80,7 @@ impl TsnlLedgerAccountsTable {
     /// Creates a new account.
     ///
     /// This does not check serial uniqueness/ordering.
-    pub(crate) fn create_account(
-        &mut self,
-        id: AccountId,
-        acct_state: OLAccountState,
-    ) -> AcctResult<()> {
+    pub fn create_account(&mut self, id: AccountId, acct_state: OLAccountState) -> AcctResult<()> {
         // Figure out where we're supposed to put it.
         let insert_idx = match self.accounts.binary_search_by_key(&id, |e| e.id) {
             Ok(_) => return Err(AcctError::AccountIdExists(id)),
@@ -111,8 +107,7 @@ impl TsnlLedgerAccountsTable {
     /// Creates a new account from [`NewAccountData`].
     ///
     /// This does not check serial uniqueness/ordering.
-    #[cfg(test)]
-    pub(crate) fn create_new_account(
+    pub fn create_new_account(
         &mut self,
         id: AccountId,
         serial: AccountSerial,

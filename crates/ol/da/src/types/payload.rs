@@ -56,12 +56,12 @@ impl StateDiff {
 
 /// Adapter for applying a state diff to a concrete state accessor.
 #[derive(Debug)]
-pub struct OLStateDiff<S: IStateAccessor> {
+pub struct OLStateDiff<S: IStateAccessorMut> {
     diff: StateDiff,
     _target: PhantomData<S>,
 }
 
-impl<S: IStateAccessor> OLStateDiff<S> {
+impl<S: IStateAccessorMut> OLStateDiff<S> {
     pub fn new(diff: StateDiff) -> Self {
         Self {
             diff,
@@ -78,13 +78,13 @@ impl<S: IStateAccessor> OLStateDiff<S> {
     }
 }
 
-impl<S: IStateAccessor> Default for OLStateDiff<S> {
+impl<S: IStateAccessorMut> Default for OLStateDiff<S> {
     fn default() -> Self {
         Self::new(StateDiff::default())
     }
 }
 
-impl<S: IStateAccessor> DaWrite for OLStateDiff<S> {
+impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
     type Target = S;
     type Context = ();
     type Error = DaError;
@@ -216,7 +216,7 @@ fn validate_ledger_entries(
     Ok(())
 }
 
-fn apply_account_diff<S: IStateAccessor>(
+fn apply_account_diff<S: IStateAccessorMut>(
     target: &mut S,
     account_id: AccountId,
     diff: &AccountDiff,
@@ -361,10 +361,7 @@ mod tests {
     fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(2);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(10),
-            NewAccountTypeState::Empty,
-        );
+        let new_acct = NewAccountData::new(BitcoinAmount::from_sat(10), NewAccountTypeState::Empty);
         state
             .create_new_account(account_id, new_acct)
             .expect("create account");
@@ -391,10 +388,8 @@ mod tests {
     fn test_ol_state_diff_apply_updates_balance() {
         let mut state = create_test_genesis_state();
         let account_id = test_account_id(3);
-        let new_acct = NewAccountData::new(
-            BitcoinAmount::from_sat(1_000),
-            NewAccountTypeState::Empty,
-        );
+        let new_acct =
+            NewAccountData::new(BitcoinAmount::from_sat(1_000), NewAccountTypeState::Empty);
         let serial = state
             .create_new_account(account_id, new_acct)
             .expect("create account");

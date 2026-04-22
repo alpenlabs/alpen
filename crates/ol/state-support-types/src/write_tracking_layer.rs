@@ -8,7 +8,7 @@ use std::fmt;
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor, NewAccountData};
+use strata_ledger_types::*;
 use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 
 /// Helper trait for computing the state root after hypothetically applying a
@@ -74,13 +74,12 @@ impl<'base, S: IStateAccessor> WriteTrackingState<'base, S> {
     }
 }
 
-impl<'base, S: IComputeStateRootWithWrites + IStateBatchApplicable> IStateAccessor
+impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessor
     for WriteTrackingState<'base, S>
 where
     S::AccountState: Clone + IAccountState + IAccountStateMut,
 {
     type AccountState = S::AccountState;
-    type AccountStateMut = S::AccountState; // Same type as AccountState for this layer
 
     // ===== Global state methods =====
 
@@ -91,10 +90,6 @@ where
             .unwrap_or_else(|| self.base.cur_slot())
     }
 
-    fn set_cur_slot(&mut self, slot: u64) {
-        self.batch.global_writes_mut().cur_slot = Some(slot);
-    }
-
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
@@ -102,10 +97,6 @@ where
             .epochal_writes()
             .cur_epoch
             .unwrap_or_else(|| self.base.cur_epoch())
-    }
-
-    fn set_cur_epoch(&mut self, epoch: u32) {
-        self.batch.epochal_writes_mut().cur_epoch = Some(epoch);
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -123,27 +114,6 @@ where
             .unwrap_or_else(|| self.base.last_l1_height())
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        // For append_manifest, we need to get the current MMR (from batch or
-        // base), clone it, append, and store back.
-        let mut mmr = self
-            .batch
-            .epochal_writes()
-            .asm_manifests_mmr
-            .clone()
-            .unwrap_or_else(|| self.base.asm_manifests_mmr().clone());
-
-        use strata_acct_types::{StrataHasher, tree_hash::TreeHash};
-        let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
-        strata_merkle::Mmr::<StrataHasher>::add_leaf(&mut mmr, manifest_hash.into_inner())
-            .expect("MMR capacity exceeded");
-
-        let ew = self.batch.epochal_writes_mut();
-        ew.asm_manifests_mmr = Some(mmr);
-        ew.last_l1_blkid = Some(*mf.blkid());
-        ew.last_l1_height = Some(height);
-    }
-
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
         self.batch
             .epochal_writes()
@@ -152,19 +122,11 @@ where
             .unwrap_or_else(|| self.base.asm_recorded_epoch())
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.batch.epochal_writes_mut().asm_recorded_epoch = Some(epoch);
-    }
-
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.batch
             .epochal_writes()
             .total_ledger_balance
             .unwrap_or_else(|| self.base.total_ledger_balance())
-    }
-
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.batch.epochal_writes_mut().total_ledger_balance = Some(amt);
     }
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
@@ -195,6 +157,73 @@ where
         self.base.get_account_state(id)
     }
 
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+        // Check write batch first (for newly created accounts)
+        if let Some(id) = self.batch.ledger().find_id_by_serial(serial) {
+            return Ok(Some(id));
+        }
+        // Fall back to base state
+        self.base.find_account_id_by_serial(serial)
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        let base_serial: u32 = self.base.next_account_serial().into();
+        let new_count = self.batch.ledger().new_accounts().len() as u32;
+        AccountSerial::from(base_serial + new_count)
+    }
+
+    fn compute_state_root(&self) -> AcctResult<Buf32> {
+        // FIXME avoid clone
+        self.base.compute_state_root_with_writes(self.batch.clone())
+    }
+}
+
+impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessorMut
+    for WriteTrackingState<'base, S>
+where
+    // FIXME make this actually wrap the account state type so it doesn't have
+    // to be mut on its own
+    S::AccountState: IAccountStateMut,
+{
+    type AccountStateMut = S::AccountState; // Same type as AccountState for this layer
+
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.batch.global_writes_mut().cur_slot = Some(slot);
+    }
+
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.batch.epochal_writes_mut().cur_epoch = Some(epoch);
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.batch.epochal_writes_mut().asm_recorded_epoch = Some(epoch);
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.batch.epochal_writes_mut().total_ledger_balance = Some(amt);
+    }
+
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        // For append_manifest, we need to get the current MMR (from batch or
+        // base), clone it, append, and store back.
+        let mut mmr = self
+            .batch
+            .epochal_writes()
+            .asm_manifests_mmr
+            .clone()
+            .unwrap_or_else(|| self.base.asm_manifests_mmr().clone());
+
+        use strata_acct_types::{StrataHasher, tree_hash::TreeHash};
+        let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
+        strata_merkle::Mmr::<StrataHasher>::add_leaf(&mut mmr, manifest_hash.into_inner())
+            .expect("MMR capacity exceeded");
+
+        let ew = self.batch.epochal_writes_mut();
+        ew.asm_manifests_mmr = Some(mmr);
+        ew.last_l1_blkid = Some(*mf.blkid());
+        ew.last_l1_height = Some(height);
+    }
+
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
@@ -214,7 +243,7 @@ where
             .batch
             .ledger_mut()
             .get_account_mut(&id)
-            .expect("account should be in batch");
+            .expect("state: account should be in batch");
         Ok(f(account))
     }
 
@@ -228,25 +257,6 @@ where
             .ledger_mut()
             .create_account_from_data(id, new_acct_data, serial);
         Ok(serial)
-    }
-
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
-        // Check write batch first (for newly created accounts)
-        if let Some(id) = self.batch.ledger().find_id_by_serial(serial) {
-            return Ok(Some(id));
-        }
-        // Fall back to base state
-        self.base.find_account_id_by_serial(serial)
-    }
-
-    fn next_account_serial(&self) -> AccountSerial {
-        let base_serial: u32 = self.base.next_account_serial().into();
-        let new_count = self.batch.ledger().new_accounts().len() as u32;
-        AccountSerial::from(base_serial + new_count)
-    }
-
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
-        self.base.compute_state_root_with_writes(self.batch.clone())
     }
 }
 
@@ -268,7 +278,6 @@ mod tests {
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
     use strata_ledger_types::*;
-
     use strata_ol_state_types::OLAccountState;
 
     use super::*;
@@ -516,9 +525,7 @@ mod tests {
         // verify the two paths are consistent rather than checking for a
         // non-trivial value.)
         let mut expected = MemoryStateBaseLayer::new(create_test_genesis_state());
-        expected
-            .apply_write_batch(tracking.into_batch())
-            .unwrap();
+        expected.apply_write_batch(tracking.into_batch()).unwrap();
         assert_eq!(root, expected.compute_state_root().unwrap());
         let _ = base_root;
     }

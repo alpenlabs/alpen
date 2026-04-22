@@ -7,10 +7,9 @@
 use std::fmt;
 
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
-use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{IStateAccessor, NewAccountData};
-use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
+use strata_ledger_types::IStateAccessor;
+use strata_ol_state_types::WriteBatch;
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
 
@@ -65,7 +64,6 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
 
 impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batches, 'base, S> {
     type AccountState = S::AccountState;
-    type AccountStateMut = S::AccountStateMut; // Never actually used since writes fail
 
     // ===== Global state methods =====
 
@@ -76,11 +74,6 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.cur_slot())
     }
 
-    fn set_cur_slot(&mut self, _slot: u64) {
-        #[cfg(feature = "tracing")]
-        tracing::error!("BatchDiffState::set_cur_slot called on read-only state");
-    }
-
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
@@ -88,11 +81,6 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .last()
             .and_then(|b| b.epochal_writes().cur_epoch)
             .unwrap_or_else(|| self.base.cur_epoch())
-    }
-
-    fn set_cur_epoch(&mut self, _epoch: u32) {
-        #[cfg(feature = "tracing")]
-        tracing::error!("BatchDiffState::set_cur_epoch called on read-only state");
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -109,11 +97,6 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.last_l1_height())
     }
 
-    fn append_manifest(&mut self, _height: L1Height, _mf: AsmManifest) {
-        #[cfg(feature = "tracing")]
-        tracing::error!("BatchDiffState::append_manifest called on read-only state");
-    }
-
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
         self.batches
             .last()
@@ -121,21 +104,11 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
             .unwrap_or_else(|| self.base.asm_recorded_epoch())
     }
 
-    fn set_asm_recorded_epoch(&mut self, _epoch: EpochCommitment) {
-        #[cfg(feature = "tracing")]
-        tracing::error!("BatchDiffState::set_asm_recorded_epoch called on read-only state");
-    }
-
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.batches
             .last()
             .and_then(|b| b.epochal_writes().total_ledger_balance)
             .unwrap_or_else(|| self.base.total_ledger_balance())
-    }
-
-    fn set_total_ledger_balance(&mut self, _amt: BitcoinAmount) {
-        #[cfg(feature = "tracing")]
-        tracing::error!("BatchDiffState::set_total_ledger_balance called on read-only state");
     }
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
@@ -169,21 +142,6 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
         self.base.get_account_state(id)
     }
 
-    fn update_account<R, F>(&mut self, _id: AccountId, _f: F) -> AcctResult<R>
-    where
-        F: FnOnce(&mut Self::AccountStateMut) -> R,
-    {
-        Err(AcctError::Unsupported)
-    }
-
-    fn create_new_account(
-        &mut self,
-        _id: AccountId,
-        _new_acct_data: NewAccountData,
-    ) -> AcctResult<AccountSerial> {
-        Err(AcctError::Unsupported)
-    }
-
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
         // Check batches in reverse order (last = most recent)
         for batch in self.batches.iter().rev() {
@@ -206,14 +164,7 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        Err(AcctError::Unsupported)
-    }
-}
-
-impl<'batches, 'base, S: IStateAccessor> IStateBatchApplicable
-    for BatchDiffState<'batches, 'base, S>
-{
-    fn apply_write_batch(&mut self, _batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
+        // TODO implement this properly
         Err(AcctError::Unsupported)
     }
 }

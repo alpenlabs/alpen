@@ -13,9 +13,7 @@ use strata_asm_common::AsmManifest;
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot, WtxidsRoot,
 };
-use strata_ledger_types::{
-    IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData, NewAccountTypeState,
-};
+use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_ol_chain_types_new::*;
 use strata_ol_params::OLParams;
@@ -309,7 +307,11 @@ pub fn assert_block_position(header: &OLBlockHeader, expected_epoch: u64, expect
 }
 
 /// Assert that the state has been properly updated after block execution.
-pub fn assert_state_updated(state: &mut MemoryStateBaseLayer, expected_epoch: u64, expected_slot: u64) {
+pub fn assert_state_updated(
+    state: &mut MemoryStateBaseLayer,
+    expected_epoch: u64,
+    expected_slot: u64,
+) {
     assert_eq!(
         state.cur_epoch() as u64,
         expected_epoch,
@@ -321,7 +323,7 @@ pub fn assert_state_updated(state: &mut MemoryStateBaseLayer, expected_epoch: u6
 // ===== Verification Test Utilities =====
 
 /// Assert that block verification succeeds.
-pub fn assert_verification_succeeds<S: IStateAccessor>(
+pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
@@ -337,7 +339,7 @@ pub fn assert_verification_succeeds<S: IStateAccessor>(
 
 /// Assert that block verification fails with a specific error.
 pub fn assert_verification_fails_with(
-    state: &mut impl IStateAccessor,
+    state: &mut impl IStateAccessorMut,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
@@ -600,7 +602,10 @@ pub fn setup_genesis_with_snark_account(
 }
 
 /// Helper to create additional empty accounts (for testing transfers/messages)
-pub fn create_empty_account(state: &mut MemoryStateBaseLayer, account_id: AccountId) -> AccountSerial {
+pub fn create_empty_account(
+    state: &mut MemoryStateBaseLayer,
+    account_id: AccountId,
+) -> AccountSerial {
     let new_acct_data = NewAccountData::new_empty(NewAccountTypeState::Empty);
     state
         .create_new_account(account_id, new_acct_data)

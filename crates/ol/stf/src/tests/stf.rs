@@ -3,11 +3,10 @@
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor, NewAccountData, NewAccountTypeState};
-use strata_ol_state_types::IStateBatchApplicable;
+use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
 use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
-use strata_ol_state_types::OLSnarkAccountState;
+use strata_ol_state_types::{IStateBatchApplicable, OLSnarkAccountState};
 use strata_predicate::PredicateKey;
 
 use crate::{

@@ -3,6 +3,7 @@
 use strata_acct_types::{
     AccountId, AccountSerial, AcctError, AcctResult, Mmr64, SYSTEM_RESERVED_ACCTS,
 };
+use strata_ledger_types::NewAccountData;
 use strata_merkle::CompactMmr64;
 use strata_ol_params::OLParams;
 
@@ -177,6 +178,29 @@ impl OLState {
         if let Some(mmr) = epochal_writes.asm_manifests_mmr {
             self.epoch.manifests_mmr = mmr;
         }
+
+        Ok(())
+    }
+
+    /// Creates a new account.
+    ///
+    /// # Panics
+    ///
+    /// If the serial isn't the expected next serial.
+    pub fn create_new_account(
+        &mut self,
+        id: AccountId,
+        serial: AccountSerial,
+        new_acct_data: NewAccountData,
+    ) -> AcctResult<()> {
+        // Sanity check serials.
+        let exp_serial = self.global.get_next_avail_serial();
+        debug_assert_eq!(exp_serial, serial, "state: inconsistent serials");
+
+        self.ledger.create_new_account(id, serial, new_acct_data)?;
+
+        // FIXME conversions
+        self.global.next_avail_serial = serial.incr().into_inner() as u64;
 
         Ok(())
     }

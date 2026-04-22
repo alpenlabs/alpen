@@ -34,9 +34,7 @@ mod state_accessor;
 pub use account::*;
 pub use coin::Coin;
 pub use proofs::*;
-pub use state_accessor::{
-    IStateAccessor, asm_manifest_mmr_index_for_height, asm_manifests_mmr_start_height,
-};
+pub use state_accessor::*;
 // transitional crap
 pub use strata_asm_manifest_types::AsmManifest;
 pub use strata_identifiers::{EpochCommitment, L1BlockId, L1Height};

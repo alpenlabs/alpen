@@ -2,10 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{
+    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64,
+    tree_hash::{Sha256Hasher, TreeHash},
+};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{IStateAccessor, NewAccountData};
+use strata_ledger_types::*;
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
@@ -55,7 +58,6 @@ impl MemoryStateBaseLayer {
 
 impl IStateAccessor for MemoryStateBaseLayer {
     type AccountState = OLAccountState;
-    type AccountStateMut = OLAccountState;
 
     // ===== Global state methods =====
 
@@ -63,18 +65,10 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.global.get_cur_slot()
     }
 
-    fn set_cur_slot(&mut self, slot: u64) {
-        self.state.global.set_cur_slot(slot);
-    }
-
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
         self.state.epoch.cur_epoch()
-    }
-
-    fn set_cur_epoch(&mut self, epoch: u32) {
-        self.state.epoch.set_cur_epoch(epoch);
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -85,24 +79,12 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.epoch.last_l1_height()
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        self.state.epoch.append_manifest(height, mf);
-    }
-
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
         self.state.epoch.asm_recorded_epoch()
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.state.epoch.set_asm_recorded_epoch(epoch);
-    }
-
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.state.epoch.total_ledger_balance()
-    }
-
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.state.epoch.set_total_ledger_balance(amt);
     }
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
@@ -117,6 +99,42 @@ impl IStateAccessor for MemoryStateBaseLayer {
 
     fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
         Ok(self.state.ledger.get_account_state(&id))
+    }
+
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+        Ok(self.serials.get(&serial).copied())
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        self.state.global.get_next_avail_serial()
+    }
+
+    fn compute_state_root(&self) -> AcctResult<Buf32> {
+        Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&self.state).into())
+    }
+}
+
+impl IStateAccessorMut for MemoryStateBaseLayer {
+    type AccountStateMut = OLAccountState;
+
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.state.global.set_cur_slot(slot);
+    }
+
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.state.epoch.set_cur_epoch(epoch);
+    }
+
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        self.state.epoch.append_manifest(height, mf);
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.state.epoch.set_asm_recorded_epoch(epoch);
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.state.epoch.set_total_ledger_balance(amt);
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
@@ -137,26 +155,9 @@ impl IStateAccessor for MemoryStateBaseLayer {
         new_acct_data: NewAccountData,
     ) -> AcctResult<AccountSerial> {
         let serial = self.state.global.get_next_avail_serial();
-        let mut batch = WriteBatch::<OLAccountState>::default();
-        batch
-            .ledger_mut()
-            .create_account_from_data(id, new_acct_data, serial);
-        self.state.apply_write_batch(batch)?;
+        self.state.create_new_account(id, serial, new_acct_data)?;
         self.serials.insert(serial, id);
         Ok(serial)
-    }
-
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
-        Ok(self.serials.get(&serial).copied())
-    }
-
-    fn next_account_serial(&self) -> AccountSerial {
-        self.state.global.get_next_avail_serial()
-    }
-
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // TODO: use a proper state root computation
-        Ok(Buf32::zero())
     }
 }
 
@@ -173,8 +174,6 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
     ) -> AcctResult<Buf32> {
         let mut state = self.state.clone();
         state.apply_write_batch(batch)?;
-        // TODO: use a proper state root computation
-        let _ = state;
-        Ok(Buf32::zero())
+        Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&state).into())
     }
 }

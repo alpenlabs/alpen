@@ -6,15 +6,10 @@
 
 use std::fmt;
 
-use strata_acct_types::{
-    AccountId, AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, MessageEntry, Mmr64,
-};
+use strata_acct_types::*;
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{
-    AccountTypeStateRef, Coin, IAccountState, IAccountStateMut, ISnarkAccountState,
-    ISnarkAccountStateMut, IStateAccessor, NewAccountData,
-};
+use strata_ledger_types::*;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
@@ -389,32 +384,18 @@ impl<S: IStateAccessor> IndexerState<S> {
     }
 }
 
-impl<S: IStateAccessor> IStateAccessor for IndexerState<S>
-where
-    S::AccountStateMut: Clone,
-    <S::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut: Clone,
-{
+impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
     type AccountState = S::AccountState;
-    type AccountStateMut = IndexerAccountStateMut<S::AccountStateMut>;
 
     // ===== Global state methods (pass through) =====
 
     fn cur_slot(&self) -> u64 {
         self.inner.cur_slot()
     }
-
-    fn set_cur_slot(&mut self, slot: u64) {
-        self.inner.set_cur_slot(slot);
-    }
-
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
         self.inner.cur_epoch()
-    }
-
-    fn set_cur_epoch(&mut self, epoch: u32) {
-        self.inner.set_cur_epoch(epoch);
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -425,30 +406,12 @@ where
         self.inner.last_l1_height()
     }
 
-    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
-        // Track the manifest write
-        self.writes.push_manifest(ManifestWrite {
-            height,
-            manifest: mf.clone(),
-        });
-        // Pass through to inner
-        self.inner.append_manifest(height, mf);
-    }
-
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
         self.inner.asm_recorded_epoch()
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.inner.set_asm_recorded_epoch(epoch);
-    }
-
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.inner.total_ledger_balance()
-    }
-
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.inner.set_total_ledger_balance(amt);
     }
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
@@ -463,6 +426,53 @@ where
 
     fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
         self.inner.get_account_state(id)
+    }
+
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+        self.inner.find_account_id_by_serial(serial)
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        self.inner.next_account_serial()
+    }
+
+    fn compute_state_root(&self) -> AcctResult<Buf32> {
+        self.inner.compute_state_root()
+    }
+}
+
+impl<S: IStateAccessorMut> IStateAccessorMut for IndexerState<S>
+where
+    S::AccountStateMut: Clone,
+    <S::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut: Clone,
+{
+    type AccountStateMut = IndexerAccountStateMut<S::AccountStateMut>;
+
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.inner.set_cur_slot(slot);
+    }
+
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.inner.set_cur_epoch(epoch);
+    }
+
+    fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        // Track the manifest write.
+        self.writes.push_manifest(ManifestWrite {
+            height,
+            manifest: mf.clone(),
+        });
+
+        // Pass through to inner.
+        self.inner.append_manifest(height, mf);
+    }
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.inner.set_asm_recorded_epoch(epoch);
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.inner.set_total_ledger_balance(amt);
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
@@ -499,18 +509,6 @@ where
         new_acct_data: NewAccountData,
     ) -> AcctResult<AccountSerial> {
         self.inner.create_new_account(id, new_acct_data)
-    }
-
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
-        self.inner.find_account_id_by_serial(serial)
-    }
-
-    fn next_account_serial(&self) -> AccountSerial {
-        self.inner.next_account_serial()
-    }
-
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
-        self.inner.compute_state_root()
     }
 }
 
