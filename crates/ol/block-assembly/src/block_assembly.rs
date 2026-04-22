@@ -845,6 +845,67 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_accumulator_proofs_missing_target_account() {
+        let fixture_builder = TestStorageFixtureBuilder::new();
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let missing_account = test_account_id(99);
+        let mempool_tx = MempoolSnarkTxBuilder::new(missing_account)
+            .with_seq_no(0)
+            .build();
+
+        let ctx = create_test_context(fixture.storage().clone());
+        let err = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx)
+            .expect_err("missing target account should fail");
+        assert!(
+            matches!(err, BlockAssemblyError::AccountNotFound(id) if id == missing_account),
+            "expected AccountNotFound for missing account, got: {err:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_accumulator_proofs_gam_passthrough() {
+        let fixture_builder = TestStorageFixtureBuilder::new();
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let target = test_account_id(77);
+        let mempool_tx = MempoolGamTxBuilder::new(target)
+            .with_data(vec![1, 2, 3])
+            .build();
+        let proofs_before = mempool_tx.proofs().clone();
+
+        let ctx = create_test_context(fixture.storage().clone());
+        let out_tx = add_accumulator_proofs(&ctx, state.as_ref(), mempool_tx)
+            .expect("GAM tx should pass through unchanged");
+
+        // For GAM payloads this path should not inject accumulator proofs.
+        assert_eq!(
+            out_tx.proofs(),
+            &proofs_before,
+            "GAM tx proofs should remain unchanged"
+        );
+        assert!(
+            matches!(
+                out_tx.payload(),
+                TransactionPayload::GenericAccountMessage(_)
+            ),
+            "GAM tx payload should remain GenericAccountMessage"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_l1_header_claim_hash_mismatch() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()

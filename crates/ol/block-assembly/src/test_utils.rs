@@ -407,10 +407,6 @@ pub(crate) struct MempoolGamTxBuilder {
 
 impl MempoolGamTxBuilder {
     /// Creates a new GAM builder targeting the given account.
-    #[expect(
-        dead_code,
-        reason = "Commit 1 adds test infra before the follow-up tests consume it."
-    )]
     pub(crate) fn new(target: AccountId) -> Self {
         Self {
             target,
@@ -419,20 +415,12 @@ impl MempoolGamTxBuilder {
     }
 
     /// Sets message payload bytes.
-    #[expect(
-        dead_code,
-        reason = "Commit 1 adds test infra before the follow-up tests consume it."
-    )]
     pub(crate) fn with_data(mut self, data: Vec<u8>) -> Self {
         self.data = data;
         self
     }
 
     /// Builds the mempool transaction.
-    #[expect(
-        dead_code,
-        reason = "Commit 1 adds test infra before the follow-up tests consume it."
-    )]
     pub(crate) fn build(self) -> OLTransaction {
         OLTransaction::new(
             OLTransactionData::new_gam(self.target, self.data),
