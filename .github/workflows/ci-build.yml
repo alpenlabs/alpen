@@ -145,11 +145,6 @@ jobs:
       - name: Build strata-datatool + SP1 guest ELFs
         if: matrix.program == 'strata'
         run: |
-          # sp1-builder uses the host rustc; matches the existing
-          # prover-client CI pattern in cd.yml. We'd prefer sp1-docker-builder
-          # for byte-reproducible ELFs, but the pinned Succinct toolchain
-          # container currently ships rustc 1.88 while alpen workspace deps
-          # require rustc >=1.91. Revisit once Succinct updates.
           cargo build --bin strata-datatool --features sp1-builder --release
 
           mkdir -p docker/strata/artifacts/elfs/sp1
