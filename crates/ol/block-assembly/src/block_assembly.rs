@@ -110,6 +110,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::InvalidRange { .. }
         | BlockAssemblyError::InvalidSignature(_)
         | BlockAssemblyError::Mempool(_)
+        | BlockAssemblyError::StateProvider(_)
         | BlockAssemblyError::NoPendingTemplateForParent(_)
         | BlockAssemblyError::Other(_)
         | BlockAssemblyError::RequestChannelClosed
@@ -117,6 +118,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::UnknownTemplateId(_)
         | BlockAssemblyError::TimestampTooEarly(_)
         | BlockAssemblyError::BlockNotFound(_)
+        | BlockAssemblyError::ParentStateNotFound(_)
         | BlockAssemblyError::TooManyClaims
         | BlockAssemblyError::CannotBuildGenesis => MempoolTxInvalidReason::Failed,
     }
@@ -170,11 +172,7 @@ where
     let parent_state = ctx
         .fetch_state_for_tip(parent_commitment)
         .await?
-        .ok_or_else(|| {
-            BlockAssemblyError::Db(DbError::Other(format!(
-                "Parent state not found for commitment: {parent_commitment}"
-            )))
-        })?;
+        .ok_or(BlockAssemblyError::ParentStateNotFound(parent_commitment))?;
 
     // 2. Calculate next slot and epoch
     let (block_slot, block_epoch) =
@@ -1442,7 +1440,7 @@ mod tests {
             .build();
         let txid = valid_tx.compute_txid();
 
-        let mempool = env.mempool_arc();
+        let mempool = env.mempool();
 
         mempool.add_transaction(txid, valid_tx);
 

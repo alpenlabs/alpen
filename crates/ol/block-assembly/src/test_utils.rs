@@ -182,19 +182,11 @@ impl MockMempoolProvider {
     }
 
     /// Configures a failure injection mode.
-    #[expect(
-        dead_code,
-        reason = "Commit 1 adds test infra before the follow-up tests consume it."
-    )]
     pub(crate) fn set_fail_mode(&self, fail_mode: MockMempoolFailMode) {
         *self.fail_mode.lock().unwrap() = fail_mode;
     }
 
     /// Returns the number of times `report_invalid_transactions` was called.
-    #[expect(
-        dead_code,
-        reason = "Commit 1 adds test infra before the follow-up tests consume it."
-    )]
     pub(crate) fn report_call_count(&self) -> usize {
         self.report_call_count.load(Ordering::Relaxed)
     }
@@ -268,10 +260,6 @@ impl MempoolProvider for Arc<MockMempoolProvider> {
 }
 
 /// State provider test double that always fails state lookup.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) struct FailingStateProvider;
 
 impl StateProvider for FailingStateProvider {
@@ -513,7 +501,9 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
-    /// Sets output messages (balance transfers to other accounts).
+    /// Sets simple output transfers as `(destination_account, value_sats)`.
+    ///
+    /// These are encoded as output messages with empty payload data.
     pub(crate) fn with_outputs(mut self, outputs: Vec<(AccountId, u64)>) -> Self {
         self.outputs = outputs;
         self
@@ -955,11 +945,6 @@ impl TestEnv {
     /// Returns mock mempool handle for injection/inspection tests.
     pub(crate) fn mempool(&self) -> &MockMempoolProvider {
         self.mempool.as_ref()
-    }
-
-    /// Returns an owned mock mempool handle when ownership is required.
-    pub(crate) fn mempool_arc(&self) -> Arc<MockMempoolProvider> {
-        self.mempool.clone()
     }
 
     /// Appends inbox messages to the storage MMR for a given account and returns MMR indices.

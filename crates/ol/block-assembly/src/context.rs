@@ -165,8 +165,7 @@ where
         self.state_provider
             .get_state_for_tip_async(tip)
             .await
-            // keep current logic: stringified provider error
-            .map_err(|e| BlockAssemblyError::Other(e.to_string()))
+            .map_err(|e| BlockAssemblyError::StateProvider(Box::new(e)))
     }
 
     async fn fetch_asm_manifests_from(

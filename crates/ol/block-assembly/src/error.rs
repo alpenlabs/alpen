@@ -1,8 +1,10 @@
 //! Error types for block assembly operations.
 
+use std::error::Error;
+
 use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Hash, OLBlockId};
+use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_stf::ExecError;
@@ -48,6 +50,10 @@ pub enum BlockAssemblyError {
     /// Block not found in db.
     #[error("block not found in db: {0}")]
     BlockNotFound(OLBlockId),
+
+    /// Parent state not found in db.
+    #[error("parent state not found in db: {0}")]
+    ParentStateNotFound(OLBlockCommitment),
 
     /// No mapping found in parent block ID -> template ID cache.
     #[error("no pending template found for parent id: {0}")]
@@ -96,6 +102,10 @@ pub enum BlockAssemblyError {
     /// Mempool operation failed.
     #[error("mempool: {0}")]
     Mempool(#[from] OLMempoolError),
+
+    /// State provider operation failed.
+    #[error("state provider: {0}")]
+    StateProvider(#[source] Box<dyn Error + Send + Sync>),
 
     /// Block construction/execution failed.
     #[error("block construction: {0}")]
