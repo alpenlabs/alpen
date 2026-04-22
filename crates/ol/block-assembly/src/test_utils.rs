@@ -92,10 +92,6 @@ pub(crate) fn test_hash(seed: u8) -> Hash {
 // Keep account/snark assertions concise in tests that inspect post-state.
 
 /// Returns account balance from post-state.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) fn account_balance(state: &OLState, account_id: AccountId) -> BitcoinAmount {
     state
         .get_account_state(account_id)
@@ -115,28 +111,16 @@ pub(crate) fn snark_account_state(state: &OLState, account_id: AccountId) -> &OL
 }
 
 /// Returns snark account sequence number from post-state.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) fn snark_account_seqno(state: &OLState, account_id: AccountId) -> u64 {
     *snark_account_state(state, account_id).seqno().inner()
 }
 
 /// Returns snark account next inbox message index from post-state.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) fn snark_account_next_inbox_msg_idx(state: &OLState, account_id: AccountId) -> u64 {
     snark_account_state(state, account_id).next_inbox_msg_idx()
 }
 
 /// Returns snark account inbox MMR entry count from post-state.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) fn snark_account_inbox_len(state: &OLState, account_id: AccountId) -> u64 {
     snark_account_state(state, account_id)
         .inbox_mmr()
@@ -959,6 +943,19 @@ impl TestEnv {
     /// Returns an owned mock mempool handle when ownership is required.
     pub(crate) fn mempool_arc(&self) -> Arc<MockMempoolProvider> {
         self.mempool.clone()
+    }
+
+    /// Appends inbox messages to the storage MMR for a given account and returns MMR indices.
+    ///
+    /// This is a runtime storage update helper for multi-block tests where
+    /// proofs in a later block must reference newly-added inbox entries.
+    pub(crate) fn append_inbox_messages(
+        &self,
+        account_id: AccountId,
+        messages: impl IntoIterator<Item = MessageEntry>,
+    ) -> Vec<u64> {
+        let mut inbox_mmr = StorageInboxMmr::new(self.storage().as_ref(), account_id);
+        inbox_mmr.add_messages(messages)
     }
 
     /// Returns configured L1 header refs keyed by L1 height.
