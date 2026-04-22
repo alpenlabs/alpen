@@ -1426,10 +1426,6 @@ pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
 }
 
 /// Returns decoded withdrawal intent logs from accumulated DA logs.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) fn withdrawal_intents(
     output: &ConstructBlockOutput<OLState>,
 ) -> Vec<SimpleWithdrawalIntentLogData> {

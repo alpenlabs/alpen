@@ -61,7 +61,6 @@ async fn test_multi_sender_attribution() {
         epoch,
         MsgPayload::new(BitcoinAmount::from_sat(250), vec![]),
     );
-
     let included_block1 = included_txids(&output_block1.template);
     assert_eq!(
         included_block1,
@@ -96,7 +95,6 @@ async fn test_multi_sender_attribution() {
         .construct_block_with_da(vec![(tx_receiver_id, tx_receiver)], parent_da_2)
         .await
         .expect("block 2 should construct and process attributed messages");
-
     let included_block2 = included_txids(&output_block2.template);
     assert_eq!(
         included_block2,
@@ -153,7 +151,6 @@ async fn test_single_account_inbox_index_progression() {
         .construct_block(vec![(tx1_id, tx1), (tx2_id, tx2)])
         .await
         .expect("block should construct");
-
     let included = included_txids(&output.template);
     assert_eq!(
         included,
