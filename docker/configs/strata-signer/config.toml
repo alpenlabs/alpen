@@ -1,6 +1,6 @@
 sequencer_key = "/app/configs/sequencer.key"
 sequencer_endpoint = "ws://strata:8432"
-duty_poll_interval = 1000
+duty_poll_interval = 1_000
 
 [logging]
 # service_label = "prod"
