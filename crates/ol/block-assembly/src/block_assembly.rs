@@ -1458,6 +1458,121 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_no_new_manifests() {
+        // Parent already tracks manifests up to ASM tip height 3.
+        // Terminal fetch starts at 4, so L1 update must be present with an empty container.
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(1)
+            .with_l1_manifest_height_range(1..=3)
+            .with_l1_header_refs([1, 2, 3]);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("terminal block generation should succeed");
+
+        let template = output.into_template();
+        check_terminal_block_with_manifests(&template, &[]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_start_above_latest_asm_height() {
+        // Parent state claims a last_l1_height above ASM tip.
+        // Fetch should return an empty manifest set (not an error).
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(1)
+            .with_l1_manifest_height_range(1..=3)
+            .with_l1_header_refs([1, 2, 3, 4, 5]);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("terminal block generation should succeed");
+
+        let template = output.into_template();
+        check_terminal_block_with_manifests(&template, &[]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_missing_manifest_in_range_errors() {
+        // Parent last_l1_height = 1, ASM tip = 2, so terminal fetch expects manifest at height 2.
+        // Corrupt L1 canonical chain so height 2 points to a blockid with no manifest body.
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(1)
+            .with_l1_manifest_height_range(1..=2)
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let missing_manifest_blkid = L1BlockId::from(Buf32::from([0xAB; 32]));
+        env.storage()
+            .l1()
+            .revert_canonical_chain_async(1)
+            .await
+            .expect("revert L1 canonical chain to height 1");
+        env.storage()
+            .l1()
+            .extend_canonical_chain_async(&missing_manifest_blkid, 2)
+            .await
+            .expect("insert missing-manifest canonical entry at height 2");
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let err = env
+            .generate_block_template()
+            .await
+            .expect_err("missing manifest in expected terminal range should error");
+
+        assert!(
+            matches!(err, BlockAssemblyError::Db(DbError::Other(_))),
+            "expected Db(Other(_)) for missing manifest in expected range, got {err:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_empty_block_invariants() {
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("terminal block generation should succeed");
+
+        let template = output.into_template();
+        let body = template.body();
+        let tx_count = body.tx_segment().map(|seg| seg.txs().len()).unwrap_or(0);
+
+        assert_eq!(tx_count, 0, "terminal empty block should have zero txs");
+        assert!(
+            body.l1_update().is_some(),
+            "terminal block should include l1_update even when tx segment is empty"
+        );
+        assert!(
+            body.is_body_terminal(),
+            "terminal body must report terminal status"
+        );
+        assert!(
+            template.header().is_terminal(),
+            "terminal header flag must be set"
+        );
+        assert_eq!(
+            template.header().is_terminal(),
+            body.is_body_terminal(),
+            "header terminal flag must match body terminal status"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_non_terminal_block_at_slot_11() {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
@@ -1477,6 +1592,49 @@ mod tests {
         let block_template = result.unwrap().into_template();
         check_block_slot_epoch(&block_template, 11, 2);
         check_non_terminal_block(&block_template);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_non_terminal_empty_block_invariants() {
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let output = env
+            .generate_block_template()
+            .await
+            .expect("non-terminal block generation should succeed");
+
+        let template = output.into_template();
+        let body = template.body();
+        let tx_count = body.tx_segment().map(|seg| seg.txs().len()).unwrap_or(0);
+
+        assert_eq!(tx_count, 0, "non-terminal empty block should have zero txs");
+        assert!(
+            body.l1_update().is_none(),
+            "non-terminal empty block should not include l1_update"
+        );
+        assert!(
+            !body.is_body_terminal(),
+            "non-terminal body must not report terminal status"
+        );
+        assert!(
+            !template.header().is_terminal(),
+            "non-terminal header flag must not be set"
+        );
+        assert_eq!(
+            template.header().is_terminal(),
+            body.is_body_terminal(),
+            "header terminal flag must match body terminal status"
+        );
+        // Empty log sets must commit to the canonical zero logs root.
+        assert_eq!(
+            *template.header().logs_root(),
+            Buf32::zero(),
+            "non-terminal empty block should have zero logs root"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
