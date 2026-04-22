@@ -1058,6 +1058,18 @@ impl TestEnv {
         self.parent_commitment = commitment;
         commitment
     }
+
+    /// Stores an OL block in runtime storage.
+    ///
+    /// Use this for tests that need runtime block injection without reaching into
+    /// raw storage plumbing from test bodies.
+    pub(crate) async fn put_block(&self, block: OLBlock) {
+        self.storage()
+            .ol_block()
+            .put_block_data_async(block)
+            .await
+            .expect("store block");
+    }
 }
 
 /// Converts assembled output into persisted artifacts: `(OLBlock, post_state)`.
