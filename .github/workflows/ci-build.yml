@@ -121,11 +121,6 @@ jobs:
           mask-password: "true"
 
       # --- strata-only: pre-build datatool + SP1 guest ELFs on the runner ----
-      # The strata image ships its own strata-datatool binary plus the
-      # runtime ELF (guest-checkpoint-new.elf) baked in. Both are produced
-      # here with --features sp1-docker-builder so they're byte-reproducible
-      # across environments, then placed into docker/strata/artifacts/ for
-      # docker build to COPY into the runtime stage.
       - name: Set up Rust toolchain (strata)
         if: matrix.program == 'strata'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (pinned 2026-04-21)
