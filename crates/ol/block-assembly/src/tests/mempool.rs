@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use strata_config::SequencerConfig;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
-use strata_ol_mempool::OLMempoolError;
+use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 
 use crate::{
     BlockAssemblyError, FixedSlotSealing,
@@ -182,5 +182,248 @@ async fn test_no_report_when_all_txs_valid() {
         env.mempool().report_call_count(),
         0,
         "report_invalid_transactions must not be called when failed_txs is empty"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_exact_invalid_report_payload() {
+    let missing_account = test_account_id(11);
+    let env = build_mempool_env([]).await;
+
+    let invalid_tx = MempoolSnarkTxBuilder::new(missing_account)
+        .with_seq_no(0)
+        .build();
+    let invalid_txid = invalid_tx.compute_txid();
+    env.mempool().add_transaction(invalid_txid, invalid_tx);
+
+    let config = BlockGenerationConfig::new(env.parent_commitment());
+    let result = generate_block_template_inner(
+        env.ctx(),
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        config,
+        AccumulatedDaData::new_empty(),
+    )
+    .await
+    .expect("assembly should succeed with invalid tx filtered");
+
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![(invalid_txid, MempoolTxInvalidReason::Invalid)];
+    assert_eq!(
+        failed_txs, expected,
+        "failed_txs should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().last_reported_invalid_txs(),
+        expected,
+        "reported invalid payload should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().report_call_count(),
+        1,
+        "invalid payload should be reported once"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_mixed_failures_keep_order_and_reason() {
+    let missing_account = test_account_id(12);
+    let low_balance_account = test_account_id(1);
+    let receiver = test_account_id(2);
+    let env = build_mempool_env([
+        TestAccount::new(low_balance_account, 0),
+        TestAccount::new(receiver, 0),
+    ])
+    .await;
+
+    let invalid_tx = MempoolSnarkTxBuilder::new(missing_account)
+        .with_seq_no(0)
+        .build();
+    let invalid_txid = invalid_tx.compute_txid();
+
+    let failed_tx = MempoolSnarkTxBuilder::new(low_balance_account)
+        .with_seq_no(0)
+        .with_outputs(vec![(receiver, 1)])
+        .build();
+    let failed_txid = failed_tx.compute_txid();
+
+    env.mempool().add_transaction(invalid_txid, invalid_tx);
+    env.mempool().add_transaction(failed_txid, failed_tx);
+
+    let config = BlockGenerationConfig::new(env.parent_commitment());
+    let result = generate_block_template_inner(
+        env.ctx(),
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        config,
+        AccumulatedDaData::new_empty(),
+    )
+    .await
+    .expect("assembly should succeed with failed tx filtering");
+
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![
+        (invalid_txid, MempoolTxInvalidReason::Invalid),
+        (failed_txid, MempoolTxInvalidReason::Failed),
+    ];
+    assert_eq!(
+        failed_txs, expected,
+        "failed_txs should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().last_reported_invalid_txs(),
+        expected,
+        "reported invalid payload should match expected invalid payload"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_max_txs_reports_only_fetched_failures() {
+    let missing_a = test_account_id(13);
+    let missing_b = test_account_id(14);
+    let env = build_mempool_env([]).await;
+
+    let tx_a = MempoolSnarkTxBuilder::new(missing_a).with_seq_no(0).build();
+    let tx_a_id = tx_a.compute_txid();
+    let tx_b = MempoolSnarkTxBuilder::new(missing_b).with_seq_no(0).build();
+    let tx_b_id = tx_b.compute_txid();
+    env.mempool().add_transaction(tx_a_id, tx_a);
+    env.mempool().add_transaction(tx_b_id, tx_b);
+
+    let mut sequencer_config = env.sequencer_config().clone();
+    sequencer_config.max_txs_per_block = 1;
+
+    let config = BlockGenerationConfig::new(env.parent_commitment());
+    let result = generate_block_template_inner(
+        env.ctx(),
+        env.epoch_sealing_policy(),
+        &sequencer_config,
+        config,
+        AccumulatedDaData::new_empty(),
+    )
+    .await
+    .expect("assembly should succeed with limited tx fetch");
+
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![(tx_a_id, MempoolTxInvalidReason::Invalid)];
+    assert_eq!(
+        failed_txs, expected,
+        "failed_txs should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().last_reported_invalid_txs(),
+        expected,
+        "reported invalid payload should match expected invalid payload"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_exec_failure_reports_failed() {
+    let sender = test_account_id(1);
+    let receiver = test_account_id(2);
+    let env = build_mempool_env([TestAccount::new(sender, 0), TestAccount::new(receiver, 0)]).await;
+
+    let tx = MempoolSnarkTxBuilder::new(sender)
+        .with_seq_no(0)
+        .with_outputs(vec![(receiver, 1)])
+        .build();
+    let txid = tx.compute_txid();
+    env.mempool().add_transaction(txid, tx);
+
+    let config = BlockGenerationConfig::new(env.parent_commitment());
+    let result = generate_block_template_inner(
+        env.ctx(),
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        config,
+        AccumulatedDaData::new_empty(),
+    )
+    .await
+    .expect("assembly should succeed with failed execution filtered");
+
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![(txid, MempoolTxInvalidReason::Failed)];
+    assert_eq!(
+        failed_txs, expected,
+        "failed_txs should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().last_reported_invalid_txs(),
+        expected,
+        "reported invalid payload should match expected invalid payload"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_duplicate_txid_one_fails() {
+    let account = test_account_id(1);
+    let env = build_mempool_env([TestAccount::new(account, 10_000)]).await;
+
+    let tx = MempoolSnarkTxBuilder::new(account).with_seq_no(0).build();
+    let txid = tx.compute_txid();
+    env.mempool().add_transaction(txid, tx.clone());
+    env.mempool().add_transaction(txid, tx);
+
+    let config = BlockGenerationConfig::new(env.parent_commitment());
+    let result = generate_block_template_inner(
+        env.ctx(),
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        config,
+        AccumulatedDaData::new_empty(),
+    )
+    .await
+    .expect("assembly should succeed");
+
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![(txid, MempoolTxInvalidReason::Invalid)];
+    assert_eq!(
+        failed_txs, expected,
+        "failed_txs should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().last_reported_invalid_txs(),
+        expected,
+        "reported invalid payload should match expected invalid payload"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_duplicate_txid_both_fail() {
+    let missing_account = test_account_id(15);
+    let env = build_mempool_env([]).await;
+
+    // Both copies of the same txid fail in the same way (missing account).
+    let tx = MempoolSnarkTxBuilder::new(missing_account)
+        .with_seq_no(0)
+        .build();
+    let txid = tx.compute_txid();
+    env.mempool().add_transaction(txid, tx.clone());
+    env.mempool().add_transaction(txid, tx);
+
+    let config = BlockGenerationConfig::new(env.parent_commitment());
+    let result = generate_block_template_inner(
+        env.ctx(),
+        env.epoch_sealing_policy(),
+        env.sequencer_config(),
+        config,
+        AccumulatedDaData::new_empty(),
+    )
+    .await
+    .expect("assembly should succeed with both txs filtered");
+
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![
+        (txid, MempoolTxInvalidReason::Invalid),
+        (txid, MempoolTxInvalidReason::Invalid),
+    ];
+    assert_eq!(
+        failed_txs, expected,
+        "failed_txs should match expected invalid payload"
+    );
+    assert_eq!(
+        env.mempool().last_reported_invalid_txs(),
+        expected,
+        "reported invalid payload should match expected invalid payload"
     );
 }

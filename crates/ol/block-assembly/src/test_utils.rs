@@ -192,10 +192,6 @@ impl MockMempoolProvider {
     }
 
     /// Returns the most recent invalid-tx payload passed to `report_invalid_transactions`.
-    #[expect(
-        dead_code,
-        reason = "Added for downstream helper migrations in follow-up commits."
-    )]
     pub(crate) fn last_reported_invalid_txs(&self) -> Vec<(OLTxId, MempoolTxInvalidReason)> {
         self.last_reported_invalid_txs.lock().unwrap().clone()
     }
