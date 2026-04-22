@@ -110,11 +110,11 @@ async fn test_get_transactions_failure_propagates() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_report_failure_propagates() {
+async fn test_generation_stage_does_not_report_invalid_txs() {
     let missing_account = test_account_id(9);
     let env = build_mempool_env([]).await;
 
-    // Target an uncreated account so this tx lands in failed_txs and triggers reporting.
+    // Target an uncreated account so this tx lands in failed_txs.
     let invalid_tx = MempoolSnarkTxBuilder::new(missing_account)
         .with_seq_no(0)
         .build();
@@ -124,7 +124,7 @@ async fn test_report_failure_propagates() {
         .set_fail_mode(MockMempoolFailMode::ReportInvalidTransactions);
 
     let config = BlockGenerationConfig::new(env.parent_commitment());
-    let err = generate_block_template_inner(
+    let result = generate_block_template_inner(
         env.ctx(),
         env.epoch_sealing_policy(),
         env.sequencer_config(),
@@ -132,19 +132,17 @@ async fn test_report_failure_propagates() {
         AccumulatedDaData::new_empty(),
     )
     .await
-    .expect_err("report_invalid_transactions failure should fail");
-
-    assert!(
-        matches!(
-            err,
-            BlockAssemblyError::Mempool(OLMempoolError::ServiceClosed(_))
-        ),
-        "expected mempool service-closed error, got: {err:?}"
+    .expect("inner assembly should not call report_invalid_transactions");
+    let (_template, failed_txs, _da) = result.into_parts();
+    let expected = vec![(invalid_txid, MempoolTxInvalidReason::Invalid)];
+    assert_eq!(
+        failed_txs, expected,
+        "inner assembly should still return failed_txs payload"
     );
     assert_eq!(
         env.mempool().report_call_count(),
-        1,
-        "failed tx report should be attempted exactly once"
+        0,
+        "inner assembly should not call report_invalid_transactions"
     );
 }
 
@@ -186,7 +184,7 @@ async fn test_no_report_when_all_txs_valid() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_exact_invalid_report_payload() {
+async fn test_exact_failed_txs_payload() {
     let missing_account = test_account_id(11);
     let env = build_mempool_env([]).await;
 
@@ -213,15 +211,9 @@ async fn test_exact_invalid_report_payload() {
         failed_txs, expected,
         "failed_txs should match expected invalid payload"
     );
-    assert_eq!(
-        env.mempool().last_reported_invalid_txs(),
-        expected,
-        "reported invalid payload should match expected invalid payload"
-    );
-    assert_eq!(
-        env.mempool().report_call_count(),
-        1,
-        "invalid payload should be reported once"
+    assert!(
+        env.mempool().last_reported_invalid_txs().is_empty(),
+        "inner assembly should not report invalid txs to mempool"
     );
 }
 
@@ -270,15 +262,14 @@ async fn test_mixed_failures_keep_order_and_reason() {
         failed_txs, expected,
         "failed_txs should match expected invalid payload"
     );
-    assert_eq!(
-        env.mempool().last_reported_invalid_txs(),
-        expected,
-        "reported invalid payload should match expected invalid payload"
+    assert!(
+        env.mempool().last_reported_invalid_txs().is_empty(),
+        "inner assembly should not report invalid txs to mempool"
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_max_txs_reports_only_fetched_failures() {
+async fn test_max_txs_returns_only_fetched_failures() {
     let missing_a = test_account_id(13);
     let missing_b = test_account_id(14);
     let env = build_mempool_env([]).await;
@@ -310,15 +301,14 @@ async fn test_max_txs_reports_only_fetched_failures() {
         failed_txs, expected,
         "failed_txs should match expected invalid payload"
     );
-    assert_eq!(
-        env.mempool().last_reported_invalid_txs(),
-        expected,
-        "reported invalid payload should match expected invalid payload"
+    assert!(
+        env.mempool().last_reported_invalid_txs().is_empty(),
+        "inner assembly should not report invalid txs to mempool"
     );
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_exec_failure_reports_failed() {
+async fn test_exec_failure_maps_to_failed() {
     let sender = test_account_id(1);
     let receiver = test_account_id(2);
     let env = build_mempool_env([TestAccount::new(sender, 0), TestAccount::new(receiver, 0)]).await;
@@ -347,10 +337,9 @@ async fn test_exec_failure_reports_failed() {
         failed_txs, expected,
         "failed_txs should match expected invalid payload"
     );
-    assert_eq!(
-        env.mempool().last_reported_invalid_txs(),
-        expected,
-        "reported invalid payload should match expected invalid payload"
+    assert!(
+        env.mempool().last_reported_invalid_txs().is_empty(),
+        "inner assembly should not report invalid txs to mempool"
     );
 }
 
@@ -381,10 +370,9 @@ async fn test_duplicate_txid_one_fails() {
         failed_txs, expected,
         "failed_txs should match expected invalid payload"
     );
-    assert_eq!(
-        env.mempool().last_reported_invalid_txs(),
-        expected,
-        "reported invalid payload should match expected invalid payload"
+    assert!(
+        env.mempool().last_reported_invalid_txs().is_empty(),
+        "inner assembly should not report invalid txs to mempool"
     );
 }
 
@@ -421,9 +409,8 @@ async fn test_duplicate_txid_both_fail() {
         failed_txs, expected,
         "failed_txs should match expected invalid payload"
     );
-    assert_eq!(
-        env.mempool().last_reported_invalid_txs(),
-        expected,
-        "reported invalid payload should match expected invalid payload"
+    assert!(
+        env.mempool().last_reported_invalid_txs().is_empty(),
+        "inner assembly should not report invalid txs to mempool"
     );
 }

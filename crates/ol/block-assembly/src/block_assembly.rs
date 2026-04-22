@@ -143,7 +143,8 @@ pub(crate) struct ConstructBlockOutput<S> {
 /// Fetches transactions from the mempool, generates accumulator proofs, validates execution
 /// with per-transaction staging, and constructs a complete block template.
 ///
-/// Transactions that fail proof generation or execution are reported to the mempool.
+/// Transactions that fail proof generation or execution are returned in `failed_txs`.
+/// Reporting those failures to the mempool is handled by the service layer.
 ///
 /// Returns a [`BlockTemplateResult`] containing both the generated template and
 /// any transactions that failed validation during assembly.
@@ -193,16 +194,6 @@ where
         parent_da,
     )
     .await?;
-
-    // 5. Report failed transactions to mempool
-    if !output.failed_txs.is_empty() {
-        debug!(
-            component = "ol_block_assembly",
-            count = output.failed_txs.len(),
-            "Reporting failed transactions to mempool"
-        );
-        MempoolProvider::report_invalid_transactions(ctx, &output.failed_txs).await?;
-    }
 
     Ok(BlockTemplateResult::new(
         output.template,
@@ -2173,13 +2164,13 @@ mod tests {
             "Block should contain tx2 only"
         );
 
-        // Assert: tx1 removed (ConsensusInvalid), tx2 still in mempool (included txs not
-        // auto-removed)
+        // Inner generation no longer reports invalid txs to mempool; both txs remain until
+        // service-level reporting and block-application handling.
         let remaining = mempool.get_transactions(10).await.unwrap();
         assert_eq!(
             remaining.len(),
-            1,
-            "tx1 removed as invalid, tx2 still in mempool until block applied"
+            2,
+            "inner generation should not mutate mempool membership"
         );
     }
 

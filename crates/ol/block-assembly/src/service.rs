@@ -11,6 +11,7 @@ use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::StateProvider;
 use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
+use tracing::debug;
 
 use crate::{
     BlockAssemblyStateAccess, EpochSealingPolicy, FullBlockTemplate, MempoolProvider,
@@ -134,8 +135,12 @@ where
 
     let (full_template, failed_txs, accumulated_da) = result.into_parts();
 
-    // Report failed transactions back to mempool
+    // Report failed transactions back to mempool.
     if !failed_txs.is_empty() {
+        debug!(
+            count = failed_txs.len(),
+            "Reporting failed transactions to mempool"
+        );
         MempoolProvider::report_invalid_transactions(state.context(), &failed_txs).await?;
     }
 
@@ -223,7 +228,7 @@ mod tests {
     use strata_config::BlockAssemblyConfig;
     use strata_crypto::{hash::raw, sign_schnorr_sig};
     use strata_identifiers::{Buf32, Buf64};
-    use strata_ol_mempool::MempoolTxInvalidReason;
+    use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
     use strata_params::CredRule;
     use strata_primitives::utils::get_test_schnorr_keys;
     use strata_test_utils_l2::gen_params;
@@ -374,7 +379,11 @@ mod tests {
         let first = generate_block_template(&mut state, config.clone())
             .await
             .expect("first generation should succeed despite invalid tx");
-        let reports_after_first = mempool.report_call_count();
+        assert_eq!(
+            mempool.report_call_count(),
+            1,
+            "first generation should report failed txs exactly once"
+        );
         assert_eq!(
             mempool.last_reported_invalid_txs(),
             vec![(invalid_txid, MempoolTxInvalidReason::Invalid)],
@@ -389,8 +398,37 @@ mod tests {
         assert_eq!(second.get_blockid(), first.get_blockid());
         assert_eq!(
             mempool.report_call_count(),
-            reports_after_first,
-            "cached template reuse should not increase report call count"
+            1,
+            "cached template reuse should not add extra report calls"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_generate_propagates_report_invalid_transactions_failure() {
+        let (mut state, mempool, env, _sk) = build_service_state(false).await;
+        let missing_account = test_account_id(78);
+        let invalid_tx = MempoolSnarkTxBuilder::new(missing_account)
+            .with_seq_no(0)
+            .build();
+        let invalid_txid = invalid_tx.compute_txid();
+        mempool.add_transaction(invalid_txid, invalid_tx);
+        mempool.set_fail_mode(MockMempoolFailMode::ReportInvalidTransactions);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let err = generate_block_template(&mut state, config)
+            .await
+            .expect_err("report_invalid_transactions failure should fail generation");
+        assert!(
+            matches!(
+                err,
+                BlockAssemblyError::Mempool(OLMempoolError::ServiceClosed(_))
+            ),
+            "expected mempool service-closed error, got: {err:?}"
+        );
+        assert_eq!(
+            mempool.report_call_count(),
+            1,
+            "failed tx report should be attempted exactly once at service layer"
         );
     }
 
