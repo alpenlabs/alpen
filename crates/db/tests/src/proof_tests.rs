@@ -1,6 +1,8 @@
 use strata_db_types::traits::CheckpointProofDatabase;
 use strata_identifiers::EpochCommitment;
-use zkaleido::{Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues, ZkVm};
+use zkaleido::{
+    ProgramId, Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, PublicValues, ZkVm,
+};
 
 pub fn test_insert_new_proof(db: &impl CheckpointProofDatabase) {
     let (epoch, proof) = generate_proof();
@@ -44,7 +46,7 @@ fn generate_proof() -> (EpochCommitment, ProofReceiptWithMetadata) {
     let proof = Proof::default();
     let public_values = PublicValues::default();
     let receipt = ProofReceipt::new(proof, public_values);
-    let metadata = ProofMetadata::new(ZkVm::Native, "0.1".to_string());
+    let metadata = ProofMetadata::new(ZkVm::Native, ProgramId([0u8; 32]), "0.1".to_string());
     let proof_receipt = ProofReceiptWithMetadata::new(receipt, metadata);
     (epoch, proof_receipt)
 }

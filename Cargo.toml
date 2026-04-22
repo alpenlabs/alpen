@@ -290,13 +290,15 @@ strata-test-utils-btc = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-
 typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 
 # zkaleido
+# TODO: switch back to a tag (rc25?) once the deadline feature lands upstream.
+# Currently pinned to the tip of the `feat/sp1-host-deadline` PR branch on zkaleido.
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
   "arbitrary",
   "ssz",
-], tag = "v0.1.0-alpha-rc24" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24" }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
+], rev = "9144e67cc3dca96e0af7b7241956c148719ed31c" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", rev = "9144e67cc3dca96e0af7b7241956c148719ed31c" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", rev = "9144e67cc3dca96e0af7b7241956c148719ed31c" }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", rev = "9144e67cc3dca96e0af7b7241956c148719ed31c", features = [
   "remote-prover",
 ] }
 
