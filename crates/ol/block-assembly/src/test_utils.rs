@@ -29,7 +29,7 @@ use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
-    WtxidsRoot, test_utils::ol_block_commitment_strategy,
+    WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::{
@@ -670,16 +670,6 @@ pub(crate) fn create_test_template_with_parent(parent: OLBlockId) -> FullBlockTe
     FullBlockTemplate::new(header, body)
 }
 
-/// Creates a random [`BlockGenerationConfig`] using proptest strategies.
-pub(crate) fn create_test_block_generation_config() -> BlockGenerationConfig {
-    let mut runner = TestRunner::default();
-    let commitment = ol_block_commitment_strategy()
-        .new_tree(&mut runner)
-        .unwrap()
-        .current();
-    BlockGenerationConfig::new(commitment)
-}
-
 /// Create test storage instance.
 pub(crate) fn create_test_storage() -> Arc<NodeStorage> {
     let pool = ThreadPool::new(1);
@@ -917,11 +907,7 @@ impl TestEnv {
         self.ctx.as_ref()
     }
 
-    /// Returns an owned block assembly context handle when ownership is required.
-    #[expect(
-        dead_code,
-        reason = "Added for downstream helper migrations in follow-up commits."
-    )]
+    /// Returns shared block assembly context handle.
     pub(crate) fn ctx_arc(&self) -> Arc<BlockAssemblyContextImpl> {
         self.ctx.clone()
     }
@@ -929,6 +915,11 @@ impl TestEnv {
     /// Returns mock mempool handle for injection/inspection tests.
     pub(crate) fn mempool(&self) -> &MockMempoolProvider {
         self.mempool.as_ref()
+    }
+
+    /// Returns shared mock mempool handle.
+    pub(crate) fn mempool_arc(&self) -> Arc<MockMempoolProvider> {
+        self.mempool.clone()
     }
 
     /// Appends inbox messages to the storage MMR for a given account and returns MMR indices.

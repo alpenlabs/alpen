@@ -217,12 +217,15 @@ pub(crate) struct BlockasmServiceStatus;
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::Arc,
-        time::{Duration, Instant},
-    };
+    use std::{sync::Arc, time::Instant};
 
-    use strata_config::{BlockAssemblyConfig, SequencerConfig};
+    use ssz::Encode;
+    use strata_config::BlockAssemblyConfig;
+    use strata_crypto::{hash::raw, sign_schnorr_sig};
+    use strata_identifiers::{Buf32, Buf64};
+    use strata_ol_mempool::MempoolTxInvalidReason;
+    use strata_params::CredRule;
+    use strata_primitives::utils::get_test_schnorr_keys;
     use strata_test_utils_l2::gen_params;
 
     use super::*;
@@ -231,29 +234,65 @@ mod tests {
         epoch_sealing::FixedSlotSealing,
         state::BlockasmServiceState,
         test_utils::{
-            TEST_BLOCK_TEMPLATE_TTL, TEST_SLOTS_PER_EPOCH, create_test_block_assembly_context,
-            create_test_block_generation_config, create_test_storage, create_test_template,
+            MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider, StateProviderHandle,
+            TEST_BLOCK_TEMPLATE_TTL, TestEnv, TestStorageFixtureBuilder, create_test_template,
+            test_account_id,
         },
+        types::BlockCompletionData,
     };
+
+    type TestServiceState =
+        BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, StateProviderHandle>;
+
+    async fn build_service_state(
+        use_schnorr_cred_rule: bool,
+    ) -> (
+        TestServiceState,
+        Arc<MockMempoolProvider>,
+        TestEnv,
+        Option<Buf32>,
+    ) {
+        let mut params = gen_params();
+        let signing_key = if use_schnorr_cred_rule {
+            let keypair = get_test_schnorr_keys()[0].clone();
+            params.rollup.cred_rule = CredRule::SchnorrKey(keypair.pk);
+            Some(keypair.sk)
+        } else {
+            None
+        };
+
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+        let mempool = env.mempool_arc();
+
+        let state = BlockasmServiceState::new(
+            Arc::new(params),
+            Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
+            env.sequencer_config().clone(),
+            env.ctx_arc(),
+            env.epoch_sealing_policy().clone(),
+        );
+
+        (state, mempool, env, signing_key)
+    }
+
+    fn valid_completion_data(
+        template: &FullBlockTemplate,
+        signing_key: Buf32,
+    ) -> BlockCompletionData {
+        let sighash = raw(&template.header().as_ssz_bytes());
+        let signature = sign_schnorr_sig(&sighash, &signing_key);
+        BlockCompletionData::from_signature(signature)
+    }
 
     /// Verifies that `process_input` lazily cleans up expired templates
     /// before handling the incoming command.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_process_input_cleans_up_expired_templates() {
-        let storage = create_test_storage();
-        let (ctx, _) = create_test_block_assembly_context(storage.clone());
-        let params = gen_params();
-        let blockasm_config = Arc::new(BlockAssemblyConfig::new(Duration::from_millis(5_000)));
-        let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
-        let sequencer_config = SequencerConfig::default();
-
-        let mut state = BlockasmServiceState::new(
-            Arc::new(params),
-            blockasm_config,
-            sequencer_config,
-            Arc::new(ctx),
-            epoch_sealing_policy,
-        );
+        let (mut state, _mempool, env, _sk) = build_service_state(false).await;
 
         // Insert a template and backdate it to simulate expiration.
         let template = create_test_template();
@@ -261,16 +300,13 @@ mod tests {
         let parent = *template.header().parent_blkid();
 
         state.state_mut().insert_template(template_id, template);
-
         state
             .state_mut()
-            .pending_templates
-            .get_mut(&template_id)
-            .unwrap()
-            .created_at = Instant::now() - TEST_BLOCK_TEMPLATE_TTL;
+            .set_template_created_at_for_test(template_id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .expect("template should be present before backdating");
 
         // Send any command — the lazy cleanup in process_input runs before handling it.
-        let config = create_test_block_generation_config();
+        let config = BlockGenerationConfig::new(env.parent_commitment());
         let (completion, _rx) = create_completion();
         let cmd = BlockasmCommand::GenerateBlockTemplate { config, completion };
         BlockasmService::<_, _, _>::process_input(&mut state, cmd)
@@ -290,5 +326,158 @@ mod tests {
                 .get_pending_block_template_by_parent(parent),
             Err(BlockAssemblyError::NoPendingTemplateForParent(p)) if p == parent
         ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_generate_reuses_cached_template() {
+        let (mut state, mempool, env, _sk) = build_service_state(false).await;
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+
+        let first = generate_block_template(&mut state, config.clone())
+            .await
+            .expect("first generation should succeed");
+        let template_id = first.get_blockid();
+        let tracked_da = state
+            .epoch_da_tracker()
+            .get_accumulated_da(template_id)
+            .expect("first generation should store accumulated DA for template id");
+        assert_eq!(
+            tracked_da.logs().len(),
+            0,
+            "empty mempool generation should store zero DA logs"
+        );
+
+        // If generation ran again, this would fail. Cached reuse must short-circuit before mempool
+        // fetch.
+        mempool.set_fail_mode(MockMempoolFailMode::GetTransactions);
+        let second = generate_block_template(&mut state, config)
+            .await
+            .expect("second generation should return cached template");
+        assert_eq!(
+            second.get_blockid(),
+            template_id,
+            "same parent should return exact cached template id"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_cached_template_does_not_report() {
+        let (mut state, mempool, env, _sk) = build_service_state(false).await;
+        let missing_account = test_account_id(77);
+        let invalid_tx = MempoolSnarkTxBuilder::new(missing_account)
+            .with_seq_no(0)
+            .build();
+        let invalid_txid = invalid_tx.compute_txid();
+        mempool.add_transaction(invalid_txid, invalid_tx);
+
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let first = generate_block_template(&mut state, config.clone())
+            .await
+            .expect("first generation should succeed despite invalid tx");
+        let reports_after_first = mempool.report_call_count();
+        assert_eq!(
+            mempool.last_reported_invalid_txs(),
+            vec![(invalid_txid, MempoolTxInvalidReason::Invalid)],
+            "first generation should report missing-account tx as Invalid"
+        );
+
+        // Reuse path must not call report_invalid_transactions again.
+        mempool.set_fail_mode(MockMempoolFailMode::ReportInvalidTransactions);
+        let second = generate_block_template(&mut state, config)
+            .await
+            .expect("cached template reuse should not hit report path");
+        assert_eq!(second.get_blockid(), first.get_blockid());
+        assert_eq!(
+            mempool.report_call_count(),
+            reports_after_first,
+            "cached template reuse should not increase report call count"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_invalid_signature_keeps_template_cached() {
+        let (mut state, _mempool, env, _sk) = build_service_state(true).await;
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        let bad_completion = BlockCompletionData::from_signature(Buf64::zero());
+        let err = complete_block_template(&mut state, template_id, bad_completion)
+            .expect_err("invalid signature should fail completion");
+        assert!(
+            matches!(err, BlockAssemblyError::InvalidSignature(id) if id == template_id),
+            "expected InvalidSignature({template_id}), got {err:?}"
+        );
+        let cached_template = state
+            .state_mut()
+            .get_pending_block_template(template_id)
+            .expect("template should remain cached after invalid signature");
+        assert_eq!(
+            cached_template.get_blockid(),
+            template_id,
+            "cached template id should remain unchanged after invalid signature"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_second_template_completion_rejected() {
+        let (mut state, _mempool, env, sk) = build_service_state(true).await;
+        let signing_key = sk.expect("schnorr signing key should be present");
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        let completion_data = valid_completion_data(&template, signing_key);
+        let completed = complete_block_template(&mut state, template_id, completion_data.clone())
+            .expect("valid signature should complete template");
+        assert_eq!(
+            completed.header().compute_blkid(),
+            template_id,
+            "completed block id should match template id"
+        );
+        assert!(
+            matches!(
+                state.state_mut().get_pending_block_template(template_id),
+                Err(BlockAssemblyError::UnknownTemplateId(id)) if id == template_id
+            ),
+            "template should be removed after successful completion"
+        );
+
+        let err = complete_block_template(&mut state, template_id, completion_data)
+            .expect_err("second completion should fail");
+        assert!(
+            matches!(err, BlockAssemblyError::UnknownTemplateId(id) if id == template_id),
+            "second completion should return UnknownTemplateId, got {err:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_expired_template_completion_rejected() {
+        let (mut state, _mempool, env, _sk) = build_service_state(false).await;
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        state
+            .state_mut()
+            .set_template_created_at_for_test(template_id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .expect("template should be present before backdating");
+
+        let err = complete_block_template(
+            &mut state,
+            template_id,
+            BlockCompletionData::from_signature(Buf64::zero()),
+        )
+        .expect_err("expired template completion should fail");
+        assert!(
+            matches!(err, BlockAssemblyError::UnknownTemplateId(id) if id == template_id),
+            "expired completion should return UnknownTemplateId, got {err:?}"
+        );
     }
 }

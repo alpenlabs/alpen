@@ -167,6 +167,21 @@ impl BlockAssemblyState {
             }
         }
     }
+
+    /// Sets a cached template creation time for expiry tests.
+    #[cfg(test)]
+    pub(crate) fn set_template_created_at_for_test(
+        &mut self,
+        template_id: OLBlockId,
+        created_at: Instant,
+    ) -> Result<(), BlockAssemblyError> {
+        let cached = self
+            .pending_templates
+            .get_mut(&template_id)
+            .ok_or(BlockAssemblyError::UnknownTemplateId(template_id))?;
+        cached.created_at = created_at;
+        Ok(())
+    }
 }
 
 /// Combined state for the service (context + mutable state).
@@ -361,8 +376,9 @@ mod tests {
         state.insert_template(id, template);
 
         // Backdate the entry so it appears expired.
-        state.pending_templates.get_mut(&id).unwrap().created_at =
-            Instant::now() - TEST_BLOCK_TEMPLATE_TTL;
+        state
+            .set_template_created_at_for_test(id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .unwrap();
 
         assert!(state.get_pending_block_template(id).is_err());
         assert!(state.get_pending_block_template_by_parent(parent).is_err());
@@ -406,8 +422,9 @@ mod tests {
         state.insert_template(id2, t2);
 
         // Backdate the first template to make it expired.
-        state.pending_templates.get_mut(&id1).unwrap().created_at =
-            Instant::now() - TEST_BLOCK_TEMPLATE_TTL;
+        state
+            .set_template_created_at_for_test(id1, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .unwrap();
 
         // Explicitly call cleanup to remove expired templates.
         state.cleanup_expired_templates();
