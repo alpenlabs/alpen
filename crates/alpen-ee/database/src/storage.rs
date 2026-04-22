@@ -130,10 +130,10 @@ impl ExecBlockStorage for EeNodeStorage {
             .map_err(Into::into)
     }
 
-    /// Extend local view of canonical chain with specified block hash
-    async fn extend_finalized_chain(&self, hash: Hash) -> Result<(), StorageError> {
+    /// Extend local view of canonical chain up to and including the specified block hash.
+    async fn extend_finalized_chain(&self, new_tip: Hash) -> Result<(), StorageError> {
         self.ops
-            .extend_finalized_chain_async(hash)
+            .extend_finalized_chain_async(new_tip)
             .await
             .map_err(Into::into)
     }
