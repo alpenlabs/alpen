@@ -739,12 +739,26 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
 
 #[cfg(test)]
 mod tests {
+    const CHECKPOINT_MSG_VALUE_SATS: u64 = 100_000_000;
+
     use strata_acct_types::*;
+    use strata_checkpoint_types_ssz::MAX_OL_LOGS_PER_CHECKPOINT;
     use strata_identifiers::{Buf32, L1Height, OLBlockId};
     use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_ol_state_types::OLState;
 
     use super::*;
     use crate::test_utils::*;
+
+    type OlWriteBatch = WriteBatch<<OLState as IStateAccessor>::AccountState>;
+
+    async fn build_process_tx_env(account_id: AccountId) -> TestEnv {
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        TestEnv::from_fixture(fixture, parent_commitment)
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_l1_header_proof_gen_success() {
@@ -2015,15 +2029,17 @@ mod tests {
     /// a single tx can never overflow the per-tx log buffer on its own. So we
     /// pre-fill the block output buffer to near capacity and verify that even a
     /// small tx triggers the soft-break when it would push past the limit.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_log_overflow_defers_tx() {
-        let account_id = test_account_id(1);
-        let env_builder = TestStorageFixtureBuilder::new()
-            .with_parent_slot(0)
-            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
-        let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let env = TestEnv::from_fixture(fixture, parent_commitment);
-
+    async fn build_process_transactions_preamble(
+        env: &TestEnv,
+        timestamp: u64,
+        slot_offset: u64,
+    ) -> (
+        Arc<OLState>,
+        OLBlockHeader,
+        BlockInfo,
+        OlWriteBatch,
+        ExecOutputBuffer,
+    ) {
         let parent_state = env
             .ctx()
             .fetch_state_for_tip(env.parent_commitment())
@@ -2037,23 +2053,41 @@ mod tests {
             .expect("fetch parent block")
             .expect("parent block exists");
         let parent_header = parent_block.header().clone();
-        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
-        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let block_info = BlockInfo::new(
+            timestamp,
+            parent_header.slot() + slot_offset,
+            parent_header.epoch(),
+        );
         let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
+        let output_buffer = ExecOutputBuffer::new_empty();
+        (
+            parent_state,
+            parent_header,
+            block_info,
+            accumulated_batch,
+            output_buffer,
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_log_overflow_defers_tx() {
+        let account_id = test_account_id(1);
+        let env = build_process_tx_env(account_id).await;
+
+        let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+            build_process_transactions_preamble(&env, 1_000_001, 1).await;
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
 
         // Create a tx with 5 withdrawal messages (= 5 logs).
         let withdrawal_dest = b"bc1qlogcapoverflow".to_vec();
-        let tx = (0..5)
-            .fold(
-                MempoolSnarkTxBuilder::new(account_id).with_seq_no(0),
-                |builder, _| builder.with_withdrawal(100_000_000, withdrawal_dest.clone()),
-            )
+        let tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_withdrawals(5, 100_000_000, withdrawal_dest)
             .build();
         let txid = tx.compute_txid();
 
         // Pre-fill output buffer so only 3 logs remain before the cap.
         // The tx produces 5 logs, so 5 > 3 remaining → soft-break.
-        let output_buffer = ExecOutputBuffer::new_empty();
         let prefill = MAX_LOGS_PER_BLOCK as usize - 3;
         output_buffer
             .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
@@ -2088,36 +2122,17 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_log_overflow_tx_skipped_not_invalid() {
         let account_id = test_account_id(8);
-        let env_builder = TestStorageFixtureBuilder::new()
-            .with_parent_slot(0)
-            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
-        let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = build_process_tx_env(account_id).await;
 
-        let parent_state = env
-            .ctx()
-            .fetch_state_for_tip(env.parent_commitment())
-            .await
-            .expect("fetch parent state")
-            .expect("parent state exists");
-        let parent_block = env
-            .ctx()
-            .fetch_ol_block(env.parent_commitment().blkid)
-            .await
-            .expect("fetch parent block")
-            .expect("parent block exists");
-        let parent_header = parent_block.header().clone();
-        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+            build_process_transactions_preamble(&env, 1_000_001, 1).await;
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
-        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
 
         // First tx: 10 withdrawal messages = 10 logs.
         let withdrawal_dest = b"bc1qlogcapfull".to_vec();
-        let tx_fill = (0..10)
-            .fold(
-                MempoolSnarkTxBuilder::new(account_id).with_seq_no(0),
-                |builder, _| builder.with_withdrawal(100_000_000, withdrawal_dest.clone()),
-            )
+        let tx_fill = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_withdrawals(10, 100_000_000, withdrawal_dest.clone())
             .build();
         let tx_fill_id = tx_fill.compute_txid();
 
@@ -2130,7 +2145,6 @@ mod tests {
 
         // Pre-fill the buffer so that tx_fill's 10 logs exactly reach the cap,
         // leaving no room for tx_overflow's 1 log.
-        let output_buffer = ExecOutputBuffer::new_empty();
         let prefill = MAX_LOGS_PER_BLOCK as usize - 10;
         output_buffer
             .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
@@ -2160,28 +2174,11 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_log_cap_soft_break() {
         let account_id = test_account_id(7);
-        let env_builder = TestStorageFixtureBuilder::new()
-            .with_parent_slot(0)
-            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE));
-        let (fixture, parent_commitment) = env_builder.build_fixture().await;
-        let env = TestEnv::from_fixture(fixture, parent_commitment);
+        let env = build_process_tx_env(account_id).await;
 
-        let parent_state = env
-            .ctx()
-            .fetch_state_for_tip(env.parent_commitment())
-            .await
-            .expect("fetch parent state")
-            .expect("parent state exists");
-        let parent_block = env
-            .ctx()
-            .fetch_ol_block(env.parent_commitment().blkid)
-            .await
-            .expect("fetch parent block")
-            .expect("parent block exists");
-        let parent_header = parent_block.header().clone();
-        let block_info = BlockInfo::new(1_000_001, parent_header.slot() + 1, parent_header.epoch());
+        let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+            build_process_transactions_preamble(&env, 1_000_001, 1).await;
         let block_context = BlockContext::new(&block_info, Some(&parent_header));
-        let accumulated_batch = WriteBatch::new_from_state(parent_state.as_ref());
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
@@ -2191,7 +2188,6 @@ mod tests {
 
         // Pre-fill the block output buffer to exactly the cap so the next tx that emits logs
         // hits the soft-break branch without being marked invalid.
-        let output_buffer = ExecOutputBuffer::new_empty();
         output_buffer
             .emit_logs(
                 (0..MAX_LOGS_PER_BLOCK).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])),
@@ -2215,6 +2211,138 @@ mod tests {
         assert!(
             out.successful_txs.is_empty(),
             "overflowing tx should not be included"
+        );
+    }
+
+    async fn run_process_transactions_with_seeded_checkpoint_logs(
+        account_id: AccountId,
+        seeded_log_count: usize,
+        mempool_txs: Vec<(OLTxId, OLTransaction)>,
+    ) -> ProcessTransactionsOutput<OLState> {
+        const CHECKPOINT_TEST_TIMESTAMP: u64 = 1_000_003;
+        const CHECKPOINT_TEST_SLOT_OFFSET: u64 = 3;
+
+        let env = build_process_tx_env(account_id).await;
+        let (parent_state, parent_header, block_info, accumulated_batch, output_buffer) =
+            build_process_transactions_preamble(
+                &env,
+                CHECKPOINT_TEST_TIMESTAMP,
+                CHECKPOINT_TEST_SLOT_OFFSET,
+            )
+            .await;
+        let block_context = BlockContext::new(&block_info, Some(&parent_header));
+        let seeded_da = seeded_da(seeded_log_count);
+
+        process_transactions(
+            env.ctx(),
+            &block_context,
+            &output_buffer,
+            parent_state.as_ref(),
+            accumulated_batch,
+            mempool_txs,
+            seeded_da,
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_checkpoint_soft_commits_then_stops() {
+        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
+        let account_id = test_account_id(9);
+        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let tx1 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())
+            .build();
+        let tx2 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest)
+            .build();
+        let tx1_id = tx1.compute_txid();
+        let tx2_id = tx2.compute_txid();
+
+        // Seed one below soft threshold so tx1's single log tips verdict to
+        // SoftLimitReached (commit current tx, then stop).
+        let soft_threshold = MAX_OL_LOGS_PER_CHECKPOINT as usize * 9 / 10;
+        let out = run_process_transactions_with_seeded_checkpoint_logs(
+            account_id,
+            soft_threshold - 1,
+            vec![(tx1_id, tx1), (tx2_id, tx2)],
+        )
+        .await;
+
+        assert_eq!(
+            out.successful_txs.len(),
+            1,
+            "soft limit should commit current tx and defer remaining txs"
+        );
+        assert_eq!(
+            out.successful_txs[0].compute_txid(),
+            tx1_id,
+            "first tx should be committed before soft-break"
+        );
+        assert!(
+            out.failed_txs.is_empty(),
+            "deferred tx should not be marked invalid"
+        );
+        assert!(
+            out.checkpoint_size_limit_reached,
+            "soft verdict should mark checkpoint_size_limit_reached"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_checkpoint_hard_rolls_back_then_stops() {
+        const CHECKPOINT_WITHDRAWAL_DEST: &[u8] = b"bc1qcheckpointlimit";
+        let account_id = test_account_id(10);
+        let withdrawal_dest = CHECKPOINT_WITHDRAWAL_DEST.to_vec();
+        let tx1 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest.clone())
+            .build();
+        let tx2 = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(1)
+            .with_withdrawal(CHECKPOINT_MSG_VALUE_SATS, withdrawal_dest)
+            .build();
+        let tx1_id = tx1.compute_txid();
+        let tx2_id = tx2.compute_txid();
+
+        // Control case: one below hard-1 (i.e. hard-2) should still accept tx1.
+        let control = run_process_transactions_with_seeded_checkpoint_logs(
+            account_id,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
+            vec![(tx1_id, tx1.clone())],
+        )
+        .await;
+        assert_eq!(
+            control
+                .successful_txs
+                .iter()
+                .map(OLTransaction::compute_txid)
+                .collect::<Vec<_>>(),
+            vec![tx1_id],
+            "tx1 should be accepted just below the hard threshold"
+        );
+
+        // Seed one below hard limit so tx1's single log tips verdict to
+        // HardLimitExceeded (roll back current tx, then stop).
+        let out = run_process_transactions_with_seeded_checkpoint_logs(
+            account_id,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1,
+            vec![(tx1_id, tx1), (tx2_id, tx2)],
+        )
+        .await;
+
+        assert!(
+            out.successful_txs.is_empty(),
+            "hard limit should roll back current tx"
+        );
+        assert!(
+            out.failed_txs.is_empty(),
+            "hard-limit rollback should not mark tx invalid"
+        );
+        assert!(
+            out.checkpoint_size_limit_reached,
+            "hard verdict should mark checkpoint_size_limit_reached"
         );
     }
 }

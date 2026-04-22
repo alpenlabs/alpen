@@ -529,6 +529,23 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
+    /// Appends `count` withdrawal messages routed to the bridge-gateway account.
+    pub(crate) fn with_withdrawals(
+        mut self,
+        count: usize,
+        amount_sats: u64,
+        destination_desc: Vec<u8>,
+    ) -> Self {
+        for _ in 0..count {
+            self.output_messages.push(withdrawal_output_message(
+                amount_sats,
+                destination_desc.clone(),
+                DEFAULT_OPERATOR_FEE,
+            ));
+        }
+        self
+    }
+
     /// Builds the mempool transaction.
     pub(crate) fn build(self) -> OLTransaction {
         // Use a random inner state from proptest
@@ -1457,10 +1474,6 @@ pub(crate) fn withdrawal_intents(
 }
 
 /// Returns accumulated DA with `n` seeded dummy logs.
-#[expect(
-    dead_code,
-    reason = "Added for downstream helper migrations in follow-up commits."
-)]
 pub(crate) fn seeded_da(n: usize) -> AccumulatedDaData {
     let logs = (0..n)
         .map(|i| OLLog::new(AccountSerial::from(i as u32), vec![]))
