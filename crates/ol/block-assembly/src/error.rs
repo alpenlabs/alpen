@@ -4,7 +4,7 @@ use std::error::Error;
 
 use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_stf::ExecError;
@@ -78,6 +78,25 @@ pub enum BlockAssemblyError {
     /// Genesis must be created via `init_ol_genesis` at node startup.
     #[error("cannot build genesis block via block assembly")]
     CannotBuildGenesis,
+
+    /// Genesis epoch has no boundary.
+    #[error("genesis epoch has no boundary")]
+    GenesisEpochNoBoundary,
+
+    /// Epoch boundary block does not satisfy expected terminal/epoch properties.
+    #[error(
+        "invalid epoch boundary at {blkid}: expected prev epoch {expected_prev_epoch}, got {got_epoch}, terminal={is_terminal}"
+    )]
+    InvalidEpochBoundary {
+        blkid: OLBlockId,
+        expected_prev_epoch: Epoch,
+        got_epoch: Epoch,
+        is_terminal: bool,
+    },
+
+    /// Epoch boundary state not found in db.
+    #[error("epoch boundary state not found in db: {0}")]
+    EpochBoundaryStateNotFound(OLBlockCommitment),
 
     /// Request channel closed (service shutdown).
     #[error("request channel closed")]

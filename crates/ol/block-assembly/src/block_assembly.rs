@@ -119,6 +119,9 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         | BlockAssemblyError::TimestampTooEarly(_)
         | BlockAssemblyError::BlockNotFound(_)
         | BlockAssemblyError::ParentStateNotFound(_)
+        | BlockAssemblyError::GenesisEpochNoBoundary
+        | BlockAssemblyError::InvalidEpochBoundary { .. }
+        | BlockAssemblyError::EpochBoundaryStateNotFound(_)
         | BlockAssemblyError::TooManyClaims
         | BlockAssemblyError::CannotBuildGenesis => MempoolTxInvalidReason::Failed,
     }
