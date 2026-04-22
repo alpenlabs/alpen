@@ -166,6 +166,12 @@ pub trait ISnarkAccountStateMut: ISnarkAccountState {
     ///
     /// This is exposed like this so that we can expose the message entry in DA.
     fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()>;
+
+    /// Replaces the predicate key (verification key) used to verify future
+    /// updates to this snark account.
+    ///
+    /// Does not touch proof state, seqno, or inbox.
+    fn set_update_vk(&mut self, new_vk: PredicateKey);
 }
 
 /// Trait for constructing account states with a serial.

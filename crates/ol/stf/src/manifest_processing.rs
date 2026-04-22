@@ -3,16 +3,19 @@
 use strata_acct_types::MsgPayload;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
-    CheckpointTipUpdate, DepositLog,
-    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
+    CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
+    constants::{
+        CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID, EE_PREDICATE_KEY_UPDATE_LOG_TYPE,
+    },
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
 use strata_msg_fmt::Msg;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_msg_types::DepositMsgData;
+use tracing::warn;
 
 use crate::{
     account_processing,
@@ -104,6 +107,14 @@ fn process_asm_log<S: IStateAccessor>(
             process_checkpoint_tip_update(state, &data, context)?;
         }
 
+        EE_PREDICATE_KEY_UPDATE_LOG_TYPE => {
+            // Parse the per-snark-account predicate key update.
+            let Ok(data) = log.try_into_log::<EePredicateKeyUpdate>() else {
+                return Ok(());
+            };
+            process_ee_predicate_key_update(state, &data)?;
+        }
+
         _ => {
             // Some other log type, which we don't care about, skip it.
         }
@@ -120,6 +131,7 @@ fn process_deposit_log<S: IStateAccessor>(
     // Parse the raw destination bytes into account serial + subject.
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
         // Malformed destination descriptor, skip this deposit.
+        warn!(amount = %deposit.amount, "dropping deposit with malformed destination descriptor");
         return Ok(());
     };
 
@@ -132,6 +144,7 @@ fn process_deposit_log<S: IStateAccessor>(
         //
         // TODO make this actually do something more sophisticated to make loss
         // of funds less likely
+        warn!(?acct_serial, amount = %deposit.amount, "dropping deposit for unknown account serial");
         return Ok(());
     };
 
@@ -161,6 +174,46 @@ fn process_checkpoint_tip_update<S: IStateAccessor>(
     let tip = data.tip();
     let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     state.set_asm_recorded_epoch(epoch_commitment);
+
+    Ok(())
+}
+
+fn process_ee_predicate_key_update<S: IStateAccessor>(
+    state: &mut S,
+    data: &EePredicateKeyUpdate,
+) -> ExecResult<()> {
+    let acct_serial = data.account();
+
+    // Resolve the account serial. Skip if not found, matching the deposit
+    // handler convention. ASM manifests cannot be rejected without halting
+    // checkpoint progress, so we log and continue.
+    let Some(acct_id) = state.find_account_id_by_serial(acct_serial)? else {
+        warn!(
+            ?acct_serial,
+            "dropping ee predicate key update for unknown account serial"
+        );
+        return Ok(());
+    };
+
+    let new_vk = data.new_predicate().clone();
+    let applied = state.update_account(acct_id, |astate| {
+        // Skip if the target is not a snark account; non-snark accounts have
+        // no predicate key to update.
+        if let Ok(snark) = astate.as_snark_account_mut() {
+            snark.set_update_vk(new_vk);
+            true
+        } else {
+            false
+        }
+    })?;
+
+    if !applied {
+        warn!(
+            ?acct_serial,
+            ?acct_id,
+            "dropping ee predicate key update for non-snark account"
+        );
+    }
 
     Ok(())
 }
