@@ -246,6 +246,96 @@ impl EpochIndexingData {
     }
 }
 
+/// Per-block producer-side staging record, pending epoch fold.
+///
+/// Not on the [`OLStateIndexingDatabase`] trait: a full-node producer concern
+/// only (checkpoint sync builds [`EpochIndexingData`] directly).
+///
+/// [`OLStateIndexingDatabase`]: crate::traits::OLStateIndexingDatabase
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PerBlockStagingRecord {
+    /// Accounts created in this block.
+    accounts_created: Vec<AccountId>,
+
+    /// Per-account indexing data from this block, in intra-block execution order.
+    accounts: Vec<(AccountId, AccountBlockIndexData)>,
+}
+
+impl PerBlockStagingRecord {
+    pub fn new(
+        accounts_created: Vec<AccountId>,
+        accounts: Vec<(AccountId, AccountBlockIndexData)>,
+    ) -> Self {
+        Self {
+            accounts_created,
+            accounts,
+        }
+    }
+
+    pub fn accounts_created(&self) -> &[AccountId] {
+        &self.accounts_created
+    }
+
+    pub fn accounts(&self) -> &[(AccountId, AccountBlockIndexData)] {
+        &self.accounts
+    }
+}
+
+/// One account's indexing data from within a single block.
+///
+/// Invariant: when `snark_updates` is non-empty, its last element's
+/// `next_inbox_msg_idx` equals `final_next_inbox_msg_idx`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccountBlockIndexData {
+    snark_updates: Vec<SnarkUpdateRecord>,
+    inbox_writes: Vec<InboxMessageRecord>,
+    /// End-of-block inbox read frontier. Present even when there are no snark
+    /// updates (inbox-only block), in which case it equals the pre-block frontier.
+    final_next_inbox_msg_idx: u64,
+}
+
+impl AccountBlockIndexData {
+    /// Builds from a non-empty update list; derives the frontier from the last update.
+    pub fn from_updates(
+        snark_updates: Vec<SnarkUpdateRecord>,
+        inbox_writes: Vec<InboxMessageRecord>,
+    ) -> Result<Self, IndexingDataError> {
+        let last = snark_updates
+            .last()
+            .ok_or(IndexingDataError::EmptySnarkUpdates)?;
+        let final_next_inbox_msg_idx = last.next_inbox_msg_idx;
+        Ok(Self {
+            snark_updates,
+            inbox_writes,
+            final_next_inbox_msg_idx,
+        })
+    }
+
+    /// Builds for a block with no snark updates; frontier must be supplied.
+    pub fn without_updates(
+        inbox_writes: Vec<InboxMessageRecord>,
+        final_next_inbox_msg_idx: u64,
+    ) -> Self {
+        Self {
+            snark_updates: Vec::new(),
+            inbox_writes,
+            final_next_inbox_msg_idx,
+        }
+    }
+
+    pub fn snark_updates(&self) -> &[SnarkUpdateRecord] {
+        &self.snark_updates
+    }
+
+    pub fn inbox_writes(&self) -> &[InboxMessageRecord] {
+        &self.inbox_writes
+    }
+
+    pub fn final_next_inbox_msg_idx(&self) -> u64 {
+        self.final_next_inbox_msg_idx
+    }
+}
+
 /// Errors returned while constructing indexing records.
 #[derive(Debug, Error)]
 pub enum IndexingDataError {

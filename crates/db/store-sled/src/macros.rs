@@ -255,6 +255,43 @@ macro_rules! impl_rkyv_value_codec {
     };
 }
 
+/// CBOR (via ciborium) value codec macro.
+///
+/// For values that derive [`serde::Serialize`] / [`serde::Deserialize`] and
+/// want schema-evolution tolerance. Unknown fields round-trip by default.
+#[macro_export]
+macro_rules! impl_cbor_value_codec {
+    ($table_name:ident, $value:ty) => {
+        impl ::typed_sled::codec::ValueCodec<$table_name> for $value {
+            type Decoded = Self;
+
+            fn encode_value(
+                &self,
+            ) -> ::std::result::Result<::std::vec::Vec<u8>, ::typed_sled::codec::CodecError> {
+                let mut buf = ::std::vec::Vec::new();
+                ::ciborium::into_writer(self, &mut buf).map_err(|err| {
+                    ::typed_sled::codec::CodecError::SerializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: ::std::boxed::Box::new(err),
+                    }
+                })?;
+                Ok(buf)
+            }
+
+            fn decode_value(
+                data: ::sled::IVec,
+            ) -> ::std::result::Result<Self::Decoded, ::typed_sled::codec::CodecError> {
+                ::ciborium::from_reader(data.as_ref()).map_err(|err| {
+                    ::typed_sled::codec::CodecError::DeserializationFailed {
+                        schema: $table_name::tree_name(),
+                        source: ::std::boxed::Box::new(err),
+                    }
+                })
+            }
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! impl_codec_key_codec {
     ($table_name:ident, $key:ty) => {

@@ -3,9 +3,9 @@
 pub mod chainstate;
 pub mod errors;
 mod mmr_index;
+mod ol_state_index;
 pub mod traits;
 pub mod types;
-mod ol_state_index;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
@@ -18,5 +18,4 @@ pub use mmr_index::{
     num_leaves_to_mmr_size, BatchWrite, LeafPos, MmrBatchWrite, MmrId, MmrIndexPrecondition,
     MmrNodePos, MmrNodeTable, NodePos, NodeTable, RawMmrId,
 };
-
 pub use ol_state_index::*;
