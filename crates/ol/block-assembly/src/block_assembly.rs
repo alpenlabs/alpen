@@ -2562,4 +2562,165 @@ mod tests {
             "hard verdict should mark checkpoint_size_limit_reached"
         );
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stress_1000_txs_100_accounts() {
+        const ACCOUNT_COUNT: usize = 100;
+        const TXS_PER_ACCOUNT: usize = 10;
+        const INITIAL_BALANCE: u64 = 1_000_000;
+
+        let account_ids: Vec<_> = (1..=ACCOUNT_COUNT)
+            .map(|i| test_account_id(i as u8))
+            .collect();
+
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_accounts(
+                account_ids
+                    .iter()
+                    .copied()
+                    .map(|account_id| TestAccount::new(account_id, INITIAL_BALANCE)),
+            );
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let mut txs = Vec::with_capacity(ACCOUNT_COUNT * TXS_PER_ACCOUNT);
+        for (idx, sender) in account_ids.iter().enumerate() {
+            let receiver = account_ids[(idx + 1) % ACCOUNT_COUNT];
+            for seq_no in 0..TXS_PER_ACCOUNT {
+                let tx = MempoolSnarkTxBuilder::new(*sender)
+                    .with_seq_no(seq_no as u64)
+                    .with_outputs(vec![(receiver, 1)])
+                    .build();
+                let txid = tx.compute_txid();
+                txs.push((txid, tx));
+            }
+        }
+
+        let output = env
+            .construct_block(txs)
+            .await
+            .expect("high-volume block should assemble");
+
+        let included = included_txids(&output.template);
+        assert_eq!(
+            included.len(),
+            ACCOUNT_COUNT * TXS_PER_ACCOUNT,
+            "all high-volume txs should be included"
+        );
+        assert!(
+            output.failed_txs.is_empty(),
+            "high-volume transfer set should not produce failed txs"
+        );
+
+        for account_id in &account_ids {
+            assert_eq!(
+                account_balance(&output.post_state, *account_id),
+                BitcoinAmount::from_sat(INITIAL_BALANCE),
+                "cyclic transfers should preserve per-account net balance for every account"
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stress_50_l1_claims_with_duplicates() {
+        let account_id = test_account_id(50);
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(1)
+            .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE))
+            .with_l1_header_refs(1..=25)
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let mut claims: Vec<_> = env
+            .l1_header_refs()
+            .iter()
+            .map(|(_, claim)| claim.clone())
+            .collect();
+        claims.extend(claims.clone());
+        assert_eq!(claims.len(), 50, "stress setup should build 50 claims");
+
+        let tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_l1_claims(claims)
+            .build();
+        let txid = tx.compute_txid();
+
+        let output = env
+            .construct_block(vec![(txid, tx)])
+            .await
+            .expect("large-claim tx should assemble");
+
+        let included = included_txids(&output.template);
+        assert_eq!(included.len(), 1, "claim-heavy tx should be included");
+        let included_tx = &output
+            .template
+            .body()
+            .tx_segment()
+            .expect("tx segment")
+            .txs()[0];
+        let acc_proofs = included_tx
+            .proofs()
+            .accumulator_proofs()
+            .expect("claim-heavy tx should carry accumulator proofs");
+        assert_eq!(
+            acc_proofs.proofs().len(),
+            50,
+            "duplicate claims should currently produce duplicate accumulator proofs (no dedup)"
+        );
+        assert!(
+            output.failed_txs.is_empty(),
+            "claim-heavy tx should not be reported failed"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_stress_100_inbox_messages_one_tx() {
+        // Stress value intentionally below SAU_MAX_PROCESSED_MESSAGES (1<<16),
+        // while still large enough to exercise message-heavy assembly/proof paths.
+        const MSG_COUNT: usize = 100;
+
+        let account_id = test_account_id(60);
+        let source_account = test_account_id(61);
+        let messages = generate_message_entries(MSG_COUNT, source_account);
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(0)
+            .with_l1_manifest_height_range(1..=3)
+            .with_account(
+                TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE).with_inbox(messages.clone()),
+            )
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let tx = MempoolSnarkTxBuilder::new(account_id)
+            .with_seq_no(0)
+            .with_processed_messages(messages)
+            .build();
+        let txid = tx.compute_txid();
+
+        let output = env
+            .construct_block(vec![(txid, tx)])
+            .await
+            .expect("message-heavy tx should assemble");
+
+        let included = included_txids(&output.template);
+        assert_eq!(included.len(), 1, "message-heavy tx should be included");
+        assert!(
+            output.failed_txs.is_empty(),
+            "message-heavy tx should not be reported failed"
+        );
+        assert_eq!(
+            snark_account_next_inbox_msg_idx(&output.post_state, account_id),
+            MSG_COUNT as u64,
+            "processing should advance next_inbox_msg_idx by all messages"
+        );
+        assert_eq!(
+            snark_account_seqno(&output.post_state, account_id),
+            1,
+            "account seqno should advance after processing update"
+        );
+    }
 }
