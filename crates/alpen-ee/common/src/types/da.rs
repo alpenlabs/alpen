@@ -4,6 +4,7 @@
 //! into Bitcoin envelope chunks for inscription.
 
 use alpen_reth_statediff::BatchStateDiff;
+use strata_acct_types::Hash;
 use strata_codec::{decode_buf_exact, encode_to_vec, BufDecoder, Codec, CodecError};
 use strata_crypto::hash;
 use strata_identifiers::Buf32;
@@ -12,15 +13,19 @@ use crate::BatchId;
 
 /// Compact summary of the last EVM block header in a batch.
 ///
-/// Captures the subset of the EVM block header needed to build the next
-/// block during DA-only chain reconstruction. A new sequencer recovering
-/// from L1 DA has the [`BatchStateDiff`] (account/storage changes) but
-/// **not** the block headers themselves — these fields fill that gap.
+/// Captures the subset of the EVM block header a sequencer recovering
+/// purely from L1 DA needs to (a) build the next EVM block and (b) feed
+/// the EE proof statement. A fresh sequencer has the [`BatchStateDiff`]
+/// (account/storage changes) but **not** the block headers themselves —
+/// these fields fill that gap.
 ///
 /// - `base_fee`, `gas_used`, `gas_limit` feed the EIP-1559 base-fee calculation and gas-limit
 ///   adjustment for the next block.
 /// - `timestamp` enforces monotonicity (`next > parent`).
 /// - `block_num` identifies where the chain continues.
+/// - `block_hash` becomes the `parent_hash` of the next block and anchors chain-continuity checks
+///   in the EE proof.
+/// - `state_root` pins the pre-state root the next block's EE proof opens against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
 pub struct EvmHeaderSummary {
     /// Block number of the last EVM block in this batch.
@@ -33,6 +38,16 @@ pub struct EvmHeaderSummary {
     pub gas_used: u64,
     /// Gas limit of the last EVM block.
     pub gas_limit: u64,
+    /// Block hash of the last EVM block in this batch.
+    ///
+    /// Becomes the `parent_hash` of the next block; required by the EE
+    /// proof for chain-continuity verification.
+    pub block_hash: Hash,
+    /// Post-state root of the last EVM block.
+    ///
+    /// Required by the EE proof so the next block's pre-state root can
+    /// be pinned to DA.
+    pub state_root: Hash,
 }
 
 /// DA blob containing batch metadata and state diff.
@@ -308,6 +323,8 @@ mod tests {
                 base_fee: 1_000_000_000,
                 gas_used: 15_000_000,
                 gas_limit: 30_000_000,
+                block_hash: Hash::from([0x33; 32]),
+                state_root: Hash::from([0x44; 32]),
             },
             state_diff: BatchStateDiff::default(),
         }

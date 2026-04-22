@@ -2,7 +2,7 @@
 //!
 //! The DA blob pipeline needs an [`EvmHeaderSummary`] for each batch so that
 //! verifiers can reconstruct EVM chain metadata (block number, timestamp,
-//! base fee, gas used/limit). [`RethHeaderSummaryProvider`]
+//! base fee, gas used/limit, block hash, state root). [`RethHeaderSummaryProvider`]
 //! satisfies the [`HeaderSummaryProvider`] trait by reading headers directly
 //! from the Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 //!
@@ -12,6 +12,7 @@
 //! [`alpen_ee_da`].
 
 use alpen_ee_common::{EvmHeaderSummary, HeaderSummaryProvider};
+use strata_acct_types::Hash;
 
 /// [`HeaderSummaryProvider`] backed by a Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 pub(crate) struct RethHeaderSummaryProvider<P> {
@@ -44,6 +45,8 @@ where
             })?,
             gas_used: header.gas_used,
             gas_limit: header.gas_limit,
+            block_hash: Hash::from(header.hash_slow().0),
+            state_root: Hash::from(header.state_root.0),
         })
     }
 }
