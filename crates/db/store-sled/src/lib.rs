@@ -18,6 +18,7 @@ pub mod mmr_index;
 pub mod ol;
 pub mod ol_checkpoint;
 pub mod ol_state;
+pub mod ol_state_index;
 pub mod prover;
 #[cfg(feature = "test_utils")]
 pub mod test_utils;

@@ -3,7 +3,7 @@
 pub mod chainstate;
 pub mod errors;
 mod mmr_index;
-mod ol_state_index;
+pub mod ol_state_index;
 pub mod traits;
 pub mod types;
 

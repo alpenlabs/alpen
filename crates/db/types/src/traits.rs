@@ -691,19 +691,14 @@ pub trait AccountDatabase: Send + Sync + 'static {
     ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
 }
 
-/// Database for storing OL state indexing data at epoch granularity.
+/// Database for OL state indexing data at epoch granularity.
 ///
-/// Indexing data captures enough information to reconstruct snark account
-/// inner states and answer per-account, per-epoch activity queries without
-/// replaying blocks. The schema is account-type-agnostic: any account may
-/// produce any kind of indexing record.
+/// Indexing data lets callers reconstruct snark account inner states and
+/// answer per-account, per-epoch activity queries without replaying blocks.
+/// The schema is account-type-agnostic.
 ///
-/// Writes go through the single atomic entrypoint [`apply_epoch_indexing`],
-/// which persists an [`EpochIndexingData`] as one logical unit. Staging for
-/// full-node block-level aggregation is an implementation concern of the
-/// producer and is not part of this trait.
-///
-/// [`apply_epoch_indexing`]: OLStateIndexingDatabase::apply_epoch_indexing
+/// Writes go through [`apply_epoch_indexing`], which persists an
+/// [`EpochIndexingData`] atomically. Block-level staging is done by the producer.
 pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     /// Atomically persists an epoch's indexing data.
     ///

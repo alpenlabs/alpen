@@ -14793,7 +14793,6 @@ dependencies = [
  "ciborium",
  "proptest",
  "rkyv",
- "serde",
  "sled",
  "ssz",
  "ssz_derive",

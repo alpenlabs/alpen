@@ -28,7 +28,6 @@ bincode.workspace = true
 borsh.workspace = true
 ciborium.workspace = true
 rkyv.workspace = true
-serde.workspace = true
 sled.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
