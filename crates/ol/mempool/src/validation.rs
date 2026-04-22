@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use strata_acct_types::{AccountId, AcctError};
 use strata_identifiers::OLTxId;
-use strata_ledger_types::{IAccountState, IStateAccessor};
+use strata_ledger_types::{IAccountState, IStateAccessor, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLTransaction, TransactionPayload};
 use strata_ol_stf::{ExecError, ExecResult, check_tx_constraints};
 use strata_snark_acct_sys as snark_sys;
@@ -62,7 +62,7 @@ fn seq_no_error_to_mempool_error(txid: OLTxId, expected: u64, got: u64) -> OLMem
 /// - Mempool state (if there are pending
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
 /// - On-chain state (if no pending transactions)
-fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
+fn validate_snark_account_update_tx_seq_no<S: IStateAccessorMut>(
     txid: OLTxId,
     target_account: AccountId,
     tx_seq_no: u64,
@@ -114,7 +114,7 @@ fn validate_snark_account_update_tx_seq_no<S: IStateAccessor>(
 /// - Account existence checking
 /// - Sequence number validation (for
 ///   [`SnarkAccountUpdate`](strata_snark_acct_types::SnarkAccountUpdate) transactions)
-pub(crate) fn validate_transaction<S: IStateAccessor>(
+pub(crate) fn validate_transaction<S: IStateAccessorMut>(
     txid: OLTxId,
     tx: &OLTransaction,
     state_accessor: &Arc<S>,

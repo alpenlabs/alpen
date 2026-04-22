@@ -178,7 +178,7 @@ fn process_checkpoint_tip_update<S: IStateAccessorMut>(
     Ok(())
 }
 
-fn process_ee_predicate_key_update<S: IStateAccessor>(
+fn process_ee_predicate_key_update<S: IStateAccessorMut>(
     state: &mut S,
     data: &EePredicateKeyUpdate,
 ) -> ExecResult<()> {
@@ -209,8 +209,8 @@ fn process_ee_predicate_key_update<S: IStateAccessor>(
 
     if !applied {
         warn!(
-            ?acct_serial,
-            ?acct_id,
+            %acct_serial,
+            %acct_id,
             "dropping ee predicate key update for non-snark account"
         );
     }

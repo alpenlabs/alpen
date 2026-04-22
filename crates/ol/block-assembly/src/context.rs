@@ -12,7 +12,7 @@ use strata_acct_types::{
 use strata_asm_manifest_types::AsmManifest;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
-use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor};
+use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::MempoolTxInvalidReason;
 use strata_ol_state_support_types::IComputeStateRootWithWrites;
@@ -37,7 +37,7 @@ impl<T> BlockAssemblyAccountState for T where
 pub trait BlockAssemblyStateAccess:
     IComputeStateRootWithWrites
     + IStateBatchApplicable
-    + IStateAccessor<AccountState: BlockAssemblyAccountState>
+    + IStateAccessorMut<AccountState: BlockAssemblyAccountState>
     + Clone
     + Send
     + Sync
@@ -47,7 +47,7 @@ pub trait BlockAssemblyStateAccess:
 impl<T> BlockAssemblyStateAccess for T where
     T: IComputeStateRootWithWrites
         + IStateBatchApplicable
-        + IStateAccessor<AccountState: BlockAssemblyAccountState>
+        + IStateAccessorMut<AccountState: BlockAssemblyAccountState>
         + Clone
         + Send
         + Sync

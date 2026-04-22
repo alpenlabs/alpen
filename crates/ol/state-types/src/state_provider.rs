@@ -10,7 +10,7 @@
 use std::{error::Error, fmt::Debug, future::Future, sync::Arc};
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::IStateAccessorMut;
 
 /// Provider trait for retrieving state at specific chain tips.
 ///
@@ -67,7 +67,7 @@ pub trait StateProvider: Send + Sync + 'static {
     /// The state type that implements [`IStateAccessor`].
     ///
     /// Must be owned and Arc-able for sharing across validation and execution operations.
-    type State: IStateAccessor + Send + Sync + Debug + 'static;
+    type State: IStateAccessorMut + Send + Sync + Debug + 'static;
 
     /// Error type for state retrieval operations.
     ///
