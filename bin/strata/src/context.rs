@@ -19,16 +19,17 @@ use strata_config::{
     BitcoindConfig, BlockAssemblyConfig, Config, SequencerConfig, SequencerRuntimeConfig,
 };
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Status};
+use strata_identifiers::Epoch;
 use strata_node_context::NodeContext;
 use strata_ol_params::OLParams;
 use strata_params::{Params, RollupParams, SyncParams};
 #[cfg(feature = "prover")]
 use strata_predicate::PredicateTypeId;
-use strata_primitives::L1BlockCommitment;
-use strata_status::StatusChannel;
+use strata_primitives::{L1BlockCommitment, OLBlockCommitment};
+use strata_status::{OLSyncStatus, OLSyncStatusUpdate, StatusChannel};
 use strata_storage::{NodeStorage, create_node_storage};
 use tokio::runtime::Handle;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{args::*, config::*, errors::*, genesis::init_ol_genesis, init_db};
 
@@ -363,10 +364,36 @@ fn init_status_channel(
     Ok(StatusChannel::new(cur_state, cur_block, l1_status, None, None).into())
 }
 
-pub(crate) fn check_and_init_genesis(
+/// Ensures client state and OL genesis, updates status channel.
+pub(crate) fn ensure_genesis(
+    storage: &NodeStorage,
+    ol_params: &OLParams,
+    status_channel: &StatusChannel,
+) -> Result<(), InitError> {
+    let olgen_out = ensure_ol_genesis(storage, ol_params)?;
+    let (l1blk, client_state) = ensure_client_state_genesis(storage, ol_params)?;
+
+    // Create sync status and update status channel
+    let sync_status = OLSyncStatus::new(
+        olgen_out.tip_blk,
+        olgen_out.epoch,
+        olgen_out.is_terminal,
+        client_state.get_last_epoch().unwrap_or_default(),
+        client_state.get_last_epoch().unwrap_or_default(),
+        client_state.get_declared_final_epoch().unwrap_or_default(),
+        l1blk,
+    );
+    status_channel.update_ol_sync_status(OLSyncStatusUpdate::new(sync_status));
+
+    Ok(())
+}
+
+/// Ensures client state genesis.
+fn ensure_client_state_genesis(
     storage: &NodeStorage,
     ol_params: &OLParams,
 ) -> Result<(L1BlockCommitment, ClientState), InitError> {
+    // Check for client state genesis
     let csman = storage.client_state();
     let recent_state = csman
         .fetch_most_recent_state()
@@ -374,18 +401,59 @@ pub(crate) fn check_and_init_genesis(
 
     match recent_state {
         None => {
-            // Initialize OL genesis block and state
-            init_ol_genesis(ol_params, storage)
-                .map_err(|e| InitError::StorageCreation(e.to_string()))?;
-
             // Create and insert init client state into db.
             let init_state = ClientState::default();
             let l1blk = ol_params.last_l1_block;
             let update = ClientUpdateOutput::new_state(init_state.clone());
             csman.put_update_blocking(&l1blk, update.clone())?;
-            Ok((l1blk, init_state))
+            Ok((l1blk, update.state().clone()))
         }
-        Some(recent_state) => Ok(recent_state),
+        Some(s) => Ok(s),
+    }
+}
+
+/// OL Chain tip information after ensuring genesis.
+#[derive(Clone, Debug)]
+pub(crate) struct EnsureOLGenesisOutput {
+    pub(crate) epoch: Epoch,
+    pub(crate) tip_blk: OLBlockCommitment,
+    pub(crate) is_terminal: bool,
+}
+
+/// Ensures OL genesis. Returns the tip block commitment and a boolean indicating if it is terminal.
+fn ensure_ol_genesis(
+    storage: &NodeStorage,
+    ol_params: &OLParams,
+) -> Result<EnsureOLGenesisOutput, InitError> {
+    match storage.ol_block().get_canonical_block_at_blocking(0)? {
+        None => {
+            info!("No canonical block found at slot 0, doing OL genesis");
+            let commitment = init_ol_genesis(ol_params, storage)
+                .inspect(|blkid| info!(%blkid, "Done genesis with block"))
+                .map_err(|e| InitError::StorageCreation(e.to_string()))?;
+            Ok(EnsureOLGenesisOutput {
+                epoch: 0,
+                tip_blk: commitment,
+                is_terminal: true,
+            })
+        }
+        Some(commitment) => {
+            info!(%commitment, "Genesis block found, no need to do OL genesis");
+            // Get tip
+            let tip = storage
+                .ol_block()
+                .get_canonical_tip_blocking()?
+                .expect("tip commitment is expected after genesis");
+            let blk = storage
+                .ol_block()
+                .get_block_data_blocking(*tip.blkid())?
+                .expect("tip block expected after genesis");
+            Ok(EnsureOLGenesisOutput {
+                epoch: blk.header().epoch(),
+                tip_blk: tip,
+                is_terminal: blk.header().is_terminal(),
+            })
+        }
     }
 }
 
