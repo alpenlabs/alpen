@@ -83,7 +83,11 @@ pub(crate) fn start_prover_service(
             // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
             // is Clone (only holds a SP1ProvingKey), so cloning from the
             // shared static is fine.
-            let host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_NEW_HOST).clone();
+            let mut host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_NEW_HOST).clone();
+            if let Some(secs) = prover_config.sp1_proof_deadline_secs {
+                host = host.with_deadline(Duration::from_secs(secs));
+                info!(deadline_secs = secs, "sp1 prover deadline configured");
+            }
             ProverBuilder::new(spec)
                 .task_store(task_store)
                 .receipt_hook(hook)
