@@ -8,7 +8,7 @@ use strata_merkle::CompactMmr64;
 use strata_ol_params::OLParams;
 
 use crate::{
-    WriteBatch,
+    OLAccountTypeState, OLSnarkAccountState, WriteBatch,
     ssz_generated::ssz::state::{
         EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
     },
@@ -20,13 +20,33 @@ impl OLState {
         let checkpointed_epoch = params.checkpointed_epoch();
         let manifests_mmr = Mmr64::from_generic(&CompactMmr64::new(64));
 
-        let ledger = TsnlLedgerAccountsTable::from_genesis_account_params(&params.accounts)?;
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+        let mut ledger = TsnlLedgerAccountsTable::new_empty();
+
+        // Create initial snark accounts.
+        for (id, acct_params) in &params.accounts {
+            // Claim the serial.
+            let serial = next_serial;
+            next_serial = next_serial.incr();
+
+            // Then just assemble the rest of the account data.
+            let snark_state = OLSnarkAccountState::new_fresh(
+                acct_params.predicate.clone(),
+                acct_params.inner_state,
+            );
+
+            let state = OLAccountState::new(
+                serial,
+                acct_params.balance,
+                OLAccountTypeState::Snark(snark_state),
+            );
+
+            ledger.create_account(*id, state)?;
+        }
+
         let total_ledger_funds = ledger.calculate_total_funds();
 
-        let global = GlobalState::new(
-            params.header.slot,
-            AccountSerial::new(SYSTEM_RESERVED_ACCTS),
-        );
+        let global = GlobalState::new(params.header.slot, next_serial);
         let manifests_mmr_offset = params.last_l1_block.height() as u64 + 1;
         let epoch = EpochalState::new(
             total_ledger_funds,

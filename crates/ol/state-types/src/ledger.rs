@@ -23,38 +23,6 @@ impl TsnlLedgerAccountsTable {
         }
     }
 
-    /// Creates a new table populated with genesis accounts from params.
-    pub fn from_genesis_account_params<'a>(
-        accounts: impl IntoIterator<Item = (&'a AccountId, &'a GenesisSnarkAccountData)>,
-    ) -> AcctResult<Self> {
-        let mut table = Self::new_empty();
-
-        // Use this because the number of reserved accocunts is the same as the
-        // first non-reserved account.
-        //
-        // This used to be `first_nonreserved` but then we accidentally got rid
-        // of that crate.
-        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
-
-        for (id, acct_params) in accounts {
-            // Fun serial bookkeeping.
-            let serial = next_serial;
-            next_serial = serial.incr();
-
-            let snark_state = OLSnarkAccountState::new_fresh(
-                acct_params.predicate.clone(),
-                acct_params.inner_state,
-            );
-            let acct_state = OLAccountState::new(
-                serial,
-                acct_params.balance,
-                OLAccountTypeState::Snark(snark_state),
-            );
-            table.create_account(*id, acct_state)?;
-        }
-        Ok(table)
-    }
-
     fn get_acct_entry_idx(&self, id: &AccountId) -> Option<usize> {
         self.accounts.binary_search_by_key(id, |e| e.id).ok()
     }
