@@ -20,7 +20,6 @@ sequencer = [
   "dep:reth-payload-builder",
   "dep:strata-btcio",
   "dep:strata-config",
-  "dep:strata-tasks",
 ]
 # SP1 remote proving for the EE chunk + acct provers. Required for
 # production; native-only test builds can drop this feature.
@@ -72,7 +71,6 @@ strata-proofimpl-alpen-chunk.workspace = true
 strata-service.workspace = true
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
-strata-tasks = { workspace = true, optional = true }
 strata-zkvm-hosts.workspace = true
 zkaleido.workspace = true
 zkaleido-sp1-host = { workspace = true, optional = true }

@@ -14,10 +14,9 @@ use strata_prover_core::{ProofSpec, Prover, ProverResult, TaskResult};
 pub(crate) trait CmdTask: Clone + fmt::Debug + Send + Sync + 'static {}
 impl<T: Clone + fmt::Debug + Send + Sync + 'static> CmdTask for T {}
 use strata_service::{
-    AsyncService, CommandCompletionSender, CommandHandle, Response, Service, ServiceBuilder,
-    ServiceState, TickMsg, TickingInput, TokioMpscInput,
+    AsyncExecutor, AsyncService, CommandCompletionSender, CommandHandle, Response, Service,
+    ServiceBuilder, ServiceState, TickMsg, TickingInput, TokioMpscInput,
 };
-use strata_tasks::TaskExecutor;
 use tokio::sync::mpsc;
 use tracing::{info, trace};
 
@@ -198,7 +197,7 @@ impl<H: ProofSpec> ProverServiceBuilder<H> {
     /// Fails fast if the prover is configured with a retry policy but no
     /// `tick_interval` — in that configuration retries would silently never
     /// fire, which is almost certainly a misconfiguration.
-    pub async fn launch(self, executor: &TaskExecutor) -> anyhow::Result<ProverHandle<H>> {
+    pub async fn launch(self, executor: &impl AsyncExecutor) -> anyhow::Result<ProverHandle<H>> {
         if self.prover.has_retry() && self.tick_interval.is_none() {
             anyhow::bail!(
                 "ProverServiceBuilder: retry is configured but tick_interval is unset; \

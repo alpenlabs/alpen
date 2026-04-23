@@ -13,7 +13,6 @@ remote = ["strata-prover-core/remote"]
 [dependencies]
 strata-prover-core.workspace = true
 strata-service.workspace = true
-strata-tasks.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true

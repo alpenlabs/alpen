@@ -127,7 +127,7 @@ pub(crate) fn start_prover_service(
         .block_on(
             ProverServiceBuilder::new(prover)
                 .tick_interval(PROVER_RETRY_INTERVAL)
-                .launch(executor),
+                .launch(executor.as_ref()),
         )
         .context("failed to launch prover service")?;
 
