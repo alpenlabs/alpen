@@ -3,15 +3,9 @@
 //! This uses the "transitional" types described in the OL STF spec.
 
 use ssz_types::VariableList;
-use strata_acct_types::{
-    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
-};
-use strata_ol_params::GenesisSnarkAccountData;
+use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
 
-use crate::ssz_generated::ssz::state::{
-    OLAccountState, OLAccountTypeState, OLSnarkAccountState, TsnlAccountEntry,
-    TsnlLedgerAccountsTable,
-};
+use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
 
 impl TsnlLedgerAccountsTable {
     /// Creates a new empty table.
