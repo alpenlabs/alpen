@@ -4,6 +4,7 @@ use strata_db_types::traits::{
     BlockStatus, DatabaseBackend, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
+
 use super::{
     checkpoint::{get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch},
     ol::get_ol_block_slot_and_epoch,

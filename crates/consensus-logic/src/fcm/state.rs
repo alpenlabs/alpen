@@ -89,7 +89,12 @@ impl FcmState {
     pub(crate) fn find_latest_pending_finalizable_epoch(&self) -> Option<(usize, EpochCommitment)> {
         // the latest epoch which we have processed and is safe to finalize
         // If prev epoch is null return None
-        let prev_epoch = self.inner_state.cur_olstate.epoch_state().cur_epoch().saturating_sub(1);
+        let prev_epoch = self
+            .inner_state
+            .cur_olstate
+            .epoch_state()
+            .cur_epoch()
+            .saturating_sub(1);
         if prev_epoch == 0 {
             return None;
         }

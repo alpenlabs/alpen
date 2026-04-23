@@ -12,7 +12,9 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::{IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState};
+use strata_ol_state_support_types::{
+    IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
+};
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::verify_block;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
@@ -323,9 +325,11 @@ impl ChainWorkerServiceState {
 
         // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
         let epochal = last_block_output.write_batch().epochal_writes();
-        let new_tip_height = epochal.last_l1_height
+        let new_tip_height = epochal
+            .last_l1_height
             .expect("terminal block must have L1 height in write batch");
-        let new_tip_blkid = epochal.last_l1_blkid
+        let new_tip_blkid = epochal
+            .last_l1_blkid
             .as_ref()
             .expect("terminal block must have L1 blkid in write batch");
         let new_l1_block = L1BlockCommitment::new(new_tip_height, *new_tip_blkid);

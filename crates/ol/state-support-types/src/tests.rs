@@ -539,7 +539,6 @@ impl ISnarkAccountStateMut for TestSnarkState {
     }
 }
 
-
 #[derive(Clone, Debug)]
 struct TestAccountState {
     serial: AccountSerial,
@@ -618,7 +617,6 @@ impl IAccountStateMut for TestAccountState {
             .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
     }
 }
-
 
 #[derive(Debug)]
 struct TestState {
@@ -781,13 +779,19 @@ fn test_account_diffs_ordered_by_serial() {
     layer
         .create_new_account(
             account_id_1,
-            test_new_snark_account_data(&test_snark_account_state(1), BitcoinAmount::from_sat(1000)),
+            test_new_snark_account_data(
+                &test_snark_account_state(1),
+                BitcoinAmount::from_sat(1000),
+            ),
         )
         .unwrap();
     layer
         .create_new_account(
             account_id_2,
-            test_new_snark_account_data(&test_snark_account_state(2), BitcoinAmount::from_sat(2000)),
+            test_new_snark_account_data(
+                &test_snark_account_state(2),
+                BitcoinAmount::from_sat(2000),
+            ),
         )
         .unwrap();
 

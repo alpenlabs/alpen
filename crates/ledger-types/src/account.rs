@@ -87,7 +87,8 @@ impl NewAccountData {
         Self::new(BitcoinAmount::zero(), type_state)
     }
 
-    /// Creates a new snark account with the given balance, verification key, and initial state root.
+    /// Creates a new snark account with the given balance, verification key, and initial state
+    /// root.
     pub fn new_snark(
         initial_balance: BitcoinAmount,
         update_vk: PredicateKey,

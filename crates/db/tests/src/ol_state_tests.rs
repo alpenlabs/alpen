@@ -19,7 +19,10 @@ pub fn proptest_put_and_get_toplevel_ol_state(
         .get_toplevel_ol_state(commitment)
         .expect("test: get toplevel")
         .unwrap();
-    assert_eq!(retrieved_state.global_state().get_cur_slot(), state.global_state().get_cur_slot());
+    assert_eq!(
+        retrieved_state.global_state().get_cur_slot(),
+        state.global_state().get_cur_slot()
+    );
 }
 
 pub fn proptest_get_latest_toplevel_ol_state(
@@ -52,7 +55,10 @@ pub fn proptest_get_latest_toplevel_ol_state(
         .expect("test: get latest")
         .unwrap();
     assert_eq!(latest_commitment, higher);
-    assert_eq!(latest_state.global_state().get_cur_slot(), state.global_state().get_cur_slot());
+    assert_eq!(
+        latest_state.global_state().get_cur_slot(),
+        state.global_state().get_cur_slot()
+    );
 }
 
 pub fn proptest_delete_toplevel_ol_state(

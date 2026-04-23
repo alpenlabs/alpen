@@ -104,7 +104,6 @@ impl OLAccountTypeState {
             OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
         }
     }
-
 }
 
 #[cfg(test)]
