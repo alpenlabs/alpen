@@ -47,7 +47,7 @@ use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
 use strata_ol_stf::{
     BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
-    construct_block as stf_construct_block,
+    construct_block as stf_construct_block, construct_block,
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
@@ -300,14 +300,14 @@ impl StateProvider for StateProviderHandle {
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
         self.0.get_state_for_tip_async(tip)
     }
 
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+    ) -> Result<Option<Self::State>, Self::Error> {
         self.0.get_state_for_tip_blocking(tip)
     }
 }

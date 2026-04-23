@@ -2,7 +2,9 @@
 
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_identifiers::{AccountSerial, L1BlockCommitment};
-use strata_ledger_types::{ISnarkAccountState, IStateAccessor, NewAccountData, NewAccountTypeState};
+use strata_ledger_types::{
+    ISnarkAccountState, IStateAccessorMut, NewAccountData, NewAccountTypeState,
+};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
@@ -50,17 +52,6 @@ pub(crate) fn test_new_snark_account_data(
             initial_state_root: snark_state.inner_state_root(),
         },
     )
-}
-
-/// Setup an OLState with a snark account.
-/// Returns (state, account_serial).
-pub(crate) fn setup_state_with_snark_account(
-    account_id: AccountId,
-    state_root_seed: u8,
-    initial_balance: BitcoinAmount,
-) -> (OLState, AccountSerial) {
-    let (layer, serial) = setup_layer_with_snark_account(account_id, state_root_seed, initial_balance);
-    (layer.into_inner(), serial)
 }
 
 /// Setup a [`MemoryStateBaseLayer`] with a snark account.

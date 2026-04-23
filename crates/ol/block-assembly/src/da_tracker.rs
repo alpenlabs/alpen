@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
-use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
+use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_stf::execute_block_batch;

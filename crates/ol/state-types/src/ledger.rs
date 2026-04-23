@@ -198,7 +198,7 @@ mod tests {
             test_account_id(4),
         ];
 
-        let mut next_serial = AccountSerial::first_nonreserved();
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
 
         for (i, account_id) in account_ids.iter().enumerate() {
             let serial = next_serial;
@@ -234,7 +234,7 @@ mod tests {
 
         // Create first account
         let account_id = test_account_id(1);
-        let serial1 = AccountSerial::first_nonreserved();
+        let serial1 = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let account_state1 = create_empty_account_state(serial1, BitcoinAmount::from_sat(1000));
 
         let result1 = table.create_account(account_id, account_state1);
@@ -262,7 +262,7 @@ mod tests {
 
         // Create an account
         let account_id = test_account_id(1);
-        let serial = AccountSerial::first_nonreserved();
+        let serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let initial_balance = BitcoinAmount::from_sat(1000);
         let account_state = create_empty_account_state(serial, initial_balance);
 
@@ -315,7 +315,7 @@ mod tests {
         let mut table = TsnlLedgerAccountsTable::new_empty();
 
         // Add several accounts
-        let mut next_serial = AccountSerial::first_nonreserved();
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         for i in 1..=5 {
             let account_id = test_account_id(i);
             let serial = next_serial;

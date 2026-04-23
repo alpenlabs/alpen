@@ -169,6 +169,8 @@ where
             .get_state_for_tip_async(tip)
             .await
             .map_err(|e| BlockAssemblyError::StateProvider(Box::new(e)))
+            // keep current logic: stringified provider error
+            .map(|opt| opt.map(Arc::new))
     }
 
     async fn fetch_asm_manifests_from(
@@ -370,6 +372,8 @@ where
 #[cfg(test)]
 mod tests {
     use strata_acct_types::AccumulatorClaim;
+    use strata_asm_manifest_types::AsmManifest;
+    use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
 
     use super::*;
     use crate::test_utils::{

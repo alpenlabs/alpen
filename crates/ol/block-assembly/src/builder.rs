@@ -71,16 +71,15 @@ where
 
     pub async fn launch(self, texec: &TaskExecutor) -> anyhow::Result<BlockasmHandle>
     where
-    // tighten bounds here to match spawned-service reality + your context impl bounds
         M: Send + Sync + 'static,
         E: Send + Sync + 'static,
         P: Send + Sync + 'static,
         P::Error: Display,
         P::State: BlockAssemblyStateAccess,
-        <<P::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut:
+    <<P::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
     <P::State as IStateAccessorMut>::AccountStateMut: Clone,
-        <<P::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+    <<P::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
     {
         let genesis_l1_height = self.params.rollup().genesis_l1_view.height();

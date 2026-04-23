@@ -158,16 +158,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })?;
 
         let prev_next_inbox_msg_idx = prev_ol_state
-            .get_account_state(account_id)
-            .map_err(|e| {
-                error!(
-                    ?e,
-                    %account_id,
-                    %prev_terminal_commitment,
-                    "Failed to get account state from previous epoch OL state"
-                );
-                internal_error(format!("Account error: {e}"))
-            })?
+            .get_account_state(&account_id)
             .and_then(|account_state| account_state.as_snark_account().ok())
             .map_or(0, |snark_state| snark_state.next_inbox_msg_idx());
 

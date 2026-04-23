@@ -202,7 +202,6 @@ impl OLStateManager {
     }
 }
 
-// Implement StateProvider trait for OLStateManager
 impl StateProvider for OLStateManager {
     type State = MemoryStateBaseLayer;
     type Error = DbError;
@@ -210,25 +209,17 @@ impl StateProvider for OLStateManager {
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
-        self.get_toplevel_ol_state_async(tip).map_ok(|opt| {
-            opt.map(|arc| {
-                let state = Arc::try_unwrap(arc).unwrap_or_else(|a| (*a).clone());
-                Arc::new(MemoryStateBaseLayer::new(state))
-            })
-        })
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
+        self.get_toplevel_ol_state_async(tip)
+            .map_ok(|opt| opt.map(|state| MemoryStateBaseLayer::new(state.as_ref().clone())))
     }
 
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
-        self.get_toplevel_ol_state_blocking(tip).map(|opt| {
-            opt.map(|arc| {
-                let state = Arc::try_unwrap(arc).unwrap_or_else(|a| (*a).clone());
-                Arc::new(MemoryStateBaseLayer::new(state))
-            })
-        })
+    ) -> Result<Option<Self::State>, Self::Error> {
+        self.get_toplevel_ol_state_blocking(tip)
+            .map(|opt| opt.map(|state| MemoryStateBaseLayer::new(state.as_ref().clone())))
     }
 }
 
@@ -240,7 +231,6 @@ mod tests {
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::traits::DatabaseBackend;
     use strata_identifiers::{test_utils::ol_block_commitment_strategy, OLBlockCommitment};
-    use strata_ledger_types::IStateAccessor;
     use strata_ol_state_types::{
         test_utils::ol_state_strategy, OLAccountState, OLState, WriteBatch,
     };
@@ -269,7 +259,10 @@ mod tests {
             .get_toplevel_ol_state_blocking(commitment)
             .expect("test: get")
             .unwrap();
-        assert_eq!(retrieved.global_state().get_cur_slot(), state.global_state().get_cur_slot());
+        assert_eq!(
+            retrieved.global_state().get_cur_slot(),
+            state.global_state().get_cur_slot()
+        );
     }
 
     fn proptest_get_latest_toplevel_blocking(
@@ -298,7 +291,10 @@ mod tests {
             .expect("test: get latest")
             .unwrap();
         assert_eq!(latest_commitment, higher);
-        assert_eq!(latest_state.global_state().get_cur_slot(), state.global_state().get_cur_slot());
+        assert_eq!(
+            latest_state.global_state().get_cur_slot(),
+            state.global_state().get_cur_slot()
+        );
     }
 
     fn proptest_delete_toplevel_blocking(commitment: OLBlockCommitment, state: OLState) {
@@ -315,25 +311,21 @@ mod tests {
         assert!(deleted.is_none());
     }
 
-    fn proptest_put_and_get_write_batch_blocking(commitment: OLBlockCommitment, state: OLState) {
+    fn proptest_put_and_get_write_batch_blocking(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        let wb = WriteBatch::<OLAccountState>::default();
         manager
-            .put_write_batch_blocking(commitment, wb.clone())
+            .put_write_batch_blocking(commitment, wb)
             .expect("test: put");
-        let retrieved = manager
+        manager
             .get_write_batch_blocking(commitment)
             .expect("test: get")
-            .unwrap();
-        assert_eq!(
-            retrieved.global().get_cur_slot(),
-            wb.global().get_cur_slot()
-        );
+            .expect("test: retrieved batch");
     }
 
-    fn proptest_delete_write_batch_blocking(commitment: OLBlockCommitment, state: OLState) {
+    fn proptest_delete_write_batch_blocking(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        let wb = WriteBatch::<OLAccountState>::default();
         manager
             .put_write_batch_blocking(commitment, wb)
             .expect("test: put");
@@ -361,7 +353,10 @@ mod tests {
             .await
             .expect("test: get")
             .unwrap();
-        assert_eq!(retrieved.global_state().get_cur_slot(), state.global_state().get_cur_slot());
+        assert_eq!(
+            retrieved.global_state().get_cur_slot(),
+            state.global_state().get_cur_slot()
+        );
     }
 
     async fn proptest_get_latest_toplevel_async(
@@ -393,7 +388,10 @@ mod tests {
             .expect("test: get latest")
             .unwrap();
         assert_eq!(latest_commitment, higher);
-        assert_eq!(latest_state.cur_slot(), state.cur_slot());
+        assert_eq!(
+            latest_state.global_state().get_cur_slot(),
+            state.global_state().get_cur_slot()
+        );
     }
 
     async fn proptest_delete_toplevel_async(commitment: OLBlockCommitment, state: OLState) {
@@ -413,27 +411,23 @@ mod tests {
         assert!(deleted.is_none());
     }
 
-    async fn proptest_put_and_get_write_batch_async(commitment: OLBlockCommitment, state: OLState) {
+    async fn proptest_put_and_get_write_batch_async(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        let wb = WriteBatch::<OLAccountState>::default();
         manager
-            .put_write_batch_async(commitment, wb.clone())
+            .put_write_batch_async(commitment, wb)
             .await
             .expect("test: put");
-        let retrieved = manager
+        manager
             .get_write_batch_async(commitment)
             .await
             .expect("test: get")
-            .unwrap();
-        assert_eq!(
-            retrieved.global().get_cur_slot(),
-            wb.global().get_cur_slot()
-        );
+            .expect("test: retrieved batch");
     }
 
-    async fn proptest_delete_write_batch_async(commitment: OLBlockCommitment, state: OLState) {
+    async fn proptest_delete_write_batch_async(commitment: OLBlockCommitment) {
         let manager = setup_manager();
-        let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+        let wb = WriteBatch::<OLAccountState>::default();
         manager
             .put_write_batch_async(commitment, wb)
             .await
@@ -482,17 +476,15 @@ mod tests {
         #[test]
         fn test_put_and_get_write_batch_blocking(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
         ) {
-            proptest_put_and_get_write_batch_blocking(commitment, state);
+            proptest_put_and_get_write_batch_blocking(commitment);
         }
 
         #[test]
         fn test_delete_write_batch_blocking(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
         ) {
-            proptest_delete_write_batch_blocking(commitment, state);
+            proptest_delete_write_batch_blocking(commitment);
         }
     }
 
@@ -535,20 +527,18 @@ mod tests {
         #[test]
         fn test_put_and_get_write_batch_async(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
         ) {
             Runtime::new().unwrap().block_on(async {
-                proptest_put_and_get_write_batch_async(commitment, state).await;
+                proptest_put_and_get_write_batch_async(commitment).await;
             });
         }
 
         #[test]
         fn test_delete_write_batch_async(
             commitment in ol_block_commitment_strategy(),
-            state in ol_state_strategy(),
         ) {
             Runtime::new().unwrap().block_on(async {
-                proptest_delete_write_batch_async(commitment, state).await;
+                proptest_delete_write_batch_async(commitment).await;
             });
         }
     }

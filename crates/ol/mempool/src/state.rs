@@ -123,7 +123,7 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     account_state: HashMap<AccountId, AccountMempoolState>,
 
     /// State accessor for validation. Updated when chain tip changes.
-    state_accessor: Arc<P::State>,
+    state_accessor: P::State,
 
     /// Mempool statistics.
     stats: OLMempoolStats,

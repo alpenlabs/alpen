@@ -86,7 +86,7 @@ pub trait StateProvider: Send + Sync + 'static {
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send;
 
     /// Retrieves the state for a given chain tip in a blocking manner.
     ///
@@ -100,7 +100,7 @@ pub trait StateProvider: Send + Sync + 'static {
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error>;
+    ) -> Result<Option<Self::State>, Self::Error>;
 }
 
 /// Blanket implementation for Arc-wrapped state providers.
@@ -114,14 +114,14 @@ impl<T: StateProvider> StateProvider for Arc<T> {
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
         T::get_state_for_tip_async(self, tip)
     }
 
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+    ) -> Result<Option<Self::State>, Self::Error> {
         T::get_state_for_tip_blocking(self, tip)
     }
 }

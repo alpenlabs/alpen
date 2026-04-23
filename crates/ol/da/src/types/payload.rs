@@ -293,8 +293,8 @@ mod tests {
     use strata_codec::encode_to_vec;
     use strata_da_framework::{DaCounter, DaLinacc, DaWrite, SignedVarInt, counter_schemes};
     use strata_identifiers::AccountSerial;
-    use strata_ledger_types::{AccountTypeState, NewAccountData};
-    use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
+    use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::test_utils::create_test_genesis_state;
     use strata_predicate::PredicateKey;
 
@@ -375,7 +375,7 @@ mod tests {
             ),
         );
 
-        let ol_diff = OLStateDiff::<OLState>::from(diff);
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
         let result = DaWrite::poll_context(&ol_diff, &state, &());
 
         assert!(matches!(
@@ -407,7 +407,7 @@ mod tests {
             ),
         );
 
-        let ol_diff = OLStateDiff::<OLState>::from(diff);
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
         DaWrite::apply(&ol_diff, &mut state, &()).expect("apply diff");
 
         let account = state
@@ -446,7 +446,7 @@ mod tests {
             ),
         );
 
-        let ol_diff = OLStateDiff::<OLState>::from(diff);
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
         DaWrite::apply(&ol_diff, &mut state, &()).expect("apply snark diff");
 
         let account = state

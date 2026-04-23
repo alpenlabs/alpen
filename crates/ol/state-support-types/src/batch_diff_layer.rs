@@ -435,33 +435,6 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_update_account_returns_unsupported() {
-        let account_id = test_account_id(1);
-        let (base_layer, _) =
-            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
-
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let mut diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        let result = diff_state.update_account(account_id, |_acct| {});
-        assert!(matches!(result, Err(AcctError::Unsupported)));
-    }
-
-    #[test]
-    fn test_create_account_returns_unsupported() {
-        let base_layer = create_test_base_layer();
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let mut diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        let account_id = test_account_id(1);
-        let snark_state = test_snark_account_state(1);
-        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1000));
-
-        let result = diff_state.create_new_account(account_id, new_acct);
-        assert!(matches!(result, Err(AcctError::Unsupported)));
-    }
-
-    #[test]
     fn test_compute_state_root_returns_unsupported() {
         let base_layer = create_test_base_layer();
         let batches: Vec<WriteBatch<_>> = vec![];

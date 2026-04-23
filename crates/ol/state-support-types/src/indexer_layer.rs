@@ -1277,7 +1277,7 @@ mod tests {
     fn test_tracks_predicate_key_update() {
         let account_id = test_account_id(1);
         let (state, _) =
-            setup_state_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
+            setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1000));
         let mut indexer = IndexerState::new(state);
 
         let new_vk = PredicateKey::never_accept();

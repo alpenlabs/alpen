@@ -651,22 +651,13 @@ impl TestState {
 
 impl IStateAccessor for TestState {
     type AccountState = TestAccountState;
-    type AccountStateMut = TestAccountState;
 
     fn cur_slot(&self) -> u64 {
         self.cur_slot
     }
 
-    fn set_cur_slot(&mut self, slot: u64) {
-        self.cur_slot = slot;
-    }
-
     fn cur_epoch(&self) -> u32 {
         self.cur_epoch
-    }
-
-    fn set_cur_epoch(&mut self, epoch: u32) {
-        self.cur_epoch = epoch;
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
@@ -677,22 +668,12 @@ impl IStateAccessor for TestState {
         self.last_l1_height
     }
 
-    fn append_manifest(&mut self, _height: L1Height, _mf: strata_asm_manifest_types::AsmManifest) {}
-
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
         &self.asm_recorded_epoch
     }
 
-    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
-        self.asm_recorded_epoch = epoch;
-    }
-
     fn total_ledger_balance(&self) -> BitcoinAmount {
         self.total_ledger_balance
-    }
-
-    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
-        self.total_ledger_balance = amt;
     }
 
     fn check_account_exists(&self, id: AccountId) -> strata_acct_types::AcctResult<bool> {
@@ -704,6 +685,50 @@ impl IStateAccessor for TestState {
         id: AccountId,
     ) -> strata_acct_types::AcctResult<Option<&Self::AccountState>> {
         Ok(self.accounts.get(&id))
+    }
+
+    fn find_account_id_by_serial(
+        &self,
+        serial: AccountSerial,
+    ) -> strata_acct_types::AcctResult<Option<AccountId>> {
+        Ok(self
+            .accounts
+            .iter()
+            .find_map(|(id, acct)| (acct.serial == serial).then_some(*id)))
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        self.next_serial
+    }
+
+    fn compute_state_root(&self) -> strata_acct_types::AcctResult<Buf32> {
+        Ok(Buf32::zero())
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        todo!()
+    }
+}
+
+impl IStateAccessorMut for TestState {
+    type AccountStateMut = TestAccountState;
+
+    fn set_cur_slot(&mut self, slot: u64) {
+        self.cur_slot = slot;
+    }
+
+    fn set_cur_epoch(&mut self, epoch: u32) {
+        self.cur_epoch = epoch;
+    }
+
+    fn append_manifest(&mut self, _height: L1Height, _mf: strata_asm_manifest_types::AsmManifest) {}
+
+    fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
+        self.asm_recorded_epoch = epoch;
+    }
+
+    fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
+        self.total_ledger_balance = amt;
     }
 
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> strata_acct_types::AcctResult<R>
@@ -737,28 +762,6 @@ impl IStateAccessor for TestState {
         let acct = TestAccountState::new_with_serial(new_acct_data, serial);
         self.accounts.insert(id, acct);
         Ok(serial)
-    }
-
-    fn find_account_id_by_serial(
-        &self,
-        serial: AccountSerial,
-    ) -> strata_acct_types::AcctResult<Option<AccountId>> {
-        Ok(self
-            .accounts
-            .iter()
-            .find_map(|(id, acct)| (acct.serial == serial).then_some(*id)))
-    }
-
-    fn next_account_serial(&self) -> AccountSerial {
-        self.next_serial
-    }
-
-    fn compute_state_root(&self) -> strata_acct_types::AcctResult<Buf32> {
-        Ok(Buf32::zero())
-    }
-
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        todo!()
     }
 }
 
