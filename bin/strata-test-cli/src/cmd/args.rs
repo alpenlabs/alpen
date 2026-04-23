@@ -3,7 +3,9 @@ use argh::FromArgs;
 use super::{
     build_snark_withdrawal::BuildSnarkWithdrawalArgs, compute_drt_output::ComputeDrtOutputArgs,
     convert_to_xonly_pk::ConvertToXonlyPkArgs, create_deposit_tx::CreateDepositTxArgs,
-    create_ee_predicate_update::CreateEePredicateUpdateArgs,
+    create_ee_predicate_update::{
+        CreateCheckpointPredicateUpdateArgs, CreateEePredicateUpdateArgs,
+    },
     create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs, get_address::GetAddressArgs,
@@ -35,6 +37,9 @@ pub enum Commands {
 
     /// Queue an admin update that changes the EE account predicate key
     CreateEePredicateUpdate(CreateEePredicateUpdateArgs),
+
+    /// Queue an admin update that changes the OL checkpoint predicate key
+    CreateCheckpointPredicateUpdate(CreateCheckpointPredicateUpdateArgs),
 
     /// Compute the bridge_in P2TR address and SPS-50 OP_RETURN script for a DRT
     ComputeDrtOutput(ComputeDrtOutputArgs),
