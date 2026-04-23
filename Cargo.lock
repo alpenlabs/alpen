@@ -1114,7 +1114,6 @@ dependencies = [
  "strata-primitives",
  "strata-service",
  "strata-snark-acct-types",
- "strata-tasks",
  "threadpool",
  "tokio",
  "tracing",

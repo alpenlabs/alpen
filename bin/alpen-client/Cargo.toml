@@ -20,7 +20,6 @@ sequencer = [
   "dep:reth-payload-builder",
   "dep:strata-btcio",
   "dep:strata-config",
-  "dep:strata-tasks",
 ]
 
 [[bin]]
@@ -56,7 +55,6 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
-strata-tasks = { workspace = true, optional = true }
 
 
 alloy-eips = { workspace = true, optional = true }
