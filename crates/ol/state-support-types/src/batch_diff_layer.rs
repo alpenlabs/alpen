@@ -60,6 +60,21 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     pub fn batches(&self) -> &'batches [WriteBatch<S::AccountState>] {
         self.batches
     }
+
+    /// Walks the batch stack newest-first, returning the first `Some` produced
+    /// by `per_batch`, or the result of `base` if no batch yields a value.
+    fn resolve<T>(
+        &self,
+        per_batch: impl Fn(&'batches WriteBatch<S::AccountState>) -> Option<T>,
+        base: impl FnOnce() -> T,
+    ) -> T {
+        for batch in self.batches.iter().rev() {
+            if let Some(v) = per_batch(batch) {
+                return v;
+            }
+        }
+        base()
+    }
 }
 
 impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batches, 'base, S> {
@@ -68,54 +83,48 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
-        self.batches
-            .last()
-            .and_then(|b| b.global_writes().cur_slot)
-            .unwrap_or_else(|| self.base.cur_slot())
+        self.resolve(|b| b.global_writes().cur_slot, || self.base.cur_slot())
     }
 
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
-        self.batches
-            .last()
-            .and_then(|b| b.epochal_writes().cur_epoch)
-            .unwrap_or_else(|| self.base.cur_epoch())
+        self.resolve(|b| b.epochal_writes().cur_epoch, || self.base.cur_epoch())
     }
 
     fn last_l1_blkid(&self) -> &L1BlockId {
-        self.batches
-            .last()
-            .and_then(|b| b.epochal_writes().last_l1_blkid.as_ref())
-            .unwrap_or_else(|| self.base.last_l1_blkid())
+        self.resolve(
+            |b| b.epochal_writes().last_l1_blkid.as_ref(),
+            || self.base.last_l1_blkid(),
+        )
     }
 
     fn last_l1_height(&self) -> L1Height {
-        self.batches
-            .last()
-            .and_then(|b| b.epochal_writes().last_l1_height)
-            .unwrap_or_else(|| self.base.last_l1_height())
+        self.resolve(
+            |b| b.epochal_writes().last_l1_height,
+            || self.base.last_l1_height(),
+        )
     }
 
     fn asm_recorded_epoch(&self) -> &EpochCommitment {
-        self.batches
-            .last()
-            .and_then(|b| b.epochal_writes().asm_recorded_epoch.as_ref())
-            .unwrap_or_else(|| self.base.asm_recorded_epoch())
+        self.resolve(
+            |b| b.epochal_writes().asm_recorded_epoch.as_ref(),
+            || self.base.asm_recorded_epoch(),
+        )
     }
 
     fn total_ledger_balance(&self) -> BitcoinAmount {
-        self.batches
-            .last()
-            .and_then(|b| b.epochal_writes().total_ledger_balance)
-            .unwrap_or_else(|| self.base.total_ledger_balance())
+        self.resolve(
+            |b| b.epochal_writes().total_ledger_balance,
+            || self.base.total_ledger_balance(),
+        )
     }
 
     fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.batches
-            .last()
-            .and_then(|b| b.epochal_writes().asm_manifests_mmr.as_ref())
-            .unwrap_or_else(|| self.base.asm_manifests_mmr())
+        self.resolve(
+            |b| b.epochal_writes().asm_manifests_mmr.as_ref(),
+            || self.base.asm_manifests_mmr(),
+        )
     }
 
     // ===== Account methods =====
@@ -461,6 +470,35 @@ mod tests {
         assert_eq!(
             diff_state.total_ledger_balance(),
             BitcoinAmount::from_sat(1_000_000)
+        );
+    }
+
+    #[test]
+    fn test_global_epochal_fall_through_batch_stack() {
+        // Older batch sets cur_slot/cur_epoch/last_l1_blkid; newer batch only
+        // touches total_ledger_balance. The newer batch must not shadow the
+        // unrelated fields set by the older batch.
+        let base_layer = new_layer_at(1, 10);
+
+        let older_blkid = L1BlockId::from(Buf32::from([0x11u8; 32]));
+
+        let mut batch1 = WriteBatch::default();
+        batch1.global_writes_mut().cur_slot = Some(200);
+        batch1.epochal_writes_mut().cur_epoch = Some(7);
+        batch1.epochal_writes_mut().last_l1_blkid = Some(older_blkid);
+
+        let mut batch2 = WriteBatch::default();
+        batch2.epochal_writes_mut().total_ledger_balance = Some(BitcoinAmount::from_sat(42));
+
+        let batches = vec![batch1, batch2];
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
+
+        assert_eq!(diff_state.cur_slot(), 200);
+        assert_eq!(diff_state.cur_epoch(), 7);
+        assert_eq!(*diff_state.last_l1_blkid(), older_blkid);
+        assert_eq!(
+            diff_state.total_ledger_balance(),
+            BitcoinAmount::from_sat(42)
         );
     }
 
