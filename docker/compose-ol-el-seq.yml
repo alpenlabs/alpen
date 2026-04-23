@@ -73,7 +73,7 @@ services:
     command:
       - --sequencer
       - --sequencer-pubkey
-      - "${SEQUENCER_PUBKEY}"
+      - "${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
       - --ol-client-url
       - ws://strata:8432
       - --custom-chain
