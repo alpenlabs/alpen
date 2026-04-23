@@ -59,6 +59,7 @@ class StrataFactory(flexitest.Factory):
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
         use_unchecked_cred_rule: bool = False,
+        admin_confirmation_depth: int | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -72,6 +73,7 @@ class StrataFactory(flexitest.Factory):
             ol_params: Custom OL parameters (genesis accounts, etc.)
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
             use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
+            admin_confirmation_depth: Optional admin subprotocol confirmation depth.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -124,6 +126,7 @@ class StrataFactory(flexitest.Factory):
             genesis_l1_height,
             params_data.operator_keys,
             ol_params_path=ol_params_path,
+            admin_confirmation_depth=admin_confirmation_depth,
         )
 
         # Build command

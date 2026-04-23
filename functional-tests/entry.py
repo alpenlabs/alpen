@@ -310,6 +310,11 @@ def main(argv: list[str]) -> int:
         ),
         # Environments containing both ee and ol
         "el_ol": EeOLEnv(pre_generate_blocks=110),
+        "el_ol_ee_predicate_transition": EeOLEnv(
+            pre_generate_blocks=110,
+            admin_confirmation_depth=2,
+            fund_test_cli_wallet=True,
+        ),
     }
 
     # Set up test runtime

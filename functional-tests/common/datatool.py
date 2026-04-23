@@ -206,6 +206,7 @@ def generate_asm_params(
     genesis_l1_height: int,
     operator_xprivs: list[str],
     ol_params_path: Path | None = None,
+    admin_confirmation_depth: int | None = None,
 ) -> Path:
     params_path = datadir / "asm-params.json"
 
@@ -222,6 +223,8 @@ def generate_asm_params(
     ]
     if ol_params_path is not None:
         args.extend(["--ol-params", str(ol_params_path)])
+    if admin_confirmation_depth is not None:
+        args.extend(["--confirmation-depth", str(admin_confirmation_depth)])
     for opkey in operator_xprivs:
         args.extend(["--opkey", opkey])
 

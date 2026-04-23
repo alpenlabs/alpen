@@ -26,11 +26,13 @@ class StrataEnvConfig(flexitest.EnvConfig):
         genesis_accounts: dict[str, GenesisAccountData] | None = None,
         epoch_sealing: EpochSealingConfig | None = None,
         fund_test_cli_wallet: bool = False,
+        admin_confirmation_depth: int | None = None,
     ):
         self.pre_generate_blocks = pre_generate_blocks
         self.genesis_accounts = genesis_accounts
         self.epoch_sealing = epoch_sealing
         self.fund_test_cli_wallet = fund_test_cli_wallet
+        self.admin_confirmation_depth = admin_confirmation_depth
 
     def _fund_bdk_wallet(self, btc_rpc) -> None:
         """Pre-fund the strata-test-cli BDK wallet so it can build Bitcoin txs."""
@@ -100,6 +102,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
             is_sequencer=True,
             ol_params=ol_params,
             epoch_sealing_config=self.epoch_sealing,
+            admin_confirmation_depth=self.admin_confirmation_depth,
         )
         strata.wait_for_ready(timeout=30)
 
