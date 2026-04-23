@@ -104,8 +104,7 @@ The EE provides EVM execution, decoupled from OL. Currently implemented via Alpe
 | Binary | Description |
 |--------|-------------|
 | `strata` | OL (Strata) client |
-| `alpen-client` | EE client with OL tracking and payload building |
-| `alpen-reth` | Custom Reth node with Alpen precompiles and extensions |
+| `alpen-client` | EE client with OL tracking and payload building (embeds Reth) |
 | `prover-client` | Validity proof generation (`checkpoint`, `cl-stf`, `evm-ee` proofs) |
 | `strata-sequencer-client` | Lightweight signing client for sequencer duties |
 | `alpen-cli` | End-user wallet CLI for deposits, withdrawals, L2 transactions |

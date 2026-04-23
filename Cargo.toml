@@ -106,10 +106,9 @@ members = [
   "bin/alpen-cli",
   "bin/strata-dbtool",
   "bin/alpen-client",
-  "bin/alpen-reth",
   "bin/strata-signer",
   "bin/prover-perf",
-  "bin/strata",        # New binary
+  "bin/strata",                  # New binary
 
   # integration tests
   "bin/strata-test-cli",
@@ -120,7 +119,6 @@ members = [
 
 default-members = [
   "bin/datatool",
-  "bin/alpen-reth",
   "bin/alpen-client",
   "bin/strata",
   "bin/strata-dbtool",

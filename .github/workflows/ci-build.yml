@@ -1,9 +1,6 @@
 # Builds new-architecture Docker images on merge to main (or manual dispatch)
 # and pushes to the shared ECR account.
 #
-# Old architecture images (strata-client, strata-sequencer-client, alpen-reth)
-# remain in the current account via the existing cd.yml workflow.
-#
 # Generate-params and CD dispatch are tracked separately (STR-2775).
 
 name: CI — Build and Push Images
