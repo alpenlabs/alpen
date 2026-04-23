@@ -14,7 +14,7 @@ use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 /// Helper trait for computing the state root after hypothetically applying a
 /// write batch, without requiring `Clone` on the state itself.
 ///
-/// Implementors are expected to clone only what is necessary internally.
+/// Impls are expected to clone only what is necessary internally.
 pub trait IComputeStateRootWithWrites: IStateAccessor {
     /// Computes the state root as if `batch` had been applied on top of the
     /// current state.
