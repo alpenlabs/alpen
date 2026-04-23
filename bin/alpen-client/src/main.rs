@@ -11,6 +11,8 @@ mod payload_builder;
 #[cfg(feature = "sequencer")]
 mod prover;
 mod rpc_client;
+mod service_executor;
+mod services;
 
 #[cfg(feature = "sequencer")]
 use std::future::Future;
@@ -31,7 +33,7 @@ use alpen_ee_exec_chain::{
 #[cfg(feature = "sequencer")]
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
-use alpen_ee_ol_tracker::{init_ol_tracker_state, OLTrackerBuilder};
+use alpen_ee_ol_tracker::init_ol_tracker_state;
 use alpen_ee_rpc_server::{AlpenEeRpcServer, EeRpcServer};
 #[cfg(feature = "sequencer")]
 use alpen_ee_sequencer::{
@@ -112,6 +114,7 @@ use crate::{
     gossip::{create_gossip_task, GossipConfig},
     ol_client::OLClientKind,
     rpc_client::RpcOLClient,
+    service_executor::ServiceExecutor,
 };
 
 /// Environment variable for overriding the default EE block time.
@@ -196,6 +199,8 @@ fn main() {
         command,
         |builder: WithLaunchContext<NodeBuilder<Arc<reth_db::DatabaseEnv>, ChainSpec>>,
          ext: AdditionalConfig| async move {
+            let service_executor = ServiceExecutor::from_reth(builder.task_executor().clone());
+
             // --- CONFIGS ---
 
             let datadir = builder.config().datadir().data_dir().to_path_buf();
@@ -369,14 +374,16 @@ fn main() {
             // task
             let (preconf_tx, preconf_rx) = watch::channel(initial_preconf_head);
 
-            let (ol_tracker, ol_tracker_task) = OLTrackerBuilder::new(
+            let ol_tracker = services::ol_tracker::start_ol_tracker_service(
                 ol_tracker_state,
                 genesis_epoch.epoch(),
                 storage.clone(),
                 ol_client.clone(),
+                ext.dev_track_latest_epoch,
+                &service_executor,
             )
-            .with_track_finalized_epoch(ext.dev_track_finalized_epoch)
-            .build();
+            .await
+            .map_err(|e| eyre::eyre!("failed to start ol tracker service: {e}"))?;
 
             let node_args = AlpenNodeArgs {
                 sequencer_http: ext.sequencer_http.clone(),
@@ -463,8 +470,6 @@ fn main() {
                 create_gossip_task(gossip_rx, state_events, preconf_tx.clone(), gossip_config);
 
             // Spawn critical tasks
-            node.task_executor
-                .spawn_critical("ol_tracker_task", ol_tracker_task);
             node.task_executor
                 .spawn_critical("engine_control", engine_control_task);
             node.task_executor
@@ -1001,7 +1006,7 @@ pub struct AdditionalConfig {
     /// checkpoint pipeline can't keep up with rapid SAU emission and would
     /// otherwise stall the EE block builder's inbox-message fetch.
     #[arg(long, default_value_t = false)]
-    pub dev_track_finalized_epoch: bool,
+    pub dev_track_latest_epoch: bool,
 
     /// End-to-end deadline (seconds) passed to the SP1 prover network on
     /// every chunk/acct proof request. Only used with the remote SP1

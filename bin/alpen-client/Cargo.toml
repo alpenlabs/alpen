@@ -69,6 +69,7 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-proofimpl-alpen-acct.workspace = true
 strata-proofimpl-alpen-chunk.workspace = true
+strata-service.workspace = true
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
 strata-tasks = { workspace = true, optional = true }
@@ -80,6 +81,7 @@ zkaleido-sp1-host = { workspace = true, optional = true }
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
+anyhow.workspace = true
 async-trait.workspace = true
 clap.workspace = true
 eyre.workspace = true
@@ -96,6 +98,7 @@ reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-primitives-traits.workspace = true
 reth-provider.workspace = true
+reth-tasks.workspace = true
 rsp-primitives.workspace = true
 thiserror.workspace = true
 threadpool.workspace = true

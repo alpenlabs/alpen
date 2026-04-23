@@ -322,7 +322,7 @@ def main(argv: list[str]) -> int:
         # job but the alpen-client tracker, ASM checkpoint pipeline, and
         # btcio reader all stay comfortable. If this proves flaky on CI,
         # bump to 2000ms and accept a longer runtime.
-        # `dev_track_finalized_epoch=True` switches the alpen-client's OL
+        # `dev_track_latest_epoch=True` switches the alpen-client's OL
         # chain tracker to advance against Strata's latest completed OL
         # epoch instead of `confirmed` (CSM/L1-checkpoint-based) so the EE
         # block builder consumes inbox messages without waiting for the L1
@@ -330,7 +330,7 @@ def main(argv: list[str]) -> int:
         "el_ol_bridge": EeOLEnv(
             pre_generate_blocks=110,
             ol_block_time_ms=1000,
-            dev_track_finalized_epoch=True,
+            dev_track_latest_epoch=True,
             batch_sealing_block_count=5,
         ),
     }

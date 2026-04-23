@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use alpen_ee_common::{
     chain_status_checked, EeAccountStateAtEpoch, OLChainStatus, OLClient, Storage,
 };
@@ -9,74 +7,13 @@ use strata_evm_ee::EvmExecutionEnvironment;
 use strata_identifiers::EpochCommitment;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
-use tokio::time;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    ctx::OLTrackerCtx,
     error::{OLTrackerError, Result},
-    reorg::handle_reorg,
+    service::EpochTrackingMode,
     state::{build_tracker_state, OLTrackerState},
 };
-
-pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
-    mut state: OLTrackerState,
-    ctx: OLTrackerCtx<TStorage, TOLClient>,
-) where
-    TStorage: Storage,
-    TOLClient: OLClient,
-{
-    loop {
-        time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
-        use tracing::*;
-
-        match track_ol_state(
-            &state,
-            ctx.ol_client.as_ref(),
-            ctx.max_epochs_fetch,
-            ctx.track_finalized_epoch,
-        )
-        .await
-        {
-            Ok(TrackOLAction::Extend(epoch_operations, chain_status)) => {
-                debug!(?epoch_operations, ?chain_status, "Received track action");
-                if let Err(error) =
-                    handle_extend_ee_state(&epoch_operations, &chain_status, &mut state, &ctx).await
-                {
-                    handle_tracker_error(error, "extend ee state");
-                }
-            }
-            Ok(TrackOLAction::Reorg) => {
-                debug!("Received reorg action");
-                if let Err(error) = handle_reorg(&mut state, &ctx).await {
-                    handle_tracker_error(error, "reorg");
-                }
-            }
-            Ok(TrackOLAction::Noop) => {
-                debug!("received noop action");
-            }
-            Err(error) => {
-                handle_tracker_error(error, "track ol state");
-            }
-        }
-    }
-}
-
-/// Handles OL tracker errors, panicking on non-recoverable errors.
-/// Note: reth task manager expects critical tasks to panic, not return an Err.
-/// Critical task panics will trigger app shutdown.
-///
-/// Recoverable errors (network issues, transient DB failures) are logged and allow retry.
-/// Non-recoverable errors (no fork point found) cause immediate panic with detailed message.
-fn handle_tracker_error(error: impl Into<OLTrackerError>, context: &str) {
-    let error = error.into();
-
-    if error.is_fatal() {
-        panic!("{}", error.panic_message());
-    } else {
-        error!(%error, %context, "recoverable error in ol tracker");
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct OLEpochOperations {
@@ -99,7 +36,7 @@ pub(crate) async fn track_ol_state(
     state: &OLTrackerState,
     ol_client: &impl OLClient,
     max_epochs_fetch: u32,
-    track_finalized_epoch: bool,
+    tracking_mode: EpochTrackingMode,
 ) -> Result<TrackOLAction> {
     // can be changed to subscribe to ol changes, with timeout
     let ol_status = chain_status_checked(ol_client).await?;
@@ -113,13 +50,14 @@ pub(crate) async fn track_ol_state(
     // whose lag is not solved just by shortening regtest L1 block time when the
     // native noop prover emits SAUs quickly.
     let mut effective_ol_status = ol_status;
-    let best_ol_commitment = if track_finalized_epoch {
-        let latest = ol_status.latest;
-        effective_ol_status.confirmed = latest;
-        effective_ol_status.finalized = latest;
-        &effective_ol_status.confirmed
-    } else {
-        &effective_ol_status.confirmed
+    let best_ol_commitment = match tracking_mode {
+        EpochTrackingMode::Confirmed => effective_ol_status.confirmed(),
+        EpochTrackingMode::Latest => {
+            let latest = ol_status.latest;
+            effective_ol_status.confirmed = latest;
+            effective_ol_status.finalized = latest;
+            ol_status.latest()
+        }
     };
     let best_ol_epoch = best_ol_commitment.epoch();
     let best_local_epoch = state.best_ol_epoch().epoch();
@@ -128,7 +66,7 @@ pub(crate) async fn track_ol_state(
         %best_local_epoch,
         %best_ol_epoch,
         latest_epoch = %ol_status.latest.epoch(),
-        track_finalized_epoch,
+        ?tracking_mode,
         "check best ol epoch"
     );
 
@@ -235,16 +173,12 @@ pub(crate) fn apply_epoch_operations(
     Ok(())
 }
 
-async fn handle_extend_ee_state<TStorage, TOLClient>(
+pub(crate) async fn handle_extend_ee_state<TStorage: Storage>(
     epoch_operations: &[OLEpochOperations],
     chain_status: &OLChainStatus,
     state: &mut OLTrackerState,
-    ctx: &OLTrackerCtx<TStorage, TOLClient>,
-) -> Result<()>
-where
-    TStorage: Storage,
-    TOLClient: OLClient,
-{
+    storage: &TStorage,
+) -> Result<()> {
     for epoch_op in epoch_operations {
         let OLEpochOperations {
             epoch: ol_epoch,
@@ -268,12 +202,12 @@ where
         let next_state = build_tracker_state(
             EeAccountStateAtEpoch::new(*ol_epoch, ee_state.clone()),
             chain_status,
-            ctx.storage.as_ref(),
+            storage,
         )
         .await?;
 
         // 3. Atomically persist corresponding ee state for this ol epoch.
-        ctx.storage
+        storage
             .store_ee_account_state(ol_epoch, &ee_state)
             .await
             .map_err(|error| {
@@ -288,10 +222,7 @@ where
         // 4. update local state
         *state = next_state;
 
-        // 5. notify watchers
-        info!(%ol_epoch, "notifying watchers from ol tracker");
-        ctx.notify_ol_status_update(state.get_ol_status());
-        ctx.notify_consensus_update(state.get_consensus_heads());
+        info!(%ol_epoch, "applied epoch to ee state");
     }
 
     Ok(())
@@ -353,7 +284,7 @@ mod tests {
                 })
             });
 
-            let result = track_ol_state(&state, &mock_client, 10, false)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -381,7 +312,7 @@ mod tests {
                 })
             });
 
-            let result = track_ol_state(&state, &mock_client, 10, false)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -409,7 +340,7 @@ mod tests {
                 })
             });
 
-            let result = track_ol_state(&state, &mock_client, 10, false)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -443,7 +374,7 @@ mod tests {
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 10, false)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -476,7 +407,7 @@ mod tests {
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 10, false)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -516,7 +447,7 @@ mod tests {
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 10, true)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Latest)
                 .await
                 .unwrap();
 
@@ -561,7 +492,7 @@ mod tests {
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 3, false)
+            let result = track_ol_state(&state, &mock_client, 3, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -636,7 +567,7 @@ mod tests {
                     ))
                 });
 
-            let result = track_ol_state(&state, &mock_client, 10, false)
+            let result = track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed)
                 .await
                 .unwrap();
 
@@ -665,7 +596,8 @@ mod tests {
                 .times(1)
                 .returning(|| Err(alpen_ee_common::OLClientError::network("network error")));
 
-            let result = track_ol_state(&state, &mock_client, 10, false).await;
+            let result =
+                track_ol_state(&state, &mock_client, 10, EpochTrackingMode::Confirmed).await;
 
             assert!(result.is_err());
         }
