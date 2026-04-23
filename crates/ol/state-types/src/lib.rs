@@ -22,7 +22,6 @@ mod global;
 mod ledger;
 mod serial_map;
 mod snark_account;
-mod state_provider;
 mod toplevel;
 mod write_batch;
 
@@ -33,5 +32,4 @@ pub mod test_utils;
 pub use batch_application::*;
 pub use serial_map::*;
 pub use ssz_generated::ssz::state::*;
-pub use state_provider::*;
 pub use write_batch::*;

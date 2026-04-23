@@ -15,8 +15,8 @@ use strata_identifiers::{Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId};
 use strata_ledger_types::{IAccountState, IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::MempoolTxInvalidReason;
-use strata_ol_state_support_types::IComputeStateRootWithWrites;
-use strata_ol_state_types::{IStateBatchApplicable, StateProvider};
+use strata_ol_state_support_types::{IComputeStateRootWithWrites, StateProvider};
+use strata_ol_state_types::IStateBatchApplicable;
 use strata_snark_acct_types::LedgerRefProofs;
 use strata_storage::NodeStorage;
 

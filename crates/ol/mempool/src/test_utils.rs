@@ -24,8 +24,8 @@ use strata_ol_chain_types_new::{
     TxConstraints, TxProofs, test_utils as ol_test_utils,
 };
 use strata_ol_params::OLParams;
-use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{OLState, StateProvider};
+use strata_ol_state_support_types::{MemoryStateBaseLayer, StateProvider};
+use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
 use strata_storage::create_node_storage;

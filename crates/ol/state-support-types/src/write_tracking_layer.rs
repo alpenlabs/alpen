@@ -268,7 +268,7 @@ mod tests {
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
     use strata_ledger_types::*;
-    use strata_ol_state_types::OLAccountState;
+    use strata_ol_state_types::{IStateBatchApplicable, OLAccountState};
 
     use super::*;
     use crate::{

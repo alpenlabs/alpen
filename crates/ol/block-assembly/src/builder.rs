@@ -7,7 +7,7 @@ use std::{
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_support_types::StateProvider;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
 use strata_storage::NodeStorage;

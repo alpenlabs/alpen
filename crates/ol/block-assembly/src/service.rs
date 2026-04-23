@@ -8,7 +8,7 @@ use strata_identifiers::OLBlockId;
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_chain_types::verify_sequencer_signature;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_support_types::StateProvider;
 use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
 use tracing::debug;

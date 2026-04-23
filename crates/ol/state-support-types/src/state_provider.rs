@@ -5,7 +5,6 @@
 //! - Production use with [`OLStateManager`] (database-backed)
 //! - Fast in-memory testing without database infrastructure
 //! - Easy mocking for edge cases and error scenarios
-// FIXME(trey): this module should not be in this crate, it should be closer to where it's used
 
 use std::{error::Error, fmt::Debug, future::Future, sync::Arc};
 
@@ -32,7 +31,8 @@ use strata_ledger_types::IStateAccessorMut;
 /// ```rust,ignore
 /// use std::{collections::HashMap, sync::Arc};
 /// use strata_identifiers::OLBlockCommitment;
-/// use strata_ol_state_types::{OLState, StateProvider};
+/// use strata_ol_state_types::OLState;
+/// use strata_ol_state_support_types::StateProvider;
 ///
 /// #[derive(Debug, thiserror::Error)]
 /// enum MyError {

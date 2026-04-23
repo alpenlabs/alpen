@@ -13,7 +13,7 @@ use strata_db_types::types::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_support_types::StateProvider;
 use strata_service::ServiceState;
 use strata_storage::{NodeStorage, OLStateManager};
 use tracing::{debug, info, instrument, warn};

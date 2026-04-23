@@ -10,7 +10,7 @@ use std::{
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_support_types::StateProvider;
 use strata_params::{Params, RollupParams};
 use strata_service::ServiceState;
 use tracing::warn;
