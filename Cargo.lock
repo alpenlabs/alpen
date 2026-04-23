@@ -15360,6 +15360,7 @@ dependencies = [
  "strata-ol-mempool",
  "strata-ol-sequencer",
  "strata-ol-state-types",
+ "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-types",
  "strata-status",
