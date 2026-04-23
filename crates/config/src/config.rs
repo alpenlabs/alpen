@@ -254,8 +254,8 @@ pub struct ProverConfig {
 
     /// End-to-end deadline (seconds) passed to the SP1 prover network on
     /// every proof request. Only used when `backend = "sp1"`. When unset,
-    /// the SP1 SDK falls back to its own default (auto-calculated from the
-    /// gas limit).
+    /// the strata prover service applies a built-in default (see
+    /// `DEFAULT_SP1_DEADLINE_SECS` in `bin/strata/src/prover/mod.rs`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sp1_proof_deadline_secs: Option<u64>,
 }
