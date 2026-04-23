@@ -20,8 +20,8 @@ RUN cargo install cargo-chef --locked
 # ---- planner: generate recipe.json ----
 FROM chef AS planner
 COPY rust-toolchain.toml ./
-COPY . .
 RUN rustup toolchain install
+COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ---- builder ----
