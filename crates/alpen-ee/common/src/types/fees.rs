@@ -199,11 +199,10 @@ impl FeeBreakdown {
             .checked_add(non_execution_gas)
             .ok_or(FeeModelError::GasEquivalentOverflow("total_gas"))?;
 
-        Ok(GasEquivalentQuote::new(
-            self.raw_evm_gas,
-            non_execution_gas,
-            total_gas,
-        ))
+        let gas_quote = GasEquivalentQuote::new(self.raw_evm_gas, non_execution_gas);
+        debug_assert_eq!(gas_quote.total_gas(), total_gas);
+
+        Ok(gas_quote)
     }
 }
 
@@ -215,9 +214,6 @@ pub struct GasEquivalentQuote {
 
     /// Additional budgeting gas equivalent for non-execution fees.
     pub(crate) non_execution_gas: u64,
-
-    /// Total budgeting gas.
-    pub(crate) total_gas: u64,
 }
 
 /// Errors returned while computing fee quotes.
@@ -315,11 +311,13 @@ impl FeeModelConfig {
 }
 
 impl GasEquivalentQuote {
-    fn new(execution_gas: u64, non_execution_gas: u64, total_gas: u64) -> Self {
+    fn new(execution_gas: u64, non_execution_gas: u64) -> Self {
+        execution_gas
+            .checked_add(non_execution_gas)
+            .expect("gas-equivalent quote must fit in u64");
         Self {
             execution_gas,
             non_execution_gas,
-            total_gas,
         }
     }
 
@@ -335,7 +333,9 @@ impl GasEquivalentQuote {
 
     /// Returns the total budgeting gas.
     pub fn total_gas(&self) -> u64 {
-        self.total_gas
+        self.execution_gas
+            .checked_add(self.non_execution_gas)
+            .expect("gas-equivalent quote must fit in u64")
     }
 }
 
@@ -440,7 +440,7 @@ mod tests {
             .and_then(|quote| quote.gas_equivalent_quote())
             .expect("gas-equivalent quote should compute");
 
-        assert_eq!(gas_quote, GasEquivalentQuote::new(100, 28, 128));
+        assert_eq!(gas_quote, GasEquivalentQuote::new(100, 28));
     }
 
     #[test]

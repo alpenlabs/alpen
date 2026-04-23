@@ -3,7 +3,7 @@
 
 use std::sync::LazyLock;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use bitcoind_async_client::traits::Reader;
 use reqwest::Url;
 use serde::Deserialize;
@@ -94,8 +94,12 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
             .estimate_smart_fee(*conf_target)
             .await
             .context("failed to estimate smart fee"),
-        FeePolicy::MempoolExplorer { policy } => {
-            resolve_mempool_fee_rate(client, config, *policy).await
+        FeePolicy::MempoolExplorer {
+            policy,
+            mempool_base_url,
+            fallback_conf_target,
+        } => {
+            resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy).await
         }
         FeePolicy::Fixed { fee_rate } => Ok(*fee_rate),
     }?;
@@ -113,15 +117,11 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
 /// Bitcoin Core's `estimatesmartfee` on failure.
 async fn resolve_mempool_fee_rate<R: Reader>(
     client: &R,
-    config: &WriterConfig,
+    base_url: &str,
+    fallback_conf_target: u16,
     mempool_fee_policy: MempoolExplorerFeePolicy,
 ) -> anyhow::Result<u64> {
-    let base_url = config
-        .mempool_base_url()
-        .ok_or_else(|| anyhow!("mempool_base_url must be set when fee_policy = \"mempool\""))?;
-
     let explorer = MempoolExplorerClient::new(base_url)?;
-    let fallback_conf_target = config.mempool_fallback_conf_target();
 
     match explorer.fetch_recommended_fees().await {
         Ok(fees) => Ok(fees.select(mempool_fee_policy)),
@@ -157,21 +157,17 @@ mod tests {
 
     fn writer_config(l1_fee_policy: L1FeePolicyConfig) -> WriterConfig {
         WriterConfig {
-            l1_fee_policy,
+            l1_fee_policy_config: l1_fee_policy,
             ..WriterConfig::default()
         }
     }
 
-    fn mempool_writer_config(
-        policy: MempoolExplorerFeePolicy,
-        base_url: Option<String>,
-    ) -> WriterConfig {
-        let mut l1_fee_policy = L1FeePolicyConfig::new(FeePolicy::MempoolExplorer { policy });
-        if let Some(base_url) = base_url {
-            l1_fee_policy = l1_fee_policy.with_mempool_base_url(base_url);
-        }
-
-        writer_config(l1_fee_policy)
+    fn mempool_writer_config(policy: MempoolExplorerFeePolicy, base_url: String) -> WriterConfig {
+        writer_config(L1FeePolicyConfig::new(FeePolicy::MempoolExplorer {
+            policy,
+            mempool_base_url: base_url,
+            fallback_conf_target: 1,
+        }))
     }
 
     fn bitcoind_writer_config(conf_target: u16) -> WriterConfig {
@@ -254,7 +250,7 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, Some(server));
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -272,7 +268,7 @@ mod tests {
         )
         .await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Economy, Some(server));
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Economy, server);
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -286,7 +282,7 @@ mod tests {
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_invalid_json() {
         let server = spawn_single_response_server("200 OK", "not-json").await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, Some(server));
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -300,7 +296,7 @@ mod tests {
     async fn test_resolve_fee_rate_falls_back_to_smart_fee_on_http_error() {
         let server = spawn_single_response_server("500 Internal Server Error", "").await;
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, Some(server));
+        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, server);
 
         let fee_rate = resolve_fee_rate(&client, &config)
             .await
@@ -311,26 +307,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_missing() {
-        let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(MempoolExplorerFeePolicy::Fastest, None);
-
-        let err = resolve_fee_rate(&client, &config)
-            .await
-            .expect_err("missing mempool_base_url should error");
-
-        assert!(err
-            .to_string()
-            .contains("mempool_base_url must be set when fee_policy = \"mempool\""));
-    }
-
-    #[tokio::test]
     async fn test_resolve_fee_rate_errors_when_mempool_base_url_is_invalid() {
         let client = TestBitcoinClient::new(1);
-        let config = mempool_writer_config(
-            MempoolExplorerFeePolicy::Fastest,
-            Some("not a url".to_string()),
-        );
+        let config =
+            mempool_writer_config(MempoolExplorerFeePolicy::Fastest, "not a url".to_string());
 
         let err = resolve_fee_rate(&client, &config)
             .await

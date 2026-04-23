@@ -695,14 +695,12 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.l1_fee_policy.fee_policy(),
+            config.l1_fee_policy_config.fee_policy(),
             &FeePolicy::MempoolExplorer {
                 policy: MempoolExplorerFeePolicy::Fastest,
+                mempool_base_url: "https://mempool.space/signet".to_string(),
+                fallback_conf_target: 1,
             }
-        );
-        assert_eq!(
-            config.l1_fee_policy.mempool_base_url(),
-            Some("https://mempool.space/signet")
         );
     }
 
@@ -721,10 +719,30 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.l1_fee_policy.fee_policy(),
+            config.l1_fee_policy_config.fee_policy(),
             &FeePolicy::MempoolExplorer {
                 policy: MempoolExplorerFeePolicy::Economy,
+                mempool_base_url: "https://mempool.space/signet".to_string(),
+                fallback_conf_target: 1,
             }
+        );
+    }
+
+    #[test]
+    fn test_writer_config_rejects_mempool_policy_without_base_url() {
+        let error = toml::from_str::<WriterConfig>(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "mempool"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+            "#,
+        )
+        .expect_err("writer config should reject mempool policy without base URL");
+
+        assert!(
+            error.to_string().contains("mempool_base_url"),
+            "unexpected error: {error}"
         );
     }
 
@@ -742,7 +760,7 @@ mod test {
         .expect("writer config should parse");
 
         assert_eq!(
-            config.l1_fee_policy.fee_policy(),
+            config.l1_fee_policy_config.fee_policy(),
             &FeePolicy::BitcoinD { conf_target: 6 }
         );
     }
@@ -753,7 +771,7 @@ mod test {
             write_poll_dur_ms: 200,
             reveal_amount: 100,
             bundle_interval_ms: 1_000,
-            l1_fee_policy: L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target: 6 }),
+            l1_fee_policy_config: L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target: 6 }),
         };
 
         let toml = toml::to_string(&config).expect("writer config should serialize");
