@@ -9,7 +9,7 @@ use std::{fmt, sync::Arc};
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize, io::Error as BorshIoError};
 use strata_identifiers::{Epoch, EpochCommitment};
-use strata_ol_state_support_types::DaAccumulatingState;
+use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_stf::execute_block_batch;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
@@ -173,7 +173,8 @@ fn fetch_input_blocking(
     // it here (rather than reading a checkpoint entry) ensures the diff
     // is available before the checkpoint entry is written.
     let da_state_diff_bytes = {
-        let mut da_state = DaAccumulatingState::new((*start_state).clone());
+        let mut da_state =
+            DaAccumulatingState::new(MemoryStateBaseLayer::new((*start_state).clone()));
         execute_block_batch(&mut da_state, &blocks, &parent)
             .map_err(|e| ProverError::DaComputation(e.to_string()))?;
         da_state

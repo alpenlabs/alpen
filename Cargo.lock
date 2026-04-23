@@ -15416,7 +15416,6 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]

@@ -93,13 +93,7 @@ impl<A> WriteBatch<A> {
     }
 
     /// Consumes the batch and returns its component parts.
-    pub fn into_parts(
-        self,
-    ) -> (
-        GlobalStateWrites,
-        EpochalStateWrites,
-        LedgerWriteBatch<A>,
-    ) {
+    pub fn into_parts(self) -> (GlobalStateWrites, EpochalStateWrites, LedgerWriteBatch<A>) {
         (self.global_writes, self.epochal_writes, self.ledger)
     }
 }
@@ -241,7 +235,7 @@ impl Codec for EpochalStateWrites {
         CodecSsz::new(self.cur_epoch).encode(enc)?;
         CodecSsz::new(self.last_l1_blkid).encode(enc)?;
         CodecSsz::new(self.last_l1_height).encode(enc)?;
-        CodecSsz::new(self.asm_recorded_epoch.clone()).encode(enc)?;
+        CodecSsz::new(self.asm_recorded_epoch).encode(enc)?;
         CodecSsz::new(self.total_ledger_balance).encode(enc)?;
         CodecSsz::new(self.asm_manifests_mmr.clone()).encode(enc)?;
         Ok(())

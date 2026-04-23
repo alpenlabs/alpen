@@ -44,10 +44,10 @@ use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
-use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
+use strata_ol_state_types::{OLState, StateProvider};
 use strata_ol_stf::{
     BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
-    construct_block as stf_construct_block, construct_block,
+    construct_block as stf_construct_block,
 };
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
@@ -273,7 +273,7 @@ impl StateProvider for FailingStateProvider {
     fn get_state_for_tip_async(
         &self,
         _tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
         async {
             Err(DbError::Other(
                 "injected state provider failure".to_string(),
@@ -284,7 +284,7 @@ impl StateProvider for FailingStateProvider {
     fn get_state_for_tip_blocking(
         &self,
         _tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+    ) -> Result<Option<Self::State>, Self::Error> {
         Err(DbError::Other(
             "injected state provider failure".to_string(),
         ))
@@ -623,6 +623,30 @@ pub(crate) fn insert_inbox_messages_into_state(
             })
             .expect("update account");
     }
+}
+
+/// Inserts inbox messages into the stored OL state at `commitment`.
+pub(crate) async fn insert_inbox_messages_into_storage_state(
+    storage: &NodeStorage,
+    commitment: OLBlockCommitment,
+    account_id: AccountId,
+    messages: &[MessageEntry],
+) {
+    let state = storage
+        .ol_state()
+        .get_toplevel_ol_state_async(commitment)
+        .await
+        .expect("fetch stored state")
+        .expect("stored state missing");
+    let mut state = MemoryStateBaseLayer::new((*state).clone());
+
+    insert_inbox_messages_into_state(&mut state, account_id, messages);
+
+    storage
+        .ol_state()
+        .put_toplevel_ol_state_async(commitment, state.into_inner())
+        .await
+        .expect("store updated state");
 }
 
 /// Create test parent header by executing genesis block.
@@ -1056,7 +1080,7 @@ impl TestEnv {
             .expect("store assembled block");
         self.storage()
             .ol_state()
-            .put_toplevel_ol_state_async(commitment, post_state)
+            .put_toplevel_ol_state_async(commitment, post_state.into_inner())
             .await
             .expect("store assembled post-state");
 
@@ -1080,11 +1104,11 @@ impl TestEnv {
 /// Converts assembled output into persisted artifacts: `(OLBlock, post_state)`.
 pub(crate) fn block_and_post_state_from_output(
     output: &ConstructBlockOutput<MemoryStateBaseLayer>,
-) -> (OLBlock, OLState) {
+) -> (OLBlock, MemoryStateBaseLayer) {
     let header = output.template.header().clone();
     let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
     let block = OLBlock::new(signed_header, output.template.body().clone());
-    (block, output.post_state.clone().into_inner())
+    (block, output.post_state.clone())
 }
 
 /// Builder for seeded storage fixtures used by block assembly tests.

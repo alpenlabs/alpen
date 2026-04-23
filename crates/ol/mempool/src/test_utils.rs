@@ -480,6 +480,7 @@ pub(crate) enum InMemoryStateProviderError {
     LockPoisoned(String),
 }
 
+#[expect(clippy::manual_async_fn, reason = "forced by trait")]
 impl StateProvider for InMemoryStateProvider {
     type State = MemoryStateBaseLayer;
     type Error = InMemoryStateProviderError;
