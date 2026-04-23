@@ -5,7 +5,8 @@ use strata_ledger_types::*;
 
 use crate::{DaResult, DaScheme, OLDaPayloadV1, OLStateDiff};
 
-/// DA scheme v1 for applying OL checkpoint state diffs to [`OLState`].
+/// DA scheme v1 for applying OL checkpoint state diffs to an OL state by way of
+/// a [`IStateAccessorMut`].
 #[derive(Debug, Default)]
 pub struct OLDaSchemeV1;
 
