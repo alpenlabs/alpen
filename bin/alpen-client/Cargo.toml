@@ -54,6 +54,7 @@ strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
+strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-tasks = { workspace = true, optional = true }
 
@@ -61,6 +62,7 @@ strata-tasks = { workspace = true, optional = true }
 alloy-eips = { workspace = true, optional = true }
 alloy-primitives.workspace = true
 alloy-rpc-types-engine = { workspace = true, optional = true }
+anyhow.workspace = true
 async-trait.workspace = true
 clap.workspace = true
 eyre.workspace = true
@@ -77,6 +79,7 @@ reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-provider.workspace = true
+reth-tasks.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -4,7 +4,6 @@ use alpen_ee_common::{
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    ctx::OLTrackerCtx,
     error::{OLTrackerError, Result},
     state::{build_tracker_state, OLTrackerState},
 };
@@ -77,19 +76,19 @@ where
 /// Handles chain reorganization by finding fork point and rolling back state.
 pub(crate) async fn handle_reorg<TStorage, TOLClient>(
     state: &mut OLTrackerState,
-    ctx: &OLTrackerCtx<TStorage, TOLClient>,
+    storage: &TStorage,
+    ol_client: &TOLClient,
+    genesis_epoch: u32,
 ) -> Result<()>
 where
     TStorage: Storage,
     TOLClient: OLClient,
 {
-    let genesis_epoch = ctx.genesis_epoch;
-
-    let ol_status = chain_status_checked(ctx.ol_client.as_ref()).await?;
+    let ol_status = chain_status_checked(ol_client).await?;
 
     let fork_state = find_fork_point(
-        ctx.storage.as_ref(),
-        ctx.ol_client.as_ref(),
+        storage,
+        ol_client,
         genesis_epoch,
         ol_status.confirmed.epoch(),
     )
@@ -109,10 +108,7 @@ where
         "reorg: found fork point; starting db rollback"
     );
 
-    rollback_to_fork_point(state, ctx.storage.as_ref(), &fork_state, &ol_status).await?;
-
-    ctx.notify_ol_status_update(state.get_ol_status());
-    ctx.notify_consensus_update(state.get_consensus_heads());
+    rollback_to_fork_point(state, storage, &fork_state, &ol_status).await?;
 
     info!("reorg: reorg complete");
 
@@ -344,40 +340,7 @@ mod tests {
     }
 
     mod handle_reorg_tests {
-        use std::sync::Arc;
-
-        use alpen_ee_common::{ConsensusHeads, OLFinalizedStatus};
-        use strata_acct_types::Hash;
-        use tokio::sync::watch;
-
         use super::*;
-
-        fn make_test_ctx(
-            storage: MockStorage,
-            ol_client: MockOLClient,
-            genesis_epoch: u32,
-        ) -> OLTrackerCtx<MockStorage, MockOLClient> {
-            let (ol_status_tx, _) = watch::channel(OLFinalizedStatus {
-                ol_block: make_block_commitment(0, 0),
-                last_ee_block: Hash::new([0; 32]),
-            });
-            let (consensus_tx, _) = watch::channel(ConsensusHeads {
-                confirmed: Hash::new([0; 32]),
-                confirmed_epoch: 0,
-                finalized: Hash::new([0; 32]),
-                finalized_epoch: 0,
-            });
-
-            OLTrackerCtx {
-                storage: Arc::new(storage),
-                ol_client: Arc::new(ol_client),
-                genesis_epoch,
-                ol_status_tx,
-                consensus_tx,
-                max_epochs_fetch: 10,
-                poll_wait_ms: 100,
-            }
-        }
 
         #[tokio::test]
         async fn test_propagates_chain_status_error() {
@@ -392,13 +355,12 @@ mod tests {
                 .times(1)
                 .returning(|| Err(OLClientError::network("network error")));
 
-            let ctx = make_test_ctx(mock_storage, mock_client, 100);
             let mut state = OLTrackerState::new(
                 make_state_at_epoch(105, 1050, 3, 3),
                 make_state_at_epoch(100, 1000, 1, 1),
             );
 
-            let result = handle_reorg(&mut state, &ctx).await;
+            let result = handle_reorg(&mut state, &mock_storage, &mock_client, 100).await;
 
             assert!(result.is_err());
         }
@@ -458,10 +420,9 @@ mod tests {
             // DB rollback should NOT be called because build_tracker_state fails first
             mock_storage.expect_rollback_ee_account_state().times(0);
 
-            let ctx = make_test_ctx(mock_storage, mock_client, 0);
             let mut state = OLTrackerState::new(chain[5].clone(), chain[0].clone());
 
-            let result = handle_reorg(&mut state, &ctx).await;
+            let result = handle_reorg(&mut state, &mock_storage, &mock_client, 0).await;
 
             // Reorg should fail
             assert!(result.is_err());
@@ -509,10 +470,9 @@ mod tests {
                 .times(1)
                 .returning(|_| Err(StorageError::database("simulated rollback failure")));
 
-            let ctx = make_test_ctx(mock_storage, mock_client, 0);
             let mut state = OLTrackerState::new(local_chain[4].clone(), local_chain[0].clone());
 
-            let result = handle_reorg(&mut state, &ctx).await;
+            let result = handle_reorg(&mut state, &mock_storage, &mock_client, 0).await;
 
             // Reorg should fail
             assert!(result.is_err());
