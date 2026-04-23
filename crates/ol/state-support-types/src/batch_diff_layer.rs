@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_state_types::WriteBatch;
@@ -25,7 +25,10 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 #[derive(Clone)]
 pub struct BatchDiffState<'batches, 'base, S: IStateAccessor> {
     base: &'base S,
-    batches: &'batches [WriteBatch<S::AccountState>],
+    write_batches: &'batches [WriteBatch<S::AccountState>],
+
+    /// Helper field so that we only have to compute this once.
+    new_accounts: usize,
 }
 
 impl<S: IStateAccessor> fmt::Debug for BatchDiffState<'_, '_, S>
@@ -36,7 +39,8 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BatchDiffState")
             .field("base", &self.base)
-            .field("batches", &self.batches)
+            .field("write_batches", &self.write_batches)
+            .field("new_accounts", &self.new_accounts)
             .finish()
     }
 }
@@ -48,7 +52,16 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     /// back to the base state. An empty batch slice results in a pure read-only
     /// passthrough to the base.
     pub fn new(base: &'base S, batches: &'batches [WriteBatch<S::AccountState>]) -> Self {
-        Self { base, batches }
+        let new_accounts = batches
+            .iter()
+            .map(|wb| wb.ledger().new_accounts().len())
+            .sum();
+
+        Self {
+            base,
+            write_batches: batches,
+            new_accounts,
+        }
     }
 
     /// Returns a reference to the base state.
@@ -57,27 +70,36 @@ impl<'batches, 'base, S: IStateAccessor> BatchDiffState<'batches, 'base, S> {
     }
 
     /// Returns a reference to the batch slice.
-    pub fn batches(&self) -> &'batches [WriteBatch<S::AccountState>] {
-        self.batches
+    pub fn write_batches(&self) -> &'batches [WriteBatch<S::AccountState>] {
+        self.write_batches
     }
 
+    /// Returns the total number of new accounts added by writes in the layer.
+    pub fn new_accounts(&self) -> usize {
+        self.new_accounts
+    }
+
+    /// Internal function for helping with lookups.
+    ///
     /// Walks the batch stack newest-first, returning the first `Some` produced
-    /// by `per_batch`, or the result of `base` if no batch yields a value.
+    /// by `on_wb`, or if none match, returns the result of `on_base`.
     fn resolve<T>(
         &self,
-        per_batch: impl Fn(&'batches WriteBatch<S::AccountState>) -> Option<T>,
-        base: impl FnOnce() -> T,
+        on_wb: impl Fn(&'batches WriteBatch<S::AccountState>) -> Option<T>,
+        on_base: impl FnOnce() -> T,
     ) -> T {
-        for batch in self.batches.iter().rev() {
-            if let Some(v) = per_batch(batch) {
+        for wb in self.write_batches.iter().rev() {
+            if let Some(v) = on_wb(wb) {
                 return v;
             }
         }
-        base()
+        on_base()
     }
 }
 
-impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batches, 'base, S> {
+impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessor
+    for BatchDiffState<'batches, 'base, S>
+{
     type AccountState = S::AccountState;
 
     // ===== Global state methods =====
@@ -130,69 +152,55 @@ impl<'batches, 'base, S: IStateAccessor> IStateAccessor for BatchDiffState<'batc
     // ===== Account methods =====
 
     fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
-        // Check batches in reverse order (last = most recent)
-        for batch in self.batches.iter().rev() {
-            if batch.ledger().contains_account(&id) {
-                return Ok(true);
-            }
-        }
-        // Fall back to base state
-        self.base.check_account_exists(id)
+        self.resolve(
+            |b| b.ledger().contains_account(&id).then_some(Ok(true)),
+            || self.base.check_account_exists(id),
+        )
     }
 
     fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
-        // Check batches in reverse order (last = most recent)
-        for batch in self.batches.iter().rev() {
-            if let Some(state) = batch.ledger().get_account(&id) {
-                return Ok(Some(state));
-            }
-        }
-        // Fall back to base state
-        self.base.get_account_state(id)
+        self.resolve(
+            |b| b.ledger().get_account(&id).map(|s| Ok(Some(s))),
+            || self.base.get_account_state(id),
+        )
     }
 
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
-        // Check batches in reverse order (last = most recent)
-        for batch in self.batches.iter().rev() {
-            if let Some(id) = batch.ledger().find_id_by_serial(serial) {
-                return Ok(Some(id));
-            }
-        }
-        // Fall back to base state
-        self.base.find_account_id_by_serial(serial)
+        self.resolve(
+            |b| b.ledger().find_id_by_serial(serial).map(|id| Ok(Some(id))),
+            || self.base.find_account_id_by_serial(serial),
+        )
     }
 
     fn next_account_serial(&self) -> AccountSerial {
-        let total_new_accounts: u32 = self
-            .batches
-            .iter()
-            .map(|b| b.ledger().new_accounts().len() as u32)
-            .sum();
         let base_serial: u32 = self.base.next_account_serial().into();
-        AccountSerial::from(base_serial + total_new_accounts)
+        AccountSerial::from(base_serial + self.new_accounts as u32)
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // TODO implement this properly
-        Err(AcctError::Unsupported)
+        self.base
+            .compute_state_root_with_writes(self.write_batches.iter())
     }
 }
 
 impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrites
     for BatchDiffState<'batches, 'base, S>
 {
-    fn compute_state_root_with_writes(
-        &self,
-        batch: WriteBatch<Self::AccountState>,
-    ) -> AcctResult<Buf32> {
-        // TODO: incorporate self.batches when computing state root
-        self.base.compute_state_root_with_writes(batch)
+    fn compute_state_root_with_writes<'b>(
+        &'b self,
+        writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
+    ) -> AcctResult<Buf32>
+    where
+        Self::AccountState: 'b,
+    {
+        self.base
+            .compute_state_root_with_writes(self.write_batches.iter().chain(writes))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{AcctError, BitcoinAmount, SYSTEM_RESERVED_ACCTS};
+    use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_identifiers::{AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot};
     use strata_ledger_types::{IAccountState, IStateAccessor};
     use strata_ol_params::OLParams;
@@ -440,20 +448,6 @@ mod tests {
     }
 
     // =========================================================================
-    // Write operation tests (all should fail/no-op)
-    // =========================================================================
-
-    #[test]
-    fn test_compute_state_root_returns_unsupported() {
-        let base_layer = create_test_base_layer();
-        let batches: Vec<WriteBatch<_>> = vec![];
-        let diff_state = BatchDiffState::new(&base_layer, &batches);
-
-        let result = diff_state.compute_state_root();
-        assert!(matches!(result, Err(AcctError::Unsupported)));
-    }
-
-    // =========================================================================
     // Epochal state tests
     // =========================================================================
 
@@ -499,6 +493,91 @@ mod tests {
         assert_eq!(
             diff_state.total_ledger_balance(),
             BitcoinAmount::from_sat(42)
+        );
+    }
+
+    #[test]
+    fn test_state_root_changes_with_writes() {
+        let account_id = test_account_id(1);
+        let base_layer = create_test_base_layer();
+
+        let base_root = base_layer.compute_state_root().unwrap();
+
+        let mut batch = WriteBatch::default();
+        let snark_state = test_snark_account_state(1);
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(5000));
+        let serial = base_layer.next_account_serial();
+        batch
+            .ledger_mut()
+            .create_account_from_data(account_id, new_acct, serial);
+
+        let batches = vec![batch];
+        let diff_state = BatchDiffState::new(&base_layer, &batches);
+        let diff_root = diff_state.compute_state_root().unwrap();
+
+        assert_ne!(base_root, diff_root);
+
+        // An empty-batches diff should match the base root.
+        let empty_batches: Vec<WriteBatch<_>> = vec![];
+        let passthrough = BatchDiffState::new(&base_layer, &empty_batches);
+        assert_eq!(passthrough.compute_state_root().unwrap(), base_root);
+    }
+
+    #[test]
+    fn test_stacked_batch_diff_layers() {
+        let account_id_1 = test_account_id(1);
+        let account_id_2 = test_account_id(2);
+        let base_layer = create_test_base_layer();
+
+        // Inner layer adds account 1.
+        let mut batch1 = WriteBatch::default();
+        let snark_state1 = test_snark_account_state(1);
+        let new_acct1 = test_new_snark_account_data(&snark_state1, BitcoinAmount::from_sat(1000));
+        let serial1 = base_layer.next_account_serial();
+        batch1
+            .ledger_mut()
+            .create_account_from_data(account_id_1, new_acct1, serial1);
+
+        let inner_batches = vec![batch1];
+        let inner = BatchDiffState::new(&base_layer, &inner_batches);
+
+        // Outer layer stacks another batch adding account 2 on top of `inner`.
+        let mut batch2 = WriteBatch::default();
+        let snark_state2 = test_snark_account_state(2);
+        let new_acct2 = test_new_snark_account_data(&snark_state2, BitcoinAmount::from_sat(2000));
+        let serial2 = inner.next_account_serial();
+        batch2
+            .ledger_mut()
+            .create_account_from_data(account_id_2, new_acct2, serial2);
+
+        let outer_batches = vec![batch2];
+        let outer = BatchDiffState::new(&inner, &outer_batches);
+
+        // Both accounts are visible through the outer layer.
+        let acct1 = outer.get_account_state(account_id_1).unwrap().unwrap();
+        assert_eq!(acct1.balance(), BitcoinAmount::from_sat(1000));
+        let acct2 = outer.get_account_state(account_id_2).unwrap().unwrap();
+        assert_eq!(acct2.balance(), BitcoinAmount::from_sat(2000));
+
+        // Serial lookups resolve through both layers.
+        assert_eq!(
+            outer.find_account_id_by_serial(serial1).unwrap(),
+            Some(account_id_1)
+        );
+        assert_eq!(
+            outer.find_account_id_by_serial(serial2).unwrap(),
+            Some(account_id_2)
+        );
+
+        // next_account_serial accumulates new accounts from both layers.
+        let base_next: u32 = base_layer.next_account_serial().into();
+        let outer_next: u32 = outer.next_account_serial().into();
+        assert_eq!(outer_next, base_next + 2);
+
+        // Stacking more writes changes the state root relative to the inner layer.
+        assert_ne!(
+            inner.compute_state_root().unwrap(),
+            outer.compute_state_root().unwrap()
         );
     }
 

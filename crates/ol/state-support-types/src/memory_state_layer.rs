@@ -168,12 +168,17 @@ impl IStateBatchApplicable for MemoryStateBaseLayer {
 }
 
 impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
-    fn compute_state_root_with_writes(
+    fn compute_state_root_with_writes<'b>(
         &self,
-        batch: WriteBatch<OLAccountState>,
+        writes: impl Iterator<Item = &'b WriteBatch<OLAccountState>>,
     ) -> AcctResult<Buf32> {
         let mut state = self.state.clone();
-        state.apply_write_batch(batch)?;
+
+        for wb in writes {
+            // Maybe we can avoid this clone?
+            state.apply_write_batch(wb.clone())?;
+        }
+
         Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&state).into())
     }
 }

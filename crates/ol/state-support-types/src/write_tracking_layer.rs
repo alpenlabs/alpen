@@ -3,13 +3,13 @@
 //! This provides an `IStateAccessor` implementation that tracks all writes
 //! in a `WriteBatch`, allowing them to be applied atomically or discarded.
 
-use std::fmt;
+use std::{fmt, iter};
 
 use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
-use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
+use strata_ol_state_types::WriteBatch;
 
 /// Helper trait for computing the state root after hypothetically applying a
 /// write batch, without requiring `Clone` on the state itself.
@@ -18,10 +18,12 @@ use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
 pub trait IComputeStateRootWithWrites: IStateAccessor {
     /// Computes the state root as if `batch` had been applied on top of the
     /// current state.
-    fn compute_state_root_with_writes(
-        &self,
-        batch: WriteBatch<Self::AccountState>,
-    ) -> AcctResult<Buf32>;
+    fn compute_state_root_with_writes<'b>(
+        &'b self,
+        writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
+    ) -> AcctResult<Buf32>
+    where
+        Self::AccountState: 'b;
 }
 
 /// A write-tracking state accessor that wraps a base state.
@@ -173,8 +175,8 @@ where
     }
 
     fn compute_state_root(&self) -> AcctResult<Buf32> {
-        // FIXME avoid clone
-        self.base.compute_state_root_with_writes(self.batch.clone())
+        self.base
+            .compute_state_root_with_writes(iter::once(&self.batch))
     }
 }
 
@@ -257,18 +259,6 @@ where
             .ledger_mut()
             .create_account_from_data(id, new_acct_data, serial);
         Ok(serial)
-    }
-}
-
-impl<'base, S: IComputeStateRootWithWrites + IStateBatchApplicable> IStateBatchApplicable
-    for WriteTrackingState<'base, S>
-where
-    S::AccountState: Clone + IAccountState + IAccountStateMut,
-{
-    fn apply_write_batch(&mut self, _batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
-        // WriteTrackingState cannot apply batches - it only tracks writes.
-        // To get a final state with batch applied, clone the base state and apply there.
-        Err(AcctError::Unsupported)
     }
 }
 

@@ -605,8 +605,8 @@ impl IAccountStateMut for TestAccountState {
         coin.safely_consume_unchecked();
     }
 
-    fn take_balance(&mut self, _amt: BitcoinAmount) -> strata_acct_types::AcctResult<Coin> {
-        Err(AcctError::Unsupported)
+    fn take_balance(&mut self, amt: BitcoinAmount) -> strata_acct_types::AcctResult<Coin> {
+        panic!("test: take_balance called in test for {amt}");
     }
 
     fn as_snark_account_mut(
