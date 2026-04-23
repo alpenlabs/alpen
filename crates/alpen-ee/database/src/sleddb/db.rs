@@ -947,6 +947,14 @@ impl EeNodeDb for EeNodeDBSled {
 
         Ok(())
     }
+
+    fn get_batch_chunks(&self, batch_id: BatchId) -> DbResult<Option<Vec<ChunkId>>> {
+        let db_batch_id: DBBatchId = batch_id.into();
+        let Some(db_chunks) = self.batch_chunks_tree.get(&db_batch_id)? else {
+            return Ok(None);
+        };
+        Ok(Some(db_chunks.into_iter().map(Into::into).collect()))
+    }
 }
 
 #[cfg(test)]

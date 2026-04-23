@@ -14,7 +14,7 @@ use reth_evm::{
     execute::{BasicBlockExecutor, Executor},
     ConfigureEvm,
 };
-use reth_primitives::EthPrimitives;
+use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
 use reth_provider::{BlockReader, StateProvider, StateProviderFactory};
 use reth_revm::{db::CacheDB, state::Bytecode};
@@ -32,7 +32,16 @@ pub struct RangeWitnessData {
     pub end_block_hash: B256,
     /// Serialized `EvmPartialState` (via `strata_codec`).
     pub raw_partial_pre_state: Vec<u8>,
-    pub raw_prev_header: Vec<u8>,
+    /// Parent of `start_block` (block before the range). Callers that
+    /// need a specific on-wire encoding should encode from here rather
+    /// than receiving pre-serialized bytes.
+    pub prev_header: Header,
+    /// Blocks in range order (start..=end). Available for callers
+    /// that need per-block header/body data (e.g. `RawBlockData`
+    /// encoding). [`Block`] is reth's type alias for
+    /// `alloy_consensus::Block`, specialized to the reth transaction
+    /// type.
+    pub blocks: Vec<Block>,
 }
 
 /// Extracts witness data for block ranges.
@@ -44,7 +53,7 @@ pub struct RangeWitnessExtractor<F, E> {
 
 impl<F, E> RangeWitnessExtractor<F, E>
 where
-    F: StateProviderFactory + BlockReader<Block = reth_primitives::Block>,
+    F: StateProviderFactory + BlockReader<Block = Block>,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone,
 {
     pub fn new(provider_factory: F, evm_config: E) -> Self {
@@ -93,7 +102,8 @@ where
         let start_state_root = prev_block.header.state_root;
 
         // 1. Execute all blocks to discover accessed state
-        let accessed = self.execute_blocks_for_accessed_state(start_block_num, end_block_num)?;
+        let (accessed, blocks) =
+            self.execute_blocks_for_accessed_state(start_block_num, end_block_num)?;
 
         // 2. Get providers for pre-range and post-range states
         let pre_state_provider = self
@@ -119,13 +129,12 @@ where
         let raw_partial_pre_state = encode_to_vec(&partial_state)
             .map_err(|e| eyre!("failed to encode partial state: {e}"))?;
 
-        let raw_prev_header = alloy_rlp::encode(&prev_block.header);
-
         Ok(RangeWitnessData {
             start_block_hash,
             end_block_hash,
             raw_partial_pre_state,
-            raw_prev_header,
+            prev_header: prev_block.header,
+            blocks,
         })
     }
 
@@ -133,8 +142,9 @@ where
         &self,
         start_block: u64,
         end_block: u64,
-    ) -> Result<AccumulatedState> {
+    ) -> Result<(AccumulatedState, Vec<Block>)> {
         let mut acc = AccumulatedState::default();
+        let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
 
         for blk_num in start_block..=end_block {
             let block = self
@@ -142,7 +152,7 @@ where
                 .block_by_number(blk_num)?
                 .ok_or_else(|| eyre!("block {} not found", blk_num))?;
 
-            let sealed = block.seal_slow();
+            let sealed = block.clone().seal_slow();
             let recovered = sealed.try_recover()?;
 
             // Get history at parent block for this execution
@@ -156,9 +166,10 @@ where
             let _output = executor.execute(&recovered)?;
 
             acc.merge(&cache_provider.get_accessed_state());
+            blocks.push(block);
         }
 
-        Ok(acc)
+        Ok((acc, blocks))
     }
 
     fn build_ethereum_state<P>(

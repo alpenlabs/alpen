@@ -16,7 +16,10 @@ use strata_storage::ops::{
 use threadpool::ThreadPool;
 use typed_sled::SledDb;
 
-use crate::{sleddb::EeNodeDBSled, storage::EeNodeStorage};
+use crate::{
+    sleddb::{EeNodeDBSled, EeProverDbSled},
+    storage::EeNodeStorage,
+};
 
 /// Container for all EE database instances.
 ///
@@ -34,6 +37,8 @@ pub struct EeDatabases {
     pub(crate) chunked_envelope_db: Arc<L1ChunkedEnvelopeDBSled>,
     /// DA filter for cross-batch deduplication (bytecodes, extensible for addresses etc.).
     pub(crate) da_context_db: Arc<EeDaContextDb<SledWitnessDB>>,
+    /// Prover-side persistence: shared task store + chunk receipts + acct proofs.
+    pub(crate) prover_db: Arc<EeProverDbSled>,
 }
 
 impl EeDatabases {
@@ -63,6 +68,12 @@ impl EeDatabases {
     /// Returns a clone of the DA context database.
     pub fn da_context_db(&self) -> Arc<EeDaContextDb<SledWitnessDB>> {
         self.da_context_db.clone()
+    }
+
+    /// Returns a clone of the prover database (shared task store +
+    /// chunk receipts + acct proofs).
+    pub fn prover_db(&self) -> Arc<EeProverDbSled> {
+        self.prover_db.clone()
     }
 }
 
@@ -101,8 +112,13 @@ pub(crate) fn init_database(datadir: &Path, db_retry_count: u16) -> Result<EeDat
     );
 
     let chunked_envelope_db = Arc::new(
-        L1ChunkedEnvelopeDBSled::new(typed_sled.clone(), config)
+        L1ChunkedEnvelopeDBSled::new(typed_sled.clone(), config.clone())
             .map_err(|e| eyre!("failed to create chunked envelope db: {e}"))?,
+    );
+
+    let prover_db = Arc::new(
+        EeProverDbSled::new(typed_sled.clone(), config)
+            .map_err(|e| eyre!("failed to create EE prover db: {e}"))?,
     );
 
     let da_context_db = Arc::new(
@@ -116,5 +132,6 @@ pub(crate) fn init_database(datadir: &Path, db_retry_count: u16) -> Result<EeDat
         broadcast_db,
         chunked_envelope_db,
         da_context_db,
+        prover_db,
     })
 }

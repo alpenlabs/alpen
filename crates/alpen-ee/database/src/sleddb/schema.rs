@@ -3,6 +3,8 @@ use strata_db_store_sled::{
     define_table_with_default_codec, define_table_without_codec, /* impl_bincode_key_codec, */
     impl_borsh_value_codec,
 };
+use strata_paas::TaskRecordData;
+use zkaleido::ProofReceiptWithMetadata;
 
 use crate::serialization_types::{
     DBAccountStateAtEpoch, DBBatchId, DBBatchWithStatus, DBChunkId, DBChunkWithStatus,
@@ -70,4 +72,44 @@ define_table_with_default_codec!(
 define_table_with_default_codec!(
     /// Batch-Chunk association
     (BatchChunksSchema) DBBatchId => Vec<DBChunkId>
+);
+
+// Prover storage schemas.
+//
+// `ProverTaskSchema` backs `strata_paas::TaskStore` for the EE chunk
+// and acct provers; both write under the same tree. Task keys are
+// tagged by kind (`b'c'`/`b'a'`) inside `Task::into()` so chunk and
+// batch entries don't collide.
+//
+// The two proof stores are separate trees keyed by domain identifier:
+// chunk receipts by task key bytes (matches paas's `ReceiptStore`),
+// acct proofs by `DBBatchId`. `AcctProofIdIndexSchema` is a secondary
+// index from `ProofId` (= batch's `last_block`) back to the batch, so
+// `BatchProver::get_proof(proof_id)` is an O(1) lookup.
+
+define_table_with_default_codec!(
+    /// Shared prover task store for chunk + acct provers.
+    ///
+    /// Keyed by the serialized `ProofSpec::Task` bytes; tag-prefixed on
+    /// the caller side (`ChunkTask` / `BatchTask`).
+    (ProverTaskSchema) Vec<u8> => TaskRecordData
+);
+
+define_table_with_default_codec!(
+    /// Chunk proof receipts, keyed by chunk task bytes.
+    ///
+    /// The acct `fetch_input` reads these to assemble chunk inputs. Key
+    /// shape matches paas's `ReceiptStore`.
+    (ChunkProofReceiptSchema) Vec<u8> => ProofReceiptWithMetadata
+);
+
+define_table_with_default_codec!(
+    /// Acct (outer/update) proof receipts keyed by [`BatchId`].
+    (AcctProofReceiptSchema) DBBatchId => ProofReceiptWithMetadata
+);
+
+define_table_with_default_codec!(
+    /// Secondary index: `ProofId` → `BatchId`, so `BatchProver::get_proof`
+    /// can resolve the receipt without scanning.
+    (AcctProofIdIndexSchema) Hash => DBBatchId
 );
