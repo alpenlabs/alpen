@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use alpen_ee_common::{
     chain_status_checked, EeAccountStateAtEpoch, OLChainStatus, OLClient, Storage,
 };
@@ -9,67 +7,12 @@ use strata_evm_ee::EvmExecutionEnvironment;
 use strata_identifiers::EpochCommitment;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{UpdateInputData, UpdateManifest};
-use tokio::time;
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    ctx::OLTrackerCtx,
     error::{OLTrackerError, Result},
-    reorg::handle_reorg,
     state::{build_tracker_state, OLTrackerState},
 };
-
-pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
-    mut state: OLTrackerState,
-    ctx: OLTrackerCtx<TStorage, TOLClient>,
-) where
-    TStorage: Storage,
-    TOLClient: OLClient,
-{
-    loop {
-        time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
-        use tracing::*;
-
-        match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_epochs_fetch).await {
-            Ok(TrackOLAction::Extend(epoch_operations, chain_status)) => {
-                debug!(?epoch_operations, ?chain_status, "Received track action");
-                if let Err(error) =
-                    handle_extend_ee_state(&epoch_operations, &chain_status, &mut state, &ctx).await
-                {
-                    handle_tracker_error(error, "extend ee state");
-                }
-            }
-            Ok(TrackOLAction::Reorg) => {
-                debug!("Received reorg action");
-                if let Err(error) = handle_reorg(&mut state, &ctx).await {
-                    handle_tracker_error(error, "reorg");
-                }
-            }
-            Ok(TrackOLAction::Noop) => {
-                debug!("received noop action");
-            }
-            Err(error) => {
-                handle_tracker_error(error, "track ol state");
-            }
-        }
-    }
-}
-
-/// Handles OL tracker errors, panicking on non-recoverable errors.
-/// Note: reth task manager expects critical tasks to panic, not return an Err.
-/// Critical task panics will trigger app shutdown.
-///
-/// Recoverable errors (network issues, transient DB failures) are logged and allow retry.
-/// Non-recoverable errors (no fork point found) cause immediate panic with detailed message.
-fn handle_tracker_error(error: impl Into<OLTrackerError>, context: &str) {
-    let error = error.into();
-
-    if error.is_fatal() {
-        panic!("{}", error.panic_message());
-    } else {
-        error!(%error, %context, "recoverable error in ol tracker");
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct OLEpochOperations {
@@ -202,16 +145,12 @@ pub(crate) fn apply_epoch_operations(
     Ok(())
 }
 
-async fn handle_extend_ee_state<TStorage, TOLClient>(
+pub(crate) async fn handle_extend_ee_state<TStorage: Storage>(
     epoch_operations: &[OLEpochOperations],
     chain_status: &OLChainStatus,
     state: &mut OLTrackerState,
-    ctx: &OLTrackerCtx<TStorage, TOLClient>,
-) -> Result<()>
-where
-    TStorage: Storage,
-    TOLClient: OLClient,
-{
+    storage: &TStorage,
+) -> Result<()> {
     for epoch_op in epoch_operations {
         let OLEpochOperations {
             epoch: ol_epoch,
@@ -235,12 +174,12 @@ where
         let next_state = build_tracker_state(
             EeAccountStateAtEpoch::new(*ol_epoch, ee_state.clone()),
             chain_status,
-            ctx.storage.as_ref(),
+            storage,
         )
         .await?;
 
         // 3. Atomically persist corresponding ee state for this ol epoch.
-        ctx.storage
+        storage
             .store_ee_account_state(ol_epoch, &ee_state)
             .await
             .map_err(|error| {
@@ -255,10 +194,7 @@ where
         // 4. update local state
         *state = next_state;
 
-        // 5. notify watchers
-        info!(%ol_epoch, "notifying watchers from ol tracker");
-        ctx.notify_ol_status_update(state.get_ol_status());
-        ctx.notify_consensus_update(state.get_consensus_heads());
+        info!(%ol_epoch, "applied epoch to ee state");
     }
 
     Ok(())

@@ -248,15 +248,12 @@ mod tests {
     }
 
     mod build_tracker_state_tests {
-        use std::sync::Arc;
-
-        use alpen_ee_common::{ConsensusHeads, MockOLClient};
+        use alpen_ee_common::ConsensusHeads;
         use strata_acct_types::Hash;
         use strata_identifiers::{Epoch, Slot};
         use tokio::sync::watch;
 
         use super::*;
-        use crate::ctx::OLTrackerCtx;
 
         #[tokio::test]
         async fn test_builds_state_successfully() {
@@ -459,19 +456,8 @@ mod tests {
                 finalized_epoch: 0,
             };
             let (consensus_tx, consensus_rx) = watch::channel(initial);
-            let (ol_status_tx, _) = watch::channel(tracker_state.get_ol_status());
 
-            let ctx = OLTrackerCtx {
-                storage: Arc::new(mock_storage),
-                ol_client: Arc::new(MockOLClient::new()),
-                genesis_epoch: 0,
-                ol_status_tx,
-                consensus_tx,
-                max_epochs_fetch: 10,
-                poll_wait_ms: 100,
-            };
-
-            ctx.notify_consensus_update(tracker_state.get_consensus_heads());
+            let _ = consensus_tx.send(tracker_state.get_consensus_heads());
 
             let received = consensus_rx.borrow().clone();
             assert_eq!(received.confirmed_epoch, CONFIRMED_EPOCH);

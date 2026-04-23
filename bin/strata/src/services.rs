@@ -89,7 +89,7 @@ mod sequencer_services {
                 super::rollup_to_btcio_params(nodectx.params().rollup()),
             )
             .with_broadcast_poll_interval_ms(nodectx.config().btcio.broadcaster.poll_interval_ms)
-            .launch(nodectx.executor())
+            .launch(nodectx.executor().as_ref())
             .await
         })
     }
