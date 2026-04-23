@@ -37,4 +37,8 @@ strata-predicate.workspace = true
 workspace = true
 
 [features]
-test-utils = ["dep:ssz_primitives", "dep:strata-ol-params", "dep:strata-ol-state-support-types"]
+test-utils = [
+  "dep:ssz_primitives",
+  "dep:strata-ol-params",
+  "dep:strata-ol-state-support-types",
+]
