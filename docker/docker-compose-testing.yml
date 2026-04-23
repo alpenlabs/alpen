@@ -7,8 +7,6 @@ x-base-prover: &base-prover
   image: "strata-prover-client:latest"
   networks:
     - strata_network
-  depends_on:
-    - sequencer-signer
 
 services:
   reth:
@@ -49,21 +47,6 @@ services:
       - 8556:8546
     profiles:
       - fullnode
-
-  sequencer-signer:
-    image: "strata-sequencer-client:latest"
-    networks:
-      - strata_network
-    container_name: strata_sequencer_signer
-    volumes:
-      - ./configs/sequencer.key:/app/sequencer.key
-    command: [
-      "--sequencer-key", "sequencer.key",
-      "--rpc-host", "sequencer",
-      "--rpc-port", "8432"
-    ]
-    depends_on:
-      - sequencer
 
   prover-client:
     <<: *base-prover
