@@ -117,6 +117,7 @@ pub(crate) fn create_ee_predicate_update(
     Ok(())
 }
 
+// TODO(STR-3191): deduplicate ennvelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
     args: &CreateEePredicateUpdateArgs,
 ) -> Result<(Transaction, Transaction), Error> {
