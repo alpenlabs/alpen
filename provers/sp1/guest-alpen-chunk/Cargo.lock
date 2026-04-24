@@ -63,7 +63,7 @@ dependencies = [
  "either",
  "k256",
  "once_cell",
- "rand 0.8.6",
+ "rand 0.8.5",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
@@ -843,7 +843,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -853,7 +853,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -863,7 +863,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -1871,7 +1871,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "835c052cb0c08c1acf6ffd71c022172e18723949c8282f2b9f27efbc51e64534"
 dependencies = [
  "byteorder",
- "rand 0.8.6",
+ "rand 0.8.5",
  "rustc-hex",
  "static_assertions",
 ]
@@ -2882,7 +2882,7 @@ dependencies = [
  "p3-mds 0.2.3-succinct",
  "p3-poseidon2 0.2.3-succinct",
  "p3-symmetric 0.2.3-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -2897,7 +2897,7 @@ dependencies = [
  "p3-field 0.3.2-succinct",
  "p3-poseidon2 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -2951,7 +2951,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "num-traits",
  "p3-util 0.2.3-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -2965,7 +2965,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "num-traits",
  "p3-util 0.3.2-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -2980,7 +2980,7 @@ dependencies = [
  "p3-mds 0.3.2-succinct",
  "p3-poseidon2 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -2994,7 +2994,7 @@ dependencies = [
  "p3-field 0.2.3-succinct",
  "p3-maybe-rayon 0.2.3-succinct",
  "p3-util 0.2.3-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
  "tracing",
 ]
@@ -3009,7 +3009,7 @@ dependencies = [
  "p3-field 0.3.2-succinct",
  "p3-maybe-rayon 0.3.2-succinct",
  "p3-util 0.3.2-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
  "tracing",
 ]
@@ -3038,7 +3038,7 @@ dependencies = [
  "p3-matrix 0.2.3-succinct",
  "p3-symmetric 0.2.3-succinct",
  "p3-util 0.2.3-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -3053,7 +3053,7 @@ dependencies = [
  "p3-matrix 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
  "p3-util 0.3.2-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -3066,7 +3066,7 @@ dependencies = [
  "p3-field 0.2.3-succinct",
  "p3-mds 0.2.3-succinct",
  "p3-symmetric 0.2.3-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -3080,7 +3080,7 @@ dependencies = [
  "p3-field 0.3.2-succinct",
  "p3-mds 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -3180,7 +3180,7 @@ dependencies = [
  "ff 0.12.1",
  "group 0.12.1",
  "lazy_static",
- "rand 0.8.6",
+ "rand 0.8.5",
  "static_assertions",
  "subtle",
 ]
@@ -3195,7 +3195,7 @@ dependencies = [
  "ff 0.13.1",
  "group 0.13.0",
  "lazy_static",
- "rand 0.8.6",
+ "rand 0.8.5",
  "static_assertions",
  "subtle",
 ]
@@ -3482,9 +3482,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.8.6"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
+checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -4392,7 +4392,7 @@ dependencies = [
  "parity-scale-codec",
  "primitive-types",
  "proptest",
- "rand 0.8.6",
+ "rand 0.8.5",
  "rand 0.9.3",
  "rlp",
  "ruint-macro",
@@ -4526,7 +4526,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.8.6",
+ "rand 0.8.5",
  "secp256k1-sys 0.10.0",
  "serde",
 ]
@@ -4539,7 +4539,7 @@ dependencies = [
  "bitcoin_hashes",
  "cfg-if",
  "k256",
- "rand 0.8.6",
+ "rand 0.8.5",
  "secp256k1-sys 0.10.0",
  "serde",
 ]
@@ -4948,7 +4948,7 @@ dependencies = [
  "libm",
  "p3-baby-bear",
  "p3-field 0.2.3-succinct",
- "rand 0.8.6",
+ "rand 0.8.5",
  "sha2",
  "sp1-lib 5.2.4",
  "sp1-primitives 5.2.4",
@@ -5034,7 +5034,7 @@ version = "0.15.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
 dependencies = [
  "hex",
- "rand 0.8.6",
+ "rand 0.8.5",
  "ruint",
 ]
 
@@ -5419,7 +5419,7 @@ dependencies = [
  "crunchy",
  "lazy_static",
  "num-bigint 0.4.6",
- "rand 0.8.6",
+ "rand 0.8.5",
  "rustc-hex",
  "sp1-lib 5.2.4",
 ]
@@ -6243,7 +6243,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
 dependencies = [
  "arbitrary",
  "bincode",
@@ -6256,7 +6256,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
 dependencies = [
  "bincode",
  "k256",
@@ -6268,7 +6268,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
 dependencies = [
  "bincode",
  "cfg-if",
@@ -6298,7 +6298,7 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "pasta_curves 0.5.1",
- "rand 0.8.6",
+ "rand 0.8.5",
  "serde",
  "sha2",
  "sha3",
