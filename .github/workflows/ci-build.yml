@@ -96,7 +96,8 @@ jobs:
           COMMIT_SHA=$(git rev-parse HEAD)
           # Pinned tag for the afb3683 staging-v2 deploy — binaries are from
           # afb3683 source; CI plumbing is PR #1668 cherry-picked on top.
-          SHORT_TAG="afb3683"
+          # Dated suffix avoids collision with any prior/future afb3683 tag push.
+          SHORT_TAG="afb3683-20260424"
           echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
           echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
