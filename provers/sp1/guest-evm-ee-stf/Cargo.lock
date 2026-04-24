@@ -297,7 +297,7 @@ dependencies = [
  "keccak-asm",
  "paste",
  "proptest",
- "rand 0.9.3",
+ "rand 0.9.4",
  "rapidhash",
  "ruint",
  "rustc-hash",
@@ -3366,7 +3366,7 @@ dependencies = [
  "bit-vec",
  "bitflags",
  "num-traits",
- "rand 0.9.3",
+ "rand 0.9.4",
  "rand_chacha 0.9.0",
  "rand_xorshift",
  "regex-syntax",
@@ -3422,9 +3422,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ec095654a25171c2124e9e3393a930bddbffdc939556c914957a4c3e0a87166"
+checksum = "44c5af06bb1b7d3216d91932aed5265164bf384dc89cd6ba05cf59a35f5f76ea"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.5",
@@ -4271,7 +4271,7 @@ dependencies = [
  "primitive-types",
  "proptest",
  "rand 0.8.5",
- "rand 0.9.3",
+ "rand 0.9.4",
  "rlp",
  "ruint-macro",
  "serde_core",
@@ -4429,7 +4429,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c3c81b43dc2d8877c216a3fccf76677ee1ebccd429566d3e67447290d0c42b2"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.9.3",
+ "rand 0.9.4",
  "secp256k1-sys 0.11.0",
 ]
 
@@ -5063,7 +5063,7 @@ dependencies = [
  "strata-crypto",
  "strata-identifiers",
  "strata-params",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
@@ -5280,7 +5280,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
  "zkaleido-native-adapter",
 ]
 
@@ -6151,7 +6151,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
 dependencies = [
  "arbitrary",
  "bincode",
@@ -6172,13 +6172,13 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
 dependencies = [
  "bincode",
  "k256",
  "rand_core 0.6.4",
  "serde",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
@@ -6199,14 +6199,14 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
 dependencies = [
  "bincode",
  "cfg-if",
  "serde",
  "sha2",
  "sp1-zkvm",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
