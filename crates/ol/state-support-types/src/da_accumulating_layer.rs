@@ -6,7 +6,7 @@ use std::{
     mem::take,
 };
 
-use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, Mmr64};
 use strata_asm_proto_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
@@ -631,15 +631,15 @@ impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
 
     // ===== Account methods =====
 
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
         self.inner.check_account_exists(id)
     }
 
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
         self.inner.get_account_state(id)
     }
 
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
         self.inner.find_account_id_by_serial(serial)
     }
 
@@ -647,7 +647,7 @@ impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
         self.inner.next_account_serial()
     }
 
-    fn compute_state_root(&self) -> AcctResult<strata_identifiers::Buf32> {
+    fn compute_state_root(&self) -> StateResult<strata_identifiers::Buf32> {
         self.inner.compute_state_root()
     }
 }
@@ -700,7 +700,7 @@ where
         self.inner.set_total_ledger_balance(amt);
     }
 
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
@@ -739,7 +739,7 @@ where
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData,
-    ) -> AcctResult<AccountSerial> {
+    ) -> StateResult<AccountSerial> {
         let expected_first_serial = self.inner.next_account_serial();
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 

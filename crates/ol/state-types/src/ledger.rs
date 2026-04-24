@@ -3,7 +3,8 @@
 //! This uses the "transitional" types described in the OL STF spec.
 
 use ssz_types::VariableList;
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+use strata_ledger_types::{StateError, StateResult};
 
 use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
 
@@ -42,10 +43,10 @@ impl TsnlLedgerAccountsTable {
     /// Creates a new account.
     ///
     /// This does not check serial uniqueness/ordering.
-    pub fn create_account(&mut self, id: AccountId, acct_state: OLAccountState) -> AcctResult<()> {
+    pub fn create_account(&mut self, id: AccountId, acct_state: OLAccountState) -> StateResult<()> {
         // Figure out where we're supposed to put it.
         let insert_idx = match self.accounts.binary_search_by_key(&id, |e| e.id) {
-            Ok(_) => return Err(AcctError::AccountIdExists(id)),
+            Ok(_) => return Err(StateError::AccountExists(id)),
             Err(i) => i,
         };
 
@@ -74,7 +75,7 @@ impl TsnlLedgerAccountsTable {
         id: AccountId,
         serial: AccountSerial,
         new_acct_data: strata_ledger_types::NewAccountData,
-    ) -> AcctResult<()> {
+    ) -> StateResult<()> {
         use strata_ledger_types::IAccountState as _;
         let acct = OLAccountState::new_with_serial(new_acct_data, serial);
         self.create_account(id, acct)?;
@@ -101,7 +102,7 @@ impl TsnlAccountEntry {
 #[cfg(test)]
 mod tests {
     use ssz::{Decode, Encode};
-    use strata_acct_types::BitcoinAmount;
+    use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_ledger_types::IAccountState;
     use strata_test_utils_ssz::ssz_proptest;
 
@@ -210,8 +211,8 @@ mod tests {
         assert!(result2.is_err());
 
         match result2.unwrap_err() {
-            AcctError::AccountIdExists(id) => assert_eq!(id, account_id),
-            _ => panic!("Expected AccountIdExists error"),
+            StateError::AccountExists(id) => assert_eq!(id, account_id),
+            _ => panic!("Expected AccountExists error"),
         }
 
         // Verify only one account exists

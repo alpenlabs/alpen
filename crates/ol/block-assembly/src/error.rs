@@ -5,6 +5,7 @@ use std::error::Error;
 use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
 use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
+use strata_ledger_types::StateError;
 use strata_ol_chain_types_new::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_stf::ExecError;
@@ -113,6 +114,10 @@ pub enum BlockAssemblyError {
     /// Various account errors.
     #[error("acct: {0}")]
     Acct(#[from] AcctError),
+
+    /// State accessor error.
+    #[error("state: {0}")]
+    State(#[from] StateError),
 
     /// Chain types construction failed.
     #[error("chain types: {0}")]

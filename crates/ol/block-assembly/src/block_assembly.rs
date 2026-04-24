@@ -79,6 +79,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         // Tx claimed invalid accumulator proof - permanently invalid
         BlockAssemblyError::InvalidAccumulatorClaim(_)
         | BlockAssemblyError::Acct(_)
+        | BlockAssemblyError::State(_)
         | BlockAssemblyError::L1HeaderHashMismatch { .. }
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
         | BlockAssemblyError::AccountNotFound(_)
@@ -677,7 +678,7 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     // verification logic in "dry-run" mode.
     let account_state = state
         .get_account_state(target)
-        .map_err(BlockAssemblyError::Acct)?
+        .map_err(BlockAssemblyError::State)?
         .ok_or(BlockAssemblyError::AccountNotFound(target))?;
 
     let mut proof_indexer = TxProofIndexer::new_fresh();
@@ -693,7 +694,7 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     // Generate accumulator proofs for the indexed claims, preserving order.
     let inbox_leaf_count = account_state
         .as_snark_account()
-        .map_err(BlockAssemblyError::Acct)?
+        .map_err(BlockAssemblyError::State)?
         .inbox_mmr()
         .num_entries();
 

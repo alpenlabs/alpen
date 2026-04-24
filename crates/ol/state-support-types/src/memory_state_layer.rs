@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{
-    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64,
+    AccountId, AccountSerial, BitcoinAmount, Mmr64,
     tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_manifest_types::AsmManifest;
@@ -93,15 +93,15 @@ impl IStateAccessor for MemoryStateBaseLayer {
 
     // ===== Account methods =====
 
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
         Ok(self.state.ledger.get_account_state(&id).is_some())
     }
 
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
         Ok(self.state.ledger.get_account_state(&id))
     }
 
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
         Ok(self.serials.get(&serial).copied())
     }
 
@@ -109,7 +109,7 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.global.get_next_avail_serial()
     }
 
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
+    fn compute_state_root(&self) -> StateResult<Buf32> {
         Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&self.state).into())
     }
 }
@@ -137,7 +137,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         self.state.epoch.set_total_ledger_balance(amt);
     }
 
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
@@ -145,7 +145,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
             .state
             .ledger
             .get_account_state_mut(&id)
-            .ok_or(AcctError::MissingExpectedAccount(id))?;
+            .ok_or(StateError::MissingAccount(id))?;
         Ok(f(acct))
     }
 
@@ -153,7 +153,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData,
-    ) -> AcctResult<AccountSerial> {
+    ) -> StateResult<AccountSerial> {
         let serial = self.state.global.get_next_avail_serial();
         self.state.create_new_account(id, serial, new_acct_data)?;
         self.serials.insert(serial, id);
@@ -162,7 +162,7 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 }
 
 impl IStateBatchApplicable for MemoryStateBaseLayer {
-    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> AcctResult<()> {
+    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> StateResult<()> {
         self.state.apply_write_batch(batch)
     }
 }
@@ -171,7 +171,7 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
     fn compute_state_root_with_writes<'b>(
         &self,
         writes: impl Iterator<Item = &'b WriteBatch<OLAccountState>>,
-    ) -> AcctResult<Buf32> {
+    ) -> StateResult<Buf32> {
         let mut state = self.state.clone();
 
         for wb in writes {

@@ -1,8 +1,11 @@
-use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
-use crate::account::{IAccountState, IAccountStateMut, NewAccountData};
+use crate::{
+    account::{IAccountState, IAccountStateMut, NewAccountData},
+    errors::StateResult,
+};
 
 /// Opaque interface for accessing the chainstate, for all of the parts directly
 /// under the toplevel state.
@@ -44,20 +47,20 @@ pub trait IStateAccessor {
     // ===== Account methods =====
 
     /// Checks if an account exists.
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool>;
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool>;
 
     /// Gets a ref to an account, if it exists. For read-only access.
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>>;
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>>;
 
     /// Resolves an account serial to an account ID.
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>>;
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>>;
 
     /// Returns the next account serial that will be assigned when creating a new account.
     fn next_account_serial(&self) -> AccountSerial;
 
     /// Computes the full state root, using whatever things we've updated.
     // TODO maybe don't use `AcctResult`, actually convert all/most of these to use a new error type
-    fn compute_state_root(&self) -> AcctResult<Buf32>;
+    fn compute_state_root(&self) -> StateResult<Buf32>;
 }
 
 /// Like [`IStateAccessor`], but for making writes to the chainstate.
@@ -98,7 +101,7 @@ pub trait IStateAccessorMut: IStateAccessor {
     /// in `AcctResult`.
     ///
     /// Returns an error if the account doesn't exist.
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R;
 
@@ -109,7 +112,7 @@ pub trait IStateAccessorMut: IStateAccessor {
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData,
-    ) -> AcctResult<AccountSerial>;
+    ) -> StateResult<AccountSerial>;
 }
 
 /// Resolves the first L1 block height represented by the ASM manifests MMR.

@@ -1,9 +1,7 @@
 //! Toplevel state.
 
-use strata_acct_types::{
-    AccountId, AccountSerial, AcctError, AcctResult, Mmr64, SYSTEM_RESERVED_ACCTS,
-};
-use strata_ledger_types::NewAccountData;
+use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS};
+use strata_ledger_types::{NewAccountData, StateError, StateResult};
 use strata_merkle::CompactMmr64;
 use strata_ol_params::OLParams;
 
@@ -16,7 +14,7 @@ use crate::{
 
 impl OLState {
     /// Creates initial OL state from genesis parameters.
-    pub fn from_genesis_params(params: &OLParams) -> AcctResult<Self> {
+    pub fn from_genesis_params(params: &OLParams) -> StateResult<Self> {
         let checkpointed_epoch = params.checkpointed_epoch();
         let manifests_mmr = Mmr64::from_generic(&CompactMmr64::new(64));
 
@@ -81,7 +79,7 @@ impl OLState {
     /// This function failing probably indicates the write batch was not
     /// intended for the state we're trying to apply it to, or some bug with how
     /// we're constructing write batches.
-    pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountState>) -> AcctResult<()> {
+    pub fn check_write_batch_safe(&self, batch: &WriteBatch<OLAccountState>) -> StateResult<()> {
         // Check serial ordering.
         let mut next_serial = self.global.get_next_avail_serial();
         for (serial, id) in batch.ledger().iter_new_accounts() {
@@ -92,7 +90,7 @@ impl OLState {
 
             // Check that the entry is consistent.
             if state.serial() != serial {
-                return Err(AcctError::AccountSerialInconsistent(
+                return Err(StateError::AcctSerialInconsistent(
                     *id,
                     state.serial(),
                     serial,
@@ -101,12 +99,12 @@ impl OLState {
 
             // Check that it works.
             if serial != next_serial {
-                return Err(AcctError::SerialSequence(serial, next_serial));
+                return Err(StateError::NextSerialSequence(serial, next_serial));
             }
 
             // Make sure that the account doesn't already exist.
             if self.ledger.get_account_state(id).is_some() {
-                return Err(AcctError::CreateExistingAccount(*id));
+                return Err(StateError::AccountExists(*id));
             }
 
             // Update next serial as if we added the account.
@@ -124,7 +122,7 @@ impl OLState {
 
             // Now make sure it exists.
             if self.ledger.get_account_state(id).is_none() {
-                return Err(AcctError::UpdateNonexistentAccount(*id));
+                return Err(StateError::AccountSanityCheckFail(*id));
             }
         }
 
@@ -137,7 +135,7 @@ impl OLState {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> AcctResult<()> {
+    pub fn apply_write_batch(&mut self, batch: WriteBatch<OLAccountState>) -> StateResult<()> {
         // Safety check first so we can use `.expect`.
         self.check_write_batch_safe(&batch)?;
         let (global_writes, epochal_writes, ledger) = batch.into_parts();
@@ -178,6 +176,7 @@ impl OLState {
         if let Some(epoch) = epochal_writes.cur_epoch {
             self.epoch.set_cur_epoch(epoch);
         }
+
         if let Some(blkid) = epochal_writes.last_l1_blkid {
             // We need to set both blkid and height together via last_l1_block.
             // For now, set them individually.
@@ -189,12 +188,15 @@ impl OLState {
             self.epoch.last_l1_block =
                 strata_identifiers::L1BlockCommitment::new(height, *self.epoch.last_l1_blkid());
         }
+
         if let Some(epoch) = epochal_writes.asm_recorded_epoch {
             self.epoch.set_asm_recorded_epoch(epoch);
         }
+
         if let Some(amt) = epochal_writes.total_ledger_balance {
             self.epoch.set_total_ledger_balance(amt);
         }
+
         if let Some(mmr) = epochal_writes.asm_manifests_mmr {
             self.epoch.manifests_mmr = mmr;
         }
@@ -212,7 +214,7 @@ impl OLState {
         id: AccountId,
         serial: AccountSerial,
         new_acct_data: NewAccountData,
-    ) -> AcctResult<()> {
+    ) -> StateResult<()> {
         // Sanity check serials.
         let exp_serial = self.global.get_next_avail_serial();
         debug_assert_eq!(exp_serial, serial, "state: inconsistent serials");
@@ -241,11 +243,11 @@ impl OLState {
     }
 
     #[cfg(test)]
-    pub fn check_account_exists(&self, id: &AccountId) -> Result<(), AcctError> {
+    pub fn check_account_exists(&self, id: &AccountId) -> Result<(), StateError> {
         self.ledger
             .get_account_state(id)
             .map(|_| ())
-            .ok_or(AcctError::MissingExpectedAccount(*id))
+            .ok_or(StateError::MissingAccount(*id))
     }
 }
 

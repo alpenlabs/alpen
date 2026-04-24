@@ -97,9 +97,8 @@ fn validate_snark_account_update_tx_seq_no(
                     account: target_account,
                 })?;
 
-        if let Err(AcctError::InvalidUpdateSequence { expected, got, .. }) =
-            snark_sys::verify_seq_no(target_account, snark_state, Seqno::from(tx_seq_no))
-        {
+        let res = snark_sys::verify_seq_no(target_account, snark_state, Seqno::from(tx_seq_no));
+        if let Err(ExecError::Acct(AcctError::InvalidUpdateSequence { expected, got, .. })) = res {
             return Err(seq_no_error_to_mempool_error(txid, expected, got));
         }
     }

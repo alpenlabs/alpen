@@ -28,11 +28,13 @@
 
 mod account;
 mod coin;
+mod errors;
 mod proofs;
 mod state_accessor;
 
 pub use account::*;
 pub use coin::Coin;
+pub use errors::*;
 pub use proofs::*;
 pub use state_accessor::*;
 // transitional crap

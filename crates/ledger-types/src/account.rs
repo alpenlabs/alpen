@@ -1,10 +1,8 @@
-use strata_acct_types::{
-    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, MessageEntry, Mmr64,
-};
+use strata_acct_types::{AccountSerial, AccountTypeId, BitcoinAmount, Hash, MessageEntry, Mmr64};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
-use crate::coin::Coin;
+use crate::{coin::Coin, errors::StateResult};
 
 /// Abstract account state.
 pub trait IAccountState: Clone + Sized {
@@ -34,7 +32,7 @@ pub trait IAccountState: Clone + Sized {
     fn type_state(&self) -> AccountTypeStateRef<'_, Self>;
 
     /// If we are a snark account, gets a ref to the type state.
-    fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState>;
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState>;
 }
 
 /// Abstract mutable account state.
@@ -46,10 +44,10 @@ pub trait IAccountStateMut: IAccountState {
     fn add_balance(&mut self, coin: Coin);
 
     /// Takes a coin from this account's balance, if funds are available.
-    fn take_balance(&mut self, amt: BitcoinAmount) -> AcctResult<Coin>;
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin>;
 
     /// If we are a snark, gets a mut ref to the type state.
-    fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut>;
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut>;
 }
 
 /// Type-specific initialization state for new accounts.
@@ -192,12 +190,12 @@ pub trait ISnarkAccountStateMut: ISnarkAccountState {
         next_read_idx: u64,
         seqno: Seqno,
         extra_data: &[u8],
-    ) -> AcctResult<()>;
+    ) -> StateResult<()>;
 
     /// Inserts message data into the inbox.  Performs no other operations.
     ///
     /// This is exposed like this so that we can expose the message entry in DA.
-    fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()>;
+    fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()>;
 
     /// Replaces the predicate key (verification key) used to verify future
     /// updates to this snark account.

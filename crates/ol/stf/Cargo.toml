@@ -24,7 +24,6 @@ strata-predicate.workspace = true
 strata-snark-acct-sys.workspace = true
 strata-snark-acct-types.workspace = true
 
-thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

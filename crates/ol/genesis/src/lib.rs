@@ -5,6 +5,7 @@ use std::result::Result as StdResult;
 use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
+use strata_ledger_types::StateError;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
@@ -42,9 +43,12 @@ pub enum GenesisError {
     #[error("invalid genesis L1 height {height}")]
     InvalidGenesisL1Height { height: u64 },
 
-    /// Failed to construct the genesis OL state.
-    #[error("failed to construct OL genesis state")]
-    GenesisState(#[from] AcctError),
+    /// Account related errors.
+    #[error("acct: {0}")]
+    Acct(#[from] AcctError),
+
+    #[error("state: {0}")]
+    State(#[from] StateError),
 }
 
 pub type Result<T> = StdResult<T, GenesisError>;

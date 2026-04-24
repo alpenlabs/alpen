@@ -60,10 +60,13 @@ impl IAccountState for OLAccountState {
         }
     }
 
-    fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState> {
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
         match &self.state {
             OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(AcctError::MismatchedType(self.ty(), AccountTypeId::Snark)),
+            _ => Err(StateError::MismatchedAcctType(
+                self.ty(),
+                AccountTypeId::Snark,
+            )),
         }
     }
 }
@@ -79,19 +82,19 @@ impl IAccountStateMut for OLAccountState {
         coin.safely_consume_unchecked();
     }
 
-    fn take_balance(&mut self, amt: BitcoinAmount) -> AcctResult<Coin> {
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         self.balance = self
             .balance
             .checked_sub(amt)
-            .expect("ledger: underflow balance");
+            .ok_or(StateError::InsufficientBalance(amt, self.balance))?;
         Ok(Coin::new_unchecked(amt))
     }
 
-    fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut> {
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
         let ty = self.ty();
         match &mut self.state {
             OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(AcctError::MismatchedType(ty, AccountTypeId::Snark)),
+            _ => Err(StateError::MismatchedAcctType(ty, AccountTypeId::Snark)),
         }
     }
 }

@@ -6,9 +6,9 @@
 
 use std::fmt;
 
-use strata_acct_types::{AccountId, AccountSerial, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IStateAccessor, StateResult};
 use strata_ol_state_types::WriteBatch;
 
 use crate::write_tracking_layer::IComputeStateRootWithWrites;
@@ -151,21 +151,21 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
 
     // ===== Account methods =====
 
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
         self.resolve(
             |b| b.ledger().contains_account(&id).then_some(Ok(true)),
             || self.base.check_account_exists(id),
         )
     }
 
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
         self.resolve(
             |b| b.ledger().get_account(&id).map(|s| Ok(Some(s))),
             || self.base.get_account_state(id),
         )
     }
 
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
         self.resolve(
             |b| b.ledger().find_id_by_serial(serial).map(|id| Ok(Some(id))),
             || self.base.find_account_id_by_serial(serial),
@@ -177,7 +177,7 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
         AccountSerial::from(base_serial + self.new_accounts as u32)
     }
 
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
+    fn compute_state_root(&self) -> StateResult<Buf32> {
         self.base
             .compute_state_root_with_writes(self.write_batches.iter())
     }
@@ -189,7 +189,7 @@ impl<'batches, 'base, S: IComputeStateRootWithWrites> IComputeStateRootWithWrite
     fn compute_state_root_with_writes<'b>(
         &'b self,
         writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
-    ) -> AcctResult<Buf32>
+    ) -> StateResult<Buf32>
     where
         Self::AccountState: 'b,
     {

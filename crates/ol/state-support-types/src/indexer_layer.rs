@@ -123,7 +123,7 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
         next_read_idx: u64,
         seqno: Seqno,
         extra_data: &[u8],
-    ) -> AcctResult<()> {
+    ) -> StateResult<()> {
         let op = SAStateUpdateOp::new(
             self.account_id,
             inner_state,
@@ -145,7 +145,7 @@ impl<S: ISnarkAccountStateMut> ISnarkAccountStateMut for IndexerSnarkAccountStat
         Ok(())
     }
 
-    fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
+    fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()> {
         // Record the index BEFORE insertion so that we capture the correct index.
         let index = self.inner.inbox_mmr().num_entries();
         let entry2 = entry.clone();
@@ -292,7 +292,7 @@ impl<A: IAccountStateMut> IAccountState for IndexerAccountStateMut<A> {
         }
     }
 
-    fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState> {
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
         self.inner.as_snark_account()
     }
 }
@@ -308,12 +308,12 @@ where
         self.inner.add_balance(coin);
     }
 
-    fn take_balance(&mut self, amt: BitcoinAmount) -> AcctResult<Coin> {
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         self.modified = true;
         self.inner.take_balance(amt)
     }
 
-    fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut> {
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
         // Initialize the snark wrapper lazily if needed.
         // We clone the snark state so we can own it in our wrapper while still
         // being able to sync changes back to the inner account in into_parts().
@@ -420,15 +420,15 @@ impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
 
     // ===== Account methods =====
 
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
         self.inner.check_account_exists(id)
     }
 
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
         self.inner.get_account_state(id)
     }
 
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
         self.inner.find_account_id_by_serial(serial)
     }
 
@@ -436,7 +436,7 @@ impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
         self.inner.next_account_serial()
     }
 
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
+    fn compute_state_root(&self) -> StateResult<Buf32> {
         self.inner.compute_state_root()
     }
 }
@@ -475,7 +475,7 @@ where
         self.inner.set_total_ledger_balance(amt);
     }
 
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
@@ -507,7 +507,7 @@ where
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData,
-    ) -> AcctResult<AccountSerial> {
+    ) -> StateResult<AccountSerial> {
         self.inner.create_new_account(id, new_acct_data)
     }
 }

@@ -5,7 +5,7 @@
 
 use std::{fmt, iter};
 
-use strata_acct_types::{AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 use strata_ledger_types::*;
@@ -21,7 +21,7 @@ pub trait IComputeStateRootWithWrites: IStateAccessor {
     fn compute_state_root_with_writes<'b>(
         &'b self,
         writes: impl Iterator<Item = &'b WriteBatch<Self::AccountState>>,
-    ) -> AcctResult<Buf32>
+    ) -> StateResult<Buf32>
     where
         Self::AccountState: 'b;
 }
@@ -141,7 +141,7 @@ where
 
     // ===== Account methods =====
 
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
         // Check write batch first
         if self.batch.ledger().contains_account(&id) {
             return Ok(true);
@@ -150,7 +150,7 @@ where
         self.base.check_account_exists(id)
     }
 
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
         // Check write batch first
         if let Some(state) = self.batch.ledger().get_account(&id) {
             return Ok(Some(state));
@@ -159,7 +159,7 @@ where
         self.base.get_account_state(id)
     }
 
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
         // Check write batch first (for newly created accounts)
         if let Some(id) = self.batch.ledger().find_id_by_serial(serial) {
             return Ok(Some(id));
@@ -174,7 +174,7 @@ where
         AccountSerial::from(base_serial + new_count)
     }
 
-    fn compute_state_root(&self) -> AcctResult<Buf32> {
+    fn compute_state_root(&self) -> StateResult<Buf32> {
         self.base
             .compute_state_root_with_writes(iter::once(&self.batch))
     }
@@ -226,7 +226,7 @@ where
         ew.last_l1_height = Some(height);
     }
 
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
@@ -235,7 +235,7 @@ where
             let account = self
                 .base
                 .get_account_state(id)?
-                .ok_or(AcctError::MissingExpectedAccount(id))?
+                .ok_or(StateError::MissingAccount(id))?
                 .clone();
             self.batch.ledger_mut().update_account(id, account);
         }
@@ -253,7 +253,7 @@ where
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData,
-    ) -> AcctResult<AccountSerial> {
+    ) -> StateResult<AccountSerial> {
         let serial = self.next_account_serial();
         self.batch
             .ledger_mut()
@@ -264,7 +264,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use strata_acct_types::{AcctError, BitcoinAmount};
+    use strata_acct_types::BitcoinAmount;
     use strata_asm_manifest_types::AsmManifest;
     use strata_identifiers::{Buf32, L1BlockId, L1Height, WtxidsRoot};
     use strata_ledger_types::*;
@@ -576,6 +576,6 @@ mod tests {
         let nonexistent_id = test_account_id(99);
         let result = tracking.update_account(nonexistent_id, |_acct: &mut OLAccountState| {});
 
-        assert!(matches!(result, Err(AcctError::MissingExpectedAccount(_))));
+        assert!(matches!(result, Err(StateError::MissingAccount(_))));
     }
 }

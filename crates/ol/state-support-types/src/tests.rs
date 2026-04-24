@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use strata_acct_types::{
-    AccountId, AccountTypeId, AcctError, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
+    AccountId, AccountTypeId, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_da_framework::decode_buf_exact;
@@ -525,12 +525,12 @@ impl ISnarkAccountStateMut for TestSnarkState {
         next_read_idx: u64,
         seqno: Seqno,
         _extra_data: &[u8],
-    ) -> strata_acct_types::AcctResult<()> {
+    ) -> StateResult<()> {
         self.set_proof_state_directly(inner_state, next_read_idx, seqno);
         Ok(())
     }
 
-    fn insert_inbox_message(&mut self, _entry: MessageEntry) -> strata_acct_types::AcctResult<()> {
+    fn insert_inbox_message(&mut self, _entry: MessageEntry) -> StateResult<()> {
         Ok(())
     }
 
@@ -589,10 +589,11 @@ impl IAccountState for TestAccountState {
         }
     }
 
-    fn as_snark_account(&self) -> strata_acct_types::AcctResult<&Self::SnarkAccountState> {
-        self.snark
-            .as_ref()
-            .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
+        self.snark.as_ref().ok_or(StateError::MismatchedAcctType(
+            self.ty,
+            AccountTypeId::Snark,
+        ))
     }
 }
 
@@ -605,16 +606,15 @@ impl IAccountStateMut for TestAccountState {
         coin.safely_consume_unchecked();
     }
 
-    fn take_balance(&mut self, amt: BitcoinAmount) -> strata_acct_types::AcctResult<Coin> {
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         panic!("test: take_balance called in test for {amt}");
     }
 
-    fn as_snark_account_mut(
-        &mut self,
-    ) -> strata_acct_types::AcctResult<&mut Self::SnarkAccountStateMut> {
-        self.snark
-            .as_mut()
-            .ok_or(AcctError::MismatchedType(self.ty, AccountTypeId::Snark))
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
+        self.snark.as_mut().ok_or(StateError::MismatchedAcctType(
+            self.ty,
+            AccountTypeId::Snark,
+        ))
     }
 }
 
@@ -674,21 +674,15 @@ impl IStateAccessor for TestState {
         self.total_ledger_balance
     }
 
-    fn check_account_exists(&self, id: AccountId) -> strata_acct_types::AcctResult<bool> {
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
         Ok(self.accounts.contains_key(&id))
     }
 
-    fn get_account_state(
-        &self,
-        id: AccountId,
-    ) -> strata_acct_types::AcctResult<Option<&Self::AccountState>> {
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
         Ok(self.accounts.get(&id))
     }
 
-    fn find_account_id_by_serial(
-        &self,
-        serial: AccountSerial,
-    ) -> strata_acct_types::AcctResult<Option<AccountId>> {
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
         Ok(self
             .accounts
             .iter()
@@ -699,7 +693,7 @@ impl IStateAccessor for TestState {
         self.next_serial
     }
 
-    fn compute_state_root(&self) -> strata_acct_types::AcctResult<Buf32> {
+    fn compute_state_root(&self) -> StateResult<Buf32> {
         Ok(Buf32::zero())
     }
 
@@ -729,14 +723,14 @@ impl IStateAccessorMut for TestState {
         self.total_ledger_balance = amt;
     }
 
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> strata_acct_types::AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
         let acct = self
             .accounts
             .get_mut(&id)
-            .ok_or(AcctError::UpdateNonexistentAccount(id))?;
+            .ok_or(StateError::MissingAccount(id))?;
         Ok(f(acct))
     }
 
@@ -744,9 +738,9 @@ impl IStateAccessorMut for TestState {
         &mut self,
         id: AccountId,
         new_acct_data: NewAccountData,
-    ) -> strata_acct_types::AcctResult<AccountSerial> {
+    ) -> StateResult<AccountSerial> {
         if self.accounts.contains_key(&id) {
-            return Err(AcctError::CreateExistingAccount(id));
+            return Err(StateError::AccountExists(id));
         }
 
         let serial = if let Some(serial) = self.serial_overrides.pop_front() {

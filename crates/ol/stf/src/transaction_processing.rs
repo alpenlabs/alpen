@@ -166,7 +166,7 @@ fn apply_tx_effects<S: IStateAccessorMut>(
     // value.
     if source != SEQUENCER_ACCT_ID && !total_sent.is_zero() {
         state.update_account(source, |astate| {
-            let coin = astate.take_balance(total_sent).map_err(ExecError::Acct)?;
+            let coin = astate.take_balance(total_sent)?;
             coin.safely_consume_unchecked(); // take from this later
             ExecResult::Ok(())
         })??;
