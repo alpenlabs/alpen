@@ -24,7 +24,6 @@ services:
       context: ..
       dockerfile: docker/strata/Dockerfile
     image: strata:latest
-    user: "0:0"
     depends_on:
       - bitcoind
     environment:
