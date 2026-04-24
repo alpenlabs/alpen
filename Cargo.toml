@@ -293,10 +293,10 @@ typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
   "arbitrary",
   "ssz",
-], tag = "v0.1.0-alpha-rc24" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24" }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
+], tag = "v0.1.0-alpha-rc25" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25" }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25", features = [
   "remote-prover",
 ] }
 

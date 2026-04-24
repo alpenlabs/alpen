@@ -9,7 +9,7 @@ workspace = true
 [dependencies]
 # sp1
 strata-sp1-guest-builder = { path = "../../../provers/sp1", optional = true }
-zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24", features = [
+zkaleido-sp1-host = { workspace = true, features = [
   "remote-prover",
 ], optional = true }
 

@@ -111,6 +111,13 @@ use crate::{
 #[cfg(feature = "sequencer")]
 const ALPEN_EE_BLOCK_TIME_MS_ENV_VAR: &str = "ALPEN_EE_BLOCK_TIME_MS";
 
+/// Default end-to-end deadline applied to the SP1 prover network for the EE
+/// chunk + acct provers when `--sp1-proof-deadline-secs` is not set. Chosen
+/// to comfortably cover chunk/acct proofs while still failing fast on stuck
+/// requests.
+#[cfg(all(feature = "sequencer", feature = "sp1"))]
+const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
+
 /// Maps btcio monitor completion into the runtime exit result.
 #[cfg(feature = "sequencer")]
 fn map_btcio_monitor_completion(
@@ -691,8 +698,19 @@ fn main() {
                 } else {
                     #[cfg(feature = "sp1")]
                     {
-                        let chunk_host: SP1Host = (**ALPEN_CHUNK_HOST).clone();
-                        let acct_host: SP1Host = (**ALPEN_ACCT_HOST).clone();
+                        let deadline_secs = ext
+                            .sp1_proof_deadline_secs
+                            .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
+                        let deadline = Duration::from_secs(deadline_secs);
+                        info!(
+                            target: "alpen-client",
+                            deadline_secs,
+                            "sp1 EE prover deadline configured"
+                        );
+                        let chunk_host: SP1Host =
+                            (**ALPEN_CHUNK_HOST).clone().with_deadline(deadline);
+                        let acct_host: SP1Host =
+                            (**ALPEN_ACCT_HOST).clone().with_deadline(deadline);
                         (
                             chunk_builder.remote(chunk_host),
                             acct_builder.remote(acct_host),
@@ -906,6 +924,13 @@ pub struct AdditionalConfig {
     /// without the SP1 prover ELFs present on disk.
     #[arg(long, default_value_t = false)]
     pub dev_native_prover: bool,
+
+    /// End-to-end deadline (seconds) passed to the SP1 prover network on
+    /// every chunk/acct proof request. Only used with the remote SP1
+    /// backend. When unset, a built-in default is applied (see
+    /// `DEFAULT_SP1_DEADLINE_SECS`).
+    #[arg(long, required = false)]
+    pub sp1_proof_deadline_secs: Option<u64>,
 }
 
 /// Run node with logging
