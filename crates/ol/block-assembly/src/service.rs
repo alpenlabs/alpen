@@ -63,7 +63,12 @@ where
 
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         // Lazily clean up expired templates on every command.
-        state.state_mut().cleanup_expired_templates();
+        let expired_template_ids = state.state_mut().cleanup_expired_templates();
+        for template_id in expired_template_ids {
+            state
+                .epoch_da_tracker_mut()
+                .remove_accumulated_da(template_id);
+        }
 
         match input {
             BlockasmCommand::GenerateBlockTemplate { config, completion } => {
@@ -151,9 +156,14 @@ where
         .epoch_da_tracker_mut()
         .set_accumulated_da_and_remove_parent_entry(template_id, parent_blkid, accumulated_da);
 
-    state
+    let evicted_template_ids = state
         .state_mut()
         .insert_template(template_id, full_template.clone());
+    for evicted_template_id in evicted_template_ids {
+        state
+            .epoch_da_tracker_mut()
+            .remove_accumulated_da(evicted_template_id);
+    }
 
     Ok(full_template)
 }
@@ -197,6 +207,9 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
 
     // Signature valid - now remove template from cache
     let template = state.state_mut().remove_template(template_id)?;
+    state
+        .epoch_da_tracker_mut()
+        .remove_accumulated_da(template_id);
 
     // Complete the template
     Ok(template.complete_block_template(completion_data))
@@ -236,12 +249,13 @@ mod tests {
     use super::*;
     use crate::{
         command::create_completion,
+        da_tracker::AccumulatedDaData,
         epoch_sealing::FixedSlotSealing,
         state::BlockasmServiceState,
         test_utils::{
             MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider, StateProviderHandle,
-            TEST_BLOCK_TEMPLATE_TTL, TestEnv, TestStorageFixtureBuilder, create_test_template,
-            test_account_id,
+            TEST_BLOCK_TEMPLATE_TTL, TestAccount, TestEnv, TestStorageFixtureBuilder,
+            create_test_template, create_test_template_with_parent, test_account_id,
         },
         types::BlockCompletionData,
     };
@@ -249,8 +263,9 @@ mod tests {
     type TestServiceState =
         BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, StateProviderHandle>;
 
-    async fn build_service_state(
+    async fn build_service_state_with_accounts(
         use_schnorr_cred_rule: bool,
+        accounts: impl IntoIterator<Item = TestAccount>,
     ) -> (
         TestServiceState,
         Arc<MockMempoolProvider>,
@@ -268,6 +283,7 @@ mod tests {
 
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_parent_slot(0)
+            .with_accounts(accounts)
             .build_fixture()
             .await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
@@ -282,6 +298,17 @@ mod tests {
         );
 
         (state, mempool, env, signing_key)
+    }
+
+    async fn build_service_state(
+        use_schnorr_cred_rule: bool,
+    ) -> (
+        TestServiceState,
+        Arc<MockMempoolProvider>,
+        TestEnv,
+        Option<Buf32>,
+    ) {
+        build_service_state_with_accounts(use_schnorr_cred_rule, Vec::<TestAccount>::new()).await
     }
 
     fn valid_completion_data(
@@ -334,6 +361,53 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_process_input_cleanup_evicts_expired_da_tracker_entry() {
+        let (mut state, _mempool, env, _sk) = build_service_state(false).await;
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+        let parent = *template.header().parent_blkid();
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(template_id)
+                .is_some(),
+            "generated template should have tracked DA entry"
+        );
+
+        state
+            .state_mut()
+            .set_template_created_at_for_test(template_id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .expect("template should be present before backdating");
+
+        let (completion, rx) = create_completion();
+        let cmd = BlockasmCommand::GetBlockTemplate {
+            parent_block_id: parent,
+            completion,
+        };
+        BlockasmService::<_, _, _>::process_input(&mut state, cmd)
+            .await
+            .expect("process_input should succeed");
+        let lookup_result = rx.await.expect("lookup completion should be delivered");
+        assert!(
+            matches!(
+                lookup_result,
+                Err(BlockAssemblyError::NoPendingTemplateForParent(p)) if p == parent
+            ),
+            "lookup should fail after expired template cleanup"
+        );
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(template_id)
+                .is_none(),
+            "expired template cleanup should evict DA tracker entry"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_generate_reuses_cached_template() {
         let (mut state, mempool, env, _sk) = build_service_state(false).await;
         let config = BlockGenerationConfig::new(env.parent_commitment());
@@ -362,6 +436,102 @@ mod tests {
             second.get_blockid(),
             template_id,
             "same parent should return exact cached template id"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_new_template_for_same_parent_evicts_expired_template_da_entry() {
+        let sender = test_account_id(91);
+        let (mut state, mempool, env, _sk) =
+            build_service_state_with_accounts(false, [TestAccount::new(sender, 10_000)]).await;
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+
+        let first = generate_block_template(&mut state, config.clone())
+            .await
+            .expect("first generation should succeed");
+        let first_template_id = first.get_blockid();
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(first_template_id)
+                .is_some(),
+            "first generation should store accumulated DA entry"
+        );
+        state
+            .state_mut()
+            .set_template_created_at_for_test(
+                first_template_id,
+                Instant::now() - TEST_BLOCK_TEMPLATE_TTL,
+            )
+            .expect("first template should be present before backdating");
+
+        // Make regenerated template content differ so block ID replacement path is deterministic.
+        let tx = MempoolSnarkTxBuilder::new(sender).with_seq_no(0).build();
+        mempool.add_transaction(tx.compute_txid(), tx);
+
+        let second = generate_block_template(&mut state, config)
+            .await
+            .expect("regeneration after expiry should succeed");
+        let second_template_id = second.get_blockid();
+        assert_ne!(
+            second_template_id, first_template_id,
+            "regeneration should produce a distinct template id"
+        );
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(first_template_id)
+                .is_none(),
+            "same-parent replacement should evict old DA tracker entry"
+        );
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(second_template_id)
+                .is_some(),
+            "new template should retain DA tracker entry"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_insert_cleans_expired_da_entry_for_different_parent() {
+        let (mut state, _mempool, env, _sk) = build_service_state(false).await;
+
+        let stale_parent = OLBlockId::from(Buf32::from([0xAB; 32]));
+        let stale_template = create_test_template_with_parent(stale_parent);
+        let stale_template_id = stale_template.get_blockid();
+        state
+            .state_mut()
+            .insert_template(stale_template_id, stale_template);
+        state
+            .epoch_da_tracker_mut()
+            .set_accumulated_da(stale_template_id, AccumulatedDaData::new_empty());
+        state
+            .state_mut()
+            .set_template_created_at_for_test(
+                stale_template_id,
+                Instant::now() - TEST_BLOCK_TEMPLATE_TTL,
+            )
+            .expect("stale template should be present before backdating");
+
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let _new_template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed while cleaning unrelated stale entry");
+
+        assert!(
+            matches!(
+                state.state_mut().get_pending_block_template(stale_template_id),
+                Err(BlockAssemblyError::UnknownTemplateId(id)) if id == stale_template_id
+            ),
+            "unrelated expired template should be removed during insert-time cleanup"
+        );
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(stale_template_id)
+                .is_none(),
+            "insert-time cleanup should evict stale DA tracker entry"
         );
     }
 
@@ -483,6 +653,13 @@ mod tests {
                 Err(BlockAssemblyError::UnknownTemplateId(id)) if id == template_id
             ),
             "template should be removed after successful completion"
+        );
+        assert!(
+            state
+                .epoch_da_tracker()
+                .get_accumulated_da(template_id)
+                .is_none(),
+            "successful completion should evict DA tracker entry"
         );
 
         let err = complete_block_template(&mut state, template_id, completion_data)

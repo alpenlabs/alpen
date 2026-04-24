@@ -31,6 +31,11 @@ impl EpochDaTracker {
         self.block_da_map.insert(blkid, da);
     }
 
+    /// Removes accumulated DA for a block id, if present.
+    pub(crate) fn remove_accumulated_da(&mut self, blkid: OLBlockId) {
+        self.block_da_map.remove(&blkid);
+    }
+
     /// Inserts the entry for given block id and also removes the entry for parent if exists. This
     /// method is used to optimize memory usage because in the next assembly we would require
     /// accumulation upto the current block and not the parent block.

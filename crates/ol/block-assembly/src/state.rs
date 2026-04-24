@@ -68,7 +68,14 @@ impl BlockAssemblyState {
     /// Insert a new pending template.
     ///
     /// Invariant: at most one pending template per parent.
-    pub(crate) fn insert_template(&mut self, template_id: OLBlockId, template: FullBlockTemplate) {
+    ///
+    /// Returns template IDs evicted while inserting (same-parent replacement and TTL cleanup).
+    pub(crate) fn insert_template(
+        &mut self,
+        template_id: OLBlockId,
+        template: FullBlockTemplate,
+    ) -> Vec<OLBlockId> {
+        let mut evicted_template_ids = Vec::new();
         let parent = *template.header().parent_blkid();
 
         // If we already have a template cached for this parent, evict it to avoid orphans.
@@ -76,6 +83,7 @@ impl BlockAssemblyState {
             && old_id != template_id
         {
             self.pending_templates.remove(&old_id);
+            evicted_template_ids.push(old_id);
         }
 
         // Insert/overwrite the template itself.
@@ -91,7 +99,8 @@ impl BlockAssemblyState {
             );
         }
 
-        self.cleanup_expired_templates();
+        evicted_template_ids.extend(self.cleanup_expired_templates());
+        evicted_template_ids
     }
 
     /// Gets a pending template by template ID.
@@ -147,8 +156,8 @@ impl BlockAssemblyState {
         Ok(cached.template)
     }
 
-    /// Removes expired entries from both maps.
-    pub(crate) fn cleanup_expired_templates(&mut self) {
+    /// Removes expired entries from both maps and returns removed template IDs.
+    pub(crate) fn cleanup_expired_templates(&mut self) -> Vec<OLBlockId> {
         let now = Instant::now();
         let ttl = self.ttl;
         let expired_ids: Vec<OLBlockId> = self
@@ -166,6 +175,7 @@ impl BlockAssemblyState {
                 }
             }
         }
+        expired_ids
     }
 
     /// Sets a cached template creation time for expiry tests.
