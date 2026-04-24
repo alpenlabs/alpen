@@ -2,7 +2,7 @@
 //!
 //! The DA blob pipeline needs an [`EvmHeaderSummary`] for each batch so that
 //! verifiers can reconstruct EVM chain metadata (block number, timestamp,
-//! base fee, gas used/limit, block hash, state root). [`RethHeaderSummaryProvider`]
+//! base fee, gas used/limit, state root). [`RethHeaderSummaryProvider`]
 //! satisfies the [`HeaderSummaryProvider`] trait by reading headers directly
 //! from the Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 //!
@@ -55,7 +55,6 @@ fn summarize_header(header: &reth_primitives::Header) -> eyre::Result<EvmHeaderS
         })?,
         gas_used: header.gas_used,
         gas_limit: header.gas_limit,
-        block_hash: Hash::from(header.hash_slow().0),
         state_root: Hash::from(header.state_root.0),
     })
 }
@@ -68,8 +67,7 @@ mod tests {
     use super::*;
 
     /// Header → EvmHeaderSummary mapping: verifies each field comes from the
-    /// right source on the reth header, catching swaps (e.g. `block_hash`
-    /// vs `state_root`) that would compile but corrupt DA blobs.
+    /// right source on the reth header.
     #[test]
     fn summarize_header_maps_fields_correctly() {
         let state_root = B256::repeat_byte(0xAA);
@@ -84,8 +82,6 @@ mod tests {
             state_root,
             ..Default::default()
         };
-        let expected_block_hash_bytes = header.hash_slow().0;
-
         let summary = summarize_header(&header).expect("mapping must succeed");
 
         assert_eq!(summary.block_num, 12345);
@@ -94,18 +90,9 @@ mod tests {
         assert_eq!(summary.gas_used, 15_000_000);
         assert_eq!(summary.gas_limit, 30_000_000);
         assert_eq!(
-            summary.block_hash,
-            Hash::from(expected_block_hash_bytes),
-            "block_hash must come from header.hash_slow(), not state_root"
-        );
-        assert_eq!(
             summary.state_root,
             Hash::from(expected_state_root_bytes),
-            "state_root must come from header.state_root, not hash_slow()"
-        );
-        assert_ne!(
-            summary.block_hash, summary.state_root,
-            "distinct sources must produce distinct values — guards against field-swap regressions"
+            "state_root must come from header.state_root"
         );
     }
 

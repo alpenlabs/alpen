@@ -13,19 +13,19 @@ use crate::BatchId;
 
 /// Compact summary of the last EVM block header in a batch.
 ///
-/// Captures the subset of the EVM block header a sequencer recovering
+/// Captures the subset of the terminal EVM block header a sequencer recovering
 /// purely from L1 DA needs to (a) build the next EVM block and (b) feed
 /// the EE proof statement. A fresh sequencer has the [`BatchStateDiff`]
 /// (account/storage changes) but **not** the block headers themselves —
-/// these fields fill that gap.
+/// these fields fill that gap. The terminal block hash is carried separately
+/// by [`DaBlob::batch_id`].
 ///
 /// - `base_fee`, `gas_used`, `gas_limit` feed the EIP-1559 base-fee calculation and gas-limit
 ///   adjustment for the next block.
 /// - `timestamp` enforces monotonicity (`next > parent`).
 /// - `block_num` identifies where the chain continues.
-/// - `block_hash` becomes the `parent_hash` of the next block and anchors chain-continuity checks
-///   in the EE proof.
-/// - `state_root` pins the pre-state root the next block's EE proof opens against.
+/// - `state_root` is the terminal post-state root, which pins the pre-state root the next block's
+///   EE proof opens against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
 pub struct EvmHeaderSummary {
     /// Block number of the last EVM block in this batch.
@@ -38,11 +38,6 @@ pub struct EvmHeaderSummary {
     pub gas_used: u64,
     /// Gas limit of the last EVM block.
     pub gas_limit: u64,
-    /// Block hash of the last EVM block in this batch.
-    ///
-    /// Becomes the `parent_hash` of the next block; required by the EE
-    /// proof for chain-continuity verification.
-    pub block_hash: Hash,
     /// Post-state root of the last EVM block.
     ///
     /// Required by the EE proof so the next block's pre-state root can
@@ -323,7 +318,6 @@ mod tests {
                 base_fee: 1_000_000_000,
                 gas_used: 15_000_000,
                 gas_limit: 30_000_000,
-                block_hash: Hash::from([0x33; 32]),
                 state_root: Hash::from([0x44; 32]),
             },
             state_diff: BatchStateDiff::default(),

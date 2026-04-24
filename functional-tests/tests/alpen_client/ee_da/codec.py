@@ -46,7 +46,6 @@ class EvmHeaderDigest:
     base_fee: int
     gas_used: int
     gas_limit: int
-    block_hash: bytes
     state_root: bytes
 
 
@@ -127,16 +126,15 @@ def parse_evm_header_digest(data: bytes) -> EvmHeaderDigest | None:
     """
     Parse EvmHeaderDigest from strata-codec encoded bytes.
 
-    Layout (104 bytes):
+    Layout (72 bytes):
     - block_num: 8 bytes
     - timestamp: 8 bytes
     - base_fee: 8 bytes
     - gas_used: 8 bytes
     - gas_limit: 8 bytes
-    - block_hash: 32 bytes
     - state_root: 32 bytes
     """
-    if len(data) < 104:
+    if len(data) < 72:
         return None
 
     return EvmHeaderDigest(
@@ -145,8 +143,7 @@ def parse_evm_header_digest(data: bytes) -> EvmHeaderDigest | None:
         base_fee=int.from_bytes(data[16:24], "big"),
         gas_used=int.from_bytes(data[24:32], "big"),
         gas_limit=int.from_bytes(data[32:40], "big"),
-        block_hash=data[40:72],
-        state_root=data[72:104],
+        state_root=data[40:72],
     )
 
 
@@ -157,17 +154,16 @@ def parse_da_blob(data: bytes) -> DaBlob | None:
     Layout:
     - batch_id.prev_block: 32 bytes (raw)
     - batch_id.last_block: 32 bytes (raw)
-    - evm_header: 104 bytes
+    - evm_header: 72 bytes
       - 5 x u64 BE
-      - block_hash: 32 bytes
       - state_root: 32 bytes
     - state_diff: remaining bytes (BatchStateDiff encoding)
     """
-    # Minimum: 32 + 32 + 104 = 168
-    if len(data) < 168:
+    # Minimum: 32 + 32 + 72 = 136
+    if len(data) < 136:
         return None
 
-    evm_header = parse_evm_header_digest(data[64:168])
+    evm_header = parse_evm_header_digest(data[64:136])
     if evm_header is None:
         return None
 
@@ -175,7 +171,7 @@ def parse_da_blob(data: bytes) -> DaBlob | None:
         batch_id_prev_block=data[0:32],
         batch_id_last_block=data[32:64],
         evm_header=evm_header,
-        state_diff=data[168:],
+        state_diff=data[136:],
     )
 
 
