@@ -142,8 +142,11 @@ jobs:
         run: |
           curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
           ~/.sp1/bin/sp1up
+          # Persist for later steps
           echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
-          cargo prove --version
+          # $GITHUB_PATH only affects SUBSEQUENT steps, so use direct path to
+          # verify install in the current step.
+          "$HOME/.sp1/bin/cargo-prove" prove --version
 
       - name: Build strata-datatool + SP1 guest ELFs
         if: matrix.program == 'strata'
