@@ -1131,7 +1131,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tracing",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
  "zkaleido-sp1-host",
 ]
 
@@ -1249,7 +1249,7 @@ dependencies = [
  "tokio",
  "tracing",
  "typed-sled",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
