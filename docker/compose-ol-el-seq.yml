@@ -1,0 +1,135 @@
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:latest
+    command:
+      - -signet
+      - -daemon=0
+      - -server=1
+      - -txindex=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=rpcuser
+      - -rpcpassword=rpcpassword
+      - -fallbackfee=0.0001
+    ports:
+      - "38332:38332"
+    volumes:
+      - bitcoind-data:/bitcoin/.bitcoin
+    networks:
+      - sequencer_network
+    restart: unless-stopped
+
+  strata:
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile
+    image: strata:latest
+    depends_on:
+      - bitcoind
+    environment:
+      CONFIG_PATH: /app/configs/config.seq.toml
+      SEQUENCER_CONFIG_PATH: /app/configs/sequencer.toml
+      PARAM_PATH: /app/configs/generated/rollup-params.json
+      OL_PARAMS_PATH: /app/configs/generated/ol-params.json
+      ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
+      BITCOIND_RPC_URL: http://bitcoind:38332
+      BITCOIND_RPC_USER: rpcuser
+      BITCOIND_RPC_PASSWORD: rpcpassword
+      BITCOIN_NETWORK: signet
+      RUST_LOG: ${RUST_LOG:-info}
+      RUST_BACKTRACE: 1
+    volumes:
+      - ./configs:/app/configs:ro
+      - strata-data:/app/data
+    ports:
+      - "8432:8432"
+    networks:
+      - sequencer_network
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    restart: unless-stopped
+
+  strata-signer:
+    build:
+      context: ..
+      dockerfile: docker/strata-signer/Dockerfile
+    image: strata-signer:latest
+    depends_on:
+      - strata
+    volumes:
+      - ./configs/strata-signer:/app/configs/strata-signer:ro
+      - ./configs/generated/sequencer.key:/app/configs/sequencer.key:ro
+    networks:
+      - sequencer_network
+    restart: unless-stopped
+
+  alpen-client:
+    build:
+      context: ..
+      dockerfile: docker/alpen-client/Dockerfile
+    image: alpen-client:latest
+    depends_on:
+      - strata
+    command:
+      - --sequencer
+      - --sequencer-pubkey
+      - "${SEQUENCER_PUBKEY:?SEQUENCER_PUBKEY must be set}"
+      - --ol-client-url
+      - ws://strata:8432
+      - --custom-chain
+      - "${CHAIN_SPEC:-dev}"
+      - --datadir
+      - /app/data
+      - --addr
+      - "0.0.0.0"
+      - --http
+      - --http.addr
+      - "0.0.0.0"
+      - --http.port
+      - "8545"
+      - --http.api
+      - eth,net,web3,txpool,admin,debug
+      - --ws
+      - --ws.addr
+      - "0.0.0.0"
+      - --ws.port
+      - "8546"
+      - --ws.api
+      - eth,net,web3,txpool
+      - --authrpc.addr
+      - "0.0.0.0"
+      - --authrpc.port
+      - "8551"
+      - --authrpc.jwtsecret
+      - /app/keys/jwt.hex
+      - --ee-da-magic-bytes
+      - "${EE_DA_MAGIC_BYTES:-ALPN}"
+      - --btc-rpc-url
+      - http://bitcoind:38332
+      - --btc-rpc-user
+      - rpcuser
+      - --btc-rpc-password
+      - rpcpassword
+    env_file:
+      - .env.alpen
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
+      - alpen-client-data:/app/data
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    networks:
+      - sequencer_network
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    restart: unless-stopped
+
+volumes:
+  bitcoind-data:
+  strata-data:
+  alpen-client-data:
+
+networks:
+  sequencer_network:
+    driver: bridge
+    name: sequencer_network
