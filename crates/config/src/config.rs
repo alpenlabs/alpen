@@ -251,6 +251,13 @@ pub struct ProverConfig {
     // value is effectively unused. Consider removing it once `paas` supports
     // defaulting unspecified backends to 0 workers (see also STR-1947).
     pub workers: usize,
+
+    /// End-to-end deadline (seconds) passed to the SP1 prover network on
+    /// every proof request. Only used when `backend = "sp1"`. When unset,
+    /// the strata prover service applies a built-in default (see
+    /// `DEFAULT_SP1_DEADLINE_SECS` in `bin/strata/src/prover/mod.rs`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sp1_proof_deadline_secs: Option<u64>,
 }
 
 impl Default for ProverConfig {
@@ -258,6 +265,7 @@ impl Default for ProverConfig {
         Self {
             backend: ProverBackend::default(),
             workers: DEFAULT_PROVER_WORKERS,
+            sp1_proof_deadline_secs: None,
         }
     }
 }
@@ -487,11 +495,17 @@ mod test {
         let config: ProverConfig = toml::from_str("").expect("empty prover config should default");
         assert_eq!(config.backend, ProverBackend::Native);
         assert_eq!(config.workers, DEFAULT_PROVER_WORKERS);
+        assert_eq!(config.sp1_proof_deadline_secs, None);
 
         let backend_only: ProverConfig =
             toml::from_str(r#"backend = "sp1""#).expect("backend-only prover config should parse");
         assert_eq!(backend_only.backend, ProverBackend::Sp1);
         assert_eq!(backend_only.workers, DEFAULT_PROVER_WORKERS);
+        assert_eq!(backend_only.sp1_proof_deadline_secs, None);
+
+        let with_deadline: ProverConfig = toml::from_str(r#"sp1_proof_deadline_secs = 3600"#)
+            .expect("prover config with deadline should parse");
+        assert_eq!(with_deadline.sp1_proof_deadline_secs, Some(3600));
     }
 
     #[test]
