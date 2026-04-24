@@ -94,7 +94,9 @@ jobs:
         id: resolve
         run: |
           COMMIT_SHA=$(git rev-parse HEAD)
-          SHORT_TAG="${COMMIT_SHA:0:7}"
+          # Pinned tag for the afb3683 staging-v2 deploy — binaries are from
+          # afb3683 source; CI plumbing is PR #1668 cherry-picked on top.
+          SHORT_TAG="afb3683"
           echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
           echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"
