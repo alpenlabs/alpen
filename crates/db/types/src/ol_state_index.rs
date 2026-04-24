@@ -246,14 +246,13 @@ impl EpochIndexingData {
     }
 }
 
-/// Per-block producer-side staging record, pending epoch fold.
+/// Per-block indexing record written by a full-node producer as each block
+/// finalizes. Folded into an [`EpochIndexingData`] at epoch finalization.
 ///
-/// Not on the [`OLStateIndexingDatabase`] trait: a full-node producer concern
-/// only (checkpoint sync builds [`EpochIndexingData`] directly).
-///
-/// [`OLStateIndexingDatabase`]: crate::traits::OLStateIndexingDatabase
+/// Checkpoint-sync producers skip this path and build [`EpochIndexingData`]
+/// directly from DA payloads.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct PerBlockStagingRecord {
+pub struct BlockIndexingRecord {
     /// Accounts created in this block.
     accounts_created: Vec<AccountId>,
 
@@ -261,7 +260,7 @@ pub struct PerBlockStagingRecord {
     accounts: Vec<(AccountId, AccountBlockIndexData)>,
 }
 
-impl PerBlockStagingRecord {
+impl BlockIndexingRecord {
     pub fn new(
         accounts_created: Vec<AccountId>,
         accounts: Vec<(AccountId, AccountBlockIndexData)>,

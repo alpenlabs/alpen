@@ -1,7 +1,7 @@
 //! Schema definitions for the OL state indexing database.
 
 use strata_db_types::ol_state_index::{
-    AccountEpochRecord, CommonEpochRecord, PerBlockStagingRecord,
+    AccountEpochRecord, BlockIndexingRecord, CommonEpochRecord,
 };
 use strata_identifiers::{AccountId, Epoch, OLBlockCommitment};
 
@@ -28,14 +28,14 @@ define_table_with_default_codec!(
     (OLAccountCreationEpochSchema) AccountId => Epoch
 );
 
-// Staging: keyed by (epoch, block commitment) with big-endian bincode so we
-// can prefix-scan all blocks in an epoch.
+// Block indexing: keyed by (epoch, block commitment) with big-endian bincode
+// so we can prefix-scan all blocks in an epoch.
 define_table_without_codec!(
-    /// Per-block staging record keyed by (epoch, block commitment).
-    (OLIndexStagingSchema) (Epoch, OLBlockCommitment) => PerBlockStagingRecord
+    /// Per-block indexing record keyed by (epoch, block commitment).
+    (OLBlockIndexingSchema) (Epoch, OLBlockCommitment) => BlockIndexingRecord
 );
 
-impl ::typed_sled::codec::KeyCodec<OLIndexStagingSchema> for (Epoch, OLBlockCommitment) {
+impl ::typed_sled::codec::KeyCodec<OLBlockIndexingSchema> for (Epoch, OLBlockCommitment) {
     fn encode_key(&self) -> Result<Vec<u8>, ::typed_sled::codec::CodecError> {
         use ::bincode::Options as _;
         let opts = ::bincode::options()
@@ -43,7 +43,7 @@ impl ::typed_sled::codec::KeyCodec<OLIndexStagingSchema> for (Epoch, OLBlockComm
             .with_big_endian();
         opts.serialize(self).map_err(|err| {
             ::typed_sled::codec::CodecError::SerializationFailed {
-                schema: OLIndexStagingSchema::tree_name(),
+                schema: OLBlockIndexingSchema::tree_name(),
                 source: err,
             }
         })
@@ -56,11 +56,11 @@ impl ::typed_sled::codec::KeyCodec<OLIndexStagingSchema> for (Epoch, OLBlockComm
             .with_big_endian();
         opts.deserialize(data).map_err(|err| {
             ::typed_sled::codec::CodecError::SerializationFailed {
-                schema: OLIndexStagingSchema::tree_name(),
+                schema: OLBlockIndexingSchema::tree_name(),
                 source: err,
             }
         })
     }
 }
 
-impl_cbor_value_codec!(OLIndexStagingSchema, PerBlockStagingRecord);
+impl_cbor_value_codec!(OLBlockIndexingSchema, BlockIndexingRecord);

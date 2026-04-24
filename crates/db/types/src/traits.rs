@@ -28,7 +28,9 @@ use crate::types::CheckpointEntry;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
-    ol_state_index::{AccountEpochRecord, CommonEpochRecord, EpochIndexingData},
+    ol_state_index::{
+        AccountEpochRecord, BlockIndexingRecord, CommonEpochRecord, EpochIndexingData,
+    },
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
         L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
@@ -720,6 +722,23 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
 
     /// Returns the epoch in which an account was created.
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;
+
+    /// Persists a per-block indexing record from a full-node producer.
+    ///
+    /// Folded into the epoch record at epoch finalization. Checkpoint-sync
+    /// producers do not use this path; their block-index tree remains empty.
+    fn put_block_indexing(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        record: BlockIndexingRecord,
+    ) -> DbResult<()>;
+
+    /// Returns all per-block indexing records for an epoch, in block-key order.
+    fn get_epoch_block_indexing(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Vec<(OLBlockCommitment, BlockIndexingRecord)>>;
 }
 
 /// Database interface for OL mempool transactions.
