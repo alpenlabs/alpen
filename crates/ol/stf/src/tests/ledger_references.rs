@@ -6,6 +6,9 @@ use strata_acct_types::{
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, WtxidsRoot};
 use strata_ledger_types::{IAccountState, IStateAccessor};
+use strata_ol_chain_types_new::{
+    OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
+};
 
 use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
 
@@ -289,5 +292,159 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
             err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
         },
         Ok(_) => panic!("Update with mismatched proof index should fail"),
+    }
+}
+
+#[test]
+fn test_snark_update_rejects_extra_ledger_reference_proof() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    // Setup: genesis with snark account
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    // Create parallel MMR tracker
+    let mut manifest_tracker = ManifestMmrTracker::new();
+
+    // Step 1: Execute a block with an ASM manifest
+    let manifest1 = AsmManifest::new(
+        1,
+        test_l1_block_id(1),
+        WtxidsRoot::from(Buf32::from([1u8; 32])),
+        vec![],
+    )
+    .expect("test manifest should be valid");
+    let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
+
+    let block1_info = BlockInfo::new(1001000, 1, 1); // slot 1, epoch 1
+    let block1_components = BlockComponents::new_manifests(vec![manifest1.clone()]);
+    let block1_output = execute_block_with_outputs(
+        &mut state,
+        &block1_info,
+        Some(genesis_block.header()),
+        block1_components,
+    )
+    .expect("Block 1 should execute");
+
+    let (manifest1_index, manifest1_proof) = manifest_tracker.add_manifest(&manifest1);
+
+    // Step 2: Build an update with one claim but two accumulator proofs.
+    // The first proof is consumed by the claim; the second must be rejected.
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
+    let extra_proof = manifest1_proof.clone();
+
+    let snark_state = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
+
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+        .with_ledger_refs(vec![claim], vec![manifest1_proof, extra_proof])
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
+
+    // Step 3: Execute and expect failure due to unconsumed accumulator proof.
+    let result = execute_tx_in_block(
+        &mut state,
+        block1_output.completed_block().header(),
+        tx,
+        2,
+        2,
+    );
+
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidUpdateProof { account_id }) => {
+                assert_eq!(account_id, snark_id);
+            }
+            err => panic!("Expected InvalidUpdateProof, got: {err:?}"),
+        },
+        Ok(_) => panic!("Update with an extra ledger reference proof should fail"),
+    }
+}
+
+#[test]
+fn test_snark_update_rejects_accumulator_proof_without_ledger_refs() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    // Setup: genesis with snark account
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    let snark_state = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
+
+    // No ledger refs and no inbox messages to consume accumulator proofs.
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32])
+        .with_accumulator_proofs(Some(
+            RawMerkleProofList::from_vec_nonempty(vec![RawMerkleProof::new_zero()])
+                .expect("non-empty proof list should be valid"),
+        ));
+
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, 1, 1);
+
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidUpdateProof { account_id }) => {
+                assert_eq!(account_id, snark_id);
+            }
+            err => panic!("Expected InvalidUpdateProof, got: {err:?}"),
+        },
+        Ok(_) => panic!("Update with unconsumed accumulator proof should fail"),
+    }
+}
+
+#[test]
+fn test_snark_update_rejects_extra_predicate_satisfier() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    // Setup: genesis with snark account
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    let snark_state = state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
+        .clone();
+
+    // Build a valid update first.
+    let base_tx = SnarkUpdateBuilder::from_snark_state(snark_state).build(
+        snark_id,
+        get_test_state_root(3),
+        get_test_proof(1),
+    );
+    let pred1 = ProofSatisfier::from_vec(get_test_proof(1)).expect("predicate proof should fit");
+    let pred2 = ProofSatisfier::from_vec(get_test_proof(2)).expect("predicate proof should fit");
+    let predicate_satisfiers = ProofSatisfierList::from_proofs(vec![pred1, pred2])
+        .expect("predicate satisfier list should fit");
+    let tx = OLTransaction::new(
+        base_tx.data().clone(),
+        TxProofs::new(
+            Some(predicate_satisfiers),
+            base_tx.proofs().accumulator_proofs().cloned(),
+        ),
+    );
+
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, 1, 1);
+
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidUpdateProof { account_id }) => {
+                assert_eq!(account_id, snark_id);
+            }
+            err => panic!("Expected InvalidUpdateProof, got: {err:?}"),
+        },
+        Ok(_) => panic!("Update with extra predicate satisfier should fail"),
     }
 }

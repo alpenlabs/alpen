@@ -290,4 +290,48 @@ mod tests {
         let err = tracker.inc_next_pred_proof().unwrap_err();
         assert!(matches!(err, ProofVerifyError::NoNextProof));
     }
+
+    #[test]
+    fn test_is_all_done_requires_consuming_all_proofs() {
+        let acc_proofs: Vec<RawMerkleProof> = (0..2).map(|_| RawMerkleProof::new_zero()).collect();
+        let pred_proofs: Vec<ProofSatisfier> = (0..2)
+            .map(|i| ProofSatisfier {
+                proof: vec![i as u8]
+                    .try_into()
+                    .expect("proof should not exceed capacity"),
+            })
+            .collect();
+
+        let tx_proofs = TxProofs::new(
+            Some(ProofSatisfierList {
+                proofs: pred_proofs
+                    .try_into()
+                    .expect("proofs should not exceed capacity"),
+            }),
+            Some(RawMerkleProofList {
+                proofs: acc_proofs
+                    .try_into()
+                    .expect("proofs should not exceed capacity"),
+            }),
+        );
+        let mut tracker = TxProofsTracker::from_txproofs(&tx_proofs);
+
+        // Consume one from each stream and ensure exhaustion is still false.
+        tracker
+            .inc_next_acc_proof()
+            .expect("first acc inc should work");
+        tracker
+            .inc_next_pred_proof()
+            .expect("first pred inc should work");
+        assert!(!tracker.is_all_done(), "one proof in each stream remains");
+
+        // Consume remaining proofs and ensure tracker now reports exhausted.
+        tracker
+            .inc_next_acc_proof()
+            .expect("second acc inc should work");
+        tracker
+            .inc_next_pred_proof()
+            .expect("second pred inc should work");
+        assert!(tracker.is_all_done(), "all proofs should be consumed");
+    }
 }
