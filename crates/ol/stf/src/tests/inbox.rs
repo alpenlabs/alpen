@@ -8,36 +8,39 @@ use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_u
 
 #[test]
 fn test_snark_inbox_message_insertion() {
-    let snark_id = make_account_id(100);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .execute_genesis();
 
-    fixture.child_block().with_default_gam(snark_id).execute();
+    fixture
+        .child_block()
+        .with_default_gam(snark_acct_id)
+        .execute();
 
     // Verify the message was added to inbox
-    let snark_state = fixture.expect_snark_account(snark_id);
+    let account_state = fixture.expect_snark_account(snark_acct_id);
 
     // Check that inbox MMR now has 1 entry (from GAM)
     assert_eq!(
-        snark_state.inbox_mmr().num_entries(),
+        account_state.inbox_mmr().num_entries(),
         1,
         "Inbox should have 1 message (GAM)"
     );
 
     // Check the seq no of the sender
     assert_eq!(
-        *snark_state.seqno().inner(),
+        *account_state.seqno().inner(),
         0,
         "Sender account seq no should not increase for GAM"
     );
 
     // Balance unchanged (GAM messages have 0 value)
     assert_eq!(
-        fixture.account_balance(snark_id),
+        fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(100_000_000),
         "Snark account balance should be unchanged"
     );
@@ -45,11 +48,11 @@ fn test_snark_inbox_message_insertion() {
 
 #[test]
 fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .with_genesis_empty_account(recipient_id)
@@ -59,7 +62,10 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     let mut inbox_tracker = InboxMmrTracker::new();
 
     // Step 1: Send a message to snark account inbox
-    let gam_output = fixture.child_block().with_default_gam(snark_id).execute();
+    let gam_output = fixture
+        .child_block()
+        .with_default_gam(snark_acct_id)
+        .execute();
 
     // Track the message in parallel MMR (must match exactly what the STF inserted:
     // GAM produces an empty MsgPayload with 0 value and no data)
@@ -72,23 +78,23 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     let gam_proof = inbox_tracker.add_message(&gam_msg_entry);
 
     // Step 2: Verify the parallel MMR matches the actual inbox MMR
-    let snark_state = fixture.expect_snark_account(snark_id);
-    let prev_seq_no = *snark_state.seqno().inner();
+    let account_state = fixture.expect_snark_account(snark_acct_id);
+    let prev_seq_no = *account_state.seqno().inner();
 
     assert_eq!(
-        snark_state.inbox_mmr().num_entries(),
+        account_state.inbox_mmr().num_entries(),
         inbox_tracker.num_entries(),
         "Parallel MMR must stay synchronized with actual inbox MMR"
     );
-    assert_eq!(snark_state.inbox_mmr().num_entries(), 1);
+    assert_eq!(account_state.inbox_mmr().num_entries(), 1);
 
     // The snark account starts with next_msg_read_idx = 0 (no messages processed yet)
-    assert_eq!(snark_state.next_inbox_msg_idx(), 0);
+    assert_eq!(account_state.next_inbox_msg_idx(), 0);
 
     // Step 3: Create update that indicates that the GAM message was processed.
     fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.with_processed_messages(vec![gam_msg_entry], vec![gam_proof])
                 .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
                 .with_state_root(make_state_root(2))
@@ -98,20 +104,20 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
     // Verify the update was applied
     assert_eq!(
-        fixture.account_balance(snark_id),
+        fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(90_000_000),
         "Sender account should be debited"
     );
 
     assert_eq!(
-        *fixture.expect_snark_account(snark_id).seqno().inner(),
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
         prev_seq_no + 1,
         "Sender seq no should increment"
     );
 
-    let snark_state = fixture.expect_snark_account(snark_id);
+    let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(
-        snark_state.next_inbox_msg_idx(),
+        account_state.next_inbox_msg_idx(),
         1,
         "Next inbox msg index should increment"
     );
@@ -125,11 +131,11 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
 #[test]
 fn test_snark_update_invalid_message_index() {
-    let snark_id = make_account_id(100);
-    let recipient_id = make_account_id(200);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .with_genesis_empty_account(recipient_id)
@@ -137,7 +143,7 @@ fn test_snark_update_invalid_message_index() {
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
                 .force_next_inbox_msg_idx(5)
                 .with_state_root(make_state_root(2))
@@ -155,26 +161,29 @@ fn test_snark_update_invalid_message_index() {
 
 #[test]
 fn test_snark_update_invalid_message_proof() {
-    let snark_id = make_account_id(100);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .execute_genesis();
 
     // Step 1: Send a gam message to snark's inbox
-    fixture.child_block().with_default_gam(snark_id).execute();
+    fixture
+        .child_block()
+        .with_default_gam(snark_acct_id)
+        .execute();
 
     // Verify the message was added to inbox
-    let snark_state = fixture.expect_snark_account(snark_id);
+    let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(
-        snark_state.inbox_mmr().num_entries(),
+        account_state.inbox_mmr().num_entries(),
         1,
         "1 inbox msg entry after gam message tx "
     );
     assert_eq!(
-        snark_state.next_inbox_msg_idx(),
+        account_state.next_inbox_msg_idx(),
         0,
         "next to be processed msg idx should be 0"
     );
@@ -192,7 +201,7 @@ fn test_snark_update_invalid_message_proof() {
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.with_processed_messages(vec![deposit_msg], vec![invalid_raw_proof])
                 .with_state_root(make_state_root(2))
                 .with_proof(vec![0u8; 32])
@@ -209,30 +218,36 @@ fn test_snark_update_invalid_message_proof() {
 
 #[test]
 fn test_snark_update_skip_message_out_of_order() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
 
     // Step 1: Send TWO messages to inbox
-    fixture.child_block().with_default_gam(snark_id).execute();
+    fixture
+        .child_block()
+        .with_default_gam(snark_acct_id)
+        .execute();
 
-    fixture.child_block().with_default_gam(snark_id).execute();
+    fixture
+        .child_block()
+        .with_default_gam(snark_acct_id)
+        .execute();
 
     // Verify we have 2 messages (2 GAMs, no deposit)
-    let snark_state = fixture.expect_snark_account(snark_id);
-    assert_eq!(snark_state.inbox_mmr().num_entries(), 2);
+    let account_state = fixture.expect_snark_account(snark_acct_id);
+    assert_eq!(account_state.inbox_mmr().num_entries(), 2);
 
     // Step 2: Try to process only the SECOND message (skipping first)
     // This should fail because messages must be processed in order starting from index 0
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
                 .force_next_inbox_msg_idx(2)
                 .with_state_root(make_state_root(2))

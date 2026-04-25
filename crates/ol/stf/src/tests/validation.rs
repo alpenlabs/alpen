@@ -7,11 +7,11 @@ use crate::{errors::ExecError, test_utils::*};
 
 #[test]
 fn test_snark_update_invalid_sequence_number() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .with_genesis_empty_account(recipient_id)
@@ -19,7 +19,7 @@ fn test_snark_update_invalid_sequence_number() {
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.force_seqno(5)
                 .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
                 .with_state_root(make_state_root(2))
@@ -37,11 +37,11 @@ fn test_snark_update_invalid_sequence_number() {
 
 #[test]
 fn test_snark_update_insufficient_balance() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(50_000_000))
         })
         .with_genesis_empty_account(recipient_id)
@@ -49,7 +49,7 @@ fn test_snark_update_insufficient_balance() {
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.transfer(recipient_id, BitcoinAmount::from_sat(100_000_000))
                 .with_state_root(make_state_root(2))
         })
@@ -63,18 +63,18 @@ fn test_snark_update_insufficient_balance() {
 
 #[test]
 fn test_snark_update_nonexistent_recipient() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let nonexistent_id = make_account_id(TEST_NONEXISTENT_ID); // Not created
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .execute_genesis();
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.transfer(nonexistent_id, BitcoinAmount::from_sat(10_000_000))
                 .with_state_root(make_state_root(2))
         })
