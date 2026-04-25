@@ -62,6 +62,18 @@ pub fn execute_block_with_outputs(
     construct_block(state, block_context, components)
 }
 
+/// Creates terminal-genesis block components with a single dummy manifest.
+pub fn genesis_block_components() -> BlockComponents {
+    let dummy_manifest = AsmManifest::new(
+        1, // Genesis manifest should be at height 1 when last_l1_height is 0
+        L1BlockId::from(Buf32::from([0u8; 32])),
+        WtxidsRoot::from(Buf32::from([0u8; 32])),
+        vec![],
+    )
+    .expect("test manifest should be valid");
+    BlockComponents::new_manifests(vec![dummy_manifest])
+}
+
 /// Build and execute a chain of empty blocks starting from genesis.
 ///
 /// Returns the headers of all blocks in the chain.
