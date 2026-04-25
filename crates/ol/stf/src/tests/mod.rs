@@ -8,6 +8,7 @@ mod inbox;
 mod ledger_references;
 mod limbo;
 mod multi_operations;
+mod partial_execution;
 mod stf;
 mod updates;
 mod validation;
