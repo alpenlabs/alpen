@@ -1046,37 +1046,47 @@ fn test_verify_empty_block_logs_root() {
 
 #[test]
 fn test_verify_rejects_mismatched_body_root() {
-    // Test that verification fails when body root doesn't match body hash
-    // Note: This test will only work when verify_block_structure is enabled
+    // Test that verification fails when body root doesn't match body hash.
     let mut state = create_test_genesis_state();
 
-    // Assemble a block with a transaction
-    let target = test_account_id(1);
-
+    // Assemble genesis first.
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(
+    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("Genesis assembly should succeed");
+
+    // Assemble a non-genesis block with a transaction.
+    let target = test_account_id(1);
+    let block1_info = BlockInfo::new(1001000, 1, 1);
+    let block1 = execute_block(
         &mut state,
-        &genesis_info,
-        None,
+        &block1_info,
+        Some(genesis.header()),
         BlockComponents::new_txs_from_ol_transactions(vec![make_gam_tx(target)]),
     )
-    .expect("Genesis assembly should succeed");
+    .expect("Block 1 assembly should succeed");
 
     // Tamper with the body root
     let wrong_root = Buf32::from([77u8; 32]);
-    let tampered_header = tamper_body_root(genesis.header(), wrong_root);
+    let tampered_header = tamper_body_root(block1.header(), wrong_root);
 
-    // When verify_block_structure is enabled, this should fail
-    // For now, we'll just verify that the block is structurally different
-    assert_ne!(
-        tampered_header.body_root(),
-        genesis.header().body_root(),
-        "Body root should be different after tampering"
+    // Positive control: untampered block verifies.
+    let mut verify_state = create_test_genesis_state();
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
+    assert_verification_succeeds(
+        &mut verify_state,
+        block1.header(),
+        Some(genesis.header().clone()),
+        block1.body(),
     );
 
-    // NOTE: Once verify_block_structure is uncommented in verification.rs,
-    // this test should verify that it fails with BlockStructureMismatch error
-    // For now, we just document the expected behavior
+    // Tampered block should fail with block-structure mismatch.
+    assert_verification_fails_with(
+        &mut verify_state,
+        &tampered_header,
+        Some(genesis.header().clone()),
+        block1.body(),
+        |e| matches!(e, ExecError::BlockStructureMismatch),
+    );
 }
 
 #[test]
