@@ -2,10 +2,13 @@
 
 use ssz_primitives::FixedBytes;
 use strata_acct_types::{
-    AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash,
+    AccountId, AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
 use strata_ledger_types::IStateAccessor;
+use strata_ol_chain_types_new::{
+    OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
+};
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -57,13 +60,22 @@ fn corrupt_proof(proof: RawMerkleProof) -> RawMerkleProof {
     }
 }
 
+fn expect_invalid_update_proof(err: ExecError, account_id: AccountId) {
+    match err.into_base() {
+        ExecError::Acct(AcctError::InvalidUpdateProof { account_id: actual }) => {
+            assert_eq!(actual, account_id);
+        }
+        err => panic!("Expected InvalidUpdateProof, got: {err:?}"),
+    }
+}
+
 #[test]
 fn test_snark_update_with_valid_ledger_reference() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .with_genesis_empty_account(recipient_id)
@@ -74,7 +86,7 @@ fn test_snark_update_with_valid_ledger_reference() {
 
     fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
                 .with_ledger_refs(vec![claim], vec![proof])
                 .with_state_root(make_state_root(2))
@@ -83,7 +95,7 @@ fn test_snark_update_with_valid_ledger_reference() {
         .execute();
 
     assert_eq!(
-        fixture.account_balance(snark_id),
+        fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(90_000_000),
         "Sender balance should be reduced"
     );
@@ -96,10 +108,10 @@ fn test_snark_update_with_valid_ledger_reference() {
 
 #[test]
 fn test_snark_update_with_invalid_ledger_reference() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .execute_genesis();
@@ -110,7 +122,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.with_ledger_refs(vec![claim], vec![invalid_proof])
                 .with_state_root(make_state_root(2))
                 .with_proof(vec![0u8; 32])
@@ -128,7 +140,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
     }
 
     assert_eq!(
-        fixture.account_balance(snark_id),
+        fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(100_000_000),
         "Balance should be unchanged after failed update"
     );
@@ -136,10 +148,10 @@ fn test_snark_update_with_invalid_ledger_reference() {
 
 #[test]
 fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
-    let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
 
     let mut fixture = OLStfFixture::builder()
-        .with_genesis_snark_account(snark_id, |acct| {
+        .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .execute_genesis();
@@ -150,7 +162,7 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
 
     let err = fixture
         .child_block()
-        .with_sau(snark_id, |sau| {
+        .with_sau(snark_acct_id, |sau| {
             sau.with_ledger_refs(vec![claim], vec![mismatched_proof])
                 .with_state_root(make_state_root(2))
                 .with_proof(vec![0u8; 32])
@@ -163,4 +175,78 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
         }
         err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
     }
+}
+
+#[test]
+fn test_snark_update_rejects_extra_ledger_reference_proof() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .execute_genesis();
+
+    let (claim, proof) =
+        execute_manifest_block_with_tracker(&mut fixture, make_empty_manifest(1, 1));
+    let extra_proof = proof.clone();
+
+    let tx =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
+            .with_ledger_refs(vec![claim], vec![proof, extra_proof])
+            .build(snark_acct_id, make_state_root(2), vec![0u8; 32]);
+
+    let err = fixture.child_block().with_tx(tx).execute_err();
+    expect_invalid_update_proof(err, snark_acct_id);
+}
+
+#[test]
+fn test_snark_update_rejects_accumulator_proof_without_ledger_refs() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .execute_genesis();
+
+    let tx =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
+            .build(snark_acct_id, make_state_root(2), vec![0u8; 32])
+            .with_accumulator_proofs(Some(
+                RawMerkleProofList::from_vec_nonempty(vec![RawMerkleProof::new_zero()])
+                    .expect("non-empty proof list should be valid"),
+            ));
+
+    let err = fixture.child_block().with_tx(tx).execute_err();
+    expect_invalid_update_proof(err, snark_acct_id);
+}
+
+#[test]
+fn test_snark_update_rejects_extra_predicate_satisfier() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .execute_genesis();
+
+    let base_tx =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
+            .build(snark_acct_id, make_state_root(3), make_proof(1));
+    let pred1 = ProofSatisfier::from_vec(make_proof(1)).expect("predicate proof should fit");
+    let pred2 = ProofSatisfier::from_vec(make_proof(2)).expect("predicate proof should fit");
+    let predicate_satisfiers = ProofSatisfierList::from_proofs(vec![pred1, pred2])
+        .expect("predicate satisfier list should fit");
+    let tx = OLTransaction::new(
+        base_tx.data().clone(),
+        TxProofs::new(
+            Some(predicate_satisfiers),
+            base_tx.proofs().accumulator_proofs().cloned(),
+        ),
+    );
+
+    let err = fixture.child_block().with_tx(tx).execute_err();
+    expect_invalid_update_proof(err, snark_acct_id);
 }
