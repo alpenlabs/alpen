@@ -1,8 +1,9 @@
 //! OL RPC server implementation for a strata node.
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_state_index::AccountEpochKey;
 use strata_identifiers::{
@@ -17,6 +18,7 @@ use strata_ol_rpc_types::{
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
+use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
 use strata_snark_acct_types::ProofState;
 use tracing::{error, info};
@@ -134,86 +136,12 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })
     }
 
-    async fn get_prev_terminal_next_inbox_msg_idx(
+    /// Resolves an epoch to its terminal-block OL state. Errors if either the
+    /// canonical commitment or the terminal-block state is missing.
+    async fn get_toplevel_ol_state_for_epoch(
         &self,
-        account_id: AccountId,
-        prev_epoch_commitment: EpochCommitment,
-    ) -> RpcResult<u64> {
-        let prev_terminal_commitment = prev_epoch_commitment.to_block_commitment();
-        let prev_ol_state = self
-            .provider
-            .get_toplevel_ol_state(prev_terminal_commitment)
-            .await
-            .map_err(|e| {
-                error!(
-                    ?e,
-                    %prev_terminal_commitment,
-                    "Failed to get previous epoch OL state"
-                );
-                db_error(e)
-            })?
-            .ok_or_else(|| {
-                not_found_error(format!(
-                    "No OL state found for previous terminal block {prev_terminal_commitment}"
-                ))
-            })?;
-
-        let prev_next_inbox_msg_idx = prev_ol_state
-            .get_account_state(account_id)
-            .map_err(|e| {
-                error!(
-                    ?e,
-                    %account_id,
-                    %prev_terminal_commitment,
-                    "Failed to get account state from previous epoch OL state"
-                );
-                internal_error(format!("Account error: {e}"))
-            })?
-            .and_then(|account_state| account_state.as_snark_account().ok())
-            .map_or(0, |snark_state| snark_state.next_inbox_msg_idx());
-
-        Ok(prev_next_inbox_msg_idx)
-    }
-
-    async fn fetch_account_epoch_messages(
-        &self,
-        account_id: AccountId,
         epoch: Epoch,
-        current_next_inbox_idx: Option<u64>,
-        prev_epoch_commitment: EpochCommitment,
-    ) -> RpcResult<Vec<MessageEntry>> {
-        // Epoch 0 is genesis-only in current flow: there is no prior terminal state and no
-        // collectable inbox updates, so messages are always empty.
-        if epoch == 0 {
-            return Ok(Vec::new());
-        }
-
-        let Some(end_idx_exclusive) = current_next_inbox_idx else {
-            return Ok(Vec::new());
-        };
-        if end_idx_exclusive == 0 {
-            return Ok(Vec::new());
-        }
-
-        let start_idx = self
-            .get_prev_terminal_next_inbox_msg_idx(account_id, prev_epoch_commitment)
-            .await?;
-
-        self.provider
-            .get_account_inbox_messages(account_id, start_idx, end_idx_exclusive)
-            .await
-            .map_err(db_error)
-    }
-}
-
-#[async_trait]
-impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
-    async fn get_acct_epoch_summary(
-        &self,
-        account_id: AccountId,
-        epoch: Epoch,
-    ) -> RpcResult<RpcAccountEpochSummary> {
-        // Get epoch commitments for the given epoch
+    ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
         let epoch_commitment = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
@@ -226,8 +154,6 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 not_found_error(format!("No canonical commitment found for epoch {epoch}"))
             })?;
 
-        // Get OL state at the terminal block using the epoch commitment directly
-        // (EpochCommitment already contains the terminal slot and block ID)
         let terminal_commitment = epoch_commitment.to_block_commitment();
         let ol_state = self
             .provider
@@ -243,7 +169,18 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 ))
             })?;
 
-        // Extract account state
+        Ok((epoch_commitment, ol_state))
+    }
+}
+
+#[async_trait]
+impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
+    async fn get_acct_epoch_summary(
+        &self,
+        account_id: AccountId,
+        epoch: Epoch,
+    ) -> RpcResult<RpcAccountEpochSummary> {
+        let (epoch_commitment, ol_state) = self.get_toplevel_ol_state_for_epoch(epoch).await?;
         let account_state = ol_state
             .get_account_state(account_id)
             .map_err(|e| {
@@ -252,74 +189,83 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             })?
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
-        // Extract snark-specific data if applicable.
-        // For non-snark accounts, these fields are zeroed since seqno and proof state
-        // concepts don't apply to them.
-        let (next_seq_no, proof_state, current_next_inbox_idx) =
-            match account_state.as_snark_account() {
-                Ok(snark_state) => {
-                    let seqno: u64 = *snark_state.seqno().inner();
-                    let inner_state = snark_state.inner_state_root();
-                    let next_inbox_idx = snark_state.next_inbox_msg_idx();
-                    (
-                        seqno,
-                        ProofState::new(inner_state, next_inbox_idx),
-                        Some(next_inbox_idx),
-                    )
-                }
-                Err(_) => (0, ProofState::new([0u8; 32].into(), 0), None), // Non-snark account
-            };
-
-        // Get previous epoch commitment if available
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
-        let update = if let Some(entry) = self
+        let updates = if let Some(entry) = self
             .provider
             .get_account_update_entry(AccountEpochKey::new(epoch, account_id))
             .await
             .map_err(db_error)?
         {
-            let messages = self
-                .fetch_account_epoch_messages(
-                    account_id,
-                    epoch,
-                    current_next_inbox_idx,
-                    prev_epoch_commitment,
-                )
-                .await?;
-
-            // FIXME: check if this is canonical or not and account for reorgs.
-            let last = entry.records().last().ok_or_else(|| {
-                internal_error(format!(
+            let records = entry.records();
+            if records.is_empty() {
+                return Err(internal_error(format!(
                     "indexing entry for account {account_id} epoch {epoch} has no records"
-                ))
-            })?;
-            let extra_data = last
-                .extra_data()
-                .ok_or_else(|| {
-                    internal_error(format!(
-                        "last update record for account {account_id} epoch {epoch} \
-                         has no extra_data (DirectSet)"
-                    ))
-                })?
-                .to_vec();
+                )));
+            }
 
-            let update = RpcUpdateInputData {
-                seq_no: next_seq_no,
-                proof_state: proof_state.into(),
-                extra_data: extra_data.into(),
-                messages: messages.into_iter().map(Into::into).collect(),
+            // Inbox-message ranges are contiguous per record:
+            // [prev_record.next_inbox_idx, this.next_inbox_idx). The first
+            // record's lower bound is the prior epoch's terminal next_inbox_idx.
+            // Epoch 0 is genesis: no prior terminal state, no collectable messages.
+            let skip_fetch = epoch == 0;
+            let mut cursor = if skip_fetch {
+                0
+            } else {
+                let (_, prev_ol_state) = self.get_toplevel_ol_state_for_epoch(epoch - 1).await?;
+                prev_ol_state
+                    .get_account_state(account_id)
+                    .map_err(|e| internal_error(format!("Account error: {e}")))?
+                    .and_then(|s| s.as_snark_account().ok())
+                    .map_or(0, |s| s.next_inbox_msg_idx())
             };
-            Some(update)
+
+            let mut out = Vec::with_capacity(records.len());
+            for r in records {
+                let meta = r.update_meta().ok_or_else(|| {
+                    internal_error(format!(
+                        "record for account {account_id} epoch {epoch} missing update_meta \
+                         (checkpoint-sync row not serveable here)"
+                    ))
+                })?;
+                let extra_data = r
+                    .extra_data()
+                    .ok_or_else(|| {
+                        internal_error(format!(
+                            "update record for account {account_id} epoch {epoch} \
+                             has no extra_data (DirectSet)"
+                        ))
+                    })?
+                    .to_vec();
+
+                let messages = if skip_fetch {
+                    Vec::new()
+                } else {
+                    self.provider
+                        .get_account_inbox_messages(account_id, cursor, r.next_inbox_idx())
+                        .await
+                        .map_err(db_error)?
+                };
+                cursor = r.next_inbox_idx();
+
+                out.push(RpcUpdateInputData {
+                    seq_no: r.seq_no(),
+                    proof_state: ProofState::new(meta.final_state_root(), r.next_inbox_idx())
+                        .into(),
+                    extra_data: extra_data.into(),
+                    messages: messages.into_iter().map(Into::into).collect(),
+                });
+            }
+            out
         } else {
-            None
+            Vec::new()
         };
 
         Ok(RpcAccountEpochSummary::new(
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
-            update,
+            updates,
         ))
     }
 

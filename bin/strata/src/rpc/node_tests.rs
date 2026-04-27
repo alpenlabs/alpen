@@ -145,11 +145,13 @@ impl MockProvider {
         mut self,
         account_id: AccountId,
         epoch: Epoch,
+        seq_no: u64,
+        next_inbox_idx: u64,
         extra_data: Vec<u8>,
         block: OLBlockCommitment,
     ) -> Self {
         let meta = AccountUpdateMeta::new(block, [0u8; 32].into());
-        let record = AccountUpdateRecord::new(Some(meta), 0, 0, Some(extra_data));
+        let record = AccountUpdateRecord::new(Some(meta), seq_no, next_inbox_idx, Some(extra_data));
         self.account_update_entries.insert(
             AccountEpochKey::new(epoch, account_id),
             AccountUpdateEntry::new(vec![record]),
@@ -161,15 +163,32 @@ impl MockProvider {
         self,
         account_id: AccountId,
         epoch: Epoch,
+        seq_no: u64,
+        next_inbox_idx: u64,
         extra_data: Vec<u8>,
         commitment: EpochCommitment,
     ) -> Self {
         self.with_account_extra_data(
             account_id,
             epoch,
+            seq_no,
+            next_inbox_idx,
             extra_data,
             commitment.to_block_commitment(),
         )
+    }
+
+    fn with_account_update_records(
+        mut self,
+        account_id: AccountId,
+        epoch: Epoch,
+        records: Vec<AccountUpdateRecord>,
+    ) -> Self {
+        self.account_update_entries.insert(
+            AccountEpochKey::new(epoch, account_id),
+            AccountUpdateEntry::new(records),
+        );
+        self
     }
 
     fn with_submit_fn(
@@ -416,6 +435,26 @@ fn inbox_fetch_expect_success(
         assert_eq!(start_idx, expected_start_idx);
         assert_eq!(end_idx_exclusive, expected_end_idx_exclusive);
         Ok(messages_to_return.clone())
+    }
+}
+
+/// Each entry in `expected` is `(start, end_exclusive, messages_to_return)`,
+/// asserted in call order.
+fn inbox_fetch_expect_sequence(
+    expected_account_id: AccountId,
+    expected: Vec<(u64, u64, Vec<MessageEntry>)>,
+) -> impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static {
+    let calls = std::sync::Mutex::new(0usize);
+    move |queried_account_id, start_idx, end_idx_exclusive| {
+        let mut idx = calls.lock().unwrap();
+        let (exp_start, exp_end, msgs) = expected
+            .get(*idx)
+            .unwrap_or_else(|| panic!("unexpected extra inbox fetch call #{}", *idx));
+        assert_eq!(queried_account_id, expected_account_id);
+        assert_eq!(start_idx, *exp_start, "call #{}: start mismatch", *idx);
+        assert_eq!(end_idx_exclusive, *exp_end, "call #{}: end mismatch", *idx);
+        *idx += 1;
+        Ok(msgs.clone())
     }
 }
 
@@ -1276,7 +1315,7 @@ async fn epoch_summary_non_snark_account() {
         .await
         .expect("non-snark");
     assert_eq!(summary.balance(), 0);
-    assert!(summary.update_input().is_none());
+    assert!(summary.update_inputs().is_empty());
 }
 
 #[tokio::test]
@@ -1311,7 +1350,14 @@ async fn epoch_summary_returns_messages_from_mmr_range() {
             prev_seq_no,
             prev_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![2, 2, 5], epoch_commitment)
+        .with_account_extra_data_at_terminal(
+            account_id,
+            epoch,
+            cur_seq_no,
+            cur_next_inbox_msg_idx,
+            vec![2, 2, 5],
+            epoch_commitment,
+        )
         .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
             prev_next_inbox_msg_idx,
@@ -1324,7 +1370,7 @@ async fn epoch_summary_returns_messages_from_mmr_range() {
         .get_acct_epoch_summary(account_id, epoch)
         .await
         .expect("epoch summary");
-    let update = summary.update_input().expect("update input");
+    let update = summary.update_inputs().first().expect("update input");
     let returned_messages = rpc_messages_to_entries(&update.messages);
 
     assert_eq!(returned_messages.len(), expected_messages.len());
@@ -1334,6 +1380,90 @@ async fn epoch_summary_returns_messages_from_mmr_range() {
         assert_eq!(actual.payload_value(), expected.payload_value());
         assert_eq!(actual.payload_buf(), expected.payload_buf());
     }
+}
+
+#[tokio::test]
+async fn epoch_summary_multi_record_slices_messages_per_update() {
+    // Three updates in one epoch with frontier progression 2 -> 4 -> 4 -> 7.
+    // Update 1 consumes messages [2,4), update 2 consumes nothing (idx unchanged),
+    // update 3 consumes [4,7). Each update gets its own message list and its own
+    // post-update proof state.
+    let epoch = 5;
+    let account_id = test_account_id(20);
+    let prev_next_inbox_msg_idx = 2;
+
+    let prev_epoch_commitment = test_epoch_commitment(epoch - 1, 100, 0x70);
+    let epoch_commitment = test_epoch_commitment(epoch, 110, 0x71);
+
+    let block1 = OLBlockCommitment::new(105, OLBlockId::from(Buf32::from([0x71; 32])));
+    let block2 = OLBlockCommitment::new(108, OLBlockId::from(Buf32::from([0x72; 32])));
+    let block3 = OLBlockCommitment::new(110, OLBlockId::from(Buf32::from([0x73; 32])));
+
+    let msgs_1 = vec![
+        make_message_entry(test_account_id(60), epoch, 2, vec![0xAA]),
+        make_message_entry(test_account_id(61), epoch, 3, vec![0xBB]),
+    ];
+    let msgs_3 = vec![
+        make_message_entry(test_account_id(62), epoch, 4, vec![0xCC]),
+        make_message_entry(test_account_id(63), epoch, 5, vec![0xDD]),
+        make_message_entry(test_account_id(64), epoch, 6, vec![0xEE]),
+    ];
+
+    let records = vec![
+        AccountUpdateRecord::new(
+            Some(AccountUpdateMeta::new(block1, [0x11; 32].into())),
+            10,
+            4,
+            Some(vec![1, 2]),
+        ),
+        AccountUpdateRecord::new(
+            Some(AccountUpdateMeta::new(block2, [0x22; 32].into())),
+            11,
+            4,
+            Some(vec![3, 4]),
+        ),
+        AccountUpdateRecord::new(
+            Some(AccountUpdateMeta::new(block3, [0x33; 32].into())),
+            12,
+            7,
+            Some(vec![5, 6]),
+        ),
+    ];
+
+    let provider = MockProvider::new()
+        .with_epoch_commitment(epoch, epoch_commitment)
+        .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
+        .with_snark_state_at_terminal(epoch_commitment, account_id, 12, 7)
+        .with_snark_state_at_terminal(
+            prev_epoch_commitment,
+            account_id,
+            9,
+            prev_next_inbox_msg_idx,
+        )
+        .with_account_update_records(account_id, epoch, records)
+        .with_inbox_fetch_fn(inbox_fetch_expect_sequence(
+            account_id,
+            vec![
+                (2, 4, msgs_1.clone()),
+                (4, 4, Vec::new()),
+                (4, 7, msgs_3.clone()),
+            ],
+        ));
+    let rpc = make_rpc(provider);
+
+    let summary = rpc
+        .get_acct_epoch_summary(account_id, epoch)
+        .await
+        .expect("epoch summary");
+    let updates = summary.update_inputs();
+    assert_eq!(updates.len(), 3);
+
+    assert_eq!(updates[0].seq_no, 10);
+    assert_eq!(updates[0].messages.len(), 2);
+    assert_eq!(updates[1].seq_no, 11);
+    assert!(updates[1].messages.is_empty());
+    assert_eq!(updates[2].seq_no, 12);
+    assert_eq!(updates[2].messages.len(), 3);
 }
 
 #[tokio::test]
@@ -1352,7 +1482,14 @@ async fn epoch_summary_epoch_zero_has_no_messages() {
             cur_seq_no,
             cur_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![0, 3], epoch_commitment)
+        .with_account_extra_data_at_terminal(
+            account_id,
+            epoch,
+            cur_seq_no,
+            cur_next_inbox_msg_idx,
+            vec![0, 3],
+            epoch_commitment,
+        )
         .with_inbox_fetch_fn(inbox_fetch_panic("epoch 0 should not fetch inbox messages"));
     let rpc = make_rpc(provider);
 
@@ -1360,7 +1497,7 @@ async fn epoch_summary_epoch_zero_has_no_messages() {
         .get_acct_epoch_summary(account_id, epoch)
         .await
         .expect("epoch summary");
-    let update = summary.update_input().expect("update input");
+    let update = summary.update_inputs().first().expect("update input");
     assert!(update.messages.is_empty());
 }
 
@@ -1390,7 +1527,14 @@ async fn epoch_summary_no_idx_delta_returns_empty_messages() {
             prev_seq_no,
             unchanged_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![4, 7], epoch_commitment)
+        .with_account_extra_data_at_terminal(
+            account_id,
+            epoch,
+            cur_seq_no,
+            unchanged_next_inbox_msg_idx,
+            vec![4, 7],
+            epoch_commitment,
+        )
         .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
             unchanged_next_inbox_msg_idx,
@@ -1403,7 +1547,7 @@ async fn epoch_summary_no_idx_delta_returns_empty_messages() {
         .get_acct_epoch_summary(account_id, epoch)
         .await
         .expect("epoch summary");
-    let update = summary.update_input().expect("update input");
+    let update = summary.update_inputs().first().expect("update input");
     assert!(update.messages.is_empty());
 }
 
@@ -1425,7 +1569,14 @@ async fn epoch_summary_account_missing_in_prev_state_starts_from_zero() {
         .with_epoch_commitment(epoch - 1, prev_epoch_commitment)
         .with_snark_state_at_terminal(epoch_commitment, account_id, 4, cur_next_inbox_msg_idx)
         .with_genesis_state_at_terminal(prev_epoch_commitment)
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![3], epoch_commitment)
+        .with_account_extra_data_at_terminal(
+            account_id,
+            epoch,
+            4,
+            cur_next_inbox_msg_idx,
+            vec![3],
+            epoch_commitment,
+        )
         .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
             0,
@@ -1438,7 +1589,7 @@ async fn epoch_summary_account_missing_in_prev_state_starts_from_zero() {
         .get_acct_epoch_summary(account_id, epoch)
         .await
         .expect("epoch summary");
-    let update = summary.update_input().expect("update input");
+    let update = summary.update_inputs().first().expect("update input");
     let returned_messages = rpc_messages_to_entries(&update.messages);
 
     assert_eq!(returned_messages.len(), expected_messages.len());
@@ -1479,7 +1630,7 @@ async fn epoch_summary_without_extra_data_skips_inbox_fetch() {
         .get_acct_epoch_summary(account_id, epoch)
         .await
         .expect("epoch summary");
-    assert!(summary.update_input().is_none());
+    assert!(summary.update_inputs().is_empty());
 }
 
 #[tokio::test]
@@ -1502,7 +1653,14 @@ async fn epoch_summary_mmr_fetch_error_propagates() {
             3,
             prev_next_inbox_msg_idx,
         )
-        .with_account_extra_data_at_terminal(account_id, epoch, vec![1, 0x10], epoch_commitment)
+        .with_account_extra_data_at_terminal(
+            account_id,
+            epoch,
+            4,
+            cur_next_inbox_msg_idx,
+            vec![1, 0x10],
+            epoch_commitment,
+        )
         .with_inbox_fetch_fn(inbox_fetch_error("forced inbox fetch failure"));
     let rpc = make_rpc(provider);
 
