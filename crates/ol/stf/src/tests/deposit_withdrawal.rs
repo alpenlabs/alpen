@@ -83,4 +83,9 @@ fn test_snark_account_deposit_and_withdrawal() {
         withdrawal_dest_desc.as_slice(),
         "Withdrawal destination should match"
     );
+    assert_eq!(
+        withdrawal_log.selected_operator,
+        u32::MAX,
+        "Withdrawal operator should preserve the any-operator sentinel"
+    );
 }

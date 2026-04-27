@@ -138,9 +138,22 @@ fn test_genesis_with_initial_transactions() {
         1
     );
 
+    assert!(
+        !state
+            .check_account_exists(target)
+            .expect("account existence check should succeed"),
+        "GAM to an unknown non-special account should not create the target account"
+    );
+
     // Verify the block with transactions passes verification.
     let mut verify_state = make_genesis_state();
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
+    assert!(
+        !verify_state
+            .check_account_exists(target)
+            .expect("account existence check should succeed"),
+        "Verified GAM to an unknown non-special account should not create the target account"
+    );
 }
 
 #[test]

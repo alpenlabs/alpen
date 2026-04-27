@@ -390,12 +390,27 @@ fn test_verify_state_root_changes_with_state() {
 
     // Verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
+    let verified_genesis_state_root = verify_state
+        .compute_state_root()
+        .expect("verified genesis state root should compute");
+    assert_eq!(
+        genesis.header().state_root(),
+        &verified_genesis_state_root,
+        "verified genesis state root should match the block header"
+    );
 
-    // Verify block 1
     assert_verification_succeeds(
         &mut verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
+    );
+    let verified_block1_state_root = verify_state
+        .compute_state_root()
+        .expect("verified block 1 state root should compute");
+    assert_eq!(
+        block1.header().state_root(),
+        &verified_block1_state_root,
+        "verified block 1 state root should match the block header"
     );
 }

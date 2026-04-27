@@ -17,7 +17,9 @@ fn test_snark_update_success_with_transfer() {
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
 
-    fixture
+    let mut verify_state = fixture.state().clone();
+    let parent_header = fixture.parent_header().clone();
+    let outcome = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
             sau.transfer(recipient_id, BitcoinAmount::from_sat(30_000_000))
@@ -25,6 +27,13 @@ fn test_snark_update_success_with_transfer() {
                 .with_proof(make_proof(1))
         })
         .execute();
+
+    assert_verification_succeeds(
+        &mut verify_state,
+        outcome.completed_block().header(),
+        Some(parent_header),
+        outcome.completed_block().body(),
+    );
 
     // Verify balances
     assert_eq!(
@@ -77,6 +86,11 @@ fn test_snark_update_multiple_transfers() {
         fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(40_000_000),
         "Sender should have 100M - 60M = 40M"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sender account seq no should increase"
     );
 
     assert_eq!(

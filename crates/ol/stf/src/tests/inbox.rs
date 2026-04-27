@@ -91,8 +91,11 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     // The snark account starts with next_msg_read_idx = 0 (no messages processed yet)
     assert_eq!(account_state.next_inbox_msg_idx(), 0);
 
+    let mut verify_state = fixture.state().clone();
+    let parent_header = fixture.parent_header().clone();
+
     // Step 3: Create update that indicates that the GAM message was processed.
-    fixture
+    let update_outcome = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
             sau.with_processed_messages(vec![gam_msg_entry], vec![gam_proof])
@@ -101,6 +104,13 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
                 .with_proof(vec![0u8; 32])
         })
         .execute();
+
+    assert_verification_succeeds(
+        &mut verify_state,
+        update_outcome.completed_block().header(),
+        Some(parent_header),
+        update_outcome.completed_block().body(),
+    );
 
     // Verify the update was applied
     assert_eq!(

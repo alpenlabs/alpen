@@ -5,7 +5,7 @@ use strata_acct_types::{
     AccountId, AcctError, AccumulatorClaim, BitcoinAmount, RawMerkleProof, tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
 };
@@ -98,6 +98,11 @@ fn test_snark_update_with_valid_ledger_reference() {
         fixture.account_balance(snark_acct_id),
         BitcoinAmount::from_sat(90_000_000),
         "Sender balance should be reduced"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sender account seq no should increase"
     );
     assert_eq!(
         fixture.account_balance(recipient_id),
