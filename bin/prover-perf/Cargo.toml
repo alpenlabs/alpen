@@ -10,8 +10,6 @@ workspace = true
 zkaleido.workspace = true
 
 # proof programs
-strata-checkpoint-types.workspace = true
-strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-checkpoint-new.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 

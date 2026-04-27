@@ -33,11 +33,6 @@ define_host!(
     "guest-evm-ee-stf.elf"
 );
 define_host!(
-    CHECKPOINT_HOST,
-    GUEST_CHECKPOINT_ELF,
-    "guest-checkpoint.elf"
-);
-define_host!(
     CHECKPOINT_NEW_HOST,
     GUEST_CHECKPOINT_NEW_ELF,
     "guest-checkpoint-new.elf"

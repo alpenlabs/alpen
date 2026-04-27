@@ -1,19 +1,16 @@
 //! L1 check-in logic.
 
-use strata_asm_common::{AsmLog, AsmManifest};
+use strata_asm_common::AsmManifest;
 use strata_asm_logs::{
-    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
+    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, DEPOSIT_LOG_TYPE_ID},
     CheckpointTipUpdate, DepositLog,
 };
-use strata_checkpoint_types::BatchInfo;
-use strata_codec::Codec;
-use strata_codec_utils::CodecSsz;
 use strata_ol_bridge_types::{DepositDescriptor, DepositIntent};
 use strata_ol_chain_types::L1Segment;
 use strata_params::RollupParams;
 use strata_primitives::{
     epoch::EpochCommitment,
-    l1::{BitcoinAmount, BitcoinTxid, L1BlockCommitment, L1Height},
+    l1::{BitcoinAmount, L1BlockCommitment, L1Height},
 };
 
 use crate::{
@@ -127,21 +124,6 @@ pub fn process_l1_view_update<'s, S: StateAccessor>(
     Ok(true)
 }
 
-/// Compatibility decoder for legacy checkpoint-v0 logs.
-///
-/// The upstream ASM logs crate no longer exports this type, but we still
-/// decode it here to preserve checkpoint-v0 ingestion during migration.
-#[derive(Debug, Clone, Codec)]
-struct CheckpointUpdate {
-    epoch_commitment: CodecSsz<EpochCommitment>,
-    batch_info: CodecSsz<BatchInfo>,
-    checkpoint_txid: CodecSsz<BitcoinTxid>,
-}
-
-impl AsmLog for CheckpointUpdate {
-    const TY: strata_msg_fmt::TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
-}
-
 fn process_asm_logs<'s, S: StateAccessor>(
     state: &mut FauxStateCache<'s, S>,
     manifest: &AsmManifest,
@@ -151,13 +133,6 @@ fn process_asm_logs<'s, S: StateAccessor>(
             Some(CHECKPOINT_TIP_UPDATE_LOG_TYPE) => {
                 if let Ok(ckpt_update) = log.try_into_log::<CheckpointTipUpdate>() {
                     if let Err(e) = process_l1_checkpoint_tip(state, &ckpt_update) {
-                        warn!(%e, "failed to process L1 checkpoint");
-                    }
-                }
-            }
-            Some(CHECKPOINT_UPDATE_LOG_TYPE) => {
-                if let Ok(ckpt_update) = log.try_into_log::<CheckpointUpdate>() {
-                    if let Err(e) = process_l1_checkpoint_v0(state, &ckpt_update) {
                         warn!(%e, "failed to process L1 checkpoint");
                     }
                 }
@@ -185,16 +160,6 @@ fn process_l1_checkpoint_tip<'s, S: StateAccessor>(
     debug!(?ckpt_update, "observed l1 checkpoint");
     let tip = ckpt_update.tip();
     let new_fin_epoch = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
-    state.inner_mut().set_finalized_epoch(new_fin_epoch);
-    Ok(())
-}
-
-fn process_l1_checkpoint_v0<'s, S: StateAccessor>(
-    state: &mut FauxStateCache<'s, S>,
-    ckpt_update: &CheckpointUpdate,
-) -> Result<(), OpError> {
-    debug!(?ckpt_update, "observed l1 checkpoint (v0)");
-    let new_fin_epoch = *ckpt_update.epoch_commitment.inner();
     state.inner_mut().set_finalized_epoch(new_fin_epoch);
     Ok(())
 }

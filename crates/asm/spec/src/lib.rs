@@ -4,17 +4,13 @@
 
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, AsmSpec, ChainViewState, HeaderVerificationState,
-    SectionState, Stage, Subprotocol,
+    SectionState, Stage,
 };
 use strata_asm_params::AsmParams;
 use strata_asm_proto_administration::{AdministrationSubprotoState, AdministrationSubprotocol};
 use strata_asm_proto_bridge_v1::{BridgeV1State, BridgeV1Subproto};
 use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
-use strata_asm_proto_checkpoint_v0::{
-    CheckpointV0InitConfig, CheckpointV0Subproto, CheckpointV0VerificationParams,
-};
 use strata_btc_verification::HeaderVerificationState as NativeHeaderVerificationState;
-use strata_params::CredRule;
 
 /// Strata ASM specification.
 #[derive(Debug, Default, Clone, Copy)]
@@ -25,7 +21,6 @@ impl AsmSpec for StrataAsmSpec {
 
     fn call_subprotocols(&self, stage: &mut impl Stage) {
         stage.invoke_subprotocol::<AdministrationSubprotocol>();
-        stage.invoke_subprotocol::<CheckpointV0Subproto>();
         stage.invoke_subprotocol::<CheckpointSubprotocol>();
         stage.invoke_subprotocol::<BridgeV1Subproto>();
     }
@@ -62,18 +57,6 @@ pub fn construct_genesis_state(params: &AsmParams) -> AnchorState {
         .checkpoint_config()
         .expect("asm: missing Checkpoint subprotocol config in params");
 
-    let checkpoint_v0_config = CheckpointV0InitConfig {
-        verification_params: CheckpointV0VerificationParams {
-            genesis_l1_block: params.anchor.block,
-            cred_rule: CredRule::Unchecked,
-            predicate: checkpoint_config.checkpoint_predicate.clone(),
-        },
-    };
-    let checkpoint_v0_state = CheckpointV0Subproto::init(&checkpoint_v0_config);
-    let checkpoint_v0_section =
-        SectionState::from_state::<CheckpointV0Subproto>(&checkpoint_v0_state)
-            .expect("asm: Checkpoint-v0 subprotocol genesis state fits section data capacity");
-
     let checkpoint_state = CheckpointState::init(checkpoint_config.clone());
     let checkpoint_section = SectionState::from_state::<CheckpointSubprotocol>(&checkpoint_state)
         .expect("asm: Checkpoint subprotocol genesis state fits section data capacity");
@@ -99,7 +82,6 @@ pub fn construct_genesis_state(params: &AsmParams) -> AnchorState {
         chain_view,
         sections: vec![
             admin_subprotocol_section,
-            checkpoint_v0_section,
             checkpoint_section,
             bridge_subprotocol_section,
         ]

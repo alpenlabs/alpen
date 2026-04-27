@@ -125,7 +125,7 @@ Core Anchor State Machine implementation.
 | `asm/common` | Core ASM types, state, subprotocol traits, aux data handling |
 | `asm/stf` | ASM state transition function and processing stages |
 | `asm/subprotocols/bridge-v1` | Bridge subprotocol: deposits, withdrawals, operators |
-| `asm/subprotocols/checkpoint-v0` | Checkpoint verification subprotocol |
+| `asm/subprotocols/checkpoint` | Checkpoint verification subprotocol |
 | `asm/subprotocols/admin` | Administrative operations and upgrades |
 | `asm/subprotocols/debug-v1` | Debug subprotocol for testing |
 | `asm/txs/bridge-v1` | Bridge transaction parsing (deposit, withdrawal, slash, unstake) |
@@ -248,7 +248,7 @@ Zero-knowledge proof generation.
 
 | Crate | Description |
 |-------|-------------|
-| `proof-impl/checkpoint` | Checkpoint proof implementation |
+| `proof-impl/checkpoint-new` | Checkpoint proof implementation |
 | `proof-impl/cl-stf` | Orchestration layer STF proof |
 | `proof-impl/evm-ee-stf` | EE Layer STF proof |
 | `zkvm/hosts` | ZKVM host implementations (SP1, RISC0, Native) |

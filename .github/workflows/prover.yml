@@ -77,7 +77,7 @@ jobs:
           --github-token "${{ secrets.GITHUB_TOKEN }}" \
           --pr-number "${{ github.event.pull_request.number }}" \
           --commit-hash "${{ github.sha }}" \
-          --programs evm-ee-stf,checkpoint-v0,checkpoint-v1
+          --programs evm-ee-stf,checkpoint-v1
         working-directory: bin/prover-perf
         env:
           RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
