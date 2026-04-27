@@ -1,5 +1,6 @@
 //! Tests for snark account operations including verification and state transitions
 
+mod asm_manifests;
 mod chain;
 mod deposit_withdrawal;
 mod ee_predicate_update;
