@@ -44,9 +44,6 @@ pub(crate) mod components {
     /// L1ChunkedEnvelopeDatabase operations. Fields: idx
     pub(crate) const STORAGE_CHUNKED_ENVELOPE: &str = "storage:chunked_envelope";
 
-    /// AccountGenesisDatabase operations. Fields: account_id, epoch
-    pub(crate) const STORAGE_ACCOUNT_GENESIS: &str = "storage:account_genesis";
-
     /// CheckpointProofDatabase operations. Fields: epoch
     pub(crate) const STORAGE_CHECKPOINT_PROOF: &str = "storage:checkpoint_proof";
 

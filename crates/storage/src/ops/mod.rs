@@ -1,4 +1,3 @@
-pub mod account;
 pub mod asm;
 pub mod chainstate;
 pub mod checkpoint;

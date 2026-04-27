@@ -1,6 +1,5 @@
 //! Sled store for the Alpen codebase.
 
-pub mod account;
 pub mod asm;
 pub mod broadcaster;
 pub mod chain_state;
@@ -27,14 +26,18 @@ pub mod writer;
 
 use std::{path::Path, sync::Arc};
 
+// Re-exports
+pub use asm::AsmDBSled;
 use broadcaster::db::L1BroadcastDBSled;
 use chain_state::db::ChainstateDBSled;
 use checkpoint::db::CheckpointDBSled;
 use chunked_envelope::db::L1ChunkedEnvelopeDBSled;
 use client_state::db::ClientStateDBSled;
+pub use config::SledDbConfig;
 use l1::db::L1DBSled;
 use l2::db::L2DBSled;
 use mempool::db::MempoolDBSled;
+pub use mmr_index::MmrIndexDb;
 use ol::db::OLBlockDBSled;
 use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
@@ -45,21 +48,14 @@ use strata_db_types::{
     DbResult,
     chainstate::ChainstateDatabase,
     traits::{
-        AccountDatabase, AsmDatabase, CheckpointDatabase, CheckpointProofDatabase,
-        ClientStateDatabase, DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase,
-        L1Database, L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase,
-        OLCheckpointDatabase, OLStateDatabase, OLStateIndexingDatabase, ProverTaskDatabase,
+        AsmDatabase, CheckpointDatabase, CheckpointProofDatabase, ClientStateDatabase,
+        DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase, L1Database,
+        L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase, OLCheckpointDatabase,
+        OLStateDatabase, OLStateIndexingDatabase, ProverTaskDatabase,
     },
 };
 use typed_sled::SledDb;
 use writer::db::L1WriterDBSled;
-
-// Re-exports
-#[rustfmt::skip]
-pub use account::db::AccountGenesisDBSled;
-pub use asm::AsmDBSled;
-pub use config::SledDbConfig;
-pub use mmr_index::MmrIndexDb;
 
 pub use crate::{
     init::{init_core_dbs, open_sled_database},
@@ -83,7 +79,6 @@ pub fn open_sled_backend(
 /// Complete Sled backend with all database types
 #[derive(Debug)]
 pub struct SledBackend {
-    account_genesis_db: Arc<AccountGenesisDBSled>,
     asm_db: Arc<AsmDBSled>,
     l1_db: Arc<L1DBSled>,
     l2_db: Arc<L2DBSled>,
@@ -107,10 +102,6 @@ impl SledBackend {
         let db_ref = &sled_db;
         let config_ref = &config;
 
-        let account_genesis_db = Arc::new(AccountGenesisDBSled::new(
-            db_ref.clone(),
-            config_ref.clone(),
-        )?);
         let asm_db = Arc::new(AsmDBSled::new(db_ref.clone(), config_ref.clone())?);
         let l1_db = Arc::new(L1DBSled::new(db_ref.clone(), config_ref.clone())?);
         let l2_db = Arc::new(L2DBSled::new(db_ref.clone(), config_ref.clone())?);
@@ -135,7 +126,6 @@ impl SledBackend {
         )?);
         let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
-            account_genesis_db,
             asm_db,
             l1_db,
             l2_db,
@@ -217,10 +207,6 @@ impl DatabaseBackend for SledBackend {
 
     fn mempool_db(&self) -> Arc<impl MempoolDatabase> {
         self.mempool_db.clone()
-    }
-
-    fn account_genesis_db(&self) -> Arc<impl AccountDatabase> {
-        self.account_genesis_db.clone()
     }
 
     fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase> {

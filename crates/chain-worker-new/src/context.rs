@@ -17,9 +17,7 @@ use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{
-    OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager,
-};
+use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
 
 use crate::{

@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use strata_db_types::{
-    DbResult,
     ol_state_index::{
         AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, AccountUpdateRecord,
         BlockIndexingWrites, EpochIndexingData, EpochIndexingWrites, InboxMessageRecord,
     },
     traits::OLStateIndexingDatabase,
+    DbResult,
 };
 use strata_identifiers::{AccountId, Epoch, EpochCommitment};
 use threadpool::ThreadPool;
@@ -133,7 +133,11 @@ impl OLStateIndexingManager {
         let Some(entry) = self.ops.get_account_update_entry_async(key).await? else {
             return Ok(Vec::new());
         };
-        Ok(filter_records_by_slot(entry.records(), start_slot, end_slot))
+        Ok(filter_records_by_slot(
+            entry.records(),
+            start_slot,
+            end_slot,
+        ))
     }
 
     /// Returns inbox writes for `(epoch, acct)` whose block falls in the

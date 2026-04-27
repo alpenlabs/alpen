@@ -11,7 +11,6 @@ use std::sync::Arc;
 use anyhow::Context;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub use managers::{
-    account_genesis::AccountManager,
     asm::AsmStateManager,
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
@@ -45,7 +44,6 @@ pub struct NodeStorage {
     /// Thread pool for blocking database operations
     pool: threadpool::ThreadPool,
 
-    account_manager: Arc<AccountManager>,
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -76,7 +74,6 @@ impl Clone for NodeStorage {
         Self {
             db: self.db.clone(),
             pool: self.pool.clone(),
-            account_manager: self.account_manager.clone(),
             asm_state_manager: self.asm_state_manager.clone(),
             l1_block_manager: self.l1_block_manager.clone(),
             l2_block_manager: self.l2_block_manager.clone(),
@@ -105,10 +102,6 @@ impl NodeStorage {
     /// Returns the thread pool for blocking database operations.
     pub fn pool(&self) -> &threadpool::ThreadPool {
         &self.pool
-    }
-
-    pub fn account(&self) -> &Arc<AccountManager> {
-        &self.account_manager
     }
 
     pub fn asm(&self) -> &Arc<AsmStateManager> {
@@ -183,7 +176,6 @@ pub fn create_node_storage(
     pool: threadpool::ThreadPool,
 ) -> anyhow::Result<NodeStorage> {
     // Extract database references
-    let account_genesis_db = db.account_genesis_db();
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -201,7 +193,6 @@ pub fn create_node_storage(
     let proof_db = db.checkpoint_proof_db();
     let prover_task_db = db.prover_task_db();
 
-    let account_genesis_manager = Arc::new(AccountManager::new(pool.clone(), account_genesis_db));
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -231,7 +222,6 @@ pub fn create_node_storage(
     Ok(NodeStorage {
         db,
         pool,
-        account_manager: account_genesis_manager,
         asm_state_manager: asm_manager,
         l1_block_manager,
         l2_block_manager,

@@ -9,8 +9,8 @@ use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
-    ol_state_index::{AccountEpochKey, AccountUpdateEntry},
     DbError, DbResult, MmrId,
+    ol_state_index::{AccountEpochKey, AccountUpdateEntry},
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};

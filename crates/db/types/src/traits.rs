@@ -16,7 +16,7 @@ use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_paas::TaskRecordData;
-use strata_primitives::{nonempty_vec::NonEmptyVec, prelude::*};
+use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -33,8 +33,8 @@ use crate::{
         EpochIndexingData, EpochIndexingWrites,
     },
     types::{
-        AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
+        BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1PayloadIntentIndex, L1TxEntry,
+        MempoolTxData,
     },
     DbResult, RawMmrId,
 };
@@ -64,7 +64,6 @@ pub trait DatabaseBackend: Send + Sync {
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
-    fn account_genesis_db(&self) -> Arc<impl AccountDatabase>;
     fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase>;
 }
 
@@ -664,35 +663,6 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     /// Returns the highest slot that has a valid OL block, or an error at genesis or when no valid
     /// block exists.
     fn get_tip_slot(&self) -> DbResult<Slot>;
-}
-
-/// Database for tracking per-account data like creation epoch, extra data, etc.
-pub trait AccountDatabase: Send + Sync + 'static {
-    /// Inserts the creation epoch for an account.
-    ///
-    /// Fails if the account already has a recorded creation epoch.
-    fn insert_account_creation_epoch(&self, account_id: AccountId, epoch: Epoch) -> DbResult<()>;
-
-    /// Gets the creation epoch for an account, if recorded.
-    fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
-
-    /// Inserts account extra data for a given epoch index. This appends the inserted extra data to
-    /// the existing value in the db.
-    // NOTE: This gets updated in every OL block where there is snark update for the account.
-    // NOTE: We only want the extra data for an epoch and not per-block so this should suffice.
-    // TODO: Make this more robust by associating with epoch commitment instead of epoch index.
-    fn insert_account_extra_data(
-        &self,
-        key: (AccountId, Epoch),
-        extra_data: AccountExtraDataEntry,
-    ) -> DbResult<()>;
-
-    /// Gets the account extra data for given account and OLBlockId. Returns an array of collected
-    /// extra data over an epoch.
-    fn get_account_extra_data(
-        &self,
-        key: (AccountId, Epoch),
-    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
 }
 
 /// Database for OL state indexing data.

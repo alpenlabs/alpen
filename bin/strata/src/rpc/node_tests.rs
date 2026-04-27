@@ -7,9 +7,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult,
-    ol_state_index::{
-        AccountEpochKey, AccountUpdateEntry, AccountUpdateMeta, AccountUpdateRecord,
-    },
+    ol_state_index::{AccountEpochKey, AccountUpdateEntry, AccountUpdateMeta, AccountUpdateRecord},
 };
 use strata_identifiers::*;
 use strata_ledger_types::*;

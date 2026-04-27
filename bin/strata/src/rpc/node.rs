@@ -289,14 +289,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 .await?;
 
             // FIXME: check if this is canonical or not and account for reorgs.
-            let last = entry
-                .records()
-                .last()
-                .expect("Should be present");
-            let extra_data = last
-                .extra_data()
-                .expect("Should be present")
-                .to_vec();
+            let last = entry.records().last().expect("Should be present");
+            let extra_data = last.extra_data().expect("Should be present").to_vec();
 
             let update = RpcUpdateInputData {
                 seq_no: next_seq_no,
