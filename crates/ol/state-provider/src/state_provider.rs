@@ -19,8 +19,8 @@ use strata_ledger_types::IStateAccessorMut;
 ///
 /// # Associated Types
 ///
-/// - `State`: The state type that implements [`IStateAccessor`]. Must be `Send + Sync + 'static` to
-///   enable sharing across async operations.
+/// - `State`: The state type that implements [`IStateAccessorMut`]. Must be `Send + Sync + 'static`
+///   to enable sharing across async tasks.
 /// - `Error`: The error type for state retrieval operations. Each implementation can use its own
 ///   error type (e.g., `DbError` for database-backed providers, custom errors for test providers).
 ///
