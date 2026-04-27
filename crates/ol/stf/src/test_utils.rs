@@ -763,19 +763,34 @@ impl OLStfFixtureBuilder {
     }
 
     /// Executes terminal genesis and returns the live fixture.
-    pub fn execute_genesis(mut self) -> OLStfFixture {
+    pub fn execute_genesis(self) -> OLStfFixture {
+        self.execute_genesis_result()
+            .expect("fixture genesis should execute")
+    }
+
+    /// Executes terminal genesis and returns the live fixture plus outputs.
+    pub fn execute_genesis_with_outputs(mut self) -> FixtureGenesisOutput {
         let genesis_info = BlockInfo::new_genesis(1_000_000);
         let genesis_components = BlockComponents::new_manifests(self.manifests);
-        let genesis_block = execute_block(&mut self.state, &genesis_info, None, genesis_components)
-            .expect("fixture genesis should execute");
+        let output =
+            execute_block_with_outputs(&mut self.state, &genesis_info, None, genesis_components)
+                .expect("fixture genesis should execute");
+        let fixture =
+            OLStfFixture::from_executed_genesis(self.state, output.completed_block().clone());
 
-        OLStfFixture {
-            state: self.state,
-            last_block: genesis_block,
-            next_slot: 1,
-            next_epoch: 1,
-            next_timestamp: 1_001_000,
-        }
+        FixtureGenesisOutput { fixture, output }
+    }
+
+    fn execute_genesis_result(mut self) -> ExecResult<OLStfFixture> {
+        let genesis_info = BlockInfo::new_genesis(1_000_000);
+        let genesis_components = BlockComponents::new_manifests(self.manifests);
+        let genesis_block =
+            execute_block(&mut self.state, &genesis_info, None, genesis_components)?;
+
+        Ok(OLStfFixture::from_executed_genesis(
+            self.state,
+            genesis_block,
+        ))
     }
 
     fn insert_snark_account_with_settings(
@@ -816,6 +831,16 @@ impl OLStfFixture {
     /// Starts configuring a protocol-shaped fixture from genesis.
     pub fn builder() -> OLStfFixtureBuilder {
         OLStfFixtureBuilder::new()
+    }
+
+    fn from_executed_genesis(state: MemoryStateBaseLayer, genesis_block: CompletedBlock) -> Self {
+        Self {
+            state,
+            last_block: genesis_block,
+            next_slot: 1,
+            next_epoch: 1,
+            next_timestamp: 1_001_000,
+        }
     }
 
     /// Returns the current fixture state.
@@ -1405,6 +1430,50 @@ impl FixtureBlockOutcome {
 #[derive(Debug)]
 pub struct FixtureBlockOutput {
     output: ConstructBlockOutput,
+}
+
+/// Outcome from executing fixture genesis with execution outputs.
+#[derive(Debug)]
+pub struct FixtureGenesisOutput {
+    fixture: OLStfFixture,
+    output: ConstructBlockOutput,
+}
+
+impl FixtureGenesisOutput {
+    /// Returns the live fixture after genesis execution.
+    pub fn fixture(&self) -> &OLStfFixture {
+        &self.fixture
+    }
+
+    /// Consumes this output and returns the live fixture.
+    pub fn into_fixture(self) -> OLStfFixture {
+        self.fixture
+    }
+
+    /// Returns the number of logs emitted by genesis.
+    pub fn log_count(&self) -> usize {
+        self.output.outputs().logs().len()
+    }
+
+    /// Finds and decodes a typed log emitted by `serial`.
+    pub fn find_typed_log<T: Codec>(&self, serial: AccountSerial) -> Option<T> {
+        self.output
+            .outputs()
+            .logs()
+            .iter()
+            .find(|l| l.account_serial() == serial)
+            .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
+    }
+
+    /// Decodes the typed log emitted by `serial`, panicking if it is missing.
+    pub fn expect_typed_log<T: Codec>(&self, serial: AccountSerial) -> T {
+        self.find_typed_log(serial).unwrap_or_else(|| {
+            panic!(
+                "expected log of type {} for account serial {serial:?}",
+                type_name::<T>()
+            )
+        })
+    }
 }
 
 impl FixtureBlockOutput {

@@ -50,7 +50,7 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
     for (i, mf) in mf_cont.manifests().iter().enumerate() {
         // New manifests in a segment are strictly after the state's current
         // last seen height.
-        let real_height = orig_l1_height + i as u32 + 1;
+        let real_height = next_manifest_height(orig_l1_height, i)?;
         if mf.height() != real_height {
             warn!(
                 expected_height = real_height,
@@ -58,7 +58,11 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
                 index = i,
                 "asm manifest height mismatch",
             );
-            return Err(ExecError::ChainIntegrity);
+            return Err(ExecError::AsmManifestHeightMismatch {
+                expected: real_height,
+                actual: mf.height(),
+                index: i,
+            });
         }
         trace!(
             height = real_height,
@@ -75,7 +79,9 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
     }
 
     // 2. Finally, we can update the epoch to get it ready for the next epoch.
-    let new_epoch = terminating_epoch + 1;
+    let new_epoch = terminating_epoch
+        .checked_add(1)
+        .ok_or(ExecError::EpochOverflow)?;
     info!(
         from_epoch = terminating_epoch,
         to_epoch = new_epoch,
@@ -85,6 +91,14 @@ pub fn process_block_manifests<S: IStateAccessorMut>(
     state.set_cur_epoch(new_epoch);
 
     Ok(())
+}
+
+fn next_manifest_height(last_l1_height: L1Height, index: usize) -> ExecResult<L1Height> {
+    let offset = L1Height::try_from(index).map_err(|_| ExecError::AsmManifestHeightOverflow)?;
+    last_l1_height
+        .checked_add(offset)
+        .and_then(|height| height.checked_add(1))
+        .ok_or(ExecError::AsmManifestHeightOverflow)
 }
 
 fn process_asm_manifest<S: IStateAccessorMut>(
@@ -282,4 +296,22 @@ fn process_ee_predicate_key_update<S: IStateAccessorMut>(
     }
 
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_manifest_height_rejects_l1_height_overflow() {
+        assert_eq!(next_manifest_height(0, 0).expect("height should fit"), 1);
+
+        assert!(matches!(
+            next_manifest_height(L1Height::MAX, 0),
+            Err(ExecError::AsmManifestHeightOverflow)
+        ));
+        assert!(matches!(
+            next_manifest_height(L1Height::MAX - 1, 1),
+            Err(ExecError::AsmManifestHeightOverflow)
+        ));
+    }
 }

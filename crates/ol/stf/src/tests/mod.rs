@@ -1,5 +1,6 @@
 //! Unit tests for OL STF execution, verification, fixtures, and boundary behavior.
 
+mod asm_manifests;
 mod chain;
 mod da_preseal_correctness;
 mod deposit_withdrawal;

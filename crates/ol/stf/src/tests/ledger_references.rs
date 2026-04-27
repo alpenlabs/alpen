@@ -12,6 +12,8 @@ use strata_ol_chain_types_new::{
 
 use crate::{errors::ExecError, test_utils::*};
 
+// The test genesis state pre-fills manifest MMR index 0 with
+// `strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF`; real manifests start at 1.
 const FIRST_REAL_MANIFEST_INDEX: u64 = 1;
 
 fn execute_manifest_block_with_tracker(
