@@ -303,12 +303,14 @@ fn test_snark_update_self_transfer() {
 fn test_snark_update_exact_balance_transfer() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID);
+    let second_recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .with_genesis_empty_account(recipient_id)
+        .with_genesis_empty_account(second_recipient_id)
         .execute_genesis();
 
     fixture
@@ -325,8 +327,41 @@ fn test_snark_update_exact_balance_transfer() {
         "Sender should have 0 balance"
     );
     assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+    assert_eq!(
         fixture.account_balance(recipient_id),
         BitcoinAmount::from_sat(100_000_000),
         "Recipient should receive entire balance"
+    );
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.transfer(second_recipient_id, BitcoinAmount::from_sat(1))
+                .with_state_root(make_state_root(3))
+        })
+        .execute_err();
+
+    assert!(
+        matches!(err.into_base(), ExecError::BalanceUnderflow),
+        "Expected BalanceUnderflow"
+    );
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::from_sat(0),
+        "Sender balance should remain zero after failed transfer from drained balance"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sequence number should not increment after failed transfer from drained balance"
+    );
+    assert_eq!(
+        fixture.account_balance(second_recipient_id),
+        BitcoinAmount::from_sat(0),
+        "Second recipient should not receive failed transfer from drained balance"
     );
 }

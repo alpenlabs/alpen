@@ -36,6 +36,16 @@ fn test_snark_update_max_bitcoin_supply() {
         BitcoinAmount::MAX_MONEY,
         "Balance should be unchanged after failed update"
     );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        0,
+        "Sequence number should not increment after failed update"
+    );
+    assert_eq!(
+        fixture.account_balance(recipient_id),
+        BitcoinAmount::from_sat(0),
+        "Recipient should not receive failed update"
+    );
 }
 
 #[test]
@@ -159,6 +169,11 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
         "Balance should be unchanged after failed update"
     );
     assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        0,
+        "Sequence number should not increment after failed update"
+    );
+    assert_eq!(
         fixture.account_balance(recipient1_id),
         BitcoinAmount::from_sat(0),
         "Recipient1 should have no balance after failed update"
@@ -174,12 +189,14 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
 fn test_snark_update_allows_max_balance_transfer() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
     let recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
+    let second_recipient_id = make_account_id(TEST_RECIPIENT_ID + 2);
 
     let mut fixture = OLStfFixture::builder()
         .with_genesis_snark_account(snark_acct_id, |acct| {
             acct.with_balance(BitcoinAmount::MAX_MONEY)
         })
         .with_genesis_empty_account(recipient_id)
+        .with_genesis_empty_account(second_recipient_id)
         .execute_genesis();
 
     fixture
@@ -196,8 +213,41 @@ fn test_snark_update_allows_max_balance_transfer() {
         "Sender should have 0 balance after transferring MAX_MONEY"
     );
     assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+    assert_eq!(
         fixture.account_balance(recipient_id),
         BitcoinAmount::MAX_MONEY,
         "Recipient should receive MAX_MONEY"
+    );
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.transfer(second_recipient_id, BitcoinAmount::from_sat(1))
+                .with_state_root(make_state_root(3))
+        })
+        .execute_err();
+
+    assert!(
+        matches!(err.into_base(), ExecError::BalanceUnderflow),
+        "Expected BalanceUnderflow"
+    );
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::from_sat(0),
+        "Sender balance should remain zero after failed transfer from drained balance"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sequence number should not increment after failed transfer from drained balance"
+    );
+    assert_eq!(
+        fixture.account_balance(second_recipient_id),
+        BitcoinAmount::from_sat(0),
+        "Second recipient should not receive failed transfer from drained balance"
     );
 }
