@@ -65,6 +65,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
     fn account_genesis_db(&self) -> Arc<impl AccountDatabase>;
+    fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase>;
 }
 
 /// Database interface to control our view of ASM state.

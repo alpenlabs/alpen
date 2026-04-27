@@ -52,4 +52,7 @@ pub(crate) mod components {
 
     /// ProverTaskDatabase operations. Fields: key
     pub(crate) const STORAGE_PROVER_TASK: &str = "storage:prover_task";
+
+    /// OLStateIndexingDatabase operations. Fields: epoch, account_id
+    pub(crate) const STORAGE_OL_STATE_INDEXING: &str = "storage:ol_state_indexing";
 }

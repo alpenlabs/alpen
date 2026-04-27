@@ -24,6 +24,7 @@ pub use managers::{
     ol::OLBlockManager,
     ol_checkpoint::OLCheckpointManager,
     ol_state::OLStateManager,
+    ol_state_indexing::OLStateIndexingManager,
     prover_task::ProverTaskDbManager,
     writer::L1WriterManager,
 };
@@ -63,6 +64,7 @@ pub struct NodeStorage {
     mmr_index_manager: Arc<MmrIndexManager>,
     mempool_db_manager: Arc<MempoolDbManager>,
     ol_state_manager: Arc<OLStateManager>,
+    ol_state_indexing_manager: Arc<OLStateIndexingManager>,
     ol_checkpoint_manager: Arc<OLCheckpointManager>,
     proof_manager: Arc<CheckpointProofDbManager>,
     prover_task_manager: Arc<ProverTaskDbManager>,
@@ -85,6 +87,7 @@ impl Clone for NodeStorage {
             mmr_index_manager: self.mmr_index_manager.clone(),
             mempool_db_manager: self.mempool_db_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
+            ol_state_indexing_manager: self.ol_state_indexing_manager.clone(),
             ol_checkpoint_manager: self.ol_checkpoint_manager.clone(),
             proof_manager: self.proof_manager.clone(),
             prover_task_manager: self.prover_task_manager.clone(),
@@ -152,6 +155,10 @@ impl NodeStorage {
         &self.ol_state_manager
     }
 
+    pub fn ol_state_indexing(&self) -> &Arc<OLStateIndexingManager> {
+        &self.ol_state_indexing_manager
+    }
+
     pub fn ol_checkpoint(&self) -> &Arc<OLCheckpointManager> {
         &self.ol_checkpoint_manager
     }
@@ -188,6 +195,7 @@ pub fn create_node_storage(
     let ol_block_db = db.ol_block_db();
     let mempool_db = db.mempool_db();
     let ol_state_db = db.ol_state_db();
+    let ol_state_indexing_db = db.ol_state_indexing_db();
     let ol_checkpoint_db = db.ol_checkpoint_db();
     let mmr_index_db = db.mmr_index_db();
     let proof_db = db.checkpoint_proof_db();
@@ -211,6 +219,10 @@ pub fn create_node_storage(
     let mmr_index_manager = Arc::new(MmrIndexManager::new(pool.clone(), mmr_index_db));
     let mempool_db_manager = Arc::new(MempoolDbManager::new(pool.clone(), mempool_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db.clone()));
+    let ol_state_indexing_manager = Arc::new(OLStateIndexingManager::new(
+        pool.clone(),
+        ol_state_indexing_db,
+    ));
     let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
     let proof_manager = Arc::new(CheckpointProofDbManager::new(pool.clone(), proof_db));
     let prover_task_manager = Arc::new(ProverTaskDbManager::new(pool.clone(), prover_task_db));
@@ -230,6 +242,7 @@ pub fn create_node_storage(
         mmr_index_manager,
         mempool_db_manager,
         ol_state_manager,
+        ol_state_indexing_manager,
         ol_checkpoint_manager,
         proof_manager,
         prover_task_manager,

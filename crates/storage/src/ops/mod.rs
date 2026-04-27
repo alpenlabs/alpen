@@ -13,5 +13,6 @@ pub mod mmr_index;
 pub mod ol;
 pub mod ol_checkpoint;
 pub mod ol_state;
+pub mod ol_state_indexing;
 pub mod prover_task;
 pub mod writer;

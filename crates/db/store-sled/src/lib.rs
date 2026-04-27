@@ -38,6 +38,7 @@ use mempool::db::MempoolDBSled;
 use ol::db::OLBlockDBSled;
 use ol_checkpoint::db::OLCheckpointDBSled;
 use ol_state::db::OLStateDBSled;
+use ol_state_index::db::OLStateIndexingDBSled;
 use rkyv as _;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_db_types::{
@@ -47,7 +48,7 @@ use strata_db_types::{
         AccountDatabase, AsmDatabase, CheckpointDatabase, CheckpointProofDatabase,
         ClientStateDatabase, DatabaseBackend, L1BroadcastDatabase, L1ChunkedEnvelopeDatabase,
         L1Database, L1WriterDatabase, L2BlockDatabase, MempoolDatabase, OLBlockDatabase,
-        OLCheckpointDatabase, OLStateDatabase, ProverTaskDatabase,
+        OLCheckpointDatabase, OLStateDatabase, OLStateIndexingDatabase, ProverTaskDatabase,
     },
 };
 use typed_sled::SledDb;
@@ -98,6 +99,7 @@ pub struct SledBackend {
     chunked_envelope_db: Arc<L1ChunkedEnvelopeDBSled>,
     mmr_index_db: Arc<MmrIndexDb>,
     mempool_db: Arc<MempoolDBSled>,
+    ol_state_indexing_db: Arc<OLStateIndexingDBSled>,
 }
 
 impl SledBackend {
@@ -127,6 +129,10 @@ impl SledBackend {
             db_ref.clone(),
             config_ref.clone(),
         )?);
+        let ol_state_indexing_db = Arc::new(OLStateIndexingDBSled::new(
+            db_ref.clone(),
+            config_ref.clone(),
+        )?);
         let mempool_db = Arc::new(MempoolDBSled::new(sled_db, config)?);
         Ok(Self {
             account_genesis_db,
@@ -145,6 +151,7 @@ impl SledBackend {
             chunked_envelope_db,
             mmr_index_db,
             mempool_db,
+            ol_state_indexing_db,
         })
     }
 }
@@ -214,6 +221,10 @@ impl DatabaseBackend for SledBackend {
 
     fn account_genesis_db(&self) -> Arc<impl AccountDatabase> {
         self.account_genesis_db.clone()
+    }
+
+    fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase> {
+        self.ol_state_indexing_db.clone()
     }
 }
 
