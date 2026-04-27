@@ -5,17 +5,10 @@ use strata_acct_types::{
     AccountId, AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
-use strata_ol_chain_types_new::{OLBlockHeader, OLTransaction, OLTransactionData, TxProofs};
+use strata_ol_chain_types_new::OLBlockHeader;
 use strata_ol_state_types::OLState;
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
-
-fn make_gam_tx_with_payload(dest: AccountId, payload: Vec<u8>) -> OLTransaction {
-    OLTransaction::new(
-        OLTransactionData::new_gam(dest, payload),
-        TxProofs::new_empty(),
-    )
-}
 
 fn execute_gam_and_track_inbox_message(
     state: &mut OLState,

@@ -13,6 +13,7 @@ mod sau_messages;
 mod sau_sequences;
 mod sau_transfers;
 mod sau_validation;
+mod stress;
 mod tx_constraints;
 mod verify_body;
 mod verify_header;
