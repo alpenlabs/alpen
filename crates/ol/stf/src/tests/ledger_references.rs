@@ -85,11 +85,16 @@ fn test_snark_update_with_valid_ledger_reference() {
     .expect("Update with valid ledger reference should succeed");
 
     // Verify the transfer was applied
-    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
         ol_account_state.balance(),
         BitcoinAmount::from_sat(90_000_000),
         "Sender balance should be reduced"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "Sender account seq no should increase"
     );
 
     let recipient = state.get_account_state(recipient_id).unwrap().unwrap();

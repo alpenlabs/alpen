@@ -105,9 +105,17 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 4: Execute the update
+    let mut verify_state = state.clone();
     let (slot, epoch) = (2, 1);
-    execute_tx_in_block(&mut state, header, update_tx, slot, epoch)
+    let update_block = execute_tx_in_block(&mut state, header, update_tx, slot, epoch)
         .expect("Update with valid message proof should succeed");
+
+    assert_verification_succeeds(
+        &mut verify_state,
+        update_block.header(),
+        Some(blk1.header().clone()),
+        update_block.body(),
+    );
 
     // Verify the update was applied
     let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);

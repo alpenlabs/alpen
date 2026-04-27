@@ -24,9 +24,17 @@ fn test_snark_update_success_with_transfer() {
         .with_transfer(recipient_id, transfer_amount)
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
+    let mut verify_state = state.clone();
     let (slot, epoch) = (1, 1);
-    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+    let block1 = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Valid update should succeed");
+
+    assert_verification_succeeds(
+        &mut verify_state,
+        block1.header(),
+        Some(genesis_block.header().clone()),
+        block1.body(),
+    );
 
     // Verify balances
     let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
@@ -79,11 +87,16 @@ fn test_snark_update_multiple_transfers() {
         .expect("Multiple transfers should succeed");
 
     // Verify all balances
-    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
         ol_account_state.balance(),
         BitcoinAmount::from_sat(40_000_000),
         "Sender should have 100M - 60M = 40M"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "Sender account seq no should increase"
     );
 
     let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();

@@ -578,6 +578,22 @@ impl ManifestMmrTracker {
     }
 }
 
+/// Creates a snark account with the given initial balance in local test state.
+pub fn create_snark_account_with_balance(
+    state: &mut OLState,
+    snark_id: AccountId,
+    initial_balance: u64,
+) {
+    let update_vk = PredicateKey::always_accept();
+    let initial_state_root = get_test_state_root(1);
+    let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
+    let balance = BitcoinAmount::from_sat(initial_balance);
+    let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
+    state
+        .create_new_account(snark_id, new_acct_data)
+        .expect("Should create snark account");
+}
+
 /// Creates a SNARK account with initial balance and executes genesis.
 ///
 /// Genesis carries an empty manifest container, matching production genesis.
@@ -599,14 +615,7 @@ pub fn setup_genesis_with_snark_accounts(
     accounts: &[(AccountId, u64)],
 ) -> CompletedBlock {
     for &(account_id, initial_balance) in accounts {
-        let update_vk = PredicateKey::always_accept();
-        let initial_state_root = get_test_state_root(1);
-        let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
-        let balance = BitcoinAmount::from_sat(initial_balance);
-        let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
-        state
-            .create_new_account(account_id, new_acct_data)
-            .expect("Should create snark account");
+        create_snark_account_with_balance(state, account_id, initial_balance);
     }
 
     let genesis_info = BlockInfo::new_genesis(1_000_000);
