@@ -255,6 +255,49 @@ pub fn test_account_active_in_multiple_epochs_creation_epoch_unchanged(
     );
 }
 
+pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexingDatabase) {
+    let epoch = 4;
+    let acct_a = acct(1);
+    let blk = block(7, 7);
+
+    let mut updates = BTreeMap::new();
+    updates.insert(
+        acct_a,
+        vec![record(
+            Some(AccountUpdateMeta::new(blk, hash(0xAA))),
+            1,
+            5,
+            Some(vec![0xAA]),
+        )],
+    );
+
+    let writes = || BlockIndexingWrites {
+        epoch,
+        block: blk,
+        created_accounts: vec![],
+        account_updates: updates.clone(),
+        account_inbox_writes: BTreeMap::new(),
+    };
+
+    db.apply_block_indexing(writes()).expect("first apply");
+
+    let err = db
+        .apply_block_indexing(writes())
+        .expect_err("duplicate apply should error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("already indexed"),
+        "expected DuplicateBlockIndexing-shaped error, got: {msg}"
+    );
+
+    // Original record is intact and not duplicated.
+    let entry = db
+        .get_account_update_entry(AccountEpochKey::new(epoch, acct_a))
+        .expect("get entry")
+        .expect("present");
+    assert_eq!(entry.records().len(), 1);
+}
+
 #[macro_export]
 macro_rules! ol_state_indexing_db_tests {
     ($setup_expr:expr) => {
@@ -292,6 +335,12 @@ macro_rules! ol_state_indexing_db_tests {
         fn test_account_active_in_multiple_epochs_creation_epoch_unchanged() {
             let db = $setup_expr;
             $crate::ol_state_indexing_tests::test_account_active_in_multiple_epochs_creation_epoch_unchanged(&db);
+        }
+
+        #[test]
+        fn test_apply_block_indexing_duplicate_block_errors() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_apply_block_indexing_duplicate_block_errors(&db);
         }
     };
 }

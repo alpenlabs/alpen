@@ -88,6 +88,17 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                     }
                     let key = AccountEpochKey::new(epoch, *acct);
                     let mut entry = update_t.get(&key)?.unwrap_or_default();
+                    if entry.records().iter().any(|r| {
+                        r.update_meta()
+                            .is_some_and(|m| *m.block_commitment() == writes.block)
+                    }) {
+                        return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                            DbError::DuplicateBlockIndexing {
+                                epoch,
+                                block: writes.block,
+                            },
+                        )));
+                    }
                     entry.extend(records.iter().cloned());
                     update_t.insert(&key, &entry)?;
                 }

@@ -1,4 +1,4 @@
-use strata_identifiers::{AccountId, Hash};
+use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, L1Height};
 use strata_storage_common::exec::OpsError;
@@ -177,6 +177,13 @@ pub enum DbError {
     RetriesExhausted {
         attempts: usize,
         last_error: Box<DbError>,
+    },
+
+    /// Block already indexed for this epoch — `apply_block_indexing` called twice.
+    #[error("block {block} already indexed for epoch {epoch}")]
+    DuplicateBlockIndexing {
+        epoch: Epoch,
+        block: OLBlockCommitment,
     },
 
     #[error("{0}")]
