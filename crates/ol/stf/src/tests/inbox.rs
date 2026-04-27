@@ -1,10 +1,43 @@
 //! Tests for inbox operations including message insertion, processing, and validation
 
 use ssz_primitives::FixedBytes;
-use strata_acct_types::{AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof};
+use strata_acct_types::{
+    AccountId, AcctError, BitcoinAmount, MessageEntry, MsgPayload, RawMerkleProof,
+};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_chain_types_new::{OLBlockHeader, OLTransaction, OLTransactionData, TxProofs};
+use strata_ol_state_types::OLState;
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
+
+fn make_gam_tx_with_payload(dest: AccountId, payload: Vec<u8>) -> OLTransaction {
+    OLTransaction::new(
+        OLTransactionData::new_gam(dest, payload),
+        TxProofs::new_empty(),
+    )
+}
+
+fn execute_gam_and_track_inbox_message(
+    state: &mut OLState,
+    parent_header: &OLBlockHeader,
+    snark_id: AccountId,
+    slot: u64,
+    epoch: u32,
+    payload: Vec<u8>,
+    inbox_tracker: &mut InboxMmrTracker,
+) -> (OLBlockHeader, MessageEntry, RawMerkleProof) {
+    let gam_tx = make_gam_tx_with_payload(snark_id, payload.clone());
+    let block = execute_tx_in_block(state, parent_header, gam_tx, slot, epoch)
+        .expect("GAM should add inbox message");
+    let msg_entry = MessageEntry::new(
+        SEQUENCER_ACCT_ID,
+        epoch,
+        MsgPayload::new(BitcoinAmount::zero(), payload),
+    );
+    let proof = inbox_tracker.add_message(&msg_entry);
+
+    (block.into_header(), msg_entry, proof)
+}
 
 #[test]
 fn test_snark_inbox_message_insertion() {
@@ -403,4 +436,127 @@ fn test_snark_update_skip_message_out_of_order() {
         initial_recipient_balance,
         "recipient balance should not change after skipped inbox messages"
     );
+}
+
+#[test]
+fn test_snark_update_rejects_reversed_processed_messages() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = get_test_recipient_account_id();
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    create_empty_account(&mut state, recipient_id);
+
+    let mut inbox_tracker = InboxMmrTracker::new();
+    let (header, first_msg, first_proof) = execute_gam_and_track_inbox_message(
+        &mut state,
+        genesis_block.header(),
+        snark_id,
+        1,
+        1,
+        vec![1],
+        &mut inbox_tracker,
+    );
+    let (header, second_msg, second_proof) = execute_gam_and_track_inbox_message(
+        &mut state,
+        &header,
+        snark_id,
+        2,
+        1,
+        vec![2],
+        &mut inbox_tracker,
+    );
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    assert_eq!(snark_account_state.inbox_mmr().num_entries(), 2);
+
+    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_processed_msgs(vec![second_msg, first_msg])
+        .with_inbox_proofs(vec![second_proof, first_proof])
+        .with_transfer(recipient_id, 10_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    let result = execute_tx_in_block(&mut state, &header, update_tx, 3, 1);
+
+    match result.unwrap_err().into_base() {
+        ExecError::Acct(AcctError::InvalidMessageProof { msg_idx, .. }) => {
+            assert_eq!(
+                msg_idx, 0,
+                "reversed order should fail at first inbox index"
+            );
+        }
+        err => panic!("Expected InvalidMessageProof, got: {err:?}"),
+    }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(100_000_000)
+    );
+    assert_eq!(*snark_account_state.seqno().inner(), 0);
+    assert_eq!(snark_account_state.next_inbox_msg_idx(), 0);
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(recipient.balance(), BitcoinAmount::zero());
+}
+
+#[test]
+fn test_snark_update_rejects_duplicate_processed_message() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = get_test_recipient_account_id();
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    create_empty_account(&mut state, recipient_id);
+
+    let mut inbox_tracker = InboxMmrTracker::new();
+    let (header, first_msg, _) = execute_gam_and_track_inbox_message(
+        &mut state,
+        genesis_block.header(),
+        snark_id,
+        1,
+        1,
+        vec![1],
+        &mut inbox_tracker,
+    );
+    let (header, _, _) = execute_gam_and_track_inbox_message(
+        &mut state,
+        &header,
+        snark_id,
+        2,
+        1,
+        vec![2],
+        &mut inbox_tracker,
+    );
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    assert_eq!(snark_account_state.inbox_mmr().num_entries(), 2);
+    let first_proof = inbox_tracker.raw_proof(0);
+
+    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_processed_msgs(vec![first_msg.clone(), first_msg])
+        .with_inbox_proofs(vec![first_proof.clone(), first_proof])
+        .with_transfer(recipient_id, 10_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    let result = execute_tx_in_block(&mut state, &header, update_tx, 3, 1);
+
+    match result.unwrap_err().into_base() {
+        ExecError::Acct(AcctError::InvalidMessageProof { msg_idx, .. }) => {
+            assert_eq!(
+                msg_idx, 1,
+                "duplicate message should fail at second inbox index"
+            );
+        }
+        err => panic!("Expected InvalidMessageProof, got: {err:?}"),
+    }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(100_000_000)
+    );
+    assert_eq!(*snark_account_state.seqno().inner(), 0);
+    assert_eq!(snark_account_state.next_inbox_msg_idx(), 0);
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(recipient.balance(), BitcoinAmount::zero());
 }
