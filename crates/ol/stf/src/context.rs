@@ -110,6 +110,17 @@ impl<'b> BlockContext<'b> {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_unchecked(
+        block_info: &'b BlockInfo,
+        parent_header: Option<&'b OLBlockHeader>,
+    ) -> Self {
+        Self {
+            block_info,
+            parent_header,
+        }
+    }
+
     pub fn block_info(&self) -> &BlockInfo {
         self.block_info
     }

@@ -2,6 +2,7 @@
 
 mod asm_manifests;
 mod chain;
+mod chain_processing;
 mod deposit_withdrawal;
 mod ee_predicate_update;
 mod inbox;
