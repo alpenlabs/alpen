@@ -1,9 +1,12 @@
 //! Tests for snark account transfer updates.
 
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
-use crate::{BRIDGE_GATEWAY_ACCT_ID, errors::ExecError, test_utils::*};
+use crate::{
+    BRIDGE_GATEWAY_ACCT_ID, assembly::BlockComponents, context::BlockInfo, errors::ExecError,
+    test_utils::*,
+};
 
 #[test]
 fn test_snark_update_success_with_transfer() {
@@ -118,6 +121,207 @@ fn test_snark_update_multiple_transfers() {
         recipient3.balance(),
         BitcoinAmount::from_sat(10_000_000),
         "Recipient3 should receive 10M"
+    );
+}
+
+#[test]
+fn test_snark_update_same_block_distinct_senders() {
+    let mut state = create_test_genesis_state();
+    let sender1_id = get_test_snark_account_id();
+    let sender2_id = test_account_id(TEST_SNARK_ACCOUNT_ID + 1);
+    let recipient1_id = test_account_id(TEST_RECIPIENT_ID + 1);
+    let recipient2_id = test_account_id(TEST_RECIPIENT_ID + 2);
+
+    create_empty_account(&mut state, recipient1_id);
+    create_empty_account(&mut state, recipient2_id);
+
+    let genesis_block = setup_genesis_with_snark_accounts(
+        &mut state,
+        &[(sender1_id, 100_000_000), (sender2_id, 70_000_000)],
+    );
+
+    let sender1_state = lookup_snark_state(&state, sender1_id);
+    let tx1 = SnarkUpdateBuilder::from_snark_state(sender1_state.clone())
+        .with_transfer(recipient1_id, 10_000_000)
+        .build(sender1_id, get_test_state_root(2), get_test_proof(1));
+
+    let sender2_state = lookup_snark_state(&state, sender2_id);
+    let tx2 = SnarkUpdateBuilder::from_snark_state(sender2_state.clone())
+        .with_transfer(recipient2_id, 20_000_000)
+        .build(sender2_id, get_test_state_root(3), get_test_proof(2));
+
+    let block_info = BlockInfo::new(1_001_000, 1, 1);
+    execute_block(
+        &mut state,
+        &block_info,
+        Some(genesis_block.header()),
+        BlockComponents::new_txs_from_ol_transactions(vec![tx1, tx2]),
+    )
+    .expect("Same-block updates from distinct senders should succeed");
+
+    let (sender1_balance, sender1_state) = lookup_snark_account_states(&state, sender1_id);
+    assert_eq!(
+        sender1_balance.balance(),
+        BitcoinAmount::from_sat(90_000_000),
+        "Sender1 balance should reflect its same-block transfer"
+    );
+    assert_eq!(
+        *sender1_state.seqno().inner(),
+        1,
+        "Sender1 sequence number should increment"
+    );
+
+    let (sender2_balance, sender2_state) = lookup_snark_account_states(&state, sender2_id);
+    assert_eq!(
+        sender2_balance.balance(),
+        BitcoinAmount::from_sat(50_000_000),
+        "Sender2 balance should reflect its same-block transfer"
+    );
+    assert_eq!(
+        *sender2_state.seqno().inner(),
+        1,
+        "Sender2 sequence number should increment"
+    );
+
+    let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();
+    assert_eq!(
+        recipient1.balance(),
+        BitcoinAmount::from_sat(10_000_000),
+        "Recipient1 should receive sender1 transfer"
+    );
+
+    let recipient2 = state.get_account_state(recipient2_id).unwrap().unwrap();
+    assert_eq!(
+        recipient2.balance(),
+        BitcoinAmount::from_sat(20_000_000),
+        "Recipient2 should receive sender2 transfer"
+    );
+}
+
+#[test]
+fn test_snark_update_same_block_sequential_seqnos() {
+    let mut state = create_test_genesis_state();
+    let sender_id = get_test_snark_account_id();
+    let recipient1_id = test_account_id(TEST_RECIPIENT_ID + 1);
+    let recipient2_id = test_account_id(TEST_RECIPIENT_ID + 2);
+
+    let genesis_block = setup_genesis_with_snark_account(&mut state, sender_id, 100_000_000);
+    create_empty_account(&mut state, recipient1_id);
+    create_empty_account(&mut state, recipient2_id);
+
+    let sender_state = lookup_snark_state(&state, sender_id);
+    let tx1 = SnarkUpdateBuilder::from_snark_state(sender_state.clone())
+        .with_transfer(recipient1_id, 10_000_000)
+        .build(sender_id, get_test_state_root(2), get_test_proof(1));
+
+    let mut tx2_effects = TxEffects::default();
+    tx2_effects.push_transfer(recipient2_id, 20_000_000);
+    let tx2 = create_unchecked_snark_update(sender_id, 1, get_test_state_root(3), 0, tx2_effects);
+
+    let block_info = BlockInfo::new(1_001_000, 1, 1);
+    execute_block(
+        &mut state,
+        &block_info,
+        Some(genesis_block.header()),
+        BlockComponents::new_txs_from_ol_transactions(vec![tx1, tx2]),
+    )
+    .expect("Same-block sequential updates from one sender should succeed");
+
+    let (sender_balance, sender_state) = lookup_snark_account_states(&state, sender_id);
+    assert_eq!(
+        sender_balance.balance(),
+        BitcoinAmount::from_sat(70_000_000),
+        "Sender balance should include both same-block transfers"
+    );
+    assert_eq!(
+        *sender_state.seqno().inner(),
+        2,
+        "Sender sequence number should increment for both same-block updates"
+    );
+
+    let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();
+    assert_eq!(
+        recipient1.balance(),
+        BitcoinAmount::from_sat(10_000_000),
+        "Recipient1 should receive the first transfer"
+    );
+
+    let recipient2 = state.get_account_state(recipient2_id).unwrap().unwrap();
+    assert_eq!(
+        recipient2.balance(),
+        BitcoinAmount::from_sat(20_000_000),
+        "Recipient2 should receive the second transfer"
+    );
+}
+
+#[test]
+fn test_snark_update_same_block_duplicate_seqno_fails() {
+    let mut state = create_test_genesis_state();
+    let sender_id = get_test_snark_account_id();
+    let recipient1_id = test_account_id(TEST_RECIPIENT_ID + 1);
+    let recipient2_id = test_account_id(TEST_RECIPIENT_ID + 2);
+
+    let genesis_block = setup_genesis_with_snark_account(&mut state, sender_id, 100_000_000);
+    create_empty_account(&mut state, recipient1_id);
+    create_empty_account(&mut state, recipient2_id);
+
+    let sender_state = lookup_snark_state(&state, sender_id);
+    let tx1 = SnarkUpdateBuilder::from_snark_state(sender_state.clone())
+        .with_transfer(recipient1_id, 10_000_000)
+        .build(sender_id, get_test_state_root(2), get_test_proof(1));
+
+    let mut tx2_effects = TxEffects::default();
+    tx2_effects.push_transfer(recipient2_id, 20_000_000);
+    let tx2 = create_unchecked_snark_update(sender_id, 0, get_test_state_root(3), 0, tx2_effects);
+
+    let block_info = BlockInfo::new(1_001_000, 1, 1);
+    let result = execute_block(
+        &mut state,
+        &block_info,
+        Some(genesis_block.header()),
+        BlockComponents::new_txs_from_ol_transactions(vec![tx1, tx2]),
+    );
+
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidUpdateSequence {
+                account_id,
+                expected,
+                got,
+            }) => {
+                assert_eq!(account_id, sender_id);
+                assert_eq!(expected, 1);
+                assert_eq!(got, 0);
+            }
+            err => panic!("Expected InvalidUpdateSequence, got: {err:?}"),
+        },
+        Ok(_) => panic!("Same-block duplicate sequence number should fail"),
+    }
+
+    let (sender_balance, sender_state) = lookup_snark_account_states(&state, sender_id);
+    assert_eq!(
+        sender_balance.balance(),
+        BitcoinAmount::from_sat(90_000_000),
+        "First same-block transfer should remain applied"
+    );
+    assert_eq!(
+        *sender_state.seqno().inner(),
+        1,
+        "Sender sequence number should reflect only the first update"
+    );
+
+    let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();
+    assert_eq!(
+        recipient1.balance(),
+        BitcoinAmount::from_sat(10_000_000),
+        "Recipient1 should receive the first transfer"
+    );
+
+    let recipient2 = state.get_account_state(recipient2_id).unwrap().unwrap();
+    assert_eq!(
+        recipient2.balance(),
+        BitcoinAmount::from_sat(0),
+        "Recipient2 should not receive the duplicate-seqno transfer"
     );
 }
 
