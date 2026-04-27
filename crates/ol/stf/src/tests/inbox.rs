@@ -22,12 +22,8 @@ fn test_snark_inbox_message_insertion() {
 
     // Execute transaction
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch);
-    assert!(
-        result.is_ok(),
-        "GAM transaction should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
+        .expect("GAM transaction should succeed");
 
     // Verify the message was added to inbox
     let (snark_account, snark_state) = get_snark_state_expect(&state, snark_id);
@@ -111,12 +107,8 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
     // Step 4: Execute the update
     let (slot, epoch) = (2, 1);
-    let result = execute_tx_in_block(&mut state, header, update_tx, slot, epoch);
-    assert!(
-        result.is_ok(),
-        "Update with valid message proof should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, header, update_tx, slot, epoch)
+        .expect("Update with valid message proof should succeed");
 
     // Verify the update was applied
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();

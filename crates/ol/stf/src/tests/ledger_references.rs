@@ -81,19 +81,14 @@ fn test_snark_update_with_valid_ledger_reference() {
 
     // Step 3: Execute the update
     let (slot, epoch) = (2, 2); // Increment epoch because genesis and block 1 are terminal
-    let result = execute_tx_in_block(
+    execute_tx_in_block(
         &mut state,
         block1_output.completed_block().header(),
         tx,
         slot,
         epoch,
-    );
-
-    assert!(
-        result.is_ok(),
-        "Update with valid ledger reference should succeed: {:?}",
-        result.err()
-    );
+    )
+    .expect("Update with valid ledger reference should succeed");
 
     // Verify the transfer was applied
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();

@@ -53,7 +53,7 @@ fn test_snark_update_max_bitcoin_supply() {
 }
 
 #[test]
-fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
+fn test_snark_update_transfer_above_bitcoin_supply_accepted() {
     let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = get_test_recipient_account_id();
@@ -67,7 +67,8 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
     create_empty_account(&mut state, recipient_id);
 
     // Try to transfer more than 21M BTC in a single transfer
-    let more_than_max_bitcoin = 2_100_000_000_000_001u64; // 21M BTC + 1 satoshi
+    let transfer_amount = 2_100_000_000_000_001u64; // 21M BTC + 1 satoshi
+    let expected_sender_balance = u64::MAX - transfer_amount;
 
     let tx = SnarkUpdateBuilder::from_snark_state(
         state
@@ -78,25 +79,20 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
             .unwrap()
             .clone(),
     )
-    .with_transfer(recipient_id, more_than_max_bitcoin)
+    .with_transfer(recipient_id, transfer_amount)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-
     // This should succeed as the account has sufficient balance
     // The protocol doesn't enforce Bitcoin's 21M limit on individual transfers
-    assert!(
-        result.is_ok(),
-        "Transfer exceeding Bitcoin max supply should succeed if balance is available: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Transfer exceeding Bitcoin max supply should succeed if balance is available");
 
     // Verify the transfer was applied correctly
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
     assert_eq!(
         snark_account.balance(),
-        BitcoinAmount::from_sat(u64::MAX - more_than_max_bitcoin),
+        BitcoinAmount::from_sat(expected_sender_balance),
         "Sender balance should be reduced by transfer amount"
     );
     assert_eq!(
@@ -108,7 +104,7 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
     let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
     assert_eq!(
         recipient.balance(),
-        BitcoinAmount::from_sat(more_than_max_bitcoin),
+        BitcoinAmount::from_sat(transfer_amount),
         "Recipient should receive the transfer amount exceeding 21M BTC"
     );
 }
@@ -220,13 +216,8 @@ fn test_snark_update_overflow_u64_boundary() {
     .with_transfer(recipient1_id, u64::MAX) // Transfer entire u64::MAX
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let result3 = execute_tx_in_block(&mut state3, genesis_block3.header(), tx3, slot, epoch);
-
-    assert!(
-        result3.is_ok(),
-        "Transfer of u64::MAX should succeed when balance is sufficient: {:?}",
-        result3.err()
-    );
+    execute_tx_in_block(&mut state3, genesis_block3.header(), tx3, slot, epoch)
+        .expect("Transfer of u64::MAX should succeed when balance is sufficient");
 
     // Verify the transfer completed
     let snark_account3 = state3.get_account_state(snark_id).unwrap().unwrap();

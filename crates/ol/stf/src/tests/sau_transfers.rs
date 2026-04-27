@@ -32,12 +32,8 @@ fn test_snark_update_success_with_transfer() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-    assert!(
-        result.is_ok(),
-        "Valid update should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Valid update should succeed");
 
     // Verify balances
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -93,12 +89,8 @@ fn test_snark_update_multiple_transfers() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-    assert!(
-        result.is_ok(),
-        "Multiple transfers should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Multiple transfers should succeed");
 
     // Verify all balances
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -216,14 +208,10 @@ fn test_snark_update_zero_value_transfer() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Zero value transfer should succeed");
 
-    // Should succeed - zero transfers are valid
-    assert!(
-        result.is_ok(),
-        "Zero value transfer should succeed: {:?}",
-        result.err()
-    );
+    // Zero transfers are valid.
 
     // Verify balances unchanged
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -303,15 +291,8 @@ fn test_snark_update_from_zero_balance_account() {
     .with_transfer(recipient_id, 0) // Zero value transfer
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx_zero, slot, epoch);
-
-    // Zero transfer should succeed even from zero balance
-    assert!(
-        result2.is_ok(),
-        "Zero value transfer from zero balance should succeed: {:?}",
-        result2.err()
-    );
-    let blk2 = result2.unwrap();
+    let blk2 = execute_tx_in_block(&mut state, genesis_block.header(), tx_zero, slot, epoch)
+        .expect("Zero value transfer from zero balance should succeed");
 
     // Verify sequence number DID increment for successful zero transfer
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -349,14 +330,8 @@ fn test_snark_update_from_zero_balance_account() {
     .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 0, vec![]) // Zero value message
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let result3 = execute_tx_in_block(&mut state, blk2.header(), tx_multiple, slot + 1, epoch);
-
-    // Multiple zero operations should all succeed
-    assert!(
-        result3.is_ok(),
-        "Multiple zero operations from zero balance should succeed: {:?}",
-        result3.err()
-    );
+    execute_tx_in_block(&mut state, blk2.header(), tx_multiple, slot + 1, epoch)
+        .expect("Multiple zero operations from zero balance should succeed");
 
     // Verify final state
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -389,13 +364,8 @@ fn test_snark_update_self_transfer() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-
-    assert!(
-        result.is_ok(),
-        "Self transfer should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Self transfer should succeed");
 
     // Verify balance unchanged (sent 30M to self)
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -437,13 +407,8 @@ fn test_snark_update_exact_balance_transfer() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-
-    assert!(
-        result.is_ok(),
-        "Exact balance transfer should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Exact balance transfer should succeed");
 
     // Verify balances
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();

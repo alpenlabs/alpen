@@ -29,12 +29,8 @@ fn test_snark_update_multiple_output_messages() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-    assert!(
-        result.is_ok(),
-        "Multiple output messages should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Multiple output messages should succeed");
 
     // Verify balance reduced by message values (10M + 5M + 0 = 15M)
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
@@ -72,12 +68,8 @@ fn test_snark_update_transfers_and_messages_combined() {
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
-    assert!(
-        result.is_ok(),
-        "Combined transfers and messages should succeed: {:?}",
-        result.err()
-    );
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+        .expect("Combined transfers and messages should succeed");
 
     // Verify balances (100M - 25M - 15M = 60M)
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
