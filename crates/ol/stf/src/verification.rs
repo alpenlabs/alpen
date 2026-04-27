@@ -396,14 +396,25 @@ pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::{AccountSerial, OLBlockCommitment};
+    use strata_acct_types::BitcoinAmount;
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_identifiers::AccountSerial;
     use strata_ol_chain_types_new::{
         BlockFlags, OLBlockId, OLL1ManifestContainer, OLLog, OLTxSegment,
     };
-    use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1, StateDiff};
+    use strata_ol_da::{
+        AccountInit, AccountTypeInit, GlobalStateDiff, LedgerDiff, NewAccountEntry, OLDaPayloadV1,
+        OLDaSchemeV1, StateDiff, U16LenList,
+    };
+    use strata_ol_state_types::OLState;
 
     use super::*;
-    use crate::{assembly::BlockExecOutputs, test_utils::create_test_genesis_state};
+    use crate::{
+        assembly::BlockExecOutputs,
+        test_utils::{
+            create_test_genesis_state, execute_block, genesis_block_components, test_account_id,
+        },
+    };
 
     fn test_logs(count: u32) -> Vec<OLLog> {
         (0..count)
@@ -414,6 +425,51 @@ mod tests {
     fn assembly_logs_root(logs: Vec<OLLog>) -> Buf32 {
         BlockExecOutputs::new(BlockPostStateCommitments::Common(Buf32::zero()), logs)
             .compute_block_logs_root()
+    }
+
+    fn setup_epoch1_diff_state() -> (OLState, EpochInfo) {
+        let mut state = create_test_genesis_state();
+        let genesis_info = BlockInfo::new_genesis(1_000_000);
+        let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+            .expect("genesis should execute");
+        let terminal_info = BlockInfo::new(1_001_000, 1, state.cur_epoch());
+        let epoch_info = EpochInfo::new(terminal_info, genesis.header().compute_block_commitment());
+        (state, epoch_info)
+    }
+
+    fn state_changing_epoch_diff() -> StateDiff {
+        let new_account = NewAccountEntry::new(
+            test_account_id(77),
+            AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty),
+        );
+        StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(vec![new_account]),
+                U16LenList::new(Vec::new()),
+            ),
+        )
+    }
+
+    fn duplicate_epoch_diff(state_diff: &StateDiff) -> StateDiff {
+        let encoded = encode_to_vec(state_diff).expect("state diff should encode");
+        decode_buf_exact(&encoded).expect("state diff should decode")
+    }
+
+    fn compute_preseal_root_after_epoch_diff(
+        state: &OLState,
+        epoch_info: &EpochInfo,
+        state_diff: StateDiff,
+    ) -> Buf32 {
+        let mut expected_state = state.clone();
+        let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+        chain_processing::process_epoch_initial(&mut expected_state, &init_ctx)
+            .expect("epoch initial processing should succeed");
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
+            .expect("state-changing epoch diff should apply");
+        expected_state
+            .compute_state_root()
+            .expect("preseal state root should compute")
     }
 
     #[test]
@@ -470,10 +526,8 @@ mod tests {
 
     #[test]
     fn test_verify_epoch_with_diff_final_root_mismatch() {
-        let mut state = create_test_genesis_state();
-        let terminal_info = BlockInfo::new(1_000_000, 1, state.cur_epoch());
-        let epoch_info = EpochInfo::new(terminal_info, OLBlockCommitment::null());
-        let diff = OLDaPayloadV1::new(StateDiff::default());
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
         let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests");
         let exp = EpochExecExpectations {
             epoch_post_state_root: Buf32::from([9u8; 32]),
@@ -486,6 +540,42 @@ mod tests {
             &manifests,
             &exp,
         );
+        assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
+    }
+
+    #[test]
+    fn test_verify_epoch_preseal_with_diff_accepts_matching_root() {
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let state_diff = state_changing_epoch_diff();
+        let expected_preseal_root = compute_preseal_root_after_epoch_diff(
+            &state,
+            &epoch_info,
+            duplicate_epoch_diff(&state_diff),
+        );
+        let diff = OLDaPayloadV1::new(state_diff);
+
+        verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            diff,
+            &expected_preseal_root,
+        )
+        .expect("matching preseal root should verify");
+    }
+
+    #[test]
+    fn test_verify_epoch_preseal_with_diff_rejects_root_mismatch() {
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
+        let wrong_preseal_root = Buf32::from([9u8; 32]);
+
+        let res = verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            diff,
+            &wrong_preseal_root,
+        );
+
         assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
     }
 
