@@ -29,7 +29,8 @@ use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     ol_state_index::{
-        AccountEpochRecord, BlockIndexingRecord, CommonEpochRecord, EpochIndexingData,
+        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, BlockIndexingWrites,
+        EpochIndexingData, EpochIndexingWrites,
     },
     types::{
         AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
@@ -693,52 +694,69 @@ pub trait AccountDatabase: Send + Sync + 'static {
     ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
 }
 
-/// Database for OL state indexing data at epoch granularity.
+/// Database for OL state indexing data.
 ///
-/// Indexing data lets callers reconstruct snark account inner states and
-/// answer per-account, per-epoch activity queries without replaying blocks.
-/// The schema is account-type-agnostic.
+/// Lets callers reconstruct snark account inner states and answer per-account,
+/// per-epoch activity queries without replaying blocks. Account-type-agnostic.
 ///
-/// Writes go through [`apply_epoch_indexing`], which persists an
-/// [`EpochIndexingData`] atomically. Block-level staging is done by the producer.
+/// Two write paths reflect the two producer modes:
+/// - [`apply_epoch_indexing`](Self::apply_epoch_indexing): single atomic write
+///   for an entire epoch. Used by checkpoint-sync producers.
+/// - [`apply_block_indexing`](Self::apply_block_indexing): incremental per-block
+///   write. Used by block-sync producers.
+///
+/// Block-sync also calls [`set_epoch_commitment`](Self::set_epoch_commitment)
+/// once at epoch finalization to stamp the commitment onto the existing common
+/// row; checkpoint-sync includes the commitment in its single write.
+///
+/// Both paths target the same tables; atomicity granularity differs.
 pub trait OLStateIndexingDatabase: Send + Sync + 'static {
-    /// Atomically persists an epoch's indexing data.
+    /// Atomically persists an epoch's indexing data in a single call.
     ///
-    /// Writes the common record, all per-account records, and creation-epoch
-    /// index entries for any newly-created accounts in a single transaction.
-    fn apply_epoch_indexing(&self, data: EpochIndexingData) -> DbResult<()>;
+    /// Writes the common record, per-account update entries, per-account
+    /// inbox entries, and creation-epoch index entries for newly created
+    /// accounts. All in one transaction.
+    fn apply_epoch_indexing(&self, writes: EpochIndexingWrites) -> DbResult<()>;
 
-    /// Returns the common indexing record for the given epoch.
-    fn get_common_epoch_record(&self, epoch: Epoch) -> DbResult<Option<CommonEpochRecord>>;
+    /// Atomically applies a single block's incremental indexing writes.
+    ///
+    /// Appends to existing per-(account, epoch) entries, updates the common
+    /// row's `created_accounts`, and inserts creation-epoch index entries
+    /// for any newly created accounts. Caller is responsible for not invoking
+    /// this twice for the same block.
+    fn apply_block_indexing(&self, writes: BlockIndexingWrites) -> DbResult<()>;
 
-    /// Returns the per-account indexing record for the given account and epoch.
+    /// Sets the epoch commitment on the existing common row.
+    ///
+    /// Called once by block-sync producers at epoch finalization. Errors if
+    /// no common row exists for the epoch.
+    fn set_epoch_commitment(
+        &self,
+        epoch: Epoch,
+        commitment: EpochCommitment,
+    ) -> DbResult<()>;
+
+    /// Returns the common indexing data for the given epoch.
+    fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>>;
+
+    /// Returns the per-(account, epoch) update entry.
     ///
     /// Returns `None` when the account had no indexed activity in the epoch.
-    fn get_account_epoch_record(
+    fn get_account_update_entry(
         &self,
-        acct: AccountId,
-        epoch: Epoch,
-    ) -> DbResult<Option<AccountEpochRecord>>;
+        key: AccountEpochKey,
+    ) -> DbResult<Option<AccountUpdateEntry>>;
+
+    /// Returns the per-(account, epoch) inbox entry.
+    ///
+    /// Returns `None` when no inbox writes were recorded for the account in the epoch.
+    fn get_account_inbox_entry(
+        &self,
+        key: AccountEpochKey,
+    ) -> DbResult<Option<AccountInboxEntry>>;
 
     /// Returns the epoch in which an account was created.
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;
-
-    /// Persists a per-block indexing record from a full-node producer.
-    ///
-    /// Folded into the epoch record at epoch finalization. Checkpoint-sync
-    /// producers do not use this path; their block-index tree remains empty.
-    fn put_block_indexing(
-        &self,
-        epoch: Epoch,
-        block: OLBlockCommitment,
-        record: BlockIndexingRecord,
-    ) -> DbResult<()>;
-
-    /// Returns all per-block indexing records for an epoch, in block-key order.
-    fn get_epoch_block_indexing(
-        &self,
-        epoch: Epoch,
-    ) -> DbResult<Vec<(OLBlockCommitment, BlockIndexingRecord)>>;
 }
 
 /// Database interface for OL mempool transactions.
