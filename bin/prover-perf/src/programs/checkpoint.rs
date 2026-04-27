@@ -18,7 +18,7 @@ use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
 use strata_ol_stf::test_utils::{build_empty_chain, create_test_genesis_state};
-use strata_proofimpl_checkpoint_new::program::{CheckpointProgram, CheckpointProverInput};
+use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use tracing::info;
 use zkaleido::{PerformanceReport, ZkVmHostPerf, ZkVmProgramPerf};
 
@@ -79,7 +79,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_checkpoint_new_native_execution() {
+    fn test_checkpoint_native_execution() {
         let input = prepare_checkpoint_input();
         let output = CheckpointProgram::execute(&input).unwrap();
         dbg!(output);

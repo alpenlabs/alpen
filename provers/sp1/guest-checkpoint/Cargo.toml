@@ -1,12 +1,12 @@
 [package]
 edition = "2021"
-name = "guest-sp1-checkpoint-new"
+name = "guest-sp1-checkpoint"
 version = "0.1.0"
 
 [workspace]
 
 [dependencies]
-strata-proofimpl-checkpoint-new = { path = "../../../crates/proof-impl/checkpoint-new" }
+strata-proofimpl-checkpoint = { path = "../../../crates/proof-impl/checkpoint" }
 zkaleido-sp1-guest-env = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25" }
 
 [patch.crates-io]

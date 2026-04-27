@@ -10,7 +10,7 @@ workspace = true
 zkaleido.workspace = true
 
 # proof programs
-strata-proofimpl-checkpoint-new.workspace = true
+strata-proofimpl-checkpoint.workspace = true
 strata-proofimpl-evm-ee-stf.workspace = true
 
 strata-codec.workspace = true

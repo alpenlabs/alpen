@@ -1,5 +1,5 @@
 [package]
-name = "strata-proofimpl-checkpoint-new"
+name = "strata-proofimpl-checkpoint"
 version = "0.1.0"
 edition = "2024"
 

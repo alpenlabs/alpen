@@ -13944,7 +13944,7 @@ dependencies = [
  "strata-params",
  "strata-predicate",
  "strata-primitives",
- "strata-proofimpl-checkpoint-new",
+ "strata-proofimpl-checkpoint",
  "strata-service",
  "strata-snark-acct-types",
  "strata-status",
@@ -15668,7 +15668,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-checkpoint-new"
+name = "strata-proofimpl-checkpoint"
 version = "0.1.0"
 dependencies = [
  "ssz",
@@ -15747,7 +15747,7 @@ dependencies = [
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-stf",
- "strata-proofimpl-checkpoint-new",
+ "strata-proofimpl-checkpoint",
  "strata-proofimpl-evm-ee-stf",
  "strata-sp1-guest-builder",
  "strata-test-utils-evm-ee",

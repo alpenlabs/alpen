@@ -248,7 +248,7 @@ Zero-knowledge proof generation.
 
 | Crate | Description |
 |-------|-------------|
-| `proof-impl/checkpoint-new` | Checkpoint proof implementation |
+| `proof-impl/checkpoint` | Checkpoint proof implementation |
 | `proof-impl/cl-stf` | Orchestration layer STF proof |
 | `proof-impl/evm-ee-stf` | EE Layer STF proof |
 | `zkvm/hosts` | ZKVM host implementations (SP1, RISC0, Native) |

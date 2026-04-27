@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-mod checkpoint_new;
+mod checkpoint;
 mod evm_ee;
 
 use crate::PerformanceReport;
@@ -29,12 +29,12 @@ impl FromStr for GuestProgram {
 /// Generates [`PerformanceReport`] for each invocation.
 #[cfg(feature = "sp1")]
 pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
-    use strata_zkvm_hosts::sp1::{CHECKPOINT_NEW_HOST, EVM_EE_STF_HOST};
+    use strata_zkvm_hosts::sp1::{CHECKPOINT_HOST, EVM_EE_STF_HOST};
     programs
         .iter()
         .map(|program| match program {
             GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&**EVM_EE_STF_HOST),
-            GuestProgram::CheckpointV1 => checkpoint_new::gen_perf_report(&**CHECKPOINT_NEW_HOST),
+            GuestProgram::CheckpointV1 => checkpoint::gen_perf_report(&**CHECKPOINT_HOST),
         })
         .collect()
 }

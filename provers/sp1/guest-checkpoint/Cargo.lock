@@ -540,10 +540,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "guest-sp1-checkpoint-new"
+name = "guest-sp1-checkpoint"
 version = "0.1.0"
 dependencies = [
- "strata-proofimpl-checkpoint-new",
+ "strata-proofimpl-checkpoint",
  "zkaleido-sp1-guest-env",
 ]
 
@@ -1827,7 +1827,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-proofimpl-checkpoint-new"
+name = "strata-proofimpl-checkpoint"
 version = "0.1.0"
 dependencies = [
  "ssz",
