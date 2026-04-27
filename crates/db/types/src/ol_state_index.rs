@@ -1,348 +1,275 @@
 //! Record types for the [`OLStateIndexingDatabase`] schema.
 //!
-//! These types capture the epoch-granularity indexing data persisted for
-//! later querying. They are account-type-agnostic: any account may produce
-//! any kind of indexing record.
+//! Captures the indexing data persisted for later querying. Account-type-agnostic:
+//! any account may produce any kind of indexing record.
 //!
-//! Records derive [`serde::Serialize`] / [`serde::Deserialize`] and are
-//! persisted as CBOR. Fields whose native types lack serde derives are stored
-//! in their raw byte forms (e.g. `MessageEntry` as its SSZ encoding); callers
-//! convert at the producer/consumer boundaries.
+//! Records derive [`serde::Serialize`] / [`serde::Deserialize`] and are persisted
+//! as CBOR. Fields whose native types lack serde derives (e.g. `MessageEntry`)
+//! are stored in their raw SSZ byte form; callers convert at the boundaries.
 //!
 //! [`OLStateIndexingDatabase`]: crate::traits::OLStateIndexingDatabase
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash};
-use thiserror::Error;
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitment};
 
-/// Per-update record of a snark account state transition.
+/// Global epoch-level indexing facts. Mutable until epoch finalization.
 ///
-/// `extra_data.is_some()` corresponds to an `update_inner_state` call;
-/// `extra_data.is_none()` corresponds to a `set_proof_state_directly` call.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SnarkUpdateRecord {
-    /// Sequence number after this update. Raw `u64`; callers convert to the
-    /// `Seqno` newtype at the boundary.
-    seqno: u64,
-
-    /// Inner state root after this update.
-    ///
-    /// `None` when the producer (e.g. checkpoint sync) does not know the
-    /// intermediate per-update state.
-    new_inner_state: Option<Hash>,
-
-    /// Inbox read frontier after this update.
-    next_inbox_msg_idx: u64,
-
-    /// Extra data associated with an update (for DA).
-    ///
-    /// `None` for direct-set updates.
-    extra_data: Option<Vec<u8>>,
+/// `epoch_commitment` is set once at epoch finalization; `created_accounts`
+/// grows incrementally as blocks in the epoch execute (block-sync) or is
+/// populated in one shot (checkpoint-sync).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct EpochIndexingData {
+    epoch_commitment: Option<EpochCommitment>,
+    created_accounts: Vec<AccountId>,
 }
 
-impl SnarkUpdateRecord {
+impl EpochIndexingData {
     pub fn new(
-        seqno: u64,
-        new_inner_state: Option<Hash>,
-        next_inbox_msg_idx: u64,
-        extra_data: Option<Vec<u8>>,
+        epoch_commitment: Option<EpochCommitment>,
+        created_accounts: Vec<AccountId>,
     ) -> Self {
         Self {
-            seqno,
-            new_inner_state,
-            next_inbox_msg_idx,
+            epoch_commitment,
+            created_accounts,
+        }
+    }
+
+    pub fn epoch_commitment(&self) -> Option<&EpochCommitment> {
+        self.epoch_commitment.as_ref()
+    }
+
+    pub fn created_accounts(&self) -> &[AccountId] {
+        &self.created_accounts
+    }
+
+    pub fn set_epoch_commitment(&mut self, commitment: EpochCommitment) {
+        self.epoch_commitment = Some(commitment);
+    }
+
+    pub fn push_created_account(&mut self, acct: AccountId) {
+        self.created_accounts.push(acct);
+    }
+}
+
+/// Block-sync metadata for an account update.
+///
+/// Present only when produced by a block-syncing node; checkpoint-sync
+/// records leave this `None`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccountUpdateMeta {
+    block_commitment: OLBlockCommitment,
+    final_state_root: Hash,
+}
+
+impl AccountUpdateMeta {
+    pub fn new(block_commitment: OLBlockCommitment, final_state_root: Hash) -> Self {
+        Self {
+            block_commitment,
+            final_state_root,
+        }
+    }
+
+    pub fn block_commitment(&self) -> &OLBlockCommitment {
+        &self.block_commitment
+    }
+
+    pub fn final_state_root(&self) -> Hash {
+        self.final_state_root
+    }
+}
+
+/// Single snark account state update.
+///
+/// `processed_messages` is the SSZ-encoded `MessageEntry`s consumed by this
+/// update. Callers decode at the boundary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccountUpdateRecord {
+    update_meta: Option<AccountUpdateMeta>,
+    seq_no: u64,
+    processed_messages: Vec<Vec<u8>>,
+    next_inbox_idx: u64,
+    extra_data: Vec<u8>,
+}
+
+impl AccountUpdateRecord {
+    pub fn new(
+        update_meta: Option<AccountUpdateMeta>,
+        seq_no: u64,
+        processed_messages: Vec<Vec<u8>>,
+        next_inbox_idx: u64,
+        extra_data: Vec<u8>,
+    ) -> Self {
+        Self {
+            update_meta,
+            seq_no,
+            processed_messages,
+            next_inbox_idx,
             extra_data,
         }
     }
 
-    pub fn seqno(&self) -> u64 {
-        self.seqno
+    pub fn update_meta(&self) -> Option<&AccountUpdateMeta> {
+        self.update_meta.as_ref()
     }
 
-    pub fn new_inner_state(&self) -> Option<Hash> {
-        self.new_inner_state
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
     }
 
-    pub fn next_inbox_msg_idx(&self) -> u64 {
-        self.next_inbox_msg_idx
+    pub fn processed_messages(&self) -> &[Vec<u8>] {
+        &self.processed_messages
     }
 
-    pub fn extra_data(&self) -> Option<&[u8]> {
-        self.extra_data.as_deref()
+    pub fn next_inbox_idx(&self) -> u64 {
+        self.next_inbox_idx
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
     }
 }
 
-/// Record of a single inbox message insertion.
+/// Key used for both [`AccountUpdateEntry`] and [`AccountInboxEntry`].
 ///
-/// `entry_bytes` holds the SSZ encoding of the underlying `MessageEntry`;
-/// callers decode at the boundary.
+/// Keying by [`EpochCommitment`] is not viable: the commitment is unknown
+/// during intermediate steps within the epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct AccountEpochKey {
+    pub epoch: Epoch,
+    pub account_id: AccountId,
+}
+
+impl AccountEpochKey {
+    pub fn new(epoch: Epoch, account_id: AccountId) -> Self {
+        Self { epoch, account_id }
+    }
+}
+
+/// Per-(account, epoch) list of update records.
+///
+/// Block-sync producers append records as blocks execute; checkpoint-sync
+/// producers write the full list in one shot.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccountUpdateEntry {
+    records: Vec<AccountUpdateRecord>,
+}
+
+impl AccountUpdateEntry {
+    pub fn new(records: Vec<AccountUpdateRecord>) -> Self {
+        Self { records }
+    }
+
+    pub fn records(&self) -> &[AccountUpdateRecord] {
+        &self.records
+    }
+
+    pub fn push(&mut self, record: AccountUpdateRecord) {
+        self.records.push(record);
+    }
+
+    pub fn extend(&mut self, records: impl IntoIterator<Item = AccountUpdateRecord>) {
+        self.records.extend(records);
+    }
+}
+
+/// Inbox message append, optionally tagged with the block in which it was inserted.
+///
+/// `block_commitment` is `Some` for block-sync writes, `None` for checkpoint-sync.
+/// `entry_bytes` is the SSZ encoding of the underlying `MessageEntry`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct InboxMessageRecord {
-    /// Position of this entry in the account's inbox MMR.
-    mmr_index: u64,
-
-    /// SSZ-encoded bytes of the message entry.
     entry_bytes: Vec<u8>,
+    block_commitment: Option<OLBlockCommitment>,
 }
 
 impl InboxMessageRecord {
-    pub fn new(mmr_index: u64, entry_bytes: Vec<u8>) -> Self {
+    pub fn new(entry_bytes: Vec<u8>, block_commitment: Option<OLBlockCommitment>) -> Self {
         Self {
-            mmr_index,
             entry_bytes,
+            block_commitment,
         }
-    }
-
-    pub fn mmr_index(&self) -> u64 {
-        self.mmr_index
     }
 
     pub fn entry_bytes(&self) -> &[u8] {
         &self.entry_bytes
     }
+
+    pub fn block_commitment(&self) -> Option<&OLBlockCommitment> {
+        self.block_commitment.as_ref()
+    }
 }
 
-/// Per-account indexing record for a single epoch.
-///
-/// Only written when the account had indexing-relevant activity in the epoch.
-/// Absence of a record means no activity.
-///
-/// # Invariant
-///
-/// When `snark_updates` is non-empty:
-///   - Its last element's `next_inbox_msg_idx` equals `final_next_inbox_msg_idx`.
-///   - If its last element's `new_inner_state` is `Some(s)`, then
-///     `s == final_inner_state`.
-///
-/// Enforced by the constructors; fields are private and never mutated after
-/// construction.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct AccountEpochRecord {
-    snark_updates: Vec<SnarkUpdateRecord>,
-    inbox_writes: Vec<InboxMessageRecord>,
-    final_inner_state: Hash,
-    final_next_inbox_msg_idx: u64,
+/// Per-(account, epoch) list of inbox message writes.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AccountInboxEntry {
+    records: Vec<InboxMessageRecord>,
 }
 
-impl AccountEpochRecord {
-    /// Constructs a record from a non-empty list of per-update details.
-    ///
-    /// Derives the final state from the last update.
-    ///
-    /// Used by the full-sync producer.
-    pub fn from_updates(
-        snark_updates: Vec<SnarkUpdateRecord>,
-        inbox_writes: Vec<InboxMessageRecord>,
-    ) -> Result<Self, IndexingDataError> {
-        let last = snark_updates
-            .last()
-            .ok_or(IndexingDataError::EmptySnarkUpdates)?;
-        let final_inner_state = last
-            .new_inner_state
-            .ok_or(IndexingDataError::MissingFinalInnerState)?;
-        let final_next_inbox_msg_idx = last.next_inbox_msg_idx;
-        Ok(Self {
-            snark_updates,
-            inbox_writes,
-            final_inner_state,
-            final_next_inbox_msg_idx,
-        })
+impl AccountInboxEntry {
+    pub fn new(records: Vec<InboxMessageRecord>) -> Self {
+        Self { records }
     }
 
-    /// Constructs a record from only end-of-epoch state.
-    ///
-    /// `snark_updates` is left empty. Used by the checkpoint-sync producer
-    /// when per-update detail is unavailable.
-    pub fn from_final_state(
-        final_inner_state: Hash,
-        final_next_inbox_msg_idx: u64,
-        inbox_writes: Vec<InboxMessageRecord>,
-    ) -> Self {
+    pub fn records(&self) -> &[InboxMessageRecord] {
+        &self.records
+    }
+
+    pub fn push(&mut self, record: InboxMessageRecord) {
+        self.records.push(record);
+    }
+
+    pub fn extend(&mut self, records: impl IntoIterator<Item = InboxMessageRecord>) {
+        self.records.extend(records);
+    }
+}
+
+/// Per-block input payload for block-sync indexing writes.
+///
+/// One call to `apply_block_indexing` consumes one of these; the DB appends
+/// to existing per-(account, epoch) rows and updates the common epoch row
+/// with any newly created accounts.
+#[derive(Clone, Debug, Default)]
+pub struct BlockIndexingWrites {
+    pub epoch: Epoch,
+    pub block: OLBlockCommitment,
+    pub created_accounts: Vec<AccountId>,
+    pub account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>>,
+    pub account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>>,
+}
+
+impl BlockIndexingWrites {
+    pub fn new(epoch: Epoch, block: OLBlockCommitment) -> Self {
         Self {
-            snark_updates: Vec::new(),
-            inbox_writes,
-            final_inner_state,
-            final_next_inbox_msg_idx,
+            epoch,
+            block,
+            created_accounts: Vec::new(),
+            account_updates: BTreeMap::new(),
+            account_inbox_writes: BTreeMap::new(),
         }
     }
-
-    pub fn snark_updates(&self) -> &[SnarkUpdateRecord] {
-        &self.snark_updates
-    }
-
-    pub fn inbox_writes(&self) -> &[InboxMessageRecord] {
-        &self.inbox_writes
-    }
-
-    pub fn final_inner_state(&self) -> Hash {
-        self.final_inner_state
-    }
-
-    pub fn final_next_inbox_msg_idx(&self) -> u64 {
-        self.final_next_inbox_msg_idx
-    }
 }
 
-/// Epoch-level indexing facts not scoped to a single account.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct CommonEpochRecord {
-    /// Accounts created during this epoch.
-    accounts_created: Vec<AccountId>,
-}
-
-impl CommonEpochRecord {
-    pub fn new(accounts_created: Vec<AccountId>) -> Self {
-        Self { accounts_created }
-    }
-
-    pub fn accounts_created(&self) -> &[AccountId] {
-        &self.accounts_created
-    }
-}
-
-/// Single-write unit for the indexing database.
+/// Single-call payload for checkpoint-sync indexing writes.
 ///
 /// Applied atomically by
 /// [`OLStateIndexingDatabase::apply_epoch_indexing`](crate::traits::OLStateIndexingDatabase::apply_epoch_indexing).
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct EpochIndexingData {
-    epoch: Epoch,
-    epoch_commitment: EpochCommitment,
-    common: CommonEpochRecord,
-    accounts: BTreeMap<AccountId, AccountEpochRecord>,
+#[derive(Clone, Debug)]
+pub struct EpochIndexingWrites {
+    pub epoch: Epoch,
+    pub common: EpochIndexingData,
+    pub account_updates: BTreeMap<AccountId, AccountUpdateEntry>,
+    pub account_inbox: BTreeMap<AccountId, AccountInboxEntry>,
 }
 
-impl EpochIndexingData {
-    pub fn new(
-        epoch: Epoch,
-        epoch_commitment: EpochCommitment,
-        common: CommonEpochRecord,
-        accounts: BTreeMap<AccountId, AccountEpochRecord>,
-    ) -> Self {
+impl EpochIndexingWrites {
+    pub fn new(epoch: Epoch, common: EpochIndexingData) -> Self {
         Self {
             epoch,
-            epoch_commitment,
             common,
-            accounts,
+            account_updates: BTreeMap::new(),
+            account_inbox: BTreeMap::new(),
         }
     }
-
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    pub fn epoch_commitment(&self) -> &EpochCommitment {
-        &self.epoch_commitment
-    }
-
-    pub fn common(&self) -> &CommonEpochRecord {
-        &self.common
-    }
-
-    pub fn accounts(&self) -> &BTreeMap<AccountId, AccountEpochRecord> {
-        &self.accounts
-    }
-}
-
-/// Per-block indexing record written by a full-node producer as each block
-/// finalizes. Folded into an [`EpochIndexingData`] at epoch finalization.
-///
-/// Checkpoint-sync producers skip this path and build [`EpochIndexingData`]
-/// directly from DA payloads.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BlockIndexingRecord {
-    /// Accounts created in this block.
-    accounts_created: Vec<AccountId>,
-
-    /// Per-account indexing data from this block, in intra-block execution order.
-    accounts: Vec<(AccountId, AccountBlockIndexData)>,
-}
-
-impl BlockIndexingRecord {
-    pub fn new(
-        accounts_created: Vec<AccountId>,
-        accounts: Vec<(AccountId, AccountBlockIndexData)>,
-    ) -> Self {
-        Self {
-            accounts_created,
-            accounts,
-        }
-    }
-
-    pub fn accounts_created(&self) -> &[AccountId] {
-        &self.accounts_created
-    }
-
-    pub fn accounts(&self) -> &[(AccountId, AccountBlockIndexData)] {
-        &self.accounts
-    }
-}
-
-/// One account's indexing data from within a single block.
-///
-/// Invariant: when `snark_updates` is non-empty, its last element's
-/// `next_inbox_msg_idx` equals `final_next_inbox_msg_idx`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct AccountBlockIndexData {
-    snark_updates: Vec<SnarkUpdateRecord>,
-    inbox_writes: Vec<InboxMessageRecord>,
-    /// End-of-block inbox read frontier. Present even when there are no snark
-    /// updates (inbox-only block), in which case it equals the pre-block frontier.
-    final_next_inbox_msg_idx: u64,
-}
-
-impl AccountBlockIndexData {
-    /// Builds from a non-empty update list; derives the frontier from the last update.
-    pub fn from_updates(
-        snark_updates: Vec<SnarkUpdateRecord>,
-        inbox_writes: Vec<InboxMessageRecord>,
-    ) -> Result<Self, IndexingDataError> {
-        let last = snark_updates
-            .last()
-            .ok_or(IndexingDataError::EmptySnarkUpdates)?;
-        let final_next_inbox_msg_idx = last.next_inbox_msg_idx;
-        Ok(Self {
-            snark_updates,
-            inbox_writes,
-            final_next_inbox_msg_idx,
-        })
-    }
-
-    /// Builds for a block with no snark updates; frontier must be supplied.
-    pub fn without_updates(
-        inbox_writes: Vec<InboxMessageRecord>,
-        final_next_inbox_msg_idx: u64,
-    ) -> Self {
-        Self {
-            snark_updates: Vec::new(),
-            inbox_writes,
-            final_next_inbox_msg_idx,
-        }
-    }
-
-    pub fn snark_updates(&self) -> &[SnarkUpdateRecord] {
-        &self.snark_updates
-    }
-
-    pub fn inbox_writes(&self) -> &[InboxMessageRecord] {
-        &self.inbox_writes
-    }
-
-    pub fn final_next_inbox_msg_idx(&self) -> u64 {
-        self.final_next_inbox_msg_idx
-    }
-}
-
-/// Errors returned while constructing indexing records.
-#[derive(Debug, Error)]
-pub enum IndexingDataError {
-    /// `from_updates` called with no updates; cannot derive final state.
-    #[error("snark update list is empty; cannot derive final state")]
-    EmptySnarkUpdates,
-
-    /// Last update is missing `new_inner_state`; cannot derive final state.
-    #[error("last snark update has no inner state; cannot derive final state")]
-    MissingFinalInnerState,
 }

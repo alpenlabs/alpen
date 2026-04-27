@@ -1,8 +1,6 @@
 //! Schema definitions for the OL state indexing database.
 
-use strata_db_types::ol_state_index::{
-    AccountEpochRecord, BlockIndexingRecord, CommonEpochRecord,
-};
+use strata_db_types::ol_state_index::{AccountEpochRecord, BlockIndexingRecord, CommonEpochRecord};
 use strata_identifiers::{AccountId, Epoch, OLBlockCommitment};
 
 use crate::{
@@ -41,12 +39,11 @@ impl ::typed_sled::codec::KeyCodec<OLBlockIndexingSchema> for (Epoch, OLBlockCom
         let opts = ::bincode::options()
             .with_fixint_encoding()
             .with_big_endian();
-        opts.serialize(self).map_err(|err| {
-            ::typed_sled::codec::CodecError::SerializationFailed {
+        opts.serialize(self)
+            .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
                 schema: OLBlockIndexingSchema::tree_name(),
                 source: err,
-            }
-        })
+            })
     }
 
     fn decode_key(data: &[u8]) -> Result<Self, ::typed_sled::codec::CodecError> {
@@ -54,12 +51,11 @@ impl ::typed_sled::codec::KeyCodec<OLBlockIndexingSchema> for (Epoch, OLBlockCom
         let opts = ::bincode::options()
             .with_fixint_encoding()
             .with_big_endian();
-        opts.deserialize(data).map_err(|err| {
-            ::typed_sled::codec::CodecError::SerializationFailed {
+        opts.deserialize(data)
+            .map_err(|err| ::typed_sled::codec::CodecError::SerializationFailed {
                 schema: OLBlockIndexingSchema::tree_name(),
                 source: err,
-            }
-        })
+            })
     }
 }
 
