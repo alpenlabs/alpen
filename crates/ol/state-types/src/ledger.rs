@@ -4,7 +4,7 @@
 
 use ssz_types::VariableList;
 use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
-use strata_ledger_types::{StateError, StateResult};
+use strata_ledger_types::{IAccountState, NewAccountData, StateError, StateResult};
 
 use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
 
@@ -74,9 +74,8 @@ impl TsnlLedgerAccountsTable {
         &mut self,
         id: AccountId,
         serial: AccountSerial,
-        new_acct_data: strata_ledger_types::NewAccountData,
+        new_acct_data: NewAccountData,
     ) -> StateResult<()> {
-        use strata_ledger_types::IAccountState as _;
         let acct = OLAccountState::new_with_serial(new_acct_data, serial);
         self.create_account(id, acct)?;
         Ok(())
