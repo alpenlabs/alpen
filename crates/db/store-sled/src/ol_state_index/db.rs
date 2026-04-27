@@ -142,3 +142,14 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         Ok(self.creation_epoch_tree.get(&acct)?)
     }
 }
+
+#[cfg(feature = "test_utils")]
+#[cfg(test)]
+mod tests {
+    use strata_db_tests::ol_state_indexing_db_tests;
+
+    use super::*;
+    use crate::sled_db_test_setup;
+
+    sled_db_test_setup!(OLStateIndexingDBSled, ol_state_indexing_db_tests);
+}
