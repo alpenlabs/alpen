@@ -256,3 +256,116 @@ pub fn verify_effects_safe<S: IStateAccessorMut>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::make_account_id;
+
+    fn make_gam_payload(target_acct_id: AccountId) -> GamTxPayload {
+        GamTxPayload::new(target_acct_id).expect("test target_acct_id should be valid")
+    }
+
+    fn push_test_message(
+        effects: &mut TxEffects,
+        dest: AccountId,
+        value_sat: u64,
+        data: Vec<u8>,
+    ) -> bool {
+        effects
+            .push_message(dest, value_sat, data)
+            .expect("test message payload should fit within SSZ max length")
+    }
+
+    fn assert_gam_structure_error(
+        target_acct_id: AccountId,
+        effects: &TxEffects,
+        expected_reason: &'static str,
+    ) {
+        let err = verify_gam_tx(&make_gam_payload(target_acct_id), effects)
+            .expect_err("invalid GAM structure should fail");
+        assert!(matches!(
+            err,
+            ExecError::TxStructureCheckFailed(reason) if reason == expected_reason
+        ));
+    }
+
+    #[test]
+    fn test_verify_gam_tx_accepts_single_zero_message_to_target() {
+        let target_acct_id = make_account_id(1);
+        let mut effects = TxEffects::default();
+        assert!(push_test_message(
+            &mut effects,
+            target_acct_id,
+            0,
+            vec![1, 2, 3]
+        ));
+
+        verify_gam_tx(&make_gam_payload(target_acct_id), &effects)
+            .expect("valid GAM effects should pass");
+    }
+
+    #[test]
+    fn test_verify_gam_tx_rejects_transfer_effects() {
+        let target_acct_id = make_account_id(1);
+        let mut effects = TxEffects::default();
+        assert!(effects.push_transfer(target_acct_id, 1));
+        assert!(push_test_message(&mut effects, target_acct_id, 0, vec![]));
+
+        assert_gam_structure_error(target_acct_id, &effects, "nonzero transfers");
+    }
+
+    #[test]
+    fn test_verify_gam_tx_rejects_missing_message() {
+        let target_acct_id = make_account_id(1);
+        let effects = TxEffects::default();
+
+        assert_gam_structure_error(
+            target_acct_id,
+            &effects,
+            "multiple messages or nonzero value",
+        );
+    }
+
+    #[test]
+    fn test_verify_gam_tx_rejects_multiple_messages() {
+        let target_acct_id = make_account_id(1);
+        let mut effects = TxEffects::default();
+        assert!(push_test_message(&mut effects, target_acct_id, 0, vec![1]));
+        assert!(push_test_message(&mut effects, target_acct_id, 0, vec![2]));
+
+        assert_gam_structure_error(
+            target_acct_id,
+            &effects,
+            "multiple messages or nonzero value",
+        );
+    }
+
+    #[test]
+    fn test_verify_gam_tx_rejects_nonzero_message_value() {
+        let target_acct_id = make_account_id(1);
+        let mut effects = TxEffects::default();
+        assert!(push_test_message(&mut effects, target_acct_id, 1, vec![]));
+
+        assert_gam_structure_error(
+            target_acct_id,
+            &effects,
+            "multiple messages or nonzero value",
+        );
+    }
+
+    #[test]
+    fn test_verify_gam_tx_rejects_mismatched_message_target() {
+        let target_acct_id = make_account_id(1);
+        let message_dest_acct_id = make_account_id(2);
+        let mut effects = TxEffects::default();
+        assert!(push_test_message(
+            &mut effects,
+            message_dest_acct_id,
+            0,
+            vec![]
+        ));
+
+        assert_gam_structure_error(target_acct_id, &effects, "mismatched target");
+    }
+}
