@@ -22,6 +22,9 @@ pub enum L1FeeRateSource {
 }
 
 /// Runtime configuration for the v1 fee model.
+// NOTE: Gas and byte counts stay in their native bounded `u64` representation.
+//       Wei-denominated rates and fee totals use `U256` because fee arithmetic can
+//       exceed 64 bits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeModelConfig {
     /// Static proving fee charged per unit of raw EVM gas.
