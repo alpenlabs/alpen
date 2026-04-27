@@ -475,12 +475,25 @@ pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::OLBlockCommitment;
-    use strata_ol_chain_types_new::{BlockFlags, OLBlockId, OLL1ManifestContainer, OLTxSegment};
+    use strata_identifiers::{AccountSerial, OLBlockCommitment};
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlockId, OLL1ManifestContainer, OLLog, OLTxSegment,
+    };
     use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1, StateDiff};
 
     use super::*;
-    use crate::test_utils::make_genesis_state;
+    use crate::{assembly::BlockExecOutputs, test_utils::make_genesis_state};
+
+    fn make_sequential_logs(count: u32) -> Vec<OLLog> {
+        (0..count)
+            .map(|i| OLLog::new(AccountSerial::from(i), vec![i as u8]))
+            .collect()
+    }
+
+    fn compute_assembly_logs_root(logs: Vec<OLLog>) -> Buf32 {
+        BlockExecOutputs::new(BlockPostStateCommitments::Common(Buf32::zero()), logs)
+            .compute_block_logs_root()
+    }
 
     #[test]
     fn test_verify_block_structure_happy_path() {
@@ -553,5 +566,16 @@ mod tests {
             &exp,
         );
         assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
+    }
+
+    #[test]
+    fn test_compute_logs_root_matches_assembly_for_empty_logs() {
+        assert_eq!(compute_logs_root(&[]), compute_assembly_logs_root(vec![]));
+    }
+
+    #[test]
+    fn test_compute_logs_root_matches_assembly_for_padded_log_count() {
+        let logs = make_sequential_logs(3);
+        assert_eq!(compute_logs_root(&logs), compute_assembly_logs_root(logs));
     }
 }
