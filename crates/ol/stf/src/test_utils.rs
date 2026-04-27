@@ -1428,6 +1428,15 @@ impl FixtureBlockOutput {
             .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
     }
 
+    /// Returns true if any emitted log uses `serial`.
+    pub fn has_log_from_account_serial(&self, serial: AccountSerial) -> bool {
+        self.output
+            .outputs()
+            .logs()
+            .iter()
+            .any(|log| log.account_serial() == serial)
+    }
+
     /// Finds and decodes a typed log emitted by `serial`, failing if missing.
     pub fn expect_typed_log<T: Codec>(&self, serial: AccountSerial) -> T {
         self.find_typed_log(serial).unwrap_or_else(|| {
