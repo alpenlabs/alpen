@@ -2,13 +2,13 @@
 
 mod chain;
 mod deposit_withdrawal;
-mod edge_cases;
 mod ee_predicate_update;
 mod inbox;
 mod ledger_references;
-mod multi_operations;
 mod partial_execution;
-mod updates;
+mod sau_limits;
+mod sau_messages;
+mod sau_transfers;
 mod validation;
 mod verify_body;
 mod verify_header;
