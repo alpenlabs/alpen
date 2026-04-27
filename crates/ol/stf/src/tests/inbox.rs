@@ -148,6 +148,12 @@ fn test_snark_update_invalid_message_index() {
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
+    let initial_sender_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_recipient_balance = BitcoinAmount::zero();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let initial_seqno = *snark_account_state.seqno().inner();
+    let initial_next_msg_idx = snark_account_state.next_inbox_msg_idx();
+    let initial_inbox_entries = snark_account_state.inbox_mmr().num_entries();
 
     // Create proof state claiming to have processed 5 messages (but inbox is empty)
     // Use SnarkUpdateBuilder but manually set a wrong msg index via create_unchecked
@@ -176,6 +182,35 @@ fn test_snark_update_invalid_message_index() {
         }
         err => panic!("Expected InvalidMsgIndex, got: {err:?}"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_sender_balance,
+        "sender balance should not change after invalid message index"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after invalid message index"
+    );
+    assert_eq!(
+        snark_account_state.next_inbox_msg_idx(),
+        initial_next_msg_idx,
+        "next inbox message index should not change after invalid message index"
+    );
+    assert_eq!(
+        snark_account_state.inbox_mmr().num_entries(),
+        initial_inbox_entries,
+        "inbox MMR should not change after invalid message index"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        initial_recipient_balance,
+        "recipient balance should not change after invalid message index"
+    );
 }
 
 #[test]
@@ -205,6 +240,10 @@ fn test_snark_update_invalid_message_proof() {
         0,
         "next to be processed msg idx should be 0"
     );
+    let initial_sender_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_seqno = *snark_account_state.seqno().inner();
+    let initial_next_msg_idx = snark_account_state.next_inbox_msg_idx();
+    let initial_inbox_entries = snark_account_state.inbox_mmr().num_entries();
 
     // Step 2: Create update with INVALID proof for the gam message (index 0)
     // First create msg entry (deliberately using wrong source to keep it invalid)
@@ -235,6 +274,28 @@ fn test_snark_update_invalid_message_proof() {
         }
         err => panic!("Expected InvalidMessageProof, got: {err:?}"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_sender_balance,
+        "sender balance should not change after invalid message proof"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after invalid message proof"
+    );
+    assert_eq!(
+        snark_account_state.next_inbox_msg_idx(),
+        initial_next_msg_idx,
+        "next inbox message index should not change after invalid message proof"
+    );
+    assert_eq!(
+        snark_account_state.inbox_mmr().num_entries(),
+        initial_inbox_entries,
+        "inbox MMR should not change after invalid message proof"
+    );
 }
 
 #[test]
@@ -270,6 +331,11 @@ fn test_snark_update_skip_message_out_of_order() {
     // Verify we have 2 messages (2 GAMs, no deposit)
     let snark_account_state = lookup_snark_state(&state, snark_id);
     assert_eq!(snark_account_state.inbox_mmr().num_entries(), 2);
+    let initial_sender_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_recipient_balance = BitcoinAmount::zero();
+    let initial_seqno = *snark_account_state.seqno().inner();
+    let initial_next_msg_idx = snark_account_state.next_inbox_msg_idx();
+    let initial_inbox_entries = snark_account_state.inbox_mmr().num_entries();
 
     // Step 2: Try to process only the SECOND message (skipping first)
     // This should fail because messages must be processed in order starting from index 0
@@ -300,4 +366,33 @@ fn test_snark_update_skip_message_out_of_order() {
         }
         err => panic!("Expected InvalidMsgIndex, got: {err:?}"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_sender_balance,
+        "sender balance should not change after skipped inbox messages"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after skipped inbox messages"
+    );
+    assert_eq!(
+        snark_account_state.next_inbox_msg_idx(),
+        initial_next_msg_idx,
+        "next inbox message index should not change after skipped inbox messages"
+    );
+    assert_eq!(
+        snark_account_state.inbox_mmr().num_entries(),
+        initial_inbox_entries,
+        "inbox MMR should not change after skipped inbox messages"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        initial_recipient_balance,
+        "recipient balance should not change after skipped inbox messages"
+    );
 }

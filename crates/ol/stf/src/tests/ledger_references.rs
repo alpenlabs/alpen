@@ -5,7 +5,7 @@ use strata_acct_types::{
 };
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, WtxidsRoot};
-use strata_ledger_types::{IAccountState, IStateAccessor};
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 use strata_ol_chain_types_new::{
     OLTransaction, ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
 };
@@ -150,6 +150,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
 
     // Create update with invalid ledger reference using SnarkUpdateBuilder
     let snark_account_state = lookup_snark_state(&state, snark_id);
+    let initial_seqno = *snark_account_state.seqno().inner();
 
     let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_ledger_refs(vec![claim], vec![invalid_proof])
@@ -181,11 +182,16 @@ fn test_snark_update_with_invalid_ledger_reference() {
     }
 
     // Verify no state change
-    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
         ol_account_state.balance(),
         BitcoinAmount::from_sat(100_000_000),
         "Balance should be unchanged after failed update"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "seqno should be unchanged after failed update"
     );
 }
 
@@ -247,6 +253,8 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     };
 
     let snark_account_state = lookup_snark_state(&state, snark_id);
+    let initial_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_seqno = *snark_account_state.seqno().inner();
 
     let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_ledger_refs(vec![claim], vec![mismatched_proof])
@@ -270,6 +278,18 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
         },
         Ok(_) => panic!("Update with mismatched proof index should fail"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_balance,
+        "balance should be unchanged after mismatched ledger reference proof"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "seqno should be unchanged after mismatched ledger reference proof"
+    );
 }
 
 #[test]

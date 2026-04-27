@@ -1,7 +1,7 @@
-//! Tests for basic validation errors like sequence numbers, balance checks, and recipient
-//! validation
+//! Tests for snark account update validation errors.
 
-use strata_acct_types::{AcctError, TxEffects};
+use strata_acct_types::{AcctError, BitcoinAmount, TxEffects};
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -16,6 +16,9 @@ fn test_snark_update_invalid_sequence_number() {
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
+    let initial_sender_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_recipient_balance = BitcoinAmount::zero();
+    let initial_seqno = *lookup_snark_state(&state, snark_id).seqno().inner();
 
     // Try to submit update with wrong sequence number (should be 0, but we use 5)
     let mut effects = TxEffects::default();
@@ -40,6 +43,25 @@ fn test_snark_update_invalid_sequence_number() {
         }
         err => panic!("Expected InvalidUpdateSequence, got: {err:?}"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_sender_balance,
+        "sender balance should not change after invalid sequence"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after invalid sequence"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        initial_recipient_balance,
+        "recipient balance should not change after invalid sequence"
+    );
 }
 
 #[test]
@@ -53,6 +75,9 @@ fn test_snark_update_insufficient_balance() {
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
+    let initial_sender_balance = BitcoinAmount::from_sat(50_000_000);
+    let initial_recipient_balance = BitcoinAmount::zero();
+    let initial_seqno = *lookup_snark_state(&state, snark_id).seqno().inner();
 
     // Try to send 100M sats (more than balance)
     let snark_account_state = lookup_snark_state(&state, snark_id);
@@ -71,6 +96,25 @@ fn test_snark_update_insufficient_balance() {
         ExecError::BalanceUnderflow => {}
         err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_sender_balance,
+        "sender balance should not change after insufficient balance"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after insufficient balance"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        initial_recipient_balance,
+        "recipient balance should not change after insufficient balance"
+    );
 }
 
 #[test]
@@ -81,6 +125,8 @@ fn test_snark_update_nonexistent_recipient() {
 
     // Setup: genesis with snark account
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    let initial_sender_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_seqno = *lookup_snark_state(&state, snark_id).seqno().inner();
 
     // Try to send to non-existent account
     let snark_account_state = lookup_snark_state(&state, snark_id);
@@ -101,4 +147,20 @@ fn test_snark_update_nonexistent_recipient() {
         }
         err => panic!("Expected UnknownAccount, got: {err:?}"),
     }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_sender_balance,
+        "sender balance should not change after nonexistent recipient"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after nonexistent recipient"
+    );
+    assert!(
+        state.get_account_state(nonexistent_id).unwrap().is_none(),
+        "failed transfer should not create the nonexistent recipient account"
+    );
 }

@@ -9,7 +9,7 @@ mod partial_execution;
 mod sau_limits;
 mod sau_messages;
 mod sau_transfers;
-mod validation;
+mod sau_validation;
 mod verify_body;
 mod verify_header;
 mod verify_write_tracking;
