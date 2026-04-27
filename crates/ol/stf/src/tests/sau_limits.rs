@@ -44,11 +44,23 @@ fn test_snark_update_max_bitcoin_supply() {
     }
 
     // Verify no state change
-    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
         ol_account_state.balance(),
         BitcoinAmount::from_sat(max_bitcoin_sats),
         "Balance should be unchanged after failed update"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        0,
+        "Sequence number should not increment after failed update"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        BitcoinAmount::from_sat(0),
+        "Recipient should not receive failed update"
     );
 }
 
@@ -158,9 +170,11 @@ fn test_snark_update_allows_max_balance_transfer() {
     let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
     let recipient_id = test_account_id(TEST_RECIPIENT_ID + 1);
+    let second_recipient_id = test_account_id(TEST_RECIPIENT_ID + 2);
 
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, u64::MAX);
     create_empty_account(&mut state, recipient_id);
+    create_empty_account(&mut state, second_recipient_id);
 
     let snark_account_state = lookup_snark_state(&state, snark_id);
     let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
@@ -168,14 +182,19 @@ fn test_snark_update_allows_max_balance_transfer() {
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
+    let block1 = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Transfer of u64::MAX should succeed when balance is sufficient");
 
-    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
         ol_account_state.balance(),
         BitcoinAmount::from_sat(0),
         "Sender should have 0 balance after transferring u64::MAX"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "Sequence number should increment"
     );
 
     let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
@@ -183,5 +202,44 @@ fn test_snark_update_allows_max_balance_transfer() {
         recipient.balance(),
         BitcoinAmount::from_sat(u64::MAX),
         "Recipient should receive u64::MAX"
+    );
+
+    let result = attempt_transfer_after_balance_drained(
+        &mut state,
+        block1.header(),
+        snark_id,
+        second_recipient_id,
+        1,
+        slot + 1,
+        epoch,
+    );
+    match result {
+        Err(e) => assert!(
+            matches!(e.into_base(), ExecError::BalanceUnderflow),
+            "Expected BalanceUnderflow"
+        ),
+        Ok(_) => panic!("Transfer after balance is drained should fail"),
+    }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(0),
+        "Sender balance should remain zero after failed transfer from drained balance"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "Sequence number should not increment after failed transfer from drained balance"
+    );
+
+    let second_recipient = state
+        .get_account_state(second_recipient_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        second_recipient.balance(),
+        BitcoinAmount::from_sat(0),
+        "Second recipient should not receive failed transfer from drained balance"
     );
 }

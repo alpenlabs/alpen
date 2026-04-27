@@ -660,6 +660,24 @@ pub fn execute_tx_in_block(
     execute_block(state, &block_info, Some(parent_header), components)
 }
 
+/// Attempts a transfer after the snark account balance has been drained.
+pub fn attempt_transfer_after_balance_drained(
+    state: &mut OLState,
+    parent_header: &OLBlockHeader,
+    sender_id: AccountId,
+    recipient_id: AccountId,
+    amount: u64,
+    slot: Slot,
+    epoch: Epoch,
+) -> ExecResult<CompletedBlock> {
+    let snark_account_state = lookup_snark_state(state, sender_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, amount)
+        .build(sender_id, get_test_state_root(3), get_test_proof(2));
+
+    execute_tx_in_block(state, parent_header, tx, slot, epoch)
+}
+
 /// Builder pattern for creating SnarkAccountUpdate transactions.
 /// Captures the starting state and builds toward the resulting state,
 /// ensuring correct sequence numbers and message indices.
