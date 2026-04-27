@@ -188,6 +188,14 @@ fn test_verify_rejects_mismatched_state_root() {
     let wrong_root = Buf32::from([99u8; 32]);
     let tampered_header = tamper_state_root(genesis.header(), wrong_root);
 
+    let mut positive_verify_state = create_test_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+
     let mut verify_state = create_test_genesis_state();
     assert_verification_fails_with(
         &mut verify_state,
@@ -226,6 +234,14 @@ fn test_verify_rejects_mismatched_logs_root() {
 
     let wrong_root = Buf32::from([88u8; 32]);
     let tampered_header = tamper_logs_root(genesis.header(), wrong_root);
+
+    let mut positive_verify_state = create_test_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
 
     let mut verify_state = create_test_genesis_state();
     assert_verification_fails_with(
@@ -276,14 +292,22 @@ fn test_verify_rejects_mismatched_body_root() {
     let wrong_root = Buf32::from([77u8; 32]);
     let tampered_header = tamper_body_root(block1.header(), wrong_root);
 
-    let mut verify_state = create_test_genesis_state();
-    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
+    let mut positive_verify_state = create_test_genesis_state();
     assert_verification_succeeds(
-        &mut verify_state,
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
     );
+
+    let mut verify_state = create_test_genesis_state();
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     assert_verification_fails_with(
         &mut verify_state,
