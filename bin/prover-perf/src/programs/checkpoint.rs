@@ -1,4 +1,4 @@
-//! TODO: (STR-2349) Replace `build_empty_chain` with `build_chain_with_transactions` to
+//! TODO(STR-2349) Replace `build_empty_chain` with `build_chain_with_transactions` to
 //! restore realistic cycle-count benchmarks. This was downgraded because the checkpoint
 //! proof now requires a correct `da_state_diff_bytes` (DA witness), and computing the
 //! full `OLDaPayloadV1` for a transaction-rich chain needs a `StateDiff` that encodes
