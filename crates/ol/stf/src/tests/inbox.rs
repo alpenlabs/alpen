@@ -141,6 +141,8 @@ fn test_snark_update_invalid_message_index() {
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
 
+    let snapshot = fixture.snapshot([snark_acct_id, recipient_id]);
+
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
@@ -157,6 +159,8 @@ fn test_snark_update_invalid_message_index() {
         }
         err => panic!("Expected InvalidMsgIndex, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }
 
 #[test]
@@ -187,6 +191,7 @@ fn test_snark_update_invalid_message_proof() {
         0,
         "next to be processed msg idx should be 0"
     );
+    let snapshot = fixture.snapshot([snark_acct_id]);
 
     // Step 2: Create update with INVALID proof for the gam message (index 0)
     // First create msg entry (deliberately using wrong source to keep it invalid)
@@ -214,6 +219,8 @@ fn test_snark_update_invalid_message_proof() {
         }
         err => panic!("Expected InvalidMessageProof, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }
 
 #[test]
@@ -242,6 +249,7 @@ fn test_snark_update_skip_message_out_of_order() {
     // Verify we have 2 messages (2 GAMs, no deposit)
     let account_state = fixture.expect_snark_account(snark_acct_id);
     assert_eq!(account_state.inbox_mmr().num_entries(), 2);
+    let snapshot = fixture.snapshot([snark_acct_id, recipient_id]);
 
     // Step 2: Try to process only the SECOND message (skipping first)
     // This should fail because messages must be processed in order starting from index 0
@@ -264,4 +272,6 @@ fn test_snark_update_skip_message_out_of_order() {
         }
         err => panic!("Expected InvalidMsgIndex, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }

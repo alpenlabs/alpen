@@ -1,5 +1,4 @@
-//! Tests for basic validation errors like sequence numbers, balance checks, and recipient
-//! validation
+//! Tests for snark account update validation errors.
 
 use strata_acct_types::{AcctError, BitcoinAmount};
 
@@ -17,6 +16,8 @@ fn test_snark_update_invalid_sequence_number() {
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
 
+    let snapshot = fixture.snapshot([snark_acct_id, recipient_id]);
+
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
@@ -33,6 +34,8 @@ fn test_snark_update_invalid_sequence_number() {
         }
         err => panic!("Expected InvalidUpdateSequence, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }
 
 #[test]
@@ -47,6 +50,8 @@ fn test_snark_update_insufficient_balance() {
         .with_genesis_empty_account(recipient_id)
         .execute_genesis();
 
+    let snapshot = fixture.snapshot([snark_acct_id, recipient_id]);
+
     let err = fixture
         .child_block()
         .with_sau(snark_acct_id, |sau| {
@@ -59,6 +64,8 @@ fn test_snark_update_insufficient_balance() {
         ExecError::BalanceUnderflow => {}
         err => panic!("Expected BalanceUnderflow, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }
 
 #[test]
@@ -71,6 +78,8 @@ fn test_snark_update_nonexistent_recipient() {
             acct.with_balance(BitcoinAmount::from_sat(100_000_000))
         })
         .execute_genesis();
+
+    let snapshot = fixture.snapshot([snark_acct_id, nonexistent_id]);
 
     let err = fixture
         .child_block()
@@ -86,4 +95,6 @@ fn test_snark_update_nonexistent_recipient() {
         }
         err => panic!("Expected UnknownAccount, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }

@@ -119,6 +119,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
     let (claim, proof) =
         execute_manifest_block_with_tracker(&mut fixture, make_empty_manifest(1, 1));
     let invalid_proof = corrupt_proof(proof);
+    let snapshot = fixture.snapshot([snark_acct_id]);
 
     let err = fixture
         .child_block()
@@ -139,11 +140,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
         err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
     }
 
-    assert_eq!(
-        fixture.account_balance(snark_acct_id),
-        BitcoinAmount::from_sat(100_000_000),
-        "Balance should be unchanged after failed update"
-    );
+    snapshot.assert_unchanged(&fixture);
 }
 
 #[test]
@@ -159,6 +156,7 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     let (claim, proof) =
         execute_manifest_block_with_tracker(&mut fixture, make_empty_manifest(1, 1));
     let mismatched_proof = corrupt_proof(proof);
+    let snapshot = fixture.snapshot([snark_acct_id]);
 
     let err = fixture
         .child_block()
@@ -175,6 +173,8 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
         }
         err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
     }
+
+    snapshot.assert_unchanged(&fixture);
 }
 
 #[test]
