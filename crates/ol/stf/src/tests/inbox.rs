@@ -6,6 +6,11 @@ use strata_ledger_types::ISnarkAccountState;
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, SEQUENCER_ACCT_ID, errors::ExecError, test_utils::*};
 
+fn msg_payload_from_bytes(data: Vec<u8>) -> MsgPayload {
+    MsgPayload::from_bytes(BitcoinAmount::from_sat(0), data)
+        .expect("message payload bytes must fit within SSZ max length")
+}
+
 #[test]
 fn test_snark_inbox_message_insertion() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
@@ -284,4 +289,159 @@ fn test_snark_update_skip_message_out_of_order() {
     }
 
     snapshot.assert_unchanged(&fixture);
+}
+
+#[test]
+fn test_snark_update_rejects_reversed_processed_messages() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID);
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .with_genesis_empty_account(recipient_id)
+        .execute_genesis();
+
+    let mut inbox_tracker = InboxMmrTracker::new();
+    let first_output = fixture
+        .child_block()
+        .with_gam(snark_acct_id, |gam| gam.with_payload(vec![1]))
+        .execute();
+    let first_msg = MessageEntry::new(
+        SEQUENCER_ACCT_ID,
+        first_output.completed_block().header().epoch(),
+        msg_payload_from_bytes(vec![1]),
+    );
+    let first_proof = inbox_tracker.add_message(&first_msg);
+
+    let second_output = fixture
+        .child_block()
+        .with_gam(snark_acct_id, |gam| gam.with_payload(vec![2]))
+        .execute();
+    let second_msg = MessageEntry::new(
+        SEQUENCER_ACCT_ID,
+        second_output.completed_block().header().epoch(),
+        msg_payload_from_bytes(vec![2]),
+    );
+    let second_proof = inbox_tracker.add_message(&second_msg);
+
+    assert_eq!(
+        fixture
+            .expect_snark_account(snark_acct_id)
+            .inbox_mmr()
+            .num_entries(),
+        2
+    );
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.with_processed_messages(
+                vec![second_msg, first_msg],
+                vec![second_proof, first_proof],
+            )
+            .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+            .with_state_root(make_state_root(2))
+        })
+        .execute_err();
+
+    match err.into_base() {
+        ExecError::Acct(AcctError::InvalidMessageProof { msg_idx, .. }) => {
+            assert_eq!(
+                msg_idx, 0,
+                "reversed order should fail at first inbox index"
+            );
+        }
+        err => panic!("Expected InvalidMessageProof, got: {err:?}"),
+    }
+
+    let account_state = fixture.expect_snark_account(snark_acct_id);
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::from_sat(100_000_000)
+    );
+    assert_eq!(*account_state.seqno().inner(), 0);
+    assert_eq!(account_state.next_inbox_msg_idx(), 0);
+    assert_eq!(
+        fixture.account_balance(recipient_id),
+        BitcoinAmount::from_sat(0)
+    );
+}
+
+#[test]
+fn test_snark_update_rejects_duplicate_processed_message() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID);
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .with_genesis_empty_account(recipient_id)
+        .execute_genesis();
+
+    let mut inbox_tracker = InboxMmrTracker::new();
+    let first_output = fixture
+        .child_block()
+        .with_gam(snark_acct_id, |gam| gam.with_payload(vec![1]))
+        .execute();
+    let first_msg = MessageEntry::new(
+        SEQUENCER_ACCT_ID,
+        first_output.completed_block().header().epoch(),
+        msg_payload_from_bytes(vec![1]),
+    );
+    inbox_tracker.add_message(&first_msg);
+
+    let second_output = fixture
+        .child_block()
+        .with_gam(snark_acct_id, |gam| gam.with_payload(vec![2]))
+        .execute();
+    let second_msg = MessageEntry::new(
+        SEQUENCER_ACCT_ID,
+        second_output.completed_block().header().epoch(),
+        msg_payload_from_bytes(vec![2]),
+    );
+    inbox_tracker.add_message(&second_msg);
+
+    assert_eq!(
+        fixture
+            .expect_snark_account(snark_acct_id)
+            .inbox_mmr()
+            .num_entries(),
+        2
+    );
+    let first_proof = inbox_tracker.expect_raw_proof_at(0);
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.with_processed_messages(
+                vec![first_msg.clone(), first_msg],
+                vec![first_proof.clone(), first_proof],
+            )
+            .transfer(recipient_id, BitcoinAmount::from_sat(10_000_000))
+            .with_state_root(make_state_root(2))
+        })
+        .execute_err();
+
+    match err.into_base() {
+        ExecError::Acct(AcctError::InvalidMessageProof { msg_idx, .. }) => {
+            assert_eq!(
+                msg_idx, 1,
+                "duplicate message should fail at second inbox index"
+            );
+        }
+        err => panic!("Expected InvalidMessageProof, got: {err:?}"),
+    }
+
+    let account_state = fixture.expect_snark_account(snark_acct_id);
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::from_sat(100_000_000)
+    );
+    assert_eq!(*account_state.seqno().inner(), 0);
+    assert_eq!(account_state.next_inbox_msg_idx(), 0);
+    assert_eq!(
+        fixture.account_balance(recipient_id),
+        BitcoinAmount::from_sat(0)
+    );
 }

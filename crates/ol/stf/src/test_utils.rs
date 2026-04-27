@@ -1569,6 +1569,22 @@ impl InboxMmrTracker {
         }
     }
 
+    /// Returns the current raw proof for a tracked inbox entry.
+    ///
+    /// Panics if the index is not tracked.
+    pub fn expect_raw_proof_at(&self, index: usize) -> RawMerkleProof {
+        let proof = self.proofs.get(index).expect("test proof should exist");
+        RawMerkleProof {
+            cohashes: proof
+                .cohashes()
+                .iter()
+                .map(|h| FixedBytes::from(*h))
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("proof cohashes should fit into RawMerkleProof"),
+        }
+    }
+
     /// Returns the number of entries in the tracked MMR
     pub fn num_entries(&self) -> u64 {
         self.mmr.num_entries()
