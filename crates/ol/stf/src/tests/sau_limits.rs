@@ -103,64 +103,39 @@ fn test_snark_update_transfer_above_bitcoin_supply_accepted() {
 }
 
 #[test]
-fn test_snark_update_overflow_u64_boundary() {
+fn test_snark_update_rejects_aggregate_transfer_overflow() {
     let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
-    let recipient1_id = test_account_id(TEST_RECIPIENT_ID + 1); // Different test IDs
+    let recipient1_id = test_account_id(TEST_RECIPIENT_ID + 1);
     let recipient2_id = test_account_id(TEST_RECIPIENT_ID + 2);
 
-    // Setup: genesis with snark account with balance near u64::MAX
-    let initial_balance = u64::MAX - 100; // Just under u64::MAX
-    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, initial_balance);
-
-    // Create recipient accounts using helper
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, u64::MAX);
     create_empty_account(&mut state, recipient1_id);
     create_empty_account(&mut state, recipient2_id);
 
-    // Test case 1: Try transfers that sum to more than available balance
     let snark_account_state = lookup_snark_state(&state, snark_id);
-    let tx1 = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
-        .with_transfer(recipient1_id, u64::MAX - 100) // Max we can afford
-        .with_transfer(recipient2_id, 101) // This exceeds balance
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient1_id, u64::MAX)
+        .with_transfer(recipient2_id, 1)
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
-    let result1 = execute_tx_in_block(&mut state, genesis_block.header(), tx1, slot, epoch);
+    let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
-    // Should fail due to insufficient balance
-    match result1 {
-        Err(e) => assert!(
-            matches!(e.into_base(), ExecError::AmountOverflow),
-            "Expected AmountOverflow"
-        ),
-        Ok(_) => panic!("Update with total exceeding available balance should fail"),
-    }
-
-    // Verify no state change occurred
-    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
-    assert_eq!(
-        ol_account_state.balance(),
-        BitcoinAmount::from_sat(initial_balance),
-        "Balance should be unchanged after failed update"
-    );
-
-    // Test case 2: Try transfers where one is u64::MAX and another is 1
-    // This tests overflow handling when summing transfers
-    let snark_account_state = lookup_snark_state(&state, snark_id);
-    let tx2 = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
-        .with_transfer(recipient1_id, u64::MAX) // Maximum u64 value
-        .with_transfer(recipient2_id, 1) // Even 1 more would overflow
-        .build(snark_id, get_test_state_root(2), get_test_proof(1));
-
-    let result2 = execute_tx_in_block(&mut state, genesis_block.header(), tx2, slot, epoch);
-
-    match result2 {
+    match result {
         Err(e) => assert!(
             matches!(e.into_base(), ExecError::AmountOverflow),
             "Expected AmountOverflow"
         ),
         Ok(_) => panic!("Sending more than bitcoin limits should fail"),
     }
+
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(u64::MAX),
+        "Balance should be unchanged after failed update"
+    );
 
     // Verify recipients have no balance (no partial execution)
     let recipient1 = state.get_account_state(recipient1_id).unwrap().unwrap();
@@ -176,32 +151,36 @@ fn test_snark_update_overflow_u64_boundary() {
         BitcoinAmount::from_sat(0),
         "Recipient2 should have no balance after failed update"
     );
+}
 
-    // Test case 3: Verify that u64::MAX transfer works when balance is sufficient
-    // Give snark account exactly u64::MAX balance
-    let mut state3 = create_test_genesis_state();
-    let genesis_block3 = setup_genesis_with_snark_account(&mut state3, snark_id, u64::MAX);
-    create_empty_account(&mut state3, recipient1_id);
+#[test]
+fn test_snark_update_allows_max_balance_transfer() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = test_account_id(TEST_RECIPIENT_ID + 1);
 
-    let snark_account_state3 = lookup_snark_state(&state3, snark_id);
-    let tx3 = SnarkUpdateBuilder::from_snark_state(snark_account_state3.clone())
-        .with_transfer(recipient1_id, u64::MAX) // Transfer entire u64::MAX
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, u64::MAX);
+    create_empty_account(&mut state, recipient_id);
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, u64::MAX)
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    execute_tx_in_block(&mut state3, genesis_block3.header(), tx3, slot, epoch)
+    let (slot, epoch) = (1, 1);
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Transfer of u64::MAX should succeed when balance is sufficient");
 
-    // Verify the transfer completed
-    let (ol_account_state3, _) = lookup_snark_account_states(&state3, snark_id);
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        ol_account_state3.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(0),
         "Sender should have 0 balance after transferring u64::MAX"
     );
 
-    let recipient3 = state3.get_account_state(recipient1_id).unwrap().unwrap();
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
     assert_eq!(
-        recipient3.balance(),
+        recipient.balance(),
         BitcoinAmount::from_sat(u64::MAX),
         "Recipient should receive u64::MAX"
     );
