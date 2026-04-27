@@ -7,13 +7,18 @@ use strata_identifiers::{Buf32, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
-use strata_ol_state_types::OLSnarkAccountState;
+use strata_ol_chain_types_new::{OLBlockHeader, OLTransaction};
+use strata_ol_msg_types::{
+    DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData,
+};
+use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 
 use crate::{
-    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, assembly::BlockComponents,
-    context::BlockInfo, test_utils::*,
+    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL,
+    assembly::{BlockComponents, ConstructBlockOutput},
+    context::BlockInfo,
+    test_utils::*,
 };
 
 #[test]
@@ -117,23 +122,7 @@ fn test_snark_account_deposit_and_withdrawal() {
     // Now create a snark account update transaction that produces a withdrawal
     let withdrawal_amount = 100_000_000u64; // Withdraw exactly 1 BTC (required denomination)
     let withdrawal_dest_desc = b"bc1qexample".to_vec(); // Example Bitcoin address descriptor
-    let withdrawal_msg_data = WithdrawalMsgData::new(
-        DEFAULT_OPERATOR_FEE,
-        withdrawal_dest_desc.clone(),
-        u32::MAX, // "any operator" sentinel
-    )
-    .expect("Valid withdrawal data");
-
-    // Encode the withdrawal message data using the msg-fmt library
-    let encoded_withdrawal_body = strata_codec::encode_to_vec(&withdrawal_msg_data)
-        .expect("Should encode withdrawal message");
-
-    // Create OwnedMsg with proper format
-    let withdrawal_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body)
-        .expect("Should create withdrawal message");
-
-    // Convert to bytes for the MsgPayload
-    let withdrawal_payload_data = withdrawal_msg.to_vec();
+    let withdrawal_payload_data = encode_withdrawal_payload(&withdrawal_dest_desc, u32::MAX);
 
     // Build the snark update using SnarkUpdateBuilder
     let snark_account_state = lookup_snark_state(&state, snark_account_id);
@@ -213,4 +202,160 @@ fn test_snark_account_deposit_and_withdrawal() {
     }
 
     assert!(withdrawal_found, "test: missing withdrawal intent log");
+}
+
+#[test]
+fn test_bridge_gateway_direct_transfer_is_silently_dropped() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        // Pins the current footgun: funds are deducted from sender but never delivered.
+        .with_transfer(BRIDGE_GATEWAY_ACCT_ID, 10_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    let output = execute_single_tx_with_outputs(&mut state, genesis_block.header(), tx, 1, 1);
+
+    assert_no_bridge_gateway_logs(&output);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(90_000_000)
+    );
+    assert_eq!(*snark_account_state.seqno().inner(), 1);
+}
+
+#[test]
+fn test_bridge_gateway_non_denomination_withdrawal_is_silently_dropped() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        // Pins the current footgun: funds are deducted from sender but never delivered.
+        .with_output_message(
+            BRIDGE_GATEWAY_ACCT_ID,
+            50_000_000,
+            encode_withdrawal_payload(b"bc1qnondenomination", u32::MAX),
+        )
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    let output = execute_single_tx_with_outputs(&mut state, genesis_block.header(), tx, 1, 1);
+
+    assert_no_bridge_gateway_logs(&output);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(50_000_000)
+    );
+    assert_eq!(*snark_account_state.seqno().inner(), 1);
+}
+
+#[test]
+fn test_bridge_gateway_zero_amount_withdrawal_is_silently_dropped() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_output_message(
+            BRIDGE_GATEWAY_ACCT_ID,
+            0,
+            encode_withdrawal_payload(b"bc1qzeroamount", u32::MAX),
+        )
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    let output = execute_single_tx_with_outputs(&mut state, genesis_block.header(), tx, 1, 1);
+
+    assert_no_bridge_gateway_logs(&output);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(100_000_000)
+    );
+    assert_eq!(*snark_account_state.seqno().inner(), 1);
+}
+
+#[test]
+fn test_bridge_gateway_non_withdrawal_gam_is_silently_dropped() {
+    let mut state = create_test_genesis_state();
+    let genesis_info = BlockInfo::new_genesis(1_000_000);
+    let genesis_block = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("terminal genesis should execute");
+
+    let tx = make_gam_tx(BRIDGE_GATEWAY_ACCT_ID);
+    let output = execute_single_tx_with_outputs(&mut state, genesis_block.header(), tx, 1, 1);
+
+    assert_no_bridge_gateway_logs(&output);
+    assert!(
+        !state
+            .check_account_exists(BRIDGE_GATEWAY_ACCT_ID)
+            .expect("account existence check should succeed"),
+        "bridge gateway is a special account, not a ledger account"
+    );
+}
+
+#[test]
+fn test_bridge_gateway_wrong_msg_type_dropped() {
+    // Properly framed message with a non-withdrawal type byte. The bridge
+    // gateway parses the envelope successfully and then drops it because
+    // `try_as_withdrawal` returns None — distinct from the empty-payload case
+    // which bails at envelope parsing.
+    let mut state = create_test_genesis_state();
+    let genesis_info = BlockInfo::new_genesis(1_000_000);
+    let genesis_block = execute_block(&mut state, &genesis_info, None, genesis_block_components())
+        .expect("terminal genesis should execute");
+
+    let framed_payload = OwnedMsg::new(DEPOSIT_MSG_TYPE_ID, vec![])
+        .expect("valid message framing should construct")
+        .to_vec();
+    let tx = make_gam_tx_with_payload(BRIDGE_GATEWAY_ACCT_ID, framed_payload);
+    let output = execute_single_tx_with_outputs(&mut state, genesis_block.header(), tx, 1, 1);
+
+    assert_no_bridge_gateway_logs(&output);
+    assert!(
+        !state
+            .check_account_exists(BRIDGE_GATEWAY_ACCT_ID)
+            .expect("account existence check should succeed"),
+        "bridge gateway is a special account, not a ledger account"
+    );
+}
+
+fn encode_withdrawal_payload(dest_desc: &[u8], selected_operator: u32) -> Vec<u8> {
+    let withdrawal_msg_data =
+        WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, dest_desc.to_vec(), selected_operator)
+            .expect("valid withdrawal data");
+    let encoded_withdrawal_body =
+        strata_codec::encode_to_vec(&withdrawal_msg_data).expect("withdrawal data should encode");
+    OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body)
+        .expect("withdrawal message should be valid")
+        .to_vec()
+}
+
+fn execute_single_tx_with_outputs(
+    state: &mut OLState,
+    parent_header: &OLBlockHeader,
+    tx: OLTransaction,
+    slot: u64,
+    epoch: u32,
+) -> ConstructBlockOutput {
+    let block_info = BlockInfo::new(1_001_000, slot, epoch);
+    let components = BlockComponents::new_txs_from_ol_transactions(vec![tx]);
+    execute_block_with_outputs(state, &block_info, Some(parent_header), components)
+        .expect("single-tx block should execute")
+}
+
+fn assert_no_bridge_gateway_logs(output: &ConstructBlockOutput) {
+    assert!(
+        output
+            .outputs()
+            .logs()
+            .iter()
+            .all(|log| log.account_serial() != BRIDGE_GATEWAY_ACCT_SERIAL),
+        "bridge gateway should not emit withdrawal logs"
+    );
 }
