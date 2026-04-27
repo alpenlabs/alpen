@@ -696,14 +696,11 @@ pub trait AccountDatabase: Send + Sync + 'static {
 
 /// Database for OL state indexing data.
 ///
-/// Lets callers reconstruct snark account inner states and answer per-account,
-/// per-epoch activity queries without replaying blocks. Account-type-agnostic.
-///
 /// Two write paths reflect the two producer modes:
-/// - [`apply_epoch_indexing`](Self::apply_epoch_indexing): single atomic write
-///   for an entire epoch. Used by checkpoint-sync producers.
-/// - [`apply_block_indexing`](Self::apply_block_indexing): incremental per-block
-///   write. Used by block-sync producers.
+/// - [`apply_epoch_indexing`](Self::apply_epoch_indexing): single atomic write for an entire epoch.
+///   Used by checkpoint-sync producers.
+/// - [`apply_block_indexing`](Self::apply_block_indexing): incremental per-block write. Used by
+///   block-sync producers.
 ///
 /// Block-sync also calls [`set_epoch_commitment`](Self::set_epoch_commitment)
 /// once at epoch finalization to stamp the commitment onto the existing common
@@ -730,11 +727,7 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     ///
     /// Called once by block-sync producers at epoch finalization. Errors if
     /// no common row exists for the epoch.
-    fn set_epoch_commitment(
-        &self,
-        epoch: Epoch,
-        commitment: EpochCommitment,
-    ) -> DbResult<()>;
+    fn set_epoch_commitment(&self, epoch: Epoch, commitment: EpochCommitment) -> DbResult<()>;
 
     /// Returns the common indexing data for the given epoch.
     fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>>;
@@ -750,10 +743,7 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     /// Returns the per-(account, epoch) inbox entry.
     ///
     /// Returns `None` when no inbox writes were recorded for the account in the epoch.
-    fn get_account_inbox_entry(
-        &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountInboxEntry>>;
+    fn get_account_inbox_entry(&self, key: AccountEpochKey) -> DbResult<Option<AccountInboxEntry>>;
 
     /// Returns the epoch in which an account was created.
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;

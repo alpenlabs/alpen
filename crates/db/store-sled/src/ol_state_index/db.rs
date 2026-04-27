@@ -1,106 +1,144 @@
 //! Sled-backed [`OLStateIndexingDatabase`] implementation.
 
-use std::ops::Bound;
-
+use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
-    DbResult,
+    DbError, DbResult,
     ol_state_index::{
-        AccountEpochRecord, BlockIndexingRecord, CommonEpochRecord, EpochIndexingData,
+        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, BlockIndexingWrites,
+        EpochIndexingData, EpochIndexingWrites,
     },
     traits::OLStateIndexingDatabase,
 };
-use strata_identifiers::{AccountId, Epoch, OLBlockCommitment};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment};
+use typed_sled::{error::Error as TSledError, tree::SledTransactionalTree};
 
 use super::schemas::{
-    OLAccountCreationEpochSchema, OLAccountEpochSchema, OLBlockIndexingSchema, OLCommonEpochSchema,
+    OLAccountCreationEpochSchema, OLAccountInboxEntrySchema, OLAccountUpdateEntrySchema,
+    OLEpochIndexingDataSchema,
 };
 use crate::define_sled_database;
 
 define_sled_database!(
     pub struct OLStateIndexingDBSled {
-        common_tree: OLCommonEpochSchema,
-        account_epoch_tree: OLAccountEpochSchema,
+        epoch_data_tree: OLEpochIndexingDataSchema,
+        account_update_tree: OLAccountUpdateEntrySchema,
+        account_inbox_tree: OLAccountInboxEntrySchema,
         creation_epoch_tree: OLAccountCreationEpochSchema,
-        block_indexing_tree: OLBlockIndexingSchema,
     }
 );
 
-// TODO: make apply_epoch_indexing atomic across the four trees. Sled
-// transactional views don't expose range iteration, so we currently do the
-// block-indexing scan outside any transaction and perform writes
-// tree-by-tree. A crash mid-apply can leave partial state that a reader must
-// tolerate.
+type Trees = (
+    SledTransactionalTree<OLEpochIndexingDataSchema>,
+    SledTransactionalTree<OLAccountUpdateEntrySchema>,
+    SledTransactionalTree<OLAccountInboxEntrySchema>,
+    SledTransactionalTree<OLAccountCreationEpochSchema>,
+);
+
 impl OLStateIndexingDatabase for OLStateIndexingDBSled {
-    fn apply_epoch_indexing(&self, data: EpochIndexingData) -> DbResult<()> {
-        let epoch = data.epoch();
+    fn apply_epoch_indexing(&self, writes: EpochIndexingWrites) -> DbResult<()> {
+        self.config.with_retry(
+            (
+                &self.epoch_data_tree,
+                &self.account_update_tree,
+                &self.account_inbox_tree,
+                &self.creation_epoch_tree,
+            ),
+            |(epoch_t, update_t, inbox_t, creation_t): Trees| {
+                let epoch = writes.epoch;
+                for acct in writes.common.created_accounts() {
+                    creation_t.insert(acct, &epoch)?;
+                }
+                epoch_t.insert(&epoch, &writes.common)?;
 
-        self.common_tree.insert(&epoch, data.common())?;
+                for (acct, entry) in &writes.account_updates {
+                    update_t.insert(&AccountEpochKey::new(epoch, *acct), entry)?;
+                }
+                for (acct, entry) in &writes.account_inbox {
+                    inbox_t.insert(&AccountEpochKey::new(epoch, *acct), entry)?;
+                }
 
-        for acct in data.common().accounts_created() {
-            self.creation_epoch_tree.insert(acct, &epoch)?;
-        }
-
-        for (acct, record) in data.accounts() {
-            self.account_epoch_tree.insert(&(*acct, epoch), record)?;
-        }
-
-        let start = (epoch, OLBlockCommitment::null());
-        let end = (epoch.saturating_add(1), OLBlockCommitment::null());
-        let mut block_index_keys: Vec<(Epoch, OLBlockCommitment)> = Vec::new();
-        for item in self
-            .block_indexing_tree
-            .range((Bound::Included(&start), Bound::Excluded(&end)))?
-        {
-            let (key, _) = item?;
-            block_index_keys.push(key);
-        }
-        for key in &block_index_keys {
-            self.block_indexing_tree.remove(key)?;
-        }
-
-        Ok(())
+                Ok(())
+            },
+        )
     }
 
-    fn get_common_epoch_record(&self, epoch: Epoch) -> DbResult<Option<CommonEpochRecord>> {
-        Ok(self.common_tree.get(&epoch)?)
+    fn apply_block_indexing(&self, writes: BlockIndexingWrites) -> DbResult<()> {
+        self.config.with_retry(
+            (
+                &self.epoch_data_tree,
+                &self.account_update_tree,
+                &self.account_inbox_tree,
+                &self.creation_epoch_tree,
+            ),
+            |(epoch_t, update_t, inbox_t, creation_t): Trees| {
+                let epoch = writes.epoch;
+
+                if !writes.created_accounts.is_empty() {
+                    let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
+                    for acct in &writes.created_accounts {
+                        creation_t.insert(acct, &epoch)?;
+                        common.push_created_account(*acct);
+                    }
+                    epoch_t.insert(&epoch, &common)?;
+                }
+
+                for (acct, records) in &writes.account_updates {
+                    if records.is_empty() {
+                        continue;
+                    }
+                    let key = AccountEpochKey::new(epoch, *acct);
+                    let mut entry = update_t.get(&key)?.unwrap_or_default();
+                    entry.extend(records.iter().cloned());
+                    update_t.insert(&key, &entry)?;
+                }
+
+                for (acct, records) in &writes.account_inbox_writes {
+                    if records.is_empty() {
+                        continue;
+                    }
+                    let key = AccountEpochKey::new(epoch, *acct);
+                    let mut entry = inbox_t.get(&key)?.unwrap_or_default();
+                    entry.extend(records.iter().cloned());
+                    inbox_t.insert(&key, &entry)?;
+                }
+
+                Ok(())
+            },
+        )
     }
 
-    fn get_account_epoch_record(
+    fn set_epoch_commitment(&self, epoch: Epoch, commitment: EpochCommitment) -> DbResult<()> {
+        self.config.with_retry(
+            (&self.epoch_data_tree,),
+            |(epoch_t,): (SledTransactionalTree<OLEpochIndexingDataSchema>,)| {
+                let Some(mut common) = epoch_t.get(&epoch)? else {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::Other(format!("no epoch indexing data for epoch {epoch}")),
+                    )));
+                };
+                common.set_epoch_commitment(commitment);
+                epoch_t.insert(&epoch, &common)?;
+                Ok(())
+            },
+        )
+    }
+
+    fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>> {
+        Ok(self.epoch_data_tree.get(&epoch)?)
+    }
+
+    fn get_account_update_entry(
         &self,
-        acct: AccountId,
-        epoch: Epoch,
-    ) -> DbResult<Option<AccountEpochRecord>> {
-        Ok(self.account_epoch_tree.get(&(acct, epoch))?)
+        key: AccountEpochKey,
+    ) -> DbResult<Option<AccountUpdateEntry>> {
+        Ok(self.account_update_tree.get(&key)?)
+    }
+
+    fn get_account_inbox_entry(&self, key: AccountEpochKey) -> DbResult<Option<AccountInboxEntry>> {
+        Ok(self.account_inbox_tree.get(&key)?)
     }
 
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>> {
         Ok(self.creation_epoch_tree.get(&acct)?)
-    }
-
-    fn put_block_indexing(
-        &self,
-        epoch: Epoch,
-        block: OLBlockCommitment,
-        record: BlockIndexingRecord,
-    ) -> DbResult<()> {
-        self.block_indexing_tree.insert(&(epoch, block), &record)?;
-        Ok(())
-    }
-
-    fn get_epoch_block_indexing(
-        &self,
-        epoch: Epoch,
-    ) -> DbResult<Vec<(OLBlockCommitment, BlockIndexingRecord)>> {
-        let start = (epoch, OLBlockCommitment::null());
-        let end = (epoch.saturating_add(1), OLBlockCommitment::null());
-        let mut out = Vec::new();
-        for item in self
-            .block_indexing_tree
-            .range((Bound::Included(&start), Bound::Excluded(&end)))?
-        {
-            let ((_, block), rec) = item?;
-            out.push((block, rec));
-        }
-        Ok(out)
     }
 }

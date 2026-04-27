@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitment};
 
@@ -135,7 +136,20 @@ impl AccountUpdateRecord {
 ///
 /// Keying by [`EpochCommitment`] is not viable: the commitment is unknown
 /// during intermediate steps within the epoch.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 pub struct AccountEpochKey {
     pub epoch: Epoch,
     pub account_id: AccountId,
