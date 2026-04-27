@@ -43,7 +43,7 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
     let acct_a = acct(1);
     let acct_b = acct(2);
 
-    let common = EpochIndexingData::new(Some(epoch_commit(epoch as u32, 9)), vec![acct_a]);
+    let common = EpochIndexingData::new(Some(epoch_commit(epoch, 9)), vec![acct_a]);
     let mut updates = BTreeMap::new();
     updates.insert(
         acct_a,
@@ -191,7 +191,7 @@ pub fn test_set_epoch_commitment_stamps(db: &impl OLStateIndexingDatabase) {
     })
     .expect("apply block");
 
-    let commitment = epoch_commit(epoch as u32, 5);
+    let commitment = epoch_commit(epoch, 5);
     db.set_epoch_commitment(epoch, commitment)
         .expect("set commitment");
 

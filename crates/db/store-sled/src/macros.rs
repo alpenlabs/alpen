@@ -257,8 +257,8 @@ macro_rules! impl_rkyv_value_codec {
 
 /// CBOR (via ciborium) value codec macro.
 ///
-/// For values that derive [`serde::Serialize`] / [`serde::Deserialize`] and
-/// want schema-evolution tolerance. Unknown fields round-trip by default.
+/// For values that derive and want schema-evolution tolerance. Unknown fields round-trip by
+/// default.
 #[macro_export]
 macro_rules! impl_cbor_value_codec {
     ($table_name:ident, $value:ty) => {

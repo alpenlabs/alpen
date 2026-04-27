@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use async_trait::async_trait;
 use strata_acct_types::{MessageEntry, MsgPayload};
@@ -444,7 +447,7 @@ fn inbox_fetch_expect_sequence(
     expected_account_id: AccountId,
     expected: Vec<(u64, u64, Vec<MessageEntry>)>,
 ) -> impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static {
-    let calls = std::sync::Mutex::new(0usize);
+    let calls = Mutex::new(0usize);
     move |queried_account_id, start_idx, end_idx_exclusive| {
         let mut idx = calls.lock().unwrap();
         let (exp_start, exp_end, msgs) = expected

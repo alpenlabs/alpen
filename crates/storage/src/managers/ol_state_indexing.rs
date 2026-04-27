@@ -13,9 +13,7 @@ use threadpool::ThreadPool;
 
 use crate::ops::ol_state_indexing::{Context, OLStateIndexingOps};
 
-// NOTE: cache layer (block-keyed and/or epoch-keyed) is intentionally deferred.
-// Add it here when real callers reveal the hot read patterns; the manager is the
-// right home for it (DB stays a dumb KV).
+// NOTE: A cache layer (block-keyed and/or epoch-keyed) can be added later as required.
 
 /// Database manager for OL state indexing data.
 #[expect(

@@ -427,8 +427,8 @@ bitvec = { version = "1.0.1", features = ["serde"] }
 borsh = { version = "1.5.0", features = ["derive"] }
 bytes = "1.11.1"
 cfg-if = "1.0.0"
-ciborium = "0.2"
 chrono = "0.4.38"
+ciborium = "0.2"
 clap = { version = "4.5.39", default-features = false, features = ["derive"] }
 corepc-node = { version = "0.10.0", features = ["29_0"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
