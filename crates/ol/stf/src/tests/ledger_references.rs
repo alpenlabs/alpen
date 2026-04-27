@@ -183,6 +183,77 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
 }
 
 #[test]
+fn test_snark_update_rejects_proof_for_wrong_ledger_reference_claim() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .execute_genesis();
+    let mut manifest_tracker = ManifestMmrTracker::new();
+
+    let manifest1 = make_empty_manifest(1, 1);
+    let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
+    let manifest2 = make_empty_manifest(2, 2);
+
+    fixture
+        .child_block()
+        .with_manifest(manifest1.clone())
+        .with_manifest(manifest2.clone())
+        .execute_with_outputs();
+
+    let (manifest1_index, _manifest1_proof) = manifest_tracker.add_manifest(&manifest1);
+    let (manifest2_index, manifest2_proof) = manifest_tracker.add_manifest(&manifest2);
+
+    assert_eq!(
+        manifest1_index, FIRST_REAL_MANIFEST_INDEX,
+        "First real manifest should follow the genesis sentinel"
+    );
+    assert_eq!(
+        manifest2_index,
+        FIRST_REAL_MANIFEST_INDEX + 1,
+        "Second real manifest should follow the first real manifest"
+    );
+    assert_eq!(
+        fixture.state().asm_manifests_mmr().num_entries(),
+        manifest_tracker.num_entries(),
+        "State MMR should match tracker MMR"
+    );
+
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
+    let initial_balance = fixture.account_balance(snark_acct_id);
+    let initial_seqno = *fixture.expect_snark_account(snark_acct_id).seqno().inner();
+
+    let err = fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.with_ledger_refs(vec![claim], vec![manifest2_proof])
+                .with_state_root(make_state_root(2))
+                .with_proof(vec![0u8; 32])
+        })
+        .execute_err();
+
+    match err.into_base() {
+        ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
+            assert_eq!(ref_idx, manifest1_index);
+        }
+        err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+    }
+
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        initial_balance,
+        "balance should be unchanged after proof for the wrong ledger reference claim"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        initial_seqno,
+        "seqno should be unchanged after proof for the wrong ledger reference claim"
+    );
+}
+
+#[test]
 fn test_snark_update_rejects_extra_ledger_reference_proof() {
     let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
 
