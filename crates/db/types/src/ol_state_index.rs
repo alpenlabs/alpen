@@ -83,29 +83,29 @@ impl AccountUpdateMeta {
 
 /// Single snark account state update.
 ///
-/// `processed_messages` is the SSZ-encoded `MessageEntry`s consumed by this
-/// update. Callers decode at the boundary.
+/// Messages consumed by this update are the inbox entries in the range
+/// `[prev_record.next_inbox_idx, self.next_inbox_idx)`. The first record
+/// in an epoch uses the prior epoch's terminal `next_inbox_idx` as the
+/// lower bound. Callers fetch the actual entries from the inbox MMR
+/// when needed.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AccountUpdateRecord {
     update_meta: Option<AccountUpdateMeta>,
     seq_no: u64,
-    processed_messages: Vec<Vec<u8>>,
     next_inbox_idx: u64,
-    extra_data: Vec<u8>,
+    extra_data: Option<Vec<u8>>,
 }
 
 impl AccountUpdateRecord {
     pub fn new(
         update_meta: Option<AccountUpdateMeta>,
         seq_no: u64,
-        processed_messages: Vec<Vec<u8>>,
         next_inbox_idx: u64,
-        extra_data: Vec<u8>,
+        extra_data: Option<Vec<u8>>,
     ) -> Self {
         Self {
             update_meta,
             seq_no,
-            processed_messages,
             next_inbox_idx,
             extra_data,
         }
@@ -119,16 +119,12 @@ impl AccountUpdateRecord {
         self.seq_no
     }
 
-    pub fn processed_messages(&self) -> &[Vec<u8>] {
-        &self.processed_messages
-    }
-
     pub fn next_inbox_idx(&self) -> u64 {
         self.next_inbox_idx
     }
 
-    pub fn extra_data(&self) -> &[u8] {
-        &self.extra_data
+    pub fn extra_data(&self) -> Option<&[u8]> {
+        self.extra_data.as_deref()
     }
 }
 

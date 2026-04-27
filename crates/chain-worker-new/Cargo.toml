@@ -24,6 +24,7 @@ strata-storage.workspace = true
 
 anyhow.workspace = true
 serde.workspace = true
+ssz.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

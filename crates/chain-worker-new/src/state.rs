@@ -282,16 +282,11 @@ impl ChainWorkerServiceState {
         output: &OLBlockExecutionOutput,
         new_state: OLState,
     ) -> WorkerResult<()> {
-        // Store the write batch
         self.ctx
             .store_block_output(block, block_commitment, output)?;
 
-        // Store the full toplevel state
         self.ctx.store_toplevel_state(block_commitment, new_state)?;
 
-        // Store auxiliary data
-        self.ctx
-            .store_auxiliary_data(block_commitment, output.indexer_writes())?;
         Ok(())
     }
 
