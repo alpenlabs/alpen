@@ -66,15 +66,9 @@ fn test_snark_update_with_valid_ledger_reference() {
     let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
     // Create update with ledger reference and a transfer using SnarkUpdateBuilder
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
-    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_transfer(recipient_id, 10_000_000)
         .with_ledger_refs(vec![claim], vec![manifest1_proof])
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
@@ -91,9 +85,9 @@ fn test_snark_update_with_valid_ledger_reference() {
     .expect("Update with valid ledger reference should succeed");
 
     // Verify the transfer was applied
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(90_000_000),
         "Sender balance should be reduced"
     );
@@ -155,15 +149,9 @@ fn test_snark_update_with_invalid_ledger_reference() {
     };
 
     // Create update with invalid ledger reference using SnarkUpdateBuilder
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
-    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_ledger_refs(vec![claim], vec![invalid_proof])
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
@@ -193,9 +181,9 @@ fn test_snark_update_with_invalid_ledger_reference() {
     }
 
     // Verify no state change
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(100_000_000),
         "Balance should be unchanged after failed update"
     );
@@ -258,15 +246,9 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
         },
     };
 
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
-    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_ledger_refs(vec![claim], vec![mismatched_proof])
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
@@ -328,15 +310,9 @@ fn test_snark_update_rejects_extra_ledger_reference_proof() {
     let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
     let extra_proof = manifest1_proof.clone();
 
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
-    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_ledger_refs(vec![claim], vec![manifest1_proof, extra_proof])
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
@@ -368,16 +344,10 @@ fn test_snark_update_rejects_accumulator_proof_without_ledger_refs() {
     // Setup: genesis with snark account
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
     // No ledger refs and no inbox messages to consume accumulator proofs.
-    let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .build(snark_id, get_test_state_root(2), vec![0u8; 32])
         .with_accumulator_proofs(Some(
             RawMerkleProofList::from_vec_nonempty(vec![RawMerkleProof::new_zero()])
@@ -405,16 +375,10 @@ fn test_snark_update_rejects_extra_predicate_satisfier() {
     // Setup: genesis with snark account
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
     // Build a valid update first.
-    let base_tx = SnarkUpdateBuilder::from_snark_state(snark_state).build(
+    let base_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone()).build(
         snark_id,
         get_test_state_root(3),
         get_test_proof(1),

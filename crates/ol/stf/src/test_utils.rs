@@ -253,7 +253,7 @@ pub fn build_chain_with_transactions(
         } else if i % 4 == 3 && !pending_msgs.is_empty() {
             // Complex SnarkAccountUpdate: processes inbox messages with valid MMR proofs
             // and transfers funds to the recipient account
-            let (_, snark_state) = get_snark_state_expect(state, snark_id);
+            let snark_state = lookup_snark_state(state, snark_id);
             let builder = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
                 .with_processed_msgs(mem::take(&mut pending_msgs))
                 .with_inbox_proofs(mem::take(&mut pending_proofs))
@@ -793,13 +793,28 @@ impl SnarkUpdateBuilder {
     }
 }
 
-/// Helper to get snark account state from OLState, panicking if not found or not a snark account
-pub fn get_snark_state_expect(
+/// Looks up the ledger account state and snark-specific state in local OL state.
+///
+/// Panics if the account is missing or is not a snark account.
+pub fn lookup_snark_account_states(
     state: &OLState,
     snark_id: AccountId,
 ) -> (&OLAccountState, &OLSnarkAccountState) {
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
-    (snark_account, snark_account.as_snark_account().unwrap())
+    let ol_account_state = state.get_account_state(snark_id).unwrap().unwrap();
+    let snark_account_state = lookup_snark_state(state, snark_id);
+    (ol_account_state, snark_account_state)
+}
+
+/// Looks up the snark-specific account state in local OL state.
+///
+/// Panics if the account is missing or is not a snark account.
+pub fn lookup_snark_state(state: &OLState, snark_id: AccountId) -> &OLSnarkAccountState {
+    state
+        .get_account_state(snark_id)
+        .unwrap()
+        .unwrap()
+        .as_snark_account()
+        .unwrap()
 }
 
 /// Helper for creating invalid snark updates for error testing.

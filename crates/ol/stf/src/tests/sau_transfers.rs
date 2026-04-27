@@ -19,32 +19,25 @@ fn test_snark_update_success_with_transfer() {
 
     // Create valid update with transfer
     let transfer_amount = 30_000_000u64;
-    let tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, transfer_amount)
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, transfer_amount)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Valid update should succeed");
 
     // Verify balances
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(70_000_000),
         "Sender account balance should be 100M - 30M"
     );
     // Check the seq no of the sender
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         1,
         "Sender account seq no should increase"
     );
@@ -74,28 +67,21 @@ fn test_snark_update_multiple_transfers() {
     create_empty_account(&mut state, recipient3_id);
 
     // Create update with multiple transfers (30M + 20M + 10M = 60M total)
-    let tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient1_id, 30_000_000)
-    .with_transfer(recipient2_id, 20_000_000)
-    .with_transfer(recipient3_id, 10_000_000)
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient1_id, 30_000_000)
+        .with_transfer(recipient2_id, 20_000_000)
+        .with_transfer(recipient3_id, 10_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Multiple transfers should succeed");
 
     // Verify all balances
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(40_000_000),
         "Sender should have 100M - 60M = 40M"
     );
@@ -137,18 +123,11 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     create_empty_account(&mut state, recipient2_id);
 
     // Try to send 60M + 50M = 110M (exceeds balance of 100M)
-    let tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient1_id, 60_000_000)
-    .with_transfer(recipient2_id, 50_000_000)
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient1_id, 60_000_000)
+        .with_transfer(recipient2_id, 50_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
@@ -160,9 +139,9 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     }
 
     // Verify no partial execution - all balances should be unchanged
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(100_000_000),
         "Sender balance should be unchanged"
     );
@@ -195,17 +174,10 @@ fn test_snark_update_zero_value_transfer() {
     create_empty_account(&mut state, recipient_id);
 
     // Create update with zero value transfer
-    let tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, 0) // Zero value
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, 0) // Zero value
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
@@ -214,14 +186,14 @@ fn test_snark_update_zero_value_transfer() {
     // Zero transfers are valid.
 
     // Verify balances unchanged
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(100_000_000),
         "Sender balance should be unchanged"
     );
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         1,
         "Sequence number should still increment"
     );
@@ -247,17 +219,10 @@ fn test_snark_update_from_zero_balance_account() {
     create_empty_account(&mut state, recipient_id);
 
     // Test case 1: Try to transfer non-zero amount from zero balance account
-    let tx_nonzero = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, 1) // Even 1 satoshi should fail
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx_nonzero = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, 1) // Even 1 satoshi should fail
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx_nonzero, slot, epoch);
@@ -271,38 +236,31 @@ fn test_snark_update_from_zero_balance_account() {
     }
 
     // Verify sequence number did NOT increment due to failure
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         0,
         "Sequence number should not increment on failed transfer"
     );
 
     // Test case 2: Zero value transfer from zero balance account should succeed
-    let tx_zero = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, 0) // Zero value transfer
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx_zero = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, 0) // Zero value transfer
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let blk2 = execute_tx_in_block(&mut state, genesis_block.header(), tx_zero, slot, epoch)
         .expect("Zero value transfer from zero balance should succeed");
 
     // Verify sequence number DID increment for successful zero transfer
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         1,
         "Sequence number should increment even for zero transfer"
     );
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(0),
         "Balance should remain zero"
     );
@@ -316,27 +274,20 @@ fn test_snark_update_from_zero_balance_account() {
     );
 
     // Test case 3: Try multiple transfers from zero balance account
-    let tx_multiple = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, 0) // Zero transfer
-    .with_transfer(snark_id, 0) // Self zero transfer
-    .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 0, vec![]) // Zero value message
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx_multiple = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, 0) // Zero transfer
+        .with_transfer(snark_id, 0) // Self zero transfer
+        .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 0, vec![]) // Zero value message
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     execute_tx_in_block(&mut state, blk2.header(), tx_multiple, slot + 1, epoch)
         .expect("Multiple zero operations from zero balance should succeed");
 
     // Verify final state
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         2,
         "Sequence number should increment to 2"
     );
@@ -351,31 +302,24 @@ fn test_snark_update_self_transfer() {
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Create update transferring to self
-    let tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(snark_id, 30_000_000) // Transfer to self
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(snark_id, 30_000_000) // Transfer to self
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Self transfer should succeed");
 
     // Verify balance unchanged (sent 30M to self)
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(100_000_000),
         "Balance should be unchanged after self-transfer"
     );
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         1,
         "Sequence number should increment"
     );
@@ -394,26 +338,19 @@ fn test_snark_update_exact_balance_transfer() {
     create_empty_account(&mut state, recipient_id);
 
     // Transfer exactly the entire balance
-    let tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, 100_000_000) // Entire balance
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, 100_000_000) // Entire balance
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch)
         .expect("Exact balance transfer should succeed");
 
     // Verify balances
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, _) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(0),
         "Sender should have 0 balance"
     );

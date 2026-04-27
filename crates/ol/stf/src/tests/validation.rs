@@ -2,7 +2,6 @@
 //! validation
 
 use strata_acct_types::{AcctError, TxEffects};
-use strata_ledger_types::{IAccountState, IStateAccessor};
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -56,17 +55,10 @@ fn test_snark_update_insufficient_balance() {
     create_empty_account(&mut state, recipient_id);
 
     // Try to send 100M sats (more than balance)
-    let invalid_tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(recipient_id, 100_000_000)
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let invalid_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, 100_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
@@ -91,17 +83,10 @@ fn test_snark_update_nonexistent_recipient() {
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
     // Try to send to non-existent account
-    let invalid_tx = SnarkUpdateBuilder::from_snark_state(
-        state
-            .get_account_state(snark_id)
-            .unwrap()
-            .unwrap()
-            .as_snark_account()
-            .unwrap()
-            .clone(),
-    )
-    .with_transfer(nonexistent_id, 10_000_000)
-    .build(snark_id, get_test_state_root(2), get_test_proof(1));
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let invalid_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(nonexistent_id, 10_000_000)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);

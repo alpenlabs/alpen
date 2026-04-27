@@ -36,8 +36,9 @@ fn ee_predicate_key_update_applies_to_target_snark_account() {
     // Create a snark account with an initial predicate key.
     let snark_account_id = get_test_snark_account_id();
     let initial_vk = make_marker_predicate(b"initial");
-    let snark_state = OLSnarkAccountState::new_fresh(initial_vk.clone(), Hash::from([1u8; 32]));
-    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
+    let snark_account_state =
+        OLSnarkAccountState::new_fresh(initial_vk.clone(), Hash::from([1u8; 32]));
+    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_account_state));
     let snark_serial = state
         .create_new_account(snark_account_id, new_acct_data)
         .expect("create snark account");
@@ -55,18 +56,14 @@ fn ee_predicate_key_update_applies_to_target_snark_account() {
     execute_block(&mut state, &genesis_info, None, components).expect("genesis with manifest");
 
     // The snark account's update_vk should now be the new key.
-    let acct = state
-        .get_account_state(snark_account_id)
-        .expect("read account state")
-        .expect("account exists");
-    let snark = acct.as_snark_account().expect("snark account state");
+    let snark_account_state = lookup_snark_state(&state, snark_account_id);
     assert_eq!(
-        snark.update_vk(),
+        snark_account_state.update_vk(),
         &new_vk,
         "predicate key should be rotated"
     );
     assert_ne!(
-        snark.update_vk(),
+        snark_account_state.update_vk(),
         &initial_vk,
         "predicate key must differ from initial"
     );
@@ -79,8 +76,9 @@ fn ee_predicate_key_update_unknown_serial_is_silently_skipped() {
     // Create a snark account so the state isn't completely empty.
     let snark_account_id = get_test_snark_account_id();
     let initial_vk = make_marker_predicate(b"initial");
-    let snark_state = OLSnarkAccountState::new_fresh(initial_vk.clone(), Hash::from([1u8; 32]));
-    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
+    let snark_account_state =
+        OLSnarkAccountState::new_fresh(initial_vk.clone(), Hash::from([1u8; 32]));
+    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_account_state));
     state
         .create_new_account(snark_account_id, new_acct_data)
         .expect("create snark account");
@@ -99,12 +97,8 @@ fn ee_predicate_key_update_unknown_serial_is_silently_skipped() {
         .expect("genesis must succeed even with unknown serial");
 
     // The existing snark account's predicate key must be unchanged.
-    let acct = state
-        .get_account_state(snark_account_id)
-        .expect("read account state")
-        .expect("account exists");
-    let snark = acct.as_snark_account().expect("snark account state");
-    assert_eq!(snark.update_vk(), &initial_vk);
+    let snark_account_state = lookup_snark_state(&state, snark_account_id);
+    assert_eq!(snark_account_state.update_vk(), &initial_vk);
 }
 
 #[test]

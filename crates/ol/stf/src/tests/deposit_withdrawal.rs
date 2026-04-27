@@ -27,9 +27,9 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Create a OLSnarkAccountState with always-accept predicate key for testing
     let vk = PredicateKey::always_accept();
-    let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
+    let snark_account_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
 
-    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
+    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_account_state));
     let snark_serial = state
         .create_new_account(snark_account_id, new_acct_data)
         .expect("Should create snark account");
@@ -68,10 +68,8 @@ fn test_snark_account_deposit_and_withdrawal() {
     let genesis_block = genesis_output.completed_block();
 
     // Verify the deposit was processed
-    let account_after_deposit = state
-        .get_account_state(snark_account_id)
-        .expect("Should get account state")
-        .expect("Account should exist");
+    let (account_after_deposit, snark_state_after_genesis) =
+        lookup_snark_account_states(&state, snark_account_id);
     assert_eq!(
         account_after_deposit.balance(),
         BitcoinAmount::from_sat(deposit_amount),
@@ -79,7 +77,6 @@ fn test_snark_account_deposit_and_withdrawal() {
     );
 
     // Check inbox state after genesis
-    let snark_state_after_genesis = account_after_deposit.as_snark_account().unwrap();
     let nxt_inbox_idx_after_gen = snark_state_after_genesis.next_inbox_msg_idx();
     // The deposit should have added a message to the inbox, but it hasn't been processed yet
     assert_eq!(
@@ -139,15 +136,9 @@ fn test_snark_account_deposit_and_withdrawal() {
     let withdrawal_payload_data = withdrawal_msg.to_vec();
 
     // Build the snark update using SnarkUpdateBuilder
-    let snark_state_ref = state
-        .get_account_state(snark_account_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_account_id);
 
-    let sau_tx = SnarkUpdateBuilder::from_snark_state(snark_state_ref)
+    let sau_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_processed_msgs(vec![deposit_msg_in_inbox])
         .with_inbox_proofs(vec![deposit_msg_proof])
         .with_output_message(

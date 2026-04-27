@@ -26,25 +26,25 @@ fn test_snark_inbox_message_insertion() {
         .expect("GAM transaction should succeed");
 
     // Verify the message was added to inbox
-    let (snark_account, snark_state) = get_snark_state_expect(&state, snark_id);
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
 
     // Check that inbox MMR now has 1 entry (from GAM)
     assert_eq!(
-        snark_state.inbox_mmr().num_entries(),
+        snark_account_state.inbox_mmr().num_entries(),
         1,
         "Inbox should have 1 message (GAM)"
     );
 
     // Check the seq no of the sender
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         0,
         "Sender account seq no should not increase for GAM"
     );
 
     // Balance unchanged (GAM messages have 0 value)
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(100_000_000),
         "Snark account balance should be unchanged"
     );
@@ -83,23 +83,22 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
     let gam_proof = inbox_tracker.add_message(&gam_msg_entry);
 
     // Step 2: Verify the parallel MMR matches the actual inbox MMR
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
-    let snark_state = snark_account.as_snark_account().unwrap();
-    let prev_seq_no = snark_state.seqno();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let prev_seq_no = snark_account_state.seqno();
 
     assert_eq!(
-        snark_state.inbox_mmr().num_entries(),
+        snark_account_state.inbox_mmr().num_entries(),
         inbox_tracker.num_entries(),
         "Parallel MMR must stay synchronized with actual inbox MMR"
     );
-    assert_eq!(snark_state.inbox_mmr().num_entries(), 1);
+    assert_eq!(snark_account_state.inbox_mmr().num_entries(), 1);
 
     // The snark account starts with next_msg_read_idx = 0 (no messages processed yet)
-    assert_eq!(snark_state.next_inbox_msg_idx(), 0);
+    assert_eq!(snark_account_state.next_inbox_msg_idx(), 0);
 
     // Step 3: Create update that indicates that the GAM message was processed.
     // Use SnarkUpdateBuilder to construct the transaction.
-    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+    let update_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_processed_msgs(vec![gam_msg_entry])
         .with_inbox_proofs(vec![gam_proof])
         .with_transfer(recipient_id, 10_000_000)
@@ -111,22 +110,21 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         .expect("Update with valid message proof should succeed");
 
     // Verify the update was applied
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(90_000_000),
         "Sender account should be debited"
     );
 
     assert_eq!(
-        *snark_account.as_snark_account().unwrap().seqno().inner(),
+        *snark_account_state.seqno().inner(),
         prev_seq_no.inner() + 1,
         "Sender seq no should increment"
     );
 
-    let snark_state = snark_account.as_snark_account().unwrap();
     assert_eq!(
-        snark_state.next_inbox_msg_idx(),
+        snark_account_state.next_inbox_msg_idx(),
         1,
         "Next inbox msg index should increment"
     );
@@ -196,14 +194,14 @@ fn test_snark_update_invalid_message_proof() {
     let header = blk.header();
 
     // Verify the message was added to inbox
-    let (_, snark_state) = get_snark_state_expect(&state, snark_id);
+    let snark_account_state = lookup_snark_state(&state, snark_id);
     assert_eq!(
-        snark_state.inbox_mmr().num_entries(),
+        snark_account_state.inbox_mmr().num_entries(),
         1,
         "1 inbox msg entry after gam message tx "
     );
     assert_eq!(
-        snark_state.next_inbox_msg_idx(),
+        snark_account_state.next_inbox_msg_idx(),
         0,
         "next to be processed msg idx should be 0"
     );
@@ -218,7 +216,7 @@ fn test_snark_update_invalid_message_proof() {
     };
 
     // Use SnarkUpdateBuilder with the invalid proof
-    let invalid_tx = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+    let invalid_tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_processed_msgs(vec![deposit_msg])
         .with_inbox_proofs(vec![invalid_raw_proof])
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
@@ -270,9 +268,8 @@ fn test_snark_update_skip_message_out_of_order() {
     let header = blk.header();
 
     // Verify we have 2 messages (2 GAMs, no deposit)
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
-    let snark_state = snark_account.as_snark_account().unwrap();
-    assert_eq!(snark_state.inbox_mmr().num_entries(), 2);
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    assert_eq!(snark_account_state.inbox_mmr().num_entries(), 2);
 
     // Step 2: Try to process only the SECOND message (skipping first)
     // This should fail because messages must be processed in order starting from index 0

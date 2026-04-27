@@ -22,15 +22,14 @@ fn assert_mid_block_failure_state(
 ) {
     // Intentional contract pin: STF mutates state in-place and caller (chain-worker-new)
     // owns any snapshot/rollback behavior around block processing.
-    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
-    let snark_state = snark_account.as_snark_account().unwrap();
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(state, snark_id);
     assert_eq!(
-        *snark_state.seqno().inner(),
+        *snark_account_state.seqno().inner(),
         1,
         "first tx should have advanced seqno"
     );
     assert_eq!(
-        snark_account.balance(),
+        ol_account_state.balance(),
         BitcoinAmount::from_sat(90_000_000),
         "first tx should have deducted sender balance"
     );
@@ -79,21 +78,15 @@ fn test_execute_block_mid_failure_keeps_prior_mutations() {
     create_empty_account(&mut state, recipient_ok);
     create_empty_account(&mut state, recipient_not_executed);
 
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
     // tx0 succeeds, tx1 fails structural GAM checks, tx2 must never execute.
-    let tx0 = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+    let tx0 = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_transfer(recipient_ok, 10_000_000)
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
     let tx1 = make_invalid_gam_with_transfer(recipient_ok, recipient_ok);
     let tx1_id = tx1.compute_txid();
-    let tx2 = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx2 = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_transfer(recipient_not_executed, 5_000_000)
         .build(snark_id, get_test_state_root(4), get_test_proof(3));
 
@@ -152,20 +145,14 @@ fn test_verify_block_mid_failure_returns_txexec() {
     )
     .expect("terminal parent block should execute");
 
-    let snark_state = state
-        .get_account_state(snark_id)
-        .unwrap()
-        .unwrap()
-        .as_snark_account()
-        .unwrap()
-        .clone();
+    let snark_account_state = lookup_snark_state(&state, snark_id);
 
-    let tx0 = SnarkUpdateBuilder::from_snark_state(snark_state.clone())
+    let tx0 = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_transfer(recipient_ok, 10_000_000)
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
     let tx1 = make_invalid_gam_with_transfer(recipient_ok, recipient_ok);
     let tx1_id = tx1.compute_txid();
-    let tx2 = SnarkUpdateBuilder::from_snark_state(snark_state)
+    let tx2 = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
         .with_transfer(recipient_not_executed, 5_000_000)
         .build(snark_id, get_test_state_root(4), get_test_proof(3));
 
