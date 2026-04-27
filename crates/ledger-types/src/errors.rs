@@ -84,7 +84,10 @@ pub type ExecResult<T> = Result<T, ExecError>;
 #[derive(Debug, Error)]
 pub enum ExecError {
     #[error("header epoch does not match state epoch (header {0}, state {1})")]
-    EpochMismatch(Epoch, Epoch),
+    HeaderEpochMismatch(Epoch, Epoch),
+
+    #[error("context epoch does not match state epoch (context {0}, state {1})")]
+    ContextEpochMismatch(Epoch, Epoch),
 
     /// Signature is invalid, for some purpose.
     #[error("signature for {0} is invalid")]
@@ -125,6 +128,9 @@ pub enum ExecError {
 
     #[error("epoch overflow")]
     EpochOverflow,
+
+    #[error("slot overflow")]
+    SlotOverflow,
 
     #[error("tried to interact with nonexistent account ({0:?})")]
     UnknownAccount(AccountId),

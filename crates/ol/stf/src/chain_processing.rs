@@ -22,7 +22,10 @@ pub fn process_epoch_initial<S: IStateAccessor>(
     let state_cur_epoch = state.cur_epoch();
     let block_cur_epoch = context.cur_epoch();
     if block_cur_epoch != state_cur_epoch {
-        return Err(ExecError::ChainIntegrity);
+        return Err(ExecError::ContextEpochMismatch(
+            block_cur_epoch,
+            state_cur_epoch,
+        ));
     }
 
     // 3. Insert the previous terminal info into the MMR.
@@ -49,7 +52,10 @@ pub fn process_block_start<S: IStateAccessorMut>(
     // also error out on this when constructing blocks?
     let header_epoch = context.epoch();
     if let Some(ph) = context.parent_header() {
-        let exp_epoch = ph.epoch() + ph.is_terminal() as u32;
+        let exp_epoch = ph
+            .epoch()
+            .checked_add(u32::from(ph.is_terminal()))
+            .ok_or(ExecError::EpochOverflow)?;
         if context.epoch() != exp_epoch {
             return Err(ExecError::IncorrectEpoch(
                 ph.epoch(),
@@ -57,7 +63,7 @@ pub fn process_block_start<S: IStateAccessorMut>(
                 ph.is_terminal(),
             ));
         }
-        let exp_slot = ph.slot() + 1;
+        let exp_slot = ph.slot().checked_add(1).ok_or(ExecError::SlotOverflow)?;
         if context.slot() != exp_slot {
             return Err(ExecError::IncorrectSlot {
                 expected: exp_slot,
@@ -71,7 +77,7 @@ pub fn process_block_start<S: IStateAccessorMut>(
     // 2. Make sure that the current state epoch matches the header's epoch.
     let state_epoch = state.cur_epoch();
     if header_epoch != state_epoch {
-        return Err(ExecError::EpochMismatch(header_epoch, state_epoch));
+        return Err(ExecError::HeaderEpochMismatch(header_epoch, state_epoch));
     }
 
     // 3. Update the global state's current slot to match the block's slot
