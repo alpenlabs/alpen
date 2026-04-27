@@ -3,8 +3,8 @@ use std::sync::Arc;
 use strata_db_types::{
     DbResult,
     ol_state_index::{
-        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, BlockIndexingWrites,
-        EpochIndexingData, EpochIndexingWrites,
+        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, AccountUpdateRecord,
+        BlockIndexingWrites, EpochIndexingData, EpochIndexingWrites, InboxMessageRecord,
     },
     traits::OLStateIndexingDatabase,
 };
@@ -120,4 +120,71 @@ impl OLStateIndexingManager {
     ) -> DbResult<Option<Epoch>> {
         self.ops.get_account_creation_epoch_async(account_id).await
     }
+
+    /// Returns update records for `(epoch, acct)` whose block falls in the
+    /// inclusive slot range. Records without `update_meta` (checkpoint-sync
+    /// rows) are skipped, since they carry no block commitment to filter on.
+    pub async fn get_account_update_records_in_slot_range_async(
+        &self,
+        key: AccountEpochKey,
+        start_slot: u64,
+        end_slot: u64,
+    ) -> DbResult<Vec<AccountUpdateRecord>> {
+        let Some(entry) = self.ops.get_account_update_entry_async(key).await? else {
+            return Ok(Vec::new());
+        };
+        Ok(filter_records_by_slot(entry.records(), start_slot, end_slot))
+    }
+
+    /// Returns inbox writes for `(epoch, acct)` whose block falls in the
+    /// inclusive slot range. Records without `block_commitment` are skipped.
+    pub async fn get_account_inbox_records_in_slot_range_async(
+        &self,
+        key: AccountEpochKey,
+        start_slot: u64,
+        end_slot: u64,
+    ) -> DbResult<Vec<InboxMessageRecord>> {
+        let Some(entry) = self.ops.get_account_inbox_entry_async(key).await? else {
+            return Ok(Vec::new());
+        };
+        Ok(filter_inbox_by_slot(entry.records(), start_slot, end_slot))
+    }
+}
+
+fn filter_records_by_slot(
+    records: &[AccountUpdateRecord],
+    start_slot: u64,
+    end_slot: u64,
+) -> Vec<AccountUpdateRecord> {
+    records
+        .iter()
+        .filter(|r| {
+            r.update_meta()
+                .map(|m| {
+                    let s = m.block_commitment().slot();
+                    s >= start_slot && s <= end_slot
+                })
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+fn filter_inbox_by_slot(
+    records: &[InboxMessageRecord],
+    start_slot: u64,
+    end_slot: u64,
+) -> Vec<InboxMessageRecord> {
+    records
+        .iter()
+        .filter(|r| {
+            r.block_commitment()
+                .map(|c| {
+                    let s = c.slot();
+                    s >= start_slot && s <= end_slot
+                })
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
 }

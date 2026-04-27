@@ -5,7 +5,12 @@ use strata_acct_types::{MessageEntry, MsgPayload};
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{DbError, DbResult, types::AccountExtraDataEntry};
+use strata_db_types::{
+    DbError, DbResult,
+    ol_state_index::{
+        AccountEpochKey, AccountUpdateEntry, AccountUpdateMeta, AccountUpdateRecord,
+    },
+};
 use strata_identifiers::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
@@ -38,7 +43,7 @@ struct MockProvider {
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
-    account_extra_data: HashMap<(AccountId, Epoch), AccountExtraData>,
+    account_update_entries: HashMap<AccountEpochKey, AccountUpdateEntry>,
     account_creation_epochs: HashMap<AccountId, Epoch>,
     manifests: HashMap<L1Height, AsmManifest>,
     l1_tip_height: Option<L1Height>,
@@ -56,7 +61,7 @@ impl MockProvider {
             epoch_commitments: HashMap::new(),
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
-            account_extra_data: HashMap::new(),
+            account_update_entries: HashMap::new(),
             account_creation_epochs: HashMap::new(),
             manifests: HashMap::new(),
             l1_tip_height: None,
@@ -145,9 +150,12 @@ impl MockProvider {
         extra_data: Vec<u8>,
         block: OLBlockCommitment,
     ) -> Self {
-        let entry = AccountExtraDataEntry::new(extra_data, block);
-        self.account_extra_data
-            .insert((account_id, epoch), AccountExtraData::new(entry));
+        let meta = AccountUpdateMeta::new(block, [0u8; 32].into());
+        let record = AccountUpdateRecord::new(Some(meta), 0, 0, Some(extra_data));
+        self.account_update_entries.insert(
+            AccountEpochKey::new(epoch, account_id),
+            AccountUpdateEntry::new(vec![record]),
+        );
         self
     }
 
@@ -221,11 +229,11 @@ impl OLRpcProvider for MockProvider {
         Ok(self.checkpoint_l1_refs.get(&commitment).cloned())
     }
 
-    async fn get_account_extra_data(
+    async fn get_account_update_entry(
         &self,
-        key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraData>> {
-        Ok(self.account_extra_data.get(&key).cloned())
+        key: AccountEpochKey,
+    ) -> DbResult<Option<AccountUpdateEntry>> {
+        Ok(self.account_update_entries.get(&key).cloned())
     }
 
     async fn get_account_inbox_messages(

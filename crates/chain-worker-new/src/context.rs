@@ -18,7 +18,7 @@ use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
-    AccountManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager,
+    OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager,
 };
 use tokio::{runtime::Handle, sync::watch};
 
@@ -47,10 +47,6 @@ pub struct ChainWorkerContextImpl {
     /// Manager for checkpoint and epoch summary data.
     ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
-    /// Manager for per-account creation epoch tracking.
-    /// TODO: remove once RPC fully migrates to ol_state_indexing_mgr.
-    account_mgr: Arc<AccountManager>,
-
     /// Manager for OL state indexing data (per-block writes, epoch finalization).
     ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
 
@@ -75,7 +71,6 @@ impl ChainWorkerContextImpl {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
-            account_mgr: nodectx.storage().account().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
@@ -206,12 +201,6 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         };
         self.ol_state_indexing_mgr
             .apply_block_indexing_blocking(writes)?;
-
-        // Mirror creation epochs into legacy AccountManager until callers migrate.
-        for id in wb.ledger().iter_new_accounts().map(|(_, id)| *id) {
-            self.account_mgr
-                .insert_account_creation_epoch_blocking(id, epoch)?;
-        }
 
         Ok(())
     }

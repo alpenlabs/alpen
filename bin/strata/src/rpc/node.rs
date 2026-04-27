@@ -4,6 +4,7 @@ use jsonrpsee::core::RpcResult;
 use ssz::Encode;
 use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
+use strata_db_types::ol_state_index::AccountEpochKey;
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId,
@@ -272,9 +273,9 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         // Get previous epoch commitment if available
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
-        let update = if let Some(extra_data) = self
+        let update = if let Some(entry) = self
             .provider
-            .get_account_extra_data((account_id, epoch))
+            .get_account_update_entry(AccountEpochKey::new(epoch, account_id))
             .await
             .map_err(db_error)?
         {
@@ -287,16 +288,20 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 )
                 .await?;
 
+            // FIXME: check if this is canonical or not and account for reorgs.
+            let last = entry
+                .records()
+                .last()
+                .expect("Should be present");
+            let extra_data = last
+                .extra_data()
+                .expect("Should be present")
+                .to_vec();
+
             let update = RpcUpdateInputData {
                 seq_no: next_seq_no,
                 proof_state: proof_state.into(),
-                extra_data: extra_data
-                    .last() // FIXME: check if this is canonical or not and account for reorgs.
-                    .cloned()
-                    .expect("Should be present")
-                    .into_parts()
-                    .0
-                    .into(),
+                extra_data: extra_data.into(),
                 messages: messages.into_iter().map(Into::into).collect(),
             };
             Some(update)

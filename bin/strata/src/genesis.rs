@@ -1,7 +1,10 @@
 //! OL genesis initialization for the new strata binary.
 
 use anyhow::Result;
-use strata_db_types::traits::BlockStatus;
+use strata_db_types::{
+    ol_state_index::{EpochIndexingData, EpochIndexingWrites},
+    traits::BlockStatus,
+};
 use strata_ol_genesis::{GenesisArtifacts, build_genesis_artifacts};
 use strata_ol_params::OLParams;
 use strata_primitives::OLBlockCommitment;
@@ -24,13 +27,22 @@ pub(crate) fn init_ol_genesis(
     } = build_genesis_artifacts(ol_params)?;
     let genesis_blkid = *commitment.blkid();
 
-    // Insert creation epoch 0 for all genesis accounts.
-    ol_state.ledger.accounts.iter().try_for_each(|entry| {
-        info!(%entry.id, "inserting account info");
-        storage
-            .account()
-            .insert_account_creation_epoch_blocking(entry.id, 0)
-    })?;
+    // Seed epoch-0 indexing with all genesis accounts as created accounts.
+    // No epoch_commitment yet (set at epoch finalization), no per-account
+    // updates or inbox writes at genesis.
+    let created_accounts = ol_state
+        .ledger
+        .accounts
+        .iter()
+        .map(|entry| {
+            info!(%entry.id, "inserting account info");
+            entry.id
+        })
+        .collect::<Vec<_>>();
+    let common = EpochIndexingData::new(None, created_accounts);
+    storage
+        .ol_state_indexing()
+        .apply_epoch_indexing_blocking(EpochIndexingWrites::new(0, common))?;
 
     storage.ol_block().put_block_data_blocking(ol_block)?;
     storage
