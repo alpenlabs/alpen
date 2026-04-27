@@ -1418,6 +1418,11 @@ impl FixtureBlockOutput {
         self.output.completed_block().header().state_root()
     }
 
+    /// Returns the number of logs emitted by the block.
+    pub fn log_count(&self) -> usize {
+        self.output.outputs().logs().len()
+    }
+
     /// Finds and decodes a typed log emitted by `serial`.
     pub fn find_typed_log<T: Codec>(&self, serial: AccountSerial) -> Option<T> {
         self.output
@@ -1736,8 +1741,12 @@ impl SnarkUpdateBuilder {
 
     /// Add a single transfer effect
     pub fn with_transfer(mut self, dest: AccountId, amount: u64) -> Self {
-        self.effects
+        let added = self
+            .effects
             .add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(amount)));
+        // This builder only constructs test fixtures; fail fast instead of silently dropping
+        // an effect that exceeds the protocol list capacity.
+        assert!(added, "test: too many transfer effects");
         self
     }
 
@@ -1745,7 +1754,10 @@ impl SnarkUpdateBuilder {
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
         let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(amount), data)
             .expect("message payload bytes must fit within SSZ max length");
-        self.effects.add_message(SentMessage::new(dest, payload));
+        let added = self.effects.add_message(SentMessage::new(dest, payload));
+        // This builder only constructs test fixtures; fail fast instead of silently dropping
+        // an effect that exceeds the protocol list capacity.
+        assert!(added, "test: too many message effects");
         self
     }
 

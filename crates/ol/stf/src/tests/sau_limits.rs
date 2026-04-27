@@ -1,7 +1,8 @@
 //! Tests for SAU value and integer boundary behavior.
 
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{BitcoinAmount, MAX_MESSAGES, MAX_TRANSFERS};
 use strata_ledger_types::ISnarkAccountState;
+use strata_ol_chain_types_new::SAU_MAX_EXTRA_DATA_BYTES;
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -183,6 +184,172 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
         BitcoinAmount::from_sat(0),
         "Recipient2 should have no balance after failed update"
     );
+}
+
+#[test]
+fn test_snark_update_allows_max_transfer_count() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(MAX_TRANSFERS))
+        })
+        .with_genesis_empty_account(recipient_id)
+        .execute_genesis();
+
+    fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            let mut sau = sau;
+            for _ in 0..MAX_TRANSFERS {
+                sau = sau.transfer(recipient_id, BitcoinAmount::from_sat(1));
+            }
+            sau.with_state_root(make_state_root(2))
+        })
+        .execute();
+
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        BitcoinAmount::from_sat(0),
+        "Sender should spend the max-count transfer total"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+    assert_eq!(
+        fixture.account_balance(recipient_id),
+        BitcoinAmount::from_sat(MAX_TRANSFERS),
+        "Recipient should receive every max-count transfer"
+    );
+}
+
+#[test]
+#[should_panic(expected = "test: too many transfer effects")]
+fn test_snark_update_builder_rejects_transfer_count_over_limit() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
+
+    let fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(0))
+        })
+        .execute_genesis();
+
+    let mut builder =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone());
+    for _ in 0..=MAX_TRANSFERS {
+        builder = builder.with_transfer(recipient_id, 1);
+    }
+}
+
+#[test]
+fn test_snark_update_allows_max_message_count() {
+    let sender_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(sender_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(0))
+        })
+        .with_genesis_snark_account(recipient_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(0))
+        })
+        .execute_genesis();
+
+    fixture
+        .child_block()
+        .with_sau(sender_acct_id, |sau| {
+            let mut sau = sau;
+            for _ in 0..MAX_MESSAGES {
+                sau = sau.output_message(recipient_id, BitcoinAmount::from_sat(0), vec![1, 2, 3]);
+            }
+            sau.with_state_root(make_state_root(2))
+        })
+        .execute();
+
+    assert_eq!(
+        *fixture.expect_snark_account(sender_acct_id).seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+    assert_eq!(
+        fixture
+            .expect_snark_account(recipient_id)
+            .inbox_mmr()
+            .num_entries(),
+        MAX_MESSAGES,
+        "Recipient inbox should receive every max-count message"
+    );
+}
+
+#[test]
+#[should_panic(expected = "test: too many message effects")]
+fn test_snark_update_builder_rejects_message_count_over_limit() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID + 1);
+
+    let fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(0))
+        })
+        .execute_genesis();
+
+    let mut builder =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone());
+    for _ in 0..=MAX_MESSAGES {
+        builder = builder.with_output_message(recipient_id, 0, vec![1, 2, 3]);
+    }
+}
+
+#[test]
+fn test_snark_update_allows_max_extra_data() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(0))
+        })
+        .execute_genesis();
+
+    fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.with_extra_data(vec![0xab; SAU_MAX_EXTRA_DATA_BYTES as usize])
+                .with_state_root(make_state_root(2))
+        })
+        .execute();
+
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+    assert_eq!(
+        fixture
+            .expect_snark_account(snark_acct_id)
+            .inner_state_root(),
+        make_state_root(2),
+        "Inner state root should update"
+    );
+}
+
+#[test]
+fn test_snark_update_builder_rejects_extra_data_over_limit() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+
+    let fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(0))
+        })
+        .execute_genesis();
+
+    let result =
+        SnarkUpdateBuilder::from_snark_state(fixture.expect_snark_account(snark_acct_id).clone())
+            .try_with_extra_data(vec![0xab; SAU_MAX_EXTRA_DATA_BYTES as usize + 1]);
+    assert!(result.is_err(), "extra data over limit should fail");
 }
 
 #[test]

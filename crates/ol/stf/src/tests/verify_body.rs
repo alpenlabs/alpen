@@ -1,9 +1,16 @@
 //! Body commitment and round-trip verification tests for the OL STF implementation.
 
+use strata_acct_types::{AccountId, BitcoinAmount, MAX_MESSAGES};
 use strata_identifiers::Buf32;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_chain_types_new::MAX_LOGS_PER_BLOCK;
 
-use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
+use crate::{
+    BRIDGE_GATEWAY_ACCT_ID, assembly::BlockComponents, context::BlockInfo, errors::ExecError,
+    test_utils::*,
+};
+
+const WITHDRAWAL_LOG_AMOUNT: u64 = 100_000_000;
 
 #[test]
 fn test_verify_valid_block_succeeds() {
@@ -298,6 +305,72 @@ fn test_verify_empty_block_logs_root() {
 }
 
 #[test]
+fn test_verify_block_allows_max_withdrawal_logs() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let initial_balance =
+        WITHDRAWAL_LOG_AMOUNT * withdrawal_log_message_count(MAX_LOGS_PER_BLOCK as usize);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(initial_balance))
+        })
+        .execute_genesis();
+    let genesis = fixture.last_completed_block().clone();
+    let mut verify_state = fixture.state().clone();
+    let block = fixture.child_block();
+    let block = with_withdrawal_log_saus(block, snark_acct_id, MAX_LOGS_PER_BLOCK as usize);
+    let output = block.execute_with_outputs();
+    let block = output.completed_block();
+
+    assert_eq!(
+        output.log_count(),
+        MAX_LOGS_PER_BLOCK as usize,
+        "Block should emit the maximum allowed log count"
+    );
+
+    assert_verification_succeeds(
+        &mut verify_state,
+        block.header(),
+        Some(genesis.header().clone()),
+        block.body(),
+    );
+
+    let (ol_account_state, account_state) = verify_state.expect_snark_account_state(snark_acct_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(0),
+        "Verified state should spend every withdrawal output"
+    );
+    assert_eq!(
+        *account_state.seqno().inner(),
+        withdrawal_log_tx_count(MAX_LOGS_PER_BLOCK as usize),
+        "Verified state should increment sequence number once per SAU"
+    );
+}
+
+#[test]
+fn test_assemble_rejects_withdrawal_logs_over_limit() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let log_count = MAX_LOGS_PER_BLOCK as usize + 1;
+    let initial_balance = WITHDRAWAL_LOG_AMOUNT * log_count as u64;
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(initial_balance))
+        })
+        .execute_genesis();
+    let block = fixture.child_block();
+    let block = with_withdrawal_log_saus(block, snark_acct_id, log_count);
+    match block.execute_err().into_base() {
+        ExecError::LogsOverflow { count, max } => {
+            assert_eq!(count, log_count);
+            assert_eq!(max, MAX_LOGS_PER_BLOCK as usize);
+        }
+        err => panic!("Expected LogsOverflow, got: {err:?}"),
+    }
+}
+
+#[test]
 fn test_verify_rejects_mismatched_body_root() {
     // Test that verification fails when body root doesn't match body hash.
     let mut state = make_genesis_state();
@@ -413,4 +486,50 @@ fn test_verify_state_root_changes_with_state() {
         &verified_block1_state_root,
         "verified block 1 state root should match the block header"
     );
+}
+
+/// Adds SAUs whose combined block-level log emissions equal `target_log_count`.
+///
+/// Each SAU emits one [`SnarkAccountUpdateLogData`] log plus one log per output message,
+/// so a fully packed SAU contributes `MAX_MESSAGES + 1` logs to the block.
+fn with_withdrawal_log_saus<'a>(
+    mut block: FixtureBlockBuilder<'a>,
+    sender_acct_id: AccountId,
+    target_log_count: usize,
+) -> FixtureBlockBuilder<'a> {
+    let logs_per_full_tx = MAX_MESSAGES as usize + 1;
+    let mut remaining = target_log_count;
+    let mut seq_no = 0u64;
+
+    while remaining > 0 {
+        let logs_this_tx = remaining.min(logs_per_full_tx);
+        let msg_count = logs_this_tx - 1;
+        let state_root = make_state_root(seq_no as u8 + 2);
+        let proof = make_proof(seq_no as u8 + 1);
+
+        block = block.with_sau(sender_acct_id, |sau| {
+            let mut sau = sau;
+            for _ in 0..msg_count {
+                sau = sau.output_message(
+                    BRIDGE_GATEWAY_ACCT_ID,
+                    BitcoinAmount::from_sat(WITHDRAWAL_LOG_AMOUNT),
+                    make_withdrawal_payload(b"bc1qlogcap".to_vec()),
+                );
+            }
+            sau.with_state_root(state_root).with_proof(proof)
+        });
+
+        remaining -= logs_this_tx;
+        seq_no += 1;
+    }
+
+    block
+}
+
+fn withdrawal_log_tx_count(target_log_count: usize) -> u64 {
+    target_log_count.div_ceil(MAX_MESSAGES as usize + 1) as u64
+}
+
+fn withdrawal_log_message_count(target_log_count: usize) -> u64 {
+    target_log_count as u64 - withdrawal_log_tx_count(target_log_count)
 }
