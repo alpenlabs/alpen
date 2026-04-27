@@ -29,7 +29,12 @@ fn epoch_commit(epoch: u32, seed: u8) -> EpochCommitment {
     EpochCommitment::new(epoch, slot, OLBlockId::from(Buf32::from([seed; 32])))
 }
 
-fn record(meta: Option<AccountUpdateMeta>, seq: u64, idx: u64, extra: Option<Vec<u8>>) -> AccountUpdateRecord {
+fn record(
+    meta: Option<AccountUpdateMeta>,
+    seq: u64,
+    idx: u64,
+    extra: Option<Vec<u8>>,
+) -> AccountUpdateRecord {
     AccountUpdateRecord::new(meta, seq, idx, extra)
 }
 
@@ -80,11 +85,10 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
         db.get_account_creation_epoch(acct_a).expect("get creation"),
         Some(epoch)
     );
-    assert!(
-        db.get_account_creation_epoch(acct_b)
-            .expect("get creation b")
-            .is_none()
-    );
+    assert!(db
+        .get_account_creation_epoch(acct_b)
+        .expect("get creation b")
+        .is_none());
 }
 
 pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
@@ -123,12 +127,7 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
     updates2.insert(
         acct_a,
         vec![
-            record(
-                Some(AccountUpdateMeta::new(block2, hash(0x22))),
-                2,
-                6,
-                None,
-            ),
+            record(Some(AccountUpdateMeta::new(block2, hash(0x22))), 2, 6, None),
             record(
                 Some(AccountUpdateMeta::new(block2, hash(0x33))),
                 3,

@@ -289,8 +289,20 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 .await?;
 
             // FIXME: check if this is canonical or not and account for reorgs.
-            let last = entry.records().last().expect("Should be present");
-            let extra_data = last.extra_data().expect("Should be present").to_vec();
+            let last = entry.records().last().ok_or_else(|| {
+                internal_error(format!(
+                    "indexing entry for account {account_id} epoch {epoch} has no records"
+                ))
+            })?;
+            let extra_data = last
+                .extra_data()
+                .ok_or_else(|| {
+                    internal_error(format!(
+                        "last update record for account {account_id} epoch {epoch} \
+                         has no extra_data (DirectSet)"
+                    ))
+                })?
+                .to_vec();
 
             let update = RpcUpdateInputData {
                 seq_no: next_seq_no,
