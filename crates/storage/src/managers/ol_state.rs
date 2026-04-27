@@ -1,11 +1,10 @@
 //! High-level OL state interface.
 
-use std::{future::Future, num::NonZeroUsize, sync::Arc};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use futures::TryFutureExt;
 use strata_db_types::{errors::DbError, traits::OLStateDatabase, DbResult};
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_support_types::{MemoryStateBaseLayer, StateProvider};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_storage_common::exec::{GenericRecv, OpsError};
 use threadpool::ThreadPool;
@@ -19,10 +18,11 @@ use crate::{
 /// Default cache capacity for OL state and write batch caches.
 const DEFAULT_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(64).expect("64 is non-zero");
 
-/// Helper to transform a channel receiver from `Option<OLState>` to `Option<Arc<OLState>>`.
-fn transform_ol_state_chan(
-    rx: GenericRecv<Option<OLState>, DbError>,
-) -> GenericRecv<Option<Arc<OLState>>, DbError> {
+/// Helper that spawns a task that waits on a oneshot to convert a `Option<T>`
+/// to a `Option<Arc<T>>` on another oneshot.
+fn wrap_oneshot_val_in_arc<T: Sync + Send + 'static>(
+    rx: GenericRecv<Option<T>, DbError>,
+) -> GenericRecv<Option<Arc<T>>, DbError> {
     let (tx, new_rx) = oneshot::channel();
     tokio::spawn(async move {
         let result = match rx.await {
@@ -92,7 +92,7 @@ impl OLStateManager {
     ) -> DbResult<Option<Arc<OLState>>> {
         self.state_cache
             .get_or_fetch(&commitment, || {
-                transform_ol_state_chan(self.ops.get_toplevel_ol_state_chan(commitment))
+                wrap_oneshot_val_in_arc(self.ops.get_toplevel_ol_state_chan(commitment))
             })
             .await
     }
@@ -199,27 +199,6 @@ impl OLStateManager {
         self.ops.del_ol_write_batch_blocking(commitment)?;
         self.wb_cache.purge_blocking(&commitment);
         Ok(())
-    }
-}
-
-impl StateProvider for OLStateManager {
-    type State = MemoryStateBaseLayer;
-    type Error = DbError;
-
-    fn get_state_for_tip_async(
-        &self,
-        tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
-        self.get_toplevel_ol_state_async(tip)
-            .map_ok(|opt| opt.map(|state| MemoryStateBaseLayer::new(state.as_ref().clone())))
-    }
-
-    fn get_state_for_tip_blocking(
-        &self,
-        tip: OLBlockCommitment,
-    ) -> Result<Option<Self::State>, Self::Error> {
-        self.get_toplevel_ol_state_blocking(tip)
-            .map(|opt| opt.map(|state| MemoryStateBaseLayer::new(state.as_ref().clone())))
     }
 }
 

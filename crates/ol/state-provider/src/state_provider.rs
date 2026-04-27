@@ -64,7 +64,7 @@ use strata_ledger_types::IStateAccessorMut;
 /// }
 /// ```
 pub trait StateProvider: Send + Sync + 'static {
-    /// The state type that implements [`IStateAccessor`].
+    /// The provided state type that implements [`IStateAccessorMut`].
     ///
     /// Must be owned and Arc-able for sharing across validation and execution operations.
     type State: IStateAccessorMut + Send + Sync + Debug + 'static;

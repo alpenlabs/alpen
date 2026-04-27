@@ -14,7 +14,6 @@ mod da_accumulating_layer;
 mod index_types;
 mod indexer_layer;
 mod memory_state_layer;
-mod state_provider;
 mod write_tracking_layer;
 
 #[cfg(test)]
@@ -28,4 +27,3 @@ pub use da_accumulating_layer::*;
 pub use index_types::*;
 pub use indexer_layer::*;
 pub use memory_state_layer::*;
-pub use state_provider::*;

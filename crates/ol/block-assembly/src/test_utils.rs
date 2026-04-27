@@ -26,7 +26,7 @@ use strata_btc_verification::L1Anchor;
 use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_db_types::{MmrId, errors::DbError};
+use strata_db_types::{DbError, MmrId};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot,
@@ -43,7 +43,8 @@ use strata_ol_chain_types_new::{
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::OLParams;
-use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer, StateProvider};
+use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
+use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
@@ -52,7 +53,7 @@ use strata_ol_stf::{
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
-use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
+use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
 
 /// Creates a genesis OLState using minimal empty parameters.
@@ -291,30 +292,9 @@ impl StateProvider for FailingStateProvider {
     }
 }
 
-pub(crate) struct StateProviderHandle(Arc<OLStateManager>);
-
-impl StateProvider for StateProviderHandle {
-    type State = MemoryStateBaseLayer;
-    type Error = DbError;
-
-    fn get_state_for_tip_async(
-        &self,
-        tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
-        self.0.get_state_for_tip_async(tip)
-    }
-
-    fn get_state_for_tip_blocking(
-        &self,
-        tip: OLBlockCommitment,
-    ) -> Result<Option<Self::State>, Self::Error> {
-        self.0.get_state_for_tip_blocking(tip)
-    }
-}
-
 /// Concrete block assembly context for tests using mock implementations.
 pub(crate) type BlockAssemblyContextImpl =
-    BlockAssemblyContext<Arc<MockMempoolProvider>, StateProviderHandle>;
+    BlockAssemblyContext<Arc<MockMempoolProvider>, OLStateManagerProviderImpl>;
 
 /// Number of slots per epoch used in tests.
 pub(crate) const TEST_SLOTS_PER_EPOCH: u64 = 10;
@@ -623,30 +603,6 @@ pub(crate) fn insert_inbox_messages_into_state(
             })
             .expect("update account");
     }
-}
-
-/// Inserts inbox messages into the stored OL state at `commitment`.
-pub(crate) async fn insert_inbox_messages_into_storage_state(
-    storage: &NodeStorage,
-    commitment: OLBlockCommitment,
-    account_id: AccountId,
-    messages: &[MessageEntry],
-) {
-    let state = storage
-        .ol_state()
-        .get_toplevel_ol_state_async(commitment)
-        .await
-        .expect("fetch stored state")
-        .expect("stored state missing");
-    let mut state = MemoryStateBaseLayer::new((*state).clone());
-
-    insert_inbox_messages_into_state(&mut state, account_id, messages);
-
-    storage
-        .ol_state()
-        .put_toplevel_ol_state_async(commitment, state.into_inner())
-        .await
-        .expect("store updated state");
 }
 
 /// Create test parent header by executing genesis block.
@@ -1433,7 +1389,7 @@ pub(crate) fn create_test_block_assembly_context(
     storage: Arc<NodeStorage>,
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
-    let state_provider = StateProviderHandle(storage.ol_state().clone());
+    let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
     let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider, 0);
     (ctx, mempool_provider)
 }

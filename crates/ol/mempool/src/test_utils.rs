@@ -24,7 +24,8 @@ use strata_ol_chain_types_new::{
     TxConstraints, TxProofs, test_utils as ol_test_utils,
 };
 use strata_ol_params::OLParams;
-use strata_ol_state_support_types::{MemoryStateBaseLayer, StateProvider};
+use strata_ol_state_provider::StateProvider;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::{Seqno, SnarkAccountUpdate, UpdateOperationData};
@@ -368,7 +369,7 @@ pub(crate) fn create_test_context<P: StateProvider>(
     let test_storage =
         Arc::new(create_node_storage(test_db, pool).expect("Failed to create test NodeStorage"));
 
-    MempoolContext::new_with_provider(config, test_storage, provider)
+    MempoolContext::new(config, test_storage, provider)
 }
 
 /// Create an InMemoryStateProvider with initial test state at the given tip.
