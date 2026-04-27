@@ -65,6 +65,80 @@ fn test_snark_update_invalid_sequence_number() {
 }
 
 #[test]
+fn test_snark_update_replay_across_blocks_fails() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = get_test_recipient_account_id();
+
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+    create_empty_account(&mut state, recipient_id);
+
+    let transfer_amount = 10_000_000;
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_transfer(recipient_id, transfer_amount)
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    let block1 = execute_tx_in_block(&mut state, genesis_block.header(), tx.clone(), 1, 1)
+        .expect("First SAU execution should succeed");
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(90_000_000),
+        "sender balance should reflect first execution"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "sender seqno should increment after first execution"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        BitcoinAmount::from_sat(transfer_amount),
+        "recipient should receive the first execution"
+    );
+
+    let result = execute_tx_in_block(&mut state, block1.header(), tx, 2, 1);
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidUpdateSequence {
+                account_id,
+                expected,
+                got,
+            }) => {
+                assert_eq!(account_id, snark_id);
+                assert_eq!(expected, 1);
+                assert_eq!(got, 0);
+            }
+            err => panic!("Expected InvalidUpdateSequence, got: {err:?}"),
+        },
+        Ok(_) => panic!("Replayed SAU should fail"),
+    }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(90_000_000),
+        "sender balance should not change after replay failure"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "sender seqno should not change after replay failure"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        BitcoinAmount::from_sat(transfer_amount),
+        "recipient balance should not change after replay failure"
+    );
+}
+
+#[test]
 fn test_snark_update_insufficient_balance() {
     let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
