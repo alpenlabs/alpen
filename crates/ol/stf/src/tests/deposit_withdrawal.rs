@@ -8,9 +8,7 @@ use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::{OLBlockHeader, OLTransaction};
-use strata_ol_msg_types::{
-    DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData,
-};
+use strata_ol_msg_types::DEPOSIT_MSG_TYPE_ID;
 use strata_ol_state_types::{OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 
@@ -323,17 +321,6 @@ fn test_bridge_gateway_wrong_msg_type_dropped() {
             .expect("account existence check should succeed"),
         "bridge gateway is a special account, not a ledger account"
     );
-}
-
-fn encode_withdrawal_payload(dest_desc: &[u8], selected_operator: u32) -> Vec<u8> {
-    let withdrawal_msg_data =
-        WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, dest_desc.to_vec(), selected_operator)
-            .expect("valid withdrawal data");
-    let encoded_withdrawal_body =
-        strata_codec::encode_to_vec(&withdrawal_msg_data).expect("withdrawal data should encode");
-    OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body)
-        .expect("withdrawal message should be valid")
-        .to_vec()
 }
 
 fn execute_single_tx_with_outputs(

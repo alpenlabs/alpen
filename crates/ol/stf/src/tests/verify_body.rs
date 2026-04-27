@@ -1,11 +1,19 @@
 //! Body commitment and round-trip verification tests for the OL STF implementation.
 
+use strata_acct_types::{AccountId, BitcoinAmount, MAX_MESSAGES, TxEffects};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-use strata_ledger_types::IStateAccessor;
-use strata_ol_chain_types_new::{OLL1ManifestContainer, OLTxSegment};
+use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_chain_types_new::{
+    MAX_LOGS_PER_BLOCK, OLL1ManifestContainer, OLTransaction, OLTxSegment,
+};
 
-use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
+use crate::{
+    BRIDGE_GATEWAY_ACCT_ID, assembly::BlockComponents, context::BlockInfo, errors::ExecError,
+    test_utils::*,
+};
+
+const WITHDRAWAL_LOG_AMOUNT: u64 = 100_000_000;
 
 // ===== ROUND-TRIP VERIFICATION TESTS =====
 
@@ -272,6 +280,85 @@ fn test_verify_empty_block_logs_root() {
 }
 
 #[test]
+fn test_verify_block_allows_max_withdrawal_logs() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let initial_balance = WITHDRAWAL_LOG_AMOUNT * MAX_LOGS_PER_BLOCK;
+
+    let genesis = setup_genesis_with_snark_account(&mut state, snark_id, initial_balance);
+    let txs = withdrawal_log_txs(snark_id, MAX_LOGS_PER_BLOCK as usize);
+
+    let block_info = BlockInfo::new(1_001_000, 1, 1);
+    let output = execute_block_with_outputs(
+        &mut state,
+        &block_info,
+        Some(genesis.header()),
+        BlockComponents::new_txs_from_ol_transactions(txs),
+    )
+    .expect("Block emitting the maximum log count should execute");
+    let block = output.completed_block();
+
+    assert_eq!(
+        output.outputs().logs().len(),
+        MAX_LOGS_PER_BLOCK as usize,
+        "Block should emit the maximum allowed log count"
+    );
+
+    let mut verify_state = create_test_genesis_state();
+    create_snark_account_with_balance(&mut verify_state, snark_id, initial_balance);
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
+    assert_verification_succeeds(
+        &mut verify_state,
+        block.header(),
+        Some(genesis.header().clone()),
+        block.body(),
+    );
+
+    let (ol_account_state, snark_account_state) =
+        lookup_snark_account_states(&verify_state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(0),
+        "Verified state should spend every withdrawal output"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        withdrawal_log_tx_count(MAX_LOGS_PER_BLOCK as usize),
+        "Verified state should increment sequence number once per SAU"
+    );
+}
+
+#[test]
+fn test_assemble_rejects_withdrawal_logs_over_limit() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let log_count = MAX_LOGS_PER_BLOCK as usize + 1;
+    let initial_balance = WITHDRAWAL_LOG_AMOUNT * log_count as u64;
+
+    let genesis = setup_genesis_with_snark_account(&mut state, snark_id, initial_balance);
+    let txs = withdrawal_log_txs(snark_id, log_count);
+
+    let block_info = BlockInfo::new(1_001_000, 1, 1);
+    let result = execute_block(
+        &mut state,
+        &block_info,
+        Some(genesis.header()),
+        BlockComponents::new_txs_from_ol_transactions(txs),
+    );
+
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::LogsOverflow { count, max } => {
+                assert_eq!(count, log_count);
+                assert_eq!(max, MAX_LOGS_PER_BLOCK as usize);
+            }
+            err => panic!("Expected LogsOverflow, got: {err:?}"),
+        },
+        Ok(_) => panic!("Block emitting too many logs should fail"),
+    }
+}
+
+#[test]
 fn test_verify_rejects_mismatched_body_root() {
     let mut state = create_test_genesis_state();
 
@@ -367,4 +454,41 @@ fn test_verify_state_root_changes_with_state() {
         &verified_block1_state_root,
         "verified block 1 state root should match the block header"
     );
+}
+
+fn withdrawal_log_txs(sender_id: AccountId, log_count: usize) -> Vec<OLTransaction> {
+    let mut remaining_logs = log_count;
+    let mut seq_no = 0;
+    let mut txs = Vec::new();
+
+    while remaining_logs > 0 {
+        let tx_log_count = remaining_logs.min(MAX_MESSAGES as usize);
+        let mut effects = TxEffects::default();
+
+        for _ in 0..tx_log_count {
+            let added = effects.push_message(
+                BRIDGE_GATEWAY_ACCT_ID,
+                WITHDRAWAL_LOG_AMOUNT,
+                encode_withdrawal_payload(b"bc1qlogcap", u32::MAX),
+            );
+            assert!(added, "test: withdrawal log tx should fit effect list");
+        }
+
+        txs.push(create_unchecked_snark_update(
+            sender_id,
+            seq_no,
+            get_test_state_root(seq_no as u8 + 2),
+            0,
+            effects,
+        ));
+
+        remaining_logs -= tx_log_count;
+        seq_no += 1;
+    }
+
+    txs
+}
+
+fn withdrawal_log_tx_count(log_count: usize) -> u64 {
+    log_count.div_ceil(MAX_MESSAGES as usize) as u64
 }

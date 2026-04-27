@@ -17,7 +17,9 @@ use strata_ledger_types::{
     AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
 };
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
+use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::*;
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::OLParams;
 use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
@@ -645,6 +647,18 @@ pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
     make_gam_tx_with_payload(dest, vec![])
 }
 
+/// Encodes a bridge withdrawal message payload.
+pub fn encode_withdrawal_payload(dest_desc: &[u8], selected_operator: u32) -> Vec<u8> {
+    let withdrawal_msg_data =
+        WithdrawalMsgData::new(DEFAULT_OPERATOR_FEE, dest_desc.to_vec(), selected_operator)
+            .expect("valid withdrawal data");
+    let encoded_withdrawal_body =
+        strata_codec::encode_to_vec(&withdrawal_msg_data).expect("withdrawal data should encode");
+    OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_withdrawal_body)
+        .expect("withdrawal message should be valid")
+        .to_vec()
+}
+
 /// Helper to execute a transaction in a non-genesis block.
 ///
 /// Accepts an `OLTransaction` directly.
@@ -691,6 +705,7 @@ pub struct SnarkUpdateBuilder {
     processed_messages: Vec<MessageEntry>,
     inbox_proofs: Vec<RawMerkleProof>,
     effects: TxEffects,
+    extra_data: Vec<u8>,
     ledger_ref_claims: Vec<AccumulatorClaim>,
     ledger_ref_proofs: Vec<RawMerkleProof>,
 }
@@ -704,6 +719,7 @@ impl SnarkUpdateBuilder {
             processed_messages: vec![],
             inbox_proofs: vec![],
             effects: TxEffects::default(),
+            extra_data: vec![],
             ledger_ref_claims: vec![],
             ledger_ref_proofs: vec![],
         }
@@ -723,15 +739,32 @@ impl SnarkUpdateBuilder {
 
     /// Add a single transfer effect
     pub fn with_transfer(mut self, dest: AccountId, amount: u64) -> Self {
-        self.effects
+        let added = self
+            .effects
             .add_transfer(SentTransfer::new(dest, BitcoinAmount::from_sat(amount)));
+        // This builder only constructs test fixtures; fail fast instead of silently dropping
+        // an effect that exceeds the protocol list capacity.
+        assert!(added, "test: too many transfer effects");
         self
     }
 
     /// Add a single message effect
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
         let payload = MsgPayload::new(BitcoinAmount::from_sat(amount), data);
-        self.effects.add_message(SentMessage::new(dest, payload));
+        let added = self.effects.add_message(SentMessage::new(dest, payload));
+        // This builder only constructs test fixtures; fail fast instead of silently dropping
+        // an effect that exceeds the protocol list capacity.
+        assert!(added, "test: too many message effects");
+        self
+    }
+
+    /// Set extra data for the update.
+    pub fn with_extra_data(mut self, extra_data: Vec<u8>) -> Self {
+        assert!(
+            extra_data.len() <= SAU_MAX_EXTRA_DATA_BYTES as usize,
+            "test: extra data exceeds max length"
+        );
+        self.extra_data = extra_data;
         self
     }
 
@@ -759,7 +792,7 @@ impl SnarkUpdateBuilder {
         let update_data = SauTxUpdateData {
             seq_no: self.seq_no,
             proof_state,
-            extra_data: vec![].try_into().unwrap(),
+            extra_data: self.extra_data.try_into().unwrap(),
         };
 
         // Build ledger refs

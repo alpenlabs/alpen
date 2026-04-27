@@ -1,7 +1,8 @@
 //! Tests for snark account u64 and Bitcoin-supply boundaries.
 
-use strata_acct_types::{BitcoinAmount, TxEffects};
+use strata_acct_types::{BitcoinAmount, MAX_MESSAGES, MAX_TRANSFERS, TxEffects};
 use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ol_chain_types_new::SAU_MAX_EXTRA_DATA_BYTES;
 
 use crate::{errors::ExecError, test_utils::*};
 
@@ -163,6 +164,156 @@ fn test_snark_update_rejects_aggregate_transfer_overflow() {
         BitcoinAmount::from_sat(0),
         "Recipient2 should have no balance after failed update"
     );
+}
+
+#[test]
+fn test_snark_update_allows_max_transfer_count() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = test_account_id(TEST_RECIPIENT_ID + 1);
+    let initial_balance = MAX_TRANSFERS;
+
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, initial_balance);
+    create_empty_account(&mut state, recipient_id);
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let mut builder = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone());
+    for _ in 0..MAX_TRANSFERS {
+        builder = builder.with_transfer(recipient_id, 1);
+    }
+    let tx = builder.build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, 1, 1)
+        .expect("SAU with maximum transfer count should execute");
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        BitcoinAmount::from_sat(0),
+        "Sender should spend the max-count transfer total"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+
+    let recipient = state.get_account_state(recipient_id).unwrap().unwrap();
+    assert_eq!(
+        recipient.balance(),
+        BitcoinAmount::from_sat(MAX_TRANSFERS),
+        "Recipient should receive every max-count transfer"
+    );
+}
+
+#[test]
+#[should_panic(expected = "test: too many transfer effects")]
+fn test_snark_update_builder_rejects_transfer_count_over_limit() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = test_account_id(TEST_RECIPIENT_ID + 1);
+
+    setup_genesis_with_snark_account(&mut state, snark_id, 0);
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+
+    let mut builder = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone());
+    for _ in 0..=MAX_TRANSFERS {
+        builder = builder.with_transfer(recipient_id, 1);
+    }
+}
+
+#[test]
+fn test_snark_update_allows_max_message_count() {
+    let mut state = create_test_genesis_state();
+    let sender_id = get_test_snark_account_id();
+    let recipient_id = test_account_id(TEST_RECIPIENT_ID + 1);
+
+    let genesis_block =
+        setup_genesis_with_snark_accounts(&mut state, &[(sender_id, 0), (recipient_id, 0)]);
+
+    let snark_account_state = lookup_snark_state(&state, sender_id);
+    let mut builder = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone());
+    for _ in 0..MAX_MESSAGES {
+        builder = builder.with_output_message(recipient_id, 0, vec![1, 2, 3]);
+    }
+    let tx = builder.build(sender_id, get_test_state_root(2), get_test_proof(1));
+
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, 1, 1)
+        .expect("SAU with maximum message count should execute");
+
+    let (_, sender_snark_state) = lookup_snark_account_states(&state, sender_id);
+    assert_eq!(
+        *sender_snark_state.seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+
+    let recipient_snark_state = lookup_snark_state(&state, recipient_id);
+    assert_eq!(
+        recipient_snark_state.inbox_mmr().num_entries(),
+        MAX_MESSAGES,
+        "Recipient inbox should receive every max-count message"
+    );
+}
+
+#[test]
+#[should_panic(expected = "test: too many message effects")]
+fn test_snark_update_builder_rejects_message_count_over_limit() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+    let recipient_id = test_account_id(TEST_RECIPIENT_ID + 1);
+
+    setup_genesis_with_snark_account(&mut state, snark_id, 0);
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+
+    let mut builder = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone());
+    for _ in 0..=MAX_MESSAGES {
+        builder = builder.with_output_message(recipient_id, 0, vec![1, 2, 3]);
+    }
+}
+
+#[test]
+fn test_snark_update_allows_max_extra_data() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 0);
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_extra_data(vec![0xab; SAU_MAX_EXTRA_DATA_BYTES as usize])
+        .build(snark_id, get_test_state_root(2), get_test_proof(1));
+
+    execute_tx_in_block(&mut state, genesis_block.header(), tx, 1, 1)
+        .expect("SAU with maximum extra data should execute");
+
+    let (_, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        1,
+        "Sequence number should increment"
+    );
+    assert_eq!(
+        snark_account_state.inner_state_root(),
+        get_test_state_root(2),
+        "Inner state root should update"
+    );
+}
+
+#[test]
+#[should_panic(expected = "test: extra data exceeds max length")]
+fn test_snark_update_builder_rejects_extra_data_over_limit() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    setup_genesis_with_snark_account(&mut state, snark_id, 0);
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+
+    SnarkUpdateBuilder::from_snark_state(snark_account_state.clone()).with_extra_data(vec![
+        0xab;
+        SAU_MAX_EXTRA_DATA_BYTES as usize
+            + 1
+    ]);
 }
 
 #[test]
