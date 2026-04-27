@@ -179,6 +179,20 @@ fn test_verify_rejects_wrong_parent_blkid() {
     let wrong_parent_id = OLBlockId::from(Buf32::from([42u8; 32]));
     let tampered_header = tamper_parent_blkid(block1.header(), wrong_parent_id);
 
+    let mut positive_verify_state = make_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        block1.header(),
+        Some(genesis.header().clone()),
+        block1.body(),
+    );
+
     // Verification should fail
     let mut verify_state = make_genesis_state();
 
@@ -223,6 +237,20 @@ fn test_verify_rejects_epoch_skip() {
     // Create a tampered header with epoch 2 (skipping epoch 1)
     let tampered_header = tamper_epoch(block1.header(), 2);
 
+    let mut positive_verify_state = make_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        block1.header(),
+        Some(genesis.header().clone()),
+        block1.body(),
+    );
+
     // Verification should fail
     let mut verify_state = make_genesis_state();
 
@@ -266,6 +294,20 @@ fn test_verify_rejects_slot_skip() {
 
     // Tamper with slot
     let tampered_header = tamper_slot(block1.header(), 3);
+
+    let mut positive_verify_state = make_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        block1.header(),
+        Some(genesis.header().clone()),
+        block1.body(),
+    );
 
     // Verification should fail
     let mut verify_state = make_genesis_state();
@@ -319,6 +361,26 @@ fn test_verify_rejects_slot_backwards() {
 
     // Tamper with block 2 to have slot 1 (going backwards from 2 to 1, same as block1)
     let tampered_header = tamper_slot(block2.header(), 1);
+
+    let mut positive_verify_state = make_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        block1.header(),
+        Some(genesis.header().clone()),
+        block1.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        block2.header(),
+        Some(block1.header().clone()),
+        block2.body(),
+    );
 
     // Verification should fail
     let mut verify_state = make_genesis_state();

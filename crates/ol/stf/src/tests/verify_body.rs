@@ -211,6 +211,14 @@ fn test_verify_rejects_mismatched_state_root() {
     let wrong_root = Buf32::from([99u8; 32]);
     let tampered_header = tamper_state_root(genesis.header(), wrong_root);
 
+    let mut positive_verify_state = make_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+
     // Verification should fail because computed state root won't match header
     let mut verify_state = make_genesis_state();
     assert_verification_fails_with(
@@ -241,6 +249,14 @@ fn test_verify_rejects_mismatched_logs_root() {
     // Tamper with the logs root
     let wrong_root = Buf32::from([88u8; 32]);
     let tampered_header = tamper_logs_root(genesis.header(), wrong_root);
+
+    let mut positive_verify_state = make_genesis_state();
+    assert_verification_succeeds(
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
 
     // Verification should fail because computed logs root won't match header
     let mut verify_state = make_genesis_state();
@@ -312,16 +328,22 @@ fn test_verify_rejects_mismatched_body_root() {
     let tampered_header = tamper_body_root(block1.header(), wrong_root);
 
     // Positive control: untampered block verifies.
-    let mut verify_state = make_genesis_state();
-    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
+    let mut positive_verify_state = make_genesis_state();
     assert_verification_succeeds(
-        &mut verify_state,
+        &mut positive_verify_state,
+        genesis.header(),
+        None,
+        genesis.body(),
+    );
+    assert_verification_succeeds(
+        &mut positive_verify_state,
         block1.header(),
         Some(genesis.header().clone()),
         block1.body(),
     );
 
-    // Tampered block should fail with block-structure mismatch.
+    let mut verify_state = make_genesis_state();
+    assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
