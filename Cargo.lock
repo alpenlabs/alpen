@@ -7078,18 +7078,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd7399781913e5393588a8d8c6a2867bf85fb38eaf2502fdce465aad2dc6f034"
 dependencies = [
  "base64 0.22.1",
- "http-body-util",
- "hyper 1.8.1",
- "hyper-rustls 0.27.7",
- "hyper-util",
  "indexmap 2.13.0",
- "ipnet",
  "metrics",
  "metrics-util 0.19.1",
  "quanta",
  "thiserror 1.0.69",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -13833,7 +13826,6 @@ dependencies = [
  "borsh",
  "format_serde_error",
  "jsonrpsee",
- "metrics-exporter-prometheus",
  "serde_json",
  "ssz",
  "strata-acct-types",

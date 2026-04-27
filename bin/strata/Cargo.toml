@@ -87,8 +87,6 @@ strata-storage.workspace = true
 strata-tasks.workspace = true
 strata-zkvm-hosts = { workspace = true, optional = true }
 
-metrics-exporter-prometheus.workspace = true
-
 anyhow.workspace = true
 argh.workspace = true
 async-trait.workspace = true
