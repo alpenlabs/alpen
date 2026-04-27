@@ -1,6 +1,6 @@
 //! Tests for SAU transfer behavior.
 
-use strata_acct_types::BitcoinAmount;
+use strata_acct_types::{AcctError, BitcoinAmount};
 use strata_ledger_types::ISnarkAccountState;
 
 use crate::{BRIDGE_GATEWAY_ACCT_ID, errors::ExecError, test_utils::*};
@@ -109,6 +109,191 @@ fn test_snark_update_multiple_transfers() {
         fixture.account_balance(recipient3_id),
         BitcoinAmount::from_sat(10_000_000),
         "Recipient3 should receive 10M"
+    );
+}
+
+#[test]
+fn test_snark_update_same_block_distinct_senders() {
+    let sender1_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let sender2_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID + 1);
+    let recipient1_id = make_account_id(TEST_RECIPIENT_ID + 1);
+    let recipient2_id = make_account_id(TEST_RECIPIENT_ID + 2);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(sender1_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .with_genesis_snark_account(sender2_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(70_000_000))
+        })
+        .with_genesis_empty_account(recipient1_id)
+        .with_genesis_empty_account(recipient2_id)
+        .execute_genesis();
+
+    fixture
+        .child_block()
+        .with_sau(sender1_acct_id, |sau| {
+            sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
+                .with_state_root(make_state_root(2))
+        })
+        .with_sau(sender2_acct_id, |sau| {
+            sau.transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
+                .with_state_root(make_state_root(3))
+        })
+        .execute();
+
+    assert_eq!(
+        fixture.account_balance(sender1_acct_id),
+        BitcoinAmount::from_sat(90_000_000),
+        "Sender1 balance should reflect its same-block transfer"
+    );
+    assert_eq!(
+        *fixture
+            .expect_snark_account(sender1_acct_id)
+            .seqno()
+            .inner(),
+        1,
+        "Sender1 sequence number should increment"
+    );
+
+    assert_eq!(
+        fixture.account_balance(sender2_acct_id),
+        BitcoinAmount::from_sat(50_000_000),
+        "Sender2 balance should reflect its same-block transfer"
+    );
+    assert_eq!(
+        *fixture
+            .expect_snark_account(sender2_acct_id)
+            .seqno()
+            .inner(),
+        1,
+        "Sender2 sequence number should increment"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient1_id),
+        BitcoinAmount::from_sat(10_000_000),
+        "Recipient1 should receive sender1 transfer"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient2_id),
+        BitcoinAmount::from_sat(20_000_000),
+        "Recipient2 should receive sender2 transfer"
+    );
+}
+
+#[test]
+fn test_snark_update_same_block_sequential_seqnos() {
+    let sender_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient1_id = make_account_id(TEST_RECIPIENT_ID + 1);
+    let recipient2_id = make_account_id(TEST_RECIPIENT_ID + 2);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(sender_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .with_genesis_empty_account(recipient1_id)
+        .with_genesis_empty_account(recipient2_id)
+        .execute_genesis();
+
+    fixture
+        .child_block()
+        .with_sau(sender_acct_id, |sau| {
+            sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
+                .with_state_root(make_state_root(2))
+        })
+        .with_sau(sender_acct_id, |sau| {
+            sau.transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
+                .with_state_root(make_state_root(3))
+        })
+        .execute();
+
+    assert_eq!(
+        fixture.account_balance(sender_acct_id),
+        BitcoinAmount::from_sat(70_000_000),
+        "Sender balance should include both same-block transfers"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(sender_acct_id).seqno().inner(),
+        2,
+        "Sender sequence number should increment for both same-block updates"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient1_id),
+        BitcoinAmount::from_sat(10_000_000),
+        "Recipient1 should receive the first transfer"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient2_id),
+        BitcoinAmount::from_sat(20_000_000),
+        "Recipient2 should receive the second transfer"
+    );
+}
+
+#[test]
+fn test_snark_update_same_block_duplicate_seqno_fails() {
+    let sender_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient1_id = make_account_id(TEST_RECIPIENT_ID + 1);
+    let recipient2_id = make_account_id(TEST_RECIPIENT_ID + 2);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(sender_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .with_genesis_empty_account(recipient1_id)
+        .with_genesis_empty_account(recipient2_id)
+        .execute_genesis();
+
+    let err = fixture
+        .child_block()
+        .with_sau(sender_acct_id, |sau| {
+            sau.transfer(recipient1_id, BitcoinAmount::from_sat(10_000_000))
+                .with_state_root(make_state_root(2))
+        })
+        .with_sau(sender_acct_id, |sau| {
+            sau.transfer(recipient2_id, BitcoinAmount::from_sat(20_000_000))
+                .force_seqno(0)
+                .with_state_root(make_state_root(3))
+        })
+        .execute_err();
+
+    match err.into_base() {
+        ExecError::Acct(AcctError::InvalidUpdateSequence {
+            account_id,
+            expected,
+            got,
+        }) => {
+            assert_eq!(account_id, sender_acct_id);
+            assert_eq!(expected, 1);
+            assert_eq!(got, 0);
+        }
+        err => panic!("Expected InvalidUpdateSequence, got: {err:?}"),
+    }
+
+    assert_eq!(
+        fixture.account_balance(sender_acct_id),
+        BitcoinAmount::from_sat(90_000_000),
+        "First same-block transfer should remain applied"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(sender_acct_id).seqno().inner(),
+        1,
+        "Sender sequence number should reflect only the first update"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient1_id),
+        BitcoinAmount::from_sat(10_000_000),
+        "Recipient1 should receive the first transfer"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient2_id),
+        BitcoinAmount::from_sat(0),
+        "Recipient2 should not receive the duplicate-seqno transfer"
     );
 }
 
