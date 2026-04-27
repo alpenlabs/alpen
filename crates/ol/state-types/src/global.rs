@@ -10,7 +10,7 @@ impl GlobalState {
     pub fn new(cur_slot: Slot, next_avail_serial: AccountSerial) -> Self {
         Self {
             cur_slot,
-            // FIXME(trey): fix this conversion
+            // FIXME(STR-3227): fix this conversion
             next_avail_serial: next_avail_serial.into_inner() as u64,
         }
     }
@@ -27,13 +27,13 @@ impl GlobalState {
 
     /// Gets the next available serial to be assigned to an account.
     pub fn get_next_avail_serial(&self) -> AccountSerial {
-        // FIXME(trey): fix this conversion
+        // FIXME(STR-3227): fix this conversion
         AccountSerial::from(self.next_avail_serial as u32)
     }
 
     /// Gets the next available serial to be assigned to an account.
     pub fn set_next_avail_serial(&mut self, serial: AccountSerial) {
-        // FIXME(trey): fix this conversion
+        // FIXME(STR-3227): fix this conversion
         self.next_avail_serial = serial.into_inner() as u64;
     }
 }
