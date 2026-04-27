@@ -13,6 +13,7 @@ mod partial_execution;
 mod sau_limits;
 mod sau_logs;
 mod sau_messages;
+mod sau_sequences;
 mod sau_transfers;
 mod sau_validation;
 mod tx_constraints;
