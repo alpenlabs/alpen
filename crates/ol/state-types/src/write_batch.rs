@@ -105,7 +105,6 @@ pub struct LedgerWriteBatch<A> {
     account_writes: BTreeMap<AccountId, A>,
 
     /// Maps serial -> account ID for newly created accounts (contiguous serials).
-    // TODO hopefully we can avoid this
     serial_to_id: SerialMap,
 }
 

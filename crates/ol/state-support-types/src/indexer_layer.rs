@@ -78,7 +78,7 @@ impl<S: ISnarkAccountStateMut + Clone> Clone for IndexerSnarkAccountStateMut<S> 
 
 impl<S: ISnarkAccountStateMut> ISnarkAccountState for IndexerSnarkAccountStateMut<S> {
     fn new_fresh(_update_vk: PredicateKey, _initial_state_root: Hash) -> Self {
-        // TODO: refactor indexer bookkeeping types so this isn't required on wrappers
+        // TODO(STR-3228): refactor indexer bookkeeping types so this isn't required on wrappers
         unimplemented!("cannot construct wrapper type directly")
     }
 
@@ -269,7 +269,7 @@ impl<A: IAccountStateMut> IAccountState for IndexerAccountStateMut<A> {
     type SnarkAccountState = A::SnarkAccountState;
 
     fn new_with_serial(_new_acct_data: NewAccountData, _serial: AccountSerial) -> Self {
-        // TODO: refactor indexer bookkeeping types so this isn't required on wrappers
+        // TODO(STR-3228): refactor indexer bookkeeping types so this isn't required on wrappers
         unimplemented!("cannot construct wrapper type directly")
     }
 

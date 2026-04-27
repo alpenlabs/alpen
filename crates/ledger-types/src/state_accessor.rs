@@ -59,7 +59,6 @@ pub trait IStateAccessor {
     fn next_account_serial(&self) -> AccountSerial;
 
     /// Computes the full state root, using whatever things we've updated.
-    // TODO maybe don't use `AcctResult`, actually convert all/most of these to use a new error type
     fn compute_state_root(&self) -> StateResult<Buf32>;
 }
 
@@ -98,7 +97,7 @@ pub trait IStateAccessorMut: IStateAccessor {
     /// The closure receives a mutable reference to the account write context and
     /// can modify it. The implementation handles any setup before and cleanup
     /// after the closure returns. Returns whatever the closure returns, wrapped
-    /// in `AcctResult`.
+    /// in `StateResult`.
     ///
     /// Returns an error if the account doesn't exist.
     fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>

@@ -183,8 +183,8 @@ where
 impl<'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAccessorMut
     for WriteTrackingState<'base, S>
 where
-    // FIXME make this actually wrap the account state type so it doesn't have
-    // to be mut on its own
+    // FIXME(STR-3229): make this actually wrap the account state type so it
+    // doesn't have to be mut on its own
     S::AccountState: IAccountStateMut,
 {
     type AccountStateMut = S::AccountState; // Same type as AccountState for this layer

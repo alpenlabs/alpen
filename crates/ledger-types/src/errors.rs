@@ -149,7 +149,6 @@ pub enum ExecError {
     /// Codec error.
     #[error("codec: {0}")]
     Codec(#[from] CodecError),
-    // TODO more types
 }
 
 impl ExecError {
