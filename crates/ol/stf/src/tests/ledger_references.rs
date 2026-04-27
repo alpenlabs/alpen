@@ -298,6 +298,95 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
 }
 
 #[test]
+fn test_snark_update_rejects_proof_for_wrong_ledger_reference_claim() {
+    let mut state = create_test_genesis_state();
+    let snark_id = get_test_snark_account_id();
+
+    // Setup: genesis with snark account
+    let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
+
+    // Create parallel MMR tracker
+    let mut manifest_tracker = ManifestMmrTracker::new();
+
+    // Step 1: Execute a block with two ASM manifests
+    let manifest1 = AsmManifest::new(
+        1,
+        test_l1_block_id(1),
+        WtxidsRoot::from(Buf32::from([1u8; 32])),
+        vec![],
+    )
+    .expect("test manifest should be valid");
+    let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
+
+    let manifest2 = AsmManifest::new(
+        2,
+        test_l1_block_id(2),
+        WtxidsRoot::from(Buf32::from([2u8; 32])),
+        vec![],
+    )
+    .expect("test manifest should be valid");
+
+    let block1_info = BlockInfo::new(1001000, 1, 1); // slot 1, epoch 1
+    let block1_components =
+        BlockComponents::new_manifests(vec![manifest1.clone(), manifest2.clone()]);
+    let block1_output = execute_block_with_outputs(
+        &mut state,
+        &block1_info,
+        Some(genesis_block.header()),
+        block1_components,
+    )
+    .expect("Block 1 should execute");
+
+    let (manifest1_index, _manifest1_proof) = manifest_tracker.add_manifest(&manifest1);
+    let (manifest2_index, manifest2_proof) = manifest_tracker.add_manifest(&manifest2);
+
+    assert_eq!(manifest1_index, 0, "First manifest should be at index 0");
+    assert_eq!(manifest2_index, 1, "Second manifest should be at index 1");
+
+    // Step 2: Use proof material that is valid for manifest2 against manifest1's claim.
+    let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
+
+    let snark_account_state = lookup_snark_state(&state, snark_id);
+    let initial_balance = BitcoinAmount::from_sat(100_000_000);
+    let initial_seqno = *snark_account_state.seqno().inner();
+
+    let tx = SnarkUpdateBuilder::from_snark_state(snark_account_state.clone())
+        .with_ledger_refs(vec![claim], vec![manifest2_proof])
+        .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
+
+    // Step 3: Execute and expect failure because the proof belongs to a different claim.
+    let result = execute_tx_in_block(
+        &mut state,
+        block1_output.completed_block().header(),
+        tx,
+        2,
+        2,
+    );
+
+    match result {
+        Err(e) => match e.into_base() {
+            ExecError::Acct(AcctError::InvalidLedgerReference { ref_idx, .. }) => {
+                assert_eq!(ref_idx, manifest1_index);
+            }
+            err => panic!("Expected InvalidLedgerReference, got: {err:?}"),
+        },
+        Ok(_) => panic!("Update with proof for the wrong ledger reference claim should fail"),
+    }
+
+    let (ol_account_state, snark_account_state) = lookup_snark_account_states(&state, snark_id);
+    assert_eq!(
+        ol_account_state.balance(),
+        initial_balance,
+        "balance should be unchanged after proof for the wrong ledger reference claim"
+    );
+    assert_eq!(
+        *snark_account_state.seqno().inner(),
+        initial_seqno,
+        "seqno should be unchanged after proof for the wrong ledger reference claim"
+    );
+}
+
+#[test]
 fn test_snark_update_rejects_extra_ledger_reference_proof() {
     let mut state = create_test_genesis_state();
     let snark_id = get_test_snark_account_id();
