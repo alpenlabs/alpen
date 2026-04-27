@@ -1,9 +1,152 @@
 //! Header continuity tamper tests.
 
 use strata_identifiers::Buf32;
-use strata_ol_chain_types_new::OLBlockId;
+use strata_ol_chain_types_new::{BlockFlags, OLBlockHeader, OLBlockId};
 
-use crate::{assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*};
+use crate::{
+    assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*,
+    verify_header_continuity,
+};
+
+#[test]
+fn test_verify_header_continuity_happy_path() {
+    // Test valid genesis (must be terminal)
+    let mut genesis_flags = BlockFlags::zero();
+    genesis_flags.set_is_terminal(true);
+    let genesis = OLBlockHeader::new(
+        1000000,
+        genesis_flags,
+        0,
+        0,
+        OLBlockId::null(),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+    assert!(verify_header_continuity(&genesis, None).is_ok());
+
+    // Test valid parent-child relationship
+    let parent = OLBlockHeader::new(
+        1000000,
+        BlockFlags::zero(),
+        5,
+        1,
+        OLBlockId::from(Buf32::from([1u8; 32])),
+        Buf32::from([2u8; 32]),
+        Buf32::from([3u8; 32]),
+        Buf32::from([4u8; 32]),
+    );
+    let child = OLBlockHeader::new(
+        1001000,
+        BlockFlags::zero(),
+        6,
+        1,
+        parent.compute_blkid(),
+        Buf32::from([5u8; 32]),
+        Buf32::from([6u8; 32]),
+        Buf32::from([7u8; 32]),
+    );
+    assert!(verify_header_continuity(&child, Some(&parent)).is_ok());
+}
+
+#[test]
+fn test_verify_header_continuity_failures() {
+    // Test wrong parent block ID
+    let parent = OLBlockHeader::new(
+        1000000,
+        BlockFlags::zero(),
+        5,
+        1,
+        OLBlockId::from(Buf32::from([1u8; 32])),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    let bad_child = OLBlockHeader::new(
+        1001000,
+        BlockFlags::zero(),
+        6,
+        1,
+        OLBlockId::from(Buf32::from([99u8; 32])), // wrong parent
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    assert!(matches!(
+        verify_header_continuity(&bad_child, Some(&parent)).unwrap_err(),
+        ExecError::BlockParentMismatch
+    ));
+
+    // Test epoch skip
+    let child_epoch_skip = OLBlockHeader::new(
+        1001000,
+        BlockFlags::zero(),
+        6,
+        3, // epoch jumps from 1 to 3
+        parent.compute_blkid(),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    assert!(matches!(
+        verify_header_continuity(&child_epoch_skip, Some(&parent)).unwrap_err(),
+        ExecError::SkipEpochs(1, 3)
+    ));
+
+    // Test slot skip
+    let child_slot_skip = OLBlockHeader::new(
+        1001000,
+        BlockFlags::zero(),
+        8,
+        1, // slot jumps from 5 to 8
+        parent.compute_blkid(),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    assert!(matches!(
+        verify_header_continuity(&child_slot_skip, Some(&parent)).unwrap_err(),
+        ExecError::SkipTooManySlots(5, 8)
+    ));
+
+    // Test non-genesis without parent
+    let non_genesis = OLBlockHeader::new(
+        1000000,
+        BlockFlags::zero(),
+        1,
+        0,
+        OLBlockId::null(),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    assert!(matches!(
+        verify_header_continuity(&non_genesis, None).unwrap_err(),
+        ExecError::GenesisCoordsNonzero
+    ));
+
+    // Test genesis with non-null parent
+    let bad_genesis = OLBlockHeader::new(
+        1000000,
+        BlockFlags::zero(),
+        0,
+        0,
+        OLBlockId::from(Buf32::from([1u8; 32])),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    assert!(matches!(
+        verify_header_continuity(&bad_genesis, None).unwrap_err(),
+        ExecError::GenesisParentNonnull
+    ));
+}
 
 #[test]
 fn test_verify_rejects_wrong_parent_blkid() {
