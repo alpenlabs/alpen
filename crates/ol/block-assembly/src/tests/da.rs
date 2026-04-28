@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer};
+use strata_ol_state_support_types::{
+    DaAccumulatingState, EpochDaAccumulator, MemoryStateBaseLayer,
+};
 use strata_ol_stf::execute_block_batch;
 
 use crate::{
@@ -21,10 +23,7 @@ use crate::{
 };
 
 /// Finalizes an accumulator against the given state and returns the encoded DA blob bytes.
-fn finalize_da_to_bytes(
-    accumulator: EpochDaAccumulator,
-    state: MemoryStateBaseLayer,
-) -> Vec<u8> {
+fn finalize_da_to_bytes(accumulator: EpochDaAccumulator, state: MemoryStateBaseLayer) -> Vec<u8> {
     let mut da_state = DaAccumulatingState::new_with_accumulator(state, accumulator);
     da_state
         .take_completed_epoch_da_blob()

@@ -778,7 +778,11 @@ mod tests {
         let ctx = create_test_context(fixture.storage().clone());
 
         // Convert transaction (generates accumulator proofs).
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
 
         assert!(
             result.is_ok(),
@@ -818,7 +822,11 @@ mod tests {
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
 
         assert!(
             result.is_ok(),
@@ -855,8 +863,12 @@ mod tests {
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let err = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx)
-            .expect_err("missing target account should fail");
+        let err = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        )
+        .expect_err("missing target account should fail");
         assert!(
             matches!(err, BlockAssemblyError::AccountNotFound(id) if id == missing_account),
             "expected AccountNotFound for missing account, got: {err:?}"
@@ -881,8 +893,12 @@ mod tests {
         let proofs_before = mempool_tx.proofs().clone();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let out_tx = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx)
-            .expect("GAM tx should pass through unchanged");
+        let out_tx = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        )
+        .expect("GAM tx should pass through unchanged");
 
         // For GAM payloads this path should not inject accumulator proofs.
         assert_eq!(
@@ -930,7 +946,11 @@ mod tests {
             .with_l1_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
@@ -970,7 +990,11 @@ mod tests {
             .with_l1_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
 
         assert!(result.is_err(), "Should fail with nonexistent index");
         let err = result.unwrap_err();
@@ -1009,7 +1033,11 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
         // Conversion should fail with an index/range DB error.
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -1111,7 +1139,11 @@ mod tests {
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
 
         assert!(
             result.is_err(),
@@ -1156,7 +1188,11 @@ mod tests {
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx);
+        let result = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        );
 
         assert!(
             result.is_err(),
@@ -1212,8 +1248,12 @@ mod tests {
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let tx = add_accumulator_proofs(&ctx, &MemoryStateBaseLayer::new(state.as_ref().clone()), mempool_tx)
-            .expect("proof generation should succeed");
+        let tx = add_accumulator_proofs(
+            &ctx,
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+            mempool_tx,
+        )
+        .expect("proof generation should succeed");
         let tx_proofs = tx.proofs();
 
         // Verify accumulator proofs exist and have correct count

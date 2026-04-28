@@ -323,8 +323,8 @@ mod tests {
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
     use strata_ol_chain_types_new::{OLBlock, OLLog, SignedOLBlockHeader};
-    use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_ol_state_provider::OLStateManagerProviderImpl;
+    use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_test_utils_l2::gen_params;
 
     use super::*;
@@ -333,14 +333,17 @@ mod tests {
         block_assembly::generate_block_template_inner,
         da_tracker::AccumulatedDaData,
         test_utils::{
-            MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL, TestEnv,
-            TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
+            MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL, TestEnv, TestStorageFixtureBuilder,
+            create_test_template, create_test_template_with_parent,
         },
         types::BlockGenerationConfig,
     };
 
-    type TestServiceState =
-        BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, OLStateManagerProviderImpl>;
+    type TestServiceState = BlockasmServiceState<
+        Arc<MockMempoolProvider>,
+        FixedSlotSealing,
+        OLStateManagerProviderImpl,
+    >;
 
     fn sample_accumulated_da() -> AccumulatedDaData {
         AccumulatedDaData::new(

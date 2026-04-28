@@ -239,11 +239,10 @@ mod tests {
     use strata_crypto::{hash::raw, sign_schnorr_sig};
     use strata_identifiers::{Buf32, Buf64};
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
+    use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_params::CredRule;
     use strata_primitives::utils::get_test_schnorr_keys;
     use strata_test_utils_l2::gen_params;
-
-    use strata_ol_state_provider::OLStateManagerProviderImpl;
 
     use super::*;
     use crate::{
@@ -259,8 +258,11 @@ mod tests {
         types::BlockCompletionData,
     };
 
-    type TestServiceState =
-        BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, OLStateManagerProviderImpl>;
+    type TestServiceState = BlockasmServiceState<
+        Arc<MockMempoolProvider>,
+        FixedSlotSealing,
+        OLStateManagerProviderImpl,
+    >;
 
     async fn build_service_state_with_accounts(
         use_schnorr_cred_rule: bool,

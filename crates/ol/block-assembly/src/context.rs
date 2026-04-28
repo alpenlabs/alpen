@@ -406,7 +406,8 @@ mod tests {
         ];
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = ctx.generate_l1_header_proofs(&claims, &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result = ctx
+            .generate_l1_header_proofs(&claims, &MemoryStateBaseLayer::new(state.as_ref().clone()));
 
         assert!(result.is_ok(), "Should succeed with valid claim");
         let proofs = result.unwrap();
@@ -434,7 +435,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         let ctx = create_test_context(fixture.storage().clone());
-        let result = ctx.generate_l1_header_proofs(&claims, &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result = ctx
+            .generate_l1_header_proofs(&claims, &MemoryStateBaseLayer::new(state.as_ref().clone()));
 
         assert!(result.is_ok(), "Should succeed with multiple valid claims");
         let proofs = result.unwrap();
@@ -466,7 +468,10 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[claim], &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result = ctx.generate_l1_header_proofs(
+            &[claim],
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+        );
 
         assert!(
             result.is_err(),
@@ -511,7 +516,10 @@ mod tests {
 
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[claim], &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result = ctx.generate_l1_header_proofs(
+            &[claim],
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+        );
 
         assert!(result.is_err(), "Should fail with missing index");
         let err = result.unwrap_err();
@@ -544,7 +552,10 @@ mod tests {
         let claim = AccumulatorClaim::new(0, test_hash(42));
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[claim], &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result = ctx.generate_l1_header_proofs(
+            &[claim],
+            &MemoryStateBaseLayer::new(state.as_ref().clone()),
+        );
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -576,7 +587,8 @@ mod tests {
             .expect("stored state missing");
         let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[], &MemoryStateBaseLayer::new(state.as_ref().clone()));
+        let result =
+            ctx.generate_l1_header_proofs(&[], &MemoryStateBaseLayer::new(state.as_ref().clone()));
 
         assert!(result.is_ok(), "Should succeed with empty claims");
         let proofs = result.unwrap();
