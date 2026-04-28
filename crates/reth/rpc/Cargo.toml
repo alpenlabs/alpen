@@ -7,17 +7,10 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-alpen-reth-db.workspace = true
-alpen-reth-statediff = { workspace = true, features = ["serde"] }
-strata-proofimpl-evm-ee-stf.workspace = true
-strata-rpc-utils.workspace = true
-
 alloy-eips.workspace = true
 alloy-network.workspace = true
 alloy-primitives.workspace = true
 eyre.workspace = true
-hex.workspace = true
-jsonrpsee = { workspace = true, features = ["server", "macros"] }
 jsonrpsee-types.workspace = true
 reqwest.workspace = true
 reth-chainspec.workspace = true
@@ -32,7 +25,6 @@ reth-storage-api.workspace = true
 reth-tasks = { workspace = true, features = ["rayon"] }
 reth-transaction-pool.workspace = true
 revm-primitives.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "sync"] }

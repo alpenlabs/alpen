@@ -1379,29 +1379,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alpen-reth"
-version = "0.3.0-alpha.1"
-dependencies = [
- "alpen-chainspec",
- "alpen-reth-db",
- "alpen-reth-exex",
- "alpen-reth-node",
- "alpen-reth-rpc",
- "clap",
- "eyre",
- "reth-chainspec",
- "reth-cli-commands",
- "reth-cli-runner",
- "reth-cli-util",
- "reth-db",
- "reth-node-builder",
- "reth-node-core",
- "sled",
- "tracing",
- "typed-sled",
-]
-
-[[package]]
 name = "alpen-reth-db"
 version = "0.3.0-alpha.1"
 dependencies = [
@@ -1441,7 +1418,6 @@ dependencies = [
 name = "alpen-reth-exex"
 version = "0.3.0-alpha.1"
 dependencies = [
- "alloy-consensus",
  "alloy-eips",
  "alloy-genesis",
  "alloy-primitives",
@@ -1450,19 +1426,13 @@ dependencies = [
  "alpen-reth-statediff",
  "eyre",
  "futures-util",
- "reth-chainspec",
- "reth-evm",
  "reth-exex",
  "reth-node-api",
  "reth-primitives",
  "reth-provider",
  "reth-revm",
- "reth-trie",
- "reth-trie-common",
  "revm-primitives",
- "rsp-mpt",
  "rsp-primitives",
- "strata-proofimpl-evm-ee-stf",
  "tracing",
 ]
 
@@ -1528,11 +1498,7 @@ dependencies = [
  "alloy-eips",
  "alloy-network",
  "alloy-primitives",
- "alpen-reth-db",
- "alpen-reth-statediff",
  "eyre",
- "hex",
- "jsonrpsee",
  "jsonrpsee-types",
  "reqwest 0.12.28",
  "reth-chainspec",
@@ -1547,10 +1513,7 @@ dependencies = [
  "reth-tasks",
  "reth-transaction-pool",
  "revm-primitives",
- "serde",
  "serde_json",
- "strata-proofimpl-evm-ee-stf",
- "strata-rpc-utils",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
