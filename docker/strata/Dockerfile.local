@@ -1,3 +1,23 @@
+################################################################################
+# Local development Dockerfile for the strata image.
+#
+# Mirrors the pre-#1668 main-branch Dockerfile: builds the `strata` binary
+# from source inside the image and skips the strata-datatool / SP1 guest
+# ELF baking step that the CI Dockerfile (./Dockerfile) requires.
+#
+# Use this when you want a one-shot local build that does not depend on:
+#   - the SP1 toolchain / `cargo prove`
+#   - prebuilt artifacts staged into docker/strata/artifacts/
+#   - the CI workflow in .github/workflows/ci-build.yml
+#
+# Build:
+#   docker buildx build -f docker/strata/Dockerfile.local -t strata:dev .
+#
+# Note: the resulting image does NOT bundle strata-datatool or any SP1
+# guest ELFs. Use the production Dockerfile (./Dockerfile) plus the CI
+# pipeline if you need a runtime-prover-capable image.
+################################################################################
+
 ARG RUST_VERSION=1.92
 
 # base
@@ -58,8 +78,7 @@ FROM debian:13-slim AS runtime
 
 ENV APP_HOME=/app \
     HOME=/app \
-    RUST_LOG=info \
-    ELF_BASE_PATH=/app/elfs/sp1
+    RUST_LOG=info
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libssl3 curl jq && \
@@ -74,15 +93,9 @@ RUN mkdir -p /app/data /app/.cache /app/.local/share && \
     chown -R alpen:alpen /app
 
 COPY --from=builder /usr/local/bin/strata /usr/local/bin/strata
-# strata-datatool + the SP1 guest ELF are built on the CI runner with
-# --features sp1-docker-builder (matches the prover-client pattern in
-# cd.yml). At docker build time they live in the build context under
-# docker/strata/artifacts/. Regeneration steps live in ci-build.yml.
-COPY docker/strata/artifacts/strata-datatool /usr/local/bin/strata-datatool
-COPY docker/strata/artifacts/elfs /app/elfs
 COPY docker/strata/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/strata-datatool /usr/local/bin/entrypoint.sh
+RUN chmod 0555 /usr/local/bin/strata /usr/local/bin/entrypoint.sh
 
 USER alpen
 

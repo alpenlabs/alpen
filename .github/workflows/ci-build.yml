@@ -120,6 +120,48 @@ jobs:
         with:
           mask-password: "true"
 
+      # --- strata-only: pre-build datatool + SP1 guest ELFs on the runner ----
+      - name: Set up Rust toolchain (strata)
+        if: matrix.program == 'strata'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (pinned 2026-04-21)
+        with:
+          toolchain: stable
+
+      - name: Cache cargo (strata datatool)
+        if: matrix.program == 'strata'
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: strata-datatool-sp1-docker-builder
+          cache-on-failure: true
+
+      - name: Install SP1 toolchain (strata)
+        if: matrix.program == 'strata'
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
+          ~/.sp1/bin/sp1up
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+          cargo prove --version
+
+      - name: Build strata-datatool + SP1 guest ELFs
+        if: matrix.program == 'strata'
+        run: |
+          cargo build --bin strata-datatool --features sp1-builder --release
+
+          mkdir -p docker/strata/artifacts/elfs/sp1
+          install -m 0755 target/release/strata-datatool docker/strata/artifacts/strata-datatool
+
+          # strata only reads guest-checkpoint-new.elf at runtime. The other
+          # guest ELFs are embedded inside the datatool binary (via
+          # strata-sp1-guest-builder's build script) and re-emitted by
+          # `datatool genparams --elf-dir` during params generation.
+          #
+          # strata-sp1-guest-builder writes compiled ELFs to
+          # provers/sp1/guest-*/cache/*.elf.
+          cp -v provers/sp1/guest-checkpoint-new/cache/guest-checkpoint-new.elf \
+            docker/strata/artifacts/elfs/sp1/
+
+          ls -la docker/strata/artifacts/ docker/strata/artifacts/elfs/sp1/
+
       # --- Build and push via Buildx ------------------------------------------
       - name: Build and push Docker image
         env:
@@ -149,6 +191,31 @@ jobs:
             --push \
             -t "${FULL_IMAGE}" \
             -f "${DOCKERFILE_PATH}" .
+
+          echo "Successfully pushed: ${FULL_IMAGE}"
+
+      # --- Publish strata-datatool as its own image ---------------------------
+      # Reuses the binary already staged at docker/strata/artifacts/ for the
+      # strata image. Consumers (generate-params.yml, other pipelines) can
+      # `docker run` this image directly instead of extracting the binary
+      # from the larger strata image.
+      - name: Build and push strata-datatool image
+        if: matrix.program == 'strata'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          SHORT_TAG: ${{ steps.resolve.outputs.short_tag }}
+          COMMIT_SHA: ${{ steps.resolve.outputs.commit_sha }}
+        run: |
+          FULL_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/strata-datatool:${SHORT_TAG}"
+
+          docker buildx build \
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${COMMIT_SHA}" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --push \
+            -t "${FULL_IMAGE}" \
+            -f docker/strata-datatool/Dockerfile .
 
           echo "Successfully pushed: ${FULL_IMAGE}"
 
