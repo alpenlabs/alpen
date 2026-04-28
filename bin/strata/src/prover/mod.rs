@@ -33,6 +33,11 @@ use crate::run_context::RunContext;
 // TODO(STR-3064): make this configurable via ProverConfig.retry_interval.
 const PROVER_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Default end-to-end deadline applied to the SP1 prover network when
+/// `ProverConfig::sp1_proof_deadline_secs` is not set. Chosen to comfortably
+/// cover checkpoint proofs while still failing fast on stuck requests.
+const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
+
 /// Starts the integrated prover service.
 ///
 /// Launches a paas prover service for checkpoint proofs and spawns a
@@ -83,7 +88,12 @@ pub(crate) fn start_prover_service(
             // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
             // is Clone (only holds a SP1ProvingKey), so cloning from the
             // shared static is fine.
-            let host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_NEW_HOST).clone();
+            let mut host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_NEW_HOST).clone();
+            let deadline_secs = prover_config
+                .sp1_proof_deadline_secs
+                .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
+            host = host.with_deadline(Duration::from_secs(deadline_secs));
+            info!(deadline_secs, "sp1 prover deadline configured");
             ProverBuilder::new(spec)
                 .task_store(task_store)
                 .receipt_hook(hook)
