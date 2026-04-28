@@ -400,7 +400,7 @@ mod tests {
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_identifiers::AccountSerial;
     use strata_ol_chain_types_new::{
-        BlockFlags, OLBlockId, OLL1ManifestContainer, OLLog, OLTxSegment,
+        BlockFlags, OLBlockId, OLL1ManifestContainer, OLL1Update, OLLog, OLTxSegment,
     };
     use strata_ol_da::{
         AccountInit, AccountTypeInit, GlobalStateDiff, LedgerDiff, NewAccountEntry, OLDaPayloadV1,
@@ -521,6 +521,56 @@ mod tests {
         assert!(matches!(
             verify_block_structure(&header, &body).unwrap_err(),
             ExecError::BlockStructureMismatch
+        ));
+    }
+
+    #[test]
+    fn test_verify_block_structure_rejects_terminal_header_without_l1_update() {
+        let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
+        let body = OLBlockBody::new(tx_segment, None);
+        let body_root = body.compute_hash_commitment();
+
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1000000,
+            flags,
+            0,
+            0,
+            OLBlockId::null(),
+            body_root,
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        assert!(matches!(
+            verify_block_structure(&header, &body).unwrap_err(),
+            ExecError::InconsistentBodyTerminality
+        ));
+    }
+
+    #[test]
+    fn test_verify_block_structure_rejects_nonterminal_header_with_l1_update() {
+        let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
+        let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests should fit");
+        let l1_update = OLL1Update::new(Buf32::zero(), manifests);
+        let body = OLBlockBody::new(tx_segment, Some(l1_update));
+        let body_root = body.compute_hash_commitment();
+
+        let header = OLBlockHeader::new(
+            1000000,
+            BlockFlags::zero(),
+            0,
+            0,
+            OLBlockId::null(),
+            body_root,
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        assert!(matches!(
+            verify_block_structure(&header, &body).unwrap_err(),
+            ExecError::InconsistentBodyTerminality
         ));
     }
 
