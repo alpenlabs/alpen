@@ -4,7 +4,6 @@
 //! into Bitcoin envelope chunks for inscription.
 
 use alpen_reth_statediff::BatchStateDiff;
-use strata_acct_types::Hash;
 use strata_codec::{decode_buf_exact, encode_to_vec, BufDecoder, Codec, CodecError};
 use strata_crypto::hash;
 use strata_identifiers::Buf32;
@@ -14,18 +13,16 @@ use crate::BatchId;
 /// Compact summary of the last EVM block header in a batch.
 ///
 /// Captures the subset of the terminal EVM block header a sequencer recovering
-/// purely from L1 DA needs to (a) build the next EVM block and (b) feed
-/// the EE proof statement. A fresh sequencer has the [`BatchStateDiff`]
-/// (account/storage changes) but **not** the block headers themselves —
-/// these fields fill that gap. The terminal block hash is carried separately
-/// by [`DaBlob::batch_id`].
+/// purely from L1 DA needs to build the next EVM block. A fresh sequencer has
+/// the [`BatchStateDiff`] for account/storage changes but **not** the block
+/// headers themselves, so these non-derivable header fields fill that gap. The
+/// terminal block hash is carried separately by [`DaBlob::batch_id`], and the
+/// terminal post-state root is reconstructible by applying the DA state diffs.
 ///
 /// - `base_fee`, `gas_used`, `gas_limit` feed the EIP-1559 base-fee calculation and gas-limit
 ///   adjustment for the next block.
 /// - `timestamp` enforces monotonicity (`next > parent`).
 /// - `block_num` identifies where the chain continues.
-/// - `state_root` is the terminal post-state root, which pins the pre-state root the next block's
-///   EE proof opens against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
 pub struct EvmHeaderSummary {
     /// Block number of the last EVM block in this batch.
@@ -38,11 +35,6 @@ pub struct EvmHeaderSummary {
     pub gas_used: u64,
     /// Gas limit of the last EVM block.
     pub gas_limit: u64,
-    /// Post-state root of the last EVM block.
-    ///
-    /// Required by the EE proof so the next block's pre-state root can
-    /// be pinned to DA.
-    pub state_root: Hash,
 }
 
 /// DA blob containing batch metadata and state diff.
@@ -318,7 +310,6 @@ mod tests {
                 base_fee: 1_000_000_000,
                 gas_used: 15_000_000,
                 gas_limit: 30_000_000,
-                state_root: Hash::from([0x44; 32]),
             },
             state_diff: BatchStateDiff::default(),
         }

@@ -2,7 +2,7 @@
 //!
 //! The DA blob pipeline needs an [`EvmHeaderSummary`] for each batch so that
 //! verifiers can reconstruct EVM chain metadata (block number, timestamp,
-//! base fee, gas used/limit, state root). [`RethHeaderSummaryProvider`]
+//! base fee, gas used/limit). [`RethHeaderSummaryProvider`]
 //! satisfies the [`HeaderSummaryProvider`] trait by reading headers directly
 //! from the Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 //!
@@ -12,7 +12,6 @@
 //! [`alpen_ee_da`].
 
 use alpen_ee_common::{EvmHeaderSummary, HeaderSummaryProvider};
-use strata_acct_types::Hash;
 
 /// [`HeaderSummaryProvider`] backed by a Reth [`HeaderProvider`](reth_provider::HeaderProvider).
 pub(crate) struct RethHeaderSummaryProvider<P> {
@@ -55,13 +54,11 @@ fn summarize_header(header: &reth_primitives::Header) -> eyre::Result<EvmHeaderS
         })?,
         gas_used: header.gas_used,
         gas_limit: header.gas_limit,
-        state_root: Hash::from(header.state_root.0),
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::B256;
     use reth_primitives::Header;
 
     use super::*;
@@ -70,16 +67,12 @@ mod tests {
     /// right source on the reth header.
     #[test]
     fn summarize_header_maps_fields_correctly() {
-        let state_root = B256::repeat_byte(0xAA);
-        let expected_state_root_bytes = state_root.0;
-
         let header = Header {
             number: 12345,
             timestamp: 1_700_000_000,
             base_fee_per_gas: Some(1_000_000_000),
             gas_used: 15_000_000,
             gas_limit: 30_000_000,
-            state_root,
             ..Default::default()
         };
         let summary = summarize_header(&header).expect("mapping must succeed");
@@ -89,11 +82,6 @@ mod tests {
         assert_eq!(summary.base_fee, 1_000_000_000);
         assert_eq!(summary.gas_used, 15_000_000);
         assert_eq!(summary.gas_limit, 30_000_000);
-        assert_eq!(
-            summary.state_root,
-            Hash::from(expected_state_root_bytes),
-            "state_root must come from header.state_root"
-        );
     }
 
     #[test]
