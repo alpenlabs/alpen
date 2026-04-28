@@ -1,10 +1,9 @@
 use std::str::FromStr;
 
+use anyhow::Context;
 use secp256k1::{Keypair, SecretKey, SECP256K1};
 use strata_crypto::sign_schnorr_sig as sign_schnorr_crypto;
 use strata_primitives::buf::Buf32;
-
-use crate::error::Error;
 
 /// Signs a message using the Schnorr signature scheme.
 ///
@@ -21,17 +20,14 @@ use crate::error::Error;
 pub(crate) fn sign_schnorr_inner(
     message: &str,
     secret_key: &str,
-) -> Result<(Vec<u8>, Vec<u8>), Error> {
-    let message = Buf32::from_str(message)
-        .map_err(|_| Error::TxBuilder("invalid message hash".to_string()))?;
-    let sk = Buf32::from_str(secret_key)
-        .map_err(|_| Error::TxBuilder("invalid secret key".to_string()))?;
+) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    let message = Buf32::from_str(message).context("invalid message hash")?;
+    let sk = Buf32::from_str(secret_key).context("invalid secret key")?;
 
     let sig = sign_schnorr_crypto(&message, &sk);
 
     // get the public key
-    let sk = SecretKey::from_str(secret_key)
-        .map_err(|_| Error::TxBuilder("Invalid secret key".to_string()))?;
+    let sk = SecretKey::from_str(secret_key).context("invalid secret key")?;
     let keypair = Keypair::from_secret_key(SECP256K1, &sk);
     let x_only_pubkey = keypair.x_only_public_key();
 

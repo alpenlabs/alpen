@@ -16014,6 +16014,7 @@ dependencies = [
 name = "strata-test-cli"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "anyhow",
  "argh",
  "bdk_bitcoind_rpc",
  "bdk_wallet",

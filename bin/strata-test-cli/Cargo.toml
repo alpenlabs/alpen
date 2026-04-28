@@ -32,6 +32,7 @@ strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
+anyhow.workspace = true
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
 musig2.workspace = true

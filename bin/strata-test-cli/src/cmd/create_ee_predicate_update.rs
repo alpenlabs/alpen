@@ -2,6 +2,7 @@
 
 use std::{slice, str::FromStr, thread, time::Duration};
 
+use anyhow::{bail, Context};
 use argh::FromArgs;
 use bdk_bitcoind_rpc::bitcoincore_rpc::{Client, RpcApi};
 use bdk_wallet::{
@@ -37,7 +38,6 @@ use strata_predicate::PredicateKey;
 
 use crate::{
     constants::{MAGIC_BYTES, NETWORK},
-    error::Error,
     taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
@@ -120,15 +120,12 @@ pub(crate) fn create_ee_predicate_update(
 // TODO(STR-3191): deduplicate ennvelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
     args: &CreateEePredicateUpdateArgs,
-) -> Result<(Transaction, Transaction), Error> {
+) -> anyhow::Result<(Transaction, Transaction)> {
     if args.commit_output_sats <= MIN_REVEAL_OUTPUT_SATS {
-        return Err(Error::TxBuilder(format!(
-            "commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}"
-        )));
+        bail!("commit_output_sats must be > {MIN_REVEAL_OUTPUT_SATS}");
     }
 
-    let xpriv = Xpriv::from_str(&args.admin_xpriv)
-        .map_err(|e| Error::TxBuilder(format!("invalid admin xpriv: {e}")))?;
+    let xpriv = Xpriv::from_str(&args.admin_xpriv).context("invalid admin xpriv")?;
     let admin_secret_key = xpriv.private_key;
 
     let action = build_ee_update_action(args.predicate.clone());
@@ -141,7 +138,7 @@ fn build_admin_commit_reveal_pair(
 
     let tag_script = ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&action.tag().as_ref())
-        .map_err(|e| Error::TxBuilder(format!("failed to build SPS-50 script: {e}")))?;
+        .context("failed to build SPS-50 script")?;
 
     let mut wallet = taproot_wallet()?;
     let client = new_bitcoind_client(
@@ -161,31 +158,27 @@ fn build_admin_commit_reveal_pair(
             Amount::from_sat(args.commit_output_sats),
         );
         builder.fee_rate(fee_rate);
-        builder
-            .finish()
-            .map_err(|e| Error::TxBuilder(format!("failed to build commit tx: {e}")))?
+        builder.finish().context("failed to build commit tx")?
     };
 
     wallet
         .sign(&mut psbt, Default::default())
-        .map_err(|e| Error::TxBuilder(format!("failed to sign commit tx: {e}")))?;
+        .context("failed to sign commit tx")?;
 
-    let commit_tx = psbt
-        .extract_tx()
-        .map_err(|e| Error::TxBuilder(format!("failed to finalize commit tx: {e}")))?;
+    let commit_tx = psbt.extract_tx().context("failed to finalize commit tx")?;
 
     let reveal_output = commit_tx
         .output
         .iter()
         .position(|o| o.script_pubkey == reveal_address.script_pubkey())
-        .ok_or_else(|| Error::TxBuilder("commit tx is missing reveal output".to_string()))?;
+        .context("commit tx is missing reveal output")?;
 
     let reveal_prevout = commit_tx.output[reveal_output].clone();
     let recipient = wallet.peek_address(KeychainKind::External, 0).address;
 
     let control_block = taproot_spend_info
         .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
-        .ok_or_else(|| Error::TxBuilder("failed to build control block".to_string()))?;
+        .context("failed to build control block")?;
 
     let mut reveal_tx =
         build_reveal_transaction_template(&commit_tx, reveal_output as u32, recipient, &tag_script);
@@ -195,10 +188,10 @@ fn build_admin_commit_reveal_pair(
     let fee = vsize as u64 * args.fee_rate;
     let input_sats = reveal_prevout.value.to_sat();
     if input_sats <= fee + MIN_REVEAL_OUTPUT_SATS {
-        return Err(Error::TxBuilder(format!(
+        bail!(
             "commit output too small for reveal tx: input={input_sats}, required>{}",
             fee + MIN_REVEAL_OUTPUT_SATS
-        )));
+        );
     }
     reveal_tx.output[1].value = Amount::from_sat(input_sats - fee);
 
@@ -233,9 +226,9 @@ fn create_signed_payload(
     SignedPayload::new(seq_no, action, signatures)
 }
 
-fn generate_keypair(secret_key: SecretKey) -> Result<(UntweakedKeypair, XOnlyPublicKey), Error> {
+fn generate_keypair(secret_key: SecretKey) -> anyhow::Result<(UntweakedKeypair, XOnlyPublicKey)> {
     let keypair = UntweakedKeypair::from_seckey_slice(SECP256K1, &secret_key.secret_bytes())
-        .map_err(|e| Error::TxBuilder(format!("failed to create keypair: {e}")))?;
+        .context("failed to create keypair")?;
     let xonly = XOnlyPublicKey::from_keypair(&keypair).0;
     Ok((keypair, xonly))
 }
@@ -243,20 +236,20 @@ fn generate_keypair(secret_key: SecretKey) -> Result<(UntweakedKeypair, XOnlyPub
 fn build_reveal_script_and_address(
     envelope_bytes: &[u8],
     xonly_pubkey: XOnlyPublicKey,
-) -> Result<(ScriptBuf, TaprootSpendInfo, Address), Error> {
+) -> anyhow::Result<(ScriptBuf, TaprootSpendInfo, Address)> {
     let envelope_chunks = vec![envelope_bytes.to_vec()];
     let reveal_script = EnvelopeScriptBuilder::with_pubkey(&xonly_pubkey.serialize())
-        .map_err(|e| Error::TxBuilder(format!("failed to build envelope script: {e}")))?
+        .context("failed to build envelope script")?
         .add_envelopes(&envelope_chunks)
-        .map_err(|e| Error::TxBuilder(format!("failed to add envelope bytes: {e}")))?
+        .context("failed to add envelope bytes")?
         .build_without_min_check()
-        .map_err(|e| Error::TxBuilder(format!("failed to finalize envelope script: {e}")))?;
+        .context("failed to finalize envelope script")?;
 
     let taproot_spend_info = TaprootBuilder::new()
         .add_leaf(0, reveal_script.clone())
-        .map_err(|e| Error::TxBuilder(format!("failed to add taproot leaf: {e}")))?
+        .context("failed to add taproot leaf")?
         .finalize(SECP256K1, xonly_pubkey)
-        .map_err(|e| Error::TxBuilder(format!("failed to finalize taproot tree: {e:?}")))?;
+        .map_err(|e| anyhow::anyhow!("failed to finalize taproot tree: {e:?}"))?;
 
     let reveal_address = Address::p2tr(
         SECP256K1,
@@ -316,12 +309,12 @@ fn sign_reveal_transaction(
     reveal_script: &ScriptBuf,
     taproot_spend_info: &TaprootSpendInfo,
     keypair: &UntweakedKeypair,
-) -> Result<(), Error> {
+) -> anyhow::Result<()> {
     let signature = compute_reveal_signature(reveal_tx, prevout, reveal_script, keypair)?;
 
     let control_block = taproot_spend_info
         .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
-        .ok_or_else(|| Error::TxBuilder("failed to create control block".to_string()))?;
+        .context("failed to create control block")?;
 
     let witness = &mut reveal_tx.input[0].witness;
     witness.push(signature.as_ref());
@@ -335,7 +328,7 @@ fn compute_reveal_signature(
     prevout: &TxOut,
     reveal_script: &ScriptBuf,
     keypair: &UntweakedKeypair,
-) -> Result<Signature, Error> {
+) -> anyhow::Result<Signature> {
     let mut sighash_cache = SighashCache::new(reveal_tx);
     let sighash = sighash_cache
         .taproot_script_spend_signature_hash(
@@ -344,22 +337,22 @@ fn compute_reveal_signature(
             TapLeafHash::from_script(reveal_script, LeafVersion::TapScript),
             TapSighashType::Default,
         )
-        .map_err(|e| Error::TxBuilder(format!("failed to compute reveal sighash: {e}")))?;
+        .context("failed to compute reveal sighash")?;
 
-    let msg = Message::from_digest_slice(sighash.as_ref())
-        .map_err(|e| Error::TxBuilder(format!("invalid reveal sighash message: {e}")))?;
+    let msg =
+        Message::from_digest_slice(sighash.as_ref()).context("invalid reveal sighash message")?;
 
     Ok(SECP256K1.sign_schnorr_no_aux_rand(&msg, keypair))
 }
 
-fn broadcast_tx(client: &Client, tx: &Transaction) -> Result<String, Error> {
+fn broadcast_tx(client: &Client, tx: &Transaction) -> anyhow::Result<String> {
     let raw_hex = hex::encode(serialize(tx));
     client
         .call("sendrawtransaction", &[serde_json::Value::String(raw_hex)])
-        .map_err(|e| Error::TxBuilder(format!("failed to broadcast transaction: {e}")))
+        .context("failed to broadcast transaction")
 }
 
-fn broadcast_reveal_with_retry(client: &Client, reveal_tx: &Transaction) -> Result<String, Error> {
+fn broadcast_reveal_with_retry(client: &Client, reveal_tx: &Transaction) -> anyhow::Result<String> {
     for attempt in 0..DEFAULT_RETRY_COUNT {
         match broadcast_tx(client, reveal_tx) {
             Ok(txid) => return Ok(txid),
@@ -375,7 +368,5 @@ fn broadcast_reveal_with_retry(client: &Client, reveal_tx: &Transaction) -> Resu
         }
     }
 
-    Err(Error::TxBuilder(
-        "exhausted reveal broadcast retries".to_string(),
-    ))
+    bail!("exhausted reveal broadcast retries")
 }
