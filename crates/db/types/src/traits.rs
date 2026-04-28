@@ -28,9 +28,7 @@ use crate::types::CheckpointEntry;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
-    ol_state_index::{
-        AccountUpdateRecord, EpochIndexingData, IndexingWrites, InboxMessageRecord,
-    },
+    ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
     types::{
         BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1PayloadIntentIndex, L1TxEntry,
         MempoolTxData,

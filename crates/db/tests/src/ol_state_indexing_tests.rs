@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use strata_db_types::{
     ol_state_index::{
-        AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData, IndexingWrites,
-        InboxMessageRecord,
+        AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData, InboxMessageRecord,
+        IndexingWrites,
     },
     traits::OLStateIndexingDatabase,
 };
@@ -46,10 +46,7 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
     let mut updates = BTreeMap::new();
     updates.insert(acct_a, vec![record(None, 0, 0, Some(vec![1, 2, 3]))]);
     let mut inbox = BTreeMap::new();
-    inbox.insert(
-        acct_b,
-        vec![InboxMessageRecord::new(vec![9, 9], None)],
-    );
+    inbox.insert(acct_b, vec![InboxMessageRecord::new(vec![9, 9], None)]);
 
     let writes = IndexingWrites::new(vec![acct_a], updates, inbox);
     db.apply_epoch_indexing(commitment, writes)
@@ -132,12 +129,8 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
         acct_a,
         vec![InboxMessageRecord::new(vec![0xA2], Some(block2))],
     );
-    db.apply_block_indexing(
-        epoch,
-        block2,
-        IndexingWrites::new(vec![], updates2, inbox2),
-    )
-    .expect("apply block2");
+    db.apply_block_indexing(epoch, block2, IndexingWrites::new(vec![], updates2, inbox2))
+        .expect("apply block2");
 
     let got = db
         .get_account_update_records(epoch, acct_a)

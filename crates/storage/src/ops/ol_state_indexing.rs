@@ -1,9 +1,7 @@
 //! OL state indexing operation interface.
 
 use strata_db_types::{
-    ol_state_index::{
-        AccountUpdateRecord, EpochIndexingData, IndexingWrites, InboxMessageRecord,
-    },
+    ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
     traits::*,
 };
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};

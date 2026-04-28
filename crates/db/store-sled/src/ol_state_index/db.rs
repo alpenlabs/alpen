@@ -4,8 +4,7 @@ use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
     DbError, DbResult,
     ol_state_index::{
-        AccountEpochKey, AccountUpdateRecord, EpochIndexingData, IndexingWrites,
-        InboxMessageRecord,
+        AccountEpochKey, AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
     },
     traits::OLStateIndexingDatabase,
 };
@@ -49,10 +48,8 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
             ),
             |(epoch_t, update_t, inbox_t, creation_t): Trees| {
                 let epoch = commitment.epoch();
-                let common = EpochIndexingData::new(
-                    Some(commitment),
-                    writes.created_accounts().to_vec(),
-                );
+                let common =
+                    EpochIndexingData::new(Some(commitment), writes.created_accounts().to_vec());
 
                 for acct in common.created_accounts() {
                     creation_t.insert(acct, &epoch)?;
@@ -85,14 +82,16 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 &self.creation_epoch_tree,
             ),
             |(epoch_t, update_t, inbox_t, creation_t): Trees| {
-                if !writes.created_accounts().is_empty() {
-                    let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
-                    for acct in writes.created_accounts() {
-                        creation_t.insert(acct, &epoch)?;
-                        common.push_created_account(*acct);
-                    }
-                    epoch_t.insert(&epoch, &common)?;
+                // Always materialize the epoch's common row, even when this
+                // block created no accounts. Without this, epochs whose blocks
+                // never created accounts would have no row when
+                // `set_epoch_commitment` fires at finalization.
+                let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
+                for acct in writes.created_accounts() {
+                    creation_t.insert(acct, &epoch)?;
+                    common.push_created_account(*acct);
                 }
+                epoch_t.insert(&epoch, &common)?;
 
                 for (acct, records) in writes.account_updates() {
                     if records.is_empty() {

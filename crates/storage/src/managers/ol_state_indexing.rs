@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use strata_db_types::{
-    ol_state_index::{
-        AccountUpdateRecord, EpochIndexingData, IndexingWrites, InboxMessageRecord,
-    },
+    ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
     traits::OLStateIndexingDatabase,
     DbResult,
 };
@@ -147,5 +145,4 @@ impl OLStateIndexingManager {
     ) -> DbResult<Option<Epoch>> {
         self.ops.get_account_creation_epoch_async(account_id).await
     }
-
 }

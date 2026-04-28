@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use ssz::Encode;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_state_index::{
-    AccountUpdateMeta, AccountUpdateRecord, IndexingWrites, InboxMessageRecord,
+    AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites,
 };
 use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
