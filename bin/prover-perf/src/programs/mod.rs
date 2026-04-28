@@ -9,7 +9,7 @@ use crate::PerformanceReport;
 #[non_exhaustive]
 pub enum GuestProgram {
     EvmEeStf,
-    CheckpointV1,
+    Checkpoint,
 }
 
 impl FromStr for GuestProgram {
@@ -18,7 +18,7 @@ impl FromStr for GuestProgram {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "evm-ee-stf" => Ok(GuestProgram::EvmEeStf),
-            "checkpoint-v1" => Ok(GuestProgram::CheckpointV1),
+            "checkpoint" => Ok(GuestProgram::Checkpoint),
             _ => Err(format!("unknown program: {s}")),
         }
     }
@@ -34,7 +34,7 @@ pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
         .iter()
         .map(|program| match program {
             GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&**EVM_EE_STF_HOST),
-            GuestProgram::CheckpointV1 => checkpoint::gen_perf_report(&**CHECKPOINT_HOST),
+            GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**CHECKPOINT_HOST),
         })
         .collect()
 }

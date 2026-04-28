@@ -35,7 +35,7 @@ pub(crate) fn process_log(
     Ok(())
 }
 
-/// Process a checkpoint tip update log from the v1 checkpoint subprotocol.
+/// Process a checkpoint tip update log from the checkpoint subprotocol.
 fn process_checkpoint_tip_log(
     state: &mut CsmWorkerState,
     checkpoint_tip_update: &CheckpointTipUpdate,
@@ -61,11 +61,11 @@ fn process_checkpoint_tip_log(
         );
     }
 
-    // v1 tip logs do not contain full batch transition details.
+    // Tip logs do not contain full batch transition details.
     // CSM only needs epoch progression for finalized-epoch signaling, so we
     // synthesize a minimal checkpoint view from the tip.
     // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
-    // checkpoint-v1-native fields without legacy L1Checkpoint shape coupling.
+    // these fields directly without legacy L1Checkpoint shape coupling.
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
     update_client_state_with_checkpoint(state, synthetic_checkpoint, epoch)?;
     mark_ol_checkpoint_l1_observed(state, checkpoint_tip_update, asm_block)?;
@@ -173,14 +173,14 @@ fn mark_ol_checkpoint_l1_observed(
         l1_height = asm_block.height(),
         ?checkpoint_txid,
         ?checkpoint_wtxid,
-        "Recorded OL checkpoint L1 ref from v1 tip update"
+        "Recorded OL checkpoint L1 ref from tip update"
     );
     Ok(())
 }
 
-/// Build a compatibility synthetic [`L1Checkpoint`] from a v1 checkpoint tip update.
-// TODO(STR-2438): Remove this adapter once CSM consumes checkpoint-v1-native
-// structures without legacy `L1Checkpoint` synthesis.
+/// Build a compatibility synthetic [`L1Checkpoint`] from a checkpoint tip update.
+// TODO(STR-2438): Remove this adapter once CSM consumes checkpoint tip update
+// structures directly without legacy `L1Checkpoint` synthesis.
 fn checkpoint_from_tip_update(
     checkpoint_tip_update: &CheckpointTipUpdate,
     asm_block: &L1BlockCommitment,
@@ -191,10 +191,10 @@ fn checkpoint_from_tip_update(
     let checkpoint_wtxid = checkpoint_txid;
     let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 
-    // TODO(STR-2438): This v0-shaped `BatchInfo` synthesis is
-    // semantically incorrect for checkpoint-v1 tip updates (start/end L1 and
-    // L2 commitments are duplicated placeholders). Replace with v1-native data
-    // flow and remove legacy `BatchInfo` construction.
+    // TODO(STR-2438): This `BatchInfo` synthesis is semantically incorrect
+    // for checkpoint tip updates (start/end L1 and L2 commitments are
+    // duplicated placeholders). Replace with native checkpoint data flow
+    // and remove legacy `BatchInfo` construction.
     let batch_info = BatchInfo::new(
         tip.epoch,
         (*asm_block, *asm_block),
@@ -430,17 +430,17 @@ mod tests {
         assert_eq!(
             observation.as_ref().map(|entry| entry.txid),
             Some(Buf32::zero()),
-            "l1 ref should persist placeholder checkpoint txid for v1 tip logs"
+            "l1 ref should persist placeholder checkpoint txid for tip logs"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.wtxid),
             Some(Buf32::zero()),
-            "l1 ref should persist placeholder checkpoint wtxid for v1 tip logs"
+            "l1 ref should persist placeholder checkpoint wtxid for tip logs"
         );
         assert_eq!(
             observation.as_ref().map(|entry| entry.l1_commitment),
             Some(asm_block),
-            "l1 ref should be written from v1 tip log"
+            "l1 ref should be written from tip log"
         );
 
         let payload = storage

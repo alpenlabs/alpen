@@ -69,7 +69,7 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
 }
 
 pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
-    info!("Generating performance report for Checkpoint New");
+    info!("Generating performance report for Checkpoint");
     let input = prepare_checkpoint_input();
     CheckpointProgram::perf_report(&input, host).unwrap()
 }

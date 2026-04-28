@@ -23,7 +23,7 @@ impl ZkVmProgram for CheckpointProgram {
     type Output = CheckpointClaim;
 
     fn name() -> String {
-        "Checkpoint New".to_string()
+        "Checkpoint".to_string()
     }
 
     fn proof_type() -> zkaleido::ProofType {

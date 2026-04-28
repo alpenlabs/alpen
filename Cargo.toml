@@ -16,8 +16,6 @@ members = [
   "crates/alpen-ee/rpc/server",
   "crates/alpen-ee/rpc/types",
   "crates/alpen-ee/sequencer",
-  "crates/asm/spec",
-  "crates/asm/spec-debug",
   "crates/btcio",
   "crates/chainexec",
   "crates/chaintsn",
@@ -162,8 +160,6 @@ alpen-reth-rpc = { path = "crates/reth/rpc" }
 alpen-reth-statediff = { path = "crates/reth/statediff" }
 alpen-reth-witness = { path = "crates/reth/witness" }
 strata-acct-types = { path = "crates/acct-types" }
-strata-asm-spec = { path = "crates/asm/spec" }
-strata-asm-spec-debug = { path = "crates/asm/spec-debug" }
 strata-btcio = { path = "crates/btcio" }
 strata-chain-worker = { path = "crates/chain-worker" }
 strata-chain-worker-new = { path = "crates/chain-worker-new" }
@@ -269,6 +265,8 @@ strata-asm-proto-administration = { git = "https://github.com/alpenlabs/asm", ta
 strata-asm-proto-bridge-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
 strata-asm-proto-checkpoint = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
 strata-asm-proto-debug-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
+strata-asm-spec = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
+strata-asm-spec-debug = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
 strata-asm-stf = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
 strata-asm-txs-admin = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
 strata-asm-txs-bridge-v1 = { git = "https://github.com/alpenlabs/asm", tag = "v0.1-alpha.5" }
