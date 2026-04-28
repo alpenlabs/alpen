@@ -2,7 +2,12 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    iter,
+    ops::RangeInclusive,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -10,34 +15,43 @@ use async_trait::async_trait;
 use bitcoin::Network;
 use proptest::{arbitrary, prelude::*, strategy::ValueTree, test_runner::TestRunner};
 use strata_acct_types::{
-    AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload, tree_hash::TreeHash,
+    AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, MsgPayload,
+    tree_hash::TreeHash,
 };
 use strata_asm_common::{
     AnchorState, AsmHistoryAccumulatorState, ChainViewState, HeaderVerificationState,
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_btc_verification::L1Anchor;
+use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
 use strata_db_types::{MmrId, errors::DbError};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
-    WtxidsRoot, test_utils::ol_block_commitment_strategy,
+    WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
 use strata_ledger_types::{
-    AccountTypeState, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor, NewAccountData,
+    AccountTypeState, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
+    IStateAccessor, NewAccountData,
 };
+use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{
-    ClaimList, OLBlock, OLBlockBody, OLTransaction, OLTransactionData, OLTxSegment,
+    ClaimList, OLBlock, OLBlockBody, OLLog, OLTransaction, OLTransactionData, OLTxSegment,
     ProofSatisfierList, SauTxLedgerRefs, SauTxOperationData, SauTxPayload, SauTxProofState,
-    SauTxUpdateData, SignedOLBlockHeader, TransactionPayload, TxProofs,
-    test_utils as ol_test_utils,
+    SauTxUpdateData, SignedOLBlockHeader, SimpleWithdrawalIntentLogData, TransactionPayload,
+    TxProofs, test_utils as ol_test_utils,
 };
-use strata_ol_mempool::MempoolTxInvalidReason;
+use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::OLParams;
+use strata_ol_state_support_types::EpochDaAccumulator;
 use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
-use strata_ol_stf::{BlockComponents, BlockContext, BlockInfo, construct_block};
+use strata_ol_stf::{
+    BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
+    construct_block as stf_construct_block,
+};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
@@ -52,8 +66,13 @@ pub(crate) fn create_test_genesis_state() -> OLState {
 
 use crate::{
     BlockAssemblyResult, FixedSlotSealing, MempoolProvider,
-    context::BlockAssemblyContext,
-    types::{BlockGenerationConfig, FullBlockTemplate},
+    block_assembly::{
+        ConstructBlockOutput, calculate_block_slot_and_epoch, construct_block,
+        generate_block_template_inner,
+    },
+    context::{BlockAssemblyAnchorContext, BlockAssemblyContext},
+    da_tracker::AccumulatedDaData,
+    types::{BlockGenerationConfig, BlockTemplateResult, FullBlockTemplate},
 };
 
 /// Creates a test account ID with the given seed byte.
@@ -66,6 +85,46 @@ pub(crate) fn test_account_id(id: u8) -> AccountId {
 /// Creates a test hash with all bytes set to the given seed.
 pub(crate) fn test_hash(seed: u8) -> Hash {
     Hash::from([seed; 32])
+}
+
+// ===== Post-State Query Helpers =====
+//
+// Keep account/snark assertions concise in tests that inspect post-state.
+
+/// Returns account balance from post-state.
+pub(crate) fn account_balance(state: &OLState, account_id: AccountId) -> BitcoinAmount {
+    state
+        .get_account_state(account_id)
+        .expect("lookup account")
+        .expect("account exists")
+        .balance()
+}
+
+/// Returns snark account state from post-state.
+pub(crate) fn snark_account_state(state: &OLState, account_id: AccountId) -> &OLSnarkAccountState {
+    state
+        .get_account_state(account_id)
+        .expect("lookup account")
+        .expect("account exists")
+        .as_snark_account()
+        .expect("account should be snark")
+}
+
+/// Returns snark account sequence number from post-state.
+pub(crate) fn snark_account_seqno(state: &OLState, account_id: AccountId) -> u64 {
+    *snark_account_state(state, account_id).seqno().inner()
+}
+
+/// Returns snark account next inbox message index from post-state.
+pub(crate) fn snark_account_next_inbox_msg_idx(state: &OLState, account_id: AccountId) -> u64 {
+    snark_account_state(state, account_id).next_inbox_msg_idx()
+}
+
+/// Returns snark account inbox MMR entry count from post-state.
+pub(crate) fn snark_account_inbox_len(state: &OLState, account_id: AccountId) -> u64 {
+    snark_account_state(state, account_id)
+        .inbox_mmr()
+        .num_entries()
 }
 
 /// Creates a test message entry.
@@ -92,6 +151,18 @@ pub(crate) fn create_test_context(storage: Arc<NodeStorage>) -> BlockAssemblyCon
 /// Mock mempool provider for tests that stores transactions in memory.
 pub(crate) struct MockMempoolProvider {
     transactions: Mutex<Vec<(OLTxId, OLTransaction)>>,
+    report_call_count: AtomicUsize,
+    last_reported_invalid_txs: Mutex<Vec<(OLTxId, MempoolTxInvalidReason)>>,
+    fail_mode: Mutex<MockMempoolFailMode>,
+}
+
+/// Failure injection mode for [`MockMempoolProvider`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum MockMempoolFailMode {
+    #[default]
+    None,
+    GetTransactions,
+    ReportInvalidTransactions,
 }
 
 impl MockMempoolProvider {
@@ -99,12 +170,30 @@ impl MockMempoolProvider {
     pub(crate) fn new() -> Self {
         Self {
             transactions: Mutex::new(Vec::new()),
+            report_call_count: AtomicUsize::new(0),
+            last_reported_invalid_txs: Mutex::new(Vec::new()),
+            fail_mode: Mutex::new(MockMempoolFailMode::None),
         }
     }
 
     /// Add a transaction to the mock mempool.
     pub(crate) fn add_transaction(&self, txid: OLTxId, tx: OLTransaction) {
         self.transactions.lock().unwrap().push((txid, tx));
+    }
+
+    /// Configures a failure injection mode.
+    pub(crate) fn set_fail_mode(&self, fail_mode: MockMempoolFailMode) {
+        *self.fail_mode.lock().unwrap() = fail_mode;
+    }
+
+    /// Returns the number of times `report_invalid_transactions` was called.
+    pub(crate) fn report_call_count(&self) -> usize {
+        self.report_call_count.load(Ordering::Relaxed)
+    }
+
+    /// Returns the most recent invalid-tx payload passed to `report_invalid_transactions`.
+    pub(crate) fn last_reported_invalid_txs(&self) -> Vec<(OLTxId, MempoolTxInvalidReason)> {
+        self.last_reported_invalid_txs.lock().unwrap().clone()
     }
 }
 
@@ -114,6 +203,14 @@ impl MempoolProvider for MockMempoolProvider {
         &self,
         limit: usize,
     ) -> BlockAssemblyResult<Vec<(OLTxId, OLTransaction)>> {
+        if *self.fail_mode.lock().unwrap() == MockMempoolFailMode::GetTransactions {
+            return Err(crate::BlockAssemblyError::Mempool(
+                OLMempoolError::ServiceClosed(
+                    "mock mempool: get_transactions injected failure".to_string(),
+                ),
+            ));
+        }
+
         let txs = self.transactions.lock().unwrap();
         Ok(txs.iter().take(limit).cloned().collect())
     }
@@ -122,6 +219,17 @@ impl MempoolProvider for MockMempoolProvider {
         &self,
         txs: &[(OLTxId, MempoolTxInvalidReason)],
     ) -> BlockAssemblyResult<()> {
+        self.report_call_count.fetch_add(1, Ordering::Relaxed);
+        *self.last_reported_invalid_txs.lock().unwrap() = txs.to_vec();
+
+        if *self.fail_mode.lock().unwrap() == MockMempoolFailMode::ReportInvalidTransactions {
+            return Err(crate::BlockAssemblyError::Mempool(
+                OLMempoolError::ServiceClosed(
+                    "mock mempool: report_invalid_transactions injected failure".to_string(),
+                ),
+            ));
+        }
+
         let mut stored = self.transactions.lock().unwrap();
         for (txid, _reason) in txs {
             stored.retain(|(id, _)| id != txid);
@@ -144,6 +252,38 @@ impl MempoolProvider for Arc<MockMempoolProvider> {
         txs: &[(OLTxId, MempoolTxInvalidReason)],
     ) -> BlockAssemblyResult<()> {
         MempoolProvider::report_invalid_transactions(self.as_ref(), txs).await
+    }
+}
+
+/// State provider test double that always fails state lookup.
+pub(crate) struct FailingStateProvider;
+
+impl StateProvider for FailingStateProvider {
+    type State = OLState;
+    type Error = DbError;
+
+    #[expect(
+        clippy::manual_async_fn,
+        reason = "Keep explicit Future return shape in this test double implementation."
+    )]
+    fn get_state_for_tip_async(
+        &self,
+        _tip: OLBlockCommitment,
+    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+        async {
+            Err(DbError::Other(
+                "injected state provider failure".to_string(),
+            ))
+        }
+    }
+
+    fn get_state_for_tip_blocking(
+        &self,
+        _tip: OLBlockCommitment,
+    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+        Err(DbError::Other(
+            "injected state provider failure".to_string(),
+        ))
     }
 }
 
@@ -234,69 +374,6 @@ impl<'a> StorageInboxMmr<'a> {
             .map(|msg| self.add_message(msg))
             .collect()
     }
-
-    pub(crate) fn entries(&self) -> &[MessageEntry] {
-        &self.entries
-    }
-}
-
-/// Tracks ASM MMR entries (L1 header hashes) in storage.
-///
-/// Use this to populate the storage MMR with L1 header hashes for claim validation tests.
-pub(crate) struct StorageAsmMmr<'a> {
-    storage: &'a NodeStorage,
-    entries: Vec<Hash>,
-    indices: Vec<u64>,
-}
-
-impl<'a> StorageAsmMmr<'a> {
-    /// Creates a new tracker bound to storage.
-    pub(crate) fn new(storage: &'a NodeStorage) -> Self {
-        Self {
-            storage,
-            entries: Vec::new(),
-            indices: Vec::new(),
-        }
-    }
-
-    /// Adds a header hash to the storage MMR and tracks it.
-    pub(crate) fn add_header(&mut self, hash: Hash) -> u64 {
-        let mmr_handle = self.storage.mmr_index().as_ref().get_handle(MmrId::Asm);
-        let idx = mmr_handle.append_leaf_blocking(hash).unwrap();
-        self.entries.push(hash);
-        self.indices.push(idx);
-        idx
-    }
-
-    /// Adds multiple header hashes and returns their indices.
-    pub(crate) fn add_headers(&mut self, hashes: impl IntoIterator<Item = Hash>) -> Vec<u64> {
-        hashes.into_iter().map(|h| self.add_header(h)).collect()
-    }
-
-    /// Adds random header hashes using proptest.
-    pub(crate) fn add_random_headers(&mut self, count: usize) -> Vec<u64> {
-        let hashes = generate_header_hashes(count);
-        hashes.into_iter().map(|h| self.add_header(h)).collect()
-    }
-
-    /// Returns the tracked header hashes.
-    pub(crate) fn hashes(&self) -> &[Hash] {
-        &self.entries
-    }
-
-    /// Returns the MMR leaf indices.
-    pub(crate) fn indices(&self) -> &[u64] {
-        &self.indices
-    }
-
-    /// Returns all claims as AccumulatorClaim objects with MMR leaf indices.
-    pub(crate) fn claims(&self) -> Vec<AccumulatorClaim> {
-        self.indices
-            .iter()
-            .zip(self.entries.iter())
-            .map(|(&idx, &hash)| AccumulatorClaim::new(idx, hash))
-            .collect()
-    }
 }
 
 // ===== Mempool Transaction Builder =====
@@ -313,6 +390,60 @@ pub(crate) struct MempoolSnarkTxBuilder {
     l1_claims: Vec<AccumulatorClaim>,
     outputs: Vec<(AccountId, u64)>,
     output_messages: Vec<OutputMessage>,
+}
+
+/// Builder for creating mempool OL transactions for generic account messages.
+///
+/// Produces a valid GAM transaction shape:
+/// - payload target matches message destination
+/// - exactly one message in effects
+/// - zero message value
+/// - no transfers
+/// - no sequence-number field (GAM payloads are non-sequenced)
+pub(crate) struct MempoolGamTxBuilder {
+    target: AccountId,
+    data: Vec<u8>,
+}
+
+impl MempoolGamTxBuilder {
+    /// Creates a new GAM builder targeting the given account.
+    pub(crate) fn new(target: AccountId) -> Self {
+        Self {
+            target,
+            data: Vec::new(),
+        }
+    }
+
+    /// Sets message payload bytes.
+    pub(crate) fn with_data(mut self, data: Vec<u8>) -> Self {
+        self.data = data;
+        self
+    }
+
+    /// Builds the mempool transaction.
+    pub(crate) fn build(self) -> OLTransaction {
+        OLTransaction::new(
+            OLTransactionData::new_gam(self.target, self.data),
+            TxProofs::new_empty(),
+        )
+    }
+}
+
+/// Constructs a bridge-gateway withdrawal output message.
+pub(crate) fn withdrawal_output_message(
+    amount_sats: u64,
+    destination_desc: Vec<u8>,
+    withdrawal_fee_sats: u32,
+) -> OutputMessage {
+    let withdrawal_data = WithdrawalMsgData::new(withdrawal_fee_sats, destination_desc, u32::MAX)
+        .expect("valid withdrawal data");
+    let encoded_body = encode_to_vec(&withdrawal_data).expect("encode withdrawal body");
+    let withdrawal_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body).expect("msg format");
+    let payload = MsgPayload::new(
+        BitcoinAmount::from_sat(amount_sats),
+        withdrawal_msg.to_vec(),
+    );
+    OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
 }
 
 impl MempoolSnarkTxBuilder {
@@ -354,15 +485,38 @@ impl MempoolSnarkTxBuilder {
         self
     }
 
-    /// Sets output messages (balance transfers to other accounts).
+    /// Sets simple output transfers as `(destination_account, value_sats)`.
+    ///
+    /// These are encoded as output messages with empty payload data.
     pub(crate) fn with_outputs(mut self, outputs: Vec<(AccountId, u64)>) -> Self {
         self.outputs = outputs;
         self
     }
 
-    /// Sets fully-formed output messages, including payload bytes.
-    pub(crate) fn with_output_messages(mut self, output_messages: Vec<OutputMessage>) -> Self {
-        self.output_messages = output_messages;
+    /// Appends a withdrawal message routed to the bridge-gateway account.
+    pub(crate) fn with_withdrawal(mut self, amount_sats: u64, destination_desc: Vec<u8>) -> Self {
+        self.output_messages.push(withdrawal_output_message(
+            amount_sats,
+            destination_desc,
+            DEFAULT_OPERATOR_FEE,
+        ));
+        self
+    }
+
+    /// Appends `count` withdrawal messages routed to the bridge-gateway account.
+    pub(crate) fn with_withdrawals(
+        mut self,
+        count: usize,
+        amount_sats: u64,
+        destination_desc: Vec<u8>,
+    ) -> Self {
+        for _ in 0..count {
+            self.output_messages.push(withdrawal_output_message(
+                amount_sats,
+                destination_desc.clone(),
+                DEFAULT_OPERATOR_FEE,
+            ));
+        }
         self
     }
 
@@ -398,7 +552,8 @@ impl MempoolSnarkTxBuilder {
             operation_data,
         ));
 
-        // Build effects: empty by default, or explicit if with_outputs() was called.
+        // Build effects: empty by default. `output_messages()` take precedence;
+        // otherwise we synthesize plain value outputs from `with_outputs()`.
         let output_messages = if !self.output_messages.is_empty() {
             self.output_messages
         } else if self.outputs.is_empty() {
@@ -465,30 +620,6 @@ pub(crate) fn insert_inbox_messages_into_state(
     }
 }
 
-/// Inserts inbox messages into the stored OL state at `commitment`.
-pub(crate) async fn insert_inbox_messages_into_storage_state(
-    storage: &NodeStorage,
-    commitment: OLBlockCommitment,
-    account_id: AccountId,
-    messages: &[MessageEntry],
-) {
-    let state = storage
-        .ol_state()
-        .get_toplevel_ol_state_async(commitment)
-        .await
-        .expect("fetch stored state")
-        .expect("stored state missing");
-    let mut state = (*state).clone();
-
-    insert_inbox_messages_into_state(&mut state, account_id, messages);
-
-    storage
-        .ol_state()
-        .put_toplevel_ol_state_async(commitment, state)
-        .await
-        .expect("store updated state");
-}
-
 /// Create test parent header by executing genesis block.
 pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockHeader {
     let mut runner = TestRunner::default();
@@ -502,7 +633,7 @@ pub(crate) fn create_test_parent_header() -> strata_ol_chain_types_new::OLBlockH
     let genesis_context = BlockContext::new(&genesis_info, None);
     let genesis_components = BlockComponents::new_empty();
     let genesis_output =
-        construct_block(&mut temp_state, genesis_context, genesis_components).unwrap();
+        stf_construct_block(&mut temp_state, genesis_context, genesis_components).unwrap();
     genesis_output.completed_block().header().clone()
 }
 
@@ -539,16 +670,6 @@ pub(crate) fn create_test_template_with_parent(parent: OLBlockId) -> FullBlockTe
     FullBlockTemplate::new(header, body)
 }
 
-/// Creates a random [`BlockGenerationConfig`] using proptest strategies.
-pub(crate) fn create_test_block_generation_config() -> BlockGenerationConfig {
-    let mut runner = TestRunner::default();
-    let commitment = ol_block_commitment_strategy()
-        .new_tree(&mut runner)
-        .unwrap()
-        .current();
-    BlockGenerationConfig::new(commitment)
-}
-
 /// Create test storage instance.
 pub(crate) fn create_test_storage() -> Arc<NodeStorage> {
     let pool = ThreadPool::new(1);
@@ -578,20 +699,6 @@ pub(crate) fn generate_message_entries(
 
             let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), data);
             MessageEntry::new(source_account, incl_epoch, payload)
-        })
-        .collect()
-}
-
-/// Generate random L1 header hashes using proptest.
-pub(crate) fn generate_header_hashes(count: usize) -> Vec<Hash> {
-    let mut runner = TestRunner::default();
-    (0..count)
-        .map(|_| {
-            arbitrary::any::<[u8; 32]>()
-                .new_tree(&mut runner)
-                .unwrap()
-                .current()
-                .into()
         })
         .collect()
 }
@@ -671,31 +778,322 @@ pub(crate) async fn setup_asm_state_with_l1_manifests(
 /// Default balance for test accounts (100 billion sats).
 pub(crate) const DEFAULT_ACCOUNT_BALANCE: u64 = 100_000_000_000;
 
-/// Manifest commitment metadata for tests (MMR leaf index + committed manifest hash).
-pub(crate) struct ManifestCommitment {
-    pub mmr_idx: u64,
-    pub hash: Hash,
+/// Typed account setup used by test environment builders.
+#[derive(Clone)]
+pub(crate) struct TestAccount {
+    id: AccountId,
+    balance: u64,
+    inbox: Vec<MessageEntry>,
 }
 
-/// Output from TestEnvBuilder - all fields public for direct access.
+impl TestAccount {
+    /// Creates a test account with a balance and empty inbox.
+    pub(crate) fn new(id: AccountId, balance: u64) -> Self {
+        Self {
+            id,
+            balance,
+            inbox: Vec::new(),
+        }
+    }
+
+    /// Adds pre-seeded inbox messages for this account.
+    pub(crate) fn with_inbox(mut self, messages: Vec<MessageEntry>) -> Self {
+        self.inbox = messages;
+        self
+    }
+}
+
+/// Storage fixture layer for block assembly tests.
+pub(crate) struct TestStorageFixture {
+    storage: Arc<NodeStorage>,
+    l1_header_refs: Vec<(L1Height, AccumulatorClaim)>,
+    inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
+}
+
+impl TestStorageFixture {
+    /// Creates a new fixture from storage.
+    pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
+        Self {
+            storage,
+            l1_header_refs: Vec::new(),
+            inbox_message_claims: Vec::new(),
+        }
+    }
+
+    /// Sets seeded L1 header refs and inbox message claims produced during fixture setup.
+    pub(crate) fn with_seeded_claims(
+        mut self,
+        l1_header_refs: Vec<(L1Height, AccumulatorClaim)>,
+        inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
+    ) -> Self {
+        self.l1_header_refs = l1_header_refs;
+        self.inbox_message_claims = inbox_message_claims;
+        self
+    }
+
+    /// Returns storage handle for lower-level tests.
+    pub(crate) fn storage(&self) -> &Arc<NodeStorage> {
+        &self.storage
+    }
+
+    /// Returns configured L1 header refs keyed by L1 height.
+    pub(crate) fn l1_header_refs(&self) -> &[(L1Height, AccumulatorClaim)] {
+        &self.l1_header_refs
+    }
+
+    /// Returns an L1 header ref for a specific L1 height.
+    pub(crate) fn l1_header_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
+        self.l1_header_refs
+            .iter()
+            .find(|(h, _)| *h == height)
+            .map(|(_, claim)| claim.clone())
+    }
+
+    /// Returns inbox message claims for a specific account.
+    pub(crate) fn inbox_message_claims_for_account(
+        &self,
+        account_id: AccountId,
+    ) -> &[AccumulatorClaim] {
+        self.inbox_message_claims
+            .iter()
+            .find(|(id, _)| *id == account_id)
+            .map(|(_, claims)| claims.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+/// Behavior-level test environment for block assembly.
 pub(crate) struct TestEnv {
-    pub storage: Arc<NodeStorage>,
-    pub parent_commitment: OLBlockCommitment,
-    pub sequencer_config: SequencerConfig,
-    pub epoch_sealing_policy: FixedSlotSealing,
-    pub manifests: Vec<ManifestCommitment>,
+    fixture: Arc<TestStorageFixture>,
+    ctx: Arc<BlockAssemblyContextImpl>,
+    mempool: Arc<MockMempoolProvider>,
+    sequencer_config: SequencerConfig,
+    epoch_sealing_policy: FixedSlotSealing,
+    parent_commitment: OLBlockCommitment,
 }
 
-/// Builder for block assembly test environments.
+impl TestEnv {
+    /// Creates a behavior-level env from a seeded fixture and parent commitment.
+    pub(crate) fn from_fixture(
+        fixture: Arc<TestStorageFixture>,
+        parent_commitment: OLBlockCommitment,
+    ) -> Self {
+        let (ctx, mempool) = create_test_block_assembly_context(fixture.storage().clone());
+        Self {
+            fixture,
+            ctx: Arc::new(ctx),
+            mempool,
+            sequencer_config: SequencerConfig::default(),
+            epoch_sealing_policy: FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH),
+            parent_commitment,
+        }
+    }
+
+    /// Returns parent commitment used by default assembly entrypoints.
+    pub(crate) fn parent_commitment(&self) -> OLBlockCommitment {
+        self.parent_commitment
+    }
+
+    /// Returns storage handle for storage-backed test setup helpers.
+    pub(crate) fn storage(&self) -> &Arc<NodeStorage> {
+        self.fixture.storage()
+    }
+
+    /// Returns the block assembly context bound to this environment.
+    ///
+    /// Prefer behavior-level helpers (`generate_block_template` /
+    /// `construct_block`) unless a test needs direct context APIs.
+    pub(crate) fn ctx(&self) -> &BlockAssemblyContextImpl {
+        self.ctx.as_ref()
+    }
+
+    /// Returns shared block assembly context handle.
+    pub(crate) fn ctx_arc(&self) -> Arc<BlockAssemblyContextImpl> {
+        self.ctx.clone()
+    }
+
+    /// Returns mock mempool handle for injection/inspection tests.
+    pub(crate) fn mempool(&self) -> &MockMempoolProvider {
+        self.mempool.as_ref()
+    }
+
+    /// Returns shared mock mempool handle.
+    pub(crate) fn mempool_arc(&self) -> Arc<MockMempoolProvider> {
+        self.mempool.clone()
+    }
+
+    /// Appends inbox messages to the storage MMR for a given account and returns MMR indices.
+    ///
+    /// This is a runtime storage update helper for multi-block tests where
+    /// proofs in a later block must reference newly-added inbox entries.
+    pub(crate) fn append_inbox_messages(
+        &self,
+        account_id: AccountId,
+        messages: impl IntoIterator<Item = MessageEntry>,
+    ) -> Vec<u64> {
+        let mut inbox_mmr = StorageInboxMmr::new(self.storage().as_ref(), account_id);
+        inbox_mmr.add_messages(messages)
+    }
+
+    /// Returns configured L1 header refs keyed by L1 height.
+    pub(crate) fn l1_header_refs(&self) -> &[(L1Height, AccumulatorClaim)] {
+        self.fixture.l1_header_refs()
+    }
+
+    /// Returns an L1 header ref for a specific L1 height.
+    pub(crate) fn l1_header_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
+        self.fixture.l1_header_ref(height)
+    }
+
+    /// Returns inbox message claims for a specific account.
+    pub(crate) fn inbox_message_claims_for_account(
+        &self,
+        account_id: AccountId,
+    ) -> &[AccumulatorClaim] {
+        self.fixture.inbox_message_claims_for_account(account_id)
+    }
+
+    /// Returns sequencer config.
+    pub(crate) fn sequencer_config(&self) -> &SequencerConfig {
+        &self.sequencer_config
+    }
+
+    /// Returns epoch sealing policy.
+    pub(crate) fn epoch_sealing_policy(&self) -> &FixedSlotSealing {
+        &self.epoch_sealing_policy
+    }
+
+    /// Returns a block-generation config rooted at this environment's parent commitment.
+    fn parent_config(&self) -> BlockGenerationConfig {
+        BlockGenerationConfig::new(self.parent_commitment())
+    }
+
+    /// Generates block template from mempool using current parent commitment and empty parent DA.
+    pub(crate) async fn generate_block_template(&self) -> BlockAssemblyResult<BlockTemplateResult> {
+        self.generate_block_template_with_da(AccumulatedDaData::new_empty())
+            .await
+    }
+
+    /// Generates block template from mempool using current parent commitment and explicit parent
+    /// DA.
+    pub(crate) async fn generate_block_template_with_da(
+        &self,
+        parent_da: AccumulatedDaData,
+    ) -> BlockAssemblyResult<BlockTemplateResult> {
+        let config = self.parent_config();
+        generate_block_template_inner(
+            self.ctx(),
+            self.epoch_sealing_policy(),
+            self.sequencer_config(),
+            config,
+            parent_da,
+        )
+        .await
+    }
+
+    /// Constructs a block directly from explicit txs using current parent commitment and empty
+    /// parent DA.
+    pub(crate) async fn construct_block(
+        &self,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+        self.construct_block_with_da(txs, AccumulatedDaData::new_empty())
+            .await
+    }
+
+    /// Constructs an empty block using current parent commitment and empty parent DA.
+    pub(crate) async fn construct_empty_block(
+        &self,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+        self.construct_block(iter::empty::<(OLTxId, OLTransaction)>())
+            .await
+    }
+
+    /// Constructs an empty block using current parent commitment and explicit parent DA.
+    pub(crate) async fn construct_empty_block_with_da(
+        &self,
+        parent_da: AccumulatedDaData,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+        self.construct_block_with_da(iter::empty::<(OLTxId, OLTransaction)>(), parent_da)
+            .await
+    }
+
+    /// Constructs a block directly from explicit txs and parent DA using current parent commitment.
+    pub(crate) async fn construct_block_with_da(
+        &self,
+        txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
+        parent_da: AccumulatedDaData,
+    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+        let config = self.parent_config();
+        assemble_block_with_txs(
+            self.ctx(),
+            self.epoch_sealing_policy(),
+            &config,
+            txs.into_iter().collect(),
+            parent_da,
+        )
+        .await
+    }
+
+    /// Persists assembled output as the next parent block/state and advances parent commitment.
+    pub(crate) async fn persist(
+        &mut self,
+        output: &ConstructBlockOutput<OLState>,
+    ) -> OLBlockCommitment {
+        let header = output.template.header().clone();
+        let commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
+        let (block, post_state) = block_and_post_state_from_output(output);
+
+        self.storage()
+            .ol_block()
+            .put_block_data_async(block)
+            .await
+            .expect("store assembled block");
+        self.storage()
+            .ol_state()
+            .put_toplevel_ol_state_async(commitment, post_state)
+            .await
+            .expect("store assembled post-state");
+
+        self.parent_commitment = commitment;
+        commitment
+    }
+
+    /// Stores an OL block in runtime storage.
+    ///
+    /// Use this for tests that need runtime block injection without reaching into
+    /// raw storage plumbing from test bodies.
+    pub(crate) async fn put_block(&self, block: OLBlock) {
+        self.storage()
+            .ol_block()
+            .put_block_data_async(block)
+            .await
+            .expect("store block");
+    }
+}
+
+/// Converts assembled output into persisted artifacts: `(OLBlock, post_state)`.
+pub(crate) fn block_and_post_state_from_output(
+    output: &ConstructBlockOutput<OLState>,
+) -> (OLBlock, OLState) {
+    let header = output.template.header().clone();
+    let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
+    let block = OLBlock::new(signed_header, output.template.body().clone());
+    (block, output.post_state.clone())
+}
+
+/// Builder for seeded storage fixtures used by block assembly tests.
 #[derive(Default)]
-pub(crate) struct TestEnvBuilder {
+pub(crate) struct TestStorageFixtureBuilder {
     parent_slot: Option<u64>,
-    asm_manifest_heights: Vec<L1Height>,
-    claim_manifest_count: Option<usize>,
-    accounts: Vec<(AccountId, u64)>,
+    l1_manifest_height_range: Option<RangeInclusive<L1Height>>,
+    l1_header_ref_heights: Vec<L1Height>,
+    expected_l1_header_ref_indices: Vec<(L1Height, u64)>,
+    expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
+    accounts: Vec<TestAccount>,
 }
 
-impl TestEnvBuilder {
+impl TestStorageFixtureBuilder {
     /// Creates a new builder with default values.
     pub(crate) fn new() -> Self {
         Self::default()
@@ -708,64 +1106,147 @@ impl TestEnvBuilder {
         self
     }
 
-    /// Adds a snark account with the specified balance.
-    pub(crate) fn with_account(mut self, id: AccountId, balance: u64) -> Self {
-        self.accounts.push((id, balance));
+    /// Adds a configured account fixture.
+    pub(crate) fn with_account(mut self, account: TestAccount) -> Self {
+        self.accounts.push(account);
+        self
+    }
+
+    /// Adds multiple configured account fixtures.
+    pub(crate) fn with_accounts(mut self, accounts: impl IntoIterator<Item = TestAccount>) -> Self {
+        self.accounts.extend(accounts);
         self
     }
 
     /// Stores L1 manifests in ASM storage for block's L1 update fetching.
-    /// Used by tests that build terminal blocks with L1 manifests.
-    pub(crate) fn with_asm_manifests(mut self, heights: &[L1Height]) -> Self {
-        self.asm_manifest_heights = heights.to_vec();
+    pub(crate) fn with_l1_manifest_height_range(mut self, range: RangeInclusive<L1Height>) -> Self {
+        self.l1_manifest_height_range = Some(range);
         self
     }
 
-    /// Sets up manifests in BOTH storage MMR AND state MMR for claim testing.
-    /// The manifests field in [`TestEnv`] will be populated with [`ManifestCommitment`]s.
-    pub(crate) fn with_claim_manifests(mut self, count: usize) -> Self {
-        self.claim_manifest_count = Some(count);
+    /// Seeds L1 header refs for the provided L1 heights.
+    pub(crate) fn with_l1_header_refs(
+        mut self,
+        heights: impl IntoIterator<Item = L1Height>,
+    ) -> Self {
+        self.l1_header_ref_heights = heights.into_iter().collect();
         self
     }
 
-    /// Builds the test environment.
-    pub(crate) async fn build(self) -> TestEnv {
-        let storage = create_test_storage();
+    /// Asserts exact seeded L1 header ref indices as `(l1_height, expected_mmr_index)` entries.
+    pub(crate) fn with_expected_l1_header_ref_indices(
+        mut self,
+        expected: impl IntoIterator<Item = (L1Height, u64)>,
+    ) -> Self {
+        self.expected_l1_header_ref_indices = expected.into_iter().collect();
+        self
+    }
 
-        // Setup ASM state with L1 manifests if heights provided
-        if let (Some(&min_height), Some(&max_height)) = (
-            self.asm_manifest_heights.iter().min(),
-            self.asm_manifest_heights.iter().max(),
-        ) {
-            setup_asm_state_with_l1_manifests(&storage, min_height, max_height).await;
+    /// Asserts exact seeded inbox message indices as `(account_id, [expected_mmr_index])` entries.
+    ///
+    /// Inbox messages come from account fixtures (`TestAccount::with_inbox`).
+    pub(crate) fn with_expected_inbox_message_indices(
+        mut self,
+        indices: impl IntoIterator<Item = (AccountId, Vec<u64>)>,
+    ) -> Self {
+        self.expected_inbox_message_indices = indices.into_iter().collect();
+        self
+    }
+
+    /// Builds and seeds the storage fixture.
+    ///
+    /// Returns `(fixture, parent_commitment)` for advanced tests that need lower layers directly.
+    pub(crate) async fn build_fixture(self) -> (Arc<TestStorageFixture>, OLBlockCommitment) {
+        let fixture = TestStorageFixture::new(create_test_storage());
+
+        // Setup ASM state with L1 manifests if configured.
+        if let Some(range) = &self.l1_manifest_height_range {
+            let min_height = *range.start();
+            let max_height = *range.end();
+            setup_asm_state_with_l1_manifests(fixture.storage().as_ref(), min_height, max_height)
+                .await;
         }
 
         // Create genesis state
         let mut state = create_test_genesis_state();
 
         // Add snark accounts
-        for (i, (account_id, balance)) in self.accounts.iter().enumerate() {
-            add_snark_account_to_state(&mut state, *account_id, i as u8 + 1, *balance);
+        let mut inbox_message_claims = Vec::new();
+        for (i, account) in self.accounts.iter().enumerate() {
+            add_snark_account_to_state(&mut state, account.id, i as u8 + 1, account.balance);
+            if !account.inbox.is_empty() {
+                insert_inbox_messages_into_state(&mut state, account.id, &account.inbox);
+
+                let mut inbox_mmr = StorageInboxMmr::new(fixture.storage().as_ref(), account.id);
+                let indices = inbox_mmr.add_messages(account.inbox.clone());
+                if let Some((_, expected_indices)) = self
+                    .expected_inbox_message_indices
+                    .iter()
+                    .find(|(account_id, _)| *account_id == account.id)
+                {
+                    assert_eq!(
+                        expected_indices.len(),
+                        indices.len(),
+                        "expected inbox ref count mismatch for account {:?}",
+                        account.id
+                    );
+                    for (position, (expected_idx, actual_idx)) in
+                        expected_indices.iter().zip(indices.iter()).enumerate()
+                    {
+                        assert_eq!(
+                            *expected_idx, *actual_idx,
+                            "seeded inbox ref index mismatch for account {:?} at position {}",
+                            account.id, position
+                        );
+                    }
+                }
+                let claims = build_inbox_claims_for_messages(&account.inbox, &indices);
+                inbox_message_claims.push((account.id, claims));
+            }
         }
 
-        // Setup claim manifests if requested (populates both state and storage MMRs)
-        let manifests = if let Some(count) = self.claim_manifest_count {
-            let test_manifests = create_deterministic_manifests(count);
-            let (hashes, _indices) =
-                setup_manifests_in_state_and_storage(&storage, &mut state, test_manifests.clone());
-
-            test_manifests
+        for (account_id, _) in &self.expected_inbox_message_indices {
+            let is_seeded = inbox_message_claims
                 .iter()
-                .enumerate()
-                .map(|(i, m)| {
-                    // Test genesis has last_l1_height=0, so mmr_offset=1
-                    let mmr_idx = m.height() as u64 - 1;
-                    ManifestCommitment {
-                        mmr_idx,
-                        hash: hashes[i],
-                    }
-                })
-                .collect()
+                .any(|(seeded_account_id, _)| seeded_account_id == account_id);
+            assert!(
+                is_seeded,
+                "inbox message indices configured for account {:?}, but no inbox messages were seeded for that account",
+                account_id
+            );
+        }
+
+        // Seed requested L1 header refs into both state claims and the ASM MMR.
+        let mut l1_heights = self.l1_header_ref_heights.clone();
+        l1_heights.extend(
+            self.expected_l1_header_ref_indices
+                .iter()
+                .map(|(height, _)| *height),
+        );
+        l1_heights.sort_unstable();
+        l1_heights.dedup();
+
+        let seeded_l1_header_refs = if !l1_heights.is_empty() {
+            let asm_manifests = create_test_manifests_for_heights(&l1_heights);
+            let claims_by_height = setup_manifests_in_state_and_storage(
+                fixture.storage().as_ref(),
+                &mut state,
+                asm_manifests,
+            );
+
+            for (height, expected_idx) in &self.expected_l1_header_ref_indices {
+                let (_, claim) = claims_by_height
+                    .iter()
+                    .find(|(h, _)| h == height)
+                    .unwrap_or_else(|| panic!("missing seeded claim for l1 height {height}"));
+                assert_eq!(
+                    claim.idx(),
+                    *expected_idx,
+                    "seeded claim index mismatch for l1 height {height}"
+                );
+            }
+
+            claims_by_height
         } else {
             vec![]
         };
@@ -791,7 +1272,7 @@ impl TestEnvBuilder {
                 let components = BlockComponents::new_manifests(vec![genesis_manifest]);
 
                 let block_context = BlockContext::new(&block_info, None);
-                let construct_output = construct_block(&mut state, block_context, components)
+                let construct_output = stf_construct_block(&mut state, block_context, components)
                     .expect("Genesis block execution should succeed");
 
                 let completed_block = construct_output.completed_block();
@@ -809,13 +1290,15 @@ impl TestEnvBuilder {
                 SignedOLBlockHeader::new(parent_header.clone(), Buf64::zero());
             let parent_block = OLBlock::new(parent_signed_header, parent_block_body);
 
-            storage
+            fixture
+                .storage()
                 .ol_state()
                 .put_toplevel_ol_state_async(commitment, parent_state)
                 .await
                 .expect("Failed to store parent OL state");
 
-            storage
+            fixture
+                .storage()
                 .ol_block()
                 .put_block_data_async(parent_block)
                 .await
@@ -825,7 +1308,8 @@ impl TestEnvBuilder {
         } else {
             // No parent slot - return null commitment for genesis testing
             let null_commitment = OLBlockCommitment::null();
-            storage
+            fixture
+                .storage()
                 .ol_state()
                 .put_toplevel_ol_state_async(null_commitment, state)
                 .await
@@ -833,30 +1317,25 @@ impl TestEnvBuilder {
             null_commitment
         };
 
-        let sequencer_config = SequencerConfig::default();
-
-        let epoch_sealing_policy = FixedSlotSealing::new(TEST_SLOTS_PER_EPOCH);
-
-        TestEnv {
-            storage,
-            parent_commitment,
-            sequencer_config,
-            epoch_sealing_policy,
-            manifests,
-        }
+        let fixture =
+            Arc::new(fixture.with_seeded_claims(seeded_l1_header_refs, inbox_message_claims));
+        (fixture, parent_commitment)
     }
 }
 
-/// Create deterministic test manifests with unique block IDs.
+/// Create deterministic test manifests for specific L1 heights.
 ///
 /// Returns manifests that can be used to populate both state and storage MMRs.
-fn create_deterministic_manifests(count: usize) -> Vec<AsmManifest> {
-    (0..count)
-        .map(|i| {
+fn create_test_manifests_for_heights(heights: &[L1Height]) -> Vec<AsmManifest> {
+    heights
+        .iter()
+        .copied()
+        .map(|height| {
             let mut blkid_bytes = [0u8; 32];
-            blkid_bytes[0] = (i + 1) as u8; // Unique block ID for each manifest
+            blkid_bytes[0] = height as u8;
+            blkid_bytes[1] = (height >> 8) as u8;
             AsmManifest::new(
-                (i + 1) as L1Height, // height
+                height,
                 L1BlockId::from(Buf32::from(blkid_bytes)),
                 WtxidsRoot::from(Buf32::zero()),
                 vec![],
@@ -871,32 +1350,51 @@ fn create_deterministic_manifests(count: usize) -> Vec<AsmManifest> {
 /// This ensures consistency between proof generation (uses storage MMR) and
 /// verification (uses state's manifest MMR).
 ///
-/// Returns the manifest hashes and their leaf indices.
+/// Returns `(l1_height, claim)` pairs for each inserted manifest.
 fn setup_manifests_in_state_and_storage(
     storage: &NodeStorage,
     state: &mut OLState,
     manifests: Vec<AsmManifest>,
-) -> (Vec<Hash>, Vec<u64>) {
+) -> Vec<(L1Height, AccumulatorClaim)> {
     let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
 
-    let mut hashes = Vec::with_capacity(manifests.len());
-    let mut indices = Vec::with_capacity(manifests.len());
+    let mut claims_by_l1_height = Vec::with_capacity(manifests.len());
 
     for manifest in manifests {
         // Compute manifest hash
         let manifest_hash: Hash = manifest.compute_hash().into();
-        hashes.push(manifest_hash);
 
         // Add to storage MMR (for proof generation)
         let leaf_idx = mmr_handle.append_leaf_blocking(manifest_hash).unwrap();
-        indices.push(leaf_idx);
+        let claim = AccumulatorClaim::new(leaf_idx, manifest_hash);
 
         // Add to state's manifest MMR (for verification)
         let height = manifest.height();
         state.append_manifest(height, manifest);
+        claims_by_l1_height.push((height, claim));
     }
 
-    (hashes, indices)
+    claims_by_l1_height.sort_by_key(|(height, _)| *height);
+    claims_by_l1_height
+}
+
+fn build_inbox_claims_for_messages(
+    messages: &[MessageEntry],
+    indices: &[u64],
+) -> Vec<AccumulatorClaim> {
+    assert_eq!(
+        messages.len(),
+        indices.len(),
+        "messages/indices length mismatch while building inbox claims"
+    );
+    indices
+        .iter()
+        .zip(messages.iter())
+        .map(|(&idx, msg)| {
+            let hash = <MessageEntry as TreeHash>::tree_hash_root(msg).into_inner();
+            AccumulatorClaim::new(idx, hash)
+        })
+        .collect()
 }
 
 /// Create test BlockAssemblyContext with mock providers.
@@ -909,4 +1407,75 @@ pub(crate) fn create_test_block_assembly_context(
     let state_provider = StateProviderHandle(storage.ol_state().clone());
     let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider, 0);
     (ctx, mempool_provider)
+}
+
+// ===== Result Inspection Helpers =====
+
+/// Returns included txids in block order.
+pub(crate) fn included_txids(template: &FullBlockTemplate) -> Vec<OLTxId> {
+    template
+        .body()
+        .tx_segment()
+        .expect("tx segment")
+        .txs()
+        .iter()
+        .map(OLTransaction::compute_txid)
+        .collect()
+}
+
+/// Returns post-state root committed in the block template header.
+pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
+    *template.header().state_root()
+}
+
+/// Returns decoded withdrawal intent logs from accumulated DA logs.
+pub(crate) fn withdrawal_intents(
+    output: &ConstructBlockOutput<OLState>,
+) -> Vec<SimpleWithdrawalIntentLogData> {
+    output
+        .accumulated_da
+        .logs()
+        .iter()
+        .filter(|log| log.account_serial() == BRIDGE_GATEWAY_ACCT_SERIAL)
+        .filter_map(|log| decode_buf_exact::<SimpleWithdrawalIntentLogData>(log.payload()).ok())
+        .collect()
+}
+
+/// Returns accumulated DA with `n` seeded dummy logs.
+pub(crate) fn seeded_da(n: usize) -> AccumulatedDaData {
+    let logs = (0..n)
+        .map(|i| OLLog::new(AccountSerial::from(i as u32), vec![]))
+        .collect();
+    AccumulatedDaData::new(EpochDaAccumulator::default(), logs)
+}
+
+// ===== Assembly Pipeline Helper =====
+
+/// Assembles a block for `config` using tx list and parent DA snapshot.
+pub(crate) async fn assemble_block_with_txs(
+    ctx: &BlockAssemblyContextImpl,
+    epoch_sealing_policy: &FixedSlotSealing,
+    config: &BlockGenerationConfig,
+    txs: Vec<(OLTxId, OLTransaction)>,
+    parent_da: AccumulatedDaData,
+) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+    let parent_state = ctx
+        .fetch_state_for_tip(config.parent_block_commitment())
+        .await?
+        .expect("parent state should exist");
+
+    let (block_slot, block_epoch) =
+        calculate_block_slot_and_epoch(&config.parent_block_commitment(), parent_state.as_ref());
+
+    construct_block(
+        ctx,
+        epoch_sealing_policy,
+        config,
+        parent_state,
+        block_slot,
+        block_epoch,
+        txs,
+        parent_da,
+    )
+    .await
 }

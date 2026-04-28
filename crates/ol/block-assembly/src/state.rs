@@ -68,7 +68,14 @@ impl BlockAssemblyState {
     /// Insert a new pending template.
     ///
     /// Invariant: at most one pending template per parent.
-    pub(crate) fn insert_template(&mut self, template_id: OLBlockId, template: FullBlockTemplate) {
+    ///
+    /// Returns template IDs evicted while inserting (same-parent replacement and TTL cleanup).
+    pub(crate) fn insert_template(
+        &mut self,
+        template_id: OLBlockId,
+        template: FullBlockTemplate,
+    ) -> Vec<OLBlockId> {
+        let mut evicted_template_ids = Vec::new();
         let parent = *template.header().parent_blkid();
 
         // If we already have a template cached for this parent, evict it to avoid orphans.
@@ -76,6 +83,7 @@ impl BlockAssemblyState {
             && old_id != template_id
         {
             self.pending_templates.remove(&old_id);
+            evicted_template_ids.push(old_id);
         }
 
         // Insert/overwrite the template itself.
@@ -91,7 +99,8 @@ impl BlockAssemblyState {
             );
         }
 
-        self.cleanup_expired_templates();
+        evicted_template_ids.extend(self.cleanup_expired_templates());
+        evicted_template_ids
     }
 
     /// Gets a pending template by template ID.
@@ -147,8 +156,8 @@ impl BlockAssemblyState {
         Ok(cached.template)
     }
 
-    /// Removes expired entries from both maps.
-    pub(crate) fn cleanup_expired_templates(&mut self) {
+    /// Removes expired entries from both maps and returns removed template IDs.
+    pub(crate) fn cleanup_expired_templates(&mut self) -> Vec<OLBlockId> {
         let now = Instant::now();
         let ttl = self.ttl;
         let expired_ids: Vec<OLBlockId> = self
@@ -166,6 +175,22 @@ impl BlockAssemblyState {
                 }
             }
         }
+        expired_ids
+    }
+
+    /// Sets a cached template creation time for expiry tests.
+    #[cfg(test)]
+    pub(crate) fn set_template_created_at_for_test(
+        &mut self,
+        template_id: OLBlockId,
+        created_at: Instant,
+    ) -> Result<(), BlockAssemblyError> {
+        let cached = self
+            .pending_templates
+            .get_mut(&template_id)
+            .ok_or(BlockAssemblyError::UnknownTemplateId(template_id))?;
+        cached.created_at = created_at;
+        Ok(())
     }
 }
 
@@ -294,10 +319,54 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S: Send + Sync + 'static> Servic
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use strata_config::BlockAssemblyConfig;
+    use strata_identifiers::{AccountSerial, Buf32, Buf64};
+    use strata_ol_chain_types_new::{OLBlock, OLLog, SignedOLBlockHeader};
+    use strata_ol_state_support_types::EpochDaAccumulator;
+    use strata_test_utils_l2::gen_params;
+
     use super::*;
-    use crate::test_utils::{
-        TEST_BLOCK_TEMPLATE_TTL, create_test_template, create_test_template_with_parent,
+    use crate::{
+        FixedSlotSealing,
+        block_assembly::generate_block_template_inner,
+        da_tracker::AccumulatedDaData,
+        test_utils::{
+            MockMempoolProvider, StateProviderHandle, TEST_BLOCK_TEMPLATE_TTL, TestEnv,
+            TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
+        },
+        types::BlockGenerationConfig,
     };
+
+    type TestServiceState =
+        BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, StateProviderHandle>;
+
+    fn sample_accumulated_da() -> AccumulatedDaData {
+        AccumulatedDaData::new(
+            EpochDaAccumulator::default(),
+            vec![OLLog::new(AccountSerial::from(4242_u32), vec![1, 2, 3])],
+        )
+    }
+
+    async fn build_service_state_with_env(parent_slot: u64) -> (TestServiceState, TestEnv) {
+        let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
+            .with_parent_slot(parent_slot)
+            .with_l1_manifest_height_range(1..=3)
+            .build_fixture()
+            .await;
+        let env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let state = BlockasmServiceState::new(
+            Arc::new(gen_params()),
+            Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
+            env.sequencer_config().clone(),
+            env.ctx_arc(),
+            env.epoch_sealing_policy().clone(),
+        );
+
+        (state, env)
+    }
 
     #[test]
     fn insert_and_get_by_id() {
@@ -349,6 +418,10 @@ mod tests {
 
         // Verify parent lookup also fails (proves both maps cleaned up).
         assert!(state.get_pending_block_template_by_parent(parent).is_err());
+        assert!(
+            !state.pending_by_parent.contains_key(&parent),
+            "parent index must be cleared when template is removed"
+        );
     }
 
     #[test]
@@ -361,8 +434,9 @@ mod tests {
         state.insert_template(id, template);
 
         // Backdate the entry so it appears expired.
-        state.pending_templates.get_mut(&id).unwrap().created_at =
-            Instant::now() - TEST_BLOCK_TEMPLATE_TTL;
+        state
+            .set_template_created_at_for_test(id, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .unwrap();
 
         assert!(state.get_pending_block_template(id).is_err());
         assert!(state.get_pending_block_template_by_parent(parent).is_err());
@@ -387,6 +461,11 @@ mod tests {
         assert!(state.get_pending_block_template(id1).is_err());
         // New template should be present.
         assert!(state.get_pending_block_template(id2).is_ok());
+        assert_eq!(
+            state.pending_by_parent.get(&parent),
+            Some(&id2),
+            "parent index must point to the newest template id"
+        );
     }
 
     #[test]
@@ -406,8 +485,9 @@ mod tests {
         state.insert_template(id2, t2);
 
         // Backdate the first template to make it expired.
-        state.pending_templates.get_mut(&id1).unwrap().created_at =
-            Instant::now() - TEST_BLOCK_TEMPLATE_TTL;
+        state
+            .set_template_created_at_for_test(id1, Instant::now() - TEST_BLOCK_TEMPLATE_TTL)
+            .unwrap();
 
         // Explicitly call cleanup to remove expired templates.
         state.cleanup_expired_templates();
@@ -419,5 +499,124 @@ mod tests {
         // Fresh template should still be present.
         assert!(state.pending_templates.contains_key(&id2));
         assert!(state.pending_by_parent.contains_key(&parent2));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_da_terminal_parent_empty() {
+        let (mut state, env) = build_service_state_with_env(0).await;
+
+        // Even if tracker has an entry, terminal-parent path must return fresh empty DA.
+        state
+            .epoch_da_tracker_mut()
+            .set_accumulated_da(*env.parent_commitment().blkid(), sample_accumulated_da());
+
+        let parent_block = state
+            .context()
+            .fetch_ol_block(*env.parent_commitment().blkid())
+            .await
+            .expect("fetch should succeed")
+            .expect("parent block should exist");
+        assert!(
+            parent_block.header().is_terminal(),
+            "test setup requires terminal parent"
+        );
+
+        let da = state
+            .fetch_epoch_da_until_parent(env.parent_commitment())
+            .await
+            .expect("terminal parent should return empty DA");
+        assert!(
+            da.logs().is_empty(),
+            "terminal-parent path must reset accumulated DA"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_da_cache_hit() {
+        let (mut state, env) = build_service_state_with_env(1).await;
+
+        let parent_block = state
+            .context()
+            .fetch_ol_block(*env.parent_commitment().blkid())
+            .await
+            .expect("fetch should succeed")
+            .expect("parent block should exist");
+        assert!(
+            !parent_block.header().is_terminal(),
+            "test setup requires non-terminal parent"
+        );
+
+        let cached_da = sample_accumulated_da();
+        let expected_logs = cached_da.logs().to_vec();
+        state
+            .epoch_da_tracker_mut()
+            .set_accumulated_da(*env.parent_commitment().blkid(), cached_da);
+
+        let da = state
+            .fetch_epoch_da_until_parent(env.parent_commitment())
+            .await
+            .expect("cache-hit path should succeed");
+        assert_eq!(
+            da.logs(),
+            expected_logs.as_slice(),
+            "cache-hit path should return tracker data without rebuild"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_da_cache_miss_rebuild() {
+        let (state, env) = build_service_state_with_env(0).await;
+
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let result = generate_block_template_inner(
+            state.context(),
+            env.epoch_sealing_policy(),
+            env.sequencer_config(),
+            config,
+            AccumulatedDaData::new_empty(),
+        )
+        .await
+        .expect("child block generation should succeed");
+        let child_template = result.into_template();
+        assert!(
+            !child_template.header().is_terminal(),
+            "test setup requires non-terminal child for cache-miss rebuild"
+        );
+
+        let child_commitment = OLBlockCommitment::new(
+            child_template.header().slot(),
+            child_template.header().compute_blkid(),
+        );
+        let signed_header =
+            SignedOLBlockHeader::new(child_template.header().clone(), Buf64::zero());
+        let child_block = OLBlock::new(signed_header, child_template.body().clone());
+        env.put_block(child_block).await;
+
+        let da = state
+            .fetch_epoch_da_until_parent(child_commitment)
+            .await
+            .expect("cache-miss rebuild should succeed");
+        assert!(
+            da.logs().is_empty(),
+            "empty-child rebuild should produce empty logs"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fetch_da_missing_parent_not_found() {
+        let (state, env) = build_service_state_with_env(0).await;
+        let missing = OLBlockCommitment::new(
+            env.parent_commitment().slot() + 100,
+            OLBlockId::from(Buf32::from([0xff_u8; 32])),
+        );
+
+        let err = state
+            .fetch_epoch_da_until_parent(missing)
+            .await
+            .expect_err("missing parent should fail");
+        assert!(
+            matches!(err, BlockAssemblyError::BlockNotFound(_)),
+            "expected BlockNotFound(_), got: {err:?}"
+        );
     }
 }
