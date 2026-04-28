@@ -131,5 +131,6 @@ fn init_logging(rt: &Handle, config: &strata_config::Config) {
         json_format: config.logging.json_format,
         default_log_prefix: "alpen",
         enable_metrics_layer: config.logging.metrics_port.is_some(),
+        extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
     });
 }
