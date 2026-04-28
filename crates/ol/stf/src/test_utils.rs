@@ -1273,7 +1273,7 @@ impl FixtureSauBuilder {
         Self {
             sender,
             builder,
-            state_root: make_state_root(seqno as u8 + 2),
+            state_root: make_state_root((seqno as u8).wrapping_add(2)),
             proof: make_proof(1),
             should_advance_seqno: true,
         }
@@ -1283,7 +1283,7 @@ impl FixtureSauBuilder {
         Self {
             sender,
             builder: SnarkUpdateBuilder::new_unchecked(seqno, 0),
-            state_root: make_state_root(seqno as u8 + 2),
+            state_root: make_state_root((seqno as u8).wrapping_add(2)),
             proof: make_proof(1),
             should_advance_seqno: true,
         }

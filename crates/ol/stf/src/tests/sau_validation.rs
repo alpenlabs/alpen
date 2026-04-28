@@ -1,9 +1,11 @@
 //! Tests for snark account update validation errors.
 
 use strata_acct_types::{AcctError, BitcoinAmount};
-use strata_ledger_types::ISnarkAccountState;
+use strata_ledger_types::{IAccountState, ISnarkAccountState};
 
 use crate::{errors::ExecError, test_utils::*};
+
+const NON_SNARK_TARGET_ACCOUNT_ID: u32 = TEST_RECIPIENT_ID + 100;
 
 #[test]
 fn test_snark_update_invalid_sequence_number() {
@@ -175,4 +177,91 @@ fn test_snark_update_nonexistent_recipient() {
     }
 
     snapshot.assert_unchanged(&fixture);
+}
+
+#[test]
+fn test_snark_update_rejects_non_snark_target() {
+    let target_acct_id = make_account_id(NON_SNARK_TARGET_ACCOUNT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_empty_account(target_acct_id)
+        .execute_genesis();
+    let initial_target_balance = fixture.account_balance(target_acct_id);
+
+    match fixture
+        .child_block()
+        .with_sau(target_acct_id, |sau| {
+            sau.with_state_root(make_state_root(2))
+        })
+        .execute_err()
+        .into_base()
+    {
+        ExecError::IncorrectTxTargetType => {}
+        err => panic!("Expected IncorrectTxTargetType, got: {err:?}"),
+    }
+
+    assert_eq!(
+        fixture.account_balance(target_acct_id),
+        initial_target_balance,
+        "non-snark target balance should not change after failed SAU"
+    );
+    assert!(
+        fixture
+            .expect_account(target_acct_id)
+            .as_snark_account()
+            .is_err(),
+        "failed SAU should not convert the target into a snark account"
+    );
+}
+
+#[test]
+fn test_snark_update_rejects_max_sequence_number() {
+    let snark_acct_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
+    let recipient_id = make_account_id(TEST_RECIPIENT_ID);
+
+    let mut fixture = OLStfFixture::builder()
+        .with_genesis_snark_account(snark_acct_id, |acct| {
+            acct.with_balance(BitcoinAmount::from_sat(100_000_000))
+        })
+        .with_genesis_empty_account(recipient_id)
+        .execute_genesis();
+
+    fixture.set_account_seqno(snark_acct_id, u64::MAX);
+
+    let initial_sender_balance = fixture.account_balance(snark_acct_id);
+    let initial_recipient_balance = fixture.account_balance(recipient_id);
+    let initial_seqno = *fixture.expect_snark_account(snark_acct_id).seqno().inner();
+
+    match fixture
+        .child_block()
+        .with_sau(snark_acct_id, |sau| {
+            sau.force_seqno(u64::MAX)
+                .transfer(recipient_id, BitcoinAmount::from_sat(1))
+                .with_state_root(make_state_root(2))
+        })
+        .execute_err()
+        .into_base()
+    {
+        ExecError::MaxSeqNumberReached { account_id } => {
+            assert_eq!(account_id, snark_acct_id);
+        }
+        err => panic!("Expected MaxSeqNumberReached, got: {err:?}"),
+    }
+
+    assert_eq!(
+        fixture.account_balance(snark_acct_id),
+        initial_sender_balance,
+        "sender balance should not change after max sequence failure"
+    );
+    assert_eq!(
+        *fixture.expect_snark_account(snark_acct_id).seqno().inner(),
+        initial_seqno,
+        "sender seqno should not change after max sequence failure"
+    );
+
+    assert_eq!(
+        fixture.account_balance(recipient_id),
+        initial_recipient_balance,
+        "recipient balance should not change after max sequence failure"
+    );
 }
