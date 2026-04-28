@@ -490,7 +490,7 @@ mod tests {
     use super::*;
     use crate::{
         assembly::BlockExecOutputs,
-        test_utils::{OLStfFixture, make_account_id},
+        test_utils::{FixtureAsmManifestBuilder, OLStfFixture, make_account_id},
     };
 
     const STATE_DIFF_EMPTY_ACCOUNT_ID: u32 = 77;
@@ -551,6 +551,27 @@ mod tests {
         expected_state
             .compute_state_root()
             .expect("preseal state root should compute")
+    }
+
+    fn compute_post_epoch_root_after_diff(
+        state: &MemoryStateBaseLayer,
+        epoch_info: &EpochInfo,
+        state_diff: StateDiff,
+        manifests: &OLL1ManifestContainer,
+    ) -> Buf32 {
+        let mut expected_state = state.clone();
+        let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+        chain_processing::process_epoch_initial(&mut expected_state, &init_ctx)
+            .expect("epoch initial processing should succeed");
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
+            .expect("state-changing epoch diff should apply");
+        let output = ExecOutputBuffer::new_empty();
+        let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+        manifest_processing::process_block_manifests(&mut expected_state, manifests, &term_ctx)
+            .expect("manifest processing should succeed");
+        expected_state
+            .compute_state_root()
+            .expect("post-epoch state root should compute")
     }
 
     #[test]
@@ -678,6 +699,41 @@ mod tests {
             res.expect_err("mismatched final root should fail epoch verification"),
             ExecError::ChainIntegrity
         ));
+    }
+
+    #[test]
+    fn test_verify_epoch_with_diff_accepts_matching_root() {
+        // Non-empty manifest at the next L1 height (no logs) so
+        // `process_block_manifests` advances `last_l1_height` and updates the
+        // asm-manifests MMR — distinct from the preseal case which never
+        // reaches manifest processing. Per-log behavior is covered in
+        // `asm_manifests.rs`.
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let state_diff = state_changing_epoch_diff();
+        let next_manifest = FixtureAsmManifestBuilder::new_at_height(state.last_l1_height() + 1)
+            .with_variant(2)
+            .build();
+        let manifests =
+            OLL1ManifestContainer::new(vec![next_manifest]).expect("manifest container should fit");
+
+        let expected_post_root = compute_post_epoch_root_after_diff(
+            &state,
+            &epoch_info,
+            duplicate_epoch_diff(&state_diff),
+            &manifests,
+        );
+        let exp = EpochExecExpectations {
+            epoch_post_state_root: expected_post_root,
+        };
+
+        verify_epoch_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            OLDaPayloadV1::new(state_diff),
+            &manifests,
+            &exp,
+        )
+        .expect("matching post-epoch root should verify");
     }
 
     #[test]
