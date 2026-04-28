@@ -49,7 +49,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
         acct_summary: AccountEpochSummary = strata_rpc.strata_getAccountEpochSummary(
             ALPEN_ACCOUNT_ID, 0
         )
-        assert acct_summary["update_input"] is None, "No update input at epoch 0"
+        assert len(acct_summary["update_inputs"]) == 0, "No update input at epoch 0"
 
         last_new_update_at = 0
         new_updates_count = 0
@@ -73,7 +73,7 @@ class TestAlpenSequencerToStrataSequencer(BaseTest):
                     ALPEN_ACCOUNT_ID, ep
                 )
 
-                if acct_summary["update_input"] is not None:
+                if len(acct_summary["update_inputs"]) > 0:
                     logger.info(
                         f"Received update input {new_updates_count + 1}. "
                         f"Alpen is submitting updates to Strata. {acct_summary}"

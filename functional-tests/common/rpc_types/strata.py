@@ -64,4 +64,4 @@ class AccountEpochSummary(TypedDict):
     epoch_commitment: EpochCommitment
     prev_epoch_commitment: EpochCommitment
     balance: int
-    update_input: UpdateInputData | None
+    update_inputs: list[UpdateInputData]
