@@ -37,7 +37,7 @@ fn test_snark_update_with_valid_ledger_reference() {
     let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
 
     // Execute block with manifest
-    let block1_info = BlockInfo::new(1001000, 1, 0); // slot 1, epoch 0
+    let block1_info = BlockInfo::new(1001000, 1, 1); // slot 1, epoch 1
     let block1_components = BlockComponents::new_manifests(vec![manifest1.clone()]);
     let block1_output = execute_block_with_outputs(
         &mut state,
@@ -77,7 +77,7 @@ fn test_snark_update_with_valid_ledger_reference() {
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute the update
-    let (slot, epoch) = (2, 1); // Increment epoch because we processed manifests in last block
+    let (slot, epoch) = (2, 2); // Increment epoch because genesis and block 1 are terminal
     let result = execute_tx_in_block(
         &mut state,
         block1_output.completed_block().header(),
@@ -132,7 +132,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
     let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
 
     // Execute block with manifest
-    let block1_info = BlockInfo::new(1001000, 1, 0); // slot 1, epoch 0
+    let block1_info = BlockInfo::new(1001000, 1, 1); // slot 1, epoch 1
     let block1_components = BlockComponents::new_manifests(vec![manifest1.clone()]);
     let block1_output = execute_block_with_outputs(
         &mut state,
@@ -170,7 +170,7 @@ fn test_snark_update_with_invalid_ledger_reference() {
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute and expect failure
-    let (slot, epoch) = (2, 1); // Increment epoch because we processed manifests in the last block
+    let (slot, epoch) = (2, 2); // Increment epoch because genesis and block 1 are terminal
     let result = execute_tx_in_block(
         &mut state,
         block1_output.completed_block().header(),
@@ -224,7 +224,7 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
     .expect("test manifest should be valid");
     let manifest1_hash = <AsmManifest as TreeHash>::tree_hash_root(&manifest1);
 
-    let block1_info = BlockInfo::new(1001000, 1, 0); // slot 1, epoch 0
+    let block1_info = BlockInfo::new(1001000, 1, 1); // slot 1, epoch 1
     let block1_components = BlockComponents::new_manifests(vec![manifest1.clone()]);
     let block1_output = execute_block_with_outputs(
         &mut state,
@@ -278,7 +278,7 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
         block1_output.completed_block().header(),
         tx,
         2,
-        1,
+        2,
     );
 
     match result {

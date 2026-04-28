@@ -30,7 +30,7 @@ fn test_snark_update_zero_value_transfer() {
     .with_transfer(recipient_id, 0) // Zero value
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     // Should succeed - zero transfers are valid
@@ -86,7 +86,7 @@ fn test_snark_update_from_zero_balance_account() {
     .with_transfer(recipient_id, 1) // Even 1 satoshi should fail
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx_nonzero, slot, epoch);
 
     // Should fail due to insufficient balance
@@ -203,7 +203,7 @@ fn test_snark_update_self_transfer() {
     .with_transfer(snark_id, 30_000_000) // Transfer to self
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     assert!(
@@ -251,7 +251,7 @@ fn test_snark_update_exact_balance_transfer() {
     .with_transfer(recipient_id, 100_000_000) // Entire balance
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     assert!(
@@ -303,7 +303,7 @@ fn test_snark_update_max_bitcoin_supply() {
         effects,
     );
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     // Should fail due to insufficient balance
@@ -352,7 +352,7 @@ fn test_snark_update_single_transfer_exceeding_max_bitcoin_suceeds() {
     .with_transfer(recipient_id, more_than_max_bitcoin)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     // This should succeed as the account has sufficient balance
@@ -413,7 +413,7 @@ fn test_snark_update_overflow_u64_boundary() {
     .with_transfer(recipient2_id, 101) // This exceeds balance
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result1 = execute_tx_in_block(&mut state, genesis_block.header(), tx1, slot, epoch);
 
     // Should fail due to insufficient balance

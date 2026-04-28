@@ -36,7 +36,7 @@ fn test_snark_update_multiple_transfers() {
     .with_transfer(recipient3_id, 10_000_000)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
     assert!(
         result.is_ok(),
@@ -97,7 +97,7 @@ fn test_snark_update_multiple_output_messages() {
     .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 0, vec![7, 8, 9])
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
     assert!(
         result.is_ok(),
@@ -140,7 +140,7 @@ fn test_snark_update_transfers_and_messages_combined() {
     .with_output_message(BRIDGE_GATEWAY_ACCT_ID, 15_000_000, vec![42, 43, 44])
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
     assert!(
         result.is_ok(),
@@ -192,7 +192,7 @@ fn test_snark_update_partial_balance_multiple_outputs() {
     .with_transfer(recipient2_id, 50_000_000)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
 
     assert!(result.is_err(), "Update exceeding balance should fail");

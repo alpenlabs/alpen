@@ -31,7 +31,7 @@ fn test_snark_update_success_with_transfer() {
     .with_transfer(recipient_id, transfer_amount)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), tx, slot, epoch);
     assert!(
         result.is_ok(),

@@ -566,24 +566,39 @@ impl ManifestMmrTracker {
     }
 }
 
-/// Creates a SNARK account with initial balance and executes an empty genesis block.
+/// Creates a SNARK account with initial balance and executes genesis.
+///
+/// Genesis carries an empty manifest container, matching production genesis.
 /// Returns the completed genesis block.
 pub fn setup_genesis_with_snark_account(
     state: &mut OLState,
     snark_id: AccountId,
     initial_balance: u64,
 ) -> CompletedBlock {
-    let update_vk = PredicateKey::always_accept();
-    let initial_state_root = get_test_state_root(1);
-    let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
-    let balance = BitcoinAmount::from_sat(initial_balance);
-    let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
-    state
-        .create_new_account(snark_id, new_acct_data)
-        .expect("Should create snark account");
+    setup_genesis_with_snark_accounts(state, &[(snark_id, initial_balance)])
+}
+
+/// Creates SNARK accounts with initial balances and executes genesis.
+///
+/// Genesis carries an empty manifest container, matching production genesis.
+/// Returns the completed genesis block.
+pub fn setup_genesis_with_snark_accounts(
+    state: &mut OLState,
+    accounts: &[(AccountId, u64)],
+) -> CompletedBlock {
+    for &(account_id, initial_balance) in accounts {
+        let update_vk = PredicateKey::always_accept();
+        let initial_state_root = get_test_state_root(1);
+        let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
+        let balance = BitcoinAmount::from_sat(initial_balance);
+        let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
+        state
+            .create_new_account(account_id, new_acct_data)
+            .expect("Should create snark account");
+    }
 
     let genesis_info = BlockInfo::new_genesis(1_000_000);
-    let genesis_components = BlockComponents::new_empty();
+    let genesis_components = BlockComponents::new_manifests(vec![]);
     execute_block(state, &genesis_info, None, genesis_components).expect("Genesis should execute")
 }
 

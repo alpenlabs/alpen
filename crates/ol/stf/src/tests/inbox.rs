@@ -21,7 +21,7 @@ fn test_snark_inbox_message_insertion() {
     let gam_tx = make_gam_tx(snark_id);
 
     // Execute transaction
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch);
     assert!(
         result.is_ok(),
@@ -71,7 +71,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
 
     // Step 1: Send a message to snark account inbox
     let gam_tx = make_gam_tx(snark_id);
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let blk1 = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
     let header = blk1.header();
@@ -110,7 +110,7 @@ fn test_snark_update_process_inbox_message_with_valid_mmr_proof() {
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 4: Execute the update
-    let (slot, epoch) = (2, 0);
+    let (slot, epoch) = (2, 1);
     let result = execute_tx_in_block(&mut state, header, update_tx, slot, epoch);
     assert!(
         result.is_ok(),
@@ -172,7 +172,7 @@ fn test_snark_update_invalid_message_index() {
         effects,
     );
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(
@@ -198,7 +198,7 @@ fn test_snark_update_invalid_message_proof() {
 
     // Step 1: Send a gam message to snark's inbox
     let gam_tx = make_gam_tx(snark_id);
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let blk = execute_tx_in_block(&mut state, genesis_block.header(), gam_tx, slot, epoch)
         .expect("GAM should succeed");
     let header = blk.header();
@@ -232,7 +232,7 @@ fn test_snark_update_invalid_message_proof() {
         .build(snark_id, get_test_state_root(2), vec![0u8; 32]);
 
     // Step 3: Execute and expect failure
-    let (slot, epoch) = (2, 0);
+    let (slot, epoch) = (2, 1);
     let result = execute_tx_in_block(&mut state, header, invalid_tx, slot, epoch);
 
     assert!(
@@ -261,7 +261,7 @@ fn test_snark_update_skip_message_out_of_order() {
 
     // Step 1: Send TWO messages to inbox
     let gam_tx1 = make_gam_tx(snark_id);
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let blk = execute_tx_in_block(
         &mut state,
         genesis_block.header(),
@@ -297,7 +297,7 @@ fn test_snark_update_skip_message_out_of_order() {
     );
 
     // Step 3: Execute and expect failure
-    let (slot, epoch) = (3, 0);
+    let (slot, epoch) = (3, 1);
     let result = execute_tx_in_block(&mut state, header, invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update skipping messages should fail");

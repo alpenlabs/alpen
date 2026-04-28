@@ -30,7 +30,7 @@ fn test_snark_update_invalid_sequence_number() {
     );
 
     // Execute and expect failure
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(result.is_err(), "Update with wrong sequence should fail");
@@ -68,7 +68,7 @@ fn test_snark_update_insufficient_balance() {
     .with_transfer(recipient_id, 100_000_000)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(
@@ -103,7 +103,7 @@ fn test_snark_update_nonexistent_recipient() {
     .with_transfer(nonexistent_id, 10_000_000)
     .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
-    let (slot, epoch) = (1, 0);
+    let (slot, epoch) = (1, 1);
     let result = execute_tx_in_block(&mut state, genesis_block.header(), invalid_tx, slot, epoch);
 
     assert!(
