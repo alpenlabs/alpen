@@ -10,7 +10,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult,
-    ol_state_index::{AccountUpdateMeta, AccountUpdateRecord},
+    ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord},
 };
 use strata_identifiers::*;
 use strata_ledger_types::*;
@@ -45,6 +45,7 @@ struct MockProvider {
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
     account_update_entries: HashMap<(Epoch, AccountId), Vec<AccountUpdateRecord>>,
+    account_inbox_entries: HashMap<(Epoch, AccountId), Vec<InboxMessageRecord>>,
     account_creation_epochs: HashMap<AccountId, Epoch>,
     manifests: HashMap<L1Height, AsmManifest>,
     l1_tip_height: Option<L1Height>,
@@ -63,6 +64,7 @@ impl MockProvider {
             epoch_summaries: HashMap::new(),
             checkpoint_l1_refs: HashMap::new(),
             account_update_entries: HashMap::new(),
+            account_inbox_entries: HashMap::new(),
             account_creation_epochs: HashMap::new(),
             manifests: HashMap::new(),
             l1_tip_height: None,
@@ -251,6 +253,14 @@ impl OLRpcProvider for MockProvider {
         account: AccountId,
     ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
         Ok(self.account_update_entries.get(&(epoch, account)).cloned())
+    }
+
+    async fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>> {
+        Ok(self.account_inbox_entries.get(&(epoch, account)).cloned())
     }
 
     async fn get_account_inbox_messages(

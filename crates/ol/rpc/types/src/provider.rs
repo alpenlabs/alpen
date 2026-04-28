@@ -10,7 +10,10 @@ use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{ol_state_index::AccountUpdateRecord, DbResult};
+use strata_db_types::{
+    ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
+    DbResult,
+};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::OLMempoolResult;
@@ -57,6 +60,13 @@ pub trait OLRpcProvider: Send + Sync + 'static {
         epoch: Epoch,
         account: AccountId,
     ) -> DbResult<Option<Vec<AccountUpdateRecord>>>;
+
+    /// Get the per-(account, epoch) inbox-write records from the indexing store.
+    async fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>>;
 
     /// Gets account inbox messages in `[start_idx, end_idx_exclusive)` from the account inbox MMR.
     /// Returns an empty vector when `end_idx_exclusive <= start_idx`.
