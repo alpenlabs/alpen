@@ -944,6 +944,28 @@ impl OLStfFixture {
         }
     }
 
+    /// Builds an owned SAU transaction from fixture state.
+    pub fn sau_tx(
+        &self,
+        sender: AccountId,
+        build: impl FnOnce(FixtureSauBuilder) -> FixtureSauBuilder,
+    ) -> OLTransaction {
+        let account_state = self.expect_snark_account(sender).clone();
+        let seqno = *account_state.seqno().inner();
+        build(FixtureSauBuilder::new(sender, account_state, seqno))
+            .build_tx_with_seqno()
+            .0
+    }
+
+    /// Builds an owned GAM transaction.
+    pub fn gam_tx(
+        &self,
+        target: AccountId,
+        build: impl FnOnce(FixtureGamBuilder) -> FixtureGamBuilder,
+    ) -> OLTransaction {
+        build(FixtureGamBuilder::new(target)).build_tx()
+    }
+
     /// Returns the current account state.
     pub fn expect_account(&self, account_id: AccountId) -> &OLAccountState {
         self.state
