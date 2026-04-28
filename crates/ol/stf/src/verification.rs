@@ -397,8 +397,9 @@ pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
 #[cfg(test)]
 mod tests {
     use strata_acct_types::BitcoinAmount;
+    use strata_asm_common::AsmManifest;
     use strata_codec::{decode_buf_exact, encode_to_vec};
-    use strata_identifiers::AccountSerial;
+    use strata_identifiers::{AccountSerial, L1BlockId, WtxidsRoot};
     use strata_ol_chain_types_new::{
         BlockFlags, OLBlockId, OLL1ManifestContainer, OLL1Update, OLLog, OLTxSegment,
     };
@@ -470,6 +471,27 @@ mod tests {
         expected_state
             .compute_state_root()
             .expect("preseal state root should compute")
+    }
+
+    fn compute_post_epoch_root_after_diff(
+        state: &OLState,
+        epoch_info: &EpochInfo,
+        state_diff: StateDiff,
+        manifests: &OLL1ManifestContainer,
+    ) -> Buf32 {
+        let mut expected_state = state.clone();
+        let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+        chain_processing::process_epoch_initial(&mut expected_state, &init_ctx)
+            .expect("epoch initial processing should succeed");
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
+            .expect("state-changing epoch diff should apply");
+        let output = ExecOutputBuffer::new_empty();
+        let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+        manifest_processing::process_block_manifests(&mut expected_state, manifests, &term_ctx)
+            .expect("manifest processing should succeed");
+        expected_state
+            .compute_state_root()
+            .expect("post-epoch state root should compute")
     }
 
     #[test]
@@ -591,6 +613,45 @@ mod tests {
             &exp,
         );
         assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
+    }
+
+    #[test]
+    fn test_verify_epoch_with_diff_accepts_matching_root() {
+        // Non-empty manifest at the next L1 height (no logs) so
+        // `process_block_manifests` advances `last_l1_height` and updates the
+        // asm-manifests MMR — distinct from the preseal case which never
+        // reaches manifest processing. Per-log behavior is covered in
+        // `asm_manifests.rs`.
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let state_diff = state_changing_epoch_diff();
+        let next_manifest = AsmManifest::new(
+            state.last_l1_height() + 1,
+            L1BlockId::from(Buf32::from([2u8; 32])),
+            WtxidsRoot::from(Buf32::from([3u8; 32])),
+            vec![],
+        )
+        .expect("test manifest should be valid");
+        let manifests =
+            OLL1ManifestContainer::new(vec![next_manifest]).expect("manifest container should fit");
+
+        let expected_post_root = compute_post_epoch_root_after_diff(
+            &state,
+            &epoch_info,
+            duplicate_epoch_diff(&state_diff),
+            &manifests,
+        );
+        let exp = EpochExecExpectations {
+            epoch_post_state_root: expected_post_root,
+        };
+
+        verify_epoch_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            OLDaPayloadV1::new(state_diff),
+            &manifests,
+            &exp,
+        )
+        .expect("matching post-epoch root should verify");
     }
 
     #[test]
