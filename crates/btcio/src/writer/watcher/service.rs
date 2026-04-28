@@ -376,7 +376,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     new_status,
                     L1BundleStatus::Confirmed | L1BundleStatus::Finalized
                 ) {
-                    info!(
+                    debug!(
                         component = "btcio_writer",
                         payload_idx = self.curr_payloadidx,
                         commit_txid = %payloadentry.commit_txid,
