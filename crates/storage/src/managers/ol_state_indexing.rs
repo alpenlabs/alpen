@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use strata_db_types::{
     ol_state_index::{
-        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, AccountUpdateRecord,
-        BlockIndexingWrites, EpochIndexingData, EpochIndexingWrites, InboxMessageRecord,
+        AccountUpdateRecord, EpochIndexingData, IndexingWrites, InboxMessageRecord,
     },
     traits::OLStateIndexingDatabase,
     DbResult,
 };
-use strata_identifiers::{AccountId, Epoch, EpochCommitment};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
 use threadpool::ThreadPool;
 
 use crate::ops::ol_state_indexing::{Context, OLStateIndexingOps};
@@ -31,20 +30,42 @@ impl OLStateIndexingManager {
         Self { ops }
     }
 
-    pub fn apply_epoch_indexing_blocking(&self, writes: EpochIndexingWrites) -> DbResult<()> {
-        self.ops.apply_epoch_indexing_blocking(writes)
+    pub fn apply_epoch_indexing_blocking(
+        &self,
+        commitment: EpochCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()> {
+        self.ops.apply_epoch_indexing_blocking(commitment, writes)
     }
 
-    pub async fn apply_epoch_indexing_async(&self, writes: EpochIndexingWrites) -> DbResult<()> {
-        self.ops.apply_epoch_indexing_async(writes).await
+    pub async fn apply_epoch_indexing_async(
+        &self,
+        commitment: EpochCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()> {
+        self.ops
+            .apply_epoch_indexing_async(commitment, writes)
+            .await
     }
 
-    pub fn apply_block_indexing_blocking(&self, writes: BlockIndexingWrites) -> DbResult<()> {
-        self.ops.apply_block_indexing_blocking(writes)
+    pub fn apply_block_indexing_blocking(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()> {
+        self.ops.apply_block_indexing_blocking(epoch, block, writes)
     }
 
-    pub async fn apply_block_indexing_async(&self, writes: BlockIndexingWrites) -> DbResult<()> {
-        self.ops.apply_block_indexing_async(writes).await
+    pub async fn apply_block_indexing_async(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()> {
+        self.ops
+            .apply_block_indexing_async(epoch, block, writes)
+            .await
     }
 
     pub fn set_epoch_commitment_blocking(
@@ -77,32 +98,40 @@ impl OLStateIndexingManager {
         self.ops.get_epoch_indexing_data_async(epoch).await
     }
 
-    pub fn get_account_update_entry_blocking(
+    pub fn get_account_update_records_blocking(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountUpdateEntry>> {
-        self.ops.get_account_update_entry_blocking(key)
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
+        self.ops.get_account_update_records_blocking(epoch, account)
     }
 
-    pub async fn get_account_update_entry_async(
+    pub async fn get_account_update_records_async(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountUpdateEntry>> {
-        self.ops.get_account_update_entry_async(key).await
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
+        self.ops
+            .get_account_update_records_async(epoch, account)
+            .await
     }
 
-    pub fn get_account_inbox_entry_blocking(
+    pub fn get_account_inbox_records_blocking(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountInboxEntry>> {
-        self.ops.get_account_inbox_entry_blocking(key)
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>> {
+        self.ops.get_account_inbox_records_blocking(epoch, account)
     }
 
-    pub async fn get_account_inbox_entry_async(
+    pub async fn get_account_inbox_records_async(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountInboxEntry>> {
-        self.ops.get_account_inbox_entry_async(key).await
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>> {
+        self.ops
+            .get_account_inbox_records_async(epoch, account)
+            .await
     }
 
     pub fn get_account_creation_epoch_blocking(
@@ -119,37 +148,43 @@ impl OLStateIndexingManager {
         self.ops.get_account_creation_epoch_async(account_id).await
     }
 
-    /// Returns update records for `(epoch, acct)` whose block falls in the
+    /// Returns update records for `(epoch, account)` whose block falls in the
     /// inclusive slot range. Records without `update_meta` (checkpoint-sync
     /// rows) are skipped, since they carry no block commitment to filter on.
     pub async fn get_account_update_records_in_slot_range_async(
         &self,
-        key: AccountEpochKey,
+        epoch: Epoch,
+        account: AccountId,
         start_slot: u64,
         end_slot: u64,
     ) -> DbResult<Vec<AccountUpdateRecord>> {
-        let Some(entry) = self.ops.get_account_update_entry_async(key).await? else {
+        let Some(records) = self
+            .ops
+            .get_account_update_records_async(epoch, account)
+            .await?
+        else {
             return Ok(Vec::new());
         };
-        Ok(filter_records_by_slot(
-            entry.records(),
-            start_slot,
-            end_slot,
-        ))
+        Ok(filter_records_by_slot(&records, start_slot, end_slot))
     }
 
-    /// Returns inbox writes for `(epoch, acct)` whose block falls in the
+    /// Returns inbox writes for `(epoch, account)` whose block falls in the
     /// inclusive slot range. Records without `block_commitment` are skipped.
     pub async fn get_account_inbox_records_in_slot_range_async(
         &self,
-        key: AccountEpochKey,
+        epoch: Epoch,
+        account: AccountId,
         start_slot: u64,
         end_slot: u64,
     ) -> DbResult<Vec<InboxMessageRecord>> {
-        let Some(entry) = self.ops.get_account_inbox_entry_async(key).await? else {
+        let Some(records) = self
+            .ops
+            .get_account_inbox_records_async(epoch, account)
+            .await?
+        else {
             return Ok(Vec::new());
         };
-        Ok(filter_inbox_by_slot(entry.records(), start_slot, end_slot))
+        Ok(filter_inbox_by_slot(&records, start_slot, end_slot))
     }
 }
 

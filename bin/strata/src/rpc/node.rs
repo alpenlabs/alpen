@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::ol_state_index::AccountEpochKey;
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId,
@@ -191,13 +190,12 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
-        let updates = if let Some(entry) = self
+        let updates = if let Some(records) = self
             .provider
-            .get_account_update_entry(AccountEpochKey::new(epoch, account_id))
+            .get_account_update_records(epoch, account_id)
             .await
             .map_err(db_error)?
         {
-            let records = entry.records();
             if records.is_empty() {
                 return Err(internal_error(format!(
                     "indexing entry for account {account_id} epoch {epoch} has no records"
@@ -221,7 +219,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             };
 
             let mut out = Vec::with_capacity(records.len());
-            for r in records {
+            for r in &records {
                 let meta = r.update_meta().ok_or_else(|| {
                     internal_error(format!(
                         "record for account {account_id} epoch {epoch} missing update_meta \

@@ -29,8 +29,7 @@ use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
     ol_state_index::{
-        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, BlockIndexingWrites,
-        EpochIndexingData, EpochIndexingWrites,
+        AccountUpdateRecord, EpochIndexingData, IndexingWrites, InboxMessageRecord,
     },
     types::{
         BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1PayloadIntentIndex, L1TxEntry,
@@ -683,16 +682,27 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     ///
     /// Writes the common record, per-account update entries, per-account
     /// inbox entries, and creation-epoch index entries for newly created
-    /// accounts. All in one transaction.
-    fn apply_epoch_indexing(&self, writes: EpochIndexingWrites) -> DbResult<()>;
+    /// accounts. The common record's `epoch_commitment` is set from
+    /// `commitment`. All in one transaction.
+    fn apply_epoch_indexing(
+        &self,
+        commitment: EpochCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()>;
 
     /// Atomically applies a single block's incremental indexing writes.
     ///
     /// Appends to existing per-(account, epoch) entries, updates the common
     /// row's `created_accounts`, and inserts creation-epoch index entries
-    /// for any newly created accounts. Caller is responsible for not invoking
-    /// this twice for the same block.
-    fn apply_block_indexing(&self, writes: BlockIndexingWrites) -> DbResult<()>;
+    /// for any newly created accounts. Errors with
+    /// [`DbError::DuplicateBlockIndexing`](crate::DbError::DuplicateBlockIndexing)
+    /// if any account update already records the same `block`.
+    fn apply_block_indexing(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()>;
 
     /// Sets the epoch commitment on the existing common row.
     ///
@@ -703,18 +713,23 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
     /// Returns the common indexing data for the given epoch.
     fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>>;
 
-    /// Returns the per-(account, epoch) update entry.
+    /// Returns the per-(account, epoch) update records.
     ///
     /// Returns `None` when the account had no indexed activity in the epoch.
-    fn get_account_update_entry(
+    fn get_account_update_records(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountUpdateEntry>>;
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>>;
 
-    /// Returns the per-(account, epoch) inbox entry.
+    /// Returns the per-(account, epoch) inbox records.
     ///
     /// Returns `None` when no inbox writes were recorded for the account in the epoch.
-    fn get_account_inbox_entry(&self, key: AccountEpochKey) -> DbResult<Option<AccountInboxEntry>>;
+    fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>>;
 
     /// Returns the epoch in which an account was created.
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;

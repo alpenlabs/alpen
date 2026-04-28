@@ -128,7 +128,7 @@ impl AccountUpdateRecord {
     }
 }
 
-/// Key used for both [`AccountUpdateEntry`] and [`AccountInboxEntry`].
+/// Key used for both account update and account inbox tables.
 ///
 /// Keying by [`EpochCommitment`] is not viable: the commitment is unknown
 /// during intermediate steps within the epoch.
@@ -147,40 +147,21 @@ impl AccountUpdateRecord {
     BorshDeserialize,
 )]
 pub struct AccountEpochKey {
-    pub epoch: Epoch,
-    pub account_id: AccountId,
+    epoch: Epoch,
+    account_id: AccountId,
 }
 
 impl AccountEpochKey {
     pub fn new(epoch: Epoch, account_id: AccountId) -> Self {
         Self { epoch, account_id }
     }
-}
 
-/// Per-(account, epoch) list of update records.
-///
-/// Block-sync producers append records as blocks execute; checkpoint-sync
-/// producers write the full list in one shot.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct AccountUpdateEntry {
-    records: Vec<AccountUpdateRecord>,
-}
-
-impl AccountUpdateEntry {
-    pub fn new(records: Vec<AccountUpdateRecord>) -> Self {
-        Self { records }
+    pub fn epoch(&self) -> Epoch {
+        self.epoch
     }
 
-    pub fn records(&self) -> &[AccountUpdateRecord] {
-        &self.records
-    }
-
-    pub fn push(&mut self, record: AccountUpdateRecord) {
-        self.records.push(record);
-    }
-
-    pub fn extend(&mut self, records: impl IntoIterator<Item = AccountUpdateRecord>) {
-        self.records.extend(records);
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
     }
 }
 
@@ -211,75 +192,36 @@ impl InboxMessageRecord {
     }
 }
 
-/// Per-(account, epoch) list of inbox message writes.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct AccountInboxEntry {
-    records: Vec<InboxMessageRecord>,
-}
-
-impl AccountInboxEntry {
-    pub fn new(records: Vec<InboxMessageRecord>) -> Self {
-        Self { records }
-    }
-
-    pub fn records(&self) -> &[InboxMessageRecord] {
-        &self.records
-    }
-
-    pub fn push(&mut self, record: InboxMessageRecord) {
-        self.records.push(record);
-    }
-
-    pub fn extend(&mut self, records: impl IntoIterator<Item = InboxMessageRecord>) {
-        self.records.extend(records);
-    }
-}
-
-/// Per-block input payload for block-sync indexing writes.
-///
-/// One call to `apply_block_indexing` consumes one of these; the DB appends
-/// to existing per-(account, epoch) rows and updates the common epoch row
-/// with any newly created accounts.
+/// Indexing data produced by a block-sync or checkpoint-sync run.
 #[derive(Clone, Debug, Default)]
-pub struct BlockIndexingWrites {
-    pub epoch: Epoch,
-    pub block: OLBlockCommitment,
-    pub created_accounts: Vec<AccountId>,
-    pub account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>>,
-    pub account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>>,
+pub struct IndexingWrites {
+    created_accounts: Vec<AccountId>,
+    account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>>,
+    account_inbox: BTreeMap<AccountId, Vec<InboxMessageRecord>>,
 }
 
-impl BlockIndexingWrites {
-    pub fn new(epoch: Epoch, block: OLBlockCommitment) -> Self {
+impl IndexingWrites {
+    pub fn new(
+        created_accounts: Vec<AccountId>,
+        account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>>,
+        account_inbox: BTreeMap<AccountId, Vec<InboxMessageRecord>>,
+    ) -> Self {
         Self {
-            epoch,
-            block,
-            created_accounts: Vec::new(),
-            account_updates: BTreeMap::new(),
-            account_inbox_writes: BTreeMap::new(),
+            created_accounts,
+            account_updates,
+            account_inbox,
         }
     }
-}
 
-/// Single-call payload for checkpoint-sync indexing writes.
-///
-/// Applied atomically by
-/// [`OLStateIndexingDatabase::apply_epoch_indexing`](crate::traits::OLStateIndexingDatabase::apply_epoch_indexing).
-#[derive(Clone, Debug)]
-pub struct EpochIndexingWrites {
-    pub epoch: Epoch,
-    pub common: EpochIndexingData,
-    pub account_updates: BTreeMap<AccountId, AccountUpdateEntry>,
-    pub account_inbox: BTreeMap<AccountId, AccountInboxEntry>,
-}
+    pub fn created_accounts(&self) -> &[AccountId] {
+        &self.created_accounts
+    }
 
-impl EpochIndexingWrites {
-    pub fn new(epoch: Epoch, common: EpochIndexingData) -> Self {
-        Self {
-            epoch,
-            common,
-            account_updates: BTreeMap::new(),
-            account_inbox: BTreeMap::new(),
-        }
+    pub fn account_updates(&self) -> &BTreeMap<AccountId, Vec<AccountUpdateRecord>> {
+        &self.account_updates
+    }
+
+    pub fn account_inbox(&self) -> &BTreeMap<AccountId, Vec<InboxMessageRecord>> {
+        &self.account_inbox
     }
 }

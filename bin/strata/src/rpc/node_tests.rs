@@ -10,7 +10,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult,
-    ol_state_index::{AccountEpochKey, AccountUpdateEntry, AccountUpdateMeta, AccountUpdateRecord},
+    ol_state_index::{AccountUpdateMeta, AccountUpdateRecord},
 };
 use strata_identifiers::*;
 use strata_ledger_types::*;
@@ -44,7 +44,7 @@ struct MockProvider {
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
     checkpoint_l1_refs: HashMap<EpochCommitment, CheckpointL1Ref>,
-    account_update_entries: HashMap<AccountEpochKey, AccountUpdateEntry>,
+    account_update_entries: HashMap<(Epoch, AccountId), Vec<AccountUpdateRecord>>,
     account_creation_epochs: HashMap<AccountId, Epoch>,
     manifests: HashMap<L1Height, AsmManifest>,
     l1_tip_height: Option<L1Height>,
@@ -155,10 +155,8 @@ impl MockProvider {
     ) -> Self {
         let meta = AccountUpdateMeta::new(block, [0u8; 32].into());
         let record = AccountUpdateRecord::new(Some(meta), seq_no, next_inbox_idx, Some(extra_data));
-        self.account_update_entries.insert(
-            AccountEpochKey::new(epoch, account_id),
-            AccountUpdateEntry::new(vec![record]),
-        );
+        self.account_update_entries
+            .insert((epoch, account_id), vec![record]);
         self
     }
 
@@ -187,10 +185,8 @@ impl MockProvider {
         epoch: Epoch,
         records: Vec<AccountUpdateRecord>,
     ) -> Self {
-        self.account_update_entries.insert(
-            AccountEpochKey::new(epoch, account_id),
-            AccountUpdateEntry::new(records),
-        );
+        self.account_update_entries
+            .insert((epoch, account_id), records);
         self
     }
 
@@ -249,11 +245,12 @@ impl OLRpcProvider for MockProvider {
         Ok(self.checkpoint_l1_refs.get(&commitment).cloned())
     }
 
-    async fn get_account_update_entry(
+    async fn get_account_update_records(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountUpdateEntry>> {
-        Ok(self.account_update_entries.get(&key).cloned())
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
+        Ok(self.account_update_entries.get(&(epoch, account)).cloned())
     }
 
     async fn get_account_inbox_messages(

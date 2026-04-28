@@ -4,8 +4,7 @@ use std::collections::BTreeMap;
 
 use strata_db_types::{
     ol_state_index::{
-        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, AccountUpdateMeta,
-        AccountUpdateRecord, BlockIndexingWrites, EpochIndexingData, EpochIndexingWrites,
+        AccountUpdateMeta, AccountUpdateRecord, EpochIndexingData, IndexingWrites,
         InboxMessageRecord,
     },
     traits::OLStateIndexingDatabase,
@@ -43,42 +42,36 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
     let acct_a = acct(1);
     let acct_b = acct(2);
 
-    let common = EpochIndexingData::new(Some(epoch_commit(epoch, 9)), vec![acct_a]);
+    let commitment = epoch_commit(epoch, 9);
     let mut updates = BTreeMap::new();
-    updates.insert(
-        acct_a,
-        AccountUpdateEntry::new(vec![record(None, 0, 0, Some(vec![1, 2, 3]))]),
-    );
+    updates.insert(acct_a, vec![record(None, 0, 0, Some(vec![1, 2, 3]))]);
     let mut inbox = BTreeMap::new();
     inbox.insert(
         acct_b,
-        AccountInboxEntry::new(vec![InboxMessageRecord::new(vec![9, 9], None)]),
+        vec![InboxMessageRecord::new(vec![9, 9], None)],
     );
 
-    let writes = EpochIndexingWrites {
-        epoch,
-        common: common.clone(),
-        account_updates: updates,
-        account_inbox: inbox,
-    };
-    db.apply_epoch_indexing(writes).expect("apply_epoch");
+    let writes = IndexingWrites::new(vec![acct_a], updates, inbox);
+    db.apply_epoch_indexing(commitment, writes)
+        .expect("apply_epoch");
 
+    let expected = EpochIndexingData::new(Some(commitment), vec![acct_a]);
     assert_eq!(
         db.get_epoch_indexing_data(epoch).expect("get common"),
-        Some(common)
+        Some(expected)
     );
     let got = db
-        .get_account_update_entry(AccountEpochKey::new(epoch, acct_a))
+        .get_account_update_records(epoch, acct_a)
         .expect("get update")
         .expect("present");
-    assert_eq!(got.records().len(), 1);
-    assert_eq!(got.records()[0].extra_data(), Some(&[1u8, 2, 3][..]));
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].extra_data(), Some(&[1u8, 2, 3][..]));
 
     let inb = db
-        .get_account_inbox_entry(AccountEpochKey::new(epoch, acct_b))
+        .get_account_inbox_records(epoch, acct_b)
         .expect("get inbox")
         .expect("present");
-    assert_eq!(inb.records().len(), 1);
+    assert_eq!(inb.len(), 1);
 
     // Creation epoch index populated for created accounts.
     assert_eq!(
@@ -113,13 +106,11 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
         acct_a,
         vec![InboxMessageRecord::new(vec![0xA1], Some(block1))],
     );
-    db.apply_block_indexing(BlockIndexingWrites {
+    db.apply_block_indexing(
         epoch,
-        block: block1,
-        created_accounts: vec![acct_a],
-        account_updates: updates1,
-        account_inbox_writes: inbox1,
-    })
+        block1,
+        IndexingWrites::new(vec![acct_a], updates1, inbox1),
+    )
     .expect("apply block1");
 
     // Block 2: two more updates, one inbox write, no new accounts.
@@ -141,29 +132,27 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
         acct_a,
         vec![InboxMessageRecord::new(vec![0xA2], Some(block2))],
     );
-    db.apply_block_indexing(BlockIndexingWrites {
+    db.apply_block_indexing(
         epoch,
-        block: block2,
-        created_accounts: vec![],
-        account_updates: updates2,
-        account_inbox_writes: inbox2,
-    })
+        block2,
+        IndexingWrites::new(vec![], updates2, inbox2),
+    )
     .expect("apply block2");
 
     let got = db
-        .get_account_update_entry(AccountEpochKey::new(epoch, acct_a))
+        .get_account_update_records(epoch, acct_a)
         .expect("get update")
         .expect("present");
-    assert_eq!(got.records().len(), 3);
-    assert_eq!(got.records()[0].seq_no(), 1);
-    assert_eq!(got.records()[1].seq_no(), 2);
-    assert_eq!(got.records()[2].seq_no(), 3);
+    assert_eq!(got.len(), 3);
+    assert_eq!(got[0].seq_no(), 1);
+    assert_eq!(got[1].seq_no(), 2);
+    assert_eq!(got[2].seq_no(), 3);
 
     let inb = db
-        .get_account_inbox_entry(AccountEpochKey::new(epoch, acct_a))
+        .get_account_inbox_records(epoch, acct_a)
         .expect("get inbox")
         .expect("present");
-    assert_eq!(inb.records().len(), 2);
+    assert_eq!(inb.len(), 2);
 
     let common = db
         .get_epoch_indexing_data(epoch)
@@ -182,13 +171,11 @@ pub fn test_set_epoch_commitment_stamps(db: &impl OLStateIndexingDatabase) {
     let epoch = 5;
     let acct_a = acct(1);
 
-    db.apply_block_indexing(BlockIndexingWrites {
+    db.apply_block_indexing(
         epoch,
-        block: block(1, 1),
-        created_accounts: vec![acct_a],
-        account_updates: BTreeMap::new(),
-        account_inbox_writes: BTreeMap::new(),
-    })
+        block(1, 1),
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
     .expect("apply block");
 
     let commitment = epoch_commit(epoch, 5);
@@ -221,13 +208,11 @@ pub fn test_account_active_in_multiple_epochs_creation_epoch_unchanged(
 ) {
     let acct_a = acct(1);
     // Created in epoch 2.
-    db.apply_block_indexing(BlockIndexingWrites {
-        epoch: 2,
-        block: block(1, 1),
-        created_accounts: vec![acct_a],
-        account_updates: BTreeMap::new(),
-        account_inbox_writes: BTreeMap::new(),
-    })
+    db.apply_block_indexing(
+        2,
+        block(1, 1),
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
     .expect("apply epoch 2");
     // Activity in epoch 3 must not overwrite creation epoch.
     let mut updates = BTreeMap::new();
@@ -240,13 +225,11 @@ pub fn test_account_active_in_multiple_epochs_creation_epoch_unchanged(
             None,
         )],
     );
-    db.apply_block_indexing(BlockIndexingWrites {
-        epoch: 3,
-        block: block(2, 2),
-        created_accounts: vec![],
-        account_updates: updates,
-        account_inbox_writes: BTreeMap::new(),
-    })
+    db.apply_block_indexing(
+        3,
+        block(2, 2),
+        IndexingWrites::new(vec![], updates, BTreeMap::new()),
+    )
     .expect("apply epoch 3");
 
     assert_eq!(
@@ -271,18 +254,13 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
         )],
     );
 
-    let writes = || BlockIndexingWrites {
-        epoch,
-        block: blk,
-        created_accounts: vec![],
-        account_updates: updates.clone(),
-        account_inbox_writes: BTreeMap::new(),
-    };
+    let writes = || IndexingWrites::new(vec![], updates.clone(), BTreeMap::new());
 
-    db.apply_block_indexing(writes()).expect("first apply");
+    db.apply_block_indexing(epoch, blk, writes())
+        .expect("first apply");
 
     let err = db
-        .apply_block_indexing(writes())
+        .apply_block_indexing(epoch, blk, writes())
         .expect_err("duplicate apply should error");
     let msg = err.to_string();
     assert!(
@@ -291,11 +269,11 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
     );
 
     // Original record is intact and not duplicated.
-    let entry = db
-        .get_account_update_entry(AccountEpochKey::new(epoch, acct_a))
+    let got = db
+        .get_account_update_records(epoch, acct_a)
         .expect("get entry")
         .expect("present");
-    assert_eq!(entry.records().len(), 1);
+    assert_eq!(got.len(), 1);
 }
 
 #[macro_export]

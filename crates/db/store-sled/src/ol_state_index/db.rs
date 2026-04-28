@@ -4,12 +4,12 @@ use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
     DbError, DbResult,
     ol_state_index::{
-        AccountEpochKey, AccountInboxEntry, AccountUpdateEntry, BlockIndexingWrites,
-        EpochIndexingData, EpochIndexingWrites,
+        AccountEpochKey, AccountUpdateRecord, EpochIndexingData, IndexingWrites,
+        InboxMessageRecord,
     },
     traits::OLStateIndexingDatabase,
 };
-use strata_identifiers::{AccountId, Epoch, EpochCommitment};
+use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
 use typed_sled::{error::Error as TSledError, tree::SledTransactionalTree};
 
 use super::schemas::{
@@ -35,7 +35,11 @@ type Trees = (
 );
 
 impl OLStateIndexingDatabase for OLStateIndexingDBSled {
-    fn apply_epoch_indexing(&self, writes: EpochIndexingWrites) -> DbResult<()> {
+    fn apply_epoch_indexing(
+        &self,
+        commitment: EpochCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()> {
         self.config.with_retry(
             (
                 &self.epoch_data_tree,
@@ -44,17 +48,22 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 &self.creation_epoch_tree,
             ),
             |(epoch_t, update_t, inbox_t, creation_t): Trees| {
-                let epoch = writes.epoch;
-                for acct in writes.common.created_accounts() {
+                let epoch = commitment.epoch();
+                let common = EpochIndexingData::new(
+                    Some(commitment),
+                    writes.created_accounts().to_vec(),
+                );
+
+                for acct in common.created_accounts() {
                     creation_t.insert(acct, &epoch)?;
                 }
-                epoch_t.insert(&epoch, &writes.common)?;
+                epoch_t.insert(&epoch, &common)?;
 
-                for (acct, entry) in &writes.account_updates {
-                    update_t.insert(&AccountEpochKey::new(epoch, *acct), entry)?;
+                for (acct, records) in writes.account_updates() {
+                    update_t.insert(&AccountEpochKey::new(epoch, *acct), records)?;
                 }
-                for (acct, entry) in &writes.account_inbox {
-                    inbox_t.insert(&AccountEpochKey::new(epoch, *acct), entry)?;
+                for (acct, records) in writes.account_inbox() {
+                    inbox_t.insert(&AccountEpochKey::new(epoch, *acct), records)?;
                 }
 
                 Ok(())
@@ -62,7 +71,12 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         )
     }
 
-    fn apply_block_indexing(&self, writes: BlockIndexingWrites) -> DbResult<()> {
+    fn apply_block_indexing(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()> {
         self.config.with_retry(
             (
                 &self.epoch_data_tree,
@@ -71,46 +85,41 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 &self.creation_epoch_tree,
             ),
             |(epoch_t, update_t, inbox_t, creation_t): Trees| {
-                let epoch = writes.epoch;
-
-                if !writes.created_accounts.is_empty() {
+                if !writes.created_accounts().is_empty() {
                     let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
-                    for acct in &writes.created_accounts {
+                    for acct in writes.created_accounts() {
                         creation_t.insert(acct, &epoch)?;
                         common.push_created_account(*acct);
                     }
                     epoch_t.insert(&epoch, &common)?;
                 }
 
-                for (acct, records) in &writes.account_updates {
+                for (acct, records) in writes.account_updates() {
                     if records.is_empty() {
                         continue;
                     }
                     let key = AccountEpochKey::new(epoch, *acct);
-                    let mut entry = update_t.get(&key)?.unwrap_or_default();
-                    if entry.records().iter().any(|r| {
+                    let mut existing = update_t.get(&key)?.unwrap_or_default();
+                    if existing.iter().any(|r| {
                         r.update_meta()
-                            .is_some_and(|m| *m.block_commitment() == writes.block)
+                            .is_some_and(|m| *m.block_commitment() == block)
                     }) {
                         return Err(ConflictableTransactionError::Abort(TSledError::abort(
-                            DbError::DuplicateBlockIndexing {
-                                epoch,
-                                block: writes.block,
-                            },
+                            DbError::DuplicateBlockIndexing { epoch, block },
                         )));
                     }
-                    entry.extend(records.iter().cloned());
-                    update_t.insert(&key, &entry)?;
+                    existing.extend(records.iter().cloned());
+                    update_t.insert(&key, &existing)?;
                 }
 
-                for (acct, records) in &writes.account_inbox_writes {
+                for (acct, records) in writes.account_inbox() {
                     if records.is_empty() {
                         continue;
                     }
                     let key = AccountEpochKey::new(epoch, *acct);
-                    let mut entry = inbox_t.get(&key)?.unwrap_or_default();
-                    entry.extend(records.iter().cloned());
-                    inbox_t.insert(&key, &entry)?;
+                    let mut existing = inbox_t.get(&key)?.unwrap_or_default();
+                    existing.extend(records.iter().cloned());
+                    inbox_t.insert(&key, &existing)?;
                 }
 
                 Ok(())
@@ -138,15 +147,24 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         Ok(self.epoch_data_tree.get(&epoch)?)
     }
 
-    fn get_account_update_entry(
+    fn get_account_update_records(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountUpdateEntry>> {
-        Ok(self.account_update_tree.get(&key)?)
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
+        Ok(self
+            .account_update_tree
+            .get(&AccountEpochKey::new(epoch, account))?)
     }
 
-    fn get_account_inbox_entry(&self, key: AccountEpochKey) -> DbResult<Option<AccountInboxEntry>> {
-        Ok(self.account_inbox_tree.get(&key)?)
+    fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>> {
+        Ok(self
+            .account_inbox_tree
+            .get(&AccountEpochKey::new(epoch, account))?)
     }
 
     fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>> {

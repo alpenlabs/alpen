@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use ssz::Encode;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_state_index::{
-    AccountUpdateMeta, AccountUpdateRecord, BlockIndexingWrites, InboxMessageRecord,
+    AccountUpdateMeta, AccountUpdateRecord, IndexingWrites, InboxMessageRecord,
 };
 use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
@@ -190,15 +190,9 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 .push(record);
         }
 
-        let writes = BlockIndexingWrites {
-            epoch,
-            block: commitment,
-            created_accounts,
-            account_updates,
-            account_inbox_writes,
-        };
+        let writes = IndexingWrites::new(created_accounts, account_updates, account_inbox_writes);
         self.ol_state_indexing_mgr
-            .apply_block_indexing_blocking(writes)?;
+            .apply_block_indexing_blocking(epoch, commitment, writes)?;
 
         Ok(())
     }

@@ -10,7 +10,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult, MmrId,
-    ol_state_index::{AccountEpochKey, AccountUpdateEntry},
+    ol_state_index::AccountUpdateRecord,
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
@@ -96,13 +96,14 @@ impl OLRpcProvider for NodeRpcProvider {
             .await
     }
 
-    async fn get_account_update_entry(
+    async fn get_account_update_records(
         &self,
-        key: AccountEpochKey,
-    ) -> DbResult<Option<AccountUpdateEntry>> {
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
         self.storage
             .ol_state_indexing()
-            .get_account_update_entry_async(key)
+            .get_account_update_records_async(epoch, account)
             .await
     }
 
