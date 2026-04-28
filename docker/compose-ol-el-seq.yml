@@ -22,7 +22,7 @@ services:
   strata:
     build:
       context: ..
-      dockerfile: docker/strata/Dockerfile
+      dockerfile: docker/strata/Dockerfile.local
     image: strata:latest
     depends_on:
       - bitcoind

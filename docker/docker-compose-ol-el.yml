@@ -39,7 +39,7 @@ services:
   strata:
     build:
       context: ..
-      dockerfile: docker/strata/Dockerfile
+      dockerfile: docker/strata/Dockerfile.local
       args:
         CARGO_FEATURES: ${CARGO_FEATURES:-}
     user: "0:0"
