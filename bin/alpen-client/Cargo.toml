@@ -7,7 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [features]
-default = ["sequencer"]
+default = ["sequencer", "sp1"]
 sequencer = [
   "dep:alpen-ee-da",
   "dep:alpen-ee-exec-chain",
@@ -22,6 +22,9 @@ sequencer = [
   "dep:strata-config",
   "dep:strata-tasks",
 ]
+# SP1 remote proving for the EE chunk + acct provers. Required for
+# production; native-only test builds can drop this feature.
+sp1 = ["dep:zkaleido-sp1-host", "strata-paas/remote", "strata-zkvm-hosts/sp1"]
 
 [[bin]]
 name = "alpen-client"
@@ -42,20 +45,35 @@ alpen-ee-sequencer = { workspace = true, optional = true }
 alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
+alpen-reth-witness.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-btcio = { workspace = true, optional = true }
+strata-codec.workspace = true
 strata-common = { workspace = true, features = ["async"] }
 strata-config = { workspace = true, optional = true }
+strata-db-types.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-ee-chunk-runtime.workspace = true
+strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
+strata-paas.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
+strata-proofimpl-alpen-acct.workspace = true
+strata-proofimpl-alpen-chunk.workspace = true
+strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
 strata-tasks = { workspace = true, optional = true }
+strata-zkvm-hosts.workspace = true
+zkaleido.workspace = true
+zkaleido-sp1-host = { workspace = true, optional = true }
 
 
 alloy-eips = { workspace = true, optional = true }
@@ -76,7 +94,10 @@ reth-node-builder.workspace = true
 reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
+reth-primitives-traits.workspace = true
 reth-provider.workspace = true
+rsp-primitives.workspace = true
+thiserror.workspace = true
 threadpool.workspace = true
 tokio.workspace = true
 tracing.workspace = true

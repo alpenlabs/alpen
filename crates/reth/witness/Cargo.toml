@@ -15,7 +15,6 @@ strata-evm-ee.workspace = true
 # External
 alloy-consensus.workspace = true
 alloy-primitives.workspace = true
-alloy-rlp.workspace = true
 eyre.workspace = true
 reth-evm.workspace = true
 reth-primitives.workspace = true

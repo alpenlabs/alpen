@@ -46,6 +46,7 @@ async-trait.workspace = true
 bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh.workspace = true
+metrics.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

@@ -83,6 +83,7 @@ impl FcmState {
     ) -> WorkerResult<()> {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
+        metrics::gauge!("strata_ol_tip_slot").set(block.slot() as f64);
         self.ctx().chain_worker().update_safe_tip(block).await
     }
 

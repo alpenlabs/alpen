@@ -235,6 +235,14 @@ impl BatchStorage for InMemoryStorage {
         batch_chunks.insert(batch_id, chunks);
         Ok(())
     }
+
+    async fn get_batch_chunks(
+        &self,
+        batch_id: BatchId,
+    ) -> Result<Option<Vec<ChunkId>>, StorageError> {
+        let batch_chunks = self.batch_chunks.read().unwrap();
+        Ok(batch_chunks.get(&batch_id).cloned())
+    }
 }
 
 #[cfg(all(test, feature = "test-utils"))]

@@ -104,14 +104,12 @@ members = [
   # binaries listed separately
   "bin/datatool",
   "bin/alpen-cli",
-  "bin/strata-client",
   "bin/strata-dbtool",
   "bin/alpen-client",
   "bin/alpen-reth",
-  "bin/strata-sequencer-client",
   "bin/strata-signer",
   "bin/prover-perf",
-  "bin/strata",                  # New binary
+  "bin/strata",        # New binary
 
   # integration tests
   "bin/strata-test-cli",
@@ -124,10 +122,8 @@ default-members = [
   "bin/datatool",
   "bin/alpen-reth",
   "bin/alpen-client",
-  "bin/strata-client",
   "bin/strata",
   "bin/strata-dbtool",
-  "bin/strata-sequencer-client",
   "bin/strata-signer",
   "bin/alpen-cli",
   "bin/strata-test-cli",
@@ -259,7 +255,7 @@ strata-crypto = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.
 strata-identifiers = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc16" }
 strata-l1-envelope-fmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc16" }
 strata-l1-txfmt = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc16" }
-strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc16" }
+strata-logging = { git = "https://github.com/alpenlabs/strata-common", tag = "v0.1.0-alpha-rc17" }
 strata-merkle = { git = "https://github.com/alpenlabs/strata-common", features = [
   "legacy_compact",
 ], tag = "v0.1.0-alpha-rc16" }
@@ -297,9 +293,12 @@ typed-sled = { git = "https://github.com/alpenlabs/typed-sled" }
 zkaleido = { git = "https://github.com/alpenlabs/zkaleido", features = [
   "arbitrary",
   "ssz",
-], tag = "v0.1.0-alpha-rc24" }
-zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24" }
-zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc24" }
+], tag = "v0.1.0-alpha-rc25" }
+zkaleido-native-adapter = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25" }
+zkaleido-sp1-groth16-verifier = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25" }
+zkaleido-sp1-host = { git = "https://github.com/alpenlabs/zkaleido", tag = "v0.1.0-alpha-rc25", features = [
+  "remote-prover",
+] }
 
 make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
@@ -450,6 +449,8 @@ jsonrpsee-http-client = { version = "0.26.0" }
 jsonrpsee-types = { version = "0.26.0" }
 k256 = { version = "0.13.4", features = ["schnorr"] }
 lru = "0.17"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.16"
 mockall = "0.14"
 musig2 = { version = "0.1.0", features = ["serde"] }
 num_enum = "0.7"

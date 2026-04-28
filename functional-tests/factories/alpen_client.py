@@ -115,6 +115,9 @@ class AlpenClientFactory(flexitest.Factory):
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
             "-vvvv",
+            # Functional tests don't ship the SP1 guest ELFs, so run the
+            # EE chunk + acct provers on the zkaleido NativeHost.
+            "--dev-native-prover",
         ]
         # fmt: on
 

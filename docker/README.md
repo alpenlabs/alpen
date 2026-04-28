@@ -44,7 +44,7 @@ Build and run the containers:
 docker compose up --build
 ```
 
-Chances are that the above step will fail as some bitcoin blocks have to be mined before the `strata_client` container can work properly.
+Chances are that the above step will fail as some bitcoin blocks have to be mined before the sequencer container can work properly.
 Mining of the required number of blocks should happen automatically when the `stata_bitcoind` container starts.
 After that, you can simply restart the containers:
 

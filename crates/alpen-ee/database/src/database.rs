@@ -36,8 +36,8 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     /// Insert first block to local view of canonical finalized chain (ie. genesis block)
     fn init_finalized_chain(&self, hash: Hash) -> DbResult<()>;
 
-    /// Extend local view of canonical chain with specified block hash
-    fn extend_finalized_chain(&self, hash: Hash) -> DbResult<()>;
+    /// Extend local view of canonical chain up to and including the specified block hash.
+    fn extend_finalized_chain(&self, new_tip: Hash) -> DbResult<()>;
 
     /// Revert local view of canonical chain to specified height
     fn revert_finalized_chain(&self, to_height: u64) -> DbResult<()>;
@@ -112,6 +112,9 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Set or update batch-chunk association.
     fn set_batch_chunks(&self, batch_id: BatchId, chunks: Vec<ChunkId>) -> DbResult<()>;
+
+    /// Get the chunk-id list previously set for a batch.
+    fn get_batch_chunks(&self, batch_id: BatchId) -> DbResult<Option<Vec<ChunkId>>>;
 }
 
 pub(crate) mod ops {
@@ -127,7 +130,7 @@ pub(crate) mod ops {
 
             save_exec_block(block: ExecBlockRecord, payload: Vec<u8>) => ();
             init_finalized_chain(hash: Hash) => ();
-            extend_finalized_chain(hash: Hash) => ();
+            extend_finalized_chain(new_tip: Hash) => ();
             revert_finalized_chain(to_height: u64) => ();
             prune_block_data(to_height: u64) => ();
             best_finalized_block() => Option<ExecBlockRecord>;
@@ -155,6 +158,7 @@ pub(crate) mod ops {
             get_chunk_by_idx(idx: u64) => Option<(Chunk, ChunkStatus)>;
             get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
             set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
+            get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
         }
     }
 }

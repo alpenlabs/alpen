@@ -12,11 +12,14 @@ alpen-reth-db.workspace = true
 bitcoin.workspace = true
 strata-acct-types.workspace = true
 strata-db-store-sled.workspace = true
+strata-db-types.workspace = true
 strata-ee-acct-types.workspace = true
 strata-ee-chain-types.workspace = true
 strata-identifiers.workspace = true
+strata-paas.workspace = true
 strata-storage.workspace = true
 strata-storage-common.workspace = true
+zkaleido.workspace = true
 
 async-trait.workspace = true
 borsh.workspace = true

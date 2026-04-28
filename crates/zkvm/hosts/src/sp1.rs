@@ -42,3 +42,13 @@ define_host!(
     GUEST_CHECKPOINT_NEW_ELF,
     "guest-checkpoint-new.elf"
 );
+define_host!(
+    ALPEN_CHUNK_HOST,
+    GUEST_ALPEN_CHUNK_ELF,
+    "guest-alpen-chunk.elf"
+);
+define_host!(
+    ALPEN_ACCT_HOST,
+    GUEST_ALPEN_ACCT_ELF,
+    "guest-alpen-acct.elf"
+);

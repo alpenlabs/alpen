@@ -41,7 +41,7 @@ class RevertOLStateDeleteBlocksTest(StrataNodeTest):
         seq_rpc = setup["rpc"]
 
         # Wait for extra blocks beyond checkpoint terminal.
-        seq_service.wait_for_additional_blocks(5, seq_rpc, timeout_per_block=10)
+        seq_service.wait_for_additional_blocks(6, seq_rpc, timeout_per_block=10)
 
         live_sync = seq_service.get_sync_status(seq_rpc)
         old_live_tip_slot = live_sync["tip"]["slot"]
