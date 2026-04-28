@@ -280,7 +280,8 @@ fn test_process_chain_with_multiple_epochs() {
     // with 3 blocks per epoch (epochs 0, 1, 2, 3 = 12 blocks total)
     let mut state = make_genesis_state();
     const BLOCKS_PER_EPOCH: u64 = 3;
-    const TOTAL_BLOCKS: usize = 12; // 4 epochs * 3 blocks each
+    const EPOCH_COUNT: usize = 4;
+    const TOTAL_BLOCKS: usize = EPOCH_COUNT * BLOCKS_PER_EPOCH as usize;
 
     let mut blocks = Vec::new();
     let mut headers = Vec::new();

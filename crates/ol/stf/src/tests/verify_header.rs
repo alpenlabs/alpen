@@ -152,6 +152,26 @@ fn test_verify_header_continuity_failures() {
 }
 
 #[test]
+fn test_verify_header_continuity_rejects_nonterminal_genesis() {
+    let genesis = OLBlockHeader::new(
+        1000000,
+        BlockFlags::zero(),
+        0,
+        0,
+        OLBlockId::null(),
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+
+    assert!(matches!(
+        verify_header_continuity(&genesis, None)
+            .expect_err("nonterminal genesis should fail continuity"),
+        ExecError::GenesisNonterminal
+    ));
+}
+
+#[test]
 fn test_verify_rejects_wrong_parent_blkid() {
     // Test that verification fails when parent block ID doesn't match
     let mut state = make_genesis_state();
