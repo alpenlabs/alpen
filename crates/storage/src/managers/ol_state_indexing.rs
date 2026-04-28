@@ -66,6 +66,30 @@ impl OLStateIndexingManager {
             .await
     }
 
+    pub fn rollback_to_block_blocking(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+    ) -> DbResult<()> {
+        self.ops.rollback_to_block_blocking(epoch, block)
+    }
+
+    pub async fn rollback_to_block_async(
+        &self,
+        epoch: Epoch,
+        block: OLBlockCommitment,
+    ) -> DbResult<()> {
+        self.ops.rollback_to_block_async(epoch, block).await
+    }
+
+    pub fn rollback_to_epoch_blocking(&self, epoch: Epoch) -> DbResult<()> {
+        self.ops.rollback_to_epoch_blocking(epoch)
+    }
+
+    pub async fn rollback_to_epoch_async(&self, epoch: Epoch) -> DbResult<()> {
+        self.ops.rollback_to_epoch_async(epoch).await
+    }
+
     pub fn set_epoch_commitment_blocking(
         &self,
         epoch: Epoch,

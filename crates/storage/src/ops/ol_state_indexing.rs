@@ -12,6 +12,8 @@ inst_ops_simple! {
     (<D: OLStateIndexingDatabase> => OLStateIndexingOps, component = components::STORAGE_OL_STATE_INDEXING) {
         apply_epoch_indexing(commitment: EpochCommitment, writes: IndexingWrites) => ();
         apply_block_indexing(epoch: Epoch, block: OLBlockCommitment, writes: IndexingWrites) => ();
+        rollback_to_block(epoch: Epoch, block: OLBlockCommitment) => ();
+        rollback_to_epoch(epoch: Epoch) => ();
         set_epoch_commitment(epoch: Epoch, commitment: EpochCommitment) => ();
         get_epoch_indexing_data(epoch: Epoch) => Option<EpochIndexingData>;
         get_account_update_records(epoch: Epoch, account: AccountId) => Option<Vec<AccountUpdateRecord>>;

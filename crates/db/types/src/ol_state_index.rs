@@ -19,17 +19,20 @@ use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitm
 ///
 /// `epoch_commitment` is set once at epoch finalization; `created_accounts`
 /// grows incrementally as blocks in the epoch execute (block-sync) or is
-/// populated in one shot (checkpoint-sync).
+/// populated in one shot (checkpoint-sync). Each entry pairs the account
+/// with the block that created it (block-sync), or `None` when block
+/// attribution is unavailable (checkpoint-sync). `None`-attributed entries
+/// are immune to per-block rollback and only drop on full-epoch rollback.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EpochIndexingData {
     epoch_commitment: Option<EpochCommitment>,
-    created_accounts: Vec<AccountId>,
+    created_accounts: Vec<(AccountId, Option<OLBlockCommitment>)>,
 }
 
 impl EpochIndexingData {
     pub fn new(
         epoch_commitment: Option<EpochCommitment>,
-        created_accounts: Vec<AccountId>,
+        created_accounts: Vec<(AccountId, Option<OLBlockCommitment>)>,
     ) -> Self {
         Self {
             epoch_commitment,
@@ -41,16 +44,36 @@ impl EpochIndexingData {
         self.epoch_commitment.as_ref()
     }
 
-    pub fn created_accounts(&self) -> &[AccountId] {
+    pub fn created_accounts(&self) -> &[(AccountId, Option<OLBlockCommitment>)] {
         &self.created_accounts
+    }
+
+    /// Iterates just the account ids of created accounts, dropping block attribution.
+    pub fn created_account_ids(&self) -> impl Iterator<Item = AccountId> + '_ {
+        self.created_accounts.iter().map(|(acct, _)| *acct)
     }
 
     pub fn set_epoch_commitment(&mut self, commitment: EpochCommitment) {
         self.epoch_commitment = Some(commitment);
     }
 
-    pub fn push_created_account(&mut self, acct: AccountId) {
-        self.created_accounts.push(acct);
+    pub fn push_created_account(&mut self, acct: AccountId, block: Option<OLBlockCommitment>) {
+        self.created_accounts.push((acct, block));
+    }
+
+    /// Removes entries whose attributed block has slot strictly greater than
+    /// `slot`. Entries with `None` attribution (checkpoint-sync) are never
+    /// matched. Returns the dropped account ids in insertion order.
+    pub fn drop_creators_after_slot(&mut self, slot: u64) -> Vec<AccountId> {
+        let mut dropped = Vec::new();
+        self.created_accounts.retain(|(acct, b)| {
+            let drop = b.is_some_and(|c| c.slot() > slot);
+            if drop {
+                dropped.push(*acct);
+            }
+            !drop
+        });
+        dropped
     }
 }
 

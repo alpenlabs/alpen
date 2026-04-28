@@ -702,6 +702,19 @@ pub trait OLStateIndexingDatabase: Send + Sync + 'static {
         writes: IndexingWrites,
     ) -> DbResult<()>;
 
+    /// Atomically rolls back all block-attributed writes in `epoch` whose
+    /// block slot is strictly greater than `block.slot()`. Records and
+    /// creators tagged with `block.slot()` itself are kept. Entries with
+    /// `None` attribution (checkpoint-sync) are preserved; they only drop
+    /// when the entire epoch is dropped via [`Self::rollback_to_epoch`].
+    ///
+    /// Idempotent. Does not clear `EpochIndexingData.epoch_commitment`.
+    fn rollback_to_block(&self, epoch: Epoch, block: OLBlockCommitment) -> DbResult<()>;
+
+    /// Atomically drops all indexing data for epochs strictly greater than
+    /// `epoch`. The given `epoch` is preserved. Idempotent.
+    fn rollback_to_epoch(&self, epoch: Epoch) -> DbResult<()>;
+
     /// Sets the epoch commitment on the existing common row.
     ///
     /// Called once by block-sync producers at epoch finalization. Errors if

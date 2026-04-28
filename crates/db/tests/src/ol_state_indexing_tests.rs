@@ -52,7 +52,8 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
     db.apply_epoch_indexing(commitment, writes)
         .expect("apply_epoch");
 
-    let expected = EpochIndexingData::new(Some(commitment), vec![acct_a]);
+    // Checkpoint-sync has no per-block attribution; entries are tagged `None`.
+    let expected = EpochIndexingData::new(Some(commitment), vec![(acct_a, None)]);
     assert_eq!(
         db.get_epoch_indexing_data(epoch).expect("get common"),
         Some(expected)
@@ -151,7 +152,7 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
         .get_epoch_indexing_data(epoch)
         .expect("get common")
         .expect("present");
-    assert_eq!(common.created_accounts(), &[acct_a]);
+    assert_eq!(common.created_accounts(), &[(acct_a, Some(block1))]);
     assert!(common.epoch_commitment().is_none());
 
     assert_eq!(
@@ -163,10 +164,11 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
 pub fn test_set_epoch_commitment_stamps(db: &impl OLStateIndexingDatabase) {
     let epoch = 5;
     let acct_a = acct(1);
+    let blk = block(1, 1);
 
     db.apply_block_indexing(
         epoch,
-        block(1, 1),
+        blk,
         IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
     )
     .expect("apply block");
@@ -181,7 +183,7 @@ pub fn test_set_epoch_commitment_stamps(db: &impl OLStateIndexingDatabase) {
         .expect("present");
     assert_eq!(common.epoch_commitment(), Some(&commitment));
     // Created accounts preserved.
-    assert_eq!(common.created_accounts(), &[acct_a]);
+    assert_eq!(common.created_accounts(), &[(acct_a, Some(blk))]);
 }
 
 pub fn test_set_epoch_commitment_missing_row_errors(db: &impl OLStateIndexingDatabase) {
@@ -269,6 +271,276 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
     assert_eq!(got.len(), 1);
 }
 
+/// Apply two blocks in an epoch; rollback to block1 should drop block2's
+/// data while keeping block1 intact.
+pub fn test_rollback_to_block_drops_later_blocks(db: &impl OLStateIndexingDatabase) {
+    let epoch = 5;
+    let acct_a = acct(1);
+    let acct_b = acct(2);
+    let blk1 = block(10, 1);
+    let blk2 = block(11, 2);
+
+    let mut u1 = BTreeMap::new();
+    u1.insert(
+        acct_a,
+        vec![record(
+            Some(AccountUpdateMeta::new(blk1, hash(1))),
+            1,
+            5,
+            Some(vec![0xAA]),
+        )],
+    );
+    db.apply_block_indexing(
+        epoch,
+        blk1,
+        IndexingWrites::new(vec![acct_a], u1, BTreeMap::new()),
+    )
+    .expect("apply blk1");
+
+    let mut u2 = BTreeMap::new();
+    u2.insert(
+        acct_a,
+        vec![record(
+            Some(AccountUpdateMeta::new(blk2, hash(2))),
+            2,
+            6,
+            Some(vec![0xBB]),
+        )],
+    );
+    let mut i2 = BTreeMap::new();
+    i2.insert(
+        acct_a,
+        vec![InboxMessageRecord::new(vec![0xA2], Some(blk2))],
+    );
+    db.apply_block_indexing(epoch, blk2, IndexingWrites::new(vec![acct_b], u2, i2))
+        .expect("apply blk2");
+
+    db.rollback_to_block(epoch, blk1).expect("rollback");
+
+    // Only block1's update for acct_a is left.
+    let got = db
+        .get_account_update_records(epoch, acct_a)
+        .expect("get update")
+        .expect("present");
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].seq_no(), 1);
+
+    // block2's inbox write gone.
+    assert!(db
+        .get_account_inbox_records(epoch, acct_a)
+        .expect("get inbox")
+        .is_none());
+
+    // acct_a creation kept (created in blk1, slot <= cutoff); acct_b dropped.
+    assert_eq!(
+        db.get_account_creation_epoch(acct_a)
+            .expect("get creation a"),
+        Some(epoch)
+    );
+    assert!(db
+        .get_account_creation_epoch(acct_b)
+        .expect("get creation b")
+        .is_none());
+
+    let common = db
+        .get_epoch_indexing_data(epoch)
+        .expect("get common")
+        .expect("present");
+    assert_eq!(common.created_accounts(), &[(acct_a, Some(blk1))]);
+}
+
+/// Rolling back to a block with slot >= every applied block keeps
+/// everything intact.
+pub fn test_rollback_to_block_keeps_when_at_or_past_tip(db: &impl OLStateIndexingDatabase) {
+    let epoch = 6;
+    let acct_a = acct(1);
+    let blk = block(10, 1);
+    let mut u = BTreeMap::new();
+    u.insert(
+        acct_a,
+        vec![record(
+            Some(AccountUpdateMeta::new(blk, hash(1))),
+            1,
+            5,
+            Some(vec![0xAA]),
+        )],
+    );
+    db.apply_block_indexing(
+        epoch,
+        blk,
+        IndexingWrites::new(vec![acct_a], u, BTreeMap::new()),
+    )
+    .expect("apply");
+
+    // Cutoff at blk's own slot keeps blk (cutoff is inclusive).
+    db.rollback_to_block(epoch, blk).expect("rollback");
+
+    let got = db
+        .get_account_update_records(epoch, acct_a)
+        .expect("get update")
+        .expect("present");
+    assert_eq!(got.len(), 1);
+    assert_eq!(
+        db.get_account_creation_epoch(acct_a).expect("get creation"),
+        Some(epoch)
+    );
+}
+
+pub fn test_rollback_to_block_idempotent(db: &impl OLStateIndexingDatabase) {
+    let epoch = 7;
+    let blk_at = block(5, 0);
+
+    // No prior apply: rollback is a silent no-op.
+    db.rollback_to_block(epoch, blk_at).expect("first");
+    db.rollback_to_block(epoch, blk_at).expect("second");
+
+    let acct_a = acct(1);
+    let blk_later = block(10, 1);
+    let mut u = BTreeMap::new();
+    u.insert(
+        acct_a,
+        vec![record(
+            Some(AccountUpdateMeta::new(blk_later, hash(1))),
+            1,
+            5,
+            Some(vec![0xAA]),
+        )],
+    );
+    db.apply_block_indexing(
+        epoch,
+        blk_later,
+        IndexingWrites::new(vec![acct_a], u, BTreeMap::new()),
+    )
+    .expect("apply");
+
+    db.rollback_to_block(epoch, blk_at).expect("rb1");
+    db.rollback_to_block(epoch, blk_at).expect("rb2");
+    assert!(db
+        .get_account_update_records(epoch, acct_a)
+        .expect("get update")
+        .is_none());
+    assert!(db
+        .get_account_creation_epoch(acct_a)
+        .expect("get creation")
+        .is_none());
+}
+
+pub fn test_rollback_to_block_preserves_commitment(db: &impl OLStateIndexingDatabase) {
+    let epoch = 8;
+    let acct_a = acct(1);
+    let blk = block(20, 1);
+    let commitment = epoch_commit(epoch, 9);
+
+    db.apply_block_indexing(
+        epoch,
+        blk,
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("apply");
+    db.set_epoch_commitment(epoch, commitment).expect("set");
+
+    // Rollback to slot 0 drops the only block-tagged creator.
+    db.rollback_to_block(epoch, block(0, 0)).expect("rollback");
+
+    let common = db
+        .get_epoch_indexing_data(epoch)
+        .expect("get common")
+        .expect("present");
+    assert_eq!(common.epoch_commitment(), Some(&commitment));
+    assert!(common.created_accounts().is_empty());
+}
+
+/// Per-block rollback should never drop checkpoint-sync (`None`) creators.
+pub fn test_rollback_to_block_immune_to_checkpoint_sync(db: &impl OLStateIndexingDatabase) {
+    let epoch = 9;
+    let acct_a = acct(1);
+    let commitment = epoch_commit(epoch, 9);
+
+    db.apply_epoch_indexing(
+        commitment,
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("apply epoch");
+
+    db.rollback_to_block(epoch, block(0, 0)).expect("rollback");
+
+    let common = db
+        .get_epoch_indexing_data(epoch)
+        .expect("get common")
+        .expect("present");
+    assert_eq!(common.created_accounts(), &[(acct_a, None)]);
+    assert_eq!(
+        db.get_account_creation_epoch(acct_a).expect("get creation"),
+        Some(epoch)
+    );
+}
+
+/// Apply data in epochs 5, 6, 7. Roll back to epoch 5: keeps 5, drops 6 and 7.
+pub fn test_rollback_to_epoch_drops_later_epochs(db: &impl OLStateIndexingDatabase) {
+    let acct_a = acct(1);
+    for ep in [5u32, 6, 7] {
+        let blk = block(ep as u64, ep as u8);
+        let mut u = BTreeMap::new();
+        u.insert(
+            acct_a,
+            vec![record(
+                Some(AccountUpdateMeta::new(blk, hash(ep as u8))),
+                1,
+                5,
+                Some(vec![0xAA]),
+            )],
+        );
+        let creators = if ep == 5 { vec![acct_a] } else { vec![] };
+        db.apply_block_indexing(ep, blk, IndexingWrites::new(creators, u, BTreeMap::new()))
+            .expect("apply");
+    }
+
+    db.rollback_to_epoch(5).expect("rollback");
+
+    // Epoch 5 intact.
+    assert!(db.get_epoch_indexing_data(5).expect("get 5").is_some());
+    assert!(db
+        .get_account_update_records(5, acct_a)
+        .expect("get a@5")
+        .is_some());
+    assert_eq!(
+        db.get_account_creation_epoch(acct_a).expect("get creation"),
+        Some(5)
+    );
+
+    // Epochs 6, 7 wiped.
+    for ep in [6u32, 7] {
+        assert!(db.get_epoch_indexing_data(ep).expect("get").is_none());
+        assert!(db
+            .get_account_update_records(ep, acct_a)
+            .expect("get a")
+            .is_none());
+    }
+}
+
+pub fn test_rollback_to_epoch_idempotent(db: &impl OLStateIndexingDatabase) {
+    // No-op on empty store.
+    db.rollback_to_epoch(99).expect("first");
+    db.rollback_to_epoch(99).expect("second");
+
+    // Apply once at higher epoch, rollback twice.
+    let acct_a = acct(1);
+    let blk = block(50, 1);
+    db.apply_block_indexing(
+        10,
+        blk,
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("apply");
+    db.rollback_to_epoch(5).expect("rb1");
+    db.rollback_to_epoch(5).expect("rb2");
+    assert!(db.get_epoch_indexing_data(10).expect("get").is_none());
+    assert!(db
+        .get_account_creation_epoch(acct_a)
+        .expect("get creation")
+        .is_none());
+}
+
 #[macro_export]
 macro_rules! ol_state_indexing_db_tests {
     ($setup_expr:expr) => {
@@ -312,6 +584,48 @@ macro_rules! ol_state_indexing_db_tests {
         fn test_apply_block_indexing_duplicate_block_errors() {
             let db = $setup_expr;
             $crate::ol_state_indexing_tests::test_apply_block_indexing_duplicate_block_errors(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_block_drops_later_blocks() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_block_drops_later_blocks(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_block_keeps_when_at_or_past_tip() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_block_keeps_when_at_or_past_tip(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_block_idempotent() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_block_idempotent(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_block_preserves_commitment() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_block_preserves_commitment(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_block_immune_to_checkpoint_sync() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_block_immune_to_checkpoint_sync(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_epoch_drops_later_epochs() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_epoch_drops_later_epochs(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_epoch_idempotent() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_epoch_idempotent(&db);
         }
     };
 }

@@ -33,6 +33,32 @@ type Trees = (
     SledTransactionalTree<OLAccountCreationEpochSchema>,
 );
 
+/// Returns the set of account ids that have either an update or an inbox row
+/// keyed by `epoch`. Done as a non-transactional scan since
+/// [`SledTransactionalTree`] doesn't expose ranged iteration; the actual
+/// rollback writes happen inside a transaction afterwards.
+fn collect_accounts_in_epoch<F>(
+    epoch: Epoch,
+    update_tree: &typed_sled::tree::SledTree<OLAccountUpdateEntrySchema>,
+    inbox_tree: &typed_sled::tree::SledTree<OLAccountInboxEntrySchema>,
+    mut emit: F,
+) -> DbResult<()>
+where
+    F: FnMut(AccountId),
+{
+    let lo = AccountEpochKey::new(epoch, AccountId::new([0u8; 32]));
+    let hi = AccountEpochKey::new(epoch, AccountId::new([0xffu8; 32]));
+    for item in update_tree.range(lo..=hi)? {
+        let (key, _) = item?;
+        emit(key.account_id());
+    }
+    for item in inbox_tree.range(lo..=hi)? {
+        let (key, _) = item?;
+        emit(key.account_id());
+    }
+    Ok(())
+}
+
 impl OLStateIndexingDatabase for OLStateIndexingDBSled {
     fn apply_epoch_indexing(
         &self,
@@ -48,10 +74,18 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
             ),
             |(epoch_t, update_t, inbox_t, creation_t): Trees| {
                 let epoch = commitment.epoch();
-                let common =
-                    EpochIndexingData::new(Some(commitment), writes.created_accounts().to_vec());
+                // Checkpoint-sync has no per-block attribution: writes the
+                // whole epoch atomically, so block-rollback can't undo
+                // individual blocks. Mark with `None` so per-block rollback
+                // is a no-op against these entries.
+                let created: Vec<(AccountId, Option<OLBlockCommitment>)> = writes
+                    .created_accounts()
+                    .iter()
+                    .map(|acct| (*acct, None))
+                    .collect();
+                let common = EpochIndexingData::new(Some(commitment), created);
 
-                for acct in common.created_accounts() {
+                for (acct, _) in common.created_accounts() {
                     creation_t.insert(acct, &epoch)?;
                 }
                 epoch_t.insert(&epoch, &common)?;
@@ -89,7 +123,7 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
                 for acct in writes.created_accounts() {
                     creation_t.insert(acct, &epoch)?;
-                    common.push_created_account(*acct);
+                    common.push_created_account(*acct, Some(block));
                 }
                 epoch_t.insert(&epoch, &common)?;
 
@@ -121,6 +155,131 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                     inbox_t.insert(&key, &existing)?;
                 }
 
+                Ok(())
+            },
+        )
+    }
+
+    fn rollback_to_block(&self, epoch: Epoch, block: OLBlockCommitment) -> DbResult<()> {
+        let cutoff_slot = block.slot();
+        // Pre-scan affected accounts via the non-transactional trees.
+        // SledTransactionalTree has no range API, so we collect keys here and
+        // act on them inside the transaction below.
+        let mut affected: std::collections::BTreeSet<AccountId> = std::collections::BTreeSet::new();
+        collect_accounts_in_epoch(
+            epoch,
+            &self.account_update_tree,
+            &self.account_inbox_tree,
+            |acct| {
+                affected.insert(acct);
+            },
+        )?;
+
+        self.config.with_retry(
+            (
+                &self.epoch_data_tree,
+                &self.account_update_tree,
+                &self.account_inbox_tree,
+                &self.creation_epoch_tree,
+            ),
+            |(epoch_t, update_t, inbox_t, creation_t): Trees| {
+                // Filter records past the cutoff out of update + inbox rows;
+                // delete the row when nothing is left.
+                for acct in &affected {
+                    let key = AccountEpochKey::new(epoch, *acct);
+                    if let Some(records) = update_t.get(&key)? {
+                        let kept: Vec<AccountUpdateRecord> = records
+                            .into_iter()
+                            .filter(|r| {
+                                r.update_meta()
+                                    .is_none_or(|m| m.block_commitment().slot() <= cutoff_slot)
+                            })
+                            .collect();
+                        if kept.is_empty() {
+                            update_t.remove(&key)?;
+                        } else {
+                            update_t.insert(&key, &kept)?;
+                        }
+                    }
+                    if let Some(records) = inbox_t.get(&key)? {
+                        let kept: Vec<InboxMessageRecord> = records
+                            .into_iter()
+                            .filter(|r| {
+                                r.block_commitment().is_none_or(|c| c.slot() <= cutoff_slot)
+                            })
+                            .collect();
+                        if kept.is_empty() {
+                            inbox_t.remove(&key)?;
+                        } else {
+                            inbox_t.insert(&key, &kept)?;
+                        }
+                    }
+                }
+
+                // Drop creators past the cutoff from the common row and remove
+                // their creation_epoch entries.
+                if let Some(mut common) = epoch_t.get(&epoch)? {
+                    let dropped = common.drop_creators_after_slot(cutoff_slot);
+                    if !dropped.is_empty() {
+                        epoch_t.insert(&epoch, &common)?;
+                        for acct in dropped {
+                            creation_t.remove(&acct)?;
+                        }
+                    }
+                }
+
+                Ok(())
+            },
+        )
+    }
+
+    fn rollback_to_epoch(&self, epoch: Epoch) -> DbResult<()> {
+        // Enumerate epochs strictly greater than `epoch` to drop.
+        let mut epochs_to_drop: Vec<Epoch> = Vec::new();
+        for item in self.epoch_data_tree.range((epoch + 1)..)? {
+            let (e, _) = item?;
+            epochs_to_drop.push(e);
+        }
+        // Per-epoch, collect affected accounts via update/inbox trees, since
+        // an epoch can have account rows even if the common row is missing
+        // (defensive — should not happen in practice).
+        let mut per_epoch: Vec<(Epoch, std::collections::BTreeSet<AccountId>)> =
+            Vec::with_capacity(epochs_to_drop.len());
+        for e in &epochs_to_drop {
+            let mut affected: std::collections::BTreeSet<AccountId> =
+                std::collections::BTreeSet::new();
+            collect_accounts_in_epoch(
+                *e,
+                &self.account_update_tree,
+                &self.account_inbox_tree,
+                |acct| {
+                    affected.insert(acct);
+                },
+            )?;
+            per_epoch.push((*e, affected));
+        }
+
+        self.config.with_retry(
+            (
+                &self.epoch_data_tree,
+                &self.account_update_tree,
+                &self.account_inbox_tree,
+                &self.creation_epoch_tree,
+            ),
+            |(epoch_t, update_t, inbox_t, creation_t): Trees| {
+                for (e, affected) in &per_epoch {
+                    for acct in affected {
+                        let key = AccountEpochKey::new(*e, *acct);
+                        update_t.remove(&key)?;
+                        inbox_t.remove(&key)?;
+                    }
+                    if let Some(common) = epoch_t.get(e)? {
+                        for (acct, _) in common.created_accounts() {
+                            creation_t.remove(acct)?;
+                        }
+                        epoch_t.remove(e)?;
+                    }
+                }
                 Ok(())
             },
         )
