@@ -163,17 +163,17 @@ impl ChainWorkerServiceState {
         let (output, new_state) =
             self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
 
-        // Persist results (including the full state)
-        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
-
         // Handle epoch terminal if needed
         debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
         if block.header().is_terminal() {
-            self.handle_complete_epoch(&block, &output)?;
+            self.handle_complete_epoch(&block, &output, &new_state)?;
             // Send the epoch commitment to receiver
             // TODO: it seems to be done for each block at the moment. Ideally we would do it just
             // here.
         }
+
+        // Persist results (including the full state)
+        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
 
         Ok(())
     }
@@ -305,9 +305,10 @@ impl ChainWorkerServiceState {
         &mut self,
         block: &OLBlock,
         last_block_output: &OLBlockExecutionOutput,
+        new_state: &OLState,
     ) -> WorkerResult<()> {
         // Use the block header epoch - this is the epoch being completed.
-        // Note: The write batch contains POST-manifest state where cur_epoch is already
+        // Note: new_state reflects POST-manifest state where cur_epoch is already
         // advanced. The header epoch is set during block assembly and doesn't change.
         let completed_epoch = block.header().epoch();
 
@@ -323,16 +324,11 @@ impl ChainWorkerServiceState {
             .map(|s| *s.terminal())
             .unwrap_or(OLBlockCommitment::null());
 
-        // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
-        let epochal = last_block_output.write_batch().epochal_writes();
-        let new_tip_height = epochal
-            .last_l1_height
-            .expect("terminal block must have L1 height in write batch");
-        let new_tip_blkid = epochal
-            .last_l1_blkid
-            .as_ref()
-            .expect("terminal block must have L1 blkid in write batch");
-        let new_l1_block = L1BlockCommitment::new(new_tip_height, *new_tip_blkid);
+        // Read L1 info from the post-state. The write batch only stores diffs, so it
+        // may not contain a last_l1_* update if the terminal block had no new manifests.
+        let epoch_state = new_state.epoch_state();
+        let new_l1_block =
+            L1BlockCommitment::new(epoch_state.last_l1_height(), *epoch_state.last_l1_blkid());
 
         let epoch_final_state = *last_block_output.computed_state_root();
 
