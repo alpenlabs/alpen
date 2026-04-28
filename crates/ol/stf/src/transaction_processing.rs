@@ -125,6 +125,11 @@ fn process_update_tx<S: IStateAccessorMut>(
         effects,
         &mut verifier,
     )?;
+    if !verifier.is_exhausted() {
+        return Err(ExecError::Acct(AcctError::InvalidUpdateProof {
+            account_id: target,
+        }));
+    }
 
     // 3. Actually take balance and write new account inner state.
     let serial = account_state.serial();
