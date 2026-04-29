@@ -15630,6 +15630,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-da",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
