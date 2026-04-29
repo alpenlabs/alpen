@@ -7,8 +7,9 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::ol_state_index::{
-    AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites,
+use strata_db_types::{
+    errors::DbError,
+    ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
 use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
@@ -19,6 +20,7 @@ use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
+use tracing::debug;
 
 use crate::{
     errors::{WorkerError, WorkerResult},
@@ -181,14 +183,38 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
         let commitment = summary.get_epoch_commitment();
-        self.ol_checkpoint_mgr
-            .insert_epoch_summary_blocking(summary)?;
-        // Stamp the commitment onto the in-progress epoch indexing row.
-        // NOTE: not in the same transaction as the epoch summary insert; a
-        // crash between these two calls leaves the indexing row without a
-        // commitment, recoverable by re-stamping on restart.
+
+        // Idempotent: Stamp the commitment onto the indexing row first.
         self.ol_state_indexing_mgr
             .set_epoch_commitment_blocking(commitment.epoch(), commitment)?;
+
+        // Insert the epoch summary last which indicates that the whole finalization persisted
+        match self
+            .ol_checkpoint_mgr
+            .insert_epoch_summary_blocking(summary)
+        {
+            Ok(()) => {}
+            Err(DbError::OverwriteEpoch(c)) if c == commitment => {
+                let existing = self
+                    .ol_checkpoint_mgr
+                    .get_epoch_summary_blocking(commitment)?
+                    .ok_or_else(|| {
+                        WorkerError::Unexpected(format!(
+                            "OverwriteEpoch reported but get_epoch_summary returned None for {commitment}"
+                        ))
+                    })?;
+                if existing != summary {
+                    return Err(WorkerError::Database(DbError::OverwriteEpoch(commitment)));
+                }
+                debug!(
+                    %commitment,
+                    "epoch summary already inserted with matching contents; \
+                     treating as crash-restart retry"
+                );
+            }
+            Err(e) => return Err(e.into()),
+        }
+
         let _ = self.epoch_summary_tx.send(Some(commitment));
         Ok(())
     }
