@@ -99,6 +99,7 @@ members = [
   # binaries listed separately
   "bin/datatool",
   "bin/alpen-cli",
+  "bin/ee-da-verify",
   "bin/strata-dbtool",
   "bin/alpen-client",
   "bin/strata-signer",
@@ -119,6 +120,7 @@ default-members = [
   "bin/strata-dbtool",
   "bin/strata-signer",
   "bin/alpen-cli",
+  "bin/ee-da-verify",
   "bin/strata-test-cli",
 ]
 

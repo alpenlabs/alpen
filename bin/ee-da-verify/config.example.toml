@@ -1,0 +1,5 @@
+bitcoind_url = "http://127.0.0.1:18443"
+bitcoind_rpc_user = "rpc_user"
+bitcoind_rpc_password = "rpc_password"
+magic_bytes = "STRA"
+chain_spec = "dev"

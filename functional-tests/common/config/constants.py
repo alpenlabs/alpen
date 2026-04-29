@@ -4,6 +4,9 @@ Constants used throughout the functional test suite.
 
 from enum import Enum
 
+# Default magic bytes for EE DA testing (must be 4 ASCII bytes).
+DEFAULT_DA_MAGIC_BYTES = b"ALPN"
+
 # =============================================================================
 # EVM Dev Accounts
 # =============================================================================

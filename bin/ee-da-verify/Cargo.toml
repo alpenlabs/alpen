@@ -1,0 +1,36 @@
+[package]
+edition = "2021"
+name = "ee-da-verify"
+version = "0.3.0-alpha.1"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "ee-da-verify"
+path = "src/main.rs"
+
+[dependencies]
+alpen-chainspec.workspace = true
+alpen-ee-common.workspace = true
+alpen-reth-statediff.workspace = true
+strata-cli-common.workspace = true
+strata-common = { workspace = true, features = ["async"] }
+strata-identifiers.workspace = true
+strata-l1-envelope-fmt.workspace = true
+strata-l1-txfmt.workspace = true
+
+argh.workspace = true
+bitcoin.workspace = true
+bitcoind-async-client.workspace = true
+futures.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+strata-codec.workspace = true

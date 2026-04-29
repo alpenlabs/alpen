@@ -7,12 +7,12 @@ from typing import cast
 import flexitest
 
 from common.config import EeDaConfig, ServiceType
+from common.config.constants import DEFAULT_DA_MAGIC_BYTES
 from common.services.bitcoin import BitcoinService
 from factories.alpen_client import AlpenClientFactory, generate_sequencer_keypair
 from factories.bitcoin import BitcoinFactory
 
-# Default magic bytes for DA testing (must be 4 bytes)
-DEFAULT_DA_MAGIC_BYTES = b"ALPN"
+__all__ = ["AlpenClientEnv", "DEFAULT_DA_MAGIC_BYTES"]
 
 
 class AlpenClientEnv(flexitest.EnvConfig):

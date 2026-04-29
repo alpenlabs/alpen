@@ -35,7 +35,7 @@ struct RevealArtifact {
 
 /// One unsigned commit tx and N signed reveal txs.
 #[derive(Debug)]
-pub(crate) struct ChunkedEnvelopeTxs {
+pub struct ChunkedEnvelopeTxs {
     pub commit_tx: Transaction,
     pub reveal_txs: Vec<Transaction>,
 }
@@ -46,7 +46,7 @@ pub(crate) struct ChunkedEnvelopeTxs {
 /// them. Each reveal's OP_RETURN carries `magic_bytes ++ prev_wtxid` to form
 /// a sequential chain: reveal 0 references `prev_tail_wtxid`, reveal 1
 /// references reveal 0's wtxid, etc.
-pub(crate) fn build_chunked_envelope_txs(
+pub fn build_chunked_envelope_txs(
     config: &EnvelopeConfig,
     chunks: &[Vec<u8>],
     magic_bytes: &MagicBytes,

@@ -4732,6 +4732,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ee-da-verify"
+version = "0.3.0-alpha.1"
+dependencies = [
+ "alpen-chainspec",
+ "alpen-ee-common",
+ "alpen-reth-statediff",
+ "argh",
+ "bitcoin",
+ "bitcoind-async-client",
+ "futures",
+ "hex",
+ "proptest",
+ "serde",
+ "serde_json",
+ "strata-cli-common",
+ "strata-codec",
+ "strata-common",
+ "strata-identifiers",
+ "strata-l1-envelope-fmt",
+ "strata-l1-txfmt",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.5.11",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16044,6 +16070,8 @@ dependencies = [
  "argh",
  "bdk_bitcoind_rpc",
  "bdk_wallet",
+ "bitcoin",
+ "bitcoind-async-client",
  "hex",
  "musig2",
  "secp256k1 0.29.1",
@@ -16055,6 +16083,7 @@ dependencies = [
  "strata-asm-logs",
  "strata-asm-manifest-types",
  "strata-asm-txs-bridge-v1",
+ "strata-btcio",
  "strata-cli-common",
  "strata-codec",
  "strata-crypto",
