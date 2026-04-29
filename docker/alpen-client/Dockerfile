@@ -54,7 +54,7 @@ ENV APP_HOME=/app \
     RUST_LOG=info
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libssl3 && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 curl && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd --system --create-home --home-dir "${APP_HOME}" --uid 10001 --shell /usr/sbin/nologin alpen
