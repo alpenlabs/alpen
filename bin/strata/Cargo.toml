@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = ["sequencer"]
 sequencer = [
-  "dep:strata-asm-txs-checkpoint",
+  "dep:strata-asm-proto-checkpoint-txs",
   "dep:strata-codec",
   "dep:strata-codec-utils",
   "dep:strata-crypto",
@@ -43,7 +43,7 @@ ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
-strata-asm-txs-checkpoint = { workspace = true, optional = true }
+strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-btcio.workspace = true

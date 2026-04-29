@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex, DbResult};
 use strata_identifiers::{Epoch, EpochCommitment};
@@ -360,11 +360,11 @@ mod tests {
     use std::sync::Arc;
 
     use proptest::prelude::*;
-    use strata_checkpoint_types::EpochSummary;
-    use strata_checkpoint_types_ssz::{
+    use strata_asm_proto_checkpoint_types::{
         test_utils::{checkpoint_payload_strategy, create_test_checkpoint_payload},
         CheckpointPayload,
     };
+    use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_db_types::traits::DatabaseBackend;
     use strata_identifiers::{

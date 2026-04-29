@@ -12,7 +12,7 @@ use bdk_wallet::bitcoin::{
     taproot, OutPoint, Psbt, ScriptBuf, TapNodeHash, TapSighashType, Transaction, TxOut, Witness,
 };
 use secp256k1::SECP256K1;
-use strata_asm_txs_bridge_v1::{
+use strata_asm_proto_bridge_v1_txs::{
     deposit::DepositTxHeaderAux,
     deposit_request::{build_deposit_request_spend_info, parse_drt},
     test_utils::create_dummy_tx,

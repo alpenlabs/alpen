@@ -1,7 +1,7 @@
 //! Checkpoint payload size policy used by the sequencer's block assembler.
 //!
-//! Inlined from alpen's old `strata-checkpoint-types-ssz::validation` module.
-//! The asm version of `strata-checkpoint-types-ssz` does not ship a `validation`
+//! Inlined from alpen's old `strata-asm-proto-checkpoint-types::validation` module.
+//! The asm version of `strata-asm-proto-checkpoint-types` does not ship a `validation`
 //! submodule because the soft/hard size policy is a sequencer concern, not part
 //! of the on-chain protocol type schema.
 //!
@@ -10,7 +10,7 @@
 //! past its hard limit (drop the tx) or past the 90% soft limit (commit the tx
 //! and seal the epoch).
 
-use strata_checkpoint_types_ssz::{
+use strata_asm_proto_checkpoint_types::{
     MAX_OL_LOGS_PER_CHECKPOINT, MAX_TOTAL_LOG_PAYLOAD_BYTES, OL_DA_DIFF_MAX_SIZE,
 };
 use strata_ol_chain_types_new::OLLog;

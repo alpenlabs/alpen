@@ -5,8 +5,8 @@ use std::{
     time::Duration,
 };
 
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::DaAccumulatingState;

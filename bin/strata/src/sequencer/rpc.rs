@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
+use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;

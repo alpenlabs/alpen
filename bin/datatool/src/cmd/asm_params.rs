@@ -100,6 +100,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let admin = AdministrationInitConfig::new(
         threshold.clone(),
+        threshold.clone(),
         threshold,
         cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH),
         cmd.max_seqno_gap.unwrap_or(DEFAULT_MAX_SEQNO_GAP),

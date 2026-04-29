@@ -1,10 +1,10 @@
 //! Service state for OL checkpoint builder.
 
-use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::{
+use strata_asm_proto_checkpoint_types::{
     CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
     TerminalHeaderComplement,
 };
+use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_service::ServiceState;
 use tracing::{debug, info};
@@ -189,10 +189,10 @@ mod tests {
     use std::sync::Arc;
 
     use proptest::prelude::*;
-    use strata_checkpoint_types::EpochSummary;
-    use strata_checkpoint_types_ssz::{
+    use strata_asm_proto_checkpoint_types::{
         CheckpointPayload, CheckpointTip, test_utils::checkpoint_sidecar_strategy,
     };
+    use strata_checkpoint_types::EpochSummary;
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{
         AccountSerial, Buf64, Epoch, OLBlockCommitment,

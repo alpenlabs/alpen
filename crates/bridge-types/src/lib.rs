@@ -12,4 +12,4 @@ mod deposit;
 pub use bridge::PublickeyTable;
 pub use bridge_ops::{DepositIntent, WithdrawalBatch, WithdrawalIntent};
 pub use deposit::{DepositDescriptor, DepositDescriptorError};
-pub use strata_bridge_types::*;
+pub use strata_asm_proto_bridge_v1_types::*;

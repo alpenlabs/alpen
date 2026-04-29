@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use argh::FromArgs;
 use strata_asm_logs::CheckpointTipUpdate;
-use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{

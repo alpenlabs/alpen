@@ -1,5 +1,5 @@
 use ssz::{Decode, Encode};
-use strata_checkpoint_types_ssz::CheckpointClaim;
+use strata_asm_proto_checkpoint_types::CheckpointClaim;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
@@ -70,7 +70,7 @@ impl CheckpointProgram {
 mod tests {
     use std::panic::catch_unwind;
 
-    use strata_checkpoint_types_ssz::TerminalHeaderComplement;
+    use strata_asm_proto_checkpoint_types::TerminalHeaderComplement;
     use strata_codec::encode_to_vec;
     use strata_crypto::hash;
     use strata_da_framework::DaCounter;
