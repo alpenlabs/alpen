@@ -21,8 +21,8 @@ pub enum StateError {
 
     /// Returned when we've only partially loaded the state and can't know if
     /// this account exists or not.
-    #[error("tried to access account {0}")]
-    InaccessibleAccount(AccountId),
+    #[error("tried to access unavailable account {0}")]
+    UnavailableAccount(AccountId),
 
     /// General error indicating insufficient state was provided for this
     /// operation.
@@ -43,6 +43,9 @@ pub enum StateError {
 
     #[error("inconsistent next serial ordering (cur {0}, new {1})")]
     NextSerialSequence(AccountSerial, AccountSerial),
+
+    #[error("tried to reuse serial {0} (existing {1}, new {2})")]
+    AccountExistsWithSerial(AccountSerial, AccountId, AccountId),
 }
 
 /// Execution result error.

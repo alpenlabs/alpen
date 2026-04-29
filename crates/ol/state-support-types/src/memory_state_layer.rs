@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{
-    AccountId, AccountSerial, BitcoinAmount, Mmr64,
     tree_hash::{Sha256Hasher, TreeHash},
+    AccountId, AccountSerial, BitcoinAmount, Mmr64,
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
@@ -16,7 +16,13 @@ use crate::write_tracking_layer::IComputeStateRootWithWrites;
 /// Base layer wrapping [`OLState`].
 #[derive(Clone, Debug)]
 pub struct MemoryStateBaseLayer {
+    /// The fully-materialized state in memory.
+    ///
+    /// This includes the transitional embedded accounts table.
     state: OLState,
+
+    /// Stored lookup table of account serials to account IDs so we don't have
+    /// to traverse the accounts list.
     serials: BTreeMap<AccountSerial, AccountId>,
 }
 
@@ -163,7 +169,24 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 
 impl IStateBatchApplicable for MemoryStateBaseLayer {
     fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> StateResult<()> {
-        self.state.apply_write_batch(batch)
+        // Validate serial bookkeeping before mutating any state so that an
+        // error leaves both the inner state and the serials index untouched.
+        let mut new_accounts: Vec<(AccountSerial, AccountId)> =
+            Vec::with_capacity(batch.ledger().new_accounts().len());
+        for (serial, id) in batch.ledger().iter_new_accounts() {
+            if let Some(existing) = self.serials.get(&serial) {
+                return Err(StateError::AccountExistsWithSerial(serial, *existing, *id));
+            }
+            new_accounts.push((serial, *id));
+        }
+
+        self.state.apply_write_batch(batch)?;
+
+        for (serial, id) in new_accounts {
+            self.serials.insert(serial, id);
+        }
+
+        Ok(())
     }
 }
 
@@ -180,5 +203,44 @@ impl IComputeStateRootWithWrites for MemoryStateBaseLayer {
         }
 
         Ok(TreeHash::<Sha256Hasher>::tree_hash_root(&state).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::BitcoinAmount;
+    use strata_ol_state_types::{IStateBatchApplicable, WriteBatch};
+
+    use super::*;
+    use crate::test_utils::*;
+
+    /// Applies a write batch that creates a new account and confirms the
+    /// freshly-allocated serial is reachable via `find_account_id_by_serial`.
+    #[test]
+    fn test_apply_write_batch_indexes_new_account_serials() {
+        let mut layer = MemoryStateBaseLayer::new(create_test_genesis_state());
+
+        let account_id = test_account_id(7);
+        let serial = layer.next_account_serial();
+
+        let snark_state = test_snark_account_state(7);
+        let new_acct = test_new_snark_account_data(&snark_state, BitcoinAmount::from_sat(1_234));
+
+        let mut batch = WriteBatch::default();
+        batch
+            .ledger_mut()
+            .create_account_from_data(account_id, new_acct, serial);
+
+        // Sanity: serial isn't indexed before applying.
+        assert_eq!(layer.find_account_id_by_serial(serial).unwrap(), None);
+
+        layer
+            .apply_write_batch(batch)
+            .expect("apply_write_batch failed");
+
+        let found = layer
+            .find_account_id_by_serial(serial)
+            .expect("lookup should not error");
+        assert_eq!(found, Some(account_id));
     }
 }
