@@ -100,7 +100,7 @@ fn process_asm_log<S: IStateAccessor>(
         }
 
         CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
-            // Parse the checkpoint tip update from the v1 checkpoint subprotocol.
+            // Parse the checkpoint tip update from the checkpoint subprotocol.
             let Ok(data) = log.try_into_log::<CheckpointTipUpdate>() else {
                 return Ok(());
             };

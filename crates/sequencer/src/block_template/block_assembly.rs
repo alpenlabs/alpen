@@ -1,15 +1,10 @@
 use std::{thread, time};
 
-use strata_asm_common::{AsmLog, AsmManifest};
-use strata_asm_logs::{
-    constants::{CHECKPOINT_TIP_UPDATE_LOG_TYPE, CHECKPOINT_UPDATE_LOG_TYPE},
-    CheckpointTipUpdate,
-};
+use strata_asm_common::AsmManifest;
+use strata_asm_logs::{constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE, CheckpointTipUpdate};
 use strata_chainexec::MemStateAccessor;
 use strata_chaintsn::{context::StateAccessor, transition::process_block};
-use strata_checkpoint_types::{BatchInfo, Checkpoint};
-use strata_codec::Codec;
-use strata_codec_utils::CodecSsz;
+use strata_checkpoint_types::Checkpoint;
 use strata_common::retry::{
     policies::ExponentialBackoff, retry_with_backoff, DEFAULT_ENGINE_CALL_MAX_RETRIES,
 };
@@ -26,7 +21,7 @@ use strata_ol_chain_types::{
 };
 use strata_ol_chainstate_types::Chainstate;
 use strata_params::{Params, RollupParams};
-use strata_primitives::{buf::Buf32, epoch::EpochCommitment, l1::BitcoinTxid, L1Height};
+use strata_primitives::{buf::Buf32, L1Height};
 use strata_state::exec_update::construct_ops_from_deposit_intents;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 use strata_storage::{CheckpointDbManager, L1BlockManager, NodeStorage};
@@ -267,21 +262,6 @@ fn prepare_l1_segment(
     }
 }
 
-/// Compatibility decoder for legacy checkpoint-v0 logs.
-///
-/// The upstream ASM logs crate no longer exports this type, but we still
-/// decode it here to preserve checkpoint-v0 ingestion during migration.
-#[derive(Debug, Clone, Codec)]
-struct CheckpointUpdate {
-    epoch_commitment: CodecSsz<EpochCommitment>,
-    batch_info: CodecSsz<BatchInfo>,
-    checkpoint_txid: CodecSsz<BitcoinTxid>,
-}
-
-impl AsmLog for CheckpointUpdate {
-    const TY: strata_msg_fmt::TypeId = CHECKPOINT_UPDATE_LOG_TYPE;
-}
-
 /// Check if ASM manifest has the checkpoint acknowledgment we are expecting.
 fn has_expected_checkpoint(
     manifest: &AsmManifest,
@@ -302,32 +282,18 @@ fn has_expected_checkpoint(
             continue;
         };
 
-        match msg.ty() {
-            CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
-                let Ok(ack_data) = log.try_into_log::<CheckpointTipUpdate>() else {
-                    warn!(blockid = %manifest.blkid(), "failed to decode checkpoint tip update log");
-                    continue;
-                };
-                if ack_data.tip().epoch == expected_epoch {
-                    debug!(
-                        epoch = ack_data.tip().epoch,
-                        "found checkpoint ack in ASM manifest"
-                    );
-                    return true;
-                }
+        if msg.ty() == CHECKPOINT_TIP_UPDATE_LOG_TYPE {
+            let Ok(ack_data) = log.try_into_log::<CheckpointTipUpdate>() else {
+                warn!(blockid = %manifest.blkid(), "failed to decode checkpoint tip update log");
+                continue;
+            };
+            if ack_data.tip().epoch == expected_epoch {
+                debug!(
+                    epoch = ack_data.tip().epoch,
+                    "found checkpoint ack in ASM manifest"
+                );
+                return true;
             }
-            CHECKPOINT_UPDATE_LOG_TYPE => {
-                let Ok(ack_data) = log.try_into_log::<CheckpointUpdate>() else {
-                    warn!(blockid = %manifest.blkid(), "failed to decode checkpoint update log");
-                    continue;
-                };
-                let epoch = ack_data.batch_info.inner().epoch();
-                if epoch == expected_epoch {
-                    debug!(epoch, "found checkpoint ack in ASM manifest");
-                    return true;
-                }
-            }
-            _ => {}
         }
     }
 

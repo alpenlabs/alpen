@@ -6,7 +6,7 @@ use strata_primitives::{EpochCommitment, l1::L1BlockCommitment};
 /// Status information for the CSM worker service.
 ///
 /// The CSM worker acts as a listener to ASM worker status updates, processing
-/// checkpoint logs emitted by the checkpoint-v0 subprotocol.
+/// checkpoint logs emitted by the checkpoint subprotocol.
 #[derive(Clone, Debug, Serialize)]
 pub struct CsmWorkerStatus {
     pub cur_block: Option<L1BlockCommitment>,

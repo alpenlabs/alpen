@@ -15,7 +15,7 @@ use crate::constants;
 /// State for the CSM worker service.
 ///
 /// This state is used by the CSM worker which acts as a listener to ASM worker
-/// status updates, processing checkpoint logs from the checkpoint-v0 subprotocol.
+/// status updates, processing checkpoint logs from the checkpoint subprotocol.
 #[expect(
     missing_debug_implementations,
     reason = "NodeStorage doesn't implement Debug"

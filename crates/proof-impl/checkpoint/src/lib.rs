@@ -1,13 +1,12 @@
-//! Passthrough checkpoint proof that reads [`BatchInfo`] and commits it back unchanged.
+//! Orchestration Layer State Transition Function (OL STF) proof statements.
 //!
-//! This proof trait will be fully removed in the future.
-
-use strata_checkpoint_types::BatchInfo;
-use zkaleido::ZkVmEnvBorsh;
-
+//! This crate provides the proof statements for zero-knowledge verification of the
+//! Orchestration Layer's state transition function. It defines the logic that runs
+//! inside the ZKVM guest to verify that OL blocks are processed correctly according
+//! to the protocol rules.
+#[cfg(not(target_os = "zkvm"))]
 pub mod program;
 
-pub fn process_checkpoint_proof(zkvm: &impl ZkVmEnvBorsh) {
-    let output: BatchInfo = zkvm.read_borsh();
-    zkvm.commit_borsh(&output);
-}
+mod statements;
+
+pub use statements::{process_ol_stf, process_ol_stf_core};
