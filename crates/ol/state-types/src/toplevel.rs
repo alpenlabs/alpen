@@ -90,16 +90,19 @@ impl OLState {
 
             // Check that the entry is consistent.
             if state.serial() != serial {
-                return Err(StateError::AcctSerialInconsistent(
-                    *id,
-                    state.serial(),
-                    serial,
-                ));
+                return Err(StateError::AcctSerialInconsistent {
+                    id: *id,
+                    in_acct: state.serial(),
+                    in_table: serial,
+                });
             }
 
             // Check that it works.
             if serial != next_serial {
-                return Err(StateError::NextSerialSequence(serial, next_serial));
+                return Err(StateError::NextSerialSequence {
+                    cur: serial,
+                    new: next_serial,
+                });
             }
 
             // Make sure that the account doesn't already exist.

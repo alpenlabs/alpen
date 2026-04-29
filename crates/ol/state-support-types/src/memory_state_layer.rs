@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use strata_acct_types::{
-    tree_hash::{Sha256Hasher, TreeHash},
     AccountId, AccountSerial, BitcoinAmount, Mmr64,
+    tree_hash::{Sha256Hasher, TreeHash},
 };
 use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
@@ -175,7 +175,11 @@ impl IStateBatchApplicable for MemoryStateBaseLayer {
             Vec::with_capacity(batch.ledger().new_accounts().len());
         for (serial, id) in batch.ledger().iter_new_accounts() {
             if let Some(existing) = self.serials.get(&serial) {
-                return Err(StateError::AccountExistsWithSerial(serial, *existing, *id));
+                return Err(StateError::AccountExistsWithSerial {
+                    serial,
+                    existing: *existing,
+                    new: *id,
+                });
             }
             new_accounts.push((serial, *id));
         }

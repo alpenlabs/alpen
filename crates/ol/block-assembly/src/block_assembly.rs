@@ -66,7 +66,9 @@ fn stf_exec_error_to_mempool_reason(err: &ExecError) -> MempoolTxInvalidReason {
         ExecError::TransactionNotMature(_, _)
         | ExecError::TxConditionCheckFailed
         | ExecError::BalanceUnderflow
-        | ExecError::InsufficientAccountBalance(_, _) => MempoolTxInvalidReason::Failed,
+        | ExecError::InsufficientAccountBalance { id: _, need: _ } => {
+            MempoolTxInvalidReason::Failed
+        }
 
         // Block-level errors shouldn't occur in tx processing
         _ => MempoolTxInvalidReason::Failed,

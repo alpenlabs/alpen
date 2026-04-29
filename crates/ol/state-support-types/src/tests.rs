@@ -590,10 +590,10 @@ impl IAccountState for TestAccountState {
     }
 
     fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
-        self.snark.as_ref().ok_or(StateError::MismatchedAcctType(
-            self.ty,
-            AccountTypeId::Snark,
-        ))
+        self.snark.as_ref().ok_or(StateError::MismatchedAcctType {
+            got: self.ty,
+            expected: AccountTypeId::Snark,
+        })
     }
 }
 
@@ -611,10 +611,10 @@ impl IAccountStateMut for TestAccountState {
     }
 
     fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
-        self.snark.as_mut().ok_or(StateError::MismatchedAcctType(
-            self.ty,
-            AccountTypeId::Snark,
-        ))
+        self.snark.as_mut().ok_or(StateError::MismatchedAcctType {
+            got: self.ty,
+            expected: AccountTypeId::Snark,
+        })
     }
 }
 

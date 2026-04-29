@@ -29,23 +29,40 @@ pub enum StateError {
     #[error("insufficient state provided")]
     InsufficientState,
 
-    #[error("mismatched account ID (got {0}, exp {1}")]
-    MismatchedAcctType(AccountTypeId, AccountTypeId),
+    #[error("mismatched account ID (got {got}, exp {expected}")]
+    MismatchedAcctType {
+        got: AccountTypeId,
+        expected: AccountTypeId,
+    },
 
-    #[error("insufficient account balance to take (need {0}, have {1}")]
-    InsufficientBalance(BitcoinAmount, BitcoinAmount),
+    #[error("insufficient account balance to take (need {need}, have {have}")]
+    InsufficientBalance {
+        need: BitcoinAmount,
+        have: BitcoinAmount,
+    },
 
-    #[error("out-of-order seqno change (cur {0:?}, new {1:?})")]
-    OooSeqnoChange(Seqno, Seqno),
+    #[error("out-of-order seqno change (cur {cur:?}, new {new:?})")]
+    OooSeqnoChange { cur: Seqno, new: Seqno },
 
-    #[error("inconsistent acct serial (id {0}, acct {1}, table {2})")]
-    AcctSerialInconsistent(AccountId, AccountSerial, AccountSerial),
+    #[error("inconsistent acct serial (id {id}, acct {in_acct}, table {in_table})")]
+    AcctSerialInconsistent {
+        id: AccountId,
+        in_acct: AccountSerial,
+        in_table: AccountSerial,
+    },
 
-    #[error("inconsistent next serial ordering (cur {0}, new {1})")]
-    NextSerialSequence(AccountSerial, AccountSerial),
+    #[error("inconsistent next serial ordering (cur {cur}, new {new})")]
+    NextSerialSequence {
+        cur: AccountSerial,
+        new: AccountSerial,
+    },
 
-    #[error("tried to reuse serial {0} (existing {1}, new {2})")]
-    AccountExistsWithSerial(AccountSerial, AccountId, AccountId),
+    #[error("tried to reuse serial {serial} (existing {existing}, new {new})")]
+    AccountExistsWithSerial {
+        serial: AccountSerial,
+        existing: AccountId,
+        new: AccountId,
+    },
 }
 
 /// Execution result error.
@@ -125,11 +142,15 @@ pub enum ExecError {
     #[error("genesis block was not a terminal")]
     GenesisNonterminal,
 
-    #[error("insufficient account balance (acct {0}, need {1})")]
-    InsufficientAccountBalance(AccountId, BitcoinAmount),
+    #[error("insufficient account balance (acct {id}, need {need})")]
+    InsufficientAccountBalance { id: AccountId, need: BitcoinAmount },
 
-    #[error("invalid sequence number for account {0} (expected {1}, actual {2})")]
-    InvalidSequenceNumber(AccountId, u64, u64),
+    #[error("invalid sequence number for account {id} (expected {exp}, actual {actual})")]
+    InvalidSequenceNumber {
+        id: AccountId,
+        exp: u64,
+        actual: u64,
+    },
 
     #[error("max sequence number reached for account {account_id}")]
     MaxSeqNumberReached { account_id: AccountId },

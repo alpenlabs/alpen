@@ -63,10 +63,10 @@ impl IAccountState for OLAccountState {
     fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
         match &self.state {
             OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(StateError::MismatchedAcctType(
-                self.ty(),
-                AccountTypeId::Snark,
-            )),
+            _ => Err(StateError::MismatchedAcctType {
+                got: self.ty(),
+                expected: AccountTypeId::Snark,
+            }),
         }
     }
 }
@@ -86,7 +86,10 @@ impl IAccountStateMut for OLAccountState {
         self.balance = self
             .balance
             .checked_sub(amt)
-            .ok_or(StateError::InsufficientBalance(amt, self.balance))?;
+            .ok_or(StateError::InsufficientBalance {
+                need: amt,
+                have: self.balance,
+            })?;
         Ok(Coin::new_unchecked(amt))
     }
 
@@ -94,7 +97,10 @@ impl IAccountStateMut for OLAccountState {
         let ty = self.ty();
         match &mut self.state {
             OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(StateError::MismatchedAcctType(ty, AccountTypeId::Snark)),
+            _ => Err(StateError::MismatchedAcctType {
+                got: ty,
+                expected: AccountTypeId::Snark,
+            }),
         }
     }
 }
