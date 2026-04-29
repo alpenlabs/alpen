@@ -8,6 +8,7 @@ use strata_db_types::{
         IndexingWrites,
     },
     traits::OLStateIndexingDatabase,
+    DbError,
 };
 use strata_identifiers::{AccountId, Buf32, EpochCommitment, Hash, OLBlockCommitment, OLBlockId};
 
@@ -37,6 +38,17 @@ fn record(
     AccountUpdateRecord::new(meta, seq, idx, extra)
 }
 
+#[track_caller]
+fn assert_duplicate_block(err: DbError, expected_epoch: u32, expected_block: OLBlockCommitment) {
+    match err {
+        DbError::DuplicateBlockIndexing { epoch, block } => {
+            assert_eq!(epoch, expected_epoch, "duplicate error epoch mismatch");
+            assert_eq!(block, expected_block, "duplicate error block mismatch");
+        }
+        other => panic!("expected DbError::DuplicateBlockIndexing, got {other:?}"),
+    }
+}
+
 pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
     let epoch = 7;
     let acct_a = acct(1);
@@ -53,7 +65,7 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
         .expect("apply_epoch");
 
     // Checkpoint-sync has no per-block attribution; entries are tagged `None`.
-    let expected = EpochIndexingData::new(Some(commitment), vec![(acct_a, None)]);
+    let expected = EpochIndexingData::new(Some(commitment), vec![(acct_a, None)], None);
     assert_eq!(
         db.get_epoch_indexing_data(epoch).expect("get common"),
         Some(expected)
@@ -257,11 +269,7 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
     let err = db
         .apply_block_indexing(epoch, blk, writes())
         .expect_err("duplicate apply should error");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("already indexed"),
-        "expected DuplicateBlockIndexing-shaped error, got: {msg}"
-    );
+    assert_duplicate_block(err, epoch, blk);
 
     // Original record is intact and not duplicated.
     let got = db
@@ -269,6 +277,117 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
         .expect("get entry")
         .expect("present");
     assert_eq!(got.len(), 1);
+}
+
+/// Re-applying a block that wrote only inbox records (no updates, no creators)
+/// must still abort. Pre-`last_applied_block` design missed this case.
+pub fn test_apply_block_indexing_dedup_inbox_only(db: &impl OLStateIndexingDatabase) {
+    let epoch = 12;
+    let acct_a = acct(1);
+    let blk = block(20, 1);
+
+    let mut inbox = BTreeMap::new();
+    inbox.insert(acct_a, vec![InboxMessageRecord::new(vec![0xA1], Some(blk))]);
+    let writes = || IndexingWrites::new(vec![], BTreeMap::new(), inbox.clone());
+
+    db.apply_block_indexing(epoch, blk, writes())
+        .expect("first");
+
+    let err = db
+        .apply_block_indexing(epoch, blk, writes())
+        .expect_err("inbox-only re-apply must error");
+    assert_duplicate_block(err, epoch, blk);
+
+    // Original inbox record still single, not duplicated.
+    let got = db
+        .get_account_inbox_records(epoch, acct_a)
+        .expect("get inbox")
+        .expect("present");
+    assert_eq!(got.len(), 1);
+}
+
+/// Re-applying a block that wrote only created_accounts (no updates, no inbox)
+/// must still abort. Pre-`last_applied_block` design missed this case.
+pub fn test_apply_block_indexing_dedup_creators_only(db: &impl OLStateIndexingDatabase) {
+    let epoch = 13;
+    let acct_a = acct(1);
+    let blk = block(21, 1);
+
+    let writes = || IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new());
+
+    db.apply_block_indexing(epoch, blk, writes())
+        .expect("first");
+
+    let err = db
+        .apply_block_indexing(epoch, blk, writes())
+        .expect_err("creators-only re-apply must error");
+    assert_duplicate_block(err, epoch, blk);
+
+    // created_accounts has exactly one entry, not duplicated.
+    let common = db
+        .get_epoch_indexing_data(epoch)
+        .expect("get common")
+        .expect("present");
+    assert_eq!(common.created_accounts(), &[(acct_a, Some(blk))]);
+}
+
+/// Applying out-of-order (later slot then earlier slot in the same epoch)
+/// must abort. The high-water mark contract demands monotonic apply.
+pub fn test_apply_block_indexing_rejects_out_of_order(db: &impl OLStateIndexingDatabase) {
+    let epoch = 14;
+    let acct_a = acct(1);
+    let blk_high = block(30, 1);
+    let blk_low = block(20, 2);
+
+    db.apply_block_indexing(
+        epoch,
+        blk_high,
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("apply high");
+
+    let err = db
+        .apply_block_indexing(
+            epoch,
+            blk_low,
+            IndexingWrites::new(vec![], BTreeMap::new(), BTreeMap::new()),
+        )
+        .expect_err("out-of-order apply must error");
+    assert_duplicate_block(err, epoch, blk_low);
+}
+
+/// After rollback_to_block, the high-water mark must allow re-applying the
+/// dropped slots' successors.
+pub fn test_rollback_to_block_resets_high_water(db: &impl OLStateIndexingDatabase) {
+    let epoch = 15;
+    let acct_a = acct(1);
+    let blk10 = block(10, 1);
+    let blk11 = block(11, 2);
+
+    db.apply_block_indexing(
+        epoch,
+        blk10,
+        IndexingWrites::new(vec![acct_a], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("apply 10");
+    db.apply_block_indexing(
+        epoch,
+        blk11,
+        IndexingWrites::new(vec![], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("apply 11");
+
+    db.rollback_to_block(epoch, blk10).expect("rollback");
+
+    // The high-water was at slot 11; rollback should reset it so slot 11
+    // can be re-applied with a different blkid (e.g. fork after reorg).
+    let blk11_new = block(11, 99);
+    db.apply_block_indexing(
+        epoch,
+        blk11_new,
+        IndexingWrites::new(vec![], BTreeMap::new(), BTreeMap::new()),
+    )
+    .expect("re-apply 11 succeeds");
 }
 
 /// Apply two blocks in an epoch; rollback to block1 should drop block2's
@@ -584,6 +703,30 @@ macro_rules! ol_state_indexing_db_tests {
         fn test_apply_block_indexing_duplicate_block_errors() {
             let db = $setup_expr;
             $crate::ol_state_indexing_tests::test_apply_block_indexing_duplicate_block_errors(&db);
+        }
+
+        #[test]
+        fn test_apply_block_indexing_dedup_inbox_only() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_apply_block_indexing_dedup_inbox_only(&db);
+        }
+
+        #[test]
+        fn test_apply_block_indexing_dedup_creators_only() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_apply_block_indexing_dedup_creators_only(&db);
+        }
+
+        #[test]
+        fn test_apply_block_indexing_rejects_out_of_order() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_apply_block_indexing_rejects_out_of_order(&db);
+        }
+
+        #[test]
+        fn test_rollback_to_block_resets_high_water() {
+            let db = $setup_expr;
+            $crate::ol_state_indexing_tests::test_rollback_to_block_resets_high_water(&db);
         }
 
         #[test]

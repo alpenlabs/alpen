@@ -198,7 +198,13 @@ impl From<anyhow::Error> for DbError {
 
 impl From<Error> for DbError {
     fn from(value: Error) -> Self {
-        Self::Other(format!("sled error: {value:?}"))
+        // If the typed-sled error wraps an aborted `DbError`, recover the
+        // original variant so downstream callers can match on it instead of
+        // dealing with a stringified payload.
+        match value.downcast_abort::<DbError>() {
+            Ok(db_err) => db_err,
+            Err(other) => Self::Other(format!("sled error: {other:?}")),
+        }
     }
 }
 

@@ -23,20 +23,28 @@ use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitm
 /// with the block that created it (block-sync), or `None` when block
 /// attribution is unavailable (checkpoint-sync). `None`-attributed entries
 /// are immune to per-block rollback and only drop on full-epoch rollback.
+///
+/// `last_applied_block` is the high-water mark of block-sync apply for this
+/// epoch. Reads as `None` for fresh epochs and checkpoint-sync rows. Used by
+/// `apply_block_indexing` to reject duplicate / out-of-order applies before
+/// any tree mutation occurs.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EpochIndexingData {
     epoch_commitment: Option<EpochCommitment>,
     created_accounts: Vec<(AccountId, Option<OLBlockCommitment>)>,
+    last_applied_block: Option<OLBlockCommitment>,
 }
 
 impl EpochIndexingData {
     pub fn new(
         epoch_commitment: Option<EpochCommitment>,
         created_accounts: Vec<(AccountId, Option<OLBlockCommitment>)>,
+        last_applied_block: Option<OLBlockCommitment>,
     ) -> Self {
         Self {
             epoch_commitment,
             created_accounts,
+            last_applied_block,
         }
     }
 
@@ -53,6 +61,23 @@ impl EpochIndexingData {
         self.created_accounts.iter().map(|(acct, _)| *acct)
     }
 
+    pub fn last_applied_block(&self) -> Option<&OLBlockCommitment> {
+        self.last_applied_block.as_ref()
+    }
+
+    pub fn set_last_applied_block(&mut self, block: OLBlockCommitment) {
+        self.last_applied_block = Some(block);
+    }
+
+    /// Resets the high-water mark to `None` if its current slot is strictly
+    /// greater than `slot`. Used by `rollback_to_block` to ensure subsequent
+    /// applies past the cutoff are accepted again.
+    pub fn clear_last_applied_block_after_slot(&mut self, slot: u64) {
+        if self.last_applied_block.is_some_and(|b| b.slot() > slot) {
+            self.last_applied_block = None;
+        }
+    }
+
     pub fn set_epoch_commitment(&mut self, commitment: EpochCommitment) {
         self.epoch_commitment = Some(commitment);
     }
@@ -64,7 +89,7 @@ impl EpochIndexingData {
     /// Removes entries whose attributed block has slot strictly greater than
     /// `slot`. Entries with `None` attribution (checkpoint-sync) are never
     /// matched. Returns the dropped account ids in insertion order.
-    pub fn drop_creators_after_slot(&mut self, slot: u64) -> Vec<AccountId> {
+    pub fn drop_created_after_slot(&mut self, slot: u64) -> Vec<AccountId> {
         let mut dropped = Vec::new();
         self.created_accounts.retain(|(acct, b)| {
             let drop = b.is_some_and(|c| c.slot() > slot);

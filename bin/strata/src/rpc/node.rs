@@ -39,6 +39,7 @@ struct ChainBlock {
 pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
     genesis_l1_height: L1Height,
+    // Maximum number of headers/block-data that can be queried
     max_headers_range: usize,
 }
 
@@ -575,6 +576,12 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
     ) -> RpcResult<Vec<RpcAccountBlockSummary>> {
         if start_slot > end_slot {
             return Err(invalid_params_error("start_slot must be <= end_slot"));
+        }
+        if (end_slot - start_slot + 1) as usize > self.max_headers_range {
+            return Err(invalid_params_error(format!(
+                "Block range too big. Allowed range is {}",
+                self.max_headers_range
+            )));
         }
 
         let chain_blocks = self.collect_canonical_chain(start_slot, end_slot).await?;

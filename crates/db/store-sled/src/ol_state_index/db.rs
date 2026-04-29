@@ -1,5 +1,7 @@
 //! Sled-backed [`OLStateIndexingDatabase`] implementation.
 
+use std::collections::BTreeSet;
+
 use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
     DbError, DbResult,
@@ -9,7 +11,7 @@ use strata_db_types::{
     traits::OLStateIndexingDatabase,
 };
 use strata_identifiers::{AccountId, Epoch, EpochCommitment, OLBlockCommitment};
-use typed_sled::{error::Error as TSledError, tree::SledTransactionalTree};
+use typed_sled::{SledTree, error::Error as TSledError, tree::SledTransactionalTree};
 
 use super::schemas::{
     OLAccountCreationEpochSchema, OLAccountInboxEntrySchema, OLAccountUpdateEntrySchema,
@@ -37,26 +39,23 @@ type Trees = (
 /// keyed by `epoch`. Done as a non-transactional scan since
 /// [`SledTransactionalTree`] doesn't expose ranged iteration; the actual
 /// rollback writes happen inside a transaction afterwards.
-fn collect_accounts_in_epoch<F>(
+fn collect_accounts_in_epoch(
     epoch: Epoch,
-    update_tree: &typed_sled::tree::SledTree<OLAccountUpdateEntrySchema>,
-    inbox_tree: &typed_sled::tree::SledTree<OLAccountInboxEntrySchema>,
-    mut emit: F,
-) -> DbResult<()>
-where
-    F: FnMut(AccountId),
-{
+    update_tree: &SledTree<OLAccountUpdateEntrySchema>,
+    inbox_tree: &SledTree<OLAccountInboxEntrySchema>,
+) -> DbResult<BTreeSet<AccountId>> {
     let lo = AccountEpochKey::new(epoch, AccountId::new([0u8; 32]));
     let hi = AccountEpochKey::new(epoch, AccountId::new([0xffu8; 32]));
+    let mut out = BTreeSet::new();
     for item in update_tree.range(lo..=hi)? {
         let (key, _) = item?;
-        emit(key.account_id());
+        out.insert(key.account_id());
     }
     for item in inbox_tree.range(lo..=hi)? {
         let (key, _) = item?;
-        emit(key.account_id());
+        out.insert(key.account_id());
     }
-    Ok(())
+    Ok(out)
 }
 
 impl OLStateIndexingDatabase for OLStateIndexingDBSled {
@@ -83,7 +82,8 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                     .iter()
                     .map(|acct| (*acct, None))
                     .collect();
-                let common = EpochIndexingData::new(Some(commitment), created);
+                // Checkpoint-sync has no per-block high-water mark.
+                let common = EpochIndexingData::new(Some(commitment), created, None);
 
                 for (acct, _) in common.created_accounts() {
                     creation_t.insert(acct, &epoch)?;
@@ -116,11 +116,21 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 &self.creation_epoch_tree,
             ),
             |(epoch_t, update_t, inbox_t, creation_t): Trees| {
-                // Always materialize the epoch's common row, even when this
-                // block created no accounts. Without this, epochs whose blocks
-                // never created accounts would have no row when
-                // `set_epoch_commitment` fires at finalization.
+                // Read the common row first and gate on the high-water mark
+                // BEFORE touching any other tree. This catches duplicate /
+                // out-of-order applies regardless of which write families
+                // are populated this call.
                 let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
+                if common
+                    .last_applied_block()
+                    .is_some_and(|prev| block.slot() <= prev.slot())
+                {
+                    return Err(ConflictableTransactionError::Abort(TSledError::abort(
+                        DbError::DuplicateBlockIndexing { epoch, block },
+                    )));
+                }
+                common.set_last_applied_block(block);
+
                 for acct in writes.created_accounts() {
                     creation_t.insert(acct, &epoch)?;
                     common.push_created_account(*acct, Some(block));
@@ -133,14 +143,6 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                     }
                     let key = AccountEpochKey::new(epoch, *acct);
                     let mut existing = update_t.get(&key)?.unwrap_or_default();
-                    if existing.iter().any(|r| {
-                        r.update_meta()
-                            .is_some_and(|m| *m.block_commitment() == block)
-                    }) {
-                        return Err(ConflictableTransactionError::Abort(TSledError::abort(
-                            DbError::DuplicateBlockIndexing { epoch, block },
-                        )));
-                    }
                     existing.extend(records.iter().cloned());
                     update_t.insert(&key, &existing)?;
                 }
@@ -165,15 +167,8 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         // Pre-scan affected accounts via the non-transactional trees.
         // SledTransactionalTree has no range API, so we collect keys here and
         // act on them inside the transaction below.
-        let mut affected: std::collections::BTreeSet<AccountId> = std::collections::BTreeSet::new();
-        collect_accounts_in_epoch(
-            epoch,
-            &self.account_update_tree,
-            &self.account_inbox_tree,
-            |acct| {
-                affected.insert(acct);
-            },
-        )?;
+        let affected =
+            collect_accounts_in_epoch(epoch, &self.account_update_tree, &self.account_inbox_tree)?;
 
         self.config.with_retry(
             (
@@ -216,11 +211,16 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                     }
                 }
 
-                // Drop creators past the cutoff from the common row and remove
-                // their creation_epoch entries.
+                // Drop creators past the cutoff from the common row, reset
+                // the high-water mark if it was past the cutoff, and remove
+                // creation_epoch entries for any dropped creators.
                 if let Some(mut common) = epoch_t.get(&epoch)? {
-                    let dropped = common.drop_creators_after_slot(cutoff_slot);
-                    if !dropped.is_empty() {
+                    let dropped = common.drop_created_after_slot(cutoff_slot);
+                    let prev_high_water = common.last_applied_block().copied();
+                    common.clear_last_applied_block_after_slot(cutoff_slot);
+                    let high_water_changed =
+                        prev_high_water != common.last_applied_block().copied();
+                    if !dropped.is_empty() || high_water_changed {
                         epoch_t.insert(&epoch, &common)?;
                         for acct in dropped {
                             creation_t.remove(&acct)?;
@@ -243,19 +243,11 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
         // Per-epoch, collect affected accounts via update/inbox trees, since
         // an epoch can have account rows even if the common row is missing
         // (defensive — should not happen in practice).
-        let mut per_epoch: Vec<(Epoch, std::collections::BTreeSet<AccountId>)> =
+        let mut per_epoch: Vec<(Epoch, BTreeSet<AccountId>)> =
             Vec::with_capacity(epochs_to_drop.len());
         for e in &epochs_to_drop {
-            let mut affected: std::collections::BTreeSet<AccountId> =
-                std::collections::BTreeSet::new();
-            collect_accounts_in_epoch(
-                *e,
-                &self.account_update_tree,
-                &self.account_inbox_tree,
-                |acct| {
-                    affected.insert(acct);
-                },
-            )?;
+            let affected =
+                collect_accounts_in_epoch(*e, &self.account_update_tree, &self.account_inbox_tree)?;
             per_epoch.push((*e, affected));
         }
 

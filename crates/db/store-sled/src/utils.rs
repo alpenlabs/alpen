@@ -11,7 +11,11 @@ pub fn first<A, B>((a, _): (A, B)) -> A {
     a
 }
 
-/// Converts any error that implements Display and Debug into a DbError::Other
+/// Converts any error that implements Display and Debug into a DbError::Other.
+///
+/// Note: a typed-sled [`Error`] should generally go through `From<Error>` to
+/// preserve aborted `DbError` variants; this helper is for non-typed-sled
+/// error sources.
 pub fn to_db_error<E: fmt::Display + fmt::Debug>(e: E) -> DbError {
     DbError::Other(e.to_string())
 }
