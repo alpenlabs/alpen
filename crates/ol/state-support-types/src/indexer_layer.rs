@@ -488,7 +488,10 @@ where
         id: AccountId,
         new_acct_data: NewAccountData<Self::AccountState>,
     ) -> AcctResult<AccountSerial> {
-        self.inner.create_new_account(id, new_acct_data)
+        let serial = self.inner.create_new_account(id, new_acct_data)?;
+        self.writes
+            .push_created_account(AccountCreatedWrite::new(id));
+        Ok(serial)
     }
 
     fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {

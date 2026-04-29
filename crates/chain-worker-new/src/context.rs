@@ -149,6 +149,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(self.ol_state_mgr.get_write_batch_blocking(commitment)?)
     }
 
+    /// Stores write batchees as well as indexing data.
     fn store_block_output(
         &self,
         block: &OLBlock,
@@ -276,19 +277,24 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
 /// Builds an [`IndexingWrites`] payload from a block-execution output.
 ///
-/// Collects newly created accounts, snark-account update records (each tagged with the block's
-/// commitment + final state root), and inbox-message writes (encoded as SSZ bytes), grouping per
-/// recipient account.
+/// Reads everything from the block's [`IndexerWrites`]: account-creation
+/// events, snark-account update records (each tagged with the block's
+/// commitment + final state root), and inbox-message writes (encoded as SSZ
+/// bytes). Per-account vecs preserve insertion order.
 fn build_indexing_writes(
     commitment: OLBlockCommitment,
     output: &OLBlockExecutionOutput,
 ) -> IndexingWrites {
-    let wb = output.write_batch();
-    let created_accounts: Vec<AccountId> =
-        wb.ledger().iter_new_accounts().map(|(_, id)| *id).collect();
+    let indexer_writes = output.indexer_writes();
+
+    let created_accounts: Vec<AccountId> = indexer_writes
+        .created_accounts()
+        .iter()
+        .map(|c| c.account_id())
+        .collect();
 
     let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
-    for update in output.indexer_writes().snark_state_updates() {
+    for update in indexer_writes.snark_state_updates() {
         let meta = AccountUpdateMeta::new(commitment, update.state());
         let record = AccountUpdateRecord::new(
             Some(meta),
@@ -303,7 +309,7 @@ fn build_indexing_writes(
     }
 
     let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
-    for write in output.indexer_writes().inbox_messages() {
+    for write in indexer_writes.inbox_messages() {
         let entry_bytes = write.entry().as_ssz_bytes();
         let record = InboxMessageRecord::new(entry_bytes, Some(commitment));
         account_inbox_writes
