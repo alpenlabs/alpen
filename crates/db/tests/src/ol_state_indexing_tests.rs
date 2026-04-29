@@ -8,7 +8,7 @@ use strata_db_types::{
         IndexingWrites,
     },
     traits::OLStateIndexingDatabase,
-    DbError,
+    AccountCreatedRecord, DbError,
 };
 use strata_identifiers::{AccountId, Buf32, EpochCommitment, Hash, OLBlockCommitment, OLBlockId};
 
@@ -65,7 +65,11 @@ pub fn test_apply_epoch_indexing_round_trip(db: &impl OLStateIndexingDatabase) {
         .expect("apply_epoch");
 
     // Checkpoint-sync has no per-block attribution; entries are tagged `None`.
-    let expected = EpochIndexingData::new(Some(commitment), vec![(acct_a, None)], None);
+    let expected = EpochIndexingData::new(
+        Some(commitment),
+        vec![AccountCreatedRecord::new_account(acct_a)],
+        None,
+    );
     assert_eq!(
         db.get_epoch_indexing_data(epoch).expect("get common"),
         Some(expected)
@@ -164,7 +168,10 @@ pub fn test_apply_block_indexing_appends(db: &impl OLStateIndexingDatabase) {
         .get_epoch_indexing_data(epoch)
         .expect("get common")
         .expect("present");
-    assert_eq!(common.created_accounts(), &[(acct_a, Some(block1))]);
+    assert_eq!(
+        common.created_accounts(),
+        &[AccountCreatedRecord::new(acct_a, Some(block1))]
+    );
     assert!(common.epoch_commitment().is_none());
 
     assert_eq!(
@@ -195,7 +202,10 @@ pub fn test_set_epoch_commitment_stamps(db: &impl OLStateIndexingDatabase) {
         .expect("present");
     assert_eq!(common.epoch_commitment(), Some(&commitment));
     // Created accounts preserved.
-    assert_eq!(common.created_accounts(), &[(acct_a, Some(blk))]);
+    assert_eq!(
+        common.created_accounts(),
+        &[AccountCreatedRecord::new(acct_a, Some(blk))]
+    );
 }
 
 pub fn test_set_epoch_commitment_missing_row_errors(db: &impl OLStateIndexingDatabase) {
@@ -328,7 +338,10 @@ pub fn test_apply_block_indexing_dedup_creators_only(db: &impl OLStateIndexingDa
         .get_epoch_indexing_data(epoch)
         .expect("get common")
         .expect("present");
-    assert_eq!(common.created_accounts(), &[(acct_a, Some(blk))]);
+    assert_eq!(
+        common.created_accounts(),
+        &[AccountCreatedRecord::new(acct_a, Some(blk))]
+    );
 }
 
 /// Applying out-of-order (later slot then earlier slot in the same epoch)
@@ -465,7 +478,10 @@ pub fn test_rollback_to_block_drops_later_blocks(db: &impl OLStateIndexingDataba
         .get_epoch_indexing_data(epoch)
         .expect("get common")
         .expect("present");
-    assert_eq!(common.created_accounts(), &[(acct_a, Some(blk1))]);
+    assert_eq!(
+        common.created_accounts(),
+        &[AccountCreatedRecord::new(acct_a, Some(blk1))]
+    );
 }
 
 /// Rolling back to a block with slot >= every applied block keeps
@@ -587,7 +603,10 @@ pub fn test_rollback_to_block_immune_to_checkpoint_sync(db: &impl OLStateIndexin
         .get_epoch_indexing_data(epoch)
         .expect("get common")
         .expect("present");
-    assert_eq!(common.created_accounts(), &[(acct_a, None)]);
+    assert_eq!(
+        common.created_accounts(),
+        &[AccountCreatedRecord::new(acct_a, None)]
+    );
     assert_eq!(
         db.get_account_creation_epoch(acct_a).expect("get creation"),
         Some(epoch)

@@ -31,14 +31,14 @@ use strata_identifiers::{AccountId, Epoch, EpochCommitment, Hash, OLBlockCommitm
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EpochIndexingData {
     epoch_commitment: Option<EpochCommitment>,
-    created_accounts: Vec<(AccountId, Option<OLBlockCommitment>)>,
+    created_accounts: Vec<AccountCreatedRecord>,
     last_applied_block: Option<OLBlockCommitment>,
 }
 
 impl EpochIndexingData {
     pub fn new(
         epoch_commitment: Option<EpochCommitment>,
-        created_accounts: Vec<(AccountId, Option<OLBlockCommitment>)>,
+        created_accounts: Vec<AccountCreatedRecord>,
         last_applied_block: Option<OLBlockCommitment>,
     ) -> Self {
         Self {
@@ -52,13 +52,13 @@ impl EpochIndexingData {
         self.epoch_commitment.as_ref()
     }
 
-    pub fn created_accounts(&self) -> &[(AccountId, Option<OLBlockCommitment>)] {
+    pub fn created_accounts(&self) -> &[AccountCreatedRecord] {
         &self.created_accounts
     }
 
     /// Iterates just the account ids of created accounts, dropping block attribution.
     pub fn created_account_ids(&self) -> impl Iterator<Item = AccountId> + '_ {
-        self.created_accounts.iter().map(|(acct, _)| *acct)
+        self.created_accounts.iter().map(|r| r.account)
     }
 
     pub fn last_applied_block(&self) -> Option<&OLBlockCommitment> {
@@ -83,7 +83,8 @@ impl EpochIndexingData {
     }
 
     pub fn push_created_account(&mut self, acct: AccountId, block: Option<OLBlockCommitment>) {
-        self.created_accounts.push((acct, block));
+        self.created_accounts
+            .push(AccountCreatedRecord::new(acct, block));
     }
 
     /// Removes entries whose attributed block has slot strictly greater than
@@ -91,14 +92,47 @@ impl EpochIndexingData {
     /// matched. Returns the dropped account ids in insertion order.
     pub fn drop_created_after_slot(&mut self, slot: u64) -> Vec<AccountId> {
         let mut dropped = Vec::new();
-        self.created_accounts.retain(|(acct, b)| {
-            let drop = b.is_some_and(|c| c.slot() > slot);
+        self.created_accounts.retain(|r| {
+            let drop = r.block.is_some_and(|c| c.slot() > slot);
             if drop {
-                dropped.push(*acct);
+                dropped.push(r.account);
             }
             !drop
         });
         dropped
+    }
+}
+
+/// A record of a created account. Expected to contain more data in the future.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountCreatedRecord {
+    /// The account that was created.
+    account: AccountId,
+    /// Block at which the account was created.
+    block: Option<OLBlockCommitment>,
+}
+
+impl AccountCreatedRecord {
+    pub fn new(account: AccountId, block_commitment: Option<OLBlockCommitment>) -> Self {
+        Self {
+            account,
+            block: block_commitment,
+        }
+    }
+
+    pub fn new_account(account: AccountId) -> Self {
+        Self {
+            account,
+            block: None,
+        }
+    }
+
+    pub fn account(&self) -> AccountId {
+        self.account
+    }
+
+    pub fn block(&self) -> Option<OLBlockCommitment> {
+        self.block
     }
 }
 

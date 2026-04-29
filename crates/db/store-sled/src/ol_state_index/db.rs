@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use sled::transaction::ConflictableTransactionError;
 use strata_db_types::{
-    DbError, DbResult,
+    AccountCreatedRecord, DbError, DbResult,
     ol_state_index::{
         AccountEpochKey, AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites,
     },
@@ -77,16 +77,16 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 // whole epoch atomically, so block-rollback can't undo
                 // individual blocks. Mark with `None` so per-block rollback
                 // is a no-op against these entries.
-                let created: Vec<(AccountId, Option<OLBlockCommitment>)> = writes
+                let created: Vec<AccountCreatedRecord> = writes
                     .created_accounts()
                     .iter()
-                    .map(|acct| (*acct, None))
+                    .map(|acct| AccountCreatedRecord::new(*acct, None))
                     .collect();
                 // Checkpoint-sync has no per-block high-water mark.
                 let common = EpochIndexingData::new(Some(commitment), created, None);
 
-                for (acct, _) in common.created_accounts() {
-                    creation_t.insert(acct, &epoch)?;
+                for r in common.created_accounts() {
+                    creation_t.insert(&r.account(), &epoch)?;
                 }
                 epoch_t.insert(&epoch, &common)?;
 
@@ -266,8 +266,8 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                         inbox_t.remove(&key)?;
                     }
                     if let Some(common) = epoch_t.get(e)? {
-                        for (acct, _) in common.created_accounts() {
-                            creation_t.remove(acct)?;
+                        for r in common.created_accounts() {
+                            creation_t.remove(&r.account())?;
                         }
                         epoch_t.remove(e)?;
                     }

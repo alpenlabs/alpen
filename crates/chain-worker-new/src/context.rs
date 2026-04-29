@@ -155,42 +155,13 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        let wb = output.write_batch();
         let epoch = block.header().epoch();
+        let wb = output.write_batch();
 
         self.ol_state_mgr
             .put_write_batch_blocking(commitment, wb.clone())?;
 
-        let created_accounts: Vec<AccountId> =
-            wb.ledger().iter_new_accounts().map(|(_, id)| *id).collect();
-
-        let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
-        for update in output.indexer_writes().snark_state_updates() {
-            let meta = AccountUpdateMeta::new(commitment, update.state());
-            let record = AccountUpdateRecord::new(
-                Some(meta),
-                *update.seqno().inner(),
-                update.next_read_idx(),
-                update.extra_data().map(<[u8]>::to_vec),
-            );
-            account_updates
-                .entry(update.account_id())
-                .or_default()
-                .push(record);
-        }
-
-        let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> =
-            BTreeMap::new();
-        for write in output.indexer_writes().inbox_messages() {
-            let entry_bytes = write.entry().as_ssz_bytes();
-            let record = InboxMessageRecord::new(entry_bytes, Some(commitment));
-            account_inbox_writes
-                .entry(write.account_id())
-                .or_default()
-                .push(record);
-        }
-
-        let writes = IndexingWrites::new(created_accounts, account_updates, account_inbox_writes);
+        let writes = build_indexing_writes(commitment, output);
         self.ol_state_indexing_mgr
             .apply_block_indexing_blocking(epoch, commitment, writes)?;
 
@@ -301,4 +272,45 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         Ok(())
     }
+}
+
+/// Builds an [`IndexingWrites`] payload from a block-execution output.
+///
+/// Collects newly created accounts, snark-account update records (each tagged with the block's
+/// commitment + final state root), and inbox-message writes (encoded as SSZ bytes), grouping per
+/// recipient account.
+fn build_indexing_writes(
+    commitment: OLBlockCommitment,
+    output: &OLBlockExecutionOutput,
+) -> IndexingWrites {
+    let wb = output.write_batch();
+    let created_accounts: Vec<AccountId> =
+        wb.ledger().iter_new_accounts().map(|(_, id)| *id).collect();
+
+    let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
+    for update in output.indexer_writes().snark_state_updates() {
+        let meta = AccountUpdateMeta::new(commitment, update.state());
+        let record = AccountUpdateRecord::new(
+            Some(meta),
+            *update.seqno().inner(),
+            update.next_read_idx(),
+            update.extra_data().map(<[u8]>::to_vec),
+        );
+        account_updates
+            .entry(update.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
+    for write in output.indexer_writes().inbox_messages() {
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let record = InboxMessageRecord::new(entry_bytes, Some(commitment));
+        account_inbox_writes
+            .entry(write.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
 }

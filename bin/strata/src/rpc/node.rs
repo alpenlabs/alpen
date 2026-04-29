@@ -43,6 +43,12 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     max_headers_range: usize,
 }
 
+/// Convenient wrapper for account records.
+struct AccountRecords {
+    updates: Vec<AccountUpdateRecord>,
+    inbox: Vec<InboxMessageRecord>,
+}
+
 impl<P: OLRpcProvider> OLRpcServer<P> {
     /// Creates a new [`OLRpcServer`].
     pub(crate) fn new(provider: P, genesis_l1_height: L1Height, max_headers_range: usize) -> Self {
@@ -219,7 +225,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
         account_id: AccountId,
         first_epoch: Epoch,
         last_epoch: Epoch,
-    ) -> RpcResult<(Vec<AccountUpdateRecord>, Vec<InboxMessageRecord>)> {
+    ) -> RpcResult<AccountRecords> {
         let mut all_updates = Vec::new();
         let mut all_inbox = Vec::new();
         for epoch in first_epoch..=last_epoch {
@@ -240,7 +246,10 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                 all_inbox.extend(records);
             }
         }
-        Ok((all_updates, all_inbox))
+        Ok(AccountRecords {
+            updates: all_updates,
+            inbox: all_inbox,
+        })
     }
 
     /// Builds one block summary from records already filtered to this block.
@@ -600,7 +609,10 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .last()
             .expect("non-empty chain blocks expected")
             .epoch;
-        let (all_updates, all_inbox) = self
+        let AccountRecords {
+            updates: all_updates,
+            inbox: all_inbox,
+        } = self
             .fetch_records_in_epoch_range(account_id, first_epoch, last_epoch)
             .await?;
 
