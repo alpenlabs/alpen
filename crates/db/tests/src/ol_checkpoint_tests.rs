@@ -1,5 +1,7 @@
+use strata_asm_proto_checkpoint_types::{
+    test_utils::create_test_checkpoint_payload, CheckpointPayload,
+};
 use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::{test_utils::create_test_checkpoint_payload, CheckpointPayload};
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex};
 use strata_identifiers::{
@@ -658,7 +660,7 @@ pub fn proptest_l1_ref_entry_roundtrip(
 #[macro_export]
 macro_rules! ol_checkpoint_db_tests {
     ($setup_expr:expr) => {
-        use strata_checkpoint_types_ssz::test_utils as checkpoint_test_utils;
+        use strata_asm_proto_checkpoint_types::test_utils as checkpoint_test_utils;
 
         #[test]
         fn test_get_nonexistent_checkpoint_payload_entry() {

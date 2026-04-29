@@ -4,8 +4,8 @@ use ssz::Encode;
 use strata_asm_common::{
     AsmHistoryAccumulatorState, AuxData, VerifiableManifestHash, VerifiedAuxData,
 };
-use strata_asm_txs_checkpoint::EnvelopeCheckpoint;
-use strata_checkpoint_types_ssz::{
+use strata_asm_proto_checkpoint_txs::EnvelopeCheckpoint;
+use strata_asm_proto_checkpoint_types::{
     compute_asm_manifests_hash_from_leaves, CheckpointClaim, CheckpointPayload, CheckpointSidecar,
     CheckpointTip, L2BlockRange, OLLog, TerminalHeaderComplement,
 };

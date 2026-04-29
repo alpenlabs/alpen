@@ -1,13 +1,14 @@
 //! Withdrawal fulfillment transaction functionality
 //!
 //! The CLI is responsible for wallet/UTXO management only.
-//! All transaction structure and OP_RETURN construction is handled by asm/txs/bridge-v1.
+//! All transaction structure and OP_RETURN construction is handled by
+//! asm/subprotocols/bridge-v1/txs.
 
 use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
 };
-use strata_asm_txs_bridge_v1::withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux;
+use strata_asm_proto_bridge_v1_txs::withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux;
 use strata_l1_txfmt::ParseConfig;
 use strata_primitives::bitcoin_bosd::Descriptor;
 
@@ -21,7 +22,7 @@ use crate::{
 /// Creates a withdrawal fulfillment transaction (CLI wrapper)
 ///
 /// Handles wallet operations (UTXO selection, signing) while using
-/// asm/txs/bridge-v1 for transaction structure.
+/// asm/subprotocols/bridge-v1/txs for transaction structure.
 ///
 /// # Arguments
 /// * `recipient_bosd` - bosd specifying which address to send to

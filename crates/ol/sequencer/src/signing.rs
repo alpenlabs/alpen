@@ -1,7 +1,7 @@
 //! Signing helpers for sequencer duties.
 
 use ssz::Encode;
-use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_crypto::{hash, sign_schnorr_sig};
 use strata_ol_chain_types_new::OLBlockHeader;
 use strata_primitives::buf::{Buf32, Buf64};

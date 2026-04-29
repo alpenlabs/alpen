@@ -18,7 +18,7 @@ use colored::Colorize;
 use indicatif::ProgressBar;
 use rand_core::OsRng;
 use shrex::encode;
-use strata_asm_txs_bridge_v1::deposit_request::DrtHeaderAux;
+use strata_asm_proto_bridge_v1_txs::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_identifiers::{AccountSerial, SubjectIdBytes};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
@@ -271,7 +271,7 @@ mod tests {
         keys::{DescriptorPublicKey, SinglePub, SinglePubKey},
         miniscript::{descriptor::TapTree, Descriptor, Miniscript},
     };
-    use strata_asm_txs_bridge_v1::deposit_request::parse_drt;
+    use strata_asm_proto_bridge_v1_txs::deposit_request::parse_drt;
     use strata_primitives::constants::RECOVER_DELAY;
     use strata_test_utils_btcio::BtcioTestHarness;
 

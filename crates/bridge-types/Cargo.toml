@@ -7,7 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
-strata-bridge-types.workspace = true
+strata-asm-proto-bridge-v1-types.workspace = true
 strata-codec.workspace = true
 strata-identifiers.workspace = true
 strata-primitives.workspace = true

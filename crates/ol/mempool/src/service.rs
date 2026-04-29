@@ -6,6 +6,7 @@ use serde::Serialize;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_state_types::StateProvider;
 use strata_service::{AsyncService, Response, Service};
+use tracing::{debug, info};
 
 use crate::{
     MempoolCommand, builder::MempoolInputMessage, state::MempoolServiceState, types::OLMempoolStats,
@@ -40,7 +41,11 @@ impl<P: StateProvider> Service for MempoolService<P> {
 }
 
 impl<P: StateProvider> AsyncService for MempoolService<P> {
-    async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
+    async fn on_launch(state: &mut Self::State) -> anyhow::Result<()> {
+        info!(
+            mempool_size = %state.stats().mempool_size(),
+            "ol mempool service launched"
+        );
         Ok(())
     }
 
@@ -58,6 +63,7 @@ impl<P: StateProvider> AsyncService for MempoolService<P> {
                 }
 
                 MempoolCommand::ReportInvalidTransactions { txs, completion } => {
+                    debug!(count = %txs.len(), "reporting invalid transactions");
                     state.handle_report_invalid_transactions(txs);
                     completion.send(()).await;
                 }

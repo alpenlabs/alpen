@@ -205,8 +205,8 @@ impl ServiceState for CsmWorkerState {
 mod tests {
     use std::sync::Arc;
 
+    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_checkpoint_types::EpochSummary;
-    use strata_checkpoint_types_ssz::test_utils::create_test_checkpoint_payload;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::Buf32;

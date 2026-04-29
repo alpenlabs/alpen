@@ -47,6 +47,7 @@ fn main() -> anyhow::Result<()> {
         json_format: config.logging.json_format,
         default_log_prefix: "signer",
         enable_metrics_layer: false,
+        extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
     });
 
     // Load sequencer key. Raw bytes are zeroized inside load_seqkey before it returns.

@@ -210,7 +210,7 @@ mod tests {
 
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointTipUpdate, constants::DEPOSIT_LOG_TYPE_ID};
-    use strata_checkpoint_types_ssz::CheckpointTip;
+    use strata_asm_proto_checkpoint_types::CheckpointTip;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_params::{Params, RollupParams, SyncParams};

@@ -7,7 +7,7 @@ use std::{
 };
 
 use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
-use strata_checkpoint_types_ssz::OL_DA_DIFF_MAX_SIZE;
+use strata_asm_proto_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
     LinearAccumulator,
