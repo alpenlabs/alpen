@@ -240,9 +240,10 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
 
     // First, decide if the block seems correctly signed and we haven't
     // already marked it as invalid.
-    let check_res = check_ol_block_proposal_valid(blkid, bundle, fcm_state.ctx().params().rollup());
-    if check_res.is_err() {
-        // It's invalid, write that and return.
+    if let Err(err) =
+        check_ol_block_proposal_valid(blkid, bundle, fcm_state.ctx().params().rollup())
+    {
+        warn!(%err, "rejecting block");
         return Ok(false);
     }
 
@@ -365,29 +366,31 @@ async fn handle_epoch_finalization(
 }
 
 /// Checks OL block's credential to ensure that it was authentically proposed.
+///
+/// Slot-0 (genesis) blocks are not expected as proposals — genesis is fixed at node init.
 pub fn check_ol_block_proposal_valid(
     blkid: &OLBlockId,
     block: &OLBlock,
     params: &RollupParams,
-) -> anyhow::Result<()> {
-    // If it's not the genesis block, check that the block is correctly signed.
-    if block.header().slot() > 0 {
-        let Some(sig) = block.signed_header().signature() else {
-            // Just ignore blocks without signature
-            warn!(%blkid, "Received block without signature. ignoring");
-            return Ok(());
-        };
-        let msg: Buf32 = block.header().compute_blkid().into();
-        let is_valid = match params.cred_rule {
-            CredRule::Unchecked => true,
-            CredRule::SchnorrKey(pubkey) => verify_schnorr_sig(sig, &msg, &pubkey),
-        };
-        if !is_valid {
-            warn!(%blkid, "Received block with invalid signature.");
-            return Err(anyhow!("block creds check failed"));
-        }
+) -> Result<(), Error> {
+    if block.header().slot() == 0 {
+        return Err(Error::UnexpectedGenesisBlock(*blkid));
     }
-
+    let sig = match block.signed_header().signature() {
+        Some(sig) => sig,
+        None => match &params.cred_rule {
+            CredRule::Unchecked => return Ok(()),
+            CredRule::SchnorrKey(_) => return Err(Error::MissingBlockSignature(*blkid)),
+        },
+    };
+    let msg: Buf32 = block.header().compute_blkid().into();
+    let is_valid = match &params.cred_rule {
+        CredRule::Unchecked => true,
+        CredRule::SchnorrKey(pubkey) => verify_schnorr_sig(sig, &msg, pubkey),
+    };
+    if !is_valid {
+        return Err(Error::InvalidBlockSignature(*blkid));
+    }
     Ok(())
 }
 
@@ -512,4 +515,134 @@ async fn revert_ol_state_to_block(
     // FIXME(STR-2140): Rollback the writes on the database that we no longer need.
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
+    use strata_primitives::{
+        crypto::sign_schnorr_sig,
+        utils::{get_test_schnorr_keys, SchnorrKeypair},
+        Buf64,
+    };
+    use strata_test_utils_l2::gen_params;
+
+    use super::*;
+
+    fn make_keypair() -> SchnorrKeypair {
+        get_test_schnorr_keys()[0].clone()
+    }
+
+    fn make_rollup_params(cred_rule: CredRule) -> RollupParams {
+        let mut params = gen_params();
+        params.rollup.cred_rule = cred_rule;
+        params.rollup
+    }
+
+    fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeader::new(
+            1_000 + slot,
+            BlockFlags::from(0),
+            slot,
+            0,
+            OLBlockId::from(Buf32::zero()),
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        let signed_header = match signature {
+            Some(signature) => SignedOLBlockHeader::new(header, signature),
+            None => SignedOLBlockHeader {
+                header,
+                credential: OLBlockCredential {
+                    schnorr_sig: None::<Buf64>.into(),
+                },
+            },
+        };
+
+        OLBlock::new(signed_header, body)
+    }
+
+    fn sign_block(block: &OLBlock, signing_key: &Buf32) -> Buf64 {
+        let msg: Buf32 = block.header().compute_blkid().into();
+        sign_schnorr_sig(&msg, signing_key)
+    }
+
+    #[test]
+    fn accepts_unsigned_block_when_unchecked() {
+        let params = make_rollup_params(CredRule::Unchecked);
+        let block = make_block(1, None);
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_unsigned_block_when_checked() {
+        let keypair = make_keypair();
+        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = make_block(1, None);
+        let blkid = block.header().compute_blkid();
+
+        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+            .expect_err("missing signature should be rejected");
+
+        assert!(matches!(err, Error::MissingBlockSignature(_)));
+    }
+
+    #[test]
+    fn rejects_invalid_signature() {
+        let keypair = make_keypair();
+        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = make_block(1, Some(Buf64::zero()));
+        let blkid = block.header().compute_blkid();
+
+        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+            .expect_err("invalid signature should be rejected");
+
+        assert!(matches!(err, Error::InvalidBlockSignature(_)));
+    }
+
+    #[test]
+    fn accepts_garbage_signature_when_unchecked() {
+        let params = make_rollup_params(CredRule::Unchecked);
+        let block = make_block(1, Some(Buf64::zero()));
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn accepts_valid_signature() {
+        let keypair = make_keypair();
+        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = make_block(1, Some(Buf64::zero()));
+        let signature = sign_block(&block, &keypair.sk);
+        let block = make_block(1, Some(signature));
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_genesis_block_proposal() {
+        let keypair = make_keypair();
+        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = make_block(0, None);
+        let blkid = block.header().compute_blkid();
+
+        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+            .expect_err("slot-0 proposals should be rejected");
+
+        assert!(matches!(err, Error::UnexpectedGenesisBlock(_)));
+    }
 }
