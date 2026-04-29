@@ -12,6 +12,7 @@ use strata_status::{OLSyncStatusUpdate, StatusChannel};
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
 use tokio::sync::{mpsc, watch};
+use tracing::info;
 
 use crate::{
     MempoolCommand, MempoolHandle,
@@ -60,6 +61,13 @@ impl MempoolBuilder {
     ///
     /// Creates the service with FCM chain sync integration via tokio::select!.
     pub async fn launch(self, texec: &TaskExecutor) -> anyhow::Result<MempoolHandle> {
+        info!(
+            tip_slot = %self.current_tip.slot(),
+            max_tx_count = %self.config.max_tx_count,
+            max_mempool_bytes = %self.config.max_mempool_bytes,
+            "launching ol mempool service"
+        );
+
         // Subscribe to chain sync updates
         let ol_sync_rx = self.status_channel.subscribe_ol_sync();
 
