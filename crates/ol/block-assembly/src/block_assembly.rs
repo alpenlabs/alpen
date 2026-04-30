@@ -491,7 +491,7 @@ where
         let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
-        debug!(%txid, ?tx, "processing transaction");
+        debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Tx executed successfully. Before committing side effects, check
@@ -563,7 +563,6 @@ where
                 failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
             }
         }
-        debug!(%txid, "successful tx execution in block assembly");
     }
 
     // Reassemble AccumulatedDaData with updated accumulator; epoch_logs unchanged
