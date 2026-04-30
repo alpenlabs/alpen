@@ -27,28 +27,25 @@ use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 use crate::{
     constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, NETWORK},
     error::Error,
-    parse::{generate_taproot_address, parse_operator_keys},
+    parse::generate_taproot_address,
 };
 
 /// Creates a deposit transaction (DT)
 ///
 /// # Arguments
 /// * `tx_bytes` - Raw DRT transaction bytes
-/// * `operator_keys` - Vector of operator secret keys as bytes (78 bytes each)
+/// * `signers` - Operator private keys (already parsed)
 /// * `dt_index` - Deposit transaction index for metadata
 ///
 /// # Returns
 /// * `Result<Vec<u8>, Error>` - The signed and serialized deposit transaction
 pub(crate) fn create_deposit_transaction_cli(
     tx_bytes: Vec<u8>,
-    operator_keys: Vec<[u8; 78]>,
+    signers: Vec<EvenSecretKey>,
     dt_index: u32,
 ) -> Result<Vec<u8>, Error> {
     let drt_tx =
         deserialize(&tx_bytes).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {e}")))?;
-
-    let signers = parse_operator_keys(&operator_keys)
-        .map_err(|e| Error::TxBuilder(format!("Failed to parse operator keys: {e}")))?;
 
     let pubkeys = signers
         .iter()

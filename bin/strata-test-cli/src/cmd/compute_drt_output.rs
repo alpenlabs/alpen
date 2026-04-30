@@ -27,7 +27,7 @@ use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
     constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES},
-    parse::parse_operator_keys,
+    parse::parse_operator_xprivs,
 };
 
 /// Compute the DRT bridge_in P2TR address and SPS-50 OP_RETURN script.
@@ -62,28 +62,11 @@ fn default_network() -> String {
 }
 
 pub(crate) fn compute_drt_output(args: ComputeDrtOutputArgs) -> Result<(), DisplayedError> {
-    let keys: Vec<String> = serde_json::from_str(&args.operator_keys)
-        .user_error("invalid operator_keys JSON")?;
+    let keys: Vec<String> =
+        serde_json::from_str(&args.operator_keys).user_error("invalid operator_keys JSON")?;
 
-    let mut keys_bytes = Vec::with_capacity(keys.len());
-    for k in keys {
-        let bytes = hex::decode(&k).user_error("invalid operator key hex")?;
-        if bytes.len() != 78 {
-            return Err(DisplayedError::UserError(
-                format!(
-                    "invalid operator key length: expected 78 bytes, got {}",
-                    bytes.len()
-                ),
-                Box::new(()),
-            ));
-        }
-        let mut arr = [0u8; 78];
-        arr.copy_from_slice(&bytes);
-        keys_bytes.push(arr);
-    }
-
-    let signers =
-        parse_operator_keys(&keys_bytes).internal_error("failed to parse operator keys")?;
+    let signers = parse_operator_xprivs(&keys)
+        .user_error("invalid operator key (need base58 xpriv or 78-byte hex)")?;
     let pubkeys: Vec<Buf32> = signers
         .iter()
         .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0.serialize()))
