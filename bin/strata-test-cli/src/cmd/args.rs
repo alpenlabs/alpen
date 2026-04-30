@@ -1,7 +1,8 @@
 use argh::FromArgs;
 
 use super::{
-    build_snark_withdrawal::BuildSnarkWithdrawalArgs, convert_to_xonly_pk::ConvertToXonlyPkArgs,
+    build_snark_withdrawal::BuildSnarkWithdrawalArgs,
+    compute_drt_output::ComputeDrtOutputArgs, convert_to_xonly_pk::ConvertToXonlyPkArgs,
     create_deposit_tx::CreateDepositTxArgs, create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
     extract_p2tr_pubkey::ExtractP2trPubkeyArgs, get_address::GetAddressArgs,
@@ -30,6 +31,9 @@ pub enum Commands {
 
     /// Inject a mock deposit via the debug subprotocol
     CreateMockDeposit(CreateMockDepositArgs),
+
+    /// Compute the bridge_in P2TR address and SPS-50 OP_RETURN script for a DRT
+    ComputeDrtOutput(ComputeDrtOutputArgs),
 
     /// Build a snark account withdrawal transaction JSON
     BuildSnarkWithdrawal(BuildSnarkWithdrawalArgs),
