@@ -16,7 +16,7 @@ use crate::{
 /// Process a block's transaction segment.
 ///
 /// This is called for every block.
-pub fn process_block_tx_segment<S: IStateAccessor>(
+pub fn process_block_tx_segment<S: IStateAccessorMut>(
     state: &mut S,
     tx_seg: &OLTxSegment,
     context: &TxExecContext<'_>,
@@ -32,7 +32,7 @@ pub fn process_block_tx_segment<S: IStateAccessor>(
 ///
 /// This can also be used in mempool logic for trying to figure out if we can
 /// apply a tx into a block.
-pub fn process_single_tx<S: IStateAccessor>(
+pub fn process_single_tx<S: IStateAccessorMut>(
     state: &mut S,
     tx: &OLTransaction,
     context: &TxExecContext<'_>,
@@ -95,7 +95,7 @@ fn verify_gam_tx(gam: &GamTxPayload, fx: &TxEffects) -> ExecResult<()> {
     Ok(())
 }
 
-fn process_update_tx<S: IStateAccessor>(
+fn process_update_tx<S: IStateAccessorMut>(
     state: &mut S,
     sau_payload: &SauTxPayload,
     effects: &TxEffects,
@@ -149,7 +149,7 @@ fn process_update_tx<S: IStateAccessor>(
 }
 
 /// Applies the effects of a transaction (transfers and messages) to account state.
-fn apply_tx_effects<S: IStateAccessor>(
+fn apply_tx_effects<S: IStateAccessorMut>(
     state: &mut S,
     source: AccountId,
     effects: &TxEffects,
@@ -166,7 +166,7 @@ fn apply_tx_effects<S: IStateAccessor>(
     // value.
     if source != SEQUENCER_ACCT_ID && !total_sent.is_zero() {
         state.update_account(source, |astate| {
-            let coin = astate.take_balance(total_sent).map_err(ExecError::Acct)?;
+            let coin = astate.take_balance(total_sent)?;
             coin.safely_consume_unchecked(); // take from this later
             ExecResult::Ok(())
         })??;
@@ -185,7 +185,7 @@ fn apply_tx_effects<S: IStateAccessor>(
 }
 
 /// Checks that a tx's constraints are valid for the current slot in state.
-pub fn check_tx_constraints<S: IStateAccessor>(
+pub fn check_tx_constraints<S: IStateAccessorMut>(
     constraints: &TxConstraints,
     state: &S,
 ) -> ExecResult<()> {
@@ -211,7 +211,7 @@ pub fn check_tx_constraints<S: IStateAccessor>(
 ///
 /// Specifically, it checks that all the destinations can receive the outputs
 /// and that we don't overdraw the account.
-pub fn verify_effects_safe<S: IStateAccessor>(
+pub fn verify_effects_safe<S: IStateAccessorMut>(
     fx: &TxEffects,
     state: &S,
     acct: &S::AccountState,

@@ -1,0 +1,63 @@
+################################################################################
+# Local development Dockerfile for strata-datatool.
+#
+# Builds strata-datatool from source. The production Dockerfile (./Dockerfile)
+# expects a pre-built binary from CI artifacts — use this instead for local
+# development and the init one-shot service.
+#
+# Skips cargo-chef to avoid cooking the full workspace (which pulls in sp1
+# and other heavy deps that datatool does not need for local runs).
+#
+# Build:
+#   docker buildx build -f docker/strata-datatool/Dockerfile.local \
+#     -t strata-datatool:dev .
+################################################################################
+
+ARG RUST_VERSION=1.92
+
+FROM rust:${RUST_VERSION}-slim-trixie AS builder
+WORKDIR /app
+
+ENV CARGO_HOME=/usr/local/cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_INCREMENTAL=0 \
+    CARGO_TERM_COLOR=always
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      build-essential ca-certificates clang libclang-dev pkg-config libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY rust-toolchain.toml ./
+RUN rustup toolchain install
+
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=private,target=/app/target \
+    cargo build --locked --release --bin strata-datatool && \
+    install -m 0555 /app/target/release/strata-datatool /usr/local/bin/strata-datatool
+
+# ---- runtime ----
+FROM debian:13-slim AS runtime
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates libssl3 curl jq python3 python3-pip && \
+    pip3 install --break-system-packages coincurve && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN useradd --system --create-home --home-dir /app --uid 10001 --shell /usr/sbin/nologin alpen
+
+WORKDIR /app
+
+COPY --from=builder /usr/local/bin/strata-datatool /usr/local/bin/strata-datatool
+COPY docker/init-network.sh /usr/local/bin/init-network.sh
+COPY docker/init/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN chmod 0555 /usr/local/bin/strata-datatool /usr/local/bin/init-network.sh /usr/local/bin/entrypoint.sh
+
+USER alpen
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

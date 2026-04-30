@@ -12,10 +12,12 @@ use crate::BatchId;
 
 /// Compact summary of the last EVM block header in a batch.
 ///
-/// Captures the subset of the EVM block header needed to build the next
-/// block during DA-only chain reconstruction. A new sequencer recovering
-/// from L1 DA has the [`BatchStateDiff`] (account/storage changes) but
-/// **not** the block headers themselves — these fields fill that gap.
+/// Captures the subset of the terminal EVM block header a sequencer recovering
+/// purely from L1 DA needs to build the next EVM block. A fresh sequencer has
+/// the [`BatchStateDiff`] for account/storage changes but **not** the block
+/// headers themselves, so these non-derivable header fields fill that gap. The
+/// terminal block hash is carried separately by [`DaBlob::batch_id`], and the
+/// terminal post-state root is reconstructible by applying the DA state diffs.
 ///
 /// - `base_fee`, `gas_used`, `gas_limit` feed the EIP-1559 base-fee calculation and gas-limit
 ///   adjustment for the next block.

@@ -35,6 +35,7 @@ mod sequencer_services {
         BlockasmBuilder, BlockasmHandle, FixedSlotSealing, MempoolProviderImpl,
     };
     use strata_ol_mempool::MempoolHandle;
+    use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_service::DumbTickHandle;
     use strata_storage::ops::{l1tx_broadcast, writer::Context};
     use tokio::sync::mpsc;
@@ -174,7 +175,7 @@ mod sequencer_services {
 
         let mempool_provider = MempoolProviderImpl::new(mempool_handle);
         let epoch_sealing = FixedSlotSealing::new(slots_per_epoch);
-        let state_provider = nodectx.storage().ol_state().clone();
+        let state_provider = OLStateManagerProviderImpl::new(nodectx.storage().ol_state().clone());
 
         nodectx.task_manager().handle().block_on(async {
             BlockasmBuilder::new(

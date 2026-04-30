@@ -61,7 +61,7 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
         encode_to_vec(&OLDaPayloadV1::new(da_diff)).expect("encode DA payload");
 
     CheckpointProverInput {
-        start_state,
+        start_state: start_state.state().clone(),
         blocks,
         parent,
         da_state_diff_bytes,

@@ -23,9 +23,6 @@ class TsnlLedgerAccountsTable(Container):
     ### Sorted list of account entries
     accounts: List[TsnlAccountEntry, MAX_LEDGER_ACCOUNTS]
 
-    ### Serial to account ID mapping
-    serials: List[strata_acct_types.AccountId, MAX_ACCOUNT_SERIALS]
-
 ### Ledger account entry
 class TsnlAccountEntry(Container):
     ### Account ID
@@ -105,3 +102,6 @@ class EpochalState(Container):
 class GlobalState(Container):
     ### Current slot number
     cur_slot: strata_identifiers.Slot
+
+    ### Next available serial we can assign to an account.
+    next_avail_serial: uint64

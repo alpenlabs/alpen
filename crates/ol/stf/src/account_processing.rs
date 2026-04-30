@@ -1,7 +1,7 @@
 //! Account-specific interaction handling, such as messages.
 
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
-use strata_ledger_types::{Coin, IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
+use strata_ledger_types::*;
 use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
@@ -17,7 +17,7 @@ use crate::{
 
 /// Processes a message by delivering it to its destination, which might involve
 /// touching the ledger state.
-pub(crate) fn process_message<S: IStateAccessor>(
+pub(crate) fn process_message<S: IStateAccessorMut>(
     state: &mut S,
     sender: AccountId,
     target: AccountId,
@@ -61,7 +61,7 @@ pub(crate) fn process_message<S: IStateAccessor>(
     Ok(())
 }
 
-pub(crate) fn process_transfer<S: IStateAccessor>(
+pub(crate) fn process_transfer<S: IStateAccessorMut>(
     state: &mut S,
     _sender: AccountId,
     target: AccountId,
@@ -96,7 +96,7 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
     Ok(())
 }
 
-fn handle_bridge_gateway_message<S: IStateAccessor>(
+fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     _state: &mut S,
     _sender: AccountId,
     payload: MsgPayload,

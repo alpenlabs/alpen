@@ -5,7 +5,7 @@
 //! outputs (corresponding with headers/checkpoints/etc).
 
 use strata_identifiers::Buf32;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
     OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog, OLTxSegment,
@@ -14,9 +14,7 @@ use strata_ol_da::DaScheme;
 
 use crate::{
     chain_processing,
-    context::{
-        BasicExecContext, BlockContext, BlockInfo, EpochInfo, EpochInitialContext, TxExecContext,
-    },
+    context::*,
     errors::{ExecError, ExecResult},
     manifest_processing,
     output::ExecOutputBuffer,
@@ -128,7 +126,7 @@ impl<'b> BlockExecInput<'b> {
         self.tx_segment
     }
 
-    /// Returns the manifest container if present.
+    /// Returns the zmanifest container if present.
     pub fn manifest_container(&self) -> Option<&'b OLL1ManifestContainer> {
         self.manifest_container
     }
@@ -142,7 +140,7 @@ impl<'b> BlockExecInput<'b> {
 /// Verifies a block by executing it the normal way.
 ///
 /// This closely aligns with `execute_block_inputs`.
-pub fn verify_block<S: IStateAccessor>(
+pub fn verify_block<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
@@ -336,7 +334,7 @@ pub struct EpochExecExpectations {
 ///
 /// The manifests are expected to be produced synthetically based on what's
 /// implied in the checkpoint.
-pub fn verify_epoch_with_diff<S: IStateAccessor, D: DaScheme<S>>(
+pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,
     diff: D::Diff,

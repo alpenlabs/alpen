@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use strata_identifiers::{Epoch, OLBlockCommitment, OLBlockId};
-use strata_ledger_types::{IAccountStateMut, IStateAccessor};
+use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, EpochDaAccumulator};
 use strata_ol_stf::execute_block_batch;
@@ -117,8 +117,8 @@ pub(crate) async fn rebuild_accumulated_da_upto<C: BlockAssemblyAnchorContext>(
 ) -> Result<AccumulatedDaData, BlockAssemblyError>
 where
     C::State: BlockAssemblyStateAccess,
-    <C::State as IStateAccessor>::AccountStateMut: Clone,
-    <<C::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+    <C::State as IStateAccessorMut>::AccountStateMut: Clone,
+    <<C::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
     let epoch_blocks = collect_epoch_blocks_until(blkid.blkid, epoch, ctx).await?;

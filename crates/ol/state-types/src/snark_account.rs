@@ -1,4 +1,4 @@
-use strata_acct_types::{AcctResult, Hash, MessageEntry, Mmr64, StrataHasher, tree_hash::TreeHash};
+use strata_acct_types::{Hash, MessageEntry, Mmr64, StrataHasher, tree_hash::TreeHash};
 use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, Mmr, Mmr64B32};
 use strata_predicate::PredicateKey;
@@ -33,6 +33,10 @@ impl OLSnarkAccountState {
 }
 
 impl ISnarkAccountState for OLSnarkAccountState {
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
+        Self::new_fresh(update_vk, initial_state_root)
+    }
+
     fn update_vk(&self) -> &PredicateKey {
         &self.update_vk
     }
@@ -54,12 +58,6 @@ impl ISnarkAccountState for OLSnarkAccountState {
     }
 }
 
-impl ISnarkAccountStateConstructible for OLSnarkAccountState {
-    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self {
-        OLSnarkAccountState::new_fresh(update_vk, initial_state_root)
-    }
-}
-
 impl ISnarkAccountStateMut for OLSnarkAccountState {
     fn set_proof_state_directly(&mut self, state: Hash, next_read_idx: u64, seqno: Seqno) {
         self.proof_state = ProofState::new(state, next_read_idx);
@@ -72,13 +70,13 @@ impl ISnarkAccountStateMut for OLSnarkAccountState {
         next_read_idx: u64,
         seqno: Seqno,
         _extra_data: &[u8],
-    ) -> AcctResult<()> {
+    ) -> StateResult<()> {
         // Set the proof state but ignore extra data in this context.
         self.set_proof_state_directly(state, next_read_idx, seqno);
         Ok(())
     }
 
-    fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()> {
+    fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()> {
         let hash = <MessageEntry as TreeHash>::tree_hash_root(&entry);
         Mmr::<StrataHasher>::add_leaf(&mut self.inbox_mmr, hash.into_inner())
             .expect("ol/state: mmr add_leaf");

@@ -30,4 +30,4 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-strata-merkle.workspace = true
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }

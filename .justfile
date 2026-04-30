@@ -358,3 +358,31 @@ bench-db: bench-db-sled
 [group('benches')]
 bench-db-sled:
     cargo bench --package alpen-benchmarks --no-default-features --features=db,sled
+
+# Rebuild sequencer stack images (uses docker cache, fast if no changes)
+[group('docker')]
+docker-seq-build:
+    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml build
+
+# Start local signet bitcoin node
+[group('docker')]
+docker-signet-up:
+    cd {{docker_dir}} && docker compose -f compose-signet.yml up -d
+
+# Stop local signet bitcoin node
+[group('docker')]
+docker-signet-down:
+    cd {{docker_dir}} && docker compose -f compose-signet.yml down
+
+# Start sequencer stack (signet + sequencer)
+[group('docker')]
+docker-seq-up: docker-signet-up
+    mkdir -p {{docker_dir}}/configs/generated
+    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml run --rm init
+    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml up -d
+
+# Stop sequencer stack (signet + sequencer)
+[group('docker')]
+docker-seq-down:
+    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml down
+    cd {{docker_dir}} && docker compose -f compose-signet.yml down

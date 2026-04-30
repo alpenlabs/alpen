@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use ssz_types::VariableList;
-use strata_acct_types::{AccountId, BitcoinAmount};
+use strata_acct_types::BitcoinAmount;
 use strata_identifiers::{
     EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockId,
     test_utils::{account_id_strategy, account_serial_strategy, buf32_strategy},
@@ -27,7 +27,10 @@ pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
 }
 
 pub fn global_state_strategy() -> impl Strategy<Value = GlobalState> {
-    any::<u64>().prop_map(|cur_slot| GlobalState { cur_slot })
+    any::<(u64, u64)>().prop_map(|(cur_slot, next_avail_serial)| GlobalState {
+        cur_slot,
+        next_avail_serial,
+    })
 }
 
 pub fn epochal_state_strategy() -> impl Strategy<Value = EpochalState> {
@@ -110,26 +113,15 @@ pub fn tsnl_ledger_accounts_table_strategy() -> impl Strategy<Value = TsnlLedger
         entries.sort_by_key(|e| e.id);
 
         let mut accounts = VariableList::default();
-        let mut serials = VariableList::default();
-
-        // Add system reserved serials (zeros)
-        for _ in 0..strata_acct_types::SYSTEM_RESERVED_ACCTS {
-            serials
-                .push(AccountId::zero())
-                .expect("within MAX_ACCOUNT_SERIALS");
-        }
 
         // Add entries
         for entry in entries {
             accounts
                 .push(entry)
                 .expect("within MAX_LEDGER_ACCOUNTS capacity");
-            serials
-                .push(AccountId::zero()) // Placeholder, would need proper ID mapping
-                .expect("within MAX_ACCOUNT_SERIALS");
         }
 
-        TsnlLedgerAccountsTable { accounts, serials }
+        TsnlLedgerAccountsTable { accounts }
     })
 }
 

@@ -13,9 +13,9 @@ use strata_db_types::types::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_service::ServiceState;
-use strata_storage::{NodeStorage, OLStateManager};
+use strata_storage::NodeStorage;
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
@@ -66,26 +66,28 @@ pub(crate) struct MempoolContext<P: StateProvider> {
     pub(crate) provider: Arc<P>,
 }
 
-impl MempoolContext<OLStateManager> {
-    /// Create new mempool context.
-    ///
-    /// Extracts the state provider from storage.
-    pub(crate) fn new(config: OLMempoolConfig, storage: Arc<NodeStorage>) -> Self {
-        let provider = storage.ol_state().clone();
-        Self {
-            config,
-            storage,
-            provider,
-        }
-    }
-
+impl<P: StateProvider> MempoolContext<P> {
     /// Create new mempool context with explicit provider.
-    pub(crate) fn new_with_provider<P: StateProvider>(
+    pub(crate) fn new(
         config: OLMempoolConfig,
         storage: Arc<NodeStorage>,
         provider: Arc<P>,
     ) -> MempoolContext<P> {
         MempoolContext {
+            config,
+            storage,
+            provider,
+        }
+    }
+}
+
+impl MempoolContext<OLStateManagerProviderImpl> {
+    /// Create new mempool context.
+    ///
+    /// Extracts the state provider from storage.
+    pub(crate) fn new_from_nodestorage(config: OLMempoolConfig, storage: Arc<NodeStorage>) -> Self {
+        let provider = Arc::new(OLStateManagerProviderImpl::new(storage.ol_state().clone()));
+        Self {
             config,
             storage,
             provider,
@@ -123,7 +125,7 @@ pub(crate) struct MempoolServiceState<P: StateProvider> {
     account_state: HashMap<AccountId, AccountMempoolState>,
 
     /// State accessor for validation. Updated when chain tip changes.
-    state_accessor: Arc<P::State>,
+    state_accessor: P::State,
 
     /// Mempool statistics.
     stats: OLMempoolStats,
@@ -138,7 +140,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
         provider: Arc<P>,
         tip: OLBlockCommitment,
     ) -> OLMempoolResult<Self> {
-        let ctx = Arc::new(MempoolContext::new_with_provider(config, storage, provider));
+        let ctx = Arc::new(MempoolContext::new(config, storage, provider));
         Self::new_with_context(ctx, tip).await
     }
 

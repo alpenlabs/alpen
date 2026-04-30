@@ -29,7 +29,10 @@ fn test_snark_account_deposit_and_withdrawal() {
     let vk = PredicateKey::always_accept();
     let snark_state = OLSnarkAccountState::new_fresh(vk, initial_state_root);
 
-    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
+    let new_acct_data = NewAccountData::new_empty(NewAccountTypeState::Snark {
+        update_vk: snark_state.update_vk().clone(),
+        initial_state_root: snark_state.inner_state_root(),
+    });
     let snark_serial = state
         .create_new_account(snark_account_id, new_acct_data)
         .expect("Should create snark account");

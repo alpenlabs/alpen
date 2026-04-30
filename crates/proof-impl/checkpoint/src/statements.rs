@@ -11,6 +11,7 @@ use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog, OLTxSegment};
 use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, EpochInfo, construct_block,
@@ -85,11 +86,14 @@ pub fn process_ol_stf(zkvm: &impl ZkVmEnv) {
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
 pub fn process_ol_stf_core(
-    mut state: OLState,
+    state: OLState,
     blocks: Vec<OLBlock>,
     parent: OLBlockHeader,
     da_state_diff_bytes: Vec<u8>,
 ) -> CheckpointClaim {
+    // Wrap OLState in MemoryStateBaseLayer to satisfy IStateAccessor requirements.
+    let mut state = MemoryStateBaseLayer::new(state);
+
     // Verify that the parent block's state root matches the initial state's computed root.
     // This ensures state continuity and prevents invalid state transitions.
     let initial_state_root = state
@@ -117,7 +121,7 @@ pub fn process_ol_stf_core(
     );
 
     // Capture epoch-start state for DA witness verification.
-    let initial_state = state.clone();
+    let initial_state = MemoryStateBaseLayer::new(state.state().clone());
 
     // SAFETY: blocks is guaranteed non-empty by the assertion above.
     // Validate the last block is terminal before accessing its L1 update.
@@ -163,7 +167,7 @@ pub fn process_ol_stf_core(
         parent.compute_block_commitment(),
     );
     let mut reconstructed_state = initial_state;
-    verify_epoch_preseal_with_diff::<OLState, OLDaSchemeV1>(
+    verify_epoch_preseal_with_diff::<MemoryStateBaseLayer, OLDaSchemeV1>(
         &mut reconstructed_state,
         &epoch_info,
         payload,
@@ -228,7 +232,7 @@ pub fn process_ol_stf_core(
 /// - Any block execution fails
 /// - The computed block header doesn't match the input block header
 fn execute_block_batch(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
 ) -> (Vec<OLLog>, FixedBytes<32>, OLBlockHeader) {

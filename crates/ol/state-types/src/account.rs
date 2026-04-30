@@ -1,6 +1,6 @@
 use strata_acct_types::*;
 use strata_identifiers::AccountSerial;
-use strata_ledger_types::{AccountTypeState, *};
+use strata_ledger_types::*;
 
 use crate::ssz_generated::ssz::state::{OLAccountState, OLAccountTypeState, OLSnarkAccountState};
 
@@ -22,6 +22,21 @@ impl OLAccountState {
 
 impl IAccountState for OLAccountState {
     type SnarkAccountState = OLSnarkAccountState;
+
+    fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self {
+        let balance = new_acct_data.initial_balance();
+        let type_state = match new_acct_data.into_type_state() {
+            NewAccountTypeState::Empty => OLAccountTypeState::Empty,
+            NewAccountTypeState::Snark {
+                update_vk,
+                initial_state_root,
+            } => OLAccountTypeState::Snark(OLSnarkAccountState::new_fresh(
+                update_vk,
+                initial_state_root,
+            )),
+        };
+        Self::new(serial, balance, type_state)
+    }
 
     fn serial(&self) -> AccountSerial {
         self.serial
@@ -45,10 +60,13 @@ impl IAccountState for OLAccountState {
         }
     }
 
-    fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState> {
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState> {
         match &self.state {
             OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(AcctError::MismatchedType(self.ty(), AccountTypeId::Snark)),
+            _ => Err(StateError::MismatchedAcctType {
+                got: self.ty(),
+                expected: AccountTypeId::Snark,
+            }),
         }
     }
 }
@@ -64,30 +82,26 @@ impl IAccountStateMut for OLAccountState {
         coin.safely_consume_unchecked();
     }
 
-    fn take_balance(&mut self, amt: BitcoinAmount) -> AcctResult<Coin> {
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
         self.balance = self
             .balance
             .checked_sub(amt)
-            .expect("ledger: underflow balance");
+            .ok_or(StateError::InsufficientBalance {
+                need: amt,
+                have: self.balance,
+            })?;
         Ok(Coin::new_unchecked(amt))
     }
 
-    fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut> {
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut> {
         let ty = self.ty();
         match &mut self.state {
             OLAccountTypeState::Snark(state) => Ok(state),
-            _ => Err(AcctError::MismatchedType(ty, AccountTypeId::Snark)),
+            _ => Err(StateError::MismatchedAcctType {
+                got: ty,
+                expected: AccountTypeId::Snark,
+            }),
         }
-    }
-}
-
-impl IAccountStateConstructible for OLAccountState {
-    fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self {
-        Self::new(
-            serial,
-            new_acct_data.initial_balance(),
-            OLAccountTypeState::from_generic(new_acct_data.into_type_state()),
-        )
     }
 }
 
@@ -97,22 +111,6 @@ impl OLAccountTypeState {
         match self {
             OLAccountTypeState::Empty => AccountTypeId::Empty,
             OLAccountTypeState::Snark(_) => AccountTypeId::Snark,
-        }
-    }
-
-    /// Converts from the generic wrapper.
-    pub fn from_generic(ts: AccountTypeState<OLAccountState>) -> Self {
-        match ts {
-            AccountTypeState::Empty => OLAccountTypeState::Empty,
-            AccountTypeState::Snark(s) => OLAccountTypeState::Snark(s),
-        }
-    }
-
-    /// Converts into the generic wrapper.
-    pub fn into_generic(self) -> AccountTypeState<OLAccountState> {
-        match self {
-            OLAccountTypeState::Empty => AccountTypeState::Empty,
-            OLAccountTypeState::Snark(s) => AccountTypeState::Snark(s),
         }
     }
 }

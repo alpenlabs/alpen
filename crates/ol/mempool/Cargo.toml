@@ -13,7 +13,7 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types-new = { workspace = true, features = ["test-utils"] }
-strata-ol-state-types.workspace = true
+strata-ol-state-provider.workspace = true
 strata-ol-stf.workspace = true
 strata-service.workspace = true
 strata-snark-acct-sys.workspace = true
@@ -29,9 +29,12 @@ tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
-proptest.workspace = true
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-ol-params.workspace = true
+strata-ol-state-support-types.workspace = true
+strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
+
+proptest.workspace = true
 threadpool.workspace = true

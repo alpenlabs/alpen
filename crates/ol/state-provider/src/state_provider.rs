@@ -9,7 +9,7 @@
 use std::{error::Error, fmt::Debug, future::Future, sync::Arc};
 
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::IStateAccessorMut;
 
 /// Provider trait for retrieving state at specific chain tips.
 ///
@@ -19,8 +19,8 @@ use strata_ledger_types::IStateAccessor;
 ///
 /// # Associated Types
 ///
-/// - `State`: The state type that implements [`IStateAccessor`]. Must be `Send + Sync + 'static` to
-///   enable sharing across async operations.
+/// - `State`: The state type that implements [`IStateAccessorMut`]. Must be `Send + Sync + 'static`
+///   to enable sharing across async tasks.
 /// - `Error`: The error type for state retrieval operations. Each implementation can use its own
 ///   error type (e.g., `DbError` for database-backed providers, custom errors for test providers).
 ///
@@ -31,7 +31,8 @@ use strata_ledger_types::IStateAccessor;
 /// ```rust,ignore
 /// use std::{collections::HashMap, sync::Arc};
 /// use strata_identifiers::OLBlockCommitment;
-/// use strata_ol_state_types::{OLState, StateProvider};
+/// use strata_ol_state_types::OLState;
+/// use strata_ol_state_support_types::StateProvider;
 ///
 /// #[derive(Debug, thiserror::Error)]
 /// enum MyError {
@@ -63,10 +64,10 @@ use strata_ledger_types::IStateAccessor;
 /// }
 /// ```
 pub trait StateProvider: Send + Sync + 'static {
-    /// The state type that implements [`IStateAccessor`].
+    /// The provided state type that implements [`IStateAccessorMut`].
     ///
     /// Must be owned and Arc-able for sharing across validation and execution operations.
-    type State: IStateAccessor + Send + Sync + Debug + 'static;
+    type State: IStateAccessorMut + Send + Sync + Debug + 'static;
 
     /// Error type for state retrieval operations.
     ///
@@ -85,7 +86,7 @@ pub trait StateProvider: Send + Sync + 'static {
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send;
 
     /// Retrieves the state for a given chain tip in a blocking manner.
     ///
@@ -99,7 +100,7 @@ pub trait StateProvider: Send + Sync + 'static {
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error>;
+    ) -> Result<Option<Self::State>, Self::Error>;
 }
 
 /// Blanket implementation for Arc-wrapped state providers.
@@ -113,14 +114,14 @@ impl<T: StateProvider> StateProvider for Arc<T> {
     fn get_state_for_tip_async(
         &self,
         tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
         T::get_state_for_tip_async(self, tip)
     }
 
     fn get_state_for_tip_blocking(
         &self,
         tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+    ) -> Result<Option<Self::State>, Self::Error> {
         T::get_state_for_tip_blocking(self, tip)
     }
 }

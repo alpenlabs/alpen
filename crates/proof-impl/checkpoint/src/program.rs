@@ -78,6 +78,7 @@ mod tests {
     use strata_ledger_types::IStateAccessor;
     use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
     use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_stf::test_utils::{build_empty_chain, create_test_genesis_state};
 
     use crate::program::{CheckpointProgram, CheckpointProverInput};
@@ -115,7 +116,7 @@ mod tests {
             encode_to_vec(&OLDaPayloadV1::new(da_diff)).expect("encode DA payload");
 
         CheckpointProverInput {
-            start_state,
+            start_state: start_state.state().clone(),
             blocks,
             parent,
             da_state_diff_bytes,
@@ -171,7 +172,8 @@ mod tests {
     fn test_statements_fail_on_da_preseal_mismatch() {
         let mut input = prepare_input();
         let terminal_header = input.blocks.last().expect("non-empty block list").header();
-        let slot_delta = terminal_header.slot() - input.start_state.cur_slot();
+        let start_state_layer = MemoryStateBaseLayer::new(input.start_state.clone());
+        let slot_delta = terminal_header.slot() - start_state_layer.cur_slot();
         let bad_delta = u16::try_from(slot_delta.saturating_sub(1))
             .expect("slot delta exceeds u16::MAX; epoch too long");
         let bad_da_diff = StateDiff::new(

@@ -3,7 +3,7 @@
 use strata_acct_types::TxEffects;
 use strata_asm_common::AsmManifest;
 use strata_identifiers::Buf32;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::IStateAccessorMut;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::*;
 
@@ -79,7 +79,7 @@ impl BlockExecOutputs {
 }
 
 /// Executes epoch-initial state transitions when needed.
-pub fn execute_epoch_initial_if_needed<S: IStateAccessor>(
+pub fn execute_epoch_initial_if_needed<S: IStateAccessorMut>(
     state: &mut S,
     block_context: &BlockContext<'_>,
 ) -> ExecResult<()> {
@@ -91,7 +91,8 @@ pub fn execute_epoch_initial_if_needed<S: IStateAccessor>(
 }
 
 /// Executes the per-block start phase.
-pub fn execute_block_start<S: IStateAccessor>(
+// TODO(STR-2863) remove this function
+pub fn execute_block_start<S: IStateAccessorMut>(
     state: &mut S,
     block_context: &BlockContext<'_>,
 ) -> ExecResult<()> {
@@ -99,7 +100,7 @@ pub fn execute_block_start<S: IStateAccessor>(
 }
 
 /// Executes the transaction segment for a block.
-pub fn execute_block_tx_segment<S: IStateAccessor>(
+pub fn execute_block_tx_segment<S: IStateAccessorMut>(
     state: &mut S,
     tx_segment: &OLTxSegment,
     tx_ctx: &TxExecContext<'_>,
@@ -108,7 +109,7 @@ pub fn execute_block_tx_segment<S: IStateAccessor>(
 }
 
 /// Executes manifest processing for a terminal block.
-pub fn execute_block_manifests<S: IStateAccessor>(
+pub fn execute_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
     manifest_container: &OLL1ManifestContainer,
     term_ctx: &BasicExecContext<'_>,
@@ -121,7 +122,7 @@ pub fn execute_block_manifests<S: IStateAccessor>(
 /// block.
 ///
 /// This closely aligns with `verify_block_classically`.
-pub fn execute_block_inputs<S: IStateAccessor>(
+pub fn execute_block_inputs<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_exec_input: BlockExecInput<'_>,
@@ -321,7 +322,7 @@ impl CompletedBlock {
 /// Given components of a block, executes it and uses it to construct the
 /// components of a block that can be signed, returning the completed block and
 /// the execution outputs (like logs).
-pub fn construct_block<S: IStateAccessor>(
+pub fn construct_block<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
@@ -375,7 +376,7 @@ pub fn construct_block<S: IStateAccessor>(
 
 /// Given components of a block, executes it and uses it to construct the
 /// components of a block that can be signed.
-pub fn execute_and_complete_block<S: IStateAccessor>(
+pub fn execute_and_complete_block<S: IStateAccessorMut>(
     state: &mut S,
     block_context: BlockContext<'_>,
     block_components: BlockComponents,
@@ -389,7 +390,7 @@ pub fn execute_and_complete_block<S: IStateAccessor>(
 ///
 /// Generic over `S: IStateAccessor` so callers can pass `OLState` directly
 /// or wrap it (e.g. `DaAccumulatingState<OLState>`) to intercept mutations.
-pub fn execute_block_batch<S: IStateAccessor>(
+pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,

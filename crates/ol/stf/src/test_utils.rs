@@ -13,19 +13,19 @@ use strata_asm_common::AsmManifest;
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot, WtxidsRoot,
 };
-use strata_ledger_types::{
-    AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
-};
+use strata_ledger_types::*;
 use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_ol_chain_types_new::*;
 use strata_ol_params::OLParams;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
 use strata_predicate::PredicateKey;
 
-/// Creates a genesis OLState using minimal empty parameters.
-pub fn create_test_genesis_state() -> OLState {
+/// Creates a genesis state layer using minimal empty parameters.
+pub fn create_test_genesis_state() -> MemoryStateBaseLayer {
     let params = OLParams::new_empty(L1BlockCommitment::default());
-    OLState::from_genesis_params(&params).expect("valid params")
+    let state = OLState::from_genesis_params(&params).expect("valid params");
+    MemoryStateBaseLayer::new(state)
 }
 
 use crate::{
@@ -41,7 +41,7 @@ use crate::{
 
 /// Execute a block with the given block info and return the completed block.
 pub fn execute_block(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     block_info: &BlockInfo,
     parent_header: Option<&OLBlockHeader>,
     components: BlockComponents,
@@ -53,7 +53,7 @@ pub fn execute_block(
 /// Execute a block and return the construct output which includes both the completed block and
 /// execution outputs. This is useful for tests that need to inspect the logs.
 pub fn execute_block_with_outputs(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     block_info: &BlockInfo,
     parent_header: Option<&OLBlockHeader>,
     components: BlockComponents,
@@ -66,7 +66,7 @@ pub fn execute_block_with_outputs(
 ///
 /// Returns the headers of all blocks in the chain.
 pub fn build_empty_chain(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> ExecResult<Vec<CompletedBlock>> {
@@ -127,7 +127,7 @@ pub fn build_empty_chain(
 ///
 /// Returns the headers of all blocks in the chain.
 pub fn build_empty_chain_headers(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> ExecResult<Vec<OLBlockHeader>> {
@@ -138,13 +138,18 @@ pub fn build_empty_chain_headers(
 }
 
 /// Creates a snark account with initial balance in the given state.
-fn create_snark_account(state: &mut OLState) {
+fn create_snark_account(state: &mut MemoryStateBaseLayer) {
     let snark_id = get_test_snark_account_id();
     let update_vk = PredicateKey::always_accept();
     let initial_state_root = get_test_state_root(1);
-    let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
     let balance = BitcoinAmount::from_sat(100_000_000);
-    let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
+    let new_acct_data = NewAccountData::new(
+        balance,
+        NewAccountTypeState::Snark {
+            update_vk,
+            initial_state_root,
+        },
+    );
     state
         .create_new_account(snark_id, new_acct_data)
         .expect("should create snark account");
@@ -161,7 +166,7 @@ fn create_snark_account(state: &mut OLState) {
 ///
 /// The last slot must equal `slots_per_epoch` to produce a terminal block with manifest processing.
 pub fn build_chain_with_transactions(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     num_blocks: usize,
     slots_per_epoch: u64,
 ) -> Vec<CompletedBlock> {
@@ -302,7 +307,11 @@ pub fn assert_block_position(header: &OLBlockHeader, expected_epoch: u64, expect
 }
 
 /// Assert that the state has been properly updated after block execution.
-pub fn assert_state_updated(state: &mut OLState, expected_epoch: u64, expected_slot: u64) {
+pub fn assert_state_updated(
+    state: &mut MemoryStateBaseLayer,
+    expected_epoch: u64,
+    expected_slot: u64,
+) {
     assert_eq!(
         state.cur_epoch() as u64,
         expected_epoch,
@@ -314,7 +323,7 @@ pub fn assert_state_updated(state: &mut OLState, expected_epoch: u64, expected_s
 // ===== Verification Test Utilities =====
 
 /// Assert that block verification succeeds.
-pub fn assert_verification_succeeds<S: IStateAccessor>(
+pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
@@ -330,7 +339,7 @@ pub fn assert_verification_succeeds<S: IStateAccessor>(
 
 /// Assert that block verification fails with a specific error.
 pub fn assert_verification_fails_with(
-    state: &mut impl IStateAccessor,
+    state: &mut impl IStateAccessorMut,
     header: &OLBlockHeader,
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
@@ -569,15 +578,20 @@ impl ManifestMmrTracker {
 /// Creates a SNARK account with initial balance and executes an empty genesis block.
 /// Returns the completed genesis block.
 pub fn setup_genesis_with_snark_account(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     snark_id: AccountId,
     initial_balance: u64,
 ) -> CompletedBlock {
     let update_vk = PredicateKey::always_accept();
     let initial_state_root = get_test_state_root(1);
-    let snark_state = OLSnarkAccountState::new_fresh(update_vk, initial_state_root);
     let balance = BitcoinAmount::from_sat(initial_balance);
-    let new_acct_data = NewAccountData::new(balance, AccountTypeState::Snark(snark_state));
+    let new_acct_data = NewAccountData::new(
+        balance,
+        NewAccountTypeState::Snark {
+            update_vk,
+            initial_state_root,
+        },
+    );
     state
         .create_new_account(snark_id, new_acct_data)
         .expect("Should create snark account");
@@ -588,9 +602,11 @@ pub fn setup_genesis_with_snark_account(
 }
 
 /// Helper to create additional empty accounts (for testing transfers/messages)
-pub fn create_empty_account(state: &mut OLState, account_id: AccountId) -> AccountSerial {
-    let empty_state = AccountTypeState::Empty;
-    let new_acct_data = NewAccountData::new_empty(empty_state);
+pub fn create_empty_account(
+    state: &mut MemoryStateBaseLayer,
+    account_id: AccountId,
+) -> AccountSerial {
+    let new_acct_data = NewAccountData::new_empty(NewAccountTypeState::Empty);
     state
         .create_new_account(account_id, new_acct_data)
         .expect("Should create empty account")
@@ -608,7 +624,7 @@ pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
 ///
 /// Accepts an `OLTransaction` directly.
 pub fn execute_tx_in_block(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     parent_header: &OLBlockHeader,
     tx: OLTransaction,
     slot: Slot,
@@ -766,9 +782,10 @@ impl SnarkUpdateBuilder {
     }
 }
 
-/// Helper to get snark account state from OLState, panicking if not found or not a snark account
+/// Helper to get snark account state from a state accessor, panicking if not found or not a snark
+/// account.
 pub fn get_snark_state_expect(
-    state: &OLState,
+    state: &MemoryStateBaseLayer,
     snark_id: AccountId,
 ) -> (&OLAccountState, &OLSnarkAccountState) {
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();

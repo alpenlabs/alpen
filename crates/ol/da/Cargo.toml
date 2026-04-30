@@ -13,7 +13,6 @@ strata-da-framework.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
 strata-ledger-types.workspace = true
-strata-ol-state-types.workspace = true
 strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 
@@ -27,4 +26,4 @@ workspace = true
 strata-asm-proto-txs-test-utils.workspace = true
 strata-l1-envelope-fmt.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
-strata-ol-state-types.workspace = true
+strata-ol-state-support-types.workspace = true

@@ -89,7 +89,4 @@ pub enum AcctError {
 
     #[error("bitcoin amount overflow")]
     BitcoinAmountOverflow,
-
-    #[error("operation not supported in this context")]
-    Unsupported,
 }

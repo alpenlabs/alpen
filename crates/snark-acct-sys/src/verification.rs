@@ -1,6 +1,6 @@
 use ssz::Encode as _;
-use strata_acct_types::{AccountId, AcctError, AcctResult, MessageEntry};
-use strata_ledger_types::{ISnarkAccountState, TxProofVerifier};
+use strata_acct_types::{AccountId, AcctError, MessageEntry};
+use strata_ledger_types::{ExecResult, ISnarkAccountState, TxProofVerifier};
 use strata_snark_acct_types::*;
 
 use crate::update::{SnarkAccountUpdateData, effects_to_update_outputs};
@@ -12,7 +12,7 @@ pub fn verify_update_correctness(
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdateData,
     proof_verifier: &mut impl TxProofVerifier,
-) -> AcctResult<()> {
+) -> ExecResult<()> {
     // 1. Check seq_no matches.
     verify_seq_no(target, snark_state, update.seq_no())?;
 
@@ -41,14 +41,15 @@ pub fn verify_seq_no(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     tx_seq_no: Seqno,
-) -> AcctResult<()> {
+) -> ExecResult<()> {
     let expected_seq = snark_state.seqno();
     if *tx_seq_no.inner() != *expected_seq.inner() {
         return Err(AcctError::InvalidUpdateSequence {
             account_id: target,
             expected: *expected_seq.inner(),
             got: *tx_seq_no.inner(),
-        });
+        }
+        .into());
     }
     Ok(())
 }
@@ -58,7 +59,7 @@ pub fn verify_message_index(
     target: AccountId,
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdateData,
-) -> AcctResult<()> {
+) -> ExecResult<()> {
     let expected_idx = snark_state
         .next_inbox_msg_idx()
         .checked_add(update.processed_messages().len() as u64)
@@ -71,7 +72,8 @@ pub fn verify_message_index(
             account_id: target,
             expected: expected_idx,
             got: claimed_idx,
-        });
+        }
+        .into());
     }
 
     Ok(())
@@ -85,7 +87,7 @@ fn verify_ledger_refs(
     target: AccountId,
     proof_verifier: &mut impl TxProofVerifier,
     ledger_refs: &LedgerRefs,
-) -> AcctResult<()> {
+) -> ExecResult<()> {
     let manifest_claims = ledger_refs.l1_header_refs();
 
     for claim in manifest_claims {
@@ -107,7 +109,7 @@ fn verify_inbox_mmr_proofs(
     state: &impl ISnarkAccountState,
     proof_verifier: &mut impl TxProofVerifier,
     processed_msgs: &[MessageEntry],
-) -> AcctResult<()> {
+) -> ExecResult<()> {
     let mut cur_index = state.next_inbox_msg_idx();
 
     for msg in processed_msgs {
@@ -135,12 +137,12 @@ pub(crate) fn verify_update_proof(
     snark_state: &impl ISnarkAccountState,
     update: &SnarkAccountUpdateData,
     verifier: &mut impl TxProofVerifier,
-) -> AcctResult<()> {
+) -> ExecResult<()> {
     let claim: Vec<u8> = compute_update_claim(snark_state, update);
     let is_valid = verifier.verify_local_predicate_next(&claim).is_ok();
 
     if !is_valid {
-        return Err(AcctError::InvalidUpdateProof { account_id: target });
+        return Err(AcctError::InvalidUpdateProof { account_id: target }.into());
     }
 
     Ok(())

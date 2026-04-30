@@ -5,10 +5,10 @@ use std::{fmt::Display, marker::PhantomData};
 use ssz::Encode;
 use strata_crypto::hash::raw;
 use strata_identifiers::OLBlockId;
-use strata_ledger_types::{IAccountStateMut, IStateAccessor};
+use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_chain_types::verify_sequencer_signature;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_provider::StateProvider;
 use strata_params::RollupParams;
 use strata_service::{AsyncService, Response, Service};
 use tracing::debug;
@@ -52,9 +52,7 @@ where
     S: StateProvider + Send + Sync + 'static,
     S::Error: Display,
     S::State: BlockAssemblyStateAccess,
-    <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
-    <S::State as IStateAccessor>::AccountStateMut: Clone,
-    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+    <<S::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
@@ -112,8 +110,7 @@ where
     S::State: BlockAssemblyStateAccess,
     // FIXME(STR-2778): This looks ugly, should we have Clone bound for the associated types?
     <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut: Clone,
-    <S::State as IStateAccessor>::AccountStateMut: Clone,
-    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+    <<S::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
     // Check if we already have a pending template for this parent block ID
@@ -242,6 +239,7 @@ mod tests {
     use strata_crypto::{hash::raw, sign_schnorr_sig};
     use strata_identifiers::{Buf32, Buf64};
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
+    use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_params::CredRule;
     use strata_primitives::utils::get_test_schnorr_keys;
     use strata_test_utils_l2::gen_params;
@@ -253,15 +251,18 @@ mod tests {
         epoch_sealing::FixedSlotSealing,
         state::BlockasmServiceState,
         test_utils::{
-            MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider, StateProviderHandle,
+            MempoolSnarkTxBuilder, MockMempoolFailMode, MockMempoolProvider,
             TEST_BLOCK_TEMPLATE_TTL, TestAccount, TestEnv, TestStorageFixtureBuilder,
             create_test_template, create_test_template_with_parent, test_account_id,
         },
         types::BlockCompletionData,
     };
 
-    type TestServiceState =
-        BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, StateProviderHandle>;
+    type TestServiceState = BlockasmServiceState<
+        Arc<MockMempoolProvider>,
+        FixedSlotSealing,
+        OLStateManagerProviderImpl,
+    >;
 
     async fn build_service_state_with_accounts(
         use_schnorr_cred_rule: bool,

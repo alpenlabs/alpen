@@ -12,6 +12,7 @@ sequencer = [
   "dep:strata-crypto",
   "dep:strata-ol-block-assembly",
   "dep:strata-ol-sequencer",
+  "dep:strata-ol-state-provider",
 ]
 debug-asm = ["strata-consensus-logic/debug-asm"]
 debug-utils = [
@@ -72,6 +73,7 @@ strata-ol-params.workspace = true
 strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
+strata-ol-state-provider = { workspace = true, optional = true }
 strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
 strata-ol-stf = { workspace = true, optional = true }
@@ -110,6 +112,7 @@ zkaleido-sp1-host = { workspace = true, features = [
 
 [dev-dependencies]
 strata-ol-params.workspace = true
+strata-ol-state-support-types.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-predicate.workspace = true
 

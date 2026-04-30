@@ -26,16 +26,13 @@ use strata_btc_verification::L1Anchor;
 use strata_codec::{decode_buf_exact, encode_to_vec};
 use strata_config::SequencerConfig;
 use strata_db_store_sled::test_utils::get_test_sled_backend;
-use strata_db_types::{MmrId, errors::DbError};
+use strata_db_types::{DbError, MmrId};
 use strata_identifiers::{
     Buf32, Buf64, L1BlockCommitment, L1BlockId, L1Height, OLBlockCommitment, OLBlockId, OLTxId,
     WtxidsRoot,
 };
 use strata_l1_txfmt::MagicBytes;
-use strata_ledger_types::{
-    AccountTypeState, IAccountState, IAccountStateMut, ISnarkAccountState, ISnarkAccountStateMut,
-    IStateAccessor, NewAccountData,
-};
+use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_chain_types_new::{
     ClaimList, OLBlock, OLBlockBody, OLLog, OLTransaction, OLTransactionData, OLTxSegment,
@@ -46,8 +43,9 @@ use strata_ol_chain_types_new::{
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
 use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 use strata_ol_params::OLParams;
-use strata_ol_state_support_types::EpochDaAccumulator;
-use strata_ol_state_types::{OLSnarkAccountState, OLState, StateProvider};
+use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
+use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
+use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
     construct_block as stf_construct_block,
@@ -55,13 +53,14 @@ use strata_ol_stf::{
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::*;
 use strata_state::asm_state::AsmState;
-use strata_storage::{NodeStorage, OLStateManager, create_node_storage};
+use strata_storage::{NodeStorage, create_node_storage};
 use threadpool::ThreadPool;
 
 /// Creates a genesis OLState using minimal empty parameters.
-pub(crate) fn create_test_genesis_state() -> OLState {
+pub(crate) fn create_test_genesis_state() -> MemoryStateBaseLayer {
     let params = OLParams::new_empty(L1BlockCommitment::default());
-    OLState::from_genesis_params(&params).expect("valid params")
+    let state = OLState::from_genesis_params(&params).expect("valid params");
+    MemoryStateBaseLayer::new(state)
 }
 
 use crate::{
@@ -92,7 +91,7 @@ pub(crate) fn test_hash(seed: u8) -> Hash {
 // Keep account/snark assertions concise in tests that inspect post-state.
 
 /// Returns account balance from post-state.
-pub(crate) fn account_balance(state: &OLState, account_id: AccountId) -> BitcoinAmount {
+pub(crate) fn account_balance(state: &impl IStateAccessor, account_id: AccountId) -> BitcoinAmount {
     state
         .get_account_state(account_id)
         .expect("lookup account")
@@ -101,7 +100,10 @@ pub(crate) fn account_balance(state: &OLState, account_id: AccountId) -> Bitcoin
 }
 
 /// Returns snark account state from post-state.
-pub(crate) fn snark_account_state(state: &OLState, account_id: AccountId) -> &OLSnarkAccountState {
+pub(crate) fn snark_account_state<S: IStateAccessor>(
+    state: &S,
+    account_id: AccountId,
+) -> &<S::AccountState as IAccountState>::SnarkAccountState {
     state
         .get_account_state(account_id)
         .expect("lookup account")
@@ -111,17 +113,20 @@ pub(crate) fn snark_account_state(state: &OLState, account_id: AccountId) -> &OL
 }
 
 /// Returns snark account sequence number from post-state.
-pub(crate) fn snark_account_seqno(state: &OLState, account_id: AccountId) -> u64 {
+pub(crate) fn snark_account_seqno(state: &impl IStateAccessor, account_id: AccountId) -> u64 {
     *snark_account_state(state, account_id).seqno().inner()
 }
 
 /// Returns snark account next inbox message index from post-state.
-pub(crate) fn snark_account_next_inbox_msg_idx(state: &OLState, account_id: AccountId) -> u64 {
+pub(crate) fn snark_account_next_inbox_msg_idx(
+    state: &impl IStateAccessor,
+    account_id: AccountId,
+) -> u64 {
     snark_account_state(state, account_id).next_inbox_msg_idx()
 }
 
 /// Returns snark account inbox MMR entry count from post-state.
-pub(crate) fn snark_account_inbox_len(state: &OLState, account_id: AccountId) -> u64 {
+pub(crate) fn snark_account_inbox_len(state: &impl IStateAccessor, account_id: AccountId) -> u64 {
     snark_account_state(state, account_id)
         .inbox_mmr()
         .num_entries()
@@ -259,7 +264,7 @@ impl MempoolProvider for Arc<MockMempoolProvider> {
 pub(crate) struct FailingStateProvider;
 
 impl StateProvider for FailingStateProvider {
-    type State = OLState;
+    type State = MemoryStateBaseLayer;
     type Error = DbError;
 
     #[expect(
@@ -269,7 +274,7 @@ impl StateProvider for FailingStateProvider {
     fn get_state_for_tip_async(
         &self,
         _tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Option<Self::State>, Self::Error>> + Send {
         async {
             Err(DbError::Other(
                 "injected state provider failure".to_string(),
@@ -280,37 +285,16 @@ impl StateProvider for FailingStateProvider {
     fn get_state_for_tip_blocking(
         &self,
         _tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
+    ) -> Result<Option<Self::State>, Self::Error> {
         Err(DbError::Other(
             "injected state provider failure".to_string(),
         ))
     }
 }
 
-pub(crate) struct StateProviderHandle(Arc<OLStateManager>);
-
-impl StateProvider for StateProviderHandle {
-    type State = OLState;
-    type Error = DbError;
-
-    fn get_state_for_tip_async(
-        &self,
-        tip: OLBlockCommitment,
-    ) -> impl Future<Output = Result<Option<Arc<Self::State>>, Self::Error>> + Send {
-        self.0.get_state_for_tip_async(tip)
-    }
-
-    fn get_state_for_tip_blocking(
-        &self,
-        tip: OLBlockCommitment,
-    ) -> Result<Option<Arc<Self::State>>, Self::Error> {
-        self.0.get_state_for_tip_blocking(tip)
-    }
-}
-
 /// Concrete block assembly context for tests using mock implementations.
 pub(crate) type BlockAssemblyContextImpl =
-    BlockAssemblyContext<Arc<MockMempoolProvider>, StateProviderHandle>;
+    BlockAssemblyContext<Arc<MockMempoolProvider>, OLStateManagerProviderImpl>;
 
 /// Number of slots per epoch used in tests.
 pub(crate) const TEST_SLOTS_PER_EPOCH: u64 = 10;
@@ -588,23 +572,24 @@ impl MempoolSnarkTxBuilder {
 }
 
 pub(crate) fn add_snark_account_to_state(
-    state: &mut OLState,
+    state: &mut impl IStateAccessorMut,
     account_id: AccountId,
     state_root_seed: u8,
     initial_balance: u64,
 ) {
-    let snark_state =
-        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), test_hash(state_root_seed));
     let new_acct = NewAccountData::new(
         BitcoinAmount::from_sat(initial_balance),
-        AccountTypeState::Snark(snark_state),
+        NewAccountTypeState::Snark {
+            update_vk: PredicateKey::always_accept(),
+            initial_state_root: test_hash(state_root_seed),
+        },
     );
     state.create_new_account(account_id, new_acct).unwrap();
 }
 
 /// Inserts inbox messages into a snark account's state MMR.
 pub(crate) fn insert_inbox_messages_into_state(
-    state: &mut OLState,
+    state: &mut impl IStateAccessorMut,
     account_id: AccountId,
     messages: &[MessageEntry],
 ) {
@@ -996,7 +981,7 @@ impl TestEnv {
     pub(crate) async fn construct_block(
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         self.construct_block_with_da(txs, AccumulatedDaData::new_empty())
             .await
     }
@@ -1004,7 +989,7 @@ impl TestEnv {
     /// Constructs an empty block using current parent commitment and empty parent DA.
     pub(crate) async fn construct_empty_block(
         &self,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         self.construct_block(iter::empty::<(OLTxId, OLTransaction)>())
             .await
     }
@@ -1013,7 +998,7 @@ impl TestEnv {
     pub(crate) async fn construct_empty_block_with_da(
         &self,
         parent_da: AccumulatedDaData,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         self.construct_block_with_da(iter::empty::<(OLTxId, OLTransaction)>(), parent_da)
             .await
     }
@@ -1023,7 +1008,7 @@ impl TestEnv {
         &self,
         txs: impl IntoIterator<Item = (OLTxId, OLTransaction)>,
         parent_da: AccumulatedDaData,
-    ) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+    ) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
         let config = self.parent_config();
         assemble_block_with_txs(
             self.ctx(),
@@ -1038,7 +1023,7 @@ impl TestEnv {
     /// Persists assembled output as the next parent block/state and advances parent commitment.
     pub(crate) async fn persist(
         &mut self,
-        output: &ConstructBlockOutput<OLState>,
+        output: &ConstructBlockOutput<MemoryStateBaseLayer>,
     ) -> OLBlockCommitment {
         let header = output.template.header().clone();
         let commitment = OLBlockCommitment::new(header.slot(), header.compute_blkid());
@@ -1051,7 +1036,7 @@ impl TestEnv {
             .expect("store assembled block");
         self.storage()
             .ol_state()
-            .put_toplevel_ol_state_async(commitment, post_state)
+            .put_toplevel_ol_state_async(commitment, post_state.into_inner())
             .await
             .expect("store assembled post-state");
 
@@ -1074,8 +1059,8 @@ impl TestEnv {
 
 /// Converts assembled output into persisted artifacts: `(OLBlock, post_state)`.
 pub(crate) fn block_and_post_state_from_output(
-    output: &ConstructBlockOutput<OLState>,
-) -> (OLBlock, OLState) {
+    output: &ConstructBlockOutput<MemoryStateBaseLayer>,
+) -> (OLBlock, MemoryStateBaseLayer) {
     let header = output.template.header().clone();
     let signed_header = SignedOLBlockHeader::new(header, Buf64::zero());
     let block = OLBlock::new(signed_header, output.template.body().clone());
@@ -1293,7 +1278,7 @@ impl TestStorageFixtureBuilder {
             fixture
                 .storage()
                 .ol_state()
-                .put_toplevel_ol_state_async(commitment, parent_state)
+                .put_toplevel_ol_state_async(commitment, parent_state.into_inner())
                 .await
                 .expect("Failed to store parent OL state");
 
@@ -1311,7 +1296,7 @@ impl TestStorageFixtureBuilder {
             fixture
                 .storage()
                 .ol_state()
-                .put_toplevel_ol_state_async(null_commitment, state)
+                .put_toplevel_ol_state_async(null_commitment, state.into_inner())
                 .await
                 .expect("Failed to store genesis OL state at null commitment");
             null_commitment
@@ -1353,7 +1338,7 @@ fn create_test_manifests_for_heights(heights: &[L1Height]) -> Vec<AsmManifest> {
 /// Returns `(l1_height, claim)` pairs for each inserted manifest.
 fn setup_manifests_in_state_and_storage(
     storage: &NodeStorage,
-    state: &mut OLState,
+    state: &mut impl IStateAccessorMut,
     manifests: Vec<AsmManifest>,
 ) -> Vec<(L1Height, AccumulatorClaim)> {
     let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
@@ -1404,7 +1389,7 @@ pub(crate) fn create_test_block_assembly_context(
     storage: Arc<NodeStorage>,
 ) -> (BlockAssemblyContextImpl, Arc<MockMempoolProvider>) {
     let mempool_provider = Arc::new(MockMempoolProvider::new());
-    let state_provider = StateProviderHandle(storage.ol_state().clone());
+    let state_provider = OLStateManagerProviderImpl::new(storage.ol_state().clone());
     let ctx = BlockAssemblyContext::new(storage, mempool_provider.clone(), state_provider, 0);
     (ctx, mempool_provider)
 }
@@ -1430,7 +1415,7 @@ pub(crate) fn template_state_root(template: &FullBlockTemplate) -> Hash {
 
 /// Returns decoded withdrawal intent logs from accumulated DA logs.
 pub(crate) fn withdrawal_intents(
-    output: &ConstructBlockOutput<OLState>,
+    output: &ConstructBlockOutput<MemoryStateBaseLayer>,
 ) -> Vec<SimpleWithdrawalIntentLogData> {
     output
         .accumulated_da
@@ -1458,7 +1443,7 @@ pub(crate) async fn assemble_block_with_txs(
     config: &BlockGenerationConfig,
     txs: Vec<(OLTxId, OLTransaction)>,
     parent_da: AccumulatedDaData,
-) -> BlockAssemblyResult<ConstructBlockOutput<OLState>> {
+) -> BlockAssemblyResult<ConstructBlockOutput<MemoryStateBaseLayer>> {
     let parent_state = ctx
         .fetch_state_for_tip(config.parent_block_commitment())
         .await?

@@ -4,7 +4,6 @@ use strata_db_types::traits::{
     BlockStatus, DatabaseBackend, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
-use strata_ledger_types::IStateAccessor;
 
 use super::{
     checkpoint::{get_latest_checkpoint_last_slot, get_latest_finalized_checkpoint_epoch},
@@ -90,11 +89,11 @@ pub(crate) fn get_ol_state(
         })?;
 
     // OL state currently exposes ASM-recorded epoch for previous-epoch view.
-    let recorded_epoch = top_level_state.asm_recorded_epoch();
+    let recorded_epoch = top_level_state.epoch_state().asm_recorded_epoch();
     // Finalized epoch should come from client-state declared final epoch (L1-confirmed).
     let finalized_epoch = get_latest_finalized_checkpoint_epoch(db, args.l1_reorg_safe_depth)?
         .unwrap_or_else(EpochCommitment::null);
-    let l1_safe_block_height = top_level_state.last_l1_height();
+    let l1_safe_block_height = top_level_state.epoch_state().last_l1_height();
     let ol_state_info = OLStateInfo {
         block_id: &block_id,
         current_slot: block_slot,
@@ -104,7 +103,7 @@ pub(crate) fn get_ol_state(
         finalized_epoch: &finalized_epoch,
         l1_next_expected_height: l1_safe_block_height.saturating_add(1),
         l1_safe_block_height,
-        l1_safe_block_blkid: top_level_state.last_l1_blkid(),
+        l1_safe_block_blkid: top_level_state.epoch_state().last_l1_blkid(),
     };
 
     output(&ol_state_info, args.output_format)

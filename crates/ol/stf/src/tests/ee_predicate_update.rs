@@ -1,13 +1,12 @@
 //! Tests for the [`EePredicateKeyUpdate`] log handler in manifest processing.
 
-use strata_acct_types::Hash;
+use strata_acct_types::{BitcoinAmount, Hash};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::EePredicateKeyUpdate;
 use strata_identifiers::{AccountSerial, Buf32, WtxidsRoot};
 use strata_ledger_types::{
-    AccountTypeState, IAccountState, ISnarkAccountState, IStateAccessor, NewAccountData,
+    IAccountState, ISnarkAccountState, IStateAccessor, IStateAccessorMut, NewAccountData,
 };
-use strata_ol_state_types::OLSnarkAccountState;
 use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{assembly::BlockComponents, context::BlockInfo, test_utils::*};
@@ -36,8 +35,11 @@ fn ee_predicate_key_update_applies_to_target_snark_account() {
     // Create a snark account with an initial predicate key.
     let snark_account_id = get_test_snark_account_id();
     let initial_vk = make_marker_predicate(b"initial");
-    let snark_state = OLSnarkAccountState::new_fresh(initial_vk.clone(), Hash::from([1u8; 32]));
-    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
+    let new_acct_data = NewAccountData::new_snark(
+        BitcoinAmount::zero(),
+        initial_vk.clone(),
+        Buf32::new([1; 32]),
+    );
     let snark_serial = state
         .create_new_account(snark_account_id, new_acct_data)
         .expect("create snark account");
@@ -79,8 +81,11 @@ fn ee_predicate_key_update_unknown_serial_is_silently_skipped() {
     // Create a snark account so the state isn't completely empty.
     let snark_account_id = get_test_snark_account_id();
     let initial_vk = make_marker_predicate(b"initial");
-    let snark_state = OLSnarkAccountState::new_fresh(initial_vk.clone(), Hash::from([1u8; 32]));
-    let new_acct_data = NewAccountData::new_empty(AccountTypeState::Snark(snark_state));
+    let new_acct_data = NewAccountData::new_snark(
+        BitcoinAmount::zero(),
+        initial_vk.clone(),
+        Hash::from([1u8; 32]),
+    );
     state
         .create_new_account(snark_account_id, new_acct_data)
         .expect("create snark account");

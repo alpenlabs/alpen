@@ -6,7 +6,7 @@ use std::{
     mem::take,
 };
 
-use strata_acct_types::{AccountId, AccountTypeId, AcctResult, BitcoinAmount, Mmr64};
+use strata_acct_types::{AccountId, AccountTypeId, BitcoinAmount, Mmr64};
 use strata_asm_proto_checkpoint_types::OL_DA_DIFF_MAX_SIZE;
 use strata_da_framework::{
     CodecError, CounterScheme, DaBuilder, DaCounter, DaCounterBuilder, DaLinacc, DaRegister,
@@ -15,16 +15,8 @@ use strata_da_framework::{
     encode_to_vec,
 };
 use strata_identifiers::{AccountSerial, EpochCommitment, L1BlockId, L1Height};
-use strata_ledger_types::{
-    AccountTypeStateRef, IAccountState, IAccountStateMut, ISnarkAccountState, IStateAccessor,
-    NewAccountData,
-};
-use strata_ol_da::{
-    AccountDiff, AccountDiffEntry, AccountInit, AccountTypeInit, DaMessageEntry, DaProofState,
-    DaProofStateDiff, GlobalStateDiff, InboxBuffer, LedgerDiff, MAX_MSG_PAYLOAD_BYTES,
-    MAX_VK_BYTES, NewAccountEntry, OLDaPayloadV1, SnarkAccountDiff, SnarkAccountInit, StateDiff,
-    U16LenList,
-};
+use strata_ledger_types::*;
+use strata_ol_da::*;
 use thiserror::Error;
 
 use crate::{index_types::IndexerWrites, indexer_layer::IndexerAccountStateMut};
@@ -602,21 +594,70 @@ impl<S: IStateAccessor> DaAccumulatingState<S> {
     }
 }
 
-impl<S> IStateAccessor for DaAccumulatingState<S>
-where
-    S: IStateAccessor,
-    S::AccountState: IAccountState,
-    S::AccountStateMut: Clone,
-    <S::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut: Clone,
-{
+impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
     type AccountState = S::AccountState;
-    type AccountStateMut = IndexerAccountStateMut<S::AccountStateMut>;
 
     // ===== Global state methods =====
 
     fn cur_slot(&self) -> u64 {
         self.inner.cur_slot()
     }
+
+    // ===== Epochal state methods =====
+
+    fn cur_epoch(&self) -> u32 {
+        self.inner.cur_epoch()
+    }
+
+    fn last_l1_blkid(&self) -> &L1BlockId {
+        self.inner.last_l1_blkid()
+    }
+
+    fn last_l1_height(&self) -> L1Height {
+        self.inner.last_l1_height()
+    }
+
+    fn asm_recorded_epoch(&self) -> &EpochCommitment {
+        self.inner.asm_recorded_epoch()
+    }
+
+    fn total_ledger_balance(&self) -> BitcoinAmount {
+        self.inner.total_ledger_balance()
+    }
+
+    fn asm_manifests_mmr(&self) -> &Mmr64 {
+        self.inner.asm_manifests_mmr()
+    }
+
+    // ===== Account methods =====
+
+    fn check_account_exists(&self, id: AccountId) -> StateResult<bool> {
+        self.inner.check_account_exists(id)
+    }
+
+    fn get_account_state(&self, id: AccountId) -> StateResult<Option<&Self::AccountState>> {
+        self.inner.get_account_state(id)
+    }
+
+    fn find_account_id_by_serial(&self, serial: AccountSerial) -> StateResult<Option<AccountId>> {
+        self.inner.find_account_id_by_serial(serial)
+    }
+
+    fn next_account_serial(&self) -> AccountSerial {
+        self.inner.next_account_serial()
+    }
+
+    fn compute_state_root(&self) -> StateResult<strata_identifiers::Buf32> {
+        self.inner.compute_state_root()
+    }
+}
+
+impl<S: IStateAccessorMut> IStateAccessorMut for DaAccumulatingState<S>
+where
+    S::AccountStateMut: Clone,
+    <S::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut: Clone,
+{
+    type AccountStateMut = IndexerAccountStateMut<S::AccountStateMut>;
 
     fn set_cur_slot(&mut self, slot: u64) {
         let prior = self.inner.cur_slot();
@@ -626,12 +667,6 @@ where
             self.pending_epoch_error = Some(err);
         }
         self.inner.set_cur_slot(slot);
-    }
-
-    // ===== Epochal state methods =====
-
-    fn cur_epoch(&self) -> u32 {
-        self.inner.cur_epoch()
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {
@@ -653,45 +688,19 @@ where
         self.inner.set_cur_epoch(epoch);
     }
 
-    fn last_l1_blkid(&self) -> &L1BlockId {
-        self.inner.last_l1_blkid()
-    }
-
-    fn last_l1_height(&self) -> L1Height {
-        self.inner.last_l1_height()
-    }
-
     fn append_manifest(&mut self, height: L1Height, mf: strata_asm_manifest_types::AsmManifest) {
         self.inner.append_manifest(height, mf);
-    }
-
-    fn asm_recorded_epoch(&self) -> &EpochCommitment {
-        self.inner.asm_recorded_epoch()
     }
 
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment) {
         self.inner.set_asm_recorded_epoch(epoch);
     }
 
-    fn total_ledger_balance(&self) -> BitcoinAmount {
-        self.inner.total_ledger_balance()
-    }
-
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount) {
         self.inner.set_total_ledger_balance(amt);
     }
 
-    // ===== Account methods =====
-
-    fn check_account_exists(&self, id: AccountId) -> AcctResult<bool> {
-        self.inner.check_account_exists(id)
-    }
-
-    fn get_account_state(&self, id: AccountId) -> AcctResult<Option<&Self::AccountState>> {
-        self.inner.get_account_state(id)
-    }
-
-    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> AcctResult<R>
+    fn update_account<R, F>(&mut self, id: AccountId, f: F) -> StateResult<R>
     where
         F: FnOnce(&mut Self::AccountStateMut) -> R,
     {
@@ -729,8 +738,8 @@ where
     fn create_new_account(
         &mut self,
         id: AccountId,
-        new_acct_data: NewAccountData<Self::AccountState>,
-    ) -> AcctResult<AccountSerial> {
+        new_acct_data: NewAccountData,
+    ) -> StateResult<AccountSerial> {
         let expected_first_serial = self.inner.next_account_serial();
         let serial = self.inner.create_new_account(id, new_acct_data)?;
 
@@ -743,22 +752,6 @@ where
         }
 
         Ok(serial)
-    }
-
-    fn find_account_id_by_serial(&self, serial: AccountSerial) -> AcctResult<Option<AccountId>> {
-        self.inner.find_account_id_by_serial(serial)
-    }
-
-    fn next_account_serial(&self) -> AccountSerial {
-        self.inner.next_account_serial()
-    }
-
-    fn compute_state_root(&self) -> AcctResult<strata_identifiers::Buf32> {
-        self.inner.compute_state_root()
-    }
-
-    fn asm_manifests_mmr(&self) -> &Mmr64 {
-        self.inner.asm_manifests_mmr()
     }
 }
 

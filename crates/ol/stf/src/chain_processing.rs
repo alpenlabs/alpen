@@ -1,7 +1,7 @@
 //! General bookkeeping to ensure that the chain evolves correctly.
 
 use strata_identifiers::EpochCommitment;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IStateAccessor, IStateAccessorMut};
 
 use crate::{
     context::{BlockContext, EpochInitialContext},
@@ -38,7 +38,8 @@ pub fn process_epoch_initial<S: IStateAccessor>(
 /// Processing that happens at the start of every block.
 ///
 /// This updates the global state to track the current slot number.
-pub fn process_block_start<S: IStateAccessor>(
+// TODO(STR-2863) remove this function
+pub fn process_block_start<S: IStateAccessorMut>(
     state: &mut S,
     context: &BlockContext<'_>,
 ) -> ExecResult<()> {

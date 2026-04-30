@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use serde::Serialize;
 use strata_identifiers::OLBlockCommitment;
-use strata_ol_state_types::StateProvider;
+use strata_ol_state_provider::StateProvider;
 use strata_service::{AsyncService, Response, Service};
 use tracing::{debug, info};
 

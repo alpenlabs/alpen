@@ -1,42 +1,41 @@
 # Running Locally
 
-## Running OL + EL with the shared compose
+## Quick Start
 
-This setup builds both `strata` (OL) and `alpen-client` (EL) from the repo Dockerfiles and wires them to a local bitcoind.
+```bash
+# Copy and configure .env (set MNEMONIC for signet miner):
+cp .env.example .env
 
-1. Ensure config files exist:
-   - `docker/configs/config.toml`
-   - `docker/configs/params.json`
-2. From repo root, start the stack:
-   ```bash
-   docker compose -f docker/docker-compose-ol-el.yml up -d --build
-   ```
-3. Services:
-   - `strata` listens on `8432` and reads the mounted config/params at `/config/config.toml` and `/config/params.json`.
-   - `alpen-client` exposes `8545/8546/30303` and is pointed at `ws://strata:8432`.
-4. Stop the stack when done:
-   ```bash
-   docker compose -f docker/docker-compose-ol-el.yml down
-   ```
+# Start everything:
+just docker-seq-up
 
-### Run OL only (silo)
-- Prereq: bitcoind must be up; compose handles it automatically.
-- Start only OL + bitcoind:
-  ```bash
-  docker compose -f docker/docker-compose-ol-el.yml up -d --build bitcoind strata
-  ```
-- Stop:
-  ```bash
-  docker compose -f docker/docker-compose-ol-el.yml down
-  ```
+# Stop everything:
+just docker-seq-down
+```
 
-### Run EL only (silo)
-- Assumes an OL endpoint is available at `--ol-client-url` (update the command in `docker/docker-compose-ol-el.yml` if needed).
-- Start only EL:
-  ```bash
-  docker compose -f docker/docker-compose-ol-el.yml up -d --build alpen-client
-  ```
-- Stop:
-  ```bash
-  docker compose -f docker/docker-compose-ol-el.yml down
-  ```
+## Architecture
+
+| Compose | Services |
+|---|---|
+| `compose-signet.yml` | `bitcoind` (local signet miner or fullnode) |
+| `compose-ol-el-seq.yml` | `init` → `strata` → `strata-signer`, `alpen-client` |
+
+Bitcoin is decoupled from the sequencer stack. `init` waits for bitcoin to reach `GENESIS_L1_HEIGHT`, generates params, then exits. Other services start after.
+
+## Just Recipes
+
+| Recipe | Description |
+|---|---|
+| `just docker-seq-up` | Start signet + sequencer stack |
+| `just docker-seq-down` | Stop everything |
+| `just docker-signet-up` | Start signet only |
+| `just docker-signet-down` | Stop signet only |
+| `just docker-seq-build` | Rebuild sequencer images |
+
+## Without Just
+
+For controlled image builds, step-by-step debugging, or running individual services, see the just recipes in `.justfile` (search for `group('docker')`) for the underlying `docker compose` commands.
+
+## With remote Bitcoin
+
+Set `BITCOIND_RPC_URL` in `.env` to the remote endpoint and run `just docker-seq-up` as usual. The init service connects to whatever `BITCOIND_RPC_URL` points to.

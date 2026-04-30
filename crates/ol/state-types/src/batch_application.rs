@@ -1,7 +1,6 @@
 //! Trait for states that can have write batches applied.
 
-use strata_acct_types::AcctResult;
-use strata_ledger_types::IStateAccessor;
+use strata_ledger_types::{IStateAccessor, StateResult};
 
 use crate::WriteBatch;
 
@@ -18,5 +17,5 @@ pub trait IStateBatchApplicable: IStateAccessor {
     /// with the modifications from the batch.
     ///
     /// If this returns an error then the state is left unmodified.
-    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> AcctResult<()>;
+    fn apply_write_batch(&mut self, batch: WriteBatch<Self::AccountState>) -> StateResult<()>;
 }
