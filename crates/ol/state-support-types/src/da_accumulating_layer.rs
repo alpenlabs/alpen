@@ -281,14 +281,17 @@ impl EpochDaAccumulator {
             }
 
             let source_id = entry.source();
-            if source_id.is_special() {
-                return Err(DaAccumulationError::MessageSourceMissing(source_id));
-            }
-            let exists = state
-                .check_account_exists(source_id)
-                .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
-            if !exists {
-                return Err(DaAccumulationError::MessageSourceMissing(source_id));
+            // Special account IDs (e.g. the bridge gateway) have no ledger
+            // record, so skip the existence check for them and trust the
+            // well-known constant. This matches the destination-side
+            // convention in `transaction_processing::check_outputs`.
+            if !source_id.is_special() {
+                let exists = state
+                    .check_account_exists(source_id)
+                    .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
+                if !exists {
+                    return Err(DaAccumulationError::MessageSourceMissing(source_id));
+                }
             }
 
             let entry = DaMessageEntry::new(source_id, entry.incl_epoch(), entry.payload().clone());
