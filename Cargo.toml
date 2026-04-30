@@ -440,13 +440,12 @@ jsonrpsee-types = { version = "0.26.0" }
 k256 = { version = "0.13.4", features = ["schnorr"] }
 lru = "0.18"
 metrics = "0.24"
-metrics-exporter-prometheus = "0.16"
 mockall = "0.14"
 musig2 = { version = "0.1.0", features = ["serde"] }
 num_enum = "0.7"
-opentelemetry = "0.26"
-opentelemetry-otlp = { version = "0.26", features = ["grpc-tonic"] }
-opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
+opentelemetry = "0.31"
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 parking_lot = "0.12.3"
 paste = "1.0"
 proptest = "1.9.0"
@@ -482,7 +481,7 @@ toml = "0.5"
 tower = "0.5"
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-opentelemetry = "0.27"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 zeroize = { version = "1.8.1", features = ["derive"] }
