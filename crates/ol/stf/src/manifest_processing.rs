@@ -13,7 +13,7 @@ use strata_msg_fmt::Msg;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_msg_types::DepositMsgData;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     account_processing,
@@ -49,6 +49,12 @@ pub fn process_block_manifests<S: IStateAccessor>(
         // last seen height.
         let real_height = orig_l1_height + i as u32 + 1;
         if mf.height() != real_height {
+            warn!(
+                expected_height = real_height,
+                got_height = mf.height(),
+                index = i,
+                "asm manifest height mismatch",
+            );
             return Err(ExecError::ChainIntegrity);
         }
         trace!(
@@ -66,7 +72,14 @@ pub fn process_block_manifests<S: IStateAccessor>(
     }
 
     // 2. Finally, we can update the epoch to get it ready for the next epoch.
-    state.set_cur_epoch(terminating_epoch + 1);
+    let new_epoch = terminating_epoch + 1;
+    info!(
+        from_epoch = terminating_epoch,
+        to_epoch = new_epoch,
+        last_l1_height = ?last.map(|(h, _)| h),
+        "advancing epoch",
+    );
+    state.set_cur_epoch(new_epoch);
 
     Ok(())
 }
@@ -131,7 +144,7 @@ fn process_asm_log<S: IStateAccessor>(
 
         ty => {
             // Some other log type, which we don't care about, skip it.
-            trace!(height = real_height, log_ty = ?ty, "ignoring unknown asm log type");
+            debug!(height = real_height, log_ty = ?ty, "ignoring unknown asm log type");
         }
     }
 
@@ -175,6 +188,13 @@ fn process_deposit_log<S: IStateAccessor>(
     let deposit_data = encode_to_vec(&deposit_msg)?;
     let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
 
+    debug!(
+        ?dest_id,
+        ?acct_serial,
+        amount = ?deposit.amount,
+        "crediting deposit to account",
+    );
+
     // Deliver the deposit message to the target account.
     // TODO need to tweak this a bit to deal with the changes to epoch contexts
     account_processing::process_message(
@@ -195,6 +215,11 @@ fn process_checkpoint_tip_update<S: IStateAccessor>(
 ) -> ExecResult<()> {
     let tip = data.tip();
     let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
+    debug!(
+        epoch = tip.epoch,
+        l2_commitment = ?tip.l2_commitment(),
+        "asm recorded epoch updated",
+    );
     state.set_asm_recorded_epoch(epoch_commitment);
 
     Ok(())
