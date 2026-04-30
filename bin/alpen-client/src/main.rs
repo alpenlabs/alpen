@@ -49,11 +49,10 @@ use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
-use reth_cli_runner::CliRunner;
+use reth_cli_runner::{tokio_runtime, CliRunner};
 use reth_cli_util::sigsegv_handler;
 use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
-use reth_node_core::args::LogArgs;
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
 #[cfg(feature = "sequencer")]
@@ -65,6 +64,7 @@ use strata_btcio::{
 use strata_config::btcio::{FeePolicy, WriterConfig};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
+use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
@@ -833,8 +833,23 @@ fn main() {
 /// Our custom cli args extension that adds one flag to reth default CLI.
 #[derive(Debug, clap::Parser)]
 pub struct AdditionalConfig {
-    #[command(flatten)]
-    pub logs: LogArgs,
+    /// OTLP gRPC endpoint for the OpenTelemetry collector.
+    ///
+    /// When set, `strata-logging` builds an `SdkMeterProvider` and a
+    /// tracer provider against this endpoint and installs a
+    /// `metrics`-crate recorder bridge. Every `metrics::*!` call
+    /// (including reth's), span busy/idle histograms, and service
+    /// framework instrumentation flow over OTLP gRPC to the collector.
+    /// Falls back to the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var
+    /// when the flag isn't passed.
+    #[arg(long, env = "OTEL_EXPORTER_OTLP_ENDPOINT")]
+    pub otlp_url: Option<String>,
+
+    /// Optional service label suffix appended to the OpenTelemetry
+    /// `service.name` resource attribute (e.g. `prod`, `dev`,
+    /// `staging-v2`). Mirrors `bin/strata`'s `--service-label`.
+    #[arg(long)]
+    pub service_label: Option<String>,
 
     /// The chain this node is running.
     ///
@@ -936,7 +951,7 @@ pub struct AdditionalConfig {
 /// Run node with logging
 /// based on reth::cli::Cli::run
 fn run<L>(
-    mut command: NodeCommand<AlpenChainSpecParser, AdditionalConfig>,
+    command: NodeCommand<AlpenChainSpecParser, AdditionalConfig>,
     launcher: L,
 ) -> eyre::Result<()>
 where
@@ -945,15 +960,6 @@ where
         AdditionalConfig,
     ) -> eyre::Result<()>,
 {
-    command.ext.logs.log_file_directory = command
-        .ext
-        .logs
-        .log_file_directory
-        .join(command.chain.chain.to_string());
-
-    let _guard = command.ext.logs.init_tracing()?;
-    info!(target: "reth::cli", cmd = %command.ext.logs.log_file_directory, "Initialized tracing, debug log directory");
-
     if command.ext.sequencer && !cfg!(feature = "sequencer") {
         error!(
             target: "alpen-client",
@@ -962,15 +968,44 @@ where
         eyre::bail!("sequencer feature not enabled at compile time");
     }
 
-    let runner = CliRunner::try_default_runtime()?;
-    runner.run_command_until_exit(|ctx| {
+    // Build the tokio runtime ourselves so logging init can run inside its
+    // context, then hand it to CliRunner. strata-logging's OTLP exporters
+    // spawn periodic export tasks that require an active tokio handle when
+    // they're built.
+    let rt = tokio_runtime()?;
+
+    {
+        let _g = rt.handle().enter();
+
+        let metrics_enabled = command.ext.otlp_url.is_some();
+        init_logging_from_config(LoggingInitConfig {
+            service_base_name: "alpen-client",
+            service_label: command.ext.service_label.as_deref(),
+            otlp_url: command.ext.otlp_url.as_deref(),
+            log_dir: None,
+            log_file_prefix: None,
+            json_format: None,
+            default_log_prefix: "alpen-client",
+            enable_metrics_layer: metrics_enabled,
+            extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
+        });
+    }
+
+    let runner = CliRunner::from_runtime(rt);
+
+    info!(target: "alpen-client", "logging initialized");
+
+    let result = runner.run_command_until_exit(|ctx| {
         command.execute(
             ctx,
             FnLauncher::new::<AlpenChainSpecParser, AdditionalConfig>(launcher),
         )
-    })?;
+    });
 
-    Ok(())
+    // Flush OTLP buffers (spans + metrics) before the process exits.
+    strata_logging::finalize();
+
+    result
 }
 
 /// Parse a hex-encoded string into a [`Buf32`].

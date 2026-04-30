@@ -61,6 +61,7 @@ strata-ee-chunk-runtime.workspace = true
 strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
 strata-l1-txfmt.workspace = true
+strata-logging.workspace = true
 strata-ol-rpc-api = { workspace = true, features = ["client"] }
 strata-ol-rpc-types.workspace = true
 strata-paas.workspace = true
@@ -91,7 +92,6 @@ reth-db.workspace = true
 reth-network.workspace = true
 reth-network-api.workspace = true
 reth-node-builder.workspace = true
-reth-node-core.workspace = true
 reth-payload-builder = { workspace = true, optional = true }
 reth-primitives.workspace = true
 reth-primitives-traits.workspace = true
