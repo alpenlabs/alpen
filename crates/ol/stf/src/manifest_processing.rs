@@ -1,6 +1,6 @@
 //! ASM manifest processing.
 
-use strata_acct_types::MsgPayload;
+use strata_acct_types::{BitcoinAmount, MsgPayload};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::{
     CheckpointTipUpdate, DepositLog, EePredicateKeyUpdate,
@@ -128,10 +128,13 @@ fn process_deposit_log<S: IStateAccessorMut>(
     deposit: &DepositLog,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
+    let amt_btc = BitcoinAmount::from_sat(deposit.amount);
+
     // Parse the raw destination bytes into account serial + subject.
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
-        // Malformed destination descriptor, skip this deposit.
-        warn!(amount = %deposit.amount, "dropping deposit with malformed destination descriptor");
+        // Malformed destination descriptor, sweep to limbo.
+        warn!(amount = %deposit.amount, "limboing deposit with malformed destination descriptor");
+        state.add_limbo_funds_coin(Coin::new_unchecked(amt_btc))?;
         return Ok(());
     };
 
@@ -140,11 +143,9 @@ fn process_deposit_log<S: IStateAccessorMut>(
 
     // Convert the account serial to account ID.
     let Some(dest_id) = state.find_account_id_by_serial(acct_serial)? else {
-        // Account serial not found, skip this deposit.
-        //
-        // TODO make this actually do something more sophisticated to make loss
-        // of funds less likely
-        warn!(?acct_serial, amount = %deposit.amount, "dropping deposit for unknown account serial");
+        // Account serial not found, sweep to limbo.
+        warn!(?acct_serial, amount = %deposit.amount, "limboing deposit for unknown account serial");
+        state.add_limbo_funds_coin(Coin::new_unchecked(amt_btc))?;
         return Ok(());
     };
 
