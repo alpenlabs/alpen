@@ -1,0 +1,42 @@
+services:
+  bitcoind:
+    image: ${SIGNET_IMAGE:-public.ecr.aws/r1l9t0r6/tn1/signet:4485b8f}
+    environment:
+      # Miner mode (default): MINERENABLED=1, MINE_GENESIS=1, MNEMONIC required
+      # Fullnode mode: MINERENABLED=0, SIGNETCHALLENGE + ADDNODE required
+      MINERENABLED: "${MINERENABLED:-1}"
+      MINE_GENESIS: "${MINE_GENESIS:-1}"
+      SIGNETCHALLENGE: "${SIGNETCHALLENGE:-}"
+      MNEMONIC: "${MNEMONIC:-}"
+      BLOCKPRODUCTIONDELAY: "${BLOCKPRODUCTIONDELAY:-2}"
+      MAXTXFEE: "${MAXTXFEE:-10}"
+      ADDNODE: "${ADDNODE:-}"
+      RPCUSER: "${BITCOIND_RPC_USER:-bitcoin}"
+      RPCPASSWORD: "${BITCOIND_RPC_PASSWORD:-bitcoin}"
+      RPCBIND: "0.0.0.0:38332"
+      RPCALLOWIP: "0.0.0.0/0"
+    volumes:
+      - bitcoind-data:/root/.bitcoin
+    ports:
+      - "38332:38332"
+    networks:
+      - alpen_network
+    healthcheck:
+      test: >-
+        bitcoin-cli -signet
+        -rpcuser=${BITCOIND_RPC_USER:-bitcoin}
+        -rpcpassword=${BITCOIND_RPC_PASSWORD:-bitcoin}
+        getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  bitcoind-data:
+
+networks:
+  alpen_network:
+    driver: bridge
+    name: alpen_network
