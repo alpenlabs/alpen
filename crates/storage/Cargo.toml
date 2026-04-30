@@ -8,8 +8,8 @@ workspace = true
 
 [dependencies]
 strata-asm-common.workspace = true
+strata-asm-proto-checkpoint-types.workspace = true
 strata-checkpoint-types.workspace = true
-strata-checkpoint-types-ssz.workspace = true
 strata-csm-types.workspace = true
 strata-db-store-sled.workspace = true
 strata-db-types.workspace = true
@@ -34,7 +34,9 @@ zkaleido.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
+strata-asm-proto-checkpoint-types = { workspace = true, features = [
+  "test-utils",
+] }
 strata-db-store-sled.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
 strata-ledger-types.workspace = true

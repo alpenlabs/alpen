@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = ["sequencer"]
 sequencer = [
-  "dep:strata-asm-txs-checkpoint",
+  "dep:strata-asm-proto-checkpoint-txs",
   "dep:strata-codec",
   "dep:strata-codec-utils",
   "dep:strata-crypto",
@@ -27,7 +27,7 @@ prover = [
   "dep:strata-ol-stf",
   "dep:strata-paas",
   "dep:strata-predicate",
-  "dep:strata-proofimpl-checkpoint-new",
+  "dep:strata-proofimpl-checkpoint",
   "dep:zkaleido",
 ]
 sp1 = [
@@ -43,7 +43,7 @@ ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
-strata-asm-txs-checkpoint = { workspace = true, optional = true }
+strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-btcio.workspace = true
@@ -79,7 +79,7 @@ strata-paas = { workspace = true, optional = true }
 strata-params.workspace = true
 strata-predicate = { workspace = true, optional = true }
 strata-primitives.workspace = true
-strata-proofimpl-checkpoint-new = { workspace = true, optional = true }
+strata-proofimpl-checkpoint = { workspace = true, optional = true }
 strata-service.workspace = true
 strata-snark-acct-types.workspace = true
 strata-status.workspace = true

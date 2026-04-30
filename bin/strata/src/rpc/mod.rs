@@ -184,6 +184,7 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     if let Some(sequencer_deps) = deps.seq_deps {
         let ol_seq_listener = OLSeqRpcServer::new(
             deps.storage.clone(),
+            deps.status_channel.clone(),
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
             deps.fcm_handle.clone(),

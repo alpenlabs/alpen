@@ -6,8 +6,8 @@ use std::sync::Arc;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::Serialize;
 use strata_asm_common::{AsmManifest, AuxData};
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, Hash, L1Height, OLBlockCommitment, OLBlockId, OLTxId, Slot,

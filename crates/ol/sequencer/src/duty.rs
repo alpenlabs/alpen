@@ -6,7 +6,7 @@
 use std::fmt;
 
 use ssz::Encode;
-use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_crypto::hash;
 use strata_ol_block_assembly::FullBlockTemplate;
 use strata_ol_chain_types_new::Epoch;
@@ -204,7 +204,7 @@ impl CheckpointSigningDuty {
 
 #[cfg(test)]
 mod tests {
-    use strata_checkpoint_types_ssz::test_utils::create_test_checkpoint_payload;
+    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_ol_chain_types_new::{BlockFlags, OLBlockBody, OLBlockHeader, OLTxSegment};
 
     use super::*;

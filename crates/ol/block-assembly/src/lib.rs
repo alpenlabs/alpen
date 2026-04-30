@@ -5,8 +5,6 @@ mod builder;
 mod checkpoint_size;
 mod command;
 mod context;
-#[cfg(test)]
-mod da_tests;
 mod da_tracker;
 mod epoch_sealing;
 mod error;
@@ -16,6 +14,8 @@ mod service;
 mod state;
 #[cfg(test)]
 mod test_utils;
+#[cfg(test)]
+mod tests;
 mod types;
 
 pub use builder::BlockasmBuilder;

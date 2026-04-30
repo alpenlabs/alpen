@@ -165,8 +165,7 @@ where
         self.state_provider
             .get_state_for_tip_async(tip)
             .await
-            // keep current logic: stringified provider error
-            .map_err(|e| BlockAssemblyError::Other(e.to_string()))
+            .map_err(|e| BlockAssemblyError::StateProvider(Box::new(e)))
     }
 
     async fn fetch_asm_manifests_from(
@@ -368,109 +367,99 @@ where
 #[cfg(test)]
 mod tests {
     use strata_acct_types::AccumulatorClaim;
-    use strata_asm_manifest_types::AsmManifest;
-    use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-    use strata_ledger_types::IStateAccessor;
 
     use super::*;
     use crate::test_utils::{
-        StorageAsmMmr, StorageInboxMmr, create_test_context, create_test_genesis_state,
-        create_test_message, create_test_storage, test_account_id, test_hash,
+        TestAccount, TestStorageFixtureBuilder, create_test_context, create_test_message,
+        test_account_id, test_hash,
     };
 
     // =========================================================================
     // L1 Header Proof Generation Tests
     // =========================================================================
 
-    fn create_test_manifest(height: L1Height, seed: u8) -> AsmManifest {
-        let mut blkid_bytes = [0u8; 32];
-        blkid_bytes[0] = seed;
-        AsmManifest::new(
-            height,
-            L1BlockId::from(Buf32::from(blkid_bytes)),
-            WtxidsRoot::from(Buf32::zero()),
-            vec![],
-        )
-        .expect("test manifest should be valid")
-    }
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_proof_gen_success() {
+        let account_id = test_account_id(1);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let claims = vec![
+            fixture
+                .l1_header_ref(1)
+                .expect("claim for L1 height 1 should exist"),
+        ];
 
-    #[test]
-    fn test_l1_header_proof_gen_success() {
-        let storage = create_test_storage();
-        let manifest = create_test_manifest(1, 1);
-        let manifest_hash = manifest.compute_hash().into();
-
-        // Add a header hash to the ASM MMR
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
-        asm_mmr.add_header(manifest_hash);
-
-        // Collect claims before creating context
-        let claims = asm_mmr.claims();
-        let mut state = create_test_genesis_state();
-        state.append_manifest(manifest.height(), manifest);
-
-        let ctx = create_test_context(storage);
-
-        let result = ctx.generate_l1_header_proofs(&claims, &state);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = ctx.generate_l1_header_proofs(&claims, state.as_ref());
 
         assert!(result.is_ok(), "Should succeed with valid claim");
         let proofs = result.unwrap();
         assert_eq!(proofs.l1_headers_proofs().len(), 1);
     }
 
-    #[test]
-    fn test_l1_header_proof_gen_multiple_claims() {
-        let storage = create_test_storage();
-        let manifests = vec![
-            create_test_manifest(1, 1),
-            create_test_manifest(2, 2),
-            create_test_manifest(3, 3),
-        ];
-        let manifest_hashes: Vec<Hash> = manifests
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_proof_gen_multiple_claims() {
+        let account_id = test_account_id(1);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1, 2, 3]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let claims = fixture
+            .l1_header_refs()
             .iter()
-            .map(|mf| mf.compute_hash().into())
-            .collect();
+            .map(|(_, claim)| claim.clone())
+            .collect::<Vec<_>>();
 
-        // Add multiple header hashes
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
-        asm_mmr.add_headers(manifest_hashes.iter().copied());
-
-        let claims = asm_mmr.claims();
-        let mut state = create_test_genesis_state();
-        for manifest in manifests {
-            state.append_manifest(manifest.height(), manifest);
-        }
-
-        let ctx = create_test_context(storage);
-
-        let result = ctx.generate_l1_header_proofs(&claims, &state);
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = ctx.generate_l1_header_proofs(&claims, state.as_ref());
 
         assert!(result.is_ok(), "Should succeed with multiple valid claims");
         let proofs = result.unwrap();
         assert_eq!(proofs.l1_headers_proofs().len(), 3);
     }
 
-    #[test]
-    fn test_l1_header_proof_gen_hash_mismatch() {
-        let storage = create_test_storage();
-        let manifest = create_test_manifest(1, 1);
-        let manifest_hash = manifest.compute_hash().into();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_proof_gen_hash_mismatch() {
+        let account_id = test_account_id(1);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let seeded_claim = fixture
+            .l1_header_ref(1)
+            .expect("claim for L1 height 1 should exist");
 
-        // Add a header hash to the ASM MMR
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
-        asm_mmr.add_header(manifest_hash);
-
-        // Create claim with correct MMR index but wrong hash
-        let mmr_idx = asm_mmr.indices()[0];
+        // Create claim with correct MMR index but wrong hash.
         let wrong_hash = test_hash(99);
-        let claim = AccumulatorClaim::new(mmr_idx, wrong_hash);
-        let expected_hash = asm_mmr.hashes()[0];
-        let mut state = create_test_genesis_state();
-        state.append_manifest(manifest.height(), manifest);
+        let claim = AccumulatorClaim::new(seeded_claim.idx(), wrong_hash);
+        let expected_hash = seeded_claim.entry_hash();
 
-        let ctx = create_test_context(storage);
+        let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[claim], &state);
+        let result = ctx.generate_l1_header_proofs(&[claim], state.as_ref());
 
         assert!(
             result.is_err(),
@@ -491,25 +480,31 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_l1_header_proof_gen_missing_index() {
-        let storage = create_test_storage();
-        let manifest = create_test_manifest(1, 1);
-        let manifest_hash = manifest.compute_hash().into();
-
-        // Add one header but request a different index
-        let mut asm_mmr = StorageAsmMmr::new(&storage);
-        asm_mmr.add_header(manifest_hash);
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_proof_gen_missing_index() {
+        let account_id = test_account_id(1);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000))
+            .with_l1_header_refs([1]);
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let seeded_claim = fixture
+            .l1_header_ref(1)
+            .expect("claim for L1 height 1 should exist");
 
         // Create claim with non-existent MMR index (999 doesn't exist, MMR has 1 entry)
         let nonexistent_idx = 999u64;
-        let claim = AccumulatorClaim::new(nonexistent_idx, asm_mmr.hashes()[0]);
-        let mut state = create_test_genesis_state();
-        state.append_manifest(manifest.height(), manifest);
+        let claim = AccumulatorClaim::new(nonexistent_idx, seeded_claim.entry_hash());
 
-        let ctx = create_test_context(storage);
+        let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[claim], &state);
+        let result = ctx.generate_l1_header_proofs(&[claim], state.as_ref());
 
         assert!(result.is_err(), "Should fail with missing index");
         let err = result.unwrap_err();
@@ -524,15 +519,25 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_l1_header_claim_empty_mmr() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_claim_empty_mmr() {
+        let account_id = test_account_id(1);
+        let fixture_builder =
+            TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+
         // MMR index 0 is valid but the MMR is empty
         let claim = AccumulatorClaim::new(0, test_hash(42));
-        let state = create_test_genesis_state();
-        let ctx = create_test_context(storage);
+        let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[claim], &state);
+        let result = ctx.generate_l1_header_proofs(&[claim], state.as_ref());
 
         assert!(result.is_err(), "Should fail when MMR is empty");
         let err = result.unwrap_err();
@@ -549,13 +554,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_l1_header_proof_gen_empty_claims() {
-        let storage = create_test_storage();
-        let state = create_test_genesis_state();
-        let ctx = create_test_context(storage);
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_l1_header_proof_gen_empty_claims() {
+        let account_id = test_account_id(1);
+        let fixture_builder =
+            TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
+        let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
+        let state = fixture
+            .storage()
+            .ol_state()
+            .get_toplevel_ol_state_async(parent_commitment)
+            .await
+            .expect("fetch stored state")
+            .expect("stored state missing");
+        let ctx = create_test_context(fixture.storage().clone());
 
-        let result = ctx.generate_l1_header_proofs(&[], &state);
+        let result = ctx.generate_l1_header_proofs(&[], state.as_ref());
 
         assert!(result.is_ok(), "Should succeed with empty claims");
         let proofs = result.unwrap();
@@ -566,24 +580,17 @@ mod tests {
     // Inbox Proof Generation Tests
     // =========================================================================
 
-    #[test]
-    fn test_inbox_proof_gen_success() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_proof_gen_success() {
         let account_id = test_account_id(1);
-
-        // Add messages to the inbox MMR using the tracker
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
         let messages: Vec<_> = (1..=2)
             .map(|i| create_test_message(i, i as u32, 1000 * i as u64))
             .collect();
-        inbox_mmr.add_messages(messages);
-
-        // Collect entries before creating context
-        let entries: Vec<_> = inbox_mmr.entries().to_vec();
-
-        let ctx = create_test_context(storage);
-
-        let result = ctx.generate_inbox_proofs_at(account_id, &entries, 0, entries.len() as u64);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()));
+        let (fixture, _parent_commitment) = fixture_builder.build_fixture().await;
+        let ctx = create_test_context(fixture.storage().clone());
+        let result = ctx.generate_inbox_proofs_at(account_id, &messages, 0, messages.len() as u64);
 
         assert!(
             result.is_ok(),
@@ -594,12 +601,13 @@ mod tests {
         assert_eq!(proofs.len(), 2);
     }
 
-    #[test]
-    fn test_inbox_proof_gen_empty_messages() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_proof_gen_empty_messages() {
         let account_id = test_account_id(1);
-
-        let ctx = create_test_context(storage);
+        let fixture_builder =
+            TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
+        let (fixture, _parent_commitment) = fixture_builder.build_fixture().await;
+        let ctx = create_test_context(fixture.storage().clone());
 
         let result = ctx.generate_inbox_proofs_at(account_id, &[], 0, 0);
 
@@ -608,27 +616,25 @@ mod tests {
         assert!(proofs.is_empty());
     }
 
-    #[test]
-    fn test_inbox_proof_gen_with_offset() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_proof_gen_with_offset() {
         let account_id = test_account_id(1);
-
-        // Add 4 messages to the inbox MMR using the tracker
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
         let all_messages: Vec<_> = (1..=4)
             .map(|i| create_test_message(i, i as u32, 1000 * i as u64))
             .collect();
-        inbox_mmr.add_messages(all_messages);
-
-        // Collect entries before creating context
-        let entries: Vec<_> = inbox_mmr.entries().to_vec();
-
-        let ctx = create_test_context(storage);
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(all_messages.clone()));
+        let (fixture, _parent_commitment) = fixture_builder.build_fixture().await;
+        let ctx = create_test_context(fixture.storage().clone());
 
         // Request proofs starting at index 2 for last 2 messages
-        let messages_to_prove = &entries[2..];
-        let result =
-            ctx.generate_inbox_proofs_at(account_id, messages_to_prove, 2, entries.len() as u64);
+        let messages_to_prove = &all_messages[2..];
+        let result = ctx.generate_inbox_proofs_at(
+            account_id,
+            messages_to_prove,
+            2,
+            all_messages.len() as u64,
+        );
 
         assert!(
             result.is_ok(),
@@ -639,34 +645,28 @@ mod tests {
         assert_eq!(proofs.len(), 2);
     }
 
-    #[test]
-    fn test_inbox_proof_gen_missing_messages() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_proof_gen_missing_messages() {
         let account_id = test_account_id(1);
-
-        // Don't add any messages to MMR, but try to generate proofs
-        let ctx = create_test_context(storage);
-
+        let fixture_builder =
+            TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
+        let (fixture, _parent_commitment) = fixture_builder.build_fixture().await;
+        let ctx = create_test_context(fixture.storage().clone());
         let messages = vec![create_test_message(1, 1, 1000)];
         let result = ctx.generate_inbox_proofs_at(account_id, &messages, 0, 0);
 
         assert!(result.is_err(), "Should fail when MMR has no messages");
     }
 
-    #[test]
-    fn test_inbox_claim_missing_index() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_claim_missing_index() {
         let account_id = test_account_id(1);
-
-        // Add one message at index 0
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
         let stored_message = create_test_message(1, 1, 1000);
-        inbox_mmr.add_message(stored_message);
-
-        // Claim messages starting at a non-existent index
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(vec![stored_message]));
+        let (fixture, _parent_commitment) = fixture_builder.build_fixture().await;
+        let ctx = create_test_context(fixture.storage().clone());
         let claimed_messages = vec![create_test_message(2, 2, 2000)];
-        let ctx = create_test_context(storage);
-
         let result = ctx.generate_inbox_proofs_at(account_id, &claimed_messages, 5, 1);
 
         assert!(result.is_err(), "Should fail for missing inbox index");
@@ -682,20 +682,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_inbox_claim_hash_mismatch() {
-        let storage = create_test_storage();
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_inbox_claim_hash_mismatch() {
         let account_id = test_account_id(1);
-
-        // Add one message at index 0
-        let mut inbox_mmr = StorageInboxMmr::new(&storage, account_id);
         let stored_message = create_test_message(1, 1, 1000);
-        inbox_mmr.add_message(stored_message);
-
-        // Claim different message for the same index
+        let fixture_builder = TestStorageFixtureBuilder::new()
+            .with_account(TestAccount::new(account_id, 100_000).with_inbox(vec![stored_message]));
+        let (fixture, _parent_commitment) = fixture_builder.build_fixture().await;
+        let ctx = create_test_context(fixture.storage().clone());
         let claimed_messages = vec![create_test_message(2, 2, 2000)];
-        let ctx = create_test_context(storage);
-
         let result = ctx.generate_inbox_proofs_at(account_id, &claimed_messages, 0, 1);
 
         assert!(

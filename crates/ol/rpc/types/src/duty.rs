@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, Encode};
-use strata_checkpoint_types_ssz::CheckpointPayload;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_ol_block_assembly::FullBlockTemplate;
 use strata_ol_chain_types_new::{OLBlockBody, OLBlockHeader};
 use strata_ol_sequencer::{BlockSigningDuty, CheckpointSigningDuty, Duty, RevealTxSigningDuty};
@@ -118,7 +118,7 @@ impl TryFrom<RpcDuty> for Duty {
 
 #[cfg(test)]
 mod tests {
-    use strata_checkpoint_types_ssz::test_utils::create_test_checkpoint_payload;
+    use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
 
     use super::*;
 

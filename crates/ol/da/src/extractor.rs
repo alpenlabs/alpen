@@ -5,7 +5,7 @@
 
 use bitcoin::Transaction;
 use strata_asm_common::TxInputRef;
-use strata_asm_txs_checkpoint::extract_checkpoint_from_envelope;
+use strata_asm_proto_checkpoint_txs::extract_checkpoint_from_envelope;
 use strata_btc_types::RawBitcoinTx;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 
@@ -29,8 +29,8 @@ pub fn decode_ol_da_payload(
 #[cfg(test)]
 mod tests {
     use bitcoin::{ScriptBuf, Transaction};
-    use strata_asm_txs_checkpoint::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
-    use strata_asm_txs_test_utils::create_reveal_transaction_stub;
+    use strata_asm_proto_checkpoint_txs::{CheckpointTxError, OL_STF_CHECKPOINT_TX_TAG};
+    use strata_asm_proto_txs_test_utils::create_reveal_transaction_stub;
     use strata_l1_envelope_fmt::parser::parse_envelope_payload;
 
     use crate::DaExtractorError;

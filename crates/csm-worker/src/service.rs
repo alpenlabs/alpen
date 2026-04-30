@@ -9,9 +9,8 @@ use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStat
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
 /// This service monitors ASM worker and reacts to checkpoint logs emitted by the
-/// checkpoint subprotocols. When ASM processes a checkpoint transaction, it emits
-/// a checkpoint log (`CheckpointTipUpdate` in v1, legacy `CheckpointUpdate` in v0)
-/// which this service processes to update the client state.
+/// checkpoint subprotocol. When ASM processes a checkpoint transaction, it emits
+/// a `CheckpointTipUpdate` log which this service processes to update the client state.
 ///
 /// The service follows the listener pattern - it passively observes ASM status updates
 /// via the service framework's `StatusMonitorInput` without ASM being aware of it.

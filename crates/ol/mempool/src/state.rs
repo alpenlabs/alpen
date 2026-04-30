@@ -7,6 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use ssz::{Decode, Encode};
 use strata_acct_types::AccountId;
 use strata_db_types::types::MempoolTxData;
 use strata_identifiers::{OLBlockCommitment, OLTxId};
@@ -15,7 +16,7 @@ use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_state_types::StateProvider;
 use strata_service::ServiceState;
 use strata_storage::{NodeStorage, OLStateManager};
-use tracing::warn;
+use tracing::{debug, info, instrument, warn};
 
 use crate::{
     MempoolTxInvalidReason, OLMempoolError, OLMempoolResult,
@@ -177,8 +178,11 @@ impl<P: StateProvider> MempoolServiceState<P> {
     ///
     /// Deserializes and validates each transaction. Invalid transactions are skipped and
     /// removed from the database.
+    #[instrument(skip(self), fields(component = "ol_mempool"))]
     pub(crate) async fn load_from_db(&mut self) -> OLMempoolResult<()> {
         let mut all_txs = self.ctx.storage.mempool().get_all_txs()?;
+        let total_in_db = all_txs.len();
+        info!(%total_in_db, "loading mempool transactions from database");
 
         // Sort by `timestamp_micros` to validate transactions in order
         all_txs.sort_by_key(|tx_data| tx_data.timestamp_micros);
@@ -188,7 +192,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         for tx_data in all_txs {
             // Parse transaction from bytes
-            let tx: OLTransaction = match ssz::Decode::from_ssz_bytes(&tx_data.tx_bytes) {
+            let tx: OLTransaction = match Decode::from_ssz_bytes(&tx_data.tx_bytes) {
                 Ok(tx) => tx,
                 Err(e) => {
                     // Skip malformed transaction and remove from DB
@@ -240,18 +244,18 @@ impl<P: StateProvider> MempoolServiceState<P> {
             loaded_count += 1;
         }
 
-        if skipped_count > 0 {
-            tracing::info!(
-                loaded_count,
-                skipped_count,
-                "Loaded transactions from database"
-            );
-        }
+        info!(
+            %loaded_count,
+            %skipped_count,
+            %total_in_db,
+            "loaded mempool transactions from database"
+        );
 
         Ok(())
     }
 
     /// Handle submit transaction command.
+    #[instrument(skip(self, tx), fields(component = "ol_mempool"))]
     pub(crate) async fn handle_submit_transaction(
         &mut self,
         tx: Box<OLTransaction>,
@@ -371,22 +375,30 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// Add a transaction to the mempool.
     ///
     /// Returns the transaction ID. Idempotent - returns existing txid if duplicate.
+    #[instrument(skip(self, tx), fields(component = "ol_mempool"))]
     pub(crate) async fn add_transaction(&mut self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         let txid = tx.compute_txid();
 
         // Idempotent check - if already present, return success
         if self.contains(&txid) {
             self.update_stats_on_reject(OLMempoolRejectReason::Duplicate);
+            debug!(?txid, "rejecting duplicate transaction");
             return Ok(txid);
         }
 
         // Encode transaction once for both size validation and database persistence
-        let tx_bytes = ssz::Encode::as_ssz_bytes(&tx);
+        let tx_bytes = Encode::as_ssz_bytes(&tx);
         let tx_size = tx_bytes.len();
 
         // Check individual transaction size limit
         if tx_size > self.ctx.config.max_tx_size {
             self.update_stats_on_reject(OLMempoolRejectReason::TransactionTooLarge);
+            debug!(
+                ?txid,
+                %tx_size,
+                limit = %self.ctx.config.max_tx_size,
+                "rejecting transaction: too large"
+            );
             return Err(OLMempoolError::TransactionTooLarge {
                 size: tx_size,
                 limit: self.ctx.config.max_tx_size,
@@ -396,15 +408,24 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Check mempool capacity limits
         if let Err(e) = self.check_capacity_limits(tx_size) {
             self.update_stats_on_reject(OLMempoolRejectReason::MempoolFull);
+            debug!(?txid, error = ?e, "rejecting transaction: capacity limit");
             return Err(e);
         }
 
         // Validate transaction using STF validation helpers
         // This checks: slot bounds, account existence, sequence number validity
-        validate_transaction(txid, &tx, &self.state_accessor, &self.account_state)?;
+        if let Err(e) = validate_transaction(txid, &tx, &self.state_accessor, &self.account_state) {
+            debug!(?txid, error = ?e, "rejecting transaction: validation failed");
+            return Err(e);
+        }
 
         // Check if this is a replacement transaction and remove old one if needed
         if let Some(old_txid) = self.find_account_tx_with_same_seqno(&tx) {
+            debug!(
+                ?txid,
+                replaced = ?old_txid,
+                "replacing transaction with same seq_no (last-write-wins)"
+            );
             // Remove old tx with same sequence number (last-write-wins), no cascade
             self.remove_transactions(&[old_txid], false);
         }
@@ -424,6 +445,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
         // Add to in-memory state
         self.add_tx_to_in_memory_state(txid, entry);
+
+        debug!(
+            ?txid,
+            tx_size,
+            mempool_size = %self.stats.mempool_size(),
+            "accepted transaction into mempool"
+        );
 
         Ok(txid)
     }
@@ -467,6 +495,12 @@ impl<P: StateProvider> MempoolServiceState<P> {
 
     /// Helper to remove a single transaction from all internal data structures.
     fn remove_single_tx(&mut self, txid: OLTxId, entry: &MempoolEntry) -> OLMempoolResult<()> {
+        debug!(
+            ?txid,
+            size = %entry.size_bytes,
+            "removing transaction from mempool"
+        );
+
         // Remove from database first
         self.ctx.storage.mempool().del_tx(txid)?;
 
@@ -656,6 +690,7 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// 2. Extracts transaction IDs from the block
     /// 3. Removes those transactions from the mempool (they're now in a block)
     /// 4. Revalidates remaining transactions (state may have changed)
+    #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.slot()))]
     async fn handle_new_block(&mut self, new_tip: OLBlockCommitment) -> OLMempoolResult<()> {
         // Step 1: Fetch new block from OL block database
         let block = self
@@ -680,12 +715,20 @@ impl<P: StateProvider> MempoolServiceState<P> {
         // Step 3: Remove included transactions from mempool (no cascade)
         let included_txids: Vec<OLTxId> = txids_by_account.values().flatten().copied().collect();
         if !included_txids.is_empty() {
+            debug!(
+                included_count = %included_txids.len(),
+                "removing block-included transactions from mempool"
+            );
             self.remove_transactions(&included_txids, false);
         }
 
         // Step 4: Revalidate all transactions
         let invalid_txids: Vec<OLTxId> = self.revalidate_all_transactions();
         if !invalid_txids.is_empty() {
+            debug!(
+                invalid_count = %invalid_txids.len(),
+                "evicting transactions invalidated by new state"
+            );
             // Remove invalid transactions with cascade (dependents are also invalid)
             self.remove_transactions(&invalid_txids, true);
         }
@@ -721,11 +764,17 @@ impl<P: StateProvider> MempoolServiceState<P> {
     /// 1. Load state for new tip and update state accessor
     /// 2. Walk backwards from new tip to current tip via parent links
     /// 3. Process all blocks in chronological order (oldest to newest)
+    #[instrument(skip(self), fields(component = "ol_mempool", slot = new_tip.slot()))]
     pub(crate) async fn handle_chain_update(
         &mut self,
         new_tip: OLBlockCommitment,
     ) -> OLMempoolResult<()> {
         let current_slot = self.state_accessor.cur_slot();
+        debug!(
+            %current_slot,
+            new_slot = %new_tip.slot(),
+            "handling chain update"
+        );
 
         // Load state for new tip from provider
         let new_state = self
@@ -1293,7 +1342,7 @@ mod tests {
 
         // Add first transaction - account 1 with seq_no 0
         let tx1 = create_test_snark_tx_with_seq_no(1, 0);
-        let tx1_size = ssz::Encode::as_ssz_bytes(&tx1).len();
+        let tx1_size = Encode::as_ssz_bytes(&tx1).len();
         state.add_transaction(tx1.clone()).await.unwrap();
 
         let stats_after_first = state.stats();
@@ -1303,7 +1352,7 @@ mod tests {
 
         // Add second transaction - account 2 with seq_no 0
         let tx2 = create_test_snark_tx_with_seq_no(2, 0);
-        let tx2_size = ssz::Encode::as_ssz_bytes(&tx2).len();
+        let tx2_size = Encode::as_ssz_bytes(&tx2).len();
         state.add_transaction(tx2).await.unwrap();
 
         let stats_after_second = state.stats();

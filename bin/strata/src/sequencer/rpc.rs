@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
 use ssz::Encode;
-use strata_asm_txs_checkpoint::OL_STF_CHECKPOINT_TX_TAG;
+use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
 use strata_btcio::writer::EnvelopeHandle;
 use strata_codec::encode_to_vec;
 use strata_codec_utils::CodecSsz;
@@ -22,15 +22,22 @@ use strata_primitives::{
     HexBytes32, HexBytes64,
     buf::{Buf32, Buf64},
 };
+use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tracing::{info, warn};
 
-use crate::rpc::errors::{db_error, internal_error, not_found_error};
+use crate::{
+    rpc::errors::{db_error, internal_error, not_found_error},
+    sequencer::tip::resolve_canonical_tip,
+};
 
 /// Rpc handler for sequencer.
 pub(crate) struct OLSeqRpcServer {
     /// Storage backend.
     storage: Arc<NodeStorage>,
+
+    /// Status channel for resolving the current canonical tip.
+    status_channel: Arc<StatusChannel>,
 
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
@@ -51,6 +58,7 @@ impl OLSeqRpcServer {
     /// Creates a new [`OLSeqRpcServer`] instance.
     pub(crate) fn new(
         storage: Arc<NodeStorage>,
+        status_channel: Arc<StatusChannel>,
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
@@ -58,6 +66,7 @@ impl OLSeqRpcServer {
     ) -> Self {
         Self {
             storage,
+            status_channel,
             blockasm_handle,
             envelope_handle,
             fcm_handle,
@@ -69,19 +78,15 @@ impl OLSeqRpcServer {
 #[async_trait]
 impl OLSequencerRpcServer for OLSeqRpcServer {
     async fn get_sequencer_duties(&self) -> RpcResult<Vec<RpcDuty>> {
-        let Some(tip_blkid) = self
-            .storage
-            .ol_block()
-            .get_canonical_tip_async()
+        let Some(tip_commitment) = resolve_canonical_tip(&self.status_channel, &self.storage)
             .await
             .map_err(db_error)?
-            .map(|c| *c.blkid())
         else {
             return Ok(vec![]);
         };
         let duties = extract_duties(
             self.blockasm_handle.as_ref(),
-            tip_blkid,
+            *tip_commitment.blkid(),
             self.storage.as_ref(),
         )
         .await

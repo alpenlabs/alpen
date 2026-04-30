@@ -8,8 +8,8 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
+strata-asm-proto-checkpoint-types.workspace = true
 strata-checkpoint-types.workspace = true
-strata-checkpoint-types-ssz.workspace = true
 strata-identifiers.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-new.workspace = true
@@ -34,5 +34,7 @@ workspace = true
 proptest.workspace = true
 strata-db-store-sled.workspace = true
 strata-identifiers = { workspace = true, features = ["test-utils"] }
-strata-checkpoint-types-ssz = { workspace = true, features = ["test-utils"] }
+strata-asm-proto-checkpoint-types = { workspace = true, features = [
+  "test-utils",
+] }
 threadpool.workspace = true

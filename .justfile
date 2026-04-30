@@ -10,7 +10,7 @@ docker_dir := "docker"
 docker_datadir := ".data"
 prover_perf_eval_dir := "bin/prover-perf"
 prover_proofs_cache_dir := "provers/tests/proofs"
-prover_programs := "evm-ee-stf,checkpoint-v0,checkpoint-v1,"
+prover_programs := "evm-ee-stf,checkpoint,"
 profile := env("PROFILE", "release")
 cargo_install_extra_flags := env("CARGO_INSTALL_EXTRA_FLAGS", "")
 features := env("FEATURES", "")
@@ -180,16 +180,6 @@ clean-uv:
 clean: clean-dd clean-docker-data clean-cargo clean-uv
     @echo "\n\033[36m======== CLEAN_COMPLETE ========\033[0m\n"
 
-# Docker compose up
-[group('functional-tests')]
-docker-up:
-    cd {{docker_dir}} && docker compose up -d
-
-# Docker compose down
-[group('functional-tests')]
-docker-down:
-    cd {{docker_dir}} && docker compose down && rm -rf {{docker_datadir}} 2>/dev/null || true
-
 # Runs functional tests
 [group('functional-tests')]
 test-functional: ensure-uv activate-uv clean-dd
@@ -343,11 +333,6 @@ pr-lite: lint rustdocs test-doc test-unit
     @echo "\n\033[36m======== CHECKS_COMPLETE ========\033[0m\n"
     @test -z \`git status --porcelain\` || echo "WARNING: You have uncommitted changes"
     @echo "All good to create a PR!"
-
-# Docker restart (down then up)
-[group('functional-tests')]
-docker: docker-down docker-up
-    echo "Done!"
 
 # Run all benchmarks in the workspace
 [group('benches')]

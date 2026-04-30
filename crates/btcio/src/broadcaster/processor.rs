@@ -42,6 +42,7 @@ where
 
 /// Computes the next status for a single entry, or `None` when no update is needed.
 #[instrument(
+    level = "debug",
     skip_all,
     fields(component = "btcio_broadcaster", %txid),
     name = "process_txentry"

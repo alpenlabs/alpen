@@ -1,5 +1,5 @@
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
-use strata_checkpoint_types_ssz::CheckpointPayload;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::types::L1PayloadIntentIndex;
 use strata_identifiers::{Epoch, EpochCommitment};

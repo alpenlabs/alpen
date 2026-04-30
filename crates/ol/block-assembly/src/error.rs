@@ -1,8 +1,10 @@
 //! Error types for block assembly operations.
 
+use std::error::Error;
+
 use strata_acct_types::AcctError;
 use strata_db_types::errors::DbError;
-use strata_identifiers::{AccountId, Hash, OLBlockId};
+use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::ChainTypesError;
 use strata_ol_mempool::OLMempoolError;
 use strata_ol_stf::ExecError;
@@ -49,6 +51,10 @@ pub enum BlockAssemblyError {
     #[error("block not found in db: {0}")]
     BlockNotFound(OLBlockId),
 
+    /// Parent state not found in db.
+    #[error("parent state not found in db: {0}")]
+    ParentStateNotFound(OLBlockCommitment),
+
     /// No mapping found in parent block ID -> template ID cache.
     #[error("no pending template found for parent id: {0}")]
     NoPendingTemplateForParent(OLBlockId),
@@ -73,6 +79,25 @@ pub enum BlockAssemblyError {
     #[error("cannot build genesis block via block assembly")]
     CannotBuildGenesis,
 
+    /// Genesis epoch has no boundary.
+    #[error("genesis epoch has no boundary")]
+    GenesisEpochNoBoundary,
+
+    /// Epoch boundary block does not satisfy expected terminal/epoch properties.
+    #[error(
+        "invalid epoch boundary at {blkid}: expected prev epoch {expected_prev_epoch}, got {got_epoch}, terminal={is_terminal}"
+    )]
+    InvalidEpochBoundary {
+        blkid: OLBlockId,
+        expected_prev_epoch: Epoch,
+        got_epoch: Epoch,
+        is_terminal: bool,
+    },
+
+    /// Epoch boundary state not found in db.
+    #[error("epoch boundary state not found in db: {0}")]
+    EpochBoundaryStateNotFound(OLBlockCommitment),
+
     /// Request channel closed (service shutdown).
     #[error("request channel closed")]
     RequestChannelClosed,
@@ -96,6 +121,10 @@ pub enum BlockAssemblyError {
     /// Mempool operation failed.
     #[error("mempool: {0}")]
     Mempool(#[from] OLMempoolError),
+
+    /// State provider operation failed.
+    #[error("state provider: {0}")]
+    StateProvider(#[source] Box<dyn Error + Send + Sync>),
 
     /// Block construction/execution failed.
     #[error("block construction: {0}")]

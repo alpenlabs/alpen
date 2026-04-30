@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use bitcoind_async_client::Client;
 use strata_asm_params::AsmParams;
-#[cfg(not(feature = "debug-asm"))]
 use strata_asm_spec::StrataAsmSpec;
 #[cfg(feature = "debug-asm")]
 use strata_asm_spec_debug::DebugAsmSpec;
@@ -305,9 +304,9 @@ pub fn spawn_asm_worker(
 
     // Construct the ASM spec based on the enabled feature.
     #[cfg(not(feature = "debug-asm"))]
-    let asm_spec = StrataAsmSpec::from_asm_params(&asm_params);
+    let asm_spec = StrataAsmSpec;
     #[cfg(feature = "debug-asm")]
-    let asm_spec = DebugAsmSpec::from_asm_params(&asm_params);
+    let asm_spec = DebugAsmSpec::new(StrataAsmSpec);
 
     // Use the new builder API to launch the worker and get a handle.
     let handle = strata_asm_worker::AsmWorkerBuilder::new()

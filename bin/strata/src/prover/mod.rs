@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use strata_config::{ProverBackend, ProverConfig};
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
-use strata_proofimpl_checkpoint_new::program::CheckpointProgram;
+use strata_proofimpl_checkpoint::program::CheckpointProgram;
 use strata_storage::CheckpointProofDbManager;
 use strata_tasks::TaskExecutor;
 use tokio::{sync::watch, time};
@@ -83,12 +83,12 @@ pub(crate) fn start_prover_service(
             .native(CheckpointProgram::native_host()),
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
-            use strata_zkvm_hosts::sp1::CHECKPOINT_NEW_HOST;
+            use strata_zkvm_hosts::sp1::CHECKPOINT_HOST;
             // prover-core's `.remote(host)` takes the host by value and
             // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
             // is Clone (only holds a SP1ProvingKey), so cloning from the
             // shared static is fine.
-            let mut host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_NEW_HOST).clone();
+            let mut host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_HOST).clone();
             let deadline_secs = prover_config
                 .sp1_proof_deadline_secs
                 .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);

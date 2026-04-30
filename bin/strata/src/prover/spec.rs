@@ -12,7 +12,7 @@ use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_state_support_types::DaAccumulatingState;
 use strata_ol_stf::execute_block_batch;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
-use strata_proofimpl_checkpoint_new::program::{CheckpointProgram, CheckpointProverInput};
+use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
 use tokio::task::spawn_blocking;
 use tracing::debug;
