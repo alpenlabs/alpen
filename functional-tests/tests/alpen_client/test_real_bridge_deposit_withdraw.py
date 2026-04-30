@@ -35,6 +35,7 @@ from common.bridge import submit_real_bridge_deposit
 from common.config.constants import ALPEN_ACCOUNT_ID, DEV_CHAIN_ID, DEV_PRIVATE_KEY, ServiceType
 from common.evm import DEV_ACCOUNT_ADDRESS
 from common.precompile import PRECOMPILE_BRIDGEOUT_ADDRESS, wait_for_receipt
+from common.rpc import RpcError
 from common.services.alpen_client import AlpenClientService
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
@@ -45,7 +46,15 @@ logger = logging.getLogger(__name__)
 BRIDGE_DENOM_SATS = 1_000_000_000  # 10 BTC
 SATS_TO_WEI = 10**10
 WITHDRAW_SATS = 1_000_000_000  # 10 BTC, full denom
-DUMMY_BOSD_HEX = "5120" + "11" * 32
+
+# BOSD destination descriptor: [type_tag: 1 byte][payload]. Type tag 0x03 with
+# a 20-byte hash160 is P2WPKH and accepts any 20 bytes (no curve check), which
+# makes it a safe placeholder for the bridgeout precompile. We swap this for
+# a real recipient address when we exercise the withdrawal-fulfillment leg.
+DUMMY_BOSD_HEX = "03" + "11" * 20
+# Bridgeout calldata: [4 bytes: selected_operator (big-endian u32)][BOSD bytes].
+# 0xFFFFFFFF = u32::MAX = "no specific operator, bridge picks".
+NO_OPERATOR_SELECTION_HEX = "ffffffff"
 
 OPERATOR_KEYS_FILENAME = "bridge-operator_keys"
 
@@ -150,7 +159,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             "gas": 200_000,
             "to": PRECOMPILE_BRIDGEOUT_ADDRESS,
             "value": withdraw_wei,
-            "data": bytes.fromhex(DUMMY_BOSD_HEX),
+            "data": bytes.fromhex(NO_OPERATOR_SELECTION_HEX + DUMMY_BOSD_HEX),
             "chainId": DEV_CHAIN_ID,
         }
         signed = Account.sign_transaction(withdraw_tx, DEV_PRIVATE_KEY)
@@ -172,7 +181,12 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             time.sleep(2)
             tip_epoch = strata_rpc.strata_getChainStatus()["tip"]["epoch"]
             for ep in range(start_epoch, tip_epoch + 1):
-                summary = strata_rpc.strata_getAccountEpochSummary(ALPEN_ACCOUNT_ID, ep)
+                # Epoch summary RPC errors when the epoch is not yet finalized.
+                # Treat that as "not ready, keep polling".
+                try:
+                    summary = strata_rpc.strata_getAccountEpochSummary(ALPEN_ACCOUNT_ID, ep)
+                except RpcError:
+                    continue
                 if summary and summary.get("update_input") is not None:
                     saw_update_at_epoch = ep
                     break

@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 # serial 128 (system serials occupy 0..128).
 ALPEN_EE_ACCOUNT_SERIAL = 128
 
+# DT input value (DRT output 1) must exceed `denomination` so the DT has a
+# positive mining fee. The bridge subprotocol enforces DT output 1 ==
+# denomination (10 BTC); the difference is the miner fee. 1000 sats covers a
+# small Schnorr-witness DT comfortably under any sane regtest mempool min
+# relay rate.
+DT_FEE_BUFFER_SATS = 1_000
+
 
 @dataclass
 class DrtOutput:
@@ -104,7 +111,12 @@ def broadcast_drt(
     """
     proxy = btc_rpc.proxy
 
-    bridge_in_btc = drt.amount_sats / 100_000_000
+    # Pad the bridge_in output with `DT_FEE_BUFFER_SATS` so the DT can spend it
+    # with a positive fee. The bridge subprotocol validates DT output 1 against
+    # the configured denomination, not the DRT input amount, so this padding is
+    # invisible to ASM-side logic.
+    bridge_in_sats_with_fee = drt.amount_sats + DT_FEE_BUFFER_SATS
+    bridge_in_btc = bridge_in_sats_with_fee / 100_000_000
 
     # Output array order is preserved by bitcoind: [OP_RETURN, bridge_in P2TR].
     outputs = [
