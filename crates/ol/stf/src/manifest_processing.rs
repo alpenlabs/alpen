@@ -144,7 +144,11 @@ fn process_asm_log<S: IStateAccessor>(
 
         ty => {
             // Some other log type, which we don't care about, skip it.
-            debug!(height = real_height, log_ty = ?ty, "ignoring unknown asm log type");
+            debug!(
+                height = real_height,
+                log_ty = ty,
+                "ignoring unknown asm log type"
+            );
         }
     }
 
@@ -157,13 +161,16 @@ fn process_deposit_log<S: IStateAccessor>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Parse the raw destination bytes into account serial + subject.
-    let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
-        // Malformed destination descriptor, skip this deposit.
-        debug!(
-            amount = ?deposit.amount,
-            "dropping deposit: malformed destination descriptor",
-        );
-        return Ok(());
+    let descriptor = match DepositDescriptor::decode_from_slice(&deposit.destination) {
+        Ok(d) => d,
+        Err(e) => {
+            debug!(
+                %e,
+                amount = deposit.amount,
+                "dropping deposit: malformed destination descriptor",
+            );
+            return Ok(());
+        }
     };
 
     let acct_serial = *descriptor.dest_acct_serial();
@@ -176,8 +183,8 @@ fn process_deposit_log<S: IStateAccessor>(
         // TODO make this actually do something more sophisticated to make loss
         // of funds less likely
         debug!(
-            ?acct_serial,
-            amount = ?deposit.amount,
+            %acct_serial,
+            amount = deposit.amount,
             "dropping deposit: unknown destination account serial",
         );
         return Ok(());
@@ -189,9 +196,9 @@ fn process_deposit_log<S: IStateAccessor>(
     let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
 
     debug!(
-        ?dest_id,
-        ?acct_serial,
-        amount = ?deposit.amount,
+        %dest_id,
+        %acct_serial,
+        amount = deposit.amount,
         "crediting deposit to account",
     );
 
@@ -217,7 +224,7 @@ fn process_checkpoint_tip_update<S: IStateAccessor>(
     let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
     debug!(
         epoch = tip.epoch,
-        l2_commitment = ?tip.l2_commitment(),
+        l2_commitment = %tip.l2_commitment(),
         "asm recorded epoch updated",
     );
     state.set_asm_recorded_epoch(epoch_commitment);

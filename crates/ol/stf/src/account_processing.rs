@@ -37,9 +37,9 @@ pub(crate) fn process_message<S: IStateAccessor>(
                 // If we don't find it then we can just ignore it.
                 // TODO do something with the funds we're throwing away by doing this
                 debug!(
-                    ?sender,
-                    ?target,
-                    value = ?msg.value(),
+                    %sender,
+                    %target,
+                    value = %msg.value(),
                     "dropping message: target account does not exist",
                 );
                 return Ok(());
@@ -79,8 +79,8 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
         BRIDGE_GATEWAY_ACCT_ID => {
             // TODO: what do we do with direct transfers to bridge accounts? Emit log?
             debug!(
-                ?sender,
-                ?value,
+                %sender,
+                %value,
                 "dropping transfer to bridge gateway account"
             );
         }
@@ -92,9 +92,9 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
                 // If we don't find it then we can just ignore it.
                 // TODO: do something with the funds we're throwing away by doing this
                 debug!(
-                    ?sender,
-                    ?target,
-                    ?value,
+                    %sender,
+                    %target,
+                    %value,
                     "dropping transfer: target account does not exist",
                 );
                 return Ok(());
@@ -123,7 +123,7 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
     let Ok(msg) = MsgRef::try_from(payload.data()) else {
         // Invalid message format, just ignore.
         debug!(
-            value = ?payload.value(),
+            value = %payload.value(),
             "dropping bridge gateway message: invalid message format",
         );
         return Ok(());
@@ -134,8 +134,8 @@ fn handle_bridge_gateway_message<S: IStateAccessor>(
         //
         // TODO maybe reroute this to a different thing?
         debug!(
-            msg_ty = ?msg.ty(),
-            value = ?payload.value(),
+            msg_ty = msg.ty(),
+            value = %payload.value(),
             "dropping bridge gateway message: not a withdrawal",
         );
         return Ok(());
