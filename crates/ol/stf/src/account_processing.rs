@@ -34,8 +34,19 @@ pub(crate) fn process_message<S: IStateAccessor>(
         _ => {
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
-                // If we don't find it then we can just ignore it.
-                // TODO do something with the funds we're throwing away by doing this
+                // Funds are silently dropped. This commonly trips when a deposit
+                // descriptor encodes an unregistered or system-reserved serial,
+                // which `find_account_id_by_serial` resolves to `AccountId::zero()`
+                // rather than returning None. Surface it so it does not go
+                // unnoticed in production.
+                // TODO(STR-XXXX): track these on a counter and decide whether to
+                // refund or burn the funds.
+                warn!(
+                    %target,
+                    %sender,
+                    value = %msg.value(),
+                    "discarding message to nonexistent target account",
+                );
                 return Ok(());
             }
 
@@ -78,8 +89,13 @@ pub(crate) fn process_transfer<S: IStateAccessor>(
         _ => {
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
-                // If we don't find it then we can just ignore it.
-                // TODO: do something with the funds we're throwing away by doing this
+                // Funds silently dropped. See `process_message` for context.
+                // TODO(STR-XXXX): counter + refund/burn policy.
+                warn!(
+                    %target,
+                    %value,
+                    "discarding transfer to nonexistent target account",
+                );
                 return Ok(());
             }
 
