@@ -324,38 +324,28 @@ class TestRealBridgeDepositWithdraw(BaseTest):
 
         # ----- bullet 4: OL to user wallet - withdrawal-fulfillment -----
         #
-        # KNOWN UPSTREAM BLOCKER. The full OL -> L1 -> ASM -> bridge cycle
-        # cannot complete in this env because of a bug in the OL DA
-        # accumulator (`crates/ol/state-support-types/src/da_accumulating_layer.rs:292`):
+        # KNOWN UPSTREAM BLOCKER (now narrowed). This PR includes a fix
+        # for one OL DA accumulator bug that was crashing
+        # `ol_checkpoint` at epoch=1 on every deposit (special-account
+        # message source rejection in `da_accumulating_layer.rs`). With
+        # that fix in place, OL now builds checkpoints continuously and
+        # the first ~4 reach ASM via the L1 broadcaster (we log
+        # `checkpoint validated successfully epoch=1..4` early in the
+        # run).
         #
-        #     let source_id = entry.source();
-        #     if source_id.is_special() {
-        #         return Err(DaAccumulationError::MessageSourceMissing(source_id));
-        #     }
-        #
-        # The bridge deposit flow sends inbox messages with `source =
-        # BRIDGE_GATEWAY_ACCT_ID = AccountId::special(0x10)`. The DA
-        # accumulator rejects any such message at checkpoint-build time, the
-        # `ol_checkpoint` service crashes at epoch=1 with:
-        #
-        #     ERROR strata_ol_checkpoint::service: checkpoint build failed
-        #     epoch=1 err=DA accumulation failed: da accumulator missing
-        #     message source 0000...0010
-        #
-        # and never recovers. With no checkpoints posted to L1, the ASM
-        # checkpoint subprotocol never emits `DispatchWithdrawal`, the
-        # bridge never gets an assignment, and any WF tx is rejected with
+        # However, after epoch 4 the L1 broadcaster pipeline stalls: OL
+        # keeps producing checkpoints (we observe up to epoch 35 in the
+        # `stored OL checkpoint entry` lines) but no further `payload
+        # advanced on L1` events fire and ASM observes no new
+        # checkpoints. The bridgeout-driven SnarkAccountUpdate therefore
+        # never reaches a validated checkpoint, the bridge never gets a
+        # `DispatchWithdrawal`, and the WF tx is rejected with
         # `WithdrawalValidationError::NoAssignmentFound`.
         #
-        # This is a real protocol gap, not a test infrastructure issue, so
-        # we do NOT pretend bullet 4 settles end-to-end. We DO broadcast a
-        # real WF tx so the bitcoin-layer half is exercised and visible in
-        # chain history; we assert only that the WF tx confirmed on bitcoin
-        # and explicitly mark protocol settlement as KNOWN GAP.
-        #
-        # Follow-up: the DA accumulator needs to handle special-account
-        # message sources (or `process_deposit_log` needs to source from a
-        # registered ledger account). Tracking separately.
+        # This is a separate bug, deeper in the L1 broadcaster, and is
+        # outside the scope of this PR. We broadcast the WF tx so the
+        # bitcoin-layer half is exercised, assert it confirms on chain,
+        # and mark protocol settlement as a known gap.
 
         fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
 
@@ -383,7 +373,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             int(wf_info.get("confirmations", 0)),
         )
         logger.info(
-            "[4] PARTIAL: WF on chain at %s; protocol settlement blocked by DA accumulator bug",
+            "[4] PARTIAL: WF on chain at %s; protocol settlement blocked by L1 broadcaster",
             wf_txid,
         )
 
