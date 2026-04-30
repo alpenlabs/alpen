@@ -39,7 +39,7 @@ class DaChunkHeader:
 
 @dataclass
 class EvmHeaderDigest:
-    """Parsed EVM header digest (5 x u64 = 40 bytes)."""
+    """Parsed EVM header digest from the DA blob."""
 
     block_num: int
     timestamp: int
@@ -125,7 +125,7 @@ def parse_evm_header_digest(data: bytes) -> EvmHeaderDigest | None:
     """
     Parse EvmHeaderDigest from strata-codec encoded bytes.
 
-    Layout (40 bytes, 5 x u64 big-endian):
+    Layout (40 bytes):
     - block_num: 8 bytes
     - timestamp: 8 bytes
     - base_fee: 8 bytes
@@ -151,7 +151,8 @@ def parse_da_blob(data: bytes) -> DaBlob | None:
     Layout:
     - batch_id.prev_block: 32 bytes (raw)
     - batch_id.last_block: 32 bytes (raw)
-    - evm_header: 40 bytes (EvmHeaderDigest: 5 x u64 BE)
+    - evm_header: 40 bytes
+      - 5 x u64 BE
     - state_diff: remaining bytes (BatchStateDiff encoding)
     """
     # Minimum: 32 + 32 + 40 = 104
