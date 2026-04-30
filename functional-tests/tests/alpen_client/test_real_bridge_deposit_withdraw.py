@@ -23,6 +23,7 @@ state.
 """
 
 import logging
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -163,6 +164,39 @@ def read_operator_xprivs(strata_service: StrataService) -> list[str]:
     return [path.read_text().strip()]
 
 
+def strata_log_path(strata_service: StrataService) -> Path:
+    """Path to the strata service log produced by the test harness."""
+    return Path(strata_service.props["datadir"]) / "service.log"
+
+
+def wait_for_log_pattern_with_mining(
+    log_path: Path,
+    pattern: re.Pattern,
+    btc_rpc,
+    miner_addr: str,
+    after_offset: int,
+    timeout: int = 600,
+    blocks_per_step: int = 2,
+    poll: float = 2.0,
+) -> str:
+    """Tail the strata log for the first occurrence of `pattern` past
+    `after_offset` bytes, mining bitcoin blocks each step so the OL/ASM
+    pipelines keep advancing. Returns the matched line; raises on timeout.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if log_path.exists():
+            with open(log_path, "rb") as f:
+                f.seek(after_offset)
+                tail = f.read().decode(errors="replace")
+            m = pattern.search(tail)
+            if m:
+                return m.group(0)
+        btc_rpc.proxy.generatetoaddress(blocks_per_step, miner_addr)
+        time.sleep(poll)
+    raise AssertionError(f"pattern {pattern.pattern!r} not found in {log_path} within {timeout}s")
+
+
 @flexitest.register
 class TestRealBridgeDepositWithdraw(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
@@ -290,33 +324,38 @@ class TestRealBridgeDepositWithdraw(BaseTest):
 
         # ----- bullet 4: OL to user wallet - withdrawal-fulfillment -----
         #
-        # KNOWN GAP. The bridge subprotocol creates a withdrawal assignment
-        # only after the OL checkpoint is proven and the proof is posted to
-        # L1, validated by the ASM checkpoint subprotocol, which then emits
-        # `BridgeIncomingMsg::DispatchWithdrawal` to the bridge. This test
-        # does not currently wait for the full checkpoint cycle, so when
-        # the bridge sees the WF tx it logs:
+        # KNOWN UPSTREAM BLOCKER. The full OL -> L1 -> ASM -> bridge cycle
+        # cannot complete in this env because of a bug in the OL DA
+        # accumulator (`crates/ol/state-support-types/src/da_accumulating_layer.rs:292`):
         #
-        #   ERROR strata_asm_proto_bridge_v1::subprotocol:
-        #     Failed to process tx ... error=failed to parse withdrawal
-        #     fulfillment tx
+        #     let source_id = entry.source();
+        #     if source_id.is_special() {
+        #         return Err(DaAccumulationError::MessageSourceMissing(source_id));
+        #     }
         #
-        # which surfaces `WithdrawalValidationError::NoAssignmentFound`.
+        # The bridge deposit flow sends inbox messages with `source =
+        # BRIDGE_GATEWAY_ACCT_ID = AccountId::special(0x10)`. The DA
+        # accumulator rejects any such message at checkpoint-build time, the
+        # `ol_checkpoint` service crashes at epoch=1 with:
         #
-        # We still broadcast a real WF tx so the bitcoin-layer half is
-        # exercised and visible in the chain history. We DO NOT assert the
-        # recipient address received funds because that signal is misleading:
-        # the test-cli wallet itself sends 10 BTC in this WF, regardless of
-        # bridge acceptance, so a balance check passes even when the
-        # protocol has not actually settled.
+        #     ERROR strata_ol_checkpoint::service: checkpoint build failed
+        #     epoch=1 err=DA accumulation failed: da accumulator missing
+        #     message source 0000...0010
         #
-        # TODO: extend the test to wait for the OL checkpoint to reach L1
-        # and the ASM checkpoint subprotocol to dispatch the withdrawal,
-        # then assert the bridge log line:
+        # and never recovers. With no checkpoints posted to L1, the ASM
+        # checkpoint subprotocol never emits `DispatchWithdrawal`, the
+        # bridge never gets an assignment, and any WF tx is rejected with
+        # `WithdrawalValidationError::NoAssignmentFound`.
         #
-        #     Fulfilled withdrawal assignment deposit_idx=0 ...
+        # This is a real protocol gap, not a test infrastructure issue, so
+        # we do NOT pretend bullet 4 settles end-to-end. We DO broadcast a
+        # real WF tx so the bitcoin-layer half is exercised and visible in
+        # chain history; we assert only that the WF tx confirmed on bitcoin
+        # and explicitly mark protocol settlement as KNOWN GAP.
         #
-        # That is the only honest end-to-end signal that bullet 4 fired.
+        # Follow-up: the DA accumulator needs to handle special-account
+        # message sources (or `process_deposit_log` needs to source from a
+        # registered ledger account). Tracking separately.
 
         fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
 
@@ -334,8 +373,6 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         )
         logger.info("[4a] WF broadcast txid=%s recipient=%s", wf_txid, recipient_btc_addr)
 
-        # Confirm the WF on the bitcoin chain. This is what we honestly verify
-        # in this test today.
         btc_rpc.proxy.generatetoaddress(8, miner_addr)
         wf_info = btc_rpc.proxy.getrawtransaction(wf_txid, 1)
         if wf_info.get("confirmations", 0) < 1:
@@ -346,7 +383,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             int(wf_info.get("confirmations", 0)),
         )
         logger.info(
-            "[4] PARTIAL: WF on chain at %s; protocol settlement not asserted (see KNOWN GAP)",
+            "[4] PARTIAL: WF on chain at %s; protocol settlement blocked by DA accumulator bug",
             wf_txid,
         )
 
