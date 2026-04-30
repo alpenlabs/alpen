@@ -289,14 +289,20 @@ impl EpochDaAccumulator {
             }
 
             let source_id = entry.source();
-            if source_id.is_special() {
-                return Err(DaAccumulationError::MessageSourceMissing(source_id));
-            }
-            let exists = state
-                .check_account_exists(source_id)
-                .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
-            if !exists {
-                return Err(DaAccumulationError::MessageSourceMissing(source_id));
+            // Special accounts (e.g. `BRIDGE_GATEWAY_ACCT_ID =
+            // AccountId::special(0x10)`) are protocol-defined system slots
+            // and never registered in the ledger account table. Bridge
+            // deposits source from one such slot, so reject them here would
+            // break the OL checkpoint cycle on every real deposit. Skip the
+            // existence check for special sources; they are constants that
+            // the DA proof side recognises directly.
+            if !source_id.is_special() {
+                let exists = state
+                    .check_account_exists(source_id)
+                    .map_err(|_| DaAccumulationError::MessageSourceMissing(source_id))?;
+                if !exists {
+                    return Err(DaAccumulationError::MessageSourceMissing(source_id));
+                }
             }
 
             let entry = DaMessageEntry::new(source_id, entry.incl_epoch(), entry.payload().clone());

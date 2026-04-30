@@ -1,7 +1,7 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 
-use crate::bridge::dt;
+use crate::{bridge::dt, parse::parse_operator_xprivs};
 
 /// Arguments for creating a deposit transaction (DT).
 ///
@@ -13,8 +13,9 @@ pub struct CreateDepositTxArgs {
     #[argh(option)]
     pub drt_tx: String,
 
-    /// operator private keys in JSON array format (each key is 78 bytes hex)
-    /// Example: --operator-keys='["foo", "bar"]'
+    /// operator extended private keys, JSON array. Each entry can be the BIP32
+    /// base58 form (`tprv...` / `xprv...`) or the 78-byte raw key hex-encoded.
+    /// Example: `--operator-keys='["tprv8Zg..."]'`
     #[argh(option)]
     pub operator_keys: String,
 
@@ -29,29 +30,10 @@ pub(crate) fn create_deposit_tx(args: CreateDepositTxArgs) -> Result<(), Display
     let keys: Vec<String> = serde_json::from_str(&args.operator_keys)
         .user_error("Invalid operator keys JSON format")?;
 
-    let keys_bytes: Result<Vec<[u8; 78]>, DisplayedError> = keys
-        .iter()
-        .map(|k| {
-            let bytes = hex::decode(k).user_error("Invalid operator key hex-encoded string")?;
+    let signers =
+        parse_operator_xprivs(&keys).user_error("Invalid operator key (need base58 xpriv or 78-byte hex)")?;
 
-            if bytes.len() != 78 {
-                return Err(DisplayedError::UserError(
-                    format!(
-                        "Invalid operator key length: expected 78 bytes, got {}",
-                        bytes.len()
-                    ),
-                    Box::new(()),
-                ));
-            }
-
-            let mut arr = [0u8; 78];
-            arr.copy_from_slice(&bytes);
-            Ok(arr)
-        })
-        .collect();
-    let keys_bytes = keys_bytes?;
-
-    let result = dt::create_deposit_transaction_cli(tx_bytes, keys_bytes, args.index)
+    let result = dt::create_deposit_transaction_cli(tx_bytes, signers, args.index)
         .internal_error("Failed to create deposit transaction")?;
     println!("{}", hex::encode(result));
 

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use bdk_wallet::bitcoin::{
     bip32::Xpriv, secp256k1::SECP256K1, taproot::TaprootBuilder, Address, Network, PublicKey,
     XOnlyPublicKey,
@@ -7,24 +9,26 @@ use strata_primitives::buf::Buf32;
 
 use crate::error::Error;
 
-/// Parses operator EvenSecretKey from extended private key bytes
+/// Parses operator [`EvenSecretKey`]s from a list of strings, accepting either
+/// the BIP32 base58 form (`tprv8...` / `xprv...`) emitted by `datatool genxpriv`
+/// or the 78-byte raw extended-key bytes hex-encoded.
 ///
-/// Takes raw bytes representing extended private keys and derives
-/// operator keys using the standard key derivation path.
-///
-/// # Arguments
-/// * `operator_keys` - Slice of 78-byte extended private key arrays
-///
-/// # Returns
-/// * `Result<Vec<EvenSecretKey>, Error>` - Vector of derived even secret keys
-pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<EvenSecretKey>, Error> {
-    operator_keys
+/// Auto-detects format per element.
+pub(crate) fn parse_operator_xprivs(xprivs: &[String]) -> Result<Vec<EvenSecretKey>, Error> {
+    xprivs
         .iter()
-        .map(|bytes| {
-            let xpriv = Xpriv::decode(bytes).map_err(|_| Error::InvalidXpriv)?;
+        .map(|s| {
+            // BIP32 base58 form is the canonical wallet format.
+            if let Ok(xpriv) = Xpriv::from_str(s) {
+                return Ok(EvenSecretKey::from(xpriv.private_key));
+            }
+            // Fall back to 78-byte hex.
+            let bytes = hex::decode(s).map_err(|_| Error::InvalidXpriv)?;
+            let bytes_arr: [u8; 78] = bytes.try_into().map_err(|_| Error::InvalidXpriv)?;
+            let xpriv = Xpriv::decode(&bytes_arr).map_err(|_| Error::InvalidXpriv)?;
             Ok(EvenSecretKey::from(xpriv.private_key))
         })
-        .collect::<Result<Vec<_>, Error>>()
+        .collect()
 }
 
 /// Generates a taproot address from operator public keys

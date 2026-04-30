@@ -310,6 +310,9 @@ def main(argv: list[str]) -> int:
         ),
         # Environments containing both ee and ol
         "el_ol": EeOLEnv(pre_generate_blocks=110),
+        # Same as `el_ol` but with a fast OL block time, so bridge tests can
+        # drive a deposit -> bridgeout -> WF cycle within reasonable runtime.
+        "el_ol_bridge": EeOLEnv(pre_generate_blocks=110, ol_block_time_ms=500),
     }
 
     # Set up test runtime
