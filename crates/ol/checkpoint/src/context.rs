@@ -9,7 +9,7 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
-use strata_ol_state_support_types::DaAccumulatingState;
+use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
 use strata_ol_stf::execute_block_batch;
 use strata_primitives::nonempty_vec::NonEmptyVec;
@@ -372,9 +372,10 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
         anyhow::anyhow!("missing prev terminal block header for {:?}", prev_terminal)
     })?;
 
-    let ol_state = ctx
+    let ol_state_raw = ctx
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
+    let ol_state = MemoryStateBaseLayer::new(ol_state_raw);
 
     let mut da_state = DaAccumulatingState::new(ol_state);
 

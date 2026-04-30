@@ -1,15 +1,23 @@
-use strata_acct_types::{
-    AccountSerial, AccountTypeId, AcctResult, BitcoinAmount, Hash, MessageEntry, Mmr64,
-};
+use strata_acct_types::{AccountSerial, AccountTypeId, BitcoinAmount, Hash, MessageEntry, Mmr64};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_types::Seqno;
 
-use crate::coin::Coin;
+use crate::{coin::Coin, errors::StateResult};
 
 /// Abstract account state.
 pub trait IAccountState: Clone + Sized {
     /// Type representing snark account state.
     type SnarkAccountState: ISnarkAccountState;
+
+    // Constructor.
+
+    /// Creates a new account state with the given serial, balance, and type state.
+    ///
+    /// This is just a dumb piece of data, it does not insert it into any state
+    /// tree or anything.
+    fn new_with_serial(new_acct_data: NewAccountData, serial: AccountSerial) -> Self;
+
+    // Accessors.
 
     /// Gets the account serial.
     fn serial(&self) -> AccountSerial;
@@ -24,7 +32,7 @@ pub trait IAccountState: Clone + Sized {
     fn type_state(&self) -> AccountTypeStateRef<'_, Self>;
 
     /// If we are a snark account, gets a ref to the type state.
-    fn as_snark_account(&self) -> AcctResult<&Self::SnarkAccountState>;
+    fn as_snark_account(&self) -> StateResult<&Self::SnarkAccountState>;
 }
 
 /// Abstract mutable account state.
@@ -36,49 +44,72 @@ pub trait IAccountStateMut: IAccountState {
     fn add_balance(&mut self, coin: Coin);
 
     /// Takes a coin from this account's balance, if funds are available.
-    fn take_balance(&mut self, amt: BitcoinAmount) -> AcctResult<Coin>;
+    fn take_balance(&mut self, amt: BitcoinAmount) -> StateResult<Coin>;
 
     /// If we are a snark, gets a mut ref to the type state.
-    fn as_snark_account_mut(&mut self) -> AcctResult<&mut Self::SnarkAccountStateMut>;
+    fn as_snark_account_mut(&mut self) -> StateResult<&mut Self::SnarkAccountStateMut>;
+}
+
+/// Type-specific initialization state for new accounts.
+#[derive(Clone, Debug)]
+pub enum NewAccountTypeState {
+    /// Empty account with no type state.
+    Empty,
+
+    /// Snark account with initial snark parameters.
+    Snark {
+        /// Update verification key.
+        update_vk: PredicateKey,
+        /// Initial inner state root.
+        initial_state_root: Hash,
+    },
 }
 
 /// Account state for a newly-created account, which hasn't been assigned a
 /// serial yet.
-pub struct NewAccountData<T: IAccountState> {
+#[derive(Clone, Debug)]
+pub struct NewAccountData {
     initial_balance: BitcoinAmount,
-    type_state: AccountTypeState<T>,
+    type_state: NewAccountTypeState,
 }
 
-impl<T: IAccountState> Clone for NewAccountData<T> {
-    fn clone(&self) -> Self {
-        Self {
-            initial_balance: self.initial_balance,
-            type_state: self.type_state.clone(),
-        }
-    }
-}
-
-impl<T: IAccountState> NewAccountData<T> {
-    pub fn new(initial_balance: BitcoinAmount, type_state: AccountTypeState<T>) -> Self {
+impl NewAccountData {
+    pub fn new(initial_balance: BitcoinAmount, type_state: NewAccountTypeState) -> Self {
         Self {
             initial_balance,
             type_state,
         }
     }
 
-    pub fn new_empty(type_state: AccountTypeState<T>) -> Self {
+    pub fn new_empty(type_state: NewAccountTypeState) -> Self {
         Self::new(BitcoinAmount::zero(), type_state)
+    }
+
+    /// Creates a new snark account with the given balance, verification key, and initial state
+    /// root.
+    pub fn new_snark(
+        initial_balance: BitcoinAmount,
+        update_vk: PredicateKey,
+        initial_state_root: Hash,
+    ) -> Self {
+        Self::new(
+            initial_balance,
+            NewAccountTypeState::Snark {
+                update_vk,
+                initial_state_root,
+            },
+        )
     }
 
     pub fn initial_balance(&self) -> BitcoinAmount {
         self.initial_balance
     }
 
-    pub fn type_state(&self) -> &AccountTypeState<T> {
+    pub fn type_state(&self) -> &NewAccountTypeState {
         &self.type_state
     }
 
-    pub fn into_type_state(self) -> AccountTypeState<T> {
+    pub fn into_type_state(self) -> NewAccountTypeState {
         self.type_state
     }
 }
@@ -118,6 +149,11 @@ pub enum AccountTypeStateMut<'a, T: IAccountState> {
 
 /// Abstract snark account state.
 pub trait ISnarkAccountState: Clone + Sized {
+    // Constructor.
+
+    /// Builds a fresh snark state from the update predicate key and initial root.
+    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self;
+
     // Proof state accessors
 
     /// Gets the verification key for this snark account.
@@ -139,12 +175,6 @@ pub trait ISnarkAccountState: Clone + Sized {
     fn inbox_mmr(&self) -> &Mmr64;
 }
 
-/// Constructor helper for snark account state.
-pub trait ISnarkAccountStateConstructible: ISnarkAccountState {
-    /// Builds a fresh snark state from the update predicate key and initial root.
-    fn new_fresh(update_vk: PredicateKey, initial_state_root: Hash) -> Self;
-}
-
 /// Mutable accessor to snark account state.
 pub trait ISnarkAccountStateMut: ISnarkAccountState {
     /// Sets the inner state root unconditionally.
@@ -160,25 +190,16 @@ pub trait ISnarkAccountStateMut: ISnarkAccountState {
         next_read_idx: u64,
         seqno: Seqno,
         extra_data: &[u8],
-    ) -> AcctResult<()>;
+    ) -> StateResult<()>;
 
     /// Inserts message data into the inbox.  Performs no other operations.
     ///
     /// This is exposed like this so that we can expose the message entry in DA.
-    fn insert_inbox_message(&mut self, entry: MessageEntry) -> AcctResult<()>;
+    fn insert_inbox_message(&mut self, entry: MessageEntry) -> StateResult<()>;
 
     /// Replaces the predicate key (verification key) used to verify future
     /// updates to this snark account.
     ///
     /// Does not touch proof state, seqno, or inbox.
     fn set_update_vk(&mut self, new_vk: PredicateKey);
-}
-
-/// Trait for constructing account states with a serial.
-///
-/// This is used by generic state accessor wrappers that need to create new
-/// accounts but don't have knowledge of the concrete account type.
-pub trait IAccountStateConstructible: IAccountState {
-    /// Creates a new account state with the given serial, balance, and type state.
-    fn new_with_serial(new_acct_data: NewAccountData<Self>, serial: AccountSerial) -> Self;
 }

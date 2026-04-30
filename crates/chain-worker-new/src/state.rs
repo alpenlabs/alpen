@@ -12,8 +12,10 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::{IndexerState, IndexerWrites, WriteTrackingState};
-use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
+use strata_ol_state_support_types::{
+    IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
+};
+use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
 use strata_ol_stf::verify_block;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
@@ -161,17 +163,17 @@ impl ChainWorkerServiceState {
         let (output, new_state) =
             self.execute_stf(&block, parent_header.as_ref(), parent_commitment)?;
 
-        // Persist results (including the full state)
-        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
-
         // Handle epoch terminal if needed
         debug!(slot=%block.header().slot(), is_terminal=%block.header().is_terminal(), "Checking if block is terminal");
         if block.header().is_terminal() {
-            self.handle_complete_epoch(&block, &output)?;
+            self.handle_complete_epoch(&block, &output, &new_state)?;
             // Send the epoch commitment to receiver
             // TODO: it seems to be done for each block at the moment. Ideally we would do it just
             // here.
         }
+
+        // Persist results (including the full state)
+        self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
 
         Ok(())
     }
@@ -222,11 +224,12 @@ impl ChainWorkerServiceState {
         parent_header: Option<&OLBlockHeader>,
         parent_commitment: OLBlockCommitment,
     ) -> WorkerResult<(OLBlockExecutionOutput, OLState)> {
-        // Fetch parent state
-        let parent_state = self
+        // Fetch parent state and wrap in MemoryStateBaseLayer for IStateAccessor
+        let parent_state_raw = self
             .ctx
             .fetch_ol_state(parent_commitment)?
             .ok_or(WorkerError::MissingPreState(parent_commitment))?;
+        let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
 
         // Execute and extract outputs
         let (write_batch, indexer_writes) =
@@ -237,6 +240,7 @@ impl ChainWorkerServiceState {
         new_state
             .apply_write_batch(write_batch.clone())
             .map_err(|e| WorkerError::Unexpected(format!("Failed to apply write batch: {}", e)))?;
+        let new_state = new_state.into_inner();
 
         // Use the state root from the header (verify_block validated it).
         // Note: logs are validated internally by verify_block via the logs_root commitment.
@@ -252,12 +256,12 @@ impl ChainWorkerServiceState {
     ///
     /// This is a pure function that builds the state stack and executes the STF.
     fn run_stf_verification(
-        parent_state: &OLState,
+        parent_state: &MemoryStateBaseLayer,
         block: &OLBlock,
         parent_header: Option<&OLBlockHeader>,
     ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
-        // Build the state stack: IndexerState<WriteTrackingState<&OLState>>
-        let tracking_state = WriteTrackingState::new_from_state(parent_state);
+        // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
+        let tracking_state = WriteTrackingState::new_empty(parent_state);
         let mut indexer_state = IndexerState::new(tracking_state);
 
         verify_block(
@@ -269,7 +273,7 @@ impl ChainWorkerServiceState {
 
         // Extract outputs
         let (tracking_state, indexer_writes) = indexer_state.into_parts();
-        let write_batch = tracking_state.into_batch();
+        let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
 
         Ok((write_batch, indexer_writes))
     }
@@ -301,14 +305,9 @@ impl ChainWorkerServiceState {
         &mut self,
         block: &OLBlock,
         last_block_output: &OLBlockExecutionOutput,
+        new_state: &OLState,
     ) -> WorkerResult<()> {
-        // Use the block header epoch - this is the epoch being completed.
-        // Note: The write batch contains POST-manifest state where cur_epoch is already
-        // advanced. The header epoch is set during block assembly and doesn't change.
         let completed_epoch = block.header().epoch();
-
-        let slot = block.header().slot();
-        let terminal = OLBlockCommitment::new(slot, block.header().compute_blkid());
 
         // Get previous terminal from storage.
         // Note: Epoch 0 (genesis) is created by genesis initialization, not chain-worker.
@@ -319,21 +318,8 @@ impl ChainWorkerServiceState {
             .map(|s| *s.terminal())
             .unwrap_or(OLBlockCommitment::null());
 
-        // Get L1 info from the write batch (epochal state has latest L1 after manifest sealing)
-        let epochal = last_block_output.write_batch().epochal();
-        let new_tip_height = epochal.last_l1_height();
-        let new_tip_blkid = epochal.last_l1_blkid();
-        let new_l1_block = L1BlockCommitment::new(new_tip_height, *new_tip_blkid);
-
-        let epoch_final_state = *last_block_output.computed_state_root();
-
-        let summary = EpochSummary::new(
-            completed_epoch,
-            terminal,
-            prev_terminal,
-            new_l1_block,
-            epoch_final_state,
-        );
+        let summary =
+            build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
 
         debug!(?summary, "completed chain epoch");
         self.ctx.store_summary(summary)?;
@@ -358,5 +344,105 @@ impl ChainWorkerServiceState {
 impl ServiceState for ChainWorkerServiceState {
     fn name(&self) -> &str {
         "chain_worker_new"
+    }
+}
+
+/// Builds the [`EpochSummary`] for a completed epoch from the terminal block,
+/// its execution output, and the post-state.
+///
+/// L1 info is sourced from the post-state's epochal state rather than the
+/// write batch, since the batch only carries diffs and may not contain a
+/// `last_l1_*` update if the terminal block introduced no new manifests.
+fn build_epoch_summary(
+    block_header: &OLBlockHeader,
+    last_block_output: &OLBlockExecutionOutput,
+    new_state: &OLState,
+    prev_terminal: OLBlockCommitment,
+) -> EpochSummary {
+    let completed_epoch = block_header.epoch();
+    let terminal = OLBlockCommitment::new(block_header.slot(), block_header.compute_blkid());
+
+    // Read L1 info from the post-state. The write batch only stores diffs, so it
+    // may not contain a last_l1_* update if the terminal block had no new manifests.
+    let epoch_state = new_state.epoch_state();
+    let new_l1_block =
+        L1BlockCommitment::new(epoch_state.last_l1_height(), *epoch_state.last_l1_blkid());
+
+    let epoch_final_state = *last_block_output.computed_state_root();
+
+    EpochSummary::new(
+        completed_epoch,
+        terminal,
+        prev_terminal,
+        new_l1_block,
+        epoch_final_state,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_identifiers::{Buf32, L1BlockCommitment, L1BlockId, L1Height, OLBlockId};
+    use strata_ol_chain_types_new::{BlockFlags, OLBlockHeader};
+    use strata_ol_state_support_types::IndexerWrites;
+    use strata_ol_state_types::{
+        OLAccountState, WriteBatch, test_utils::create_test_genesis_state,
+    };
+
+    use super::*;
+    use crate::OLBlockExecutionOutput;
+
+    /// Regression test for the panic
+    /// `terminal block must have L1 height in write batch`.
+    ///
+    /// When a terminal block does not introduce any new ASM manifests, its
+    /// [`WriteBatch`] does not contain `last_l1_height` / `last_l1_blkid`
+    /// updates. The summary builder must therefore read L1 info from the
+    /// post-state rather than the write batch.
+    #[test]
+    fn test_handle_write_batch_without_last_l1_change() {
+        // Set up a post-state with a known L1 commitment, simulating L1 progress
+        // recorded in earlier (non-terminal) blocks of the epoch.
+        let mut new_state = create_test_genesis_state();
+        let expected_height = L1Height::from(1234u32);
+        let expected_blkid = L1BlockId::from(Buf32::from([7u8; 32]));
+        let mut setup_batch: WriteBatch<OLAccountState> = WriteBatch::default();
+        setup_batch.epochal_writes_mut().last_l1_height = Some(expected_height);
+        setup_batch.epochal_writes_mut().last_l1_blkid = Some(expected_blkid);
+        new_state
+            .apply_write_batch(setup_batch)
+            .expect("apply setup batch");
+
+        // Terminal block's write batch carries no `last_l1_*` update — this is
+        // the case that previously panicked.
+        let terminal_batch: WriteBatch<OLAccountState> = WriteBatch::default();
+        assert!(terminal_batch.epochal_writes().last_l1_height.is_none());
+        assert!(terminal_batch.epochal_writes().last_l1_blkid.is_none());
+
+        let state_root = Buf32::from([9u8; 32]);
+        let output = OLBlockExecutionOutput::new(state_root, terminal_batch, IndexerWrites::new());
+
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            0,
+            flags,
+            10,
+            5,
+            OLBlockId::from(Buf32::zero()),
+            Buf32::zero(),
+            state_root,
+            Buf32::zero(),
+        );
+
+        let summary = build_epoch_summary(&header, &output, &new_state, OLBlockCommitment::null());
+
+        assert_eq!(
+            summary.new_l1(),
+            &L1BlockCommitment::new(expected_height, expected_blkid),
+            "L1 commitment must come from post-state, not from the empty write batch"
+        );
+        assert_eq!(summary.epoch(), 5);
+        assert_eq!(summary.final_state(), &state_root);
+        assert_eq!(summary.prev_terminal(), &OLBlockCommitment::null());
     }
 }

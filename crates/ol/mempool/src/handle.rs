@@ -116,8 +116,8 @@ mod tests {
         MempoolBuilder,
         test_utils::{
             create_test_block_commitment, create_test_generic_tx_for_account,
-            create_test_snark_tx_with_seq_no, create_test_snark_tx_with_seq_no_and_slots,
-            setup_test_state_for_tip,
+            create_test_ol_state_for_tip, create_test_snark_tx_with_seq_no,
+            create_test_snark_tx_with_seq_no_and_slots,
         },
         types::OLMempoolConfig,
     };
@@ -135,10 +135,18 @@ mod tests {
         let current_tip = create_test_block_commitment(100);
 
         // Set up test state for the tip and other tips tests will use
-        setup_test_state_for_tip(&storage, current_tip).await;
-        setup_test_state_for_tip(&storage, create_test_block_commitment(80)).await;
-        setup_test_state_for_tip(&storage, create_test_block_commitment(160)).await;
-        setup_test_state_for_tip(&storage, create_test_block_commitment(200)).await;
+        for tip in [
+            current_tip,
+            create_test_block_commitment(80),
+            create_test_block_commitment(160),
+            create_test_block_commitment(200),
+        ] {
+            storage
+                .ol_state()
+                .put_toplevel_ol_state_async(tip, create_test_ol_state_for_tip(tip.slot()))
+                .await
+                .expect("Failed to set up test state");
+        }
 
         let client_state = ClientState::new(None, None);
         let l1_block = L1BlockCommitment::new(0, L1BlockId::default());

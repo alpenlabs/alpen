@@ -5,8 +5,10 @@ use std::result::Result as StdResult;
 use strata_acct_types::AcctError;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Buf64, OLBlockCommitment};
+use strata_ledger_types::StateError;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_params::OLParams;
+use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::OLState;
 use strata_ol_stf::{
     BlockComponents, BlockContext, BlockInfo, ExecError, execute_and_complete_block,
@@ -41,9 +43,12 @@ pub enum GenesisError {
     #[error("invalid genesis L1 height {height}")]
     InvalidGenesisL1Height { height: u64 },
 
-    /// Failed to construct the genesis OL state.
-    #[error("failed to construct OL genesis state")]
-    GenesisState(#[from] AcctError),
+    /// Account related errors.
+    #[error("acct: {0}")]
+    Acct(#[from] AcctError),
+
+    #[error("state: {0}")]
+    State(#[from] StateError),
 }
 
 pub type Result<T> = StdResult<T, GenesisError>;
@@ -54,7 +59,8 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     info!("building OL genesis block and state");
 
     // Create initial OL state (uses genesis params).
-    let mut ol_state = OLState::from_genesis_params(params)?;
+    let ol_state_raw = OLState::from_genesis_params(params)?;
+    let mut ol_state = MemoryStateBaseLayer::new(ol_state_raw);
 
     // Create genesis block info.
     let genesis_ts = params.header.timestamp;
@@ -72,6 +78,7 @@ pub fn build_genesis_artifacts(params: &OLParams) -> Result<GenesisArtifacts> {
     let block_context = BlockContext::new(&genesis_info, None);
     let genesis_block =
         execute_and_complete_block(&mut ol_state, block_context, genesis_components)?;
+    let ol_state = ol_state.into_inner();
 
     // Create signed header (genesis uses zero signature).
     let signed_header = SignedOLBlockHeader::new(genesis_block.header().clone(), Buf64::zero());

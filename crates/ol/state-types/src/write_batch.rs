@@ -3,18 +3,42 @@
 use std::collections::BTreeMap;
 
 use ssz::{Decode, Encode};
-use strata_acct_types::{AccountId, AccountSerial};
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount, Mmr64};
 use strata_codec::{Codec, CodecError, Decoder, Encoder};
 use strata_codec_utils::CodecSsz;
-use strata_identifiers::L1BlockCommitment;
-use strata_ledger_types::{
-    IAccountStateConstructible, IStateAccessor, NewAccountData, asm_manifests_mmr_start_height,
-};
+use strata_identifiers::{EpochCommitment, L1BlockId, L1Height, Slot};
+use strata_ledger_types::{IAccountState, NewAccountData};
 
-use crate::{
-    SerialMap,
-    ssz_generated::ssz::state::{EpochalState, GlobalState},
-};
+use crate::SerialMap;
+
+/// Tracked writes to the global state.
+#[derive(Clone, Debug, Default)]
+pub struct GlobalStateWrites {
+    /// New slot value, if changed.
+    pub cur_slot: Option<Slot>,
+}
+
+/// Tracked writes to the epochal state.
+#[derive(Clone, Debug, Default)]
+pub struct EpochalStateWrites {
+    /// New epoch number, if changed.
+    pub cur_epoch: Option<u32>,
+
+    /// New last L1 block ID, if changed.
+    pub last_l1_blkid: Option<L1BlockId>,
+
+    /// New last L1 height, if changed.
+    pub last_l1_height: Option<L1Height>,
+
+    /// New ASM recorded epoch, if changed.
+    pub asm_recorded_epoch: Option<EpochCommitment>,
+
+    /// New total ledger balance, if changed.
+    pub total_ledger_balance: Option<BitcoinAmount>,
+
+    /// New ASM manifests MMR, if changed.
+    pub asm_manifests_mmr: Option<Mmr64>,
+}
 
 /// A batch of writes to the OL state.
 ///
@@ -22,61 +46,40 @@ use crate::{
 /// applied atomically or discarded.
 #[derive(Clone, Debug)]
 pub struct WriteBatch<A> {
-    pub(crate) global: GlobalState,
-    pub(crate) epochal: EpochalState,
+    pub(crate) global_writes: GlobalStateWrites,
+    pub(crate) epochal_writes: EpochalStateWrites,
     pub(crate) ledger: LedgerWriteBatch<A>,
 }
 
-impl<A> WriteBatch<A> {
-    /// Creates a new write batch initialized from the given state components.
-    pub fn new(global: GlobalState, epochal: EpochalState) -> Self {
+impl<A> Default for WriteBatch<A> {
+    fn default() -> Self {
         Self {
-            global,
-            epochal,
+            global_writes: GlobalStateWrites::default(),
+            epochal_writes: EpochalStateWrites::default(),
             ledger: LedgerWriteBatch::new(),
         }
     }
+}
 
-    /// Creates a new write batch by extracting state from a state accessor.
-    ///
-    /// This initializes the global and epochal state from the accessor's current values.
-    pub fn new_from_state<S>(state: &S) -> Self
-    where
-        S: IStateAccessor<AccountState = A>,
-    {
-        // TODO provide accessors/constructors to simplify this
-        let global = GlobalState::new(state.cur_slot());
-        let manifests_mmr_start_height = asm_manifests_mmr_start_height(state)
-            .expect("state: invalid manifests MMR start height derivation");
-        let epochal = EpochalState::new(
-            state.total_ledger_balance(),
-            state.cur_epoch(),
-            L1BlockCommitment::new(state.last_l1_height(), *state.last_l1_blkid()),
-            *state.asm_recorded_epoch(),
-            state.asm_manifests_mmr().clone(),
-            manifests_mmr_start_height as u64,
-        );
-        WriteBatch::new(global, epochal)
+impl<A> WriteBatch<A> {
+    /// Returns a reference to the global state writes.
+    pub fn global_writes(&self) -> &GlobalStateWrites {
+        &self.global_writes
     }
 
-    /// Returns a reference to the global state in this batch.
-    pub fn global(&self) -> &GlobalState {
-        &self.global
+    /// Returns a mutable reference to the global state writes.
+    pub fn global_writes_mut(&mut self) -> &mut GlobalStateWrites {
+        &mut self.global_writes
     }
 
-    /// Returns a mutable reference to the global state in this batch.
-    pub fn global_mut(&mut self) -> &mut GlobalState {
-        &mut self.global
+    /// Returns a reference to the epochal state writes.
+    pub fn epochal_writes(&self) -> &EpochalStateWrites {
+        &self.epochal_writes
     }
 
-    /// Returns a reference to the epochal state in this batch.
-    pub fn epochal(&self) -> &EpochalState {
-        &self.epochal
-    }
-
-    /// Returns a mutable reference to the epochal state in this batch.
-    pub fn epochal_mut(&mut self) -> &mut EpochalState {
-        &mut self.epochal
+    /// Returns a mutable reference to the epochal state writes.
+    pub fn epochal_writes_mut(&mut self) -> &mut EpochalStateWrites {
+        &mut self.epochal_writes
     }
 
     /// Returns a reference to the ledger write batch.
@@ -90,8 +93,8 @@ impl<A> WriteBatch<A> {
     }
 
     /// Consumes the batch and returns its component parts.
-    pub fn into_parts(self) -> (GlobalState, EpochalState, LedgerWriteBatch<A>) {
-        (self.global, self.epochal, self.ledger)
+    pub fn into_parts(self) -> (GlobalStateWrites, EpochalStateWrites, LedgerWriteBatch<A>) {
+        (self.global_writes, self.epochal_writes, self.ledger)
     }
 }
 
@@ -110,19 +113,24 @@ impl<A> LedgerWriteBatch<A> {
     pub fn new() -> Self {
         Self::default()
     }
+}
 
+impl<A: IAccountState> LedgerWriteBatch<A> {
     /// Tracks creating a new account with the given pre-built state and assigned serial.
     ///
     /// The serial should be obtained from `IStateAccessor::next_account_serial()`.
     pub fn create_account_raw(&mut self, id: AccountId, state: A, serial: AccountSerial) {
         #[cfg(debug_assertions)]
         if self.account_writes.contains_key(&id) {
-            panic!("state/wb: creating new account at addr that already exists");
+            panic!("state/wb: creating new account at addr that already exists (addr {id})");
         }
 
         self.account_writes.insert(id, state);
         let inserted = self.serial_to_id.insert_next(serial, id);
-        debug_assert!(inserted, "state/wb: serial not contiguous");
+        debug_assert!(
+            inserted,
+            "state/wb: serial not contiguous (serial {serial})"
+        );
     }
 
     /// Creates a new account from new account data with the given serial.
@@ -131,11 +139,9 @@ impl<A> LedgerWriteBatch<A> {
     pub fn create_account_from_data(
         &mut self,
         id: AccountId,
-        new_acct_data: NewAccountData<A>,
+        new_acct_data: NewAccountData,
         serial: AccountSerial,
-    ) where
-        A: IAccountStateConstructible,
-    {
+    ) {
         let state = A::new_with_serial(new_acct_data, serial);
         self.create_account_raw(id, state, serial);
     }
@@ -210,24 +216,57 @@ impl<A> Default for LedgerWriteBatch<A> {
     }
 }
 
-// Codec implementation for WriteBatch - needed for database serialization
-// Uses CodecSsz shim for SSZ types (GlobalState, EpochalState)
-// and Codec for non-SSZ types (LedgerWriteBatch)
+impl Codec for GlobalStateWrites {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        CodecSsz::new(self.cur_slot).encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        Ok(Self {
+            cur_slot: CodecSsz::<Option<Slot>>::decode(dec)?.into_inner(),
+        })
+    }
+}
+
+impl Codec for EpochalStateWrites {
+    fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
+        CodecSsz::new(self.cur_epoch).encode(enc)?;
+        CodecSsz::new(self.last_l1_blkid).encode(enc)?;
+        CodecSsz::new(self.last_l1_height).encode(enc)?;
+        CodecSsz::new(self.asm_recorded_epoch).encode(enc)?;
+        CodecSsz::new(self.total_ledger_balance).encode(enc)?;
+        CodecSsz::new(self.asm_manifests_mmr.clone()).encode(enc)?;
+        Ok(())
+    }
+
+    fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
+        Ok(Self {
+            cur_epoch: CodecSsz::<Option<u32>>::decode(dec)?.into_inner(),
+            last_l1_blkid: CodecSsz::<Option<L1BlockId>>::decode(dec)?.into_inner(),
+            last_l1_height: CodecSsz::<Option<L1Height>>::decode(dec)?.into_inner(),
+            asm_recorded_epoch: CodecSsz::<Option<EpochCommitment>>::decode(dec)?.into_inner(),
+            total_ledger_balance: CodecSsz::<Option<BitcoinAmount>>::decode(dec)?.into_inner(),
+            asm_manifests_mmr: CodecSsz::<Option<Mmr64>>::decode(dec)?.into_inner(),
+        })
+    }
+}
+
 impl<A: Encode + Decode + Clone> Codec for WriteBatch<A> {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
-        CodecSsz::new(self.global.clone()).encode(enc)?;
-        CodecSsz::new(self.epochal.clone()).encode(enc)?;
+        self.global_writes.encode(enc)?;
+        self.epochal_writes.encode(enc)?;
         self.ledger.encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
-        let global = CodecSsz::<GlobalState>::decode(dec)?.into_inner();
-        let epochal = CodecSsz::<EpochalState>::decode(dec)?.into_inner();
+        let global_writes = GlobalStateWrites::decode(dec)?;
+        let epochal_writes = EpochalStateWrites::decode(dec)?;
         let ledger = LedgerWriteBatch::decode(dec)?;
         Ok(Self {
-            global,
-            epochal,
+            global_writes,
+            epochal_writes,
             ledger,
         })
     }

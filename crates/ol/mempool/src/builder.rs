@@ -71,7 +71,7 @@ impl MempoolBuilder {
         // Subscribe to chain sync updates
         let ol_sync_rx = self.status_channel.subscribe_ol_sync();
 
-        let ctx = Arc::new(MempoolContext::new(
+        let ctx = Arc::new(MempoolContext::new_from_nodestorage(
             self.config.clone(),
             self.storage.clone(),
         ));

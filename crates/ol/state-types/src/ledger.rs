@@ -2,15 +2,11 @@
 //!
 //! This uses the "transitional" types described in the OL STF spec.
 
-use strata_acct_types::{
-    AccountId, AccountSerial, AcctError, AcctResult, BitcoinAmount, SYSTEM_RESERVED_ACCTS,
-};
-use strata_ol_params::GenesisSnarkAccountData;
+use ssz_types::VariableList;
+use strata_acct_types::{AccountId, AccountSerial, BitcoinAmount};
+use strata_ledger_types::{IAccountState, NewAccountData, StateError, StateResult};
 
-use crate::ssz_generated::ssz::state::{
-    OLAccountState, OLAccountTypeState, OLSnarkAccountState, TsnlAccountEntry,
-    TsnlLedgerAccountsTable,
-};
+use crate::ssz_generated::ssz::state::{OLAccountState, TsnlAccountEntry, TsnlLedgerAccountsTable};
 
 impl TsnlLedgerAccountsTable {
     /// Creates a new empty table.
@@ -18,36 +14,8 @@ impl TsnlLedgerAccountsTable {
     /// This reserves serials for system accounts with 0 values.
     pub fn new_empty() -> Self {
         Self {
-            accounts: Vec::new().try_into().expect("empty accounts should fit"),
-            serials: vec![AccountId::zero(); SYSTEM_RESERVED_ACCTS as usize]
-                .try_into()
-                .expect("reserved serials should fit"),
+            accounts: VariableList::empty(),
         }
-    }
-
-    /// Creates a new table populated with genesis accounts from params.
-    pub fn from_genesis_account_params<'a>(
-        accounts: impl IntoIterator<Item = (&'a AccountId, &'a GenesisSnarkAccountData)>,
-    ) -> AcctResult<Self> {
-        let mut table = Self::new_empty();
-        for (id, acct_params) in accounts {
-            let serial = table.next_avail_serial();
-            let snark_state = OLSnarkAccountState::new_fresh(
-                acct_params.predicate.clone(),
-                acct_params.inner_state,
-            );
-            let acct_state = OLAccountState::new(
-                serial,
-                acct_params.balance,
-                OLAccountTypeState::Snark(snark_state),
-            );
-            table.create_account(*id, acct_state)?;
-        }
-        Ok(table)
-    }
-
-    pub(crate) fn next_avail_serial(&self) -> AccountSerial {
-        AccountSerial::from(self.serials.len() as u32)
     }
 
     fn get_acct_entry_idx(&self, id: &AccountId) -> Option<usize> {
@@ -64,36 +32,21 @@ impl TsnlLedgerAccountsTable {
         self.accounts.get_mut(idx)
     }
 
-    pub(crate) fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
+    pub fn get_account_state(&self, id: &AccountId) -> Option<&OLAccountState> {
         self.get_acct_entry(id).map(|e| &e.state)
     }
 
-    pub(crate) fn get_account_state_mut(&mut self, id: &AccountId) -> Option<&mut OLAccountState> {
+    pub fn get_account_state_mut(&mut self, id: &AccountId) -> Option<&mut OLAccountState> {
         self.get_acct_entry_mut(id).map(|e| &mut e.state)
     }
 
     /// Creates a new account.
     ///
-    /// # Panics
-    ///
-    /// If the serial of the provided account doesn't match the value of
-    /// `.next_avail_serial()` when called.
-    pub(crate) fn create_account(
-        &mut self,
-        id: AccountId,
-        acct_state: OLAccountState,
-    ) -> AcctResult<AccountSerial> {
-        // Sanity check, this should get optimized out.
-        let next_serial = self.next_avail_serial();
-        assert_eq!(
-            acct_state.serial(),
-            next_serial,
-            "test: invalid serial sequencing"
-        );
-
+    /// This does not check serial uniqueness/ordering.
+    pub fn create_account(&mut self, id: AccountId, acct_state: OLAccountState) -> StateResult<()> {
         // Figure out where we're supposed to put it.
         let insert_idx = match self.accounts.binary_search_by_key(&id, |e| e.id) {
-            Ok(_) => return Err(AcctError::AccountIdExists(id)),
+            Ok(_) => return Err(StateError::AccountExists(id)),
             Err(i) => i,
         };
 
@@ -105,21 +58,27 @@ impl TsnlLedgerAccountsTable {
         accounts_vec.insert(insert_idx, entry);
         self.accounts = accounts_vec.try_into().expect("accounts should fit");
 
-        // Push new serial mapping
-        self.serials.push(id).expect("serials list not full");
-
         // Sanity check.
         assert!(
             self.accounts.is_sorted_by_key(|e| e.id),
             "ol/state: accounts table not sorted by ID"
         );
 
-        Ok(next_serial)
+        Ok(())
     }
 
-    /// Gets the account ID corresponding to a serial.
-    pub(crate) fn get_serial_acct_id(&self, serial: AccountSerial) -> Option<&AccountId> {
-        self.serials.get(*serial.inner() as usize)
+    /// Creates a new account from [`NewAccountData`].
+    ///
+    /// This does not check serial uniqueness/ordering.
+    pub fn create_new_account(
+        &mut self,
+        id: AccountId,
+        serial: AccountSerial,
+        new_acct_data: NewAccountData,
+    ) -> StateResult<()> {
+        let acct = OLAccountState::new_with_serial(new_acct_data, serial);
+        self.create_account(id, acct)?;
+        Ok(())
     }
 
     /// Calculates the total funds across all accounts in the ledger.
@@ -142,7 +101,7 @@ impl TsnlAccountEntry {
 #[cfg(test)]
 mod tests {
     use ssz::{Decode, Encode};
-    use strata_acct_types::BitcoinAmount;
+    use strata_acct_types::{BitcoinAmount, SYSTEM_RESERVED_ACCTS};
     use strata_ledger_types::IAccountState;
     use strata_test_utils_ssz::ssz_proptest;
 
@@ -165,56 +124,27 @@ mod tests {
     }
 
     #[test]
-    fn test_new_empty_table() {
-        let table = TsnlLedgerAccountsTable::new_empty();
-
-        // Verify the table starts empty
-        assert_eq!(table.accounts.len(), 0);
-
-        // Verify system reserved accounts are initialized
-        assert_eq!(table.serials.len(), SYSTEM_RESERVED_ACCTS as usize);
-
-        // Verify all reserved serials are zero AccountIds
-        for serial in &table.serials {
-            assert_eq!(*serial, AccountId::zero());
-        }
-
-        // Verify next available serial is correct
-        assert_eq!(
-            table.next_avail_serial(),
-            AccountSerial::from(SYSTEM_RESERVED_ACCTS)
-        );
-    }
-
-    #[test]
     fn test_create_single_account() {
         let mut table = TsnlLedgerAccountsTable::new_empty();
 
         // Create an account
         let account_id = test_account_id(1);
-        let serial = table.next_avail_serial();
+        let serial = AccountSerial::zero();
         let balance = BitcoinAmount::from_sat(1000);
         let account_state = create_empty_account_state(serial, balance);
 
         // Add the account
         let result = table.create_account(account_id, account_state.clone());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), serial);
 
         // Verify the account was added
         assert_eq!(table.accounts.len(), 1);
-        assert_eq!(table.serials.len(), (SYSTEM_RESERVED_ACCTS + 1) as usize);
 
         // Verify we can retrieve the account state
         let retrieved_state = table.get_account_state(&account_id);
         assert!(retrieved_state.is_some());
         assert_eq!(retrieved_state.unwrap().serial(), serial);
         assert_eq!(retrieved_state.unwrap().balance(), balance);
-
-        // Verify the serial mapping
-        let serial_account_id = table.get_serial_acct_id(serial);
-        assert!(serial_account_id.is_some());
-        assert_eq!(*serial_account_id.unwrap(), account_id);
     }
 
     #[test]
@@ -230,8 +160,11 @@ mod tests {
             test_account_id(4),
         ];
 
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
+
         for (i, account_id) in account_ids.iter().enumerate() {
-            let serial = table.next_avail_serial();
+            let serial = next_serial;
+            next_serial = serial.incr();
             let balance = BitcoinAmount::from_sat((i as u64 + 1) * 100);
             let account_state = create_empty_account_state(serial, balance);
 
@@ -263,22 +196,22 @@ mod tests {
 
         // Create first account
         let account_id = test_account_id(1);
-        let serial1 = table.next_avail_serial();
+        let serial1 = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let account_state1 = create_empty_account_state(serial1, BitcoinAmount::from_sat(1000));
 
         let result1 = table.create_account(account_id, account_state1);
         assert!(result1.is_ok());
 
         // Try to create account with same ID
-        let serial2 = table.next_avail_serial();
+        let serial2 = serial1.incr();
         let account_state2 = create_empty_account_state(serial2, BitcoinAmount::from_sat(2000));
 
         let result2 = table.create_account(account_id, account_state2);
         assert!(result2.is_err());
 
         match result2.unwrap_err() {
-            AcctError::AccountIdExists(id) => assert_eq!(id, account_id),
-            _ => panic!("Expected AccountIdExists error"),
+            StateError::AccountExists(id) => assert_eq!(id, account_id),
+            _ => panic!("Expected AccountExists error"),
         }
 
         // Verify only one account exists
@@ -291,7 +224,7 @@ mod tests {
 
         // Create an account
         let account_id = test_account_id(1);
-        let serial = table.next_avail_serial();
+        let serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let initial_balance = BitcoinAmount::from_sat(1000);
         let account_state = create_empty_account_state(serial, initial_balance);
 
@@ -322,51 +255,6 @@ mod tests {
         let account_id = test_account_id(1);
         let state = table.get_account_state(&account_id);
         assert!(state.is_none());
-
-        // Try to get account ID for non-existent serial
-        let serial = AccountSerial::from(1000);
-        let serial_account_id = table.get_serial_acct_id(serial);
-        assert!(serial_account_id.is_none());
-    }
-
-    #[test]
-    fn test_serial_sequence() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
-
-        // Verify serials increase sequentially
-        let mut expected_serial = SYSTEM_RESERVED_ACCTS;
-
-        for i in 0..10 {
-            let serial = table.next_avail_serial();
-            assert_eq!(serial, AccountSerial::from(expected_serial));
-
-            let account_id = test_account_id(i);
-            let account_state =
-                create_empty_account_state(serial, BitcoinAmount::from_sat(i as u64));
-
-            table.create_account(account_id, account_state).unwrap();
-            expected_serial += 1;
-        }
-
-        // Verify final serial is correct
-        assert_eq!(
-            table.next_avail_serial(),
-            AccountSerial::from(expected_serial)
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "test: invalid serial sequencing")]
-    fn test_invalid_serial_panics() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
-
-        // Create account with wrong serial (should panic)
-        let account_id = test_account_id(1);
-        let wrong_serial = AccountSerial::from(999); // Wrong serial
-        let account_state = create_empty_account_state(wrong_serial, BitcoinAmount::from_sat(1000));
-
-        // This should panic
-        let _ = table.create_account(account_id, account_state);
     }
 
     #[test]
@@ -382,11 +270,6 @@ mod tests {
 
         // Verify they match
         assert_eq!(decoded.accounts.len(), table.accounts.len());
-        assert_eq!(decoded.serials.len(), table.serials.len());
-
-        for i in 0..table.serials.len() {
-            assert_eq!(decoded.serials[i], table.serials[i]);
-        }
     }
 
     #[test]
@@ -394,9 +277,11 @@ mod tests {
         let mut table = TsnlLedgerAccountsTable::new_empty();
 
         // Add several accounts
+        let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         for i in 1..=5 {
             let account_id = test_account_id(i);
-            let serial = table.next_avail_serial();
+            let serial = next_serial;
+            next_serial = serial.incr();
             let balance = BitcoinAmount::from_sat((i as u64) * 1000);
             let account_state = create_empty_account_state(serial, balance);
 
@@ -422,83 +307,6 @@ mod tests {
                 decoded.accounts[i].state.balance(),
                 table.accounts[i].state.balance()
             );
-        }
-
-        // Verify serials match
-        assert_eq!(decoded.serials.len(), table.serials.len());
-        for i in 0..table.serials.len() {
-            assert_eq!(decoded.serials[i], table.serials[i]);
-        }
-
-        // Verify next serial is preserved
-        assert_eq!(decoded.next_avail_serial(), table.next_avail_serial());
-    }
-
-    #[test]
-    fn test_get_serial_acct_id_boundaries() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
-
-        // Test system reserved serials (should all be zero)
-        for i in 0..SYSTEM_RESERVED_ACCTS {
-            let serial = AccountSerial::from(i);
-            let account_id = table.get_serial_acct_id(serial);
-            assert!(account_id.is_some());
-            assert_eq!(*account_id.unwrap(), AccountId::zero());
-        }
-
-        // Add an account
-        let account_id = test_account_id(1);
-        let serial = table.next_avail_serial();
-        let account_state = create_empty_account_state(serial, BitcoinAmount::from_sat(1000));
-        table.create_account(account_id, account_state).unwrap();
-
-        // Test the new serial
-        let retrieved_id = table.get_serial_acct_id(serial);
-        assert!(retrieved_id.is_some());
-        assert_eq!(*retrieved_id.unwrap(), account_id);
-
-        // Test out-of-bounds serial
-        let out_of_bounds = AccountSerial::from(1000);
-        assert!(table.get_serial_acct_id(out_of_bounds).is_none());
-    }
-
-    #[test]
-    fn test_binary_search_efficiency() {
-        let mut table = TsnlLedgerAccountsTable::new_empty();
-
-        // Add many accounts to test binary search
-        for i in 0..100 {
-            // Create account IDs that are not sequential but will be sorted
-            let mut bytes = [0u8; 32];
-            bytes[0] = (i * 2) as u8; // Even numbers to leave gaps
-            let account_id = AccountId::from(bytes);
-
-            let serial = table.next_avail_serial();
-            let balance = BitcoinAmount::from_sat(i);
-            let account_state = create_empty_account_state(serial, balance);
-
-            table.create_account(account_id, account_state).unwrap();
-        }
-
-        // Verify all accounts can be found
-        for i in 0..100 {
-            let mut bytes = [0u8; 32];
-            bytes[0] = (i * 2) as u8;
-            let account_id = AccountId::from(bytes);
-
-            let state = table.get_account_state(&account_id);
-            assert!(state.is_some());
-            assert_eq!(state.unwrap().balance(), BitcoinAmount::from_sat(i));
-        }
-
-        // Verify non-existent accounts (odd numbers) are not found
-        for i in 0..100 {
-            let mut bytes = [0u8; 32];
-            bytes[0] = (i * 2 + 1) as u8; // Odd numbers that don't exist
-            let account_id = AccountId::from(bytes);
-
-            let state = table.get_account_state(&account_id);
-            assert!(state.is_none());
         }
     }
 

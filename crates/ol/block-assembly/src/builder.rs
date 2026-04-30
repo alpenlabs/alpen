@@ -6,8 +6,8 @@ use std::{
 };
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
-use strata_ledger_types::{IAccountStateMut, IStateAccessor};
-use strata_ol_state_types::StateProvider;
+use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
+use strata_ol_state_provider::StateProvider;
 use strata_params::Params;
 use strata_service::ServiceBuilder;
 use strata_storage::NodeStorage;
@@ -21,27 +21,27 @@ use crate::{
 /// Builder for creating and launching block assembly service.
 ///
 /// Separates service initialization logic from the handle interface.
-pub struct BlockasmBuilder<M, E, S>
+pub struct BlockasmBuilder<M, E, P>
 where
     M: MempoolProvider,
     E: EpochSealingPolicy,
-    S: StateProvider,
+    P: StateProvider,
 {
     params: Arc<Params>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     epoch_sealing_policy: E,
-    state_provider: S,
+    state_provider: P,
     sequencer_config: SequencerConfig,
     command_buffer_size: usize,
 }
 
-impl<M, E, S> BlockasmBuilder<M, E, S>
+impl<M, E, P> BlockasmBuilder<M, E, P>
 where
     M: MempoolProvider,
     E: EpochSealingPolicy,
-    S: StateProvider,
+    P: StateProvider,
 {
     pub fn new(
         params: Arc<Params>,
@@ -49,7 +49,7 @@ where
         storage: Arc<NodeStorage>,
         mempool_provider: M,
         epoch_sealing_policy: E,
-        state_provider: S,
+        state_provider: P,
         sequencer_config: SequencerConfig,
     ) -> Self {
         Self {
@@ -71,16 +71,15 @@ where
 
     pub async fn launch(self, texec: &TaskExecutor) -> anyhow::Result<BlockasmHandle>
     where
-        // tighten bounds here to match spawned-service reality + your context impl bounds
         M: Send + Sync + 'static,
         E: Send + Sync + 'static,
-        S: Send + Sync + 'static,
-        S::Error: Display,
-        S::State: BlockAssemblyStateAccess,
-        <<S::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut:
+        P: Send + Sync + 'static,
+        P::Error: Display,
+        P::State: BlockAssemblyStateAccess,
+    <<P::State as IStateAccessor>::AccountState as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
-        <S::State as IStateAccessor>::AccountStateMut: Clone,
-        <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+    <P::State as IStateAccessorMut>::AccountStateMut: Clone,
+    <<P::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
     {
         let genesis_l1_height = self.params.rollup().genesis_l1_view.height();
@@ -100,7 +99,7 @@ where
         );
 
         let mut service_builder =
-            ServiceBuilder::<BlockasmService<M, E, S>, _>::new().with_state(state);
+            ServiceBuilder::<BlockasmService<M, E, P>, _>::new().with_state(state);
 
         let command_handle =
             Arc::new(service_builder.create_command_handle(self.command_buffer_size));

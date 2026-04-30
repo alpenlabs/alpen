@@ -4,13 +4,16 @@
 //! write batching and write tracking for efficient state updates.
 
 // Re-export from state-types for convenience
-pub use strata_ol_state_types::{LedgerWriteBatch, SerialMap, WriteBatch};
-pub use write_tracking_layer::WriteTrackingState;
+pub use strata_ol_state_types::{
+    EpochalStateWrites, GlobalStateWrites, LedgerWriteBatch, SerialMap, WriteBatch,
+};
+pub use write_tracking_layer::{IComputeStateRootWithWrites, WriteTrackingState};
 
 mod batch_diff_layer;
 mod da_accumulating_layer;
 mod index_types;
 mod indexer_layer;
+mod memory_state_layer;
 mod write_tracking_layer;
 
 #[cfg(test)]
@@ -23,3 +26,4 @@ pub use batch_diff_layer::*;
 pub use da_accumulating_layer::*;
 pub use index_types::*;
 pub use indexer_layer::*;
+pub use memory_state_layer::*;

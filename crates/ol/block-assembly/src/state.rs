@@ -9,8 +9,8 @@ use std::{
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
-use strata_ledger_types::{IAccountStateMut, IStateAccessor};
-use strata_ol_state_types::StateProvider;
+use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
+use strata_ol_state_provider::StateProvider;
 use strata_params::{Params, RollupParams};
 use strata_service::ServiceState;
 use tracing::warn;
@@ -274,8 +274,7 @@ where
     E: EpochSealingPolicy,
     S: StateProvider + Send + Sync + 'static,
     S::State: BlockAssemblyStateAccess,
-    <S::State as IStateAccessor>::AccountStateMut: Clone,
-    <<S::State as IStateAccessor>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
+    <<S::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
         Clone,
 {
     /// Resolves accumulated DA upto a block: returns cached data, rebuilds by re-executing epoch
@@ -324,6 +323,7 @@ mod tests {
     use strata_config::BlockAssemblyConfig;
     use strata_identifiers::{AccountSerial, Buf32, Buf64};
     use strata_ol_chain_types_new::{OLBlock, OLLog, SignedOLBlockHeader};
+    use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
     use strata_test_utils_l2::gen_params;
 
@@ -333,14 +333,17 @@ mod tests {
         block_assembly::generate_block_template_inner,
         da_tracker::AccumulatedDaData,
         test_utils::{
-            MockMempoolProvider, StateProviderHandle, TEST_BLOCK_TEMPLATE_TTL, TestEnv,
-            TestStorageFixtureBuilder, create_test_template, create_test_template_with_parent,
+            MockMempoolProvider, TEST_BLOCK_TEMPLATE_TTL, TestEnv, TestStorageFixtureBuilder,
+            create_test_template, create_test_template_with_parent,
         },
         types::BlockGenerationConfig,
     };
 
-    type TestServiceState =
-        BlockasmServiceState<Arc<MockMempoolProvider>, FixedSlotSealing, StateProviderHandle>;
+    type TestServiceState = BlockasmServiceState<
+        Arc<MockMempoolProvider>,
+        FixedSlotSealing,
+        OLStateManagerProviderImpl,
+    >;
 
     fn sample_accumulated_da() -> AccumulatedDaData {
         AccumulatedDaData::new(

@@ -3,10 +3,10 @@
 use strata_acct_types::{AccountId, BitcoinAmount};
 use strata_asm_common::AsmManifest;
 use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
-use strata_ledger_types::{AccountTypeState, IStateAccessor, NewAccountData};
+use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
-use strata_ol_state_support_types::{IndexerState, WriteTrackingState};
-use strata_ol_state_types::{OLSnarkAccountState, OLState};
+use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
+use strata_ol_state_types::{IStateBatchApplicable, OLSnarkAccountState};
 use strata_predicate::PredicateKey;
 
 use crate::{
@@ -31,7 +31,7 @@ fn genesis_block_components() -> BlockComponents {
 
 #[expect(dead_code, reason = "didn't want to remove this")]
 fn setup_terminal_genesis_with_snark_account(
-    state: &mut OLState,
+    state: &mut MemoryStateBaseLayer,
     snark_id: AccountId,
     initial_balance: u64,
 ) -> CompletedBlock {
@@ -39,7 +39,10 @@ fn setup_terminal_genesis_with_snark_account(
         OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), get_test_state_root(1));
     let new_acct_data = NewAccountData::new(
         BitcoinAmount::from_sat(initial_balance),
-        AccountTypeState::Snark(snark_state),
+        NewAccountTypeState::Snark {
+            update_vk: snark_state.update_vk().clone(),
+            initial_state_root: snark_state.inner_state_root(),
+        },
     );
     state
         .create_new_account(snark_id, new_acct_data)
@@ -1148,35 +1151,25 @@ fn test_verify_block_through_write_tracking_stack() {
 
     // Now verify using the WriteTrackingState + IndexerState stack,
     // same composition as chain-worker-new.
-    let verify_base = create_test_genesis_state();
+    let mut verify_base = create_test_genesis_state();
 
-    // Verify genesis through the stack
+    // Verify genesis through the stack and apply writes to advance state
     {
-        let tracking = WriteTrackingState::new_from_state(&verify_base);
+        let tracking = WriteTrackingState::new_empty(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
         verify_block(&mut indexer, genesis.header(), None, genesis.body())
             .expect("Genesis verification through write-tracking stack should succeed");
-    }
-
-    // Apply genesis writes to get post-genesis state for next block
-    let mut post_genesis = verify_base.clone();
-    {
-        let tracking = WriteTrackingState::new_from_state(&post_genesis);
-        let mut indexer = IndexerState::new(tracking);
-
-        verify_block(&mut indexer, genesis.header(), None, genesis.body())
-            .expect("Genesis verification should succeed");
 
         let (tracking, _writes) = indexer.into_parts();
-        post_genesis
+        verify_base
             .apply_write_batch(tracking.into_batch())
             .expect("Applying genesis batch should succeed");
     }
 
     // Verify block 1 through the stack using post-genesis state
     {
-        let tracking = WriteTrackingState::new_from_state(&post_genesis);
+        let tracking = WriteTrackingState::new_empty(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
         verify_block(
@@ -1219,7 +1212,7 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
             Some(blocks[i - 1].header().clone())
         };
 
-        let tracking = WriteTrackingState::new_from_state(&verify_base);
+        let tracking = WriteTrackingState::new_empty(&verify_base);
         let mut indexer = IndexerState::new(tracking);
 
         verify_block(&mut indexer, block.header(), parent_header.as_ref(), block.body()).unwrap_or_else(

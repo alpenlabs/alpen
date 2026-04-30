@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::anyhow;
 use serde::Serialize;
 use strata_db_types::{traits::BlockStatus, DbError};
-use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::OLBlock;
 use strata_params::{CredRule, RollupParams};
 use strata_primitives::{
@@ -148,13 +147,13 @@ async fn process_fc_message(
 
                 // Update status.
                 let last_l1_blk = L1BlockCommitment::new(
-                    fcm_state.cur_ol_state().last_l1_height(),
-                    *fcm_state.cur_ol_state().last_l1_blkid(),
+                    fcm_state.cur_ol_state().epoch_state().last_l1_height(),
+                    *fcm_state.cur_ol_state().epoch_state().last_l1_blkid(),
                 );
 
                 let cur_state = fcm_state.cur_ol_state();
                 // Get prev epoch summary
-                let prev_epoch_num = cur_state.cur_epoch().saturating_sub(1);
+                let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
                 let prev_epoch = ckpt_db
                     .get_canonical_epoch_commitment_at_async(prev_epoch_num)
                     .await?

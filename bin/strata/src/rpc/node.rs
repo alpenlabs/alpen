@@ -8,7 +8,7 @@ use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId,
 };
-use strata_ledger_types::{IAccountState, ISnarkAccountState, IStateAccessor};
+use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
@@ -158,16 +158,7 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })?;
 
         let prev_next_inbox_msg_idx = prev_ol_state
-            .get_account_state(account_id)
-            .map_err(|e| {
-                error!(
-                    ?e,
-                    %account_id,
-                    %prev_terminal_commitment,
-                    "Failed to get account state from previous epoch OL state"
-                );
-                internal_error(format!("Account error: {e}"))
-            })?
+            .get_account_state(&account_id)
             .and_then(|account_state| account_state.as_snark_account().ok())
             .map_or(0, |snark_state| snark_state.next_inbox_msg_idx());
 
@@ -244,11 +235,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
 
         // Extract account state
         let account_state = ol_state
-            .get_account_state(account_id)
-            .map_err(|e| {
-                error!(?e, %account_id, "Failed to get account state");
-                internal_error(format!("Account error: {e}"))
-            })?
+            .get_account_state(&account_id)
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
         // Extract snark-specific data if applicable.
@@ -512,12 +499,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             };
 
             // Get account state
-            let account_state = ol_state.get_account_state(account_id).map_err(|e| {
-                error!(?e, %account_id, slot, "Failed to get account state");
-                internal_error(format!("Account error: {e}"))
-            })?;
-
-            let Some(account_state) = account_state else {
+            let Some(account_state) = ol_state.get_account_state(&account_id) else {
                 continue; // Account not found at this slot
             };
 
@@ -692,13 +674,8 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             })?;
 
         // Get account state
-        let account_state = match ol_state.get_account_state(account_id) {
-            Ok(Some(state)) => state,
-            Ok(None) => return Ok(None), // Account doesn't exist
-            Err(e) => {
-                error!(?e, %account_id, "Failed to get account state");
-                return Err(internal_error(format!("Account error: {e}")));
-            }
+        let Some(account_state) = ol_state.get_account_state(&account_id) else {
+            return Ok(None); // Account doesn't exist
         };
 
         // Try to get snark account state; return None if not a snark account

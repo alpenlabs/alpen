@@ -2,7 +2,6 @@
 
 use strata_db_types::traits::OLStateDatabase;
 use strata_identifiers::OLBlockCommitment;
-use strata_ledger_types::IStateAccessor;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 
 // =============================================================================
@@ -20,7 +19,10 @@ pub fn proptest_put_and_get_toplevel_ol_state(
         .get_toplevel_ol_state(commitment)
         .expect("test: get toplevel")
         .unwrap();
-    assert_eq!(retrieved_state.cur_slot(), state.cur_slot());
+    assert_eq!(
+        retrieved_state.global_state().get_cur_slot(),
+        state.global_state().get_cur_slot()
+    );
 }
 
 pub fn proptest_get_latest_toplevel_ol_state(
@@ -53,7 +55,10 @@ pub fn proptest_get_latest_toplevel_ol_state(
         .expect("test: get latest")
         .unwrap();
     assert_eq!(latest_commitment, higher);
-    assert_eq!(latest_state.cur_slot(), state.cur_slot());
+    assert_eq!(
+        latest_state.global_state().get_cur_slot(),
+        state.global_state().get_cur_slot()
+    );
 }
 
 pub fn proptest_delete_toplevel_ol_state(
@@ -71,12 +76,8 @@ pub fn proptest_delete_toplevel_ol_state(
     assert!(deleted.is_none());
 }
 
-pub fn proptest_put_and_get_write_batch(
-    db: &impl OLStateDatabase,
-    commitment: OLBlockCommitment,
-    state: OLState,
-) {
-    let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+pub fn proptest_put_and_get_write_batch(db: &impl OLStateDatabase, commitment: OLBlockCommitment) {
+    let wb = WriteBatch::<OLAccountState>::default();
     db.put_ol_write_batch(commitment, wb.clone())
         .expect("test: put write batch");
     let retrieved_wb = db
@@ -84,17 +85,13 @@ pub fn proptest_put_and_get_write_batch(
         .expect("test: get write batch")
         .unwrap();
     assert_eq!(
-        retrieved_wb.global().get_cur_slot(),
-        wb.global().get_cur_slot()
+        retrieved_wb.global_writes().cur_slot,
+        wb.global_writes().cur_slot,
     );
 }
 
-pub fn proptest_delete_write_batch(
-    db: &impl OLStateDatabase,
-    commitment: OLBlockCommitment,
-    state: OLState,
-) {
-    let wb = WriteBatch::<OLAccountState>::new_from_state(&state);
+pub fn proptest_delete_write_batch(db: &impl OLStateDatabase, commitment: OLBlockCommitment) {
+    let wb = WriteBatch::<OLAccountState>::default();
     db.put_ol_write_batch(commitment, wb)
         .expect("test: put write batch");
     db.del_ol_write_batch(commitment)
@@ -140,19 +137,17 @@ macro_rules! ol_state_db_tests {
             #[test]
             fn proptest_put_and_get_write_batch(
                 commitment in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types::test_utils::ol_state_strategy(),
             ) {
                 let db = $setup_expr;
-                $crate::ol_state_tests::proptest_put_and_get_write_batch(&db, commitment, state);
+                $crate::ol_state_tests::proptest_put_and_get_write_batch(&db, commitment);
             }
 
             #[test]
             fn proptest_delete_write_batch(
                 commitment in strata_identifiers::test_utils::ol_block_commitment_strategy(),
-                state in strata_ol_state_types::test_utils::ol_state_strategy(),
             ) {
                 let db = $setup_expr;
-                $crate::ol_state_tests::proptest_delete_write_batch(&db, commitment, state);
+                $crate::ol_state_tests::proptest_delete_write_batch(&db, commitment);
             }
         }
     };

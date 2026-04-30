@@ -13868,6 +13868,7 @@ dependencies = [
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-ol-sequencer",
+ "strata-ol-state-provider",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
@@ -14379,7 +14380,6 @@ dependencies = [
  "strata-checkpoint-types",
  "strata-db-types",
  "strata-identifiers",
- "strata-merkle",
  "strata-node-context",
  "strata-ol-chain-types-new",
  "strata-ol-state-support-types",
@@ -14539,7 +14539,6 @@ dependencies = [
  "strata-db-types",
  "strata-eectl",
  "strata-identifiers",
- "strata-ledger-types",
  "strata-merkle",
  "strata-node-context",
  "strata-ol-chain-types",
@@ -14717,7 +14716,6 @@ dependencies = [
  "strata-db-types",
  "strata-identifiers",
  "strata-l1-txfmt",
- "strata-ledger-types",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-ol-chainstate-types",
@@ -14777,7 +14775,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
- "strata-ledger-types",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
  "strata-primitives",
@@ -15004,6 +15001,7 @@ version = "0.1.0"
 dependencies = [
  "strata-acct-types",
  "strata-asm-manifest-types",
+ "strata-codec",
  "strata-identifiers",
  "strata-predicate",
  "strata-snark-acct-types",
@@ -15115,6 +15113,7 @@ dependencies = [
  "strata-ol-mempool",
  "strata-ol-msg-types",
  "strata-ol-params",
+ "strata-ol-state-provider",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
@@ -15248,7 +15247,7 @@ dependencies = [
  "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-ledger-types",
- "strata-ol-state-types",
+ "strata-ol-state-support-types",
  "strata-ol-stf",
  "strata-predicate",
  "strata-snark-acct-types",
@@ -15262,8 +15261,10 @@ dependencies = [
  "strata-acct-types",
  "strata-checkpoint-types",
  "strata-identifiers",
+ "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-params",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
  "thiserror 2.0.18",
@@ -15286,6 +15287,8 @@ dependencies = [
  "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-params",
+ "strata-ol-state-provider",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
  "strata-predicate",
@@ -15402,6 +15405,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-ol-state-provider"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "strata-db-types",
+ "strata-identifiers",
+ "strata-ledger-types",
+ "strata-ol-state-support-types",
+ "strata-storage",
+]
+
+[[package]]
 name = "strata-ol-state-support-types"
 version = "0.1.0"
 dependencies = [
@@ -15418,7 +15433,6 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-types",
  "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]
@@ -15435,7 +15449,6 @@ dependencies = [
  "strata-asm-manifest-types",
  "strata-codec",
  "strata-codec-utils 0.1.0",
- "strata-crypto",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-merkle",
@@ -15470,7 +15483,6 @@ dependencies = [
  "strata-predicate",
  "strata-snark-acct-sys",
  "strata-snark-acct-types",
- "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -15618,6 +15630,7 @@ dependencies = [
  "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-da",
+ "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
  "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
@@ -15948,7 +15961,6 @@ dependencies = [
  "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
- "strata-ledger-types",
  "strata-merkle",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",

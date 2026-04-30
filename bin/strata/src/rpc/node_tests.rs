@@ -13,7 +13,8 @@ use strata_ol_mempool::{OLMempoolError, OLMempoolResult};
 use strata_ol_params::OLParams;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::*;
-use strata_ol_state_types::{OLSnarkAccountState, OLState};
+use strata_ol_state_support_types::MemoryStateBaseLayer;
+use strata_ol_state_types::OLState;
 use strata_predicate::PredicateKey;
 use strata_primitives::{
     HexBytes, HexBytes32, OLBlockCommitment, epoch::EpochCommitment, prelude::BitcoinAmount,
@@ -345,10 +346,16 @@ fn ol_state_with_snark_account(
     seq_no: u64,
     next_inbox_msg_idx: u64,
 ) -> OLState {
-    let mut state = genesis_ol_state();
+    let base = genesis_ol_state();
+    let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
-    let snark = OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), Hash::zero());
-    let new_acct = NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Snark(snark));
+    let new_acct = NewAccountData::new(
+        BitcoinAmount::from(0),
+        NewAccountTypeState::Snark {
+            update_vk: PredicateKey::always_accept(),
+            initial_state_root: Hash::zero(),
+        },
+    );
     state.create_new_account(account_id, new_acct).unwrap();
     state
         .update_account(account_id, |acct| {
@@ -356,15 +363,16 @@ fn ol_state_with_snark_account(
             s.set_proof_state_directly(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
         })
         .unwrap();
-    state
+    state.into_inner()
 }
 
 fn ol_state_with_empty_account(account_id: AccountId, slot: u64) -> OLState {
-    let mut state = genesis_ol_state();
+    let base = genesis_ol_state();
+    let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
-    let new_acct = NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Empty);
+    let new_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
     state.create_new_account(account_id, new_acct).unwrap();
-    state
+    state.into_inner()
 }
 
 const TEST_GENESIS_L1_HEIGHT: L1Height = 0;
@@ -1095,9 +1103,11 @@ async fn blocks_summaries_snark_vs_non_snark() {
     let block = make_block(0, 0, null_blkid());
     let blkid = block.header().compute_blkid();
 
-    let mut state = ol_state_with_snark_account(snark_id, 0, 42, DEFAULT_NEXT_INBOX_MSG_IDX);
-    let empty_acct = NewAccountData::new(BitcoinAmount::from(0), AccountTypeState::Empty);
+    let snark_state = ol_state_with_snark_account(snark_id, 0, 42, DEFAULT_NEXT_INBOX_MSG_IDX);
+    let mut state = MemoryStateBaseLayer::new(snark_state);
+    let empty_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
     state.create_new_account(empty_id, empty_acct).unwrap();
+    let state = state.into_inner();
 
     let tip = OLBlockCommitment::new(0, blkid);
     let provider = MockProvider::new()

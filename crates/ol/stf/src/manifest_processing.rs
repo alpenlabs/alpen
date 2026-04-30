@@ -10,7 +10,7 @@ use strata_asm_logs::{
 };
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
-use strata_ledger_types::{IAccountStateMut, ISnarkAccountStateMut, IStateAccessor};
+use strata_ledger_types::*;
 use strata_msg_fmt::Msg;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
@@ -28,7 +28,7 @@ use crate::{
 /// processing.
 ///
 /// This does NOT check the preseal root.
-pub fn process_block_manifests<S: IStateAccessor>(
+pub fn process_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
     mf_cont: &OLL1ManifestContainer,
     context: &BasicExecContext<'_>,
@@ -61,7 +61,7 @@ pub fn process_block_manifests<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_asm_manifest<S: IStateAccessor>(
+fn process_asm_manifest<S: IStateAccessorMut>(
     state: &mut S,
     real_height: L1Height,
     mf: &AsmManifest,
@@ -78,7 +78,7 @@ fn process_asm_manifest<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_asm_log<S: IStateAccessor>(
+fn process_asm_log<S: IStateAccessorMut>(
     state: &mut S,
     log: &AsmLogEntry,
     _real_height: L1Height,
@@ -123,7 +123,7 @@ fn process_asm_log<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_deposit_log<S: IStateAccessor>(
+fn process_deposit_log<S: IStateAccessorMut>(
     state: &mut S,
     deposit: &DepositLog,
     context: &BasicExecContext<'_>,
@@ -166,7 +166,7 @@ fn process_deposit_log<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_checkpoint_tip_update<S: IStateAccessor>(
+fn process_checkpoint_tip_update<S: IStateAccessorMut>(
     state: &mut S,
     data: &CheckpointTipUpdate,
     _context: &BasicExecContext<'_>,
@@ -178,7 +178,7 @@ fn process_checkpoint_tip_update<S: IStateAccessor>(
     Ok(())
 }
 
-fn process_ee_predicate_key_update<S: IStateAccessor>(
+fn process_ee_predicate_key_update<S: IStateAccessorMut>(
     state: &mut S,
     data: &EePredicateKeyUpdate,
 ) -> ExecResult<()> {
@@ -209,8 +209,8 @@ fn process_ee_predicate_key_update<S: IStateAccessor>(
 
     if !applied {
         warn!(
-            ?acct_serial,
-            ?acct_id,
+            %acct_serial,
+            %acct_id,
             "dropping ee predicate key update for non-snark account"
         );
     }
