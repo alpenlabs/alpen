@@ -35,12 +35,14 @@ class EeOLEnv(flexitest.EnvConfig):
         mesh_bootnodes: bool = False,
         pre_generate_blocks: int = 0,
         seal_epoch_slots: int | None = None,
+        ol_block_time_ms: int | None = None,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
         self.pure_discovery = pure_discovery
         self.mesh_bootnodes = mesh_bootnodes
         self.pre_generate_blocks = pre_generate_blocks
+        self.ol_block_time_ms = ol_block_time_ms
         self.epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
@@ -55,6 +57,7 @@ class EeOLEnv(flexitest.EnvConfig):
         strata_config = StrataEnvConfig(
             pre_generate_blocks=self.pre_generate_blocks,
             epoch_sealing=self.epoch_seal_config,
+            ol_block_time_ms=self.ol_block_time_ms,
         )
         strata_services = strata_config._get_services(ectx)
 

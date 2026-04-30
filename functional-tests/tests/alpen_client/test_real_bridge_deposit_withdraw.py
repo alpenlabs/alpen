@@ -169,6 +169,16 @@ def strata_log_path(strata_service: StrataService) -> Path:
     return Path(strata_service.props["datadir"]) / "service.log"
 
 
+# Matches ANSI escape sequences (color codes wrapping log text). The strata
+# `tracing` setup writes coloured output even to file logs, so we strip them
+# before regex matching.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
 def wait_for_log_pattern_with_mining(
     log_path: Path,
     pattern: re.Pattern,
@@ -176,8 +186,8 @@ def wait_for_log_pattern_with_mining(
     miner_addr: str,
     after_offset: int,
     timeout: int = 600,
-    blocks_per_step: int = 2,
-    poll: float = 2.0,
+    blocks_per_step: int = 8,
+    poll: float = 0.5,
 ) -> str:
     """Tail the strata log for the first occurrence of `pattern` past
     `after_offset` bytes, mining bitcoin blocks each step so the OL/ASM
@@ -188,7 +198,7 @@ def wait_for_log_pattern_with_mining(
         if log_path.exists():
             with open(log_path, "rb") as f:
                 f.seek(after_offset)
-                tail = f.read().decode(errors="replace")
+                tail = _strip_ansi(f.read().decode(errors="replace"))
             m = pattern.search(tail)
             if m:
                 return m.group(0)
@@ -197,10 +207,51 @@ def wait_for_log_pattern_with_mining(
     raise AssertionError(f"pattern {pattern.pattern!r} not found in {log_path} within {timeout}s")
 
 
+def wait_for_checkpoint_at_epoch(
+    log_path: Path,
+    target_epoch: int,
+    btc_rpc,
+    miner_addr: str,
+    timeout: int = 300,
+    blocks_per_step: int = 8,
+    poll: float = 0.5,
+) -> int:
+    """Mine bitcoin blocks until the ASM checkpoint subprotocol logs a
+    `checkpoint validated successfully epoch=N` line with `N >= target_epoch`.
+
+    The bridge subprotocol creates a withdrawal assignment in the same ASM
+    transition that validates the checkpoint carrying the bridgeout intent.
+    Returning here means the assignment has been created and a WF tx will
+    pass `validate_withdrawal_fulfillment_info` instead of being rejected
+    with `NoAssignmentFound`.
+
+    Returns the matching epoch number.
+    """
+    pattern = re.compile(r"checkpoint validated successfully\s+epoch=(\d+)")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if log_path.exists():
+            with open(log_path, "rb") as f:
+                tail = _strip_ansi(f.read().decode(errors="replace"))
+            for match in pattern.finditer(tail):
+                epoch = int(match.group(1))
+                if epoch >= target_epoch:
+                    return epoch
+        btc_rpc.proxy.generatetoaddress(blocks_per_step, miner_addr)
+        time.sleep(poll)
+    raise AssertionError(
+        f"no `checkpoint validated successfully epoch>={target_epoch}` "
+        f"in {log_path} within {timeout}s"
+    )
+
+
 @flexitest.register
 class TestRealBridgeDepositWithdraw(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("el_ol")
+        # `el_ol_bridge` mirrors `el_ol` but runs the OL with a 500ms block
+        # time so the deposit -> bridgeout -> checkpoint -> WF cycle fits in
+        # a reasonable test runtime.
+        ctx.set_env("el_ol_bridge")
 
     def main(self, ctx):
         del ctx
@@ -324,29 +375,32 @@ class TestRealBridgeDepositWithdraw(BaseTest):
 
         # ----- bullet 4: OL to user wallet - withdrawal-fulfillment -----
         #
-        # KNOWN UPSTREAM BLOCKER (now narrowed). This PR includes a fix
-        # for one OL DA accumulator bug that was crashing
-        # `ol_checkpoint` at epoch=1 on every deposit (special-account
-        # message source rejection in `da_accumulating_layer.rs`). With
-        # that fix in place, OL now builds checkpoints continuously and
-        # the first ~4 reach ASM via the L1 broadcaster (we log
-        # `checkpoint validated successfully epoch=1..4` early in the
-        # run).
-        #
-        # However, after epoch 4 the L1 broadcaster pipeline stalls: OL
-        # keeps producing checkpoints (we observe up to epoch 35 in the
-        # `stored OL checkpoint entry` lines) but no further `payload
-        # advanced on L1` events fire and ASM observes no new
-        # checkpoints. The bridgeout-driven SnarkAccountUpdate therefore
-        # never reaches a validated checkpoint, the bridge never gets a
-        # `DispatchWithdrawal`, and the WF tx is rejected with
+        # KNOWN UPSTREAM GAP. With the DA accumulator fix in this PR plus
+        # the fast OL block time, the OL -> L1 -> ASM checkpoint cycle
+        # progresses cleanly. We observe `checkpoint validated successfully
+        # epoch=N` for many epochs past the one that carried our
+        # SnarkAccountUpdate. What does NOT happen is the bridge receiving
+        # `BridgeIncomingMsg::DispatchWithdrawal`, so when we broadcast a
+        # WF tx the bridge rejects it with
         # `WithdrawalValidationError::NoAssignmentFound`.
         #
-        # This is a separate bug, deeper in the L1 broadcaster, and is
-        # outside the scope of this PR. We broadcast the WF tx so the
-        # bitcoin-layer half is exercised, assert it confirms on chain,
-        # and mark protocol settlement as a known gap.
-
+        # The dispatch path is in
+        # `asm/subprotocols/checkpoint/.../verification.rs:extract_and_validate_withdrawal_intents`,
+        # which extracts withdrawal intents from `OLLog` entries whose
+        # `account_serial == BRIDGE_GATEWAY_ACCT_SERIAL`. Those logs are
+        # emitted in OL's `account_processing::handle_bridge_gateway_message`
+        # when a snark account sends a withdrawal-shaped message to the
+        # gateway. In our run, no such log shows up, which means the
+        # SnarkAccountUpdate either does not carry a message to
+        # BRIDGE_GATEWAY, or the message does not parse as a withdrawal,
+        # or the log it emits does not end up in the checkpoint payload's
+        # OLLog list. Untangling that is multi-hour upstream debugging
+        # outside this PR.
+        #
+        # We DO broadcast a real WF tx so the bitcoin-layer half is
+        # exercised and visible on chain. The `Fulfilled withdrawal
+        # assignment` assertion is the right canonical signal once the
+        # upstream gap is fixed; for now we only assert WF confirmation.
         fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
 
         btc_rpc.proxy.generatetoaddress(8, miner_addr)
@@ -373,7 +427,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             int(wf_info.get("confirmations", 0)),
         )
         logger.info(
-            "[4] PARTIAL: WF on chain at %s; protocol settlement blocked by L1 broadcaster",
+            "[4] PARTIAL: WF %s on chain; protocol settlement blocked upstream",
             wf_txid,
         )
 

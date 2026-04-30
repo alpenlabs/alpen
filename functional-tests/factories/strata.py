@@ -59,6 +59,7 @@ class StrataFactory(flexitest.Factory):
         ol_params: OLParams | None = None,
         epoch_sealing_config: EpochSealingConfig | None = None,
         use_unchecked_cred_rule: bool = False,
+        ol_block_time_ms: int | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -97,8 +98,13 @@ class StrataFactory(flexitest.Factory):
 
         sequencer_config_path = datadir / "sequencer.toml"
         if is_sequencer:
+            seq_cfg = (
+                SequencerConfig(ol_block_time_ms=ol_block_time_ms)
+                if ol_block_time_ms is not None
+                else SequencerConfig()
+            )
             sequencer_runtime_config = SequencerRuntimeConfig(
-                sequencer=SequencerConfig(),
+                sequencer=seq_cfg,
                 epoch_sealing=epoch_sealing_config,
             )
             with open(sequencer_config_path, "w") as f:
