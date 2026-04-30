@@ -142,6 +142,15 @@ impl<'b> BlockExecInput<'b> {
 /// Verifies a block by executing it the normal way.
 ///
 /// This closely aligns with `execute_block_inputs`.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        slot = header.slot(),
+        epoch = header.epoch(),
+        is_terminal = header.is_terminal(),
+        tx_count = body.tx_segment().map(|s| s.txs().len()).unwrap_or(0),
+    ),
+)]
 pub fn verify_block<S: IStateAccessor>(
     state: &mut S,
     header: &OLBlockHeader,
