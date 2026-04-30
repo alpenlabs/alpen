@@ -371,15 +371,20 @@ pub fn check_ol_block_proposal_valid(
 ) -> anyhow::Result<()> {
     // If it's not the genesis block, check that the block is correctly signed.
     if block.header().slot() > 0 {
-        let Some(sig) = block.signed_header().signature() else {
-            // Just ignore blocks without signature
-            warn!(%blkid, "Received block without signature. ignoring");
-            return Ok(());
+        let sig = match block.signed_header().signature() {
+            Some(sig) => sig,
+            None => match &params.cred_rule {
+                CredRule::Unchecked => return Ok(()),
+                CredRule::SchnorrKey(_) => {
+                    warn!(%blkid, "Received unsigned block while credential checks are enabled.");
+                    return Err(anyhow!("missing block signature"));
+                }
+            },
         };
         let msg: Buf32 = block.header().compute_blkid().into();
-        let is_valid = match params.cred_rule {
+        let is_valid = match &params.cred_rule {
             CredRule::Unchecked => true,
-            CredRule::SchnorrKey(pubkey) => verify_schnorr_sig(sig, &msg, &pubkey),
+            CredRule::SchnorrKey(pubkey) => verify_schnorr_sig(sig, &msg, pubkey),
         };
         if !is_valid {
             warn!(%blkid, "Received block with invalid signature.");
@@ -511,4 +516,133 @@ async fn revert_ol_state_to_block(
     // FIXME(STR-2140): Rollback the writes on the database that we no longer need.
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
+    use strata_primitives::{
+        crypto::sign_schnorr_sig,
+        utils::{get_test_schnorr_keys, SchnorrKeypair},
+        Buf64,
+    };
+    use strata_test_utils_l2::gen_params;
+
+    use super::*;
+
+    fn test_keypair() -> SchnorrKeypair {
+        get_test_schnorr_keys()[0].clone()
+    }
+
+    fn test_rollup_params(cred_rule: CredRule) -> RollupParams {
+        let mut params = gen_params();
+        params.rollup.cred_rule = cred_rule;
+        params.rollup
+    }
+
+    fn test_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeader::new(
+            1_000 + slot,
+            BlockFlags::from(0),
+            slot,
+            0,
+            OLBlockId::from(Buf32::zero()),
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        let signed_header = match signature {
+            Some(signature) => SignedOLBlockHeader::new(header, signature),
+            None => SignedOLBlockHeader {
+                header,
+                credential: OLBlockCredential {
+                    schnorr_sig: None::<Buf64>.into(),
+                },
+            },
+        };
+
+        OLBlock::new(signed_header, body)
+    }
+
+    fn sign_block(block: &OLBlock, signing_key: &Buf32) -> Buf64 {
+        let msg: Buf32 = block.header().compute_blkid().into();
+        sign_schnorr_sig(&msg, signing_key)
+    }
+
+    #[test]
+    fn accepts_unsigned_block_when_unchecked() {
+        let params = test_rollup_params(CredRule::Unchecked);
+        let block = test_block(1, None);
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_unsigned_block_when_checked() {
+        let keypair = test_keypair();
+        let params = test_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = test_block(1, None);
+        let blkid = block.header().compute_blkid();
+
+        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+            .expect_err("missing signature should be rejected");
+
+        assert!(err.to_string().contains("missing block signature"));
+    }
+
+    #[test]
+    fn rejects_invalid_signature() {
+        let keypair = test_keypair();
+        let params = test_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = test_block(1, Some(Buf64::zero()));
+        let blkid = block.header().compute_blkid();
+
+        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+            .expect_err("invalid signature should be rejected");
+
+        assert!(err.to_string().contains("block creds check failed"));
+    }
+
+    #[test]
+    fn accepts_garbage_signature_when_unchecked() {
+        let params = test_rollup_params(CredRule::Unchecked);
+        let block = test_block(1, Some(Buf64::zero()));
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn accepts_valid_signature() {
+        let keypair = test_keypair();
+        let params = test_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = test_block(1, Some(Buf64::zero()));
+        let signature = sign_block(&block, &keypair.sk);
+        let block = test_block(1, Some(signature));
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn accepts_unsigned_genesis_block() {
+        let keypair = test_keypair();
+        let params = test_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let block = test_block(0, None);
+        let blkid = block.header().compute_blkid();
+
+        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+
+        assert!(result.is_ok());
+    }
 }
