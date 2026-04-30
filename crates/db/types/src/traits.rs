@@ -16,7 +16,7 @@ use strata_ol_chain_types::L2BlockBundle;
 use strata_ol_chain_types_new::OLBlock;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_paas::TaskRecordData;
-use strata_primitives::{nonempty_vec::NonEmptyVec, prelude::*};
+use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use zkaleido::ProofReceiptWithMetadata;
 
@@ -28,9 +28,10 @@ use crate::types::CheckpointEntry;
 use crate::{
     chainstate::ChainstateDatabase,
     mmr_index::{LeafPos, MmrBatchWrite, MmrNodePos, MmrNodeTable, NodePos},
+    ol_state_index::{AccountUpdateRecord, EpochIndexingData, InboxMessageRecord, IndexingWrites},
     types::{
-        AccountExtraDataEntry, BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry,
-        L1PayloadIntentIndex, L1TxEntry, MempoolTxData,
+        BundledPayloadEntry, ChunkedEnvelopeEntry, IntentEntry, L1PayloadIntentIndex, L1TxEntry,
+        MempoolTxData,
     },
     DbResult, RawMmrId,
 };
@@ -60,7 +61,7 @@ pub trait DatabaseBackend: Send + Sync {
     fn broadcast_db(&self) -> Arc<impl L1BroadcastDatabase>;
     fn chunked_envelope_db(&self) -> Arc<impl L1ChunkedEnvelopeDatabase>;
     fn mempool_db(&self) -> Arc<impl MempoolDatabase>;
-    fn account_genesis_db(&self) -> Arc<impl AccountDatabase>;
+    fn ol_state_indexing_db(&self) -> Arc<impl OLStateIndexingDatabase>;
 }
 
 /// Database interface to control our view of ASM state.
@@ -661,33 +662,88 @@ pub trait OLBlockDatabase: Send + Sync + 'static {
     fn get_tip_slot(&self) -> DbResult<Slot>;
 }
 
-/// Database for tracking per-account data like creation epoch, extra data, etc.
-pub trait AccountDatabase: Send + Sync + 'static {
-    /// Inserts the creation epoch for an account.
+/// Database for OL state indexing data.
+///
+/// Two write paths reflect the two producer modes:
+/// - [`apply_epoch_indexing`](Self::apply_epoch_indexing): single atomic write for an entire epoch.
+///   Used by checkpoint-sync producers.
+/// - [`apply_block_indexing`](Self::apply_block_indexing): incremental per-block write. Used by
+///   block-sync producers.
+///
+/// Block-sync also calls [`set_epoch_commitment`](Self::set_epoch_commitment)
+/// once at epoch finalization to stamp the commitment onto the existing common
+/// row; checkpoint-sync includes the commitment in its single write.
+///
+/// Both paths target the same tables; atomicity granularity differs.
+pub trait OLStateIndexingDatabase: Send + Sync + 'static {
+    /// Atomically persists an epoch's indexing data in a single call.
     ///
-    /// Fails if the account already has a recorded creation epoch.
-    fn insert_account_creation_epoch(&self, account_id: AccountId, epoch: Epoch) -> DbResult<()>;
-
-    /// Gets the creation epoch for an account, if recorded.
-    fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>>;
-
-    /// Inserts account extra data for a given epoch index. This appends the inserted extra data to
-    /// the existing value in the db.
-    // NOTE: This gets updated in every OL block where there is snark update for the account.
-    // NOTE: We only want the extra data for an epoch and not per-block so this should suffice.
-    // TODO: Make this more robust by associating with epoch commitment instead of epoch index.
-    fn insert_account_extra_data(
+    /// Writes the common record, per-account update entries, per-account
+    /// inbox entries, and creation-epoch index entries for newly created
+    /// accounts. The common record's `epoch_commitment` is set from
+    /// `commitment`. All in one transaction.
+    fn apply_epoch_indexing(
         &self,
-        key: (AccountId, Epoch),
-        extra_data: AccountExtraDataEntry,
+        commitment: EpochCommitment,
+        writes: IndexingWrites,
     ) -> DbResult<()>;
 
-    /// Gets the account extra data for given account and OLBlockId. Returns an array of collected
-    /// extra data over an epoch.
-    fn get_account_extra_data(
+    /// Atomically applies a single block's incremental indexing writes.
+    ///
+    /// Appends to existing per-(account, epoch) entries, updates the common
+    /// row's `created_accounts`, and inserts creation-epoch index entries
+    /// for any newly created accounts. Errors with
+    /// [`DbError::DuplicateBlockIndexing`](crate::DbError::DuplicateBlockIndexing)
+    /// if any account update already records the same `block`.
+    fn apply_block_indexing(
         &self,
-        key: (AccountId, Epoch),
-    ) -> DbResult<Option<NonEmptyVec<AccountExtraDataEntry>>>;
+        epoch: Epoch,
+        block: OLBlockCommitment,
+        writes: IndexingWrites,
+    ) -> DbResult<()>;
+
+    /// Atomically rolls back all block-attributed writes in `epoch` whose
+    /// block slot is strictly greater than `block.slot()`. Records and
+    /// creators tagged with `block.slot()` itself are kept. Entries with
+    /// `None` attribution (checkpoint-sync) are preserved; they only drop
+    /// when the entire epoch is dropped via [`Self::rollback_to_epoch`].
+    ///
+    /// Idempotent. Does not clear `EpochIndexingData.epoch_commitment`.
+    fn rollback_to_block(&self, epoch: Epoch, block: OLBlockCommitment) -> DbResult<()>;
+
+    /// Atomically drops all indexing data for epochs strictly greater than
+    /// `epoch`. The given `epoch` is preserved. Idempotent.
+    fn rollback_to_epoch(&self, epoch: Epoch) -> DbResult<()>;
+
+    /// Sets the epoch commitment on the existing common row.
+    ///
+    /// Called once by block-sync producers at epoch finalization. Errors if
+    /// no common row exists for the epoch.
+    fn set_epoch_commitment(&self, epoch: Epoch, commitment: EpochCommitment) -> DbResult<()>;
+
+    /// Returns the common indexing data for the given epoch.
+    fn get_epoch_indexing_data(&self, epoch: Epoch) -> DbResult<Option<EpochIndexingData>>;
+
+    /// Returns the per-(account, epoch) update records.
+    ///
+    /// Returns `None` when the account had no indexed activity in the epoch.
+    fn get_account_update_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>>;
+
+    /// Returns the per-(account, epoch) inbox records.
+    ///
+    /// Returns `None` when no inbox writes were recorded for the account in the epoch.
+    fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>>;
+
+    /// Returns the epoch in which an account was created.
+    fn get_account_creation_epoch(&self, acct: AccountId) -> DbResult<Option<Epoch>>;
 }
 
 /// Database interface for OL mempool transactions.

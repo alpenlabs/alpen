@@ -1,4 +1,4 @@
-use strata_identifiers::{AccountId, Hash};
+use strata_identifiers::{AccountId, Epoch, Hash, OLBlockCommitment};
 use strata_ol_chain_types::L2BlockId;
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockId, L1Height};
 use strata_storage_common::exec::OpsError;
@@ -179,6 +179,13 @@ pub enum DbError {
         last_error: Box<DbError>,
     },
 
+    /// Block already indexed for this epoch — `apply_block_indexing` called twice.
+    #[error("block {block} already indexed for epoch {epoch}")]
+    DuplicateBlockIndexing {
+        epoch: Epoch,
+        block: OLBlockCommitment,
+    },
+
     #[error("{0}")]
     Other(String),
 }
@@ -191,7 +198,13 @@ impl From<anyhow::Error> for DbError {
 
 impl From<Error> for DbError {
     fn from(value: Error) -> Self {
-        Self::Other(format!("sled error: {value:?}"))
+        // If the typed-sled error wraps an aborted `DbError`, recover the
+        // original variant so downstream callers can match on it instead of
+        // dealing with a stringified payload.
+        match value.downcast_abort::<DbError>() {
+            Ok(db_err) => db_err,
+            Err(other) => Self::Other(format!("sled error: {other:?}")),
+        }
     }
 }
 

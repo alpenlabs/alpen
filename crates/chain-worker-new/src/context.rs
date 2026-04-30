@@ -3,21 +3,24 @@
 //! This module provides [`ChainWorkerContextImpl`], a production implementation
 //! of the worker context that uses the storage layer managers for database access.
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
+use ssz::Encode;
 use strata_checkpoint_types::EpochSummary;
-use strata_db_types::{DbResult, types::AccountExtraDataEntry};
-use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_db_types::{
+    errors::DbError,
+    ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
+};
+use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::IndexerWrites;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{AccountManager, OLBlockManager, OLCheckpointManager, OLStateManager};
+use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager};
 use tokio::{runtime::Handle, sync::watch};
-use tracing::warn;
+use tracing::debug;
 
 use crate::{
     errors::{WorkerError, WorkerResult},
@@ -44,8 +47,8 @@ pub struct ChainWorkerContextImpl {
     /// Manager for checkpoint and epoch summary data.
     ol_checkpoint_mgr: Arc<OLCheckpointManager>,
 
-    /// Manager for per-account creation epoch tracking.
-    account_mgr: Arc<AccountManager>,
+    /// Manager for OL state indexing data (per-block writes, epoch finalization).
+    ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
 
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
@@ -68,7 +71,7 @@ impl ChainWorkerContextImpl {
             ol_block_mgr: nodectx.storage().ol_block().clone(),
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
-            account_mgr: nodectx.storage().account().clone(),
+            ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
@@ -148,63 +151,23 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(self.ol_state_mgr.get_write_batch_blocking(commitment)?)
     }
 
+    /// Stores write batchees as well as indexing data.
     fn store_block_output(
         &self,
         block: &OLBlock,
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
     ) -> WorkerResult<()> {
-        // Store the write batch
-        self.ol_state_mgr
-            .put_write_batch_blocking(commitment, output.write_batch().clone())?;
-
-        // Record creation epoch for newly created accounts.
-        let wb = output.write_batch();
         let epoch = block.header().epoch();
-        wb.ledger().iter_new_accounts().try_for_each(|(_, id)| {
-            self.account_mgr
-                .insert_account_creation_epoch_blocking(*id, epoch)
-            // TODO: might need to account for extra data as well
-        })?;
+        let wb = output.write_batch();
 
-        // Write account extra data
-        let mut snark_updates_iter = output.indexer_writes().snark_state_updates().iter();
-        snark_updates_iter.try_for_each(|update| -> DbResult<()> {
-            let acct_id = update.account_id();
-            if let Some(extra_data) = update.extra_data() {
-                // NOTE: this is expected to be updated for given epoch at every block that contains
-                // extra data for this account
-                let key = (acct_id, epoch);
-                let entry = AccountExtraDataEntry::new(extra_data.to_vec(), commitment);
-                self.account_mgr
-                    .insert_account_extra_data_blocking(key, entry)?
-            }
-            Ok(())
-        })?;
+        self.ol_state_mgr
+            .put_write_batch_blocking(commitment, wb.clone())?;
 
-        Ok(())
-    }
+        let writes = build_indexing_writes(commitment, output);
+        self.ol_state_indexing_mgr
+            .apply_block_indexing_blocking(epoch, commitment, writes)?;
 
-    fn store_auxiliary_data(
-        &self,
-        _commitment: OLBlockCommitment,
-        writes: &IndexerWrites,
-    ) -> WorkerResult<()> {
-        // TODO: IndexerWrites needs Borsh serialization before it can be stored.
-        // This requires adding BorshSerialize/BorshDeserialize to IndexerWrites
-        // and all its sub-types (InboxMessageWrite, ManifestWrite, SnarkAcctStateUpdate,
-        // etc.), which cascades to types in other crates that may not have Borsh.
-        //
-        // For now, we log a warning if there are writes to store but skip storage.
-        // This should be addressed in a follow-up PR that adds serialization support.
-        if !writes.is_empty() {
-            warn!(
-                inbox_messages = writes.inbox_messages().len(),
-                manifests = writes.manifests().len(),
-                snark_updates = writes.snark_state_updates().len(),
-                "skipping auxiliary data storage - IndexerWrites serialization not implemented"
-            );
-        }
         Ok(())
     }
 
@@ -220,8 +183,38 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
     fn store_summary(&self, summary: EpochSummary) -> WorkerResult<()> {
         let commitment = summary.get_epoch_commitment();
-        self.ol_checkpoint_mgr
-            .insert_epoch_summary_blocking(summary)?;
+
+        // Idempotent: Stamp the commitment onto the indexing row first.
+        self.ol_state_indexing_mgr
+            .set_epoch_commitment_blocking(commitment.epoch(), commitment)?;
+
+        // Insert the epoch summary last which indicates that the whole finalization persisted
+        match self
+            .ol_checkpoint_mgr
+            .insert_epoch_summary_blocking(summary)
+        {
+            Ok(()) => {}
+            Err(DbError::OverwriteEpoch(c)) if c == commitment => {
+                let existing = self
+                    .ol_checkpoint_mgr
+                    .get_epoch_summary_blocking(commitment)?
+                    .ok_or_else(|| {
+                        WorkerError::Unexpected(format!(
+                            "OverwriteEpoch reported but get_epoch_summary returned None for {commitment}"
+                        ))
+                    })?;
+                if existing != summary {
+                    return Err(WorkerError::Database(DbError::OverwriteEpoch(commitment)));
+                }
+                debug!(
+                    %commitment,
+                    "epoch summary already inserted with matching contents; \
+                     treating as crash-restart retry"
+                );
+            }
+            Err(e) => return Err(e.into()),
+        }
+
         let _ = self.epoch_summary_tx.send(Some(commitment));
         Ok(())
     }
@@ -306,4 +299,50 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         Ok(())
     }
+}
+
+/// Builds an [`IndexingWrites`] payload from a block-execution output.
+///
+/// Reads everything from the block's [`IndexerWrites`]: account-creation
+/// events, snark-account update records (each tagged with the block's
+/// commitment + final state root), and inbox-message writes (encoded as SSZ
+/// bytes). Per-account vecs preserve insertion order.
+fn build_indexing_writes(
+    commitment: OLBlockCommitment,
+    output: &OLBlockExecutionOutput,
+) -> IndexingWrites {
+    let indexer_writes = output.indexer_writes();
+
+    let created_accounts: Vec<AccountId> = indexer_writes
+        .created_accounts()
+        .iter()
+        .map(|c| c.account_id())
+        .collect();
+
+    let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
+    for update in indexer_writes.snark_state_updates() {
+        let meta = AccountUpdateMeta::new(commitment, update.state());
+        let record = AccountUpdateRecord::new(
+            Some(meta),
+            *update.seqno().inner(),
+            update.next_read_idx(),
+            update.extra_data().map(<[u8]>::to_vec),
+        );
+        account_updates
+            .entry(update.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
+    for write in indexer_writes.inbox_messages() {
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let record = InboxMessageRecord::new(entry_bytes, Some(commitment));
+        account_inbox_writes
+            .entry(write.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
 }

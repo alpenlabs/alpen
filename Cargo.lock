@@ -14376,6 +14376,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "ssz",
  "strata-checkpoint-types",
  "strata-db-types",
  "strata-identifiers",
@@ -14676,6 +14677,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "borsh",
+ "ciborium",
  "proptest",
  "rkyv",
  "sled",
@@ -14743,6 +14745,7 @@ dependencies = [
  "strata-asm-common",
  "strata-asm-proto-checkpoint-types",
  "strata-checkpoint-types",
+ "strata-codec",
  "strata-csm-types",
  "strata-identifiers",
  "strata-l1-txfmt",

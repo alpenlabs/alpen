@@ -18,7 +18,7 @@ use strata_ol_rpc_api::OLClientRpcClient;
 use strata_ol_rpc_types::{
     OLBlockOrTag, RpcOLTransaction, RpcSnarkAccountUpdate, RpcTransactionPayload, RpcTxConstraints,
 };
-use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData, UpdateStateData};
+use strata_snark_acct_types::{ProofState, SnarkAccountUpdate, UpdateInputData};
 use tracing::info;
 
 /// Max retries for startup RPC calls where the OL node may still be booting.
@@ -135,23 +135,11 @@ impl OLClient for RpcOLClient {
                 let epoch_summary =
                     call_rpc!(self, get_acct_epoch_summary(self.account_id, epoch))?;
 
-                let mut updates = vec![];
-                if let Some(update) = epoch_summary.update_input() {
-                    let update = UpdateInputData::new(
-                        update.seq_no,
-                        update
-                            .messages
-                            .clone()
-                            .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        UpdateStateData::new(
-                            update.proof_state.clone().into(),
-                            update.extra_data.clone().into(),
-                        ),
-                    );
-                    updates.push(update);
-                };
+                let updates: Vec<UpdateInputData> = epoch_summary
+                    .update_inputs()
+                    .iter()
+                    .map(Into::into)
+                    .collect();
 
                 Ok(OLEpochSummary::new(
                     epoch_summary.epoch_commitment(),

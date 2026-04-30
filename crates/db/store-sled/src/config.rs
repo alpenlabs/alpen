@@ -1,14 +1,23 @@
 use std::sync::Arc;
 
-use sled::transaction::ConflictableTransactionResult;
-use strata_db_types::DbResult;
+use sled::transaction::{ConflictableTransactionResult, TransactionError};
+use strata_db_types::{DbError, DbResult};
 use tracing::instrument;
 use typed_sled::{
     error::Error,
     transaction::{Backoff, ConstantBackoff, SledTransactional},
 };
 
-use crate::{instrumentation::components, utils::to_db_error};
+use crate::instrumentation::components;
+
+/// Flattens a `TransactionError<typed_sled::Error>` into a `DbError`,
+/// preserving aborted `DbError` variants via the `From<Error>` impl.
+fn tx_error_to_db_error(err: TransactionError<Error>) -> DbError {
+    match err {
+        TransactionError::Abort(e) => DbError::from(e),
+        TransactionError::Storage(e) => DbError::Other(format!("sled storage: {e:?}")),
+    }
+}
 
 // Configuration constants
 pub(crate) const DEFAULT_RETRY_COUNT: u16 = 3;
@@ -64,6 +73,6 @@ impl SledDbConfig {
     {
         trees
             .transaction_with_retry(self.backoff.as_ref(), self.retry_count.into(), f)
-            .map_err(to_db_error)
+            .map_err(tx_error_to_db_error)
     }
 }

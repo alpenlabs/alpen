@@ -23,7 +23,7 @@ pub use blocktag::OLBlockOrTag;
 pub use chain_status::{RpcOLBlockInfo, RpcOLChainStatus};
 pub use checkpoint::{RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref};
 pub use duty::*;
-pub use provider::{AccountExtraData, OLRpcProvider};
+pub use provider::OLRpcProvider;
 pub use snark_acct_update::RpcSnarkAccountUpdate;
 pub use tx::{
     RpcGenericAccountMessage, RpcOLTransaction, RpcTransactionPayload, RpcTxConstraints,

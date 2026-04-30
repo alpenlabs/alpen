@@ -26,6 +26,7 @@ zkaleido.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 borsh.workspace = true
+ciborium.workspace = true
 rkyv.workspace = true
 sled.workspace = true
 thiserror.workspace = true

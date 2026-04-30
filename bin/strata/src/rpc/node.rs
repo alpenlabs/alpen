@@ -1,9 +1,12 @@
 //! OL RPC server implementation for a strata node.
+use std::{collections::HashMap, sync::Arc};
+
 use async_trait::async_trait;
 use jsonrpsee::core::RpcResult;
-use ssz::Encode;
+use ssz::{Decode, Encode};
 use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
+use strata_db_types::ol_state_index::{AccountUpdateRecord, InboxMessageRecord};
 use strata_identifiers::{
     AccountId, Epoch, EpochCommitment, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId,
@@ -16,19 +19,34 @@ use strata_ol_rpc_types::{
     RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
     RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
 };
+use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
-use strata_snark_acct_types::ProofState;
+use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
 use tracing::{error, info};
 
 use crate::rpc::errors::{
     db_error, internal_error, invalid_params_error, map_mempool_error_to_rpc, not_found_error,
 };
 
+/// One canonical-chain block in the range walked by `get_blocks_summaries`.
+struct ChainBlock {
+    slot: u64,
+    blkid: OLBlockId,
+    epoch: Epoch,
+}
+
 /// OL RPC server implementation, generic over a provider.
 pub(crate) struct OLRpcServer<P: OLRpcProvider> {
     provider: P,
     genesis_l1_height: L1Height,
+    // Maximum number of headers/block-data that can be queried
     max_headers_range: usize,
+}
+
+/// Convenient wrapper for account records.
+struct AccountRecords {
+    updates: Vec<AccountUpdateRecord>,
+    inbox: Vec<InboxMessageRecord>,
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
@@ -133,86 +151,197 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             })
     }
 
-    async fn get_prev_terminal_next_inbox_msg_idx(
+    /// Walks the canonical chain backwards from `end_slot` to `start_slot`,
+    /// returning blocks in ascending slot order. Each entry carries
+    /// `(slot, blkid, epoch)`; epoch is read off the header during the walk.
+    async fn collect_canonical_chain(
         &self,
-        account_id: AccountId,
-        prev_epoch_commitment: EpochCommitment,
-    ) -> RpcResult<u64> {
-        let prev_terminal_commitment = prev_epoch_commitment.to_block_commitment();
-        let prev_ol_state = self
+        start_slot: u64,
+        end_slot: u64,
+    ) -> RpcResult<Vec<ChainBlock>> {
+        let finalized_slot = self
             .provider
-            .get_toplevel_ol_state(prev_terminal_commitment)
-            .await
-            .map_err(|e| {
-                error!(
-                    ?e,
-                    %prev_terminal_commitment,
-                    "Failed to get previous epoch OL state"
-                );
-                db_error(e)
-            })?
-            .ok_or_else(|| {
-                not_found_error(format!(
-                    "No OL state found for previous terminal block {prev_terminal_commitment}"
-                ))
-            })?;
+            .get_ol_sync_status()
+            .map(|css| css.finalized_epoch.last_slot())
+            .unwrap_or(0);
 
-        let prev_next_inbox_msg_idx = prev_ol_state
-            .get_account_state(account_id)
-            .map_err(|e| {
-                error!(
-                    ?e,
-                    %account_id,
-                    %prev_terminal_commitment,
-                    "Failed to get account state from previous epoch OL state"
-                );
-                internal_error(format!("Account error: {e}"))
-            })?
-            .and_then(|account_state| account_state.as_snark_account().ok())
-            .map_or(0, |snark_state| snark_state.next_inbox_msg_idx());
+        let mut chain = Vec::new();
 
-        Ok(prev_next_inbox_msg_idx)
-    }
-
-    async fn fetch_account_epoch_messages(
-        &self,
-        account_id: AccountId,
-        epoch: Epoch,
-        current_next_inbox_idx: Option<u64>,
-        prev_epoch_commitment: EpochCommitment,
-    ) -> RpcResult<Vec<MessageEntry>> {
-        // Epoch 0 is genesis-only in current flow: there is no prior terminal state and no
-        // collectable inbox updates, so messages are always empty.
-        if epoch == 0 {
-            return Ok(Vec::new());
-        }
-
-        let Some(end_idx_exclusive) = current_next_inbox_idx else {
-            return Ok(Vec::new());
+        let Some(end_block_id) = self.get_canonical_block_at_height(end_slot).await? else {
+            return Ok(chain);
         };
-        if end_idx_exclusive == 0 {
-            return Ok(Vec::new());
+
+        let mut current_id = end_block_id;
+        loop {
+            let block = self.get_block(current_id).await?;
+            let header = block.header();
+            let current_slot = header.slot();
+
+            if current_slot >= start_slot && current_slot <= end_slot {
+                chain.push(ChainBlock {
+                    slot: current_slot,
+                    blkid: current_id,
+                    epoch: header.epoch(),
+                });
+            }
+
+            if current_slot <= start_slot {
+                break;
+            }
+
+            // Past the finalized boundary the chain is unique by slot, so we
+            // can fetch remaining blocks directly without parent-walking.
+            if current_slot <= finalized_slot {
+                for slot in (start_slot..current_slot).rev() {
+                    let Some(blkid) = self.get_canonical_block_at_height(slot).await? else {
+                        continue;
+                    };
+                    let block = self.get_block(blkid).await?;
+                    chain.push(ChainBlock {
+                        slot,
+                        blkid,
+                        epoch: block.header().epoch(),
+                    });
+                }
+                break;
+            }
+
+            current_id = *header.parent_blkid();
         }
 
-        let start_idx = self
-            .get_prev_terminal_next_inbox_msg_idx(account_id, prev_epoch_commitment)
-            .await?;
-
-        self.provider
-            .get_account_inbox_messages(account_id, start_idx, end_idx_exclusive)
-            .await
-            .map_err(db_error)
+        chain.reverse();
+        Ok(chain)
     }
-}
 
-#[async_trait]
-impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
-    async fn get_acct_epoch_summary(
+    /// Fetches per-epoch indexing records for the inclusive range
+    /// `[first_epoch, last_epoch]`. Missing rows become empty vecs.
+    /// Fetches per-epoch indexing records for the inclusive range
+    /// `[first_epoch, last_epoch]` and concatenates them into flat vecs.
+    /// Per-block filtering at the call site uses exact `block_commitment`
+    /// match, which intrinsically filters out records for blocks outside
+    /// the queried chain range.
+    async fn fetch_records_in_epoch_range(
         &self,
         account_id: AccountId,
+        first_epoch: Epoch,
+        last_epoch: Epoch,
+    ) -> RpcResult<AccountRecords> {
+        let mut all_updates = Vec::new();
+        let mut all_inbox = Vec::new();
+        for epoch in first_epoch..=last_epoch {
+            if let Some(records) = self
+                .provider
+                .get_account_update_records(epoch, account_id)
+                .await
+                .map_err(db_error)?
+            {
+                all_updates.extend(records);
+            }
+            if let Some(records) = self
+                .provider
+                .get_account_inbox_records(epoch, account_id)
+                .await
+                .map_err(db_error)?
+            {
+                all_inbox.extend(records);
+            }
+        }
+        Ok(AccountRecords {
+            updates: all_updates,
+            inbox: all_inbox,
+        })
+    }
+
+    /// Builds one block summary from records already filtered to this block.
+    /// Returns `Ok(None)` when state or account is unavailable at this block.
+    async fn build_block_summary(
+        &self,
+        account_id: AccountId,
+        cb: &ChainBlock,
+        block_updates: &[&AccountUpdateRecord],
+        block_inbox: &[&InboxMessageRecord],
+    ) -> RpcResult<Option<RpcAccountBlockSummary>> {
+        let block_commitment = OLBlockCommitment::new(cb.slot, cb.blkid);
+
+        let ol_state = self
+            .provider
+            .get_toplevel_ol_state(block_commitment)
+            .await
+            .map_err(|e| {
+                error!(?e, %block_commitment, "Failed to get OL state");
+                db_error(e)
+            })?;
+        let Some(ol_state) = ol_state else {
+            return Ok(None);
+        };
+
+        let account_state = ol_state.get_account_state(account_id).map_err(|e| {
+            error!(?e, %account_id, slot = cb.slot, "Failed to get account state");
+            internal_error(format!("Account error: {e}"))
+        })?;
+        let Some(account_state) = account_state else {
+            return Ok(None);
+        };
+
+        // Snark-only fields are zeroed for non-snark accounts. `RpcAccountBlockSummary`
+        // exposes `next_inbox_msg_idx` directly rather than a full `ProofState`, since
+        // per-block summaries focus on changes rather than full proof state.
+        let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
+            Ok(snark_state) => (
+                *snark_state.seqno().inner(),
+                snark_state.next_inbox_msg_idx(),
+            ),
+            Err(_) => (0, 0),
+        };
+
+        // Per-update `messages` is left empty here; populating it requires
+        // walking inbox indices across the chain, which the per-block view
+        // does not yet do.
+        let updates: Vec<UpdateInputData> = block_updates
+            .iter()
+            .filter_map(|r| {
+                let meta = r.update_meta()?;
+                let extra = r.extra_data()?.to_vec();
+                Some(UpdateInputData::new(
+                    r.seq_no(),
+                    Vec::new(),
+                    UpdateStateData::new(
+                        ProofState::new(meta.final_state_root(), r.next_inbox_idx()),
+                        extra,
+                    ),
+                ))
+            })
+            .collect();
+
+        let new_inbox_messages: Vec<MessageEntry> = block_inbox
+            .iter()
+            .map(|r| {
+                MessageEntry::from_ssz_bytes(r.entry_bytes()).map_err(|e| {
+                    internal_error(format!(
+                        "failed to decode inbox record bytes for account {account_id} \
+                         block {block_commitment}: {e}"
+                    ))
+                })
+            })
+            .collect::<RpcResult<Vec<_>>>()?;
+
+        Ok(Some(RpcAccountBlockSummary::new(
+            account_id,
+            block_commitment,
+            account_state.balance(),
+            next_seq_no,
+            updates,
+            new_inbox_messages,
+            next_inbox_msg_idx,
+        )))
+    }
+
+    /// Resolves an epoch to its terminal-block OL state. Errors if either the
+    /// canonical commitment or the terminal-block state is missing.
+    async fn get_toplevel_ol_state_for_epoch(
+        &self,
         epoch: Epoch,
-    ) -> RpcResult<RpcAccountEpochSummary> {
-        // Get epoch commitments for the given epoch
+    ) -> RpcResult<(EpochCommitment, Arc<OLState>)> {
         let epoch_commitment = self
             .provider
             .get_canonical_epoch_commitment_at(epoch)
@@ -225,8 +354,6 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 not_found_error(format!("No canonical commitment found for epoch {epoch}"))
             })?;
 
-        // Get OL state at the terminal block using the epoch commitment directly
-        // (EpochCommitment already contains the terminal slot and block ID)
         let terminal_commitment = epoch_commitment.to_block_commitment();
         let ol_state = self
             .provider
@@ -242,7 +369,18 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                 ))
             })?;
 
-        // Extract account state
+        Ok((epoch_commitment, ol_state))
+    }
+}
+
+#[async_trait]
+impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
+    async fn get_acct_epoch_summary(
+        &self,
+        account_id: AccountId,
+        epoch: Epoch,
+    ) -> RpcResult<RpcAccountEpochSummary> {
+        let (epoch_commitment, ol_state) = self.get_toplevel_ol_state_for_epoch(epoch).await?;
         let account_state = ol_state
             .get_account_state(account_id)
             .map_err(|e| {
@@ -251,64 +389,82 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             })?
             .ok_or_else(|| not_found_error(format!("Account {account_id} not found")))?;
 
-        // Extract snark-specific data if applicable.
-        // For non-snark accounts, these fields are zeroed since seqno and proof state
-        // concepts don't apply to them.
-        let (next_seq_no, proof_state, current_next_inbox_idx) =
-            match account_state.as_snark_account() {
-                Ok(snark_state) => {
-                    let seqno: u64 = *snark_state.seqno().inner();
-                    let inner_state = snark_state.inner_state_root();
-                    let next_inbox_idx = snark_state.next_inbox_msg_idx();
-                    (
-                        seqno,
-                        ProofState::new(inner_state, next_inbox_idx),
-                        Some(next_inbox_idx),
-                    )
-                }
-                Err(_) => (0, ProofState::new([0u8; 32].into(), 0), None), // Non-snark account
-            };
-
-        // Get previous epoch commitment if available
         let prev_epoch_commitment = self.get_prev_epoch_commitment(epoch).await?;
 
-        let update = if let Some(extra_data) = self
+        let updates = if let Some(records) = self
             .provider
-            .get_account_extra_data((account_id, epoch))
+            .get_account_update_records(epoch, account_id)
             .await
             .map_err(db_error)?
         {
-            let messages = self
-                .fetch_account_epoch_messages(
-                    account_id,
-                    epoch,
-                    current_next_inbox_idx,
-                    prev_epoch_commitment,
-                )
-                .await?;
+            if records.is_empty() {
+                return Err(internal_error(format!(
+                    "indexing entry for account {account_id} epoch {epoch} has no records"
+                )));
+            }
 
-            let update = RpcUpdateInputData {
-                seq_no: next_seq_no,
-                proof_state: proof_state.into(),
-                extra_data: extra_data
-                    .last() // FIXME: check if this is canonical or not and account for reorgs.
-                    .cloned()
-                    .expect("Should be present")
-                    .into_parts()
-                    .0
-                    .into(),
-                messages: messages.into_iter().map(Into::into).collect(),
+            // Inbox-message ranges are contiguous per record:
+            // [prev_record.next_inbox_idx, this.next_inbox_idx). The first
+            // record's lower bound is the prior epoch's terminal next_inbox_idx.
+            // Epoch 0 is genesis: no prior terminal state, no collectable messages.
+            let skip_fetch = epoch == 0;
+            let mut cursor = if skip_fetch {
+                0
+            } else {
+                let (_, prev_ol_state) = self.get_toplevel_ol_state_for_epoch(epoch - 1).await?;
+                prev_ol_state
+                    .get_account_state(account_id)
+                    .map_err(|e| internal_error(format!("Account error: {e}")))?
+                    .and_then(|s| s.as_snark_account().ok())
+                    .map_or(0, |s| s.next_inbox_msg_idx())
             };
-            Some(update)
+
+            let mut out = Vec::with_capacity(records.len());
+            for r in &records {
+                let meta = r.update_meta().ok_or_else(|| {
+                    internal_error(format!(
+                        "record for account {account_id} epoch {epoch} missing update_meta \
+                         (checkpoint-sync row not serveable here)"
+                    ))
+                })?;
+                let extra_data = r
+                    .extra_data()
+                    .ok_or_else(|| {
+                        internal_error(format!(
+                            "update record for account {account_id} epoch {epoch} \
+                             has no extra_data (DirectSet)"
+                        ))
+                    })?
+                    .to_vec();
+
+                let messages = if skip_fetch {
+                    Vec::new()
+                } else {
+                    self.provider
+                        .get_account_inbox_messages(account_id, cursor, r.next_inbox_idx())
+                        .await
+                        .map_err(db_error)?
+                };
+                cursor = r.next_inbox_idx();
+
+                out.push(RpcUpdateInputData {
+                    seq_no: r.seq_no(),
+                    proof_state: ProofState::new(meta.final_state_root(), r.next_inbox_idx())
+                        .into(),
+                    extra_data: extra_data.into(),
+                    messages: messages.into_iter().map(Into::into).collect(),
+                });
+            }
+            out
         } else {
-            None
+            Vec::new()
         };
 
         Ok(RpcAccountEpochSummary::new(
             epoch_commitment,
             prev_epoch_commitment,
             account_state.balance().to_sat(),
-            update,
+            updates,
         ))
     }
 
@@ -430,123 +586,75 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         if start_slot > end_slot {
             return Err(invalid_params_error("start_slot must be <= end_slot"));
         }
-
-        // Get finalized slot - blocks at or before this are guaranteed to be on canonical chain
-        let finalized_slot = self
-            .provider
-            .get_ol_sync_status()
-            .map(|css| css.finalized_epoch.last_slot())
-            .unwrap_or(0);
-
-        // Walk backwards from end_slot via parent references to ensure blocks are chained.
-        // This guarantees all returned blocks are from the same chain, not different forks.
-        // Once we reach a finalized block, we can fetch remaining blocks directly by slot.
-        let mut chain_blocks: Vec<(u64, OLBlockId)> = Vec::new();
-
-        // Get the block at end_slot (we'll walk backwards from here)
-        let end_block_id = self.get_canonical_block_at_height(end_slot).await?;
-
-        let Some(current_block_id) = end_block_id else {
-            // No block at end_slot, return empty
-            return Ok(Vec::new());
-        };
-
-        // Walk backwards from end_slot to start_slot following parent references
-        let mut current_id = current_block_id;
-
-        loop {
-            // Get the block data to access parent
-            let block = self.get_block(current_id).await?;
-
-            let header = block.header();
-            let current_slot = header.slot();
-
-            // Add this block if it's within our range
-            if current_slot >= start_slot && current_slot <= end_slot {
-                chain_blocks.push((current_slot, current_id));
-            }
-
-            // Stop if we've reached or passed start_slot
-            if current_slot <= start_slot {
-                break;
-            }
-
-            // Optimization: if we've reached a finalized slot, fetch remaining blocks directly
-            // by slot instead of walking parent references (finalized blocks have a single chain)
-            if current_slot <= finalized_slot {
-                // Fetch remaining blocks directly by slot
-                for slot in (start_slot..current_slot).rev() {
-                    let blkid = self.get_canonical_block_at_height(slot).await?;
-                    if let Some(blkid) = blkid {
-                        chain_blocks.push((slot, blkid));
-                    }
-                }
-                break;
-            }
-
-            // Move to parent block
-            current_id = *header.parent_blkid();
+        if (end_slot - start_slot + 1) as usize > self.max_headers_range {
+            return Err(invalid_params_error(format!(
+                "Block range too big. Allowed range is {}",
+                self.max_headers_range
+            )));
         }
 
-        // Reverse to get ascending slot order
-        chain_blocks.reverse();
+        let chain_blocks = self.collect_canonical_chain(start_slot, end_slot).await?;
+        if chain_blocks.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        // Now build summaries for each block in the chain
+        // Pre-fetch indexing records across the chain's epoch span. Epochs
+        // along the canonical chain are monotonic, so the touched set is a
+        // contiguous range.
+        let first_epoch = chain_blocks
+            .first()
+            .expect("non-empty chain blocks expected")
+            .epoch;
+        let last_epoch = chain_blocks
+            .last()
+            .expect("non-empty chain blocks expected")
+            .epoch;
+        let AccountRecords {
+            updates: all_updates,
+            inbox: all_inbox,
+        } = self
+            .fetch_records_in_epoch_range(account_id, first_epoch, last_epoch)
+            .await?;
+
+        // Index records by block_commitment so each block lookup is O(1)
+        // instead of an O(M) scan. Records without a block_commitment
+        // (checkpoint-sync update rows; inbox writes with no block tag)
+        // can never match a chain block, so they're dropped here.
+        let mut updates_by_block: HashMap<OLBlockCommitment, Vec<&AccountUpdateRecord>> =
+            HashMap::new();
+        for r in &all_updates {
+            if let Some(meta) = r.update_meta() {
+                updates_by_block
+                    .entry(*meta.block_commitment())
+                    .or_default()
+                    .push(r);
+            }
+        }
+        let mut inbox_by_block: HashMap<OLBlockCommitment, Vec<&InboxMessageRecord>> =
+            HashMap::new();
+        for r in &all_inbox {
+            if let Some(c) = r.block_commitment() {
+                inbox_by_block.entry(*c).or_default().push(r);
+            }
+        }
+
         let mut summaries = Vec::with_capacity(chain_blocks.len());
-
-        for (slot, block_id) in chain_blocks {
-            let block_commitment = OLBlockCommitment::new(slot, block_id);
-
-            // Get OL state at this block
-            let ol_state = self
-                .provider
-                .get_toplevel_ol_state(block_commitment)
-                .await
-                .map_err(|e| {
-                    error!(?e, %block_commitment, "Failed to get OL state");
-                    db_error(e)
-                })?;
-
-            let Some(ol_state) = ol_state else {
-                continue; // Skip if state not available
-            };
-
-            // Get account state
-            let account_state = ol_state.get_account_state(account_id).map_err(|e| {
-                error!(?e, %account_id, slot, "Failed to get account state");
-                internal_error(format!("Account error: {e}"))
-            })?;
-
-            let Some(account_state) = account_state else {
-                continue; // Account not found at this slot
-            };
-
-            // Extract snark-specific data if applicable.
-            // For non-snark accounts, these fields are zeroed since seqno and inbox
-            // concepts don't apply to them.
-            //
-            // Note: Unlike `get_acct_epoch_summary` which returns a full `ProofState`,
-            // `RpcAccountBlockSummary` only has `next_inbox_msg_idx` as a separate field
-            // (no `inner_state`). This is by design - per-block summaries focus on
-            // tracking changes rather than full proof state.
-            let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
-                Ok(snark_state) => {
-                    let seqno: u64 = *snark_state.seqno().inner();
-                    let next_inbox_idx = snark_state.next_inbox_msg_idx();
-                    (seqno, next_inbox_idx)
-                }
-                Err(_) => (0, 0), // Non-snark account
-            };
-
-            summaries.push(RpcAccountBlockSummary::new(
-                account_id,
-                block_commitment,
-                account_state.balance(),
-                next_seq_no,
-                vec![], // updates - requires write batch analysis
-                vec![], // new_inbox_messages - requires write batch analysis
-                next_inbox_msg_idx,
-            ));
+        for cb in &chain_blocks {
+            let commitment = OLBlockCommitment::new(cb.slot, cb.blkid);
+            let updates = updates_by_block
+                .get(&commitment)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            let inbox = inbox_by_block
+                .get(&commitment)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            if let Some(summary) = self
+                .build_block_summary(account_id, cb, updates, inbox)
+                .await?
+            {
+                summaries.push(summary);
+            }
         }
 
         Ok(summaries)
