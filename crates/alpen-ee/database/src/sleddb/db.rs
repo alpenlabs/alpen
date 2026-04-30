@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, thread, time::Duration};
 
 use alpen_ee_common::{
     Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, EeAccountStateAtEpoch,
@@ -8,7 +8,7 @@ use strata_acct_types::Hash;
 use strata_db_store_sled::SledDbConfig;
 use strata_ee_acct_types::EeAccountState;
 use strata_identifiers::{EpochCommitment, OLBlockId};
-use tracing::{error, warn};
+use tracing::{error, trace, warn};
 use typed_sled::{error::Error as TSledError, transaction::SledTransactional, SledDb, SledTree};
 
 use super::{AccountStateAtOLEpochSchema, OLBlockAtEpochSchema};
@@ -27,6 +27,49 @@ use crate::{
 
 fn abort<T>(reason: impl Error + Send + Sync + 'static) -> Result<T, TSledError> {
     Err(TSledError::abort(reason))
+}
+
+/// Retries a finalized-tip operation when tip-shift conflicts are detected.
+///
+/// Calls `op` up to `retry_count + 1` times with configured backoff between retries.
+/// Retries only [`DbError::TxnExpectFinalized`] and [`DbError::TxnExpectEmptyFinalized`];
+/// all other errors fail fast.
+fn retry_on_tip_shift<T, F>(config: &SledDbConfig, new_tip: Hash, mut op: F) -> DbResult<T>
+where
+    F: FnMut() -> DbResult<T>,
+{
+    let mut delay_ms = config.backoff.base_delay_ms();
+
+    for attempt in 0..=config.retry_count {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(err @ DbError::TxnExpectFinalized(_, _))
+            | Err(err @ DbError::TxnExpectEmptyFinalized(_)) => {
+                let retries_left = config.retry_count - attempt;
+                if retries_left == 0 {
+                    return Err(err);
+                }
+
+                warn!(
+                    ?new_tip,
+                    %attempt,
+                    retries_left,
+                    delay_ms,
+                    %err,
+                    "finalized tip shifted while extending chain; retrying whole operation"
+                );
+                // NOTE: blocking sleep is safe here because EE DB ops are dispatched on a
+                // dedicated threadpool via `inst_ops_generic!`, so this blocks a worker
+                // thread rather than the async runtime. If this helper is ever invoked
+                // directly from async context, switch to a non-blocking sleep.
+                thread::sleep(Duration::from_millis(delay_ms));
+                delay_ms = config.backoff.next_delay_ms(delay_ms);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    unreachable!("loop exits via return");
 }
 
 #[derive(Debug)]
@@ -62,6 +105,123 @@ impl EeNodeDBSled {
             batch_chunks_tree: db.get_tree()?,
             config,
         })
+    }
+
+    fn extend_finalized_chain_once(&self, new_tip: Hash) -> DbResult<()> {
+        let (last_finalized_height, last_finalized_blockhash) = self
+            .exec_block_finalized_tree
+            .last()?
+            .ok_or(DbError::FinalizedExecChainEmpty)?;
+
+        if new_tip == last_finalized_blockhash {
+            return Ok(());
+        }
+
+        let tip_block = self
+            .get_exec_block(new_tip)?
+            .ok_or(DbError::MissingExecBlock(new_tip))?;
+        if tip_block.blocknum() <= last_finalized_height {
+            // Another writer may have finalized this tip (or beyond) concurrently.
+            // In that case, extending to `new_tip` is already satisfied.
+            if self.get_finalized_height(new_tip)?.is_some() {
+                trace!(
+                    ?new_tip,
+                    tip_blocknum = tip_block.blocknum(),
+                    last_finalized_height,
+                    "new_tip already finalized by concurrent writer; no-op"
+                );
+                return Ok(());
+            }
+            return Err(DbError::ExecBlockDoesNotExtendChain(new_tip));
+        }
+
+        // Walk parent links from `new_tip` backward until we reach the current finalized tip.
+        // On a well-formed chain the walk terminates naturally at `last_finalized_blockhash`.
+        // If the walk crosses below the current finalized height without matching the tip,
+        // `new_tip` is not a descendant and we reject the request.
+        //
+        // Reads are sequential (one `get_exec_block` per height). The walk length is bounded
+        // by the L1 follow distance during normal operation (tens of blocks), so sequential
+        // reads are acceptable. A batched bulk-get would be worth adding if catch-up windows
+        // grow significantly.
+        let max_steps = tip_block.blocknum() - last_finalized_height;
+        let mut pending_entries_rev = Vec::new();
+        let mut current_hash = new_tip;
+        let mut current_block = tip_block;
+        let mut found_child_of_tip = false;
+
+        for _ in 0..max_steps {
+            if current_block.blocknum() <= last_finalized_height {
+                return Err(DbError::FinalizedWalkNotDescending {
+                    new_tip,
+                    finalized_height: last_finalized_height,
+                });
+            }
+            pending_entries_rev.push((current_block.blocknum(), current_hash));
+
+            if current_block.parent_blockhash() == last_finalized_blockhash {
+                found_child_of_tip = true;
+                break;
+            }
+
+            current_hash = current_block.parent_blockhash();
+            current_block = self
+                .get_exec_block(current_hash)?
+                .ok_or(DbError::MissingExecBlock(current_hash))?;
+        }
+        if !found_child_of_tip {
+            return Err(DbError::FinalizedWalkStepBudgetExceeded {
+                new_tip,
+                finalized_height: last_finalized_height,
+                max_steps,
+            });
+        }
+
+        pending_entries_rev.reverse();
+
+        // Defense in depth: parent-link walk alone is not enough if block number metadata
+        // is corrupted (parent links valid but blocknums non-contiguous). Verify the walked
+        // range has contiguous heights starting at `last_finalized_height + 1` before
+        // inserting, so we never leave gaps in the finalized tree.
+        for (offset, (height, _)) in pending_entries_rev.iter().enumerate() {
+            let expected_height = last_finalized_height + offset as u64 + 1;
+            if *height != expected_height {
+                return Err(DbError::FinalizedWalkNotDescending {
+                    new_tip,
+                    finalized_height: last_finalized_height,
+                });
+            }
+        }
+
+        // Retry storage conflicts inside the transaction body, but do not retry user aborts.
+        // Tip-shift aborts invalidate precomputed `pending_entries_rev`, so those must be
+        // retried by re-running the whole operation in `extend_finalized_chain`.
+        (&self.exec_block_finalized_tree,)
+            .transaction_with_retry(
+                self.config.backoff.as_ref(),
+                self.config.retry_count.into(),
+                |(finalized_tree,)| {
+                    if finalized_tree.get(&last_finalized_height)? != Some(last_finalized_blockhash)
+                    {
+                        abort(DbError::TxnExpectFinalized(
+                            last_finalized_height,
+                            last_finalized_blockhash,
+                        ))?;
+                    }
+
+                    for (height, hash) in &pending_entries_rev {
+                        if finalized_tree.get(height)?.is_some() {
+                            abort(DbError::TxnExpectEmptyFinalized(*height))?;
+                        }
+                        finalized_tree.insert(height, hash)?;
+                    }
+
+                    Ok(())
+                },
+            )
+            .map_err(DbError::from)?;
+
+        Ok(())
     }
 }
 
@@ -273,49 +433,10 @@ impl EeNodeDb for EeNodeDBSled {
         Ok(())
     }
 
-    fn extend_finalized_chain(&self, hash: Hash) -> DbResult<()> {
-        let block = self
-            .get_exec_block(hash)?
-            .ok_or(DbError::MissingExecBlock(hash))?;
-
-        let (last_finalized_height, last_finalized_blockhash) = self
-            .exec_block_finalized_tree
-            .last()?
-            .ok_or(DbError::FinalizedExecChainEmpty)?;
-
-        if block.parent_blockhash() != last_finalized_blockhash {
-            // does not extend chain
-            return Err(DbError::ExecBlockDoesNotExtendChain(hash));
-        }
-
-        (&self.exec_block_finalized_tree,).transaction_with_retry(
-            self.config.backoff.as_ref(),
-            self.config.retry_count.into(),
-            |(finalized_tree,)| {
-                // NOTE: Cannot check for last entry inside txn, so have to do this. CANNOT retry if
-                // finalized block has changed in a race.
-
-                // ensure finalized block has not changed
-                if finalized_tree.get(&last_finalized_height)? != Some(last_finalized_blockhash) {
-                    abort(DbError::TxnExpectFinalized(
-                        last_finalized_height,
-                        last_finalized_blockhash,
-                    ))?;
-                }
-                let next_height = last_finalized_height + 1;
-                // ensure next block height is empty
-                if finalized_tree.get(&next_height)?.is_some() {
-                    abort(DbError::TxnExpectEmptyFinalized(last_finalized_height + 1))?;
-                }
-
-                // las finalized block has not changed and can extend
-                finalized_tree.insert(&next_height, &hash)?;
-
-                Ok(())
-            },
-        )?;
-
-        Ok(())
+    fn extend_finalized_chain(&self, new_tip: Hash) -> DbResult<()> {
+        retry_on_tip_shift(&self.config, new_tip, || {
+            self.extend_finalized_chain_once(new_tip)
+        })
     }
 
     fn revert_finalized_chain(&self, to_height: u64) -> DbResult<()> {
@@ -825,5 +946,132 @@ impl EeNodeDb for EeNodeDBSled {
         self.batch_chunks_tree.insert(&db_batch_id, &db_chunks)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use alpen_ee_common::exec_block_storage_test_fns::create_exec_block;
+    use strata_db_store_sled::SledDbConfig;
+    use typed_sled::SledDb;
+
+    use super::*;
+
+    fn hash_from_u8(value: u8) -> Hash {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 1;
+        bytes[31] = value;
+        Hash::from(bytes)
+    }
+
+    fn setup_db(retry_count: u16) -> EeNodeDBSled {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = SledDb::new(db).unwrap();
+        let config = SledDbConfig::new_with_constant_backoff(retry_count, 0);
+        EeNodeDBSled::new(Arc::new(sled_db), config).unwrap()
+    }
+
+    fn save_block(db: &EeNodeDBSled, block: ExecBlockRecord) {
+        db.save_exec_block(block, vec![]).unwrap();
+    }
+
+    #[test]
+    fn retry_on_tip_shift_retries_then_succeeds() {
+        let config = SledDbConfig::new_with_constant_backoff(2, 0);
+        let mut attempts = 0usize;
+
+        let out = retry_on_tip_shift(&config, hash_from_u8(9), || {
+            attempts += 1;
+            if attempts == 1 {
+                return Err(DbError::TxnExpectFinalized(0, hash_from_u8(0)));
+            }
+            Ok(())
+        });
+
+        assert!(out.is_ok());
+        assert_eq!(attempts, 2);
+    }
+
+    #[test]
+    fn retry_on_tip_shift_exhausts_retry_budget() {
+        let config = SledDbConfig::new_with_constant_backoff(1, 0); // 2 attempts total
+        let mut attempts = 0usize;
+
+        let err = retry_on_tip_shift(&config, hash_from_u8(9), || {
+            attempts += 1;
+            Err::<(), DbError>(DbError::TxnExpectEmptyFinalized(42))
+        })
+        .unwrap_err();
+
+        assert!(matches!(err, DbError::TxnExpectEmptyFinalized(42)));
+        assert_eq!(attempts, 2);
+    }
+
+    #[test]
+    fn retry_on_tip_shift_does_not_retry_non_retryable_errors() {
+        let config = SledDbConfig::new_with_constant_backoff(10, 0);
+        let mut attempts = 0usize;
+        let missing = hash_from_u8(7);
+
+        let err = retry_on_tip_shift(&config, hash_from_u8(9), || {
+            attempts += 1;
+            Err::<(), DbError>(DbError::MissingExecBlock(missing))
+        })
+        .unwrap_err();
+
+        assert!(matches!(err, DbError::MissingExecBlock(h) if h == missing));
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn extend_finalized_chain_ok_if_tip_already_finalized() {
+        let db = setup_db(2);
+        let h0 = hash_from_u8(0);
+        let h1 = hash_from_u8(1);
+        let h2 = hash_from_u8(2);
+
+        save_block(&db, create_exec_block(0, Hash::default(), h0, 0));
+        save_block(&db, create_exec_block(1, h0, h1, 1));
+        save_block(&db, create_exec_block(2, h1, h2, 2));
+
+        db.init_finalized_chain(h0).unwrap();
+        db.extend_finalized_chain(h2).unwrap();
+
+        // Simulates "caller behind" after another writer already finalized beyond h1.
+        db.extend_finalized_chain(h1).unwrap();
+
+        assert_eq!(db.get_finalized_height(h1).unwrap(), Some(1));
+        assert_eq!(db.get_finalized_height(h2).unwrap(), Some(2));
+        let best = db.best_finalized_block().unwrap().unwrap();
+        assert_eq!(best.blockhash(), h2);
+        assert_eq!(best.blocknum(), 2);
+    }
+
+    #[test]
+    fn extend_finalized_chain_cycle_errors_with_step_budget_exceeded() {
+        let db = setup_db(2);
+        let h0 = hash_from_u8(0);
+        let h2 = hash_from_u8(2);
+        let h3 = hash_from_u8(3);
+
+        save_block(&db, create_exec_block(0, Hash::default(), h0, 0));
+        db.init_finalized_chain(h0).unwrap();
+
+        // Corrupt graph above finalized tip:
+        // h3 -> h2 and h2 -> h3 (cycle).
+        save_block(&db, create_exec_block(2, h3, h2, 2));
+        save_block(&db, create_exec_block(3, h2, h3, 3));
+
+        let err = db.extend_finalized_chain(h3).unwrap_err();
+        assert!(matches!(
+            err,
+            DbError::FinalizedWalkStepBudgetExceeded {
+                new_tip,
+                finalized_height: 0,
+                max_steps: 3,
+            } if new_tip == h3
+        ));
     }
 }
