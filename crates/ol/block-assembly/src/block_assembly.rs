@@ -245,6 +245,14 @@ pub(crate) fn calculate_block_slot_and_epoch<S: IStateAccessor>(
 /// 5. Detects terminal blocks and fetches L1 manifests
 /// 6. Builds the complete block with only valid transactions
 #[expect(clippy::too_many_arguments, reason = "can't get around the args")]
+#[tracing::instrument(
+    skip_all,
+    fields(
+        slot = block_slot,
+        epoch = block_epoch,
+        mempool_tx_count = mempool_txs.len(),
+    ),
+)]
 pub(crate) async fn construct_block<C, E>(
     ctx: &C,
     epoch_sealing_policy: &E,
@@ -320,6 +328,12 @@ where
     // Phase 4: Finalize block construction.
     // Clone output_buffer: the clone goes to build_block_template (which adds manifest logs
     // for the header), the original is consumed below to append this block's tx logs to DA.
+    debug!(
+        successful_tx_count = successful_txs.len(),
+        failed_tx_count = failed_txs.len(),
+        is_terminal = manifest_container.is_some(),
+        "block construction summary",
+    );
     let (template, post_state) = build_block_template(
         config,
         &block_context,
@@ -359,6 +373,14 @@ async fn fetch_asm_manifests_for_terminal_block<
 
     // Fetch manifests using BlockAssemblyAnchorContext trait
     let manifests = ctx.fetch_asm_manifests_from(start_height).await?;
+
+    let total_logs: usize = manifests.iter().map(|m| m.logs().len()).sum();
+    debug!(
+        start_height,
+        manifest_count = manifests.len(),
+        total_logs,
+        "fetched asm manifests for terminal block",
+    );
 
     let container = OLL1ManifestContainer::new(manifests)?;
 
@@ -469,7 +491,7 @@ where
         let basic_ctx = BasicExecContext::new(*block_context.block_info(), &tx_buffer);
         let tx_ctx = TxExecContext::new(&basic_ctx, block_context.parent_header());
 
-        debug!(%txid, ?tx, "processing transaction");
+        debug!(%txid, kind = %tx.payload().type_id(), "processing transaction");
         match process_single_tx(&mut staging_state, &tx, &tx_ctx) {
             Ok(()) => {
                 // Tx executed successfully. Before committing side effects, check
@@ -541,7 +563,6 @@ where
                 failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
             }
         }
-        debug!(%txid, "successful tx execution in block assembly");
     }
 
     // Reassemble AccumulatedDaData with updated accumulator; epoch_logs unchanged

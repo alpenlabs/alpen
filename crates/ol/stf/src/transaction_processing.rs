@@ -3,6 +3,7 @@
 use strata_acct_types::*;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
+use tracing::trace;
 
 use crate::{
     account_processing,
@@ -16,13 +17,16 @@ use crate::{
 /// Process a block's transaction segment.
 ///
 /// This is called for every block.
+#[tracing::instrument(skip_all, fields(tx_count = tx_seg.txs().len()))]
 pub fn process_block_tx_segment<S: IStateAccessor>(
     state: &mut S,
     tx_seg: &OLTxSegment,
     context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     for (i, tx) in tx_seg.txs().iter().enumerate() {
-        process_single_tx(state, tx, context).map_err(|e| e.with_tx(tx.compute_txid(), i))?
+        let txid = tx.compute_txid();
+        trace!(index = i, %txid, kind = %tx.payload().type_id(), "processing tx");
+        process_single_tx(state, tx, context).map_err(|e| e.with_tx(txid, i))?
     }
 
     Ok(())

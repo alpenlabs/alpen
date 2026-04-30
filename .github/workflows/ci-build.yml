@@ -96,12 +96,12 @@ jobs:
           COMMIT_SHA=$(git rev-parse HEAD)
           # Pinned tag for the afb3683 staging-v2 deploy — binaries are from
           # afb3683 source; CI plumbing is PR #1668 + #1663 cherry-picked on top.
-          # The `-prover` suffix differentiates from the first build
-          # (afb3683-20260424) which was missing the prover feature flag:
+          # The `-prover-timeout-logs-enhanced-1` suffix differentiates from the first build
+          # (afb3683-20260424) which was missing the prover feature flag and logs:
           # Dockerfile didn't consume CARGO_FEATURES build arg, so
           # #[cfg(feature = "prover")] code paths were compiled out and
           # checkpoints went out with empty proof witnesses.
-          SHORT_TAG="afb3683-prover-timeout"
+          SHORT_TAG="afb3683-prover-timeout-logs-enhanced-1"
           echo "commit_sha=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
           echo "Resolved commit: ${COMMIT_SHA} (tag: ${SHORT_TAG})"

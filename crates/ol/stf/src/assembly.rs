@@ -321,6 +321,15 @@ impl CompletedBlock {
 /// Given components of a block, executes it and uses it to construct the
 /// components of a block that can be signed, returning the completed block and
 /// the execution outputs (like logs).
+#[tracing::instrument(
+    skip_all,
+    fields(
+        slot = block_context.slot(),
+        epoch = block_context.epoch(),
+        is_terminal = block_components.manifest_container.is_some(),
+        tx_count = block_components.tx_segment.txs().len(),
+    ),
+)]
 pub fn construct_block<S: IStateAccessor>(
     state: &mut S,
     block_context: BlockContext<'_>,

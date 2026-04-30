@@ -13,6 +13,7 @@ use strata_msg_fmt::Msg;
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
 use strata_ol_msg_types::DepositMsgData;
+use tracing::{debug, info, trace, warn};
 
 use crate::{
     account_processing,
@@ -25,6 +26,13 @@ use crate::{
 /// processing.
 ///
 /// This does NOT check the preseal root.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        manifest_count = mf_cont.manifests().len(),
+        epoch = state.cur_epoch(),
+    ),
+)]
 pub fn process_block_manifests<S: IStateAccessor>(
     state: &mut S,
     mf_cont: &OLL1ManifestContainer,
@@ -41,8 +49,19 @@ pub fn process_block_manifests<S: IStateAccessor>(
         // last seen height.
         let real_height = orig_l1_height + i as u32 + 1;
         if mf.height() != real_height {
+            warn!(
+                expected_height = real_height,
+                got_height = mf.height(),
+                index = i,
+                "asm manifest height mismatch",
+            );
             return Err(ExecError::ChainIntegrity);
         }
+        trace!(
+            height = real_height,
+            log_count = mf.logs().len(),
+            "processing asm manifest",
+        );
         last = Some((real_height, mf));
         process_asm_manifest(state, real_height, mf, context)?;
     }
@@ -53,7 +72,14 @@ pub fn process_block_manifests<S: IStateAccessor>(
     }
 
     // 2. Finally, we can update the epoch to get it ready for the next epoch.
-    state.set_cur_epoch(terminating_epoch + 1);
+    let new_epoch = terminating_epoch + 1;
+    info!(
+        from_epoch = terminating_epoch,
+        to_epoch = new_epoch,
+        last_l1_height = ?last.map(|(h, _)| h),
+        "advancing epoch",
+    );
+    state.set_cur_epoch(new_epoch);
 
     Ok(())
 }
@@ -78,12 +104,16 @@ fn process_asm_manifest<S: IStateAccessor>(
 fn process_asm_log<S: IStateAccessor>(
     state: &mut S,
     log: &AsmLogEntry,
-    _real_height: L1Height,
+    real_height: L1Height,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Try to parse the log as an SPS-52 message.
     let Some(msg) = log.try_as_msg() else {
         // Not a valid message format, skip it.
+        debug!(
+            height = real_height,
+            "skipping asm log: not an sps-52 message"
+        );
         return Ok(());
     };
 
@@ -91,6 +121,10 @@ fn process_asm_log<S: IStateAccessor>(
     match msg.ty() {
         DEPOSIT_LOG_TYPE_ID => {
             let Ok(deposit) = log.try_into_log::<DepositLog>() else {
+                debug!(
+                    height = real_height,
+                    "failed to decode deposit log; skipping"
+                );
                 return Ok(());
             };
             process_deposit_log(state, &deposit, context)?;
@@ -99,13 +133,22 @@ fn process_asm_log<S: IStateAccessor>(
         CHECKPOINT_TIP_UPDATE_LOG_TYPE => {
             // Parse the checkpoint tip update from the v1 checkpoint subprotocol.
             let Ok(data) = log.try_into_log::<CheckpointTipUpdate>() else {
+                debug!(
+                    height = real_height,
+                    "failed to decode checkpoint tip update log; skipping"
+                );
                 return Ok(());
             };
             process_checkpoint_tip_update(state, &data, context)?;
         }
 
-        _ => {
+        ty => {
             // Some other log type, which we don't care about, skip it.
+            debug!(
+                height = real_height,
+                log_ty = ty,
+                "ignoring unknown asm log type"
+            );
         }
     }
 
@@ -118,9 +161,16 @@ fn process_deposit_log<S: IStateAccessor>(
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
     // Parse the raw destination bytes into account serial + subject.
-    let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
-        // Malformed destination descriptor, skip this deposit.
-        return Ok(());
+    let descriptor = match DepositDescriptor::decode_from_slice(&deposit.destination) {
+        Ok(d) => d,
+        Err(e) => {
+            debug!(
+                %e,
+                amount = deposit.amount,
+                "dropping deposit: malformed destination descriptor",
+            );
+            return Ok(());
+        }
     };
 
     let acct_serial = *descriptor.dest_acct_serial();
@@ -132,6 +182,11 @@ fn process_deposit_log<S: IStateAccessor>(
         //
         // TODO make this actually do something more sophisticated to make loss
         // of funds less likely
+        debug!(
+            %acct_serial,
+            amount = deposit.amount,
+            "dropping deposit: unknown destination account serial",
+        );
         return Ok(());
     };
 
@@ -139,6 +194,13 @@ fn process_deposit_log<S: IStateAccessor>(
     let deposit_msg = DepositMsgData::new(subject_id);
     let deposit_data = encode_to_vec(&deposit_msg)?;
     let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
+
+    debug!(
+        %dest_id,
+        %acct_serial,
+        amount = deposit.amount,
+        "crediting deposit to account",
+    );
 
     // Deliver the deposit message to the target account.
     // TODO need to tweak this a bit to deal with the changes to epoch contexts
@@ -160,6 +222,11 @@ fn process_checkpoint_tip_update<S: IStateAccessor>(
 ) -> ExecResult<()> {
     let tip = data.tip();
     let epoch_commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
+    debug!(
+        epoch = tip.epoch,
+        l2_commitment = %tip.l2_commitment(),
+        "asm recorded epoch updated",
+    );
     state.set_asm_recorded_epoch(epoch_commitment);
 
     Ok(())
