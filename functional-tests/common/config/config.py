@@ -86,6 +86,20 @@ class SequencerConfig:
 
 
 @dataclass
+class FeeModelConfig:
+    """v1 L2 fee-model configuration mirroring ``SequencerFeeModelConfig``.
+
+    Defaults match ``docker/configs/sequencer.toml`` so functional-test
+    environments deserialize cleanly on the Rust side.
+    """
+
+    prover_fee_per_gas_wei: int = field(default=15)
+    da_overhead_multiplier_bps: int = field(default=10_000)
+    ol_overhead_wei: int = field(default=0)
+    l1_fee_rate_source: str = field(default="btcio_writer")
+
+
+@dataclass
 class EeDaConfig:
     """DA pipeline configuration for alpen-client sequencer.
 
@@ -135,6 +149,7 @@ class StrataConfig:
 @dataclass
 class SequencerRuntimeConfig:
     sequencer: SequencerConfig = field(default_factory=SequencerConfig)
+    fee_model: FeeModelConfig = field(default_factory=FeeModelConfig)
     epoch_sealing: EpochSealingConfig | None = field(default=None)
 
     def as_toml_string(self) -> str:
