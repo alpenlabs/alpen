@@ -105,3 +105,6 @@ class GlobalState(Container):
 
     ### Next available serial we can assign to an account.
     next_avail_serial: uint64
+
+    ### Funds in limbo, measured in satoshis.
+    limbo_funds_sats: uint64

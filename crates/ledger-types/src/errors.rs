@@ -41,6 +41,18 @@ pub enum StateError {
         have: BitcoinAmount,
     },
 
+    #[error("insufficient limbo funds to take (need {need}, have {have})")]
+    InsufficientLimboFunds {
+        need: BitcoinAmount,
+        have: BitcoinAmount,
+    },
+
+    #[error("limbo funds overflow (cur {cur}, add {add})")]
+    LimboFundsOverflow {
+        cur: BitcoinAmount,
+        add: BitcoinAmount,
+    },
+
     #[error("out-of-order seqno change (cur {cur:?}, new {new:?})")]
     OooSeqnoChange { cur: Seqno, new: Seqno },
 

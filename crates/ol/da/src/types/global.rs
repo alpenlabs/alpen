@@ -2,7 +2,7 @@
 
 use strata_da_framework::{
     DaCounter,
-    counter_schemes::{self, CtrU64ByU16},
+    counter_schemes::{CtrU64BySignedVarInt, CtrU64ByU16},
     make_compound_impl,
 };
 
@@ -11,26 +11,37 @@ use strata_da_framework::{
 pub struct GlobalStateDiff {
     /// Slot counter diff.
     pub cur_slot: DaCounter<CtrU64ByU16>,
+
+    /// Limbo funds counter diff.
+    pub limbo_funds_sats: DaCounter<CtrU64BySignedVarInt>,
 }
 
 impl Default for GlobalStateDiff {
     fn default() -> Self {
         Self {
             cur_slot: DaCounter::new_unchanged(),
+            limbo_funds_sats: DaCounter::default(),
         }
     }
 }
 
 impl GlobalStateDiff {
     /// Creates a new [`GlobalStateDiff`] from a slot counter.
-    pub fn new(cur_slot: DaCounter<counter_schemes::CtrU64ByU16>) -> Self {
-        Self { cur_slot }
+    pub fn new(
+        cur_slot: DaCounter<CtrU64ByU16>,
+        limbo_funds_sats: DaCounter<CtrU64BySignedVarInt>,
+    ) -> Self {
+        Self {
+            cur_slot,
+            limbo_funds_sats,
+        }
     }
 }
 
 make_compound_impl! {
     GlobalStateDiff < (), crate::DaError > u8 => GlobalStateTarget {
-        cur_slot: counter (counter_schemes::CtrU64ByU16),
+        cur_slot: counter (CtrU64ByU16),
+        limbo_funds_sats: counter (CtrU64BySignedVarInt)
     }
 }
 
@@ -39,4 +50,7 @@ make_compound_impl! {
 pub struct GlobalStateTarget {
     /// Current slot value.
     pub cur_slot: u64,
+
+    /// Limbo funds value.
+    pub limbo_funds_sats: u64,
 }

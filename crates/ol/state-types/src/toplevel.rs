@@ -175,6 +175,10 @@ impl OLState {
             self.global.set_cur_slot(slot);
         }
 
+        if let Some(limbo_funds_sats) = global_writes.limbo_funds_sats {
+            self.global.limbo_funds_sats = limbo_funds_sats;
+        }
+
         // Apply epochal state writes.
         if let Some(epoch) = epochal_writes.cur_epoch {
             self.epoch.set_cur_epoch(epoch);

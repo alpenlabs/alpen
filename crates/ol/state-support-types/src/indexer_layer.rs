@@ -392,6 +392,10 @@ impl<S: IStateAccessor> IStateAccessor for IndexerState<S> {
     fn cur_slot(&self) -> u64 {
         self.inner.cur_slot()
     }
+
+    fn limbo_funds(&self) -> BitcoinAmount {
+        self.inner.limbo_funds()
+    }
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
@@ -450,6 +454,14 @@ where
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.inner.set_cur_slot(slot);
+    }
+
+    fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
+        self.inner.add_limbo_funds_coin(coin)
+    }
+
+    fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
+        self.inner.take_limbo_funds_coin(amt)
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {

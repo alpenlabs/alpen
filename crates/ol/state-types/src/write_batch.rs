@@ -16,6 +16,9 @@ use crate::SerialMap;
 pub struct GlobalStateWrites {
     /// New slot value, if changed.
     pub cur_slot: Option<Slot>,
+
+    /// New limbo funds value (in satoshis), if changed.
+    pub limbo_funds_sats: Option<u64>,
 }
 
 /// Tracked writes to the epochal state.
@@ -219,12 +222,14 @@ impl<A> Default for LedgerWriteBatch<A> {
 impl Codec for GlobalStateWrites {
     fn encode(&self, enc: &mut impl Encoder) -> Result<(), CodecError> {
         CodecSsz::new(self.cur_slot).encode(enc)?;
+        CodecSsz::new(self.limbo_funds_sats).encode(enc)?;
         Ok(())
     }
 
     fn decode(dec: &mut impl Decoder) -> Result<Self, CodecError> {
         Ok(Self {
             cur_slot: CodecSsz::<Option<Slot>>::decode(dec)?.into_inner(),
+            limbo_funds_sats: CodecSsz::<Option<u64>>::decode(dec)?.into_inner(),
         })
     }
 }

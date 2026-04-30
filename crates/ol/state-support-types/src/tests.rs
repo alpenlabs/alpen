@@ -624,6 +624,7 @@ struct TestState {
     next_serial: AccountSerial,
     serial_overrides: VecDeque<AccountSerial>,
     cur_slot: u64,
+    limbo_funds: BitcoinAmount,
     cur_epoch: u32,
     last_l1_blkid: L1BlockId,
     last_l1_height: L1Height,
@@ -638,6 +639,7 @@ impl TestState {
             next_serial: AccountSerial::one(),
             serial_overrides: VecDeque::from(serials),
             cur_slot: 0,
+            limbo_funds: BitcoinAmount::ZERO,
             cur_epoch: 0,
             last_l1_blkid: L1BlockId::from(Buf32::zero()),
             last_l1_height: L1Height::from(0u32),
@@ -652,6 +654,10 @@ impl IStateAccessor for TestState {
 
     fn cur_slot(&self) -> u64 {
         self.cur_slot
+    }
+
+    fn limbo_funds(&self) -> BitcoinAmount {
+        self.limbo_funds
     }
 
     fn cur_epoch(&self) -> u32 {
@@ -707,6 +713,32 @@ impl IStateAccessorMut for TestState {
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.cur_slot = slot;
+    }
+
+    fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
+        let amt = coin.amt();
+        let new = self
+            .limbo_funds
+            .checked_add(amt)
+            .ok_or(StateError::LimboFundsOverflow {
+                cur: self.limbo_funds,
+                add: amt,
+            })?;
+        self.limbo_funds = new;
+        coin.safely_consume_unchecked();
+        Ok(())
+    }
+
+    fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
+        let new = self
+            .limbo_funds
+            .checked_sub(amt)
+            .ok_or(StateError::InsufficientLimboFunds {
+                need: amt,
+                have: self.limbo_funds,
+            })?;
+        self.limbo_funds = new;
+        Ok(Coin::new_unchecked(amt))
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {

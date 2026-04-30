@@ -27,9 +27,12 @@ pub fn bitcoin_amount_strategy() -> impl Strategy<Value = BitcoinAmount> {
 }
 
 pub fn global_state_strategy() -> impl Strategy<Value = GlobalState> {
-    any::<(u64, u64)>().prop_map(|(cur_slot, next_avail_serial)| GlobalState {
-        cur_slot,
-        next_avail_serial,
+    any::<(u64, u64, u64)>().prop_map(|(cur_slot, next_avail_serial, limbo_funds_sats)| {
+        GlobalState {
+            cur_slot,
+            next_avail_serial,
+            limbo_funds_sats,
+        }
     })
 }
 
