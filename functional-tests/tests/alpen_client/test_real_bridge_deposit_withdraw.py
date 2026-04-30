@@ -23,6 +23,7 @@ state.
 """
 
 import logging
+import subprocess
 import time
 from pathlib import Path
 from typing import cast
@@ -47,16 +48,97 @@ BRIDGE_DENOM_SATS = 1_000_000_000  # 10 BTC
 SATS_TO_WEI = 10**10
 WITHDRAW_SATS = 1_000_000_000  # 10 BTC, full denom
 
-# BOSD destination descriptor: [type_tag: 1 byte][payload]. Type tag 0x03 with
-# a 20-byte hash160 is P2WPKH and accepts any 20 bytes (no curve check), which
-# makes it a safe placeholder for the bridgeout precompile. We swap this for
-# a real recipient address when we exercise the withdrawal-fulfillment leg.
-DUMMY_BOSD_HEX = "03" + "11" * 20
+# BOSD descriptor type tags (see strata-common/bitcoin-bosd).
+BOSD_P2WPKH_TAG = "03"
+
 # Bridgeout calldata: [4 bytes: selected_operator (big-endian u32)][BOSD bytes].
 # 0xFFFFFFFF = u32::MAX = "no specific operator, bridge picks".
 NO_OPERATOR_SELECTION_HEX = "ffffffff"
 
 OPERATOR_KEYS_FILENAME = "bridge-operator_keys"
+
+
+def derive_p2wpkh_bosd_hex(btc_rpc) -> tuple[str, str]:
+    """Generate a fresh P2WPKH address from bitcoind and convert to BOSD hex.
+
+    Returns `(bitcoin_address, bosd_hex)`. The BOSD format is
+    `[type_tag: 1 byte][20-byte hash160]`. The address is bcrt1q-encoded
+    P2WPKH; its scriptPubKey is `0014<hash160>`, so we strip the `0014`
+    prefix to recover the hash and prepend the BOSD type tag.
+    """
+    addr = btc_rpc.proxy.getnewaddress("", "bech32")
+    info = btc_rpc.proxy.getaddressinfo(addr)
+    spk = info["scriptPubKey"]
+    if not spk.startswith("0014") or len(spk) != 4 + 40:
+        raise RuntimeError(f"unexpected scriptPubKey for P2WPKH {addr}: {spk}")
+    hash20_hex = spk[4:]
+    return addr, BOSD_P2WPKH_TAG + hash20_hex
+
+
+def fund_strata_test_cli_wallet(btc_rpc, fund_btc: float = 12.0) -> str:
+    """Send BTC to the strata-test-cli internal taproot wallet so it can
+    fund a withdrawal-fulfillment tx. Returns the funded address.
+
+    The strata-test-cli wallet is hardcoded to a single XPRIV in
+    `strata-test-cli/src/constants.rs`; we get its index-0 address via the
+    `get-address` subcommand and send funds to it.
+    """
+    res = subprocess.run(
+        ["strata-test-cli", "get-address", "--index", "0"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"strata-test-cli get-address failed (exit {res.returncode}): {res.stderr.strip()}"
+        )
+    bdk_addr = res.stdout.strip()
+    btc_rpc.proxy.sendtoaddress(bdk_addr, fund_btc)
+    miner = btc_rpc.proxy.getnewaddress()
+    btc_rpc.proxy.generatetoaddress(1, miner)
+    return bdk_addr
+
+
+def build_and_broadcast_wf(
+    btc_rpc,
+    recipient_bosd_hex: str,
+    amount_sats: int,
+    deposit_idx: int,
+    btc_rpc_url: str,
+    btc_rpc_user: str,
+    btc_rpc_password: str,
+) -> str:
+    """Sign and broadcast a withdrawal-fulfillment tx via strata-test-cli."""
+    res = subprocess.run(
+        [
+            "strata-test-cli",
+            "create-withdrawal-fulfillment",
+            "--destination",
+            recipient_bosd_hex,
+            "--amount",
+            str(amount_sats),
+            "--deposit-idx",
+            str(deposit_idx),
+            "--btc-url",
+            btc_rpc_url,
+            "--btc-user",
+            btc_rpc_user,
+            "--btc-password",
+            btc_rpc_password,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(
+            f"create-withdrawal-fulfillment failed (exit {res.returncode}): {res.stderr.strip()}"
+        )
+    wf_hex = res.stdout.strip()
+    wf_txid = btc_rpc.proxy.sendrawtransaction(wf_hex)
+    logger.info("WF broadcast: txid=%s deposit_idx=%d", wf_txid, deposit_idx)
+    return wf_txid
 
 
 def get_ol_balance(rpc, account_id_hex: str) -> int:
@@ -149,6 +231,16 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         logger.info("[2] EVM balance = %d wei (expected >= %d)", actual_wei, expected_wei)
 
         # ----- bullet 3: EE to OL - bridgeout precompile -----
+        # Generate a real recipient bitcoin address now so bullet 4 can verify
+        # delivery to it. The BOSD form is what the bridge subprotocol records
+        # as the withdrawal target.
+        recipient_btc_addr, recipient_bosd_hex = derive_p2wpkh_bosd_hex(btc_rpc)
+        logger.info(
+            "withdrawal recipient: btc_addr=%s bosd=%s",
+            recipient_btc_addr,
+            recipient_bosd_hex,
+        )
+
         nonce = int(alpen_rpc.eth_getTransactionCount(DEV_ACCOUNT_ADDRESS, "latest"), 16)
         gas_price = int(alpen_rpc.eth_gasPrice(), 16)
         withdraw_wei = WITHDRAW_SATS * SATS_TO_WEI
@@ -159,7 +251,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             "gas": 200_000,
             "to": PRECOMPILE_BRIDGEOUT_ADDRESS,
             "value": withdraw_wei,
-            "data": bytes.fromhex(NO_OPERATOR_SELECTION_HEX + DUMMY_BOSD_HEX),
+            "data": bytes.fromhex(NO_OPERATOR_SELECTION_HEX + recipient_bosd_hex),
             "chainId": DEV_CHAIN_ID,
         }
         signed = Account.sign_transaction(withdraw_tx, DEV_PRIVATE_KEY)
@@ -197,15 +289,47 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         logger.info("[3b] SnarkAccountUpdate landed at OL epoch %d", saw_update_at_epoch)
 
         # ----- bullet 4: OL to user wallet - withdrawal-fulfillment -----
-        # TODO: pick up the bridge subprotocol's withdrawal assignment from the
-        # OL state, call `strata-test-cli create-withdrawal-fulfillment` with
-        # operator_xprivs, broadcast the WF tx, and assert the recipient
-        # bitcoin address receives BRIDGE_DENOM_SATS sats.
-        #
-        # The DUMMY_BOSD_HEX above currently encodes a P2TR placeholder; for
-        # this assertion to be meaningful we need to recipient_addr_btc be a
-        # real address we can poll via listunspent / gettxout. Sketched in
-        # follow-up commit.
-        logger.info("[4] withdrawal-fulfillment leg pending follow-up commit")
+        # Fund the strata-test-cli internal taproot wallet so it can build
+        # and sign the WF tx. el_ol env doesn't pre-fund this wallet.
+        fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
+
+        # Mine some bitcoin blocks so the bridge subprotocol observes the OL
+        # withdrawal command and assigns it to an operator. We don't have an
+        # RPC to query bridge assignment state directly; the simplest signal
+        # is "OL has produced a few more checkpoints since SnarkAccountUpdate".
+        btc_rpc.proxy.generatetoaddress(8, miner_addr)
+        strata_seq.wait_for_additional_blocks(2 * slots_per_epoch, strata_rpc, timeout_per_block=15)
+
+        # Build, sign, broadcast the WF tx. deposit_idx is the index of the
+        # deposit being fulfilled; we deposited dt_index=0 above so this is 0.
+        wf_txid = build_and_broadcast_wf(
+            btc_rpc,
+            recipient_bosd_hex=recipient_bosd_hex,
+            amount_sats=WITHDRAW_SATS,
+            deposit_idx=0,
+            btc_rpc_url=bitcoin.props["rpc_url"],
+            btc_rpc_user=bitcoin.props["rpc_user"],
+            btc_rpc_password=bitcoin.props["rpc_password"],
+        )
+        logger.info("[4a] WF broadcast txid=%s", wf_txid)
+
+        # Confirm the WF, then wait for the bridge subprotocol to process it
+        # and the recipient to see incoming BTC. minconf=1 is enough.
+        btc_rpc.proxy.generatetoaddress(8, miner_addr)
+        strata_seq.wait_for_additional_blocks(slots_per_epoch, strata_rpc, timeout_per_block=15)
+
+        wait_until_with_value(
+            lambda: float(btc_rpc.proxy.getreceivedbyaddress(recipient_btc_addr, 1)),
+            lambda received_btc: received_btc * 100_000_000 >= WITHDRAW_SATS,
+            error_with=f"recipient {recipient_btc_addr} did not receive {WITHDRAW_SATS} sats",
+            timeout=120,
+        )
+        received_btc = float(btc_rpc.proxy.getreceivedbyaddress(recipient_btc_addr, 1))
+        logger.info(
+            "[4] recipient %s received %.8f BTC (>= %d sats expected)",
+            recipient_btc_addr,
+            received_btc,
+            WITHDRAW_SATS,
+        )
 
         return True
