@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use strata_primitives::{HexBytes, HexBytes32};
-use strata_snark_acct_types::SnarkAccountState;
+use strata_predicate::PredicateKey;
+use strata_primitives::HexBytes32;
 
 /// Snark account state for RPC responses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,8 +12,9 @@ pub struct RpcSnarkAccountState {
     inner_state: HexBytes32,
     /// Index of the next inbox message to process.
     next_inbox_msg_idx: u64,
-    /// Snark account update verification key
-    update_vk: HexBytes,
+    /// Snark account update verification key.
+    #[cfg_attr(feature = "jsonschema", schemars(with = "String"))]
+    update_vk: PredicateKey,
 }
 
 impl RpcSnarkAccountState {
@@ -22,7 +23,7 @@ impl RpcSnarkAccountState {
         seq_no: u64,
         inner_state: HexBytes32,
         next_inbox_msg_idx: u64,
-        update_vk: HexBytes,
+        update_vk: PredicateKey,
     ) -> Self {
         Self {
             seq_no,
@@ -46,15 +47,9 @@ impl RpcSnarkAccountState {
     pub fn next_inbox_msg_idx(&self) -> u64 {
         self.next_inbox_msg_idx
     }
-}
 
-impl From<SnarkAccountState> for RpcSnarkAccountState {
-    fn from(value: SnarkAccountState) -> Self {
-        Self {
-            seq_no: value.seq_no,
-            inner_state: value.proof_state().inner_state().0.into(),
-            next_inbox_msg_idx: value.proof_state().next_inbox_msg_idx(),
-            update_vk: value.update_vk().to_vec().into(),
-        }
+    /// Returns the update verification key.
+    pub fn update_vk(&self) -> &PredicateKey {
+        &self.update_vk
     }
 }

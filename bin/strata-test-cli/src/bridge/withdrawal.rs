@@ -4,6 +4,7 @@
 //! All transaction structure and OP_RETURN construction is handled by
 //! asm/subprotocols/bridge-v1/txs.
 
+use anyhow::Context;
 use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
@@ -15,7 +16,6 @@ use strata_primitives::bitcoin_bosd::Descriptor;
 use super::types::BitcoinDConfig;
 use crate::{
     constants::MAGIC_BYTES,
-    error::Error,
     taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
@@ -34,10 +34,10 @@ pub(crate) fn create_withdrawal_fulfillment_cli(
     amount: u64,
     deposit_idx: u32,
     bitcoind_config: BitcoinDConfig,
-) -> Result<Vec<u8>, Error> {
+) -> anyhow::Result<Vec<u8>> {
     let recipient_script = recipient_bosd
         .parse::<Descriptor>()
-        .map_err(|_| Error::TxBuilder("Not a valid bosd".to_string()))?
+        .map_err(|_| anyhow::anyhow!("not a valid bosd"))?
         .to_script();
 
     let tx = create_withdrawal_fulfillment_inner(
@@ -56,7 +56,7 @@ fn create_withdrawal_fulfillment_inner(
     amount: u64,
     deposit_idx: u32,
     bitcoind_config: BitcoinDConfig,
-) -> Result<Transaction, Error> {
+) -> anyhow::Result<Transaction> {
     // Parse inputs
     let amount = Amount::from_sat(amount);
 
@@ -64,7 +64,7 @@ fn create_withdrawal_fulfillment_inner(
     let sps50_tag = WithdrawalFulfillmentTxHeaderAux::new(deposit_idx).build_tag_data();
     let sps_50_script = ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&sps50_tag.as_ref())
-        .map_err(|e| Error::TxBuilder(e.to_string()))?;
+        .context("failed to encode SPS-50 script")?;
 
     // Use wallet to select and fund inputs (CLI responsibility)
     let mut wallet = taproot_wallet()?;
@@ -89,19 +89,15 @@ fn create_withdrawal_fulfillment_inner(
         builder.add_recipient(recipient_script.clone(), amount);
 
         builder.fee_rate(fee_rate);
-        builder
-            .finish()
-            .map_err(|e| Error::TxBuilder(format!("Invalid PSBT: {e}")))?
+        builder.finish().context("invalid PSBT")?
     };
 
     // Sign the PSBT
     wallet
         .sign(&mut psbt, Default::default())
-        .map_err(|e| Error::TxBuilder(format!("Signing failed: {e}")))?;
+        .context("signing failed")?;
 
-    let tx = psbt
-        .extract_tx()
-        .map_err(|e| Error::TxBuilder(format!("Transaction extraction failed: {e}")))?;
+    let tx = psbt.extract_tx().context("transaction extraction failed")?;
 
     Ok(tx)
 }

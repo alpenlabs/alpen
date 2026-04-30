@@ -35,12 +35,16 @@ class EeOLEnv(flexitest.EnvConfig):
         mesh_bootnodes: bool = False,
         pre_generate_blocks: int = 0,
         seal_epoch_slots: int | None = None,
+        admin_confirmation_depth: int | None = None,
+        fund_test_cli_wallet: bool = False,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
         self.pure_discovery = pure_discovery
         self.mesh_bootnodes = mesh_bootnodes
         self.pre_generate_blocks = pre_generate_blocks
+        self.admin_confirmation_depth = admin_confirmation_depth
+        self.fund_test_cli_wallet = fund_test_cli_wallet
         self.epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
@@ -55,6 +59,8 @@ class EeOLEnv(flexitest.EnvConfig):
         strata_config = StrataEnvConfig(
             pre_generate_blocks=self.pre_generate_blocks,
             epoch_sealing=self.epoch_seal_config,
+            fund_test_cli_wallet=self.fund_test_cli_wallet,
+            admin_confirmation_depth=self.admin_confirmation_depth,
         )
         strata_services = strata_config._get_services(ectx)
 

@@ -15,19 +15,24 @@ shrex.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
+strata-asm-params.workspace = true
+strata-asm-proto-admin-txs = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-bridge-v1-txs = { workspace = true, features = ["test-utils"] }
 strata-cli-common.workspace = true
 strata-codec.workspace = true
 strata-crypto.workspace = true
 strata-identifiers.workspace = true
+strata-l1-envelope-fmt.workspace = true
 strata-l1-txfmt.workspace = true
 strata-msg-fmt.workspace = true
 strata-ol-bridge-types.workspace = true
 strata-ol-msg-types.workspace = true
 strata-ol-stf.workspace = true
+strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-types.workspace = true
 
+anyhow.workspace = true
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
 musig2.workspace = true

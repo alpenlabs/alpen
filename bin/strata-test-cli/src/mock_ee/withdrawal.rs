@@ -3,6 +3,7 @@
 //! Builds a complete `RpcOLTransaction` JSON blob for `strata_submitTransaction`.
 //! Pure computation — no network calls.
 
+use anyhow::Context;
 use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload};
 use strata_msg_fmt::{Msg, OwnedMsg};
@@ -11,8 +12,6 @@ use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
 use strata_snark_acct_types::{
     LedgerRefs, OutputMessage, ProofState, UpdateOperationData, UpdateOutputs,
 };
-
-use crate::error::Error;
 
 /// Builds an `RpcOLTransaction` JSON value for a snark account withdrawal.
 ///
@@ -25,16 +24,16 @@ pub(crate) fn build_snark_withdrawal_json(
     dest_bytes: Vec<u8>,
     amount: u64,
     fees: u32,
-) -> Result<serde_json::Value, Error> {
+) -> anyhow::Result<serde_json::Value> {
     // Build withdrawal message data
-    let withdrawal_msg_data = WithdrawalMsgData::new(fees, dest_bytes, 0)
-        .ok_or_else(|| Error::TxBuilder("destination descriptor too long".to_string()))?;
+    let withdrawal_msg_data =
+        WithdrawalMsgData::new(fees, dest_bytes, 0).context("destination descriptor too long")?;
 
     let encoded_body = strata_codec::encode_to_vec(&withdrawal_msg_data)
-        .map_err(|e| Error::TxBuilder(format!("failed to encode withdrawal msg data: {e}")))?;
+        .context("failed to encode withdrawal msg data")?;
 
-    let owned_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body)
-        .map_err(|e| Error::TxBuilder(format!("failed to create OwnedMsg: {e}")))?;
+    let owned_msg =
+        OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body).context("failed to create OwnedMsg")?;
 
     let msg_payload = MsgPayload::new(BitcoinAmount::from_sat(amount), owned_msg.to_vec());
 
