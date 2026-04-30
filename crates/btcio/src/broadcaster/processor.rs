@@ -156,7 +156,7 @@ where
             Ok(PublishTxOutcome::Published) => Ok(L1TxStatus::Published),
             Ok(PublishTxOutcome::AlreadyInMempool) => Ok(L1TxStatus::Published),
             Ok(PublishTxOutcome::InvalidInputs) => {
-                debug!("tx excluded due to invalid inputs");
+                warn!("tx excluded due to invalid inputs");
                 Ok(L1TxStatus::InvalidInputs)
             }
             Ok(PublishTxOutcome::RetryLater { reason }) => {
