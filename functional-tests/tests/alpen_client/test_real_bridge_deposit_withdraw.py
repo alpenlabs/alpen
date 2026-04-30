@@ -289,19 +289,40 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         logger.info("[3b] SnarkAccountUpdate landed at OL epoch %d", saw_update_at_epoch)
 
         # ----- bullet 4: OL to user wallet - withdrawal-fulfillment -----
-        # Fund the strata-test-cli internal taproot wallet so it can build
-        # and sign the WF tx. el_ol env doesn't pre-fund this wallet.
+        #
+        # KNOWN GAP. The bridge subprotocol creates a withdrawal assignment
+        # only after the OL checkpoint is proven and the proof is posted to
+        # L1, validated by the ASM checkpoint subprotocol, which then emits
+        # `BridgeIncomingMsg::DispatchWithdrawal` to the bridge. This test
+        # does not currently wait for the full checkpoint cycle, so when
+        # the bridge sees the WF tx it logs:
+        #
+        #   ERROR strata_asm_proto_bridge_v1::subprotocol:
+        #     Failed to process tx ... error=failed to parse withdrawal
+        #     fulfillment tx
+        #
+        # which surfaces `WithdrawalValidationError::NoAssignmentFound`.
+        #
+        # We still broadcast a real WF tx so the bitcoin-layer half is
+        # exercised and visible in the chain history. We DO NOT assert the
+        # recipient address received funds because that signal is misleading:
+        # the test-cli wallet itself sends 10 BTC in this WF, regardless of
+        # bridge acceptance, so a balance check passes even when the
+        # protocol has not actually settled.
+        #
+        # TODO: extend the test to wait for the OL checkpoint to reach L1
+        # and the ASM checkpoint subprotocol to dispatch the withdrawal,
+        # then assert the bridge log line:
+        #
+        #     Fulfilled withdrawal assignment deposit_idx=0 ...
+        #
+        # That is the only honest end-to-end signal that bullet 4 fired.
+
         fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
 
-        # Mine some bitcoin blocks so the bridge subprotocol observes the OL
-        # withdrawal command and assigns it to an operator. We don't have an
-        # RPC to query bridge assignment state directly; the simplest signal
-        # is "OL has produced a few more checkpoints since SnarkAccountUpdate".
         btc_rpc.proxy.generatetoaddress(8, miner_addr)
         strata_seq.wait_for_additional_blocks(2 * slots_per_epoch, strata_rpc, timeout_per_block=15)
 
-        # Build, sign, broadcast the WF tx. deposit_idx is the index of the
-        # deposit being fulfilled; we deposited dt_index=0 above so this is 0.
         wf_txid = build_and_broadcast_wf(
             btc_rpc,
             recipient_bosd_hex=recipient_bosd_hex,
@@ -311,25 +332,22 @@ class TestRealBridgeDepositWithdraw(BaseTest):
             btc_rpc_user=bitcoin.props["rpc_user"],
             btc_rpc_password=bitcoin.props["rpc_password"],
         )
-        logger.info("[4a] WF broadcast txid=%s", wf_txid)
+        logger.info("[4a] WF broadcast txid=%s recipient=%s", wf_txid, recipient_btc_addr)
 
-        # Confirm the WF, then wait for the bridge subprotocol to process it
-        # and the recipient to see incoming BTC. minconf=1 is enough.
+        # Confirm the WF on the bitcoin chain. This is what we honestly verify
+        # in this test today.
         btc_rpc.proxy.generatetoaddress(8, miner_addr)
-        strata_seq.wait_for_additional_blocks(slots_per_epoch, strata_rpc, timeout_per_block=15)
-
-        wait_until_with_value(
-            lambda: float(btc_rpc.proxy.getreceivedbyaddress(recipient_btc_addr, 1)),
-            lambda received_btc: received_btc * 100_000_000 >= WITHDRAW_SATS,
-            error_with=f"recipient {recipient_btc_addr} did not receive {WITHDRAW_SATS} sats",
-            timeout=120,
-        )
-        received_btc = float(btc_rpc.proxy.getreceivedbyaddress(recipient_btc_addr, 1))
+        wf_info = btc_rpc.proxy.getrawtransaction(wf_txid, 1)
+        if wf_info.get("confirmations", 0) < 1:
+            raise AssertionError(f"WF tx {wf_txid} did not confirm on bitcoin")
         logger.info(
-            "[4] recipient %s received %.8f BTC (>= %d sats expected)",
-            recipient_btc_addr,
-            received_btc,
-            WITHDRAW_SATS,
+            "[4b] WF confirmed in block %s (depth=%d)",
+            wf_info.get("blockhash"),
+            int(wf_info.get("confirmations", 0)),
+        )
+        logger.info(
+            "[4] PARTIAL: WF on chain at %s; protocol settlement not asserted (see KNOWN GAP)",
+            wf_txid,
         )
 
         return True
