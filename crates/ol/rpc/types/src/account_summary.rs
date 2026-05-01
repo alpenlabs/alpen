@@ -17,8 +17,8 @@ pub struct RpcAccountEpochSummary {
     prev_epoch_commitment: EpochCommitment,
     /// Balance of account at the end of this epoch in sats.
     balance: u64,
-    /// Update input for this epoch if present
-    update_input: Option<RpcUpdateInputData>,
+    /// Update inputs for this epoch if present
+    update_inputs: Vec<RpcUpdateInputData>,
 }
 
 impl RpcAccountEpochSummary {
@@ -27,13 +27,13 @@ impl RpcAccountEpochSummary {
         epoch_commitment: EpochCommitment,
         prev_epoch_commitment: EpochCommitment,
         balance: u64,
-        update_input: Option<RpcUpdateInputData>,
+        update_inputs: Vec<RpcUpdateInputData>,
     ) -> Self {
         Self {
             epoch_commitment,
             prev_epoch_commitment,
             balance,
-            update_input,
+            update_inputs,
         }
     }
 
@@ -49,8 +49,8 @@ impl RpcAccountEpochSummary {
         self.balance
     }
 
-    pub fn update_input(&self) -> Option<&RpcUpdateInputData> {
-        self.update_input.as_ref()
+    pub fn update_inputs(&self) -> &[RpcUpdateInputData] {
+        &self.update_inputs
     }
 
     pub fn epoch_commitment(&self) -> EpochCommitment {
@@ -171,6 +171,12 @@ impl From<RpcUpdateInputData> for UpdateInputData {
             rpc.messages.into_iter().map(Into::into).collect(),
             UpdateStateData::new(rpc.proof_state.into(), rpc.extra_data.0),
         )
+    }
+}
+
+impl From<&RpcUpdateInputData> for UpdateInputData {
+    fn from(rpc: &RpcUpdateInputData) -> Self {
+        rpc.clone().into()
     }
 }
 

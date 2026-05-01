@@ -8,11 +8,14 @@ use strata_acct_types::MessageEntry;
 use strata_asm_common::AsmManifest;
 use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
-use strata_db_types::{DbError, DbResult, MmrId};
+use strata_db_types::{
+    DbError, DbResult, MmrId,
+    ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
+};
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
 use strata_ol_mempool::{MempoolHandle, OLMempoolResult};
-use strata_ol_rpc_types::{AccountExtraData, OLRpcProvider};
+use strata_ol_rpc_types::OLRpcProvider;
 use strata_ol_state_types::OLState;
 use strata_primitives::{OLBlockCommitment, epoch::EpochCommitment};
 use strata_status::{OLSyncStatus, StatusChannel};
@@ -93,13 +96,25 @@ impl OLRpcProvider for NodeRpcProvider {
             .await
     }
 
-    async fn get_account_extra_data(
+    async fn get_account_update_records(
         &self,
-        key: (AccountId, Epoch),
-    ) -> DbResult<Option<AccountExtraData>> {
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<AccountUpdateRecord>>> {
         self.storage
-            .account()
-            .get_account_extra_data_async(key)
+            .ol_state_indexing()
+            .get_account_update_records_async(epoch, account)
+            .await
+    }
+
+    async fn get_account_inbox_records(
+        &self,
+        epoch: Epoch,
+        account: AccountId,
+    ) -> DbResult<Option<Vec<InboxMessageRecord>>> {
+        self.storage
+            .ol_state_indexing()
+            .get_account_inbox_records_async(epoch, account)
             .await
     }
 
@@ -135,8 +150,9 @@ impl OLRpcProvider for NodeRpcProvider {
 
     async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>> {
         self.storage
-            .account()
-            .get_account_creation_epoch_blocking(account_id)
+            .ol_state_indexing()
+            .get_account_creation_epoch_async(account_id)
+            .await
     }
 
     async fn get_block_manifest_at_height(

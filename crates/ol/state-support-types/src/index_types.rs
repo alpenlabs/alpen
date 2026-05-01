@@ -251,6 +251,27 @@ pub struct ManifestWrite {
 }
 
 // ============================================================================
+// Account creation tracking
+// ============================================================================
+
+/// A tracked account-creation event.
+#[derive(Clone, Debug)]
+pub struct AccountCreatedWrite {
+    /// The id of the newly created account.
+    account_id: AccountId,
+}
+
+impl AccountCreatedWrite {
+    pub fn new(account_id: AccountId) -> Self {
+        Self { account_id }
+    }
+
+    pub fn account_id(&self) -> AccountId {
+        self.account_id
+    }
+}
+
+// ============================================================================
 // Collected writes container
 // ============================================================================
 
@@ -259,6 +280,7 @@ pub struct ManifestWrite {
 /// This struct is extensible - add new `Vec` fields for future tracked operations.
 #[derive(Clone, Debug, Default)]
 pub struct IndexerWrites {
+    created_accounts: Vec<AccountCreatedWrite>,
     inbox_messages: Vec<InboxMessageWrite>,
     manifests: Vec<ManifestWrite>,
     snark_acct_state_updates: Vec<SnarkAcctStateUpdate>,
@@ -269,6 +291,11 @@ impl IndexerWrites {
     /// Creates a new empty collection.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Records an account-creation event.
+    pub fn push_created_account(&mut self, write: AccountCreatedWrite) {
+        self.created_accounts.push(write);
     }
 
     /// Records an inbox message write.
@@ -289,6 +316,11 @@ impl IndexerWrites {
     /// Records a predicate key update.
     pub fn push_predicate_key_update(&mut self, update: PredicateKeyUpdate) {
         self.predicate_key_updates.push(update);
+    }
+
+    /// Returns all tracked account-creation events.
+    pub fn created_accounts(&self) -> &[AccountCreatedWrite] {
+        &self.created_accounts
     }
 
     /// Returns all tracked inbox message writes.
@@ -313,7 +345,8 @@ impl IndexerWrites {
 
     /// Returns true if no writes have been tracked.
     pub fn is_empty(&self) -> bool {
-        self.inbox_messages.is_empty()
+        self.created_accounts.is_empty()
+            && self.inbox_messages.is_empty()
             && self.manifests.is_empty()
             && self.snark_acct_state_updates.is_empty()
             && self.predicate_key_updates.is_empty()
@@ -321,6 +354,7 @@ impl IndexerWrites {
 
     /// Extends this collection with writes from another.
     pub fn extend(&mut self, other: IndexerWrites) {
+        self.created_accounts.extend(other.created_accounts);
         self.inbox_messages.extend(other.inbox_messages);
         self.manifests.extend(other.manifests);
         self.snark_acct_state_updates

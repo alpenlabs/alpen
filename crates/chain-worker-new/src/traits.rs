@@ -3,7 +3,6 @@
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
-use strata_ol_state_support_types::IndexerWrites;
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_primitives::epoch::EpochCommitment;
 
@@ -52,19 +51,13 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     // Output storage
     // =========================================================================
 
-    /// Stores the block execution output (write batch, state root).
+    /// Stores the block execution output: write batch, indexing data
+    /// (creation epochs, per-account update records, inbox writes).
     fn store_block_output(
         &self,
         block: &OLBlock,
         commitment: OLBlockCommitment,
         output: &OLBlockExecutionOutput,
-    ) -> WorkerResult<()>;
-
-    /// Stores auxiliary data for indexing (inbox messages, manifests).
-    fn store_auxiliary_data(
-        &self,
-        commitment: OLBlockCommitment,
-        writes: &IndexerWrites,
     ) -> WorkerResult<()>;
 
     /// Stores the full toplevel state for a block.

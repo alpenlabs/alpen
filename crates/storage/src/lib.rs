@@ -11,7 +11,6 @@ use std::sync::Arc;
 use anyhow::Context;
 #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
 pub use managers::{
-    account_genesis::AccountManager,
     asm::AsmStateManager,
     chainstate::ChainstateManager,
     checkpoint::CheckpointDbManager,
@@ -24,6 +23,7 @@ pub use managers::{
     ol::OLBlockManager,
     ol_checkpoint::OLCheckpointManager,
     ol_state::OLStateManager,
+    ol_state_indexing::OLStateIndexingManager,
     prover_task::ProverTaskDbManager,
     writer::L1WriterManager,
 };
@@ -44,7 +44,6 @@ pub struct NodeStorage {
     /// Thread pool for blocking database operations
     pool: threadpool::ThreadPool,
 
-    account_manager: Arc<AccountManager>,
     asm_state_manager: Arc<AsmStateManager>,
     l1_block_manager: Arc<L1BlockManager>,
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -63,6 +62,7 @@ pub struct NodeStorage {
     mmr_index_manager: Arc<MmrIndexManager>,
     mempool_db_manager: Arc<MempoolDbManager>,
     ol_state_manager: Arc<OLStateManager>,
+    ol_state_indexing_manager: Arc<OLStateIndexingManager>,
     ol_checkpoint_manager: Arc<OLCheckpointManager>,
     proof_manager: Arc<CheckpointProofDbManager>,
     prover_task_manager: Arc<ProverTaskDbManager>,
@@ -74,7 +74,6 @@ impl Clone for NodeStorage {
         Self {
             db: self.db.clone(),
             pool: self.pool.clone(),
-            account_manager: self.account_manager.clone(),
             asm_state_manager: self.asm_state_manager.clone(),
             l1_block_manager: self.l1_block_manager.clone(),
             l2_block_manager: self.l2_block_manager.clone(),
@@ -85,6 +84,7 @@ impl Clone for NodeStorage {
             mmr_index_manager: self.mmr_index_manager.clone(),
             mempool_db_manager: self.mempool_db_manager.clone(),
             ol_state_manager: self.ol_state_manager.clone(),
+            ol_state_indexing_manager: self.ol_state_indexing_manager.clone(),
             ol_checkpoint_manager: self.ol_checkpoint_manager.clone(),
             proof_manager: self.proof_manager.clone(),
             prover_task_manager: self.prover_task_manager.clone(),
@@ -102,10 +102,6 @@ impl NodeStorage {
     /// Returns the thread pool for blocking database operations.
     pub fn pool(&self) -> &threadpool::ThreadPool {
         &self.pool
-    }
-
-    pub fn account(&self) -> &Arc<AccountManager> {
-        &self.account_manager
     }
 
     pub fn asm(&self) -> &Arc<AsmStateManager> {
@@ -152,6 +148,10 @@ impl NodeStorage {
         &self.ol_state_manager
     }
 
+    pub fn ol_state_indexing(&self) -> &Arc<OLStateIndexingManager> {
+        &self.ol_state_indexing_manager
+    }
+
     pub fn ol_checkpoint(&self) -> &Arc<OLCheckpointManager> {
         &self.ol_checkpoint_manager
     }
@@ -176,7 +176,6 @@ pub fn create_node_storage(
     pool: threadpool::ThreadPool,
 ) -> anyhow::Result<NodeStorage> {
     // Extract database references
-    let account_genesis_db = db.account_genesis_db();
     let asm_db = db.asm_db();
     let l1_db = db.l1_db();
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -188,12 +187,12 @@ pub fn create_node_storage(
     let ol_block_db = db.ol_block_db();
     let mempool_db = db.mempool_db();
     let ol_state_db = db.ol_state_db();
+    let ol_state_indexing_db = db.ol_state_indexing_db();
     let ol_checkpoint_db = db.ol_checkpoint_db();
     let mmr_index_db = db.mmr_index_db();
     let proof_db = db.checkpoint_proof_db();
     let prover_task_db = db.prover_task_db();
 
-    let account_genesis_manager = Arc::new(AccountManager::new(pool.clone(), account_genesis_db));
     let asm_manager = Arc::new(AsmStateManager::new(pool.clone(), asm_db));
     let l1_block_manager = Arc::new(L1BlockManager::new(pool.clone(), l1_db));
     #[expect(deprecated, reason = "legacy old code is retained for compatibility")]
@@ -211,6 +210,10 @@ pub fn create_node_storage(
     let mmr_index_manager = Arc::new(MmrIndexManager::new(pool.clone(), mmr_index_db));
     let mempool_db_manager = Arc::new(MempoolDbManager::new(pool.clone(), mempool_db));
     let ol_state_manager = Arc::new(OLStateManager::new(pool.clone(), ol_state_db.clone()));
+    let ol_state_indexing_manager = Arc::new(OLStateIndexingManager::new(
+        pool.clone(),
+        ol_state_indexing_db,
+    ));
     let ol_checkpoint_manager = Arc::new(OLCheckpointManager::new(pool.clone(), ol_checkpoint_db));
     let proof_manager = Arc::new(CheckpointProofDbManager::new(pool.clone(), proof_db));
     let prover_task_manager = Arc::new(ProverTaskDbManager::new(pool.clone(), prover_task_db));
@@ -219,7 +222,6 @@ pub fn create_node_storage(
     Ok(NodeStorage {
         db,
         pool,
-        account_manager: account_genesis_manager,
         asm_state_manager: asm_manager,
         l1_block_manager,
         l2_block_manager,
@@ -230,6 +232,7 @@ pub fn create_node_storage(
         mmr_index_manager,
         mempool_db_manager,
         ol_state_manager,
+        ol_state_indexing_manager,
         ol_checkpoint_manager,
         proof_manager,
         prover_task_manager,

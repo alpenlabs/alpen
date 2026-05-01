@@ -508,7 +508,10 @@ where
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial> {
-        self.inner.create_new_account(id, new_acct_data)
+        let serial = self.inner.create_new_account(id, new_acct_data)?;
+        self.writes
+            .push_created_account(AccountCreatedWrite::new(id));
+        Ok(serial)
     }
 }
 

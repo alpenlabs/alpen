@@ -10,6 +10,7 @@
 //! service framework design.
 
 use strata_checkpoint_types::EpochSummary;
+use strata_db_types::errors::DbError;
 use strata_identifiers::OLBlockCommitment;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_support_types::{
@@ -279,6 +280,9 @@ impl ChainWorkerServiceState {
     }
 
     /// Persists the execution output and state to storage.
+    ///
+    /// Handles crash-restart cases like indexing already applied or wrong indexing applied
+    /// gracefully.
     fn persist_execution_output(
         &self,
         block: &OLBlock,
@@ -286,16 +290,24 @@ impl ChainWorkerServiceState {
         output: &OLBlockExecutionOutput,
         new_state: OLState,
     ) -> WorkerResult<()> {
-        // Store the write batch
-        self.ctx
-            .store_block_output(block, block_commitment, output)?;
+        match self.ctx.store_block_output(block, block_commitment, output) {
+            Ok(()) => {}
+            Err(WorkerError::Database(DbError::BlockIndexingConflict {
+                attempted,
+                last_applied,
+                ..
+            })) if attempted == block_commitment && last_applied == block_commitment => {
+                debug!(
+                    %block_commitment,
+                    "block indexing already applied for this exact block; \
+                     treating as crash-restart retry and continuing persist"
+                );
+            }
+            Err(e) => return Err(e),
+        }
 
-        // Store the full toplevel state
         self.ctx.store_toplevel_state(block_commitment, new_state)?;
 
-        // Store auxiliary data
-        self.ctx
-            .store_auxiliary_data(block_commitment, output.indexer_writes())?;
         Ok(())
     }
 

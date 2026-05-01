@@ -2,6 +2,7 @@ use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{
     BlockStatus, DatabaseBackend, OLBlockDatabase, OLCheckpointDatabase, OLStateDatabase,
+    OLStateIndexingDatabase,
 };
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 
@@ -229,6 +230,14 @@ pub(crate) fn revert_ol_state(
         target_epoch
     };
 
+    if !dry_run {
+        revert_indexing(
+            db,
+            target_epoch,
+            OLBlockCommitment::new(target_slot, target_block_id),
+        )?;
+    }
+
     let mut checkpoints_to_delete = Vec::new();
     let mut epoch_summaries_to_delete = Vec::new();
 
@@ -277,11 +286,29 @@ pub(crate) fn revert_ol_state(
         "Epoch summaries to delete: {}",
         epoch_summaries_to_delete.len()
     );
+    println!("Indexing rollback target: epoch {target_epoch} slot {target_slot}");
 
     if dry_run {
         println!();
         println!("Use --force to execute these changes.");
     }
 
+    Ok(())
+}
+
+/// Rolls back the indexing DB so its `last_applied_block` and per-block
+/// records line up with the reverted tip. Without this, re-execution past
+/// `target_slot` errors with `BlockIndexingConflict`.
+fn revert_indexing(
+    db: &impl DatabaseBackend,
+    target_epoch: u32,
+    target_commitment: OLBlockCommitment,
+) -> Result<(), DisplayedError> {
+    db.ol_state_indexing_db()
+        .rollback_to_epoch(target_epoch)
+        .internal_error("Failed to roll back indexing for later epochs")?;
+    db.ol_state_indexing_db()
+        .rollback_to_block(target_epoch, target_commitment)
+        .internal_error("Failed to roll back indexing within target epoch")?;
     Ok(())
 }
