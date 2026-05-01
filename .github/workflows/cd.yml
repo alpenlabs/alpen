@@ -49,19 +49,19 @@ jobs:
           persist-credentials: false
 
       - name: Configure AWS ECR Details
-        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v4
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
         with:
           role-to-assume: ${{ secrets.AWS_ECR_ROLE }}
           aws-region: us-east-1
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
+        uses: aws-actions/amazon-ecr-login@376925c9d111252e87ae59691e5a442dd100ef6a # v2
         with:
           mask-password: "true"
 
       - name: Set up Clang
-        uses: egor-tensin/setup-clang@471a6f8ef1d449dba8e1a51780e7f943572a3f99 # v1
+        uses: egor-tensin/setup-clang@8092a31dc33b0c41ee7cc5bb81fd0267490a0161 # v1
         with:
           version: latest
           platform: x64
