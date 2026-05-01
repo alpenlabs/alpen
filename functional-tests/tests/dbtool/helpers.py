@@ -192,9 +192,11 @@ def wait_for_completed_epoch(
     """Wait until target epoch is completed (tip.epoch > target_epoch)."""
     return wait_until_with_value(
         lambda: strata_service.get_sync_status(strata_rpc).get("tip"),
-        lambda tip: isinstance(tip, dict)
-        and isinstance(tip.get("epoch"), int)
-        and tip["epoch"] > target_epoch,
+        lambda tip: (
+            isinstance(tip, dict)
+            and isinstance(tip.get("epoch"), int)
+            and tip["epoch"] > target_epoch
+        ),
         timeout=timeout,
         error_with=error_with or f"Timed out waiting for epoch {target_epoch} to complete",
     )
