@@ -99,7 +99,7 @@ jobs:
           rustup default "$RUST_NIGHTLY"
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d # v2.62.14
+        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
         with:
           tool: cargo-llvm-cov
 
@@ -139,7 +139,7 @@ jobs:
       - name: Upload coverage lcov artifact
         if: always() && hashFiles('lcov.functional.info') != ''
         continue-on-error: true
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         with:
           name: functional-lcov
           path: lcov.functional.info
@@ -157,7 +157,7 @@ jobs:
 
       - name: Upload logs as build artifact on failure
         if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         with:
           name: fntest_dd
           path: logs.zip

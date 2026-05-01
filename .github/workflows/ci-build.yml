@@ -104,7 +104,7 @@ jobs:
 
       # Authenticate to the shared ECR account
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@8df5847569e6427dd6c4fb1cf565c83acfa8afa7 # v4
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
         env:
           ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
         with:
@@ -113,7 +113,7 @@ jobs:
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
+        uses: aws-actions/amazon-ecr-login@376925c9d111252e87ae59691e5a442dd100ef6a # v2
         with:
           mask-password: "true"
 

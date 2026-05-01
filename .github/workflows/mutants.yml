@@ -42,7 +42,7 @@ jobs:
           cache-on-failure: true
 
       - name: Install `cargo-mutants`
-        uses: taiki-e/install-action@3216b6964cbfe053bb8b9a2ef245bd9300e2061d # v2
+        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2
         with:
           tool: cargo-mutants
 
@@ -51,7 +51,7 @@ jobs:
           cargo mutants --no-shuffle -vV --in-diff git.diff --shard ${{ matrix.shard }}/8 --timeout 300
 
       - name: Archive mutants.out
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         if: always()
         with:
           name: mutants-incremental.out
