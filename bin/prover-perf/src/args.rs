@@ -48,29 +48,49 @@ mod tests {
 
     #[test]
     fn test_parse_programs_comma_separated() {
-        let input = vec!["checkpoint,checkpoint".to_string()];
+        let input = vec!["alpen-chunk,alpen-acct,checkpoint".to_string()];
         let result = parse_programs(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], GuestProgram::Checkpoint));
-        assert!(matches!(result[1], GuestProgram::Checkpoint));
+        assert_eq!(result.len(), 3);
+        assert!(matches!(result[0], GuestProgram::AlpenChunk));
+        assert!(matches!(result[1], GuestProgram::AlpenAcct));
+        assert!(matches!(result[2], GuestProgram::Checkpoint));
     }
 
     #[test]
     fn test_parse_programs_repeated_options() {
-        let input = vec!["checkpoint".to_string(), "checkpoint".to_string()];
+        let input = vec![
+            "alpen-chunk".to_string(),
+            "alpen-acct".to_string(),
+            "checkpoint".to_string(),
+        ];
         let result = parse_programs(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], GuestProgram::Checkpoint));
-        assert!(matches!(result[1], GuestProgram::Checkpoint));
+        assert_eq!(result.len(), 3);
+        assert!(matches!(result[0], GuestProgram::AlpenChunk));
+        assert!(matches!(result[1], GuestProgram::AlpenAcct));
+        assert!(matches!(result[2], GuestProgram::Checkpoint));
     }
 
     #[test]
-    fn test_parse_programs_with_whitespace() {
-        let input = vec!["checkpoint , checkpoint".to_string()];
+    fn test_parse_programs_mixed_comma_and_repeated() {
+        let input = vec![
+            "alpen-chunk,alpen-acct".to_string(),
+            "checkpoint".to_string(),
+        ];
         let result = parse_programs(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], GuestProgram::Checkpoint));
-        assert!(matches!(result[1], GuestProgram::Checkpoint));
+        assert_eq!(result.len(), 3);
+        assert!(matches!(result[0], GuestProgram::AlpenChunk));
+        assert!(matches!(result[1], GuestProgram::AlpenAcct));
+        assert!(matches!(result[2], GuestProgram::Checkpoint));
+    }
+
+    #[test]
+    fn test_parse_programs_trims_whitespace() {
+        let input = vec!["  alpen-chunk , alpen-acct,checkpoint ".to_string()];
+        let result = parse_programs(&input).unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(matches!(result[0], GuestProgram::AlpenChunk));
+        assert!(matches!(result[1], GuestProgram::AlpenAcct));
+        assert!(matches!(result[2], GuestProgram::Checkpoint));
     }
 
     #[test]
@@ -81,23 +101,29 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_programs_empty_strings() {
-        let input = vec!["".to_string(), "  ".to_string()];
+    fn test_parse_programs_skips_empty_segments() {
+        // Comma-separated lists with leading/trailing/duplicate commas
+        // should drop the empty segments rather than fail to parse.
+        let input = vec!["".to_string(), ",alpen-chunk,,checkpoint,".to_string()];
         let result = parse_programs(&input).unwrap();
-        assert!(result.is_empty());
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], GuestProgram::AlpenChunk));
+        assert!(matches!(result[1], GuestProgram::Checkpoint));
     }
 
     #[test]
-    fn test_parse_programs_invalid() {
-        let input = vec!["invalid-program".to_string()];
+    fn test_parse_programs_invalid_name() {
+        let input = vec!["evm-ee-stf".to_string()];
         let result = parse_programs(&input);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unknown program"));
     }
 
     #[test]
-    fn test_parse_programs_partial_invalid() {
-        let input = vec!["checkpoint,invalid".to_string()];
+    fn test_parse_programs_one_invalid_fails_the_whole_list() {
+        // A single bad entry inside an otherwise-valid list still
+        // fails — the parser is all-or-nothing rather than skipping.
+        let input = vec!["alpen-chunk,gibberish,checkpoint".to_string()];
         let result = parse_programs(&input);
         assert!(result.is_err());
     }

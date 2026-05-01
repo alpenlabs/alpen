@@ -25,17 +25,21 @@ struct WitnessData {
 }
 
 fn load_witness() -> EthClientExecutorInput {
-    // The witness JSON lives next to the EVM-EE STF crate (the host-side
-    // crate that owns the canonical Reth-shaped witness fixtures); the
-    // alpen-chunk runtime can consume it directly.
+    // Canonical Reth-shaped witness fixture lives under
+    // crates/test-utils/data/evm_ee/, alongside the legacy
+    // witness_{N}.json files used by the EVM-EE STF tests.
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../crates/proof-impl/evm-ee-stf/test_data/witness_params.json");
+        .join("../../crates/test-utils/data/evm_ee/witness_params.json");
     let json = fs::read_to_string(path).expect("read witness JSON");
     let data: WitnessData = serde_json::from_str(&json).expect("parse witness JSON");
     data.witness
 }
 
-fn prepare_input() -> EeChunkProofInput {
+/// Builds an EeChunkProofInput from the canonical EVM witness fixture.
+/// Pub-super so the sibling `alpen_acct` module can reuse the same
+/// chunk to drive its perf input (one realistic chunk → one acct
+/// update aggregating it).
+pub(super) fn prepare_input() -> EeChunkProofInput {
     info!("Preparing input for Alpen Chunk");
     let witness = load_witness();
 
