@@ -20,21 +20,46 @@ pub struct ReaderConfig {
 pub struct WriterConfig {
     /// How often to invoke the writer.
     pub write_poll_dur_ms: u64,
-    /// How the fees for are determined.
-    // FIXME: This should actually be a part of signer.
+    /// How the fees are determined.
     #[serde(flatten)]
-    pub fee_policy: FeePolicy,
+    pub l1_fee_policy_config: L1FeePolicyConfig,
     /// How much amount(in sats) to send to reveal address. Must be above dust amount or else
     /// reveal transaction won't be accepted.
     pub reveal_amount: u64,
     /// How often to bundle write intents.
     pub bundle_interval_ms: u64,
-    /// Base URL for mempool.space-compatible fee API.
-    pub mempool_base_url: Option<String>,
-    /// Confirmation target passed to bitcoind's `estimatesmartfee` when the mempool explorer is
-    /// unreachable and the policy falls back to bitcoind.
-    #[serde(default = "default_bitcoind_conf_target")]
-    pub mempool_fallback_conf_target: u16,
+}
+
+impl WriterConfig {
+    /// Returns the configured L1 fee-policy configuration.
+    pub fn l1_fee_policy_config(&self) -> &L1FeePolicyConfig {
+        &self.l1_fee_policy_config
+    }
+
+    /// Returns the configured L1 fee policy.
+    pub fn fee_policy(&self) -> &FeePolicy {
+        self.l1_fee_policy_config.fee_policy()
+    }
+}
+
+/// Reusable configuration for resolving Bitcoin fee rates.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct L1FeePolicyConfig {
+    /// How fees are determined while creating L1 transactions.
+    #[serde(flatten)]
+    pub(crate) fee_policy: FeePolicy,
+}
+
+impl L1FeePolicyConfig {
+    /// Creates an L1 fee-policy configuration for the provided fee policy.
+    pub fn new(fee_policy: FeePolicy) -> Self {
+        Self { fee_policy }
+    }
+
+    /// Returns how fees are determined while creating L1 transactions.
+    pub fn fee_policy(&self) -> &FeePolicy {
+        &self.fee_policy
+    }
 }
 
 /// Definition of how fees are determined while creating l1 transactions.
@@ -46,6 +71,15 @@ pub enum FeePolicy {
     MempoolExplorer {
         #[serde(default, rename = "mempool_fee_policy")]
         policy: MempoolExplorerFeePolicy,
+        /// Base URL for a mempool.space-compatible fee API.
+        mempool_base_url: String,
+        /// Confirmation target passed to bitcoind's `estimatesmartfee` when the mempool explorer
+        /// is unreachable.
+        #[serde(
+            default = "default_bitcoind_conf_target",
+            rename = "mempool_fallback_conf_target"
+        )]
+        fallback_conf_target: u16,
     },
 
     /// Use Bitcoin Core's `estimatesmartfee` and the target confirmation parameter is the provided
@@ -87,6 +121,18 @@ pub enum MempoolExplorerFeePolicy {
     Minimum,
 }
 
+impl FeePolicy {
+    /// Returns the configured mempool explorer base URL, if any.
+    pub fn mempool_base_url(&self) -> Option<&str> {
+        match self {
+            Self::MempoolExplorer {
+                mempool_base_url, ..
+            } => Some(mempool_base_url.as_str()),
+            Self::BitcoinD { .. } | Self::Fixed { .. } => None,
+        }
+    }
+}
+
 /// Configuration for btcio broadcaster.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BroadcasterConfig {
@@ -98,11 +144,9 @@ impl Default for WriterConfig {
     fn default() -> Self {
         Self {
             write_poll_dur_ms: 5_000,
-            fee_policy: FeePolicy::default(),
             reveal_amount: 1_000,
             bundle_interval_ms: 500,
-            mempool_base_url: None,
-            mempool_fallback_conf_target: default_bitcoind_conf_target(),
+            l1_fee_policy_config: L1FeePolicyConfig::default(),
         }
     }
 }

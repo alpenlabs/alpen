@@ -39,6 +39,10 @@ pub use types::{
     da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, ReassemblyError},
     ee_account_state::EeAccountStateAtEpoch,
     exec_record::{ExecBlockPayload, ExecBlockRecord},
+    fees::{
+        FeeBreakdown, FeeModelConfig, FeeModelError, FeeQuoteInputs, GasEquivalentQuote,
+        L1FeeRateSource, DA_OVERHEAD_MULTIPLIER_SCALE_BPS,
+    },
     ol_account_epoch_summary::OLEpochSummary,
     ol_chain_status::{OLChainStatus, OLFinalizedStatus},
     payload_builder::{DepositInfo, PayloadBuildAttributes},

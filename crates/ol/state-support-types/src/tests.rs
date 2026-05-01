@@ -1031,6 +1031,32 @@ fn test_message_source_missing_is_rejected() {
 }
 
 #[test]
+fn test_special_message_source_is_accepted() {
+    // Special account IDs (e.g. the bridge gateway used for deposits) have
+    // no ledger record. The DA accumulator must accept inbox messages from
+    // them without consulting state, otherwise every epoch that includes a
+    // deposit fails to produce a DA diff.
+    let account_id = test_account_id(1);
+    let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
+    let mut da_state = DaAccumulatingState::new(layer);
+
+    let bridge_gateway = AccountId::special(0x10);
+    let payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![0u8; 4]);
+    let msg = MessageEntry::new(bridge_gateway, 0, payload);
+    da_state
+        .update_account(account_id, |acct| {
+            acct.as_snark_account_mut()
+                .unwrap()
+                .insert_inbox_message(msg)
+        })
+        .unwrap()
+        .unwrap();
+
+    let result = da_state.take_completed_epoch_da_blob();
+    assert!(matches!(result, Ok(Some(_))));
+}
+
+#[test]
 fn test_message_payload_size_limit() {
     let account_id = test_account_id(1);
     let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
