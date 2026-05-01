@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./init-network.sh --fullnode <datatool_path> --params-dir <path>
 #   BITCOIN_NETWORK=signet GENESIS_L1_HEIGHT=200000 ./init-network.sh <datatool_path>
 #
-# When BITCOIN_RPC_URL is set, the script fetches the real GenesisL1View from
+# When BITCOIND_RPC_URL is set, the script fetches the real GenesisL1View from
 # the Bitcoin node via `datatool genl1view`. Without it, a network-specific
 # placeholder is used (suitable for regtest where the strata entrypoint patches
 # params at runtime).
@@ -18,9 +18,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BITCOIN_NETWORK="${BITCOIN_NETWORK:-regtest}"
 GENESIS_L1_HEIGHT="${GENESIS_L1_HEIGHT:-0}"
-BITCOIN_RPC_URL="${BITCOIN_RPC_URL:-}"
-BITCOIN_RPC_USER="${BITCOIN_RPC_USER:-}"
-BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD:-}"
+BITCOIND_RPC_URL="${BITCOIND_RPC_URL:-${BITCOIND_RPC_URL:-}}"
+BITCOIND_RPC_USER="${BITCOIND_RPC_USER:-${BITCOIND_RPC_USER:-}}"
+BITCOIND_RPC_PASSWORD="${BITCOIND_RPC_PASSWORD:-${BITCOIND_RPC_PASSWORD:-}}"
 
 MODE="sequencer"
 PARAMS_DIR=""
@@ -53,9 +53,9 @@ while [ $# -gt 0 ]; do
             echo "Environment:"
             echo "  BITCOIN_NETWORK       regtest (default) or signet"
             echo "  GENESIS_L1_HEIGHT     L1 block height for genesis (default: 0)"
-            echo "  BITCOIN_RPC_URL       Bitcoin RPC URL (enables fetching real L1 view)"
-            echo "  BITCOIN_RPC_USER      Bitcoin RPC username"
-            echo "  BITCOIN_RPC_PASSWORD  Bitcoin RPC password"
+            echo "  BITCOIND_RPC_URL       Bitcoin RPC URL (enables fetching real L1 view)"
+            echo "  BITCOIND_RPC_USER      Bitcoin RPC username"
+            echo "  BITCOIND_RPC_PASSWORD  Bitcoin RPC password"
             echo "  OUTPUT_DIR            output directory (default: ./configs/generated)"
             exit 0
             ;;
@@ -199,14 +199,14 @@ if [ "${MODE}" = "sequencer" ]; then
 
     GENESIS_L1_VIEW="${OUTPUT_DIR}/genesis-l1-view.json"
     if [ ! -f "${GENESIS_L1_VIEW}" ]; then
-        if [ -n "${BITCOIN_RPC_URL}" ] && [ -n "${BITCOIN_RPC_USER}" ] && [ -n "${BITCOIN_RPC_PASSWORD}" ]; then
+        if [ -n "${BITCOIND_RPC_URL}" ] && [ -n "${BITCOIND_RPC_USER}" ] && [ -n "${BITCOIND_RPC_PASSWORD}" ]; then
             # Fetch real L1 view from Bitcoin node — produces correct values for
             # all fields (next_target, epoch_start_timestamp, last_11_timestamps).
-            echo "fetching genesis L1 view from ${BITCOIN_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
+            echo "fetching genesis L1 view from ${BITCOIND_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
             "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
-                --bitcoin-rpc-url "${BITCOIN_RPC_URL}" \
-                --bitcoin-rpc-user "${BITCOIN_RPC_USER}" \
-                --bitcoin-rpc-password "${BITCOIN_RPC_PASSWORD}" \
+                --bitcoin-rpc-url "${BITCOIND_RPC_URL}" \
+                --bitcoin-rpc-user "${BITCOIND_RPC_USER}" \
+                --bitcoin-rpc-password "${BITCOIND_RPC_PASSWORD}" \
                 genl1view \
                 -g "${GENESIS_L1_HEIGHT}" \
                 -o "${GENESIS_L1_VIEW}"
@@ -219,7 +219,7 @@ if [ "${MODE}" = "sequencer" ]; then
             if [ "${BITCOIN_NETWORK}" != "regtest" ] && [ "${GENESIS_L1_HEIGHT}" != "0" ]; then
                 echo "warning: generating placeholder L1 view for ${BITCOIN_NETWORK} at height ${GENESIS_L1_HEIGHT}" >&2
                 echo "         without Bitcoin RPC, next_target / timestamps will be WRONG." >&2
-                echo "         Set BITCOIN_RPC_URL, BITCOIN_RPC_USER, BITCOIN_RPC_PASSWORD for correct values." >&2
+                echo "         Set BITCOIND_RPC_URL, BITCOIND_RPC_USER, BITCOIND_RPC_PASSWORD for correct values." >&2
             fi
             cat > "${GENESIS_L1_VIEW}" <<GEOF
 {
@@ -246,7 +246,8 @@ GEOF
             -b "${OPERATOR_XPRIV}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --proof-timeout 30 \
-            --genesis-l1-view-file "${GENESIS_L1_VIEW}"
+            --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
+            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
         echo "generated ${ROLLUP_PARAMS}"
     fi
 
@@ -256,7 +257,8 @@ GEOF
             gen-ol-params \
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
-            --genesis-l1-view-file "${GENESIS_L1_VIEW}"
+            --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
+            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"}
         echo "generated ${OL_PARAMS}"
     fi
 
@@ -269,7 +271,8 @@ GEOF
             -b "${OPERATOR_XPRIV}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
-            --ol-params "${OL_PARAMS}"
+            --ol-params "${OL_PARAMS}" \
+            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
         echo "generated ${ASM_PARAMS}"
     fi
 
