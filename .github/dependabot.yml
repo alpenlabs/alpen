@@ -182,6 +182,45 @@ updates:
       prefix: "chore(deps)"
       include: "scope"
 
+  - package-ecosystem: "cargo"
+    directory: "/provers/sp1/guest-alpen-chunk"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 14
+    groups:
+      sp1-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "cargo"
+    directory: "/provers/sp1/guest-alpen-acct"
+    schedule:
+      interval: "monthly"
+      time: "00:00"
+    # Cooldown
+    cooldown:
+      default-days: 14
+    groups:
+      sp1-guest-programs:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
 
   - package-ecosystem: "cargo"
     directory: "/provers/sp1/guest-btc-blockspace"
