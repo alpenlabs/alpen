@@ -99,7 +99,7 @@ jobs:
           fi
 
           echo "checkpoint_predicate=${CHECKPOINT_PREDICATE}" >> "$GITHUB_OUTPUT"
-          echo "Checkpoint predicate (first 80 chars): ${CHECKPOINT_PREDICATE:0:80}..."
+          echo "Checkpoint predicate: ${CHECKPOINT_PREDICATE}"
 
           OL_PARAMS_OUTPUT=$(./target/release/strata-datatool gen-ol-params \
             --genesis-l1-view-file .github/fixtures/genesis-l1-view.json)
@@ -112,7 +112,7 @@ jobs:
           fi
 
           echo "alpen_predicate=${ALPEN_PREDICATE}" >> "$GITHUB_OUTPUT"
-          echo "Alpen predicate (first 80 chars): ${ALPEN_PREDICATE:0:80}..."
+          echo "Alpen predicate: ${ALPEN_PREDICATE}"
 
   # ---------------------------------------------------------------------------
   # Dispatch VK update to deployments repo
