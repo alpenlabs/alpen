@@ -306,7 +306,7 @@ alloy = { version = "1.0.41", features = [
   "rpc-types",
 ] }
 alloy-consensus = { version = "1.0.41", default-features = false }
-alloy-eips = { version = "1.0.41", default-features = false }
+alloy-eips = { version = "2.0.0", default-features = false }
 alloy-genesis = { version = "1.0.41", default-features = false }
 alloy-network = { version = "1.0.41", default-features = false }
 alloy-primitives = { version = "1.4.1", default-features = false, features = [

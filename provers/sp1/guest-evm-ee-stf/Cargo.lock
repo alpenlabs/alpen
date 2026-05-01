@@ -50,7 +50,7 @@ version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f16daaf7e1f95f62c6c3bf8a3fc3d78b08ae9777810c0bb5e94966c7cd57ef0"
 dependencies = [
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-serde",
@@ -78,7 +78,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "118998d9015332ab1b4720ae1f1e3009491966a0349938a1f43ff45a8a4c6299"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-serde",
@@ -163,13 +163,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-eips"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64c0456f5f7a4497e9342d20f528e30f5288ddfa0d6a012bd5044afee46cd8a0"
+dependencies = [
+ "alloy-eip2124",
+ "alloy-eip2930",
+ "alloy-eip7702",
+ "alloy-eip7928",
+ "alloy-primitives",
+ "alloy-rlp",
+ "auto_impl",
+ "derive_more",
+ "either",
+]
+
+[[package]]
 name = "alloy-evm"
 version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "527b47dc39850c6168002ddc1f7a2063e15d26137c1bb5330f6065a7524c1aa9"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-hardforks",
  "alloy-primitives",
  "alloy-rpc-types-engine",
@@ -190,7 +207,7 @@ version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbf9480307b09d22876efb67d30cadd9013134c21f3a17ec9f93fd7536d38024"
 dependencies = [
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-serde",
  "alloy-trie",
@@ -247,7 +264,7 @@ checksum = "7197a66d94c4de1591cdc16a9bcea5f8cccd0da81b865b49aef97b1b4016e0fa"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-json-rpc",
  "alloy-network-primitives",
  "alloy-primitives",
@@ -272,7 +289,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb82711d59a43fdfd79727c99f270b974c784ec4eb5728a0d0d22f26716c87ef"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-serde",
  "serde",
@@ -369,7 +386,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb9b97b6e7965679ad22df297dda809b11cebc13405c1b537e5cffecc95834fa"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-serde",
@@ -388,7 +405,7 @@ checksum = "59c095f92c4e1ff4981d89e9aa02d5f98c762a1980ab66bec49c44be11349da2"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-network-primitives",
  "alloy-primitives",
  "alloy-rlp",
@@ -2776,7 +2793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "726da827358a547be9f1e37c2a756b9e3729cb0350f43408164794b370cad8ae"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-serde",
@@ -2793,7 +2810,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8f24b8cb66e4b33e6c9e508bf46b8ecafc92eadd0b93fedd306c0accb477657"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types-engine",
@@ -3541,7 +3558,7 @@ source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5
 dependencies = [
  "alloy-chains",
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-evm",
  "alloy-genesis",
  "alloy-primitives",
@@ -3560,7 +3577,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-genesis",
  "alloy-primitives",
  "alloy-trie",
@@ -3601,7 +3618,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "reth-chainspec",
  "reth-consensus",
  "reth-primitives-traits",
@@ -3612,7 +3629,7 @@ name = "reth-db-models"
 version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "bytes",
  "reth-primitives-traits",
@@ -3636,7 +3653,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "reth-chainspec",
  "reth-consensus",
@@ -3665,7 +3682,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-rpc-types-eth",
@@ -3683,7 +3700,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-evm",
  "alloy-primitives",
  "auto_impl",
@@ -3704,7 +3721,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-evm",
  "alloy-primitives",
  "alloy-rpc-types-engine",
@@ -3738,7 +3755,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-evm",
  "alloy-primitives",
  "derive_more",
@@ -3782,7 +3799,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-genesis",
  "alloy-primitives",
  "alloy-rlp",
@@ -3844,7 +3861,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rpc-types-engine",
  "auto_impl",
@@ -3865,7 +3882,7 @@ name = "reth-storage-errors"
 version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "derive_more",
@@ -3882,7 +3899,7 @@ version = "1.9.1"
 source = "git+https://github.com/paradigmxyz/reth?tag=v1.9.1#3afe69a5738459a7cb5f46c598c7f541a1510f32"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-primitives",
  "alloy-rlp",
  "alloy-trie",
@@ -4016,7 +4033,7 @@ version = "9.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "980d8d6bba78c5dd35b83abbb6585b0b902eb25ea4448ed7bfba6283b0337191"
 dependencies = [
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "revm-bytecode",
  "revm-database-interface",
  "revm-primitives",
@@ -4227,7 +4244,7 @@ name = "rsp-primitives"
 version = "0.1.0"
 source = "git+https://github.com/succinctlabs/rsp?tag=reth-1.9.1b#1ddb68b4bcf7060af7eb4930e79a17f927c99c93"
 dependencies = [
- "alloy-eips",
+ "alloy-eips 1.8.3",
  "alloy-genesis",
  "alloy-rpc-types",
  "reth-chainspec",
@@ -4939,7 +4956,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "strata-asm-common"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
 dependencies = [
  "bitcoin",
  "borsh",
@@ -4966,7 +4983,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-manifest-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
 dependencies = [
  "borsh",
  "serde",
@@ -4985,22 +5002,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "strata-asm-stf"
+name = "strata-asm-proto-bridge-v1-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
-dependencies = [
- "bitcoin",
- "ssz_types",
- "strata-asm-common",
- "strata-btc-verification",
- "strata-identifiers",
- "strata-l1-txfmt",
-]
-
-[[package]]
-name = "strata-bridge-types"
-version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
 dependencies = [
  "arbitrary",
  "bitcoin-bosd 0.10.0",
@@ -5015,9 +5019,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-asm-stf"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
+dependencies = [
+ "bitcoin",
+ "ssz_types",
+ "strata-asm-common",
+ "strata-btc-verification",
+ "strata-identifiers",
+ "strata-l1-txfmt",
+]
+
+[[package]]
 name = "strata-btc-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5037,7 +5054,7 @@ dependencies = [
 [[package]]
 name = "strata-btc-verification"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.5#a8559d399ebed1bb860ce5c4434ee25ada385f5f"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5063,13 +5080,13 @@ dependencies = [
  "strata-crypto",
  "strata-identifiers",
  "strata-params",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
 name = "strata-codec"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "strata-codec-derive",
  "thiserror 2.0.18",
@@ -5078,7 +5095,7 @@ dependencies = [
 [[package]]
 name = "strata-codec-derive"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -5087,7 +5104,7 @@ dependencies = [
 [[package]]
 name = "strata-crypto"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5120,7 +5137,7 @@ dependencies = [
 [[package]]
 name = "strata-identifiers"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "arbitrary",
  "borsh",
@@ -5141,7 +5158,7 @@ dependencies = [
 [[package]]
 name = "strata-l1-txfmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -5153,7 +5170,7 @@ dependencies = [
 [[package]]
 name = "strata-merkle"
 version = "0.2.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "borsh",
  "digest 0.10.7",
@@ -5173,7 +5190,7 @@ dependencies = [
 [[package]]
 name = "strata-msg-fmt"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "thiserror 2.0.18",
 ]
@@ -5187,7 +5204,7 @@ dependencies = [
  "serde",
  "ssz",
  "ssz_derive",
- "strata-bridge-types",
+ "strata-asm-proto-bridge-v1-types",
  "strata-codec",
  "strata-identifiers",
  "strata-primitives",
@@ -5227,7 +5244,7 @@ dependencies = [
 [[package]]
 name = "strata-predicate"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc16#a0c346696ffbf2bc95b7fa37174e09d41462efa3"
+source = "git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#f24dc6483e9134dacf22a5fcb7481183282068f2"
 dependencies = [
  "borsh",
  "hex",
@@ -5263,7 +5280,7 @@ name = "strata-proofimpl-evm-ee-stf"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
- "alloy-eips",
+ "alloy-eips 2.0.4",
  "alpen-reth-evm",
  "alpen-reth-primitives",
  "reth-chainspec",
@@ -5280,7 +5297,7 @@ dependencies = [
  "strata-ol-chain-types",
  "strata-primitives",
  "strata-state",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
  "zkaleido-native-adapter",
 ]
 
@@ -6151,7 +6168,7 @@ dependencies = [
 [[package]]
 name = "zkaleido"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
 dependencies = [
  "arbitrary",
  "bincode",
@@ -6172,13 +6189,13 @@ dependencies = [
 [[package]]
 name = "zkaleido-native-adapter"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
 dependencies = [
  "bincode",
  "k256",
  "rand_core 0.6.4",
  "serde",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
@@ -6199,14 +6216,14 @@ dependencies = [
 [[package]]
 name = "zkaleido-sp1-guest-env"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24#69692581a5e1cb5a361fb6a3a23d847fd93a6b47"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25#ac91ce4fe417b6d2b738d152d884943f399cb3a5"
 dependencies = [
  "bincode",
  "cfg-if",
  "serde",
  "sha2",
  "sp1-zkvm",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc24)",
+ "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
