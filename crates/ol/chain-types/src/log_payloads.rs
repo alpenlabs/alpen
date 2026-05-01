@@ -2,6 +2,8 @@
 
 use strata_codec::{Codec, VarVec};
 
+use crate::SauTxUpdateData;
+
 /// Payload for a simple withdrawal intent log.
 ///
 /// Emitted by the OL STF when a withdrawal message is processed at the bridge
@@ -62,6 +64,13 @@ impl SnarkAccountUpdateLogData {
             new_msg_idx,
             extra_data,
         })
+    }
+
+    /// Create a new snark update log data from [`SauTxUpdateData`]
+    pub fn from_sau_data(sau_data: &SauTxUpdateData) -> Option<Self> {
+        let new_msg_idx = sau_data.proof_state().new_next_msg_idx();
+        let extra_data = sau_data.extra_data().to_vec();
+        Self::new(new_msg_idx, extra_data)
     }
 
     /// Get the new message index.

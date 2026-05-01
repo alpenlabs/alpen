@@ -15467,6 +15467,7 @@ name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
  "ssz_primitives",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",

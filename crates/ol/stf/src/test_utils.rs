@@ -5,6 +5,7 @@
 use std::mem;
 
 use ssz_primitives::FixedBytes;
+use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
     RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
@@ -661,7 +662,7 @@ pub struct SnarkUpdateBuilder {
     effects: TxEffects,
     ledger_ref_claims: Vec<AccumulatorClaim>,
     ledger_ref_proofs: Vec<RawMerkleProof>,
-    extra_data: Vec<u8>,
+    extra_data: VariableList<u8, 1024>,
 }
 
 impl SnarkUpdateBuilder {
@@ -675,13 +676,21 @@ impl SnarkUpdateBuilder {
             effects: TxEffects::default(),
             ledger_ref_claims: vec![],
             ledger_ref_proofs: vec![],
-            extra_data: vec![],
+            extra_data: VariableList::default(),
         }
     }
 
-    pub fn with_extra_data(mut self, extra_data: Vec<u8>) -> Self {
+    pub fn with_extra_data(mut self, extra_data: VariableList<u8, 1024>) -> Self {
         self.extra_data = extra_data;
         self
+    }
+
+    pub fn try_with_extra_data<T: TryInto<VariableList<u8, 1024>>>(
+        mut self,
+        extra_data: T,
+    ) -> Result<Self, T::Error> {
+        self.extra_data = extra_data.try_into()?;
+        Ok(self)
     }
 
     /// Add processed messages
@@ -734,10 +743,7 @@ impl SnarkUpdateBuilder {
         let update_data = SauTxUpdateData {
             seq_no: self.seq_no,
             proof_state,
-            extra_data: self
-                .extra_data
-                .try_into()
-                .expect("test: extra_data exceeds SSZ max"),
+            extra_data: self.extra_data,
         };
 
         // Build ledger refs

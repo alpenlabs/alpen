@@ -75,7 +75,8 @@ fn test_snark_update_emits_log() {
 
     let extra_data = b"snark-update-extra".to_vec();
     let tx = SnarkUpdateBuilder::from_snark_state(snark_state)
-        .with_extra_data(extra_data.clone())
+        .try_with_extra_data(extra_data.clone())
+        .expect("extra_data fits within SSZ bound")
         .build(snark_id, get_test_state_root(2), get_test_proof(1));
 
     let block_info = BlockInfo::new(1_001_000, 1, 0);

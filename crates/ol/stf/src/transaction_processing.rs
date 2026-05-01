@@ -123,8 +123,9 @@ fn process_update_tx<S: IStateAccessorMut>(
     )?;
 
     // 3. Actually take balance and write new account inner state.
+    let serial = account_state.serial();
     let upd = sau_payload.operation().update();
-    let serial = state.update_account(target, |astate| -> ExecResult<_> {
+    state.update_account(target, |astate| -> ExecResult<_> {
         // SAFETY: These panics are checked ahead of time so can never get hit.
 
         // Extract the snark account state so we can modify it.
@@ -143,13 +144,11 @@ fn process_update_tx<S: IStateAccessorMut>(
             upd.extra_data(),
         )?;
 
-        Ok(astate.serial())
+        Ok(())
     })??;
 
     // Emit log after successful update.
-    let new_msg_idx = upd.proof_state().new_next_msg_idx();
-    let extra_data = upd.extra_data().to_vec();
-    let log = SnarkAccountUpdateLogData::new(new_msg_idx, extra_data)
+    let log = SnarkAccountUpdateLogData::from_sau_data(upd)
         .expect("extra_data bounded by SSZ MAX_EXTRA_DATA_BYTES(1024) exceeds VarVec bound");
     context.emit_typed_log(serial, &log)?;
     Ok(())
