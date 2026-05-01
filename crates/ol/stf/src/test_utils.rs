@@ -64,7 +64,6 @@ pub fn execute_block_with_outputs(
 }
 
 /// Find and decode a single typed log emitted by `serial` in the block output.
-/// Panics if no matching log is found or the payload fails to decode as `T`.
 pub fn find_typed_log<T: Codec>(output: &ConstructBlockOutput, serial: AccountSerial) -> Option<T> {
     output
         .outputs()
