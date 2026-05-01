@@ -70,9 +70,7 @@ impl GlobalState {
     pub fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> Option<Coin> {
         let lf = self.limbo_funds();
 
-        let Some(new_lf) = lf.checked_sub(amt) else {
-            return None;
-        };
+        let new_lf = lf.checked_sub(amt)?;
 
         // This sanity check should be optimized out.
         assert_eq!(
