@@ -292,12 +292,14 @@ impl ChainWorkerServiceState {
     ) -> WorkerResult<()> {
         match self.ctx.store_block_output(block, block_commitment, output) {
             Ok(()) => {}
-            Err(WorkerError::Database(DbError::DuplicateBlockIndexing {
-                block: dup_blk, ..
-            })) if dup_blk == block_commitment => {
+            Err(WorkerError::Database(DbError::BlockIndexingConflict {
+                attempted,
+                last_applied,
+                ..
+            })) if attempted == block_commitment && last_applied == block_commitment => {
                 debug!(
                     %block_commitment,
-                    "block_indexing reports duplicate for this exact block; \
+                    "block indexing already applied for this exact block; \
                      treating as crash-restart retry and continuing persist"
                 );
             }

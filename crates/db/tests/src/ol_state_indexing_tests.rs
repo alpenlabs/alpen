@@ -39,13 +39,29 @@ fn record(
 }
 
 #[track_caller]
-fn assert_duplicate_block(err: DbError, expected_epoch: u32, expected_block: OLBlockCommitment) {
+fn assert_block_indexing_conflict(
+    err: DbError,
+    expected_epoch: u32,
+    expected_attempted: OLBlockCommitment,
+    expected_last_applied: OLBlockCommitment,
+) {
     match err {
-        DbError::DuplicateBlockIndexing { epoch, block } => {
-            assert_eq!(epoch, expected_epoch, "duplicate error epoch mismatch");
-            assert_eq!(block, expected_block, "duplicate error block mismatch");
+        DbError::BlockIndexingConflict {
+            epoch,
+            attempted,
+            last_applied,
+        } => {
+            assert_eq!(epoch, expected_epoch, "conflict error epoch mismatch");
+            assert_eq!(
+                attempted, expected_attempted,
+                "conflict error attempted mismatch"
+            );
+            assert_eq!(
+                last_applied, expected_last_applied,
+                "conflict error last_applied mismatch"
+            );
         }
-        other => panic!("expected DbError::DuplicateBlockIndexing, got {other:?}"),
+        other => panic!("expected DbError::BlockIndexingConflict, got {other:?}"),
     }
 }
 
@@ -279,7 +295,7 @@ pub fn test_apply_block_indexing_duplicate_block_errors(db: &impl OLStateIndexin
     let err = db
         .apply_block_indexing(epoch, blk, writes())
         .expect_err("duplicate apply should error");
-    assert_duplicate_block(err, epoch, blk);
+    assert_block_indexing_conflict(err, epoch, blk, blk);
 
     // Original record is intact and not duplicated.
     let got = db
@@ -306,7 +322,7 @@ pub fn test_apply_block_indexing_dedup_inbox_only(db: &impl OLStateIndexingDatab
     let err = db
         .apply_block_indexing(epoch, blk, writes())
         .expect_err("inbox-only re-apply must error");
-    assert_duplicate_block(err, epoch, blk);
+    assert_block_indexing_conflict(err, epoch, blk, blk);
 
     // Original inbox record still single, not duplicated.
     let got = db
@@ -331,7 +347,7 @@ pub fn test_apply_block_indexing_dedup_creators_only(db: &impl OLStateIndexingDa
     let err = db
         .apply_block_indexing(epoch, blk, writes())
         .expect_err("creators-only re-apply must error");
-    assert_duplicate_block(err, epoch, blk);
+    assert_block_indexing_conflict(err, epoch, blk, blk);
 
     // created_accounts has exactly one entry, not duplicated.
     let common = db
@@ -366,7 +382,7 @@ pub fn test_apply_block_indexing_rejects_out_of_order(db: &impl OLStateIndexingD
             IndexingWrites::new(vec![], BTreeMap::new(), BTreeMap::new()),
         )
         .expect_err("out-of-order apply must error");
-    assert_duplicate_block(err, epoch, blk_low);
+    assert_block_indexing_conflict(err, epoch, blk_low, blk_high);
 }
 
 /// After rollback_to_block, the high-water mark must allow re-applying the

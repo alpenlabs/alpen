@@ -121,12 +121,15 @@ impl OLStateIndexingDatabase for OLStateIndexingDBSled {
                 // out-of-order applies regardless of which write families
                 // are populated this call.
                 let mut common = epoch_t.get(&epoch)?.unwrap_or_default();
-                if common
-                    .last_applied_block()
-                    .is_some_and(|prev| block.slot() <= prev.slot())
+                if let Some(prev) = common.last_applied_block()
+                    && block.slot() <= prev.slot()
                 {
                     return Err(ConflictableTransactionError::Abort(TSledError::abort(
-                        DbError::DuplicateBlockIndexing { epoch, block },
+                        DbError::BlockIndexingConflict {
+                            epoch,
+                            attempted: block,
+                            last_applied: *prev,
+                        },
                     )));
                 }
                 common.set_last_applied_block(block);

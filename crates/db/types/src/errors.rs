@@ -179,11 +179,18 @@ pub enum DbError {
         last_error: Box<DbError>,
     },
 
-    /// Block already indexed for this epoch — `apply_block_indexing` called twice.
-    #[error("block {block} already indexed for epoch {epoch}")]
-    DuplicateBlockIndexing {
+    /// `apply_block_indexing` was called for a block whose slot does not
+    /// strictly advance past the last applied block for this epoch.
+    /// `attempted` is the incoming block; `last_applied` is what was already
+    /// recorded for this epoch.
+    #[error(
+        "block indexing conflict for epoch {epoch}: \
+         attempted {attempted}, last applied {last_applied}"
+    )]
+    BlockIndexingConflict {
         epoch: Epoch,
-        block: OLBlockCommitment,
+        attempted: OLBlockCommitment,
+        last_applied: OLBlockCommitment,
     },
 
     #[error("{0}")]
