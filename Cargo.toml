@@ -433,7 +433,7 @@ futures-util = "0.3"
 hex = { version = "0.4", features = ["serde"] }
 hex-literal = "0.4"
 http = "1.0.0"
-hyper = "0.14.25"
+hyper = "1.8.1"
 int-enum = "1.2"
 itertools = "0.14"
 jsonrpsee = { version = "0.26.0" }
