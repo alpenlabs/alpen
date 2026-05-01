@@ -58,8 +58,7 @@ pub struct SnarkAccountUpdateLogData {
 impl SnarkAccountUpdateLogData {
     /// Create a new snark account update log data instance.
     pub fn new(new_msg_idx: u64, extra_data: Vec<u8>) -> Option<Self> {
-        let extra_data = VarVec::from_vec(extra_data)?;
-        Some(Self {
+        VarVec::from_vec(extra_data).map(|extra_data| Self {
             new_msg_idx,
             extra_data,
         })

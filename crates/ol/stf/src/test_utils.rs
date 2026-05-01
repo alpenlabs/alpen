@@ -10,6 +10,7 @@ use strata_acct_types::{
     RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
+use strata_codec::{Codec, decode_buf_exact};
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot, WtxidsRoot,
 };
@@ -60,6 +61,17 @@ pub fn execute_block_with_outputs(
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
     construct_block(state, block_context, components)
+}
+
+/// Find and decode a single typed log emitted by `serial` in the block output.
+/// Panics if no matching log is found or the payload fails to decode as `T`.
+pub fn find_typed_log<T: Codec>(output: &ConstructBlockOutput, serial: AccountSerial) -> Option<T> {
+    output
+        .outputs()
+        .logs()
+        .iter()
+        .find(|l| l.account_serial() == serial)
+        .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
 }
 
 /// Build and execute a chain of empty blocks starting from genesis.
@@ -650,6 +662,7 @@ pub struct SnarkUpdateBuilder {
     effects: TxEffects,
     ledger_ref_claims: Vec<AccumulatorClaim>,
     ledger_ref_proofs: Vec<RawMerkleProof>,
+    extra_data: Vec<u8>,
 }
 
 impl SnarkUpdateBuilder {
@@ -663,7 +676,13 @@ impl SnarkUpdateBuilder {
             effects: TxEffects::default(),
             ledger_ref_claims: vec![],
             ledger_ref_proofs: vec![],
+            extra_data: vec![],
         }
+    }
+
+    pub fn with_extra_data(mut self, extra_data: Vec<u8>) -> Self {
+        self.extra_data = extra_data;
+        self
     }
 
     /// Add processed messages
@@ -716,7 +735,10 @@ impl SnarkUpdateBuilder {
         let update_data = SauTxUpdateData {
             seq_no: self.seq_no,
             proof_state,
-            extra_data: vec![].try_into().unwrap(),
+            extra_data: self
+                .extra_data
+                .try_into()
+                .expect("test: extra_data exceeds SSZ max"),
         };
 
         // Build ledger refs

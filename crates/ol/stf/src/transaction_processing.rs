@@ -5,7 +5,7 @@ use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
 
 use crate::{
-    account_processing,
+    OutputCtx, account_processing,
     constants::SEQUENCER_ACCT_ID,
     context::{BasicExecContext, TxExecContext},
     errors::{ExecError, ExecResult},
@@ -53,7 +53,7 @@ pub fn process_single_tx<S: IStateAccessorMut>(
             let tx_proofs = tx.proofs();
 
             // Call out to verify the update.
-            process_update_tx(state, sau_payload, effects, tx_proofs)?;
+            process_update_tx(state, sau_payload, effects, tx_proofs, context)?;
 
             target
         }
@@ -100,6 +100,7 @@ fn process_update_tx<S: IStateAccessorMut>(
     sau_payload: &SauTxPayload,
     effects: &TxEffects,
     tx_proofs: &TxProofs,
+    context: &TxExecContext<'_>,
 ) -> ExecResult<()> {
     // 1. Read account state and verify effects are safe to apply.
     let target = *sau_payload.target();
@@ -123,7 +124,7 @@ fn process_update_tx<S: IStateAccessorMut>(
 
     // 3. Actually take balance and write new account inner state.
     let upd = sau_payload.operation().update();
-    state.update_account(target, |astate| -> ExecResult<_> {
+    let serial = state.update_account(target, |astate| -> ExecResult<_> {
         // SAFETY: These panics are checked ahead of time so can never get hit.
 
         // Extract the snark account state so we can modify it.
@@ -142,9 +143,15 @@ fn process_update_tx<S: IStateAccessorMut>(
             upd.extra_data(),
         )?;
 
-        Ok(())
+        Ok(astate.serial())
     })??;
 
+    // Emit log after successful update.
+    let new_msg_idx = upd.proof_state().new_next_msg_idx();
+    let extra_data = upd.extra_data().to_vec();
+    let log = SnarkAccountUpdateLogData::new(new_msg_idx, extra_data)
+        .expect("extra_data bounded by SSZ MAX_EXTRA_DATA_BYTES(1024) exceeds VarVec bound");
+    context.emit_typed_log(serial, &log)?;
     Ok(())
 }
 
