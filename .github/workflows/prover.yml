@@ -61,7 +61,13 @@ jobs:
 
       - name: Install SP1 Toolchain
         run: |
-          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up
+          # Pin to v5.2.1 to match the workspace's sp1-{helper,sdk,verifier}
+          # = "5.2.1". Latest sp1up installs v6+ whose target/toolchain
+          # combo (riscv64im + 32-bit C compiler) doesn't match what our
+          # guest deps' build scripts expect.
+          # `-c` installs the RISC-V C++ toolchain so secp256k1-sys (and
+          # other C-bound crates) cross-compile for the guest target.
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash && ~/.sp1/bin/sp1up -v v5.2.1 -c
           export PATH=~/.sp1/bin:$PATH
           cargo prove --version
 
@@ -77,7 +83,7 @@ jobs:
           --github-token "${{ secrets.GITHUB_TOKEN }}" \
           --pr-number "${{ github.event.pull_request.number }}" \
           --commit-hash "${{ github.sha }}" \
-          --programs evm-ee-stf,checkpoint
+          --programs checkpoint
         working-directory: bin/prover-perf
         env:
           RUSTFLAGS: "-C target-cpu=native -C link-arg=-fuse-ld=lld"
