@@ -148,14 +148,14 @@ jobs:
           mkdir -p docker/strata/artifacts/elfs/sp1
           install -m 0755 target/release/strata-datatool docker/strata/artifacts/strata-datatool
 
-          # strata only reads guest-checkpoint-new.elf at runtime. The other
+          # strata only reads guest-checkpoint.elf at runtime. The other
           # guest ELFs are embedded inside the datatool binary (via
           # strata-sp1-guest-builder's build script) and re-emitted by
           # `datatool genparams --elf-dir` during params generation.
           #
           # strata-sp1-guest-builder writes compiled ELFs to
           # provers/sp1/guest-*/cache/*.elf.
-          cp -v provers/sp1/guest-checkpoint-new/cache/guest-checkpoint-new.elf \
+          cp -v provers/sp1/guest-checkpoint/cache/guest-checkpoint.elf \
             docker/strata/artifacts/elfs/sp1/
 
           ls -la docker/strata/artifacts/ docker/strata/artifacts/elfs/sp1/
