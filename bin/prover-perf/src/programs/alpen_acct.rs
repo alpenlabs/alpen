@@ -86,6 +86,9 @@ mod tests {
             vec![0u8; 32],
         ));
         let result = program.execute(&input).expect("native execution");
-        assert_eq!(result.cur_state().inner_state(), result.new_state().inner_state());
+        assert_eq!(
+            result.cur_state().inner_state(),
+            result.new_state().inner_state()
+        );
     }
 }

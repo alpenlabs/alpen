@@ -83,12 +83,8 @@ fn prepare_input() -> EeChunkProofInput {
     let raw_prev_header = encode_to_vec(&parent_evm_header).expect("encode prev header");
     let raw_pre_state = encode_to_vec(&pre_state).expect("encode pre-state");
 
-    let private_input = PrivateInput::new(
-        chunk_transition,
-        raw_chunk,
-        raw_prev_header,
-        raw_pre_state,
-    );
+    let private_input =
+        PrivateInput::new(chunk_transition, raw_chunk, raw_prev_header, raw_pre_state);
 
     EeChunkProofInput {
         genesis: witness.genesis,
