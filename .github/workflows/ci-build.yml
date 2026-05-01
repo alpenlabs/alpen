@@ -137,6 +137,7 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
           ~/.sp1/bin/sp1up
           echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.sp1/bin:$PATH"
           cargo prove --version
 
       - name: Build strata-datatool + SP1 guest ELFs
