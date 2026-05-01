@@ -377,8 +377,7 @@ docker-signet-down:
 # Start sequencer stack (signet + sequencer)
 [group('docker')]
 docker-seq-up: docker-signet-up
-    mkdir -p {{docker_dir}}/configs/generated
-    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml run --rm init
+    cd {{docker_dir}} && ./gen-params-and-elfs.sh
     cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml up -d
 
 # Stop sequencer stack (signet + sequencer)
