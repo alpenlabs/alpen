@@ -13,4 +13,4 @@ eyre.workspace = true
 reth-chainspec.workspace = true
 reth-cli.workspace = true
 serde_json.workspace = true
-shellexpand = "3.0.0"
+shellexpand = "3.1.2"
