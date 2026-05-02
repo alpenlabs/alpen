@@ -51,3 +51,26 @@ pub fn process_ee_acct_update(zkvm: &impl ZkVmEnvSerde, chunk_predicate_key: &Pr
     // Pass through the pre-encoded SSZ bytes directly (zero-copy).
     zkvm.commit_buf(upd_input.update_pub_params_ssz());
 }
+
+/// No-op variant of [`process_ee_acct_update`] for native dev/test runs only.
+///
+/// Reads the same inputs as [`process_ee_acct_update`] (so the host's
+/// input cursor advances correctly) and commits the same public output
+/// bytes, but skips
+/// [`strata_ee_acct_runtime::verify_and_process_update`] — which is the
+/// expensive STF + chunk-proof verification. The caller is expected to
+/// trust the inputs already produced by the alpen-client. Output bytes
+/// are identical to the verifying path so downstream consumers (the OL
+/// update verifier under `PredicateKey::always_accept`) are unaffected.
+///
+/// Wired in `bin/alpen-client/src/main.rs` behind the
+/// `--dev-native-noop-prover` flag.
+pub fn process_ee_acct_update_noop(zkvm: &impl ZkVmEnvSerde) {
+    let _genesis: Genesis = zkvm.read_serde();
+    let _ee_buf = zkvm.read_buf();
+    let upd_buf = zkvm.read_buf();
+    let upd_input: &ArchivedUpdatePrivateInput =
+        rkyv::access::<ArchivedUpdatePrivateInput, RkyvError>(&upd_buf)
+            .expect("failed to access rkyv update archive");
+    zkvm.commit_buf(upd_input.update_pub_params_ssz());
+}

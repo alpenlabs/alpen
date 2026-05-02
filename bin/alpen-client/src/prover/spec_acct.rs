@@ -4,13 +4,11 @@
 //! `fetch_input` reads chunk receipts (from the shared paas
 //! `ReceiptStore`) and the prior batch's end-state, then assembles
 //! `ee_acct_runtime::PrivateInput` + `snark_acct_runtime::PrivateInput`.
-//!
-//! DA witnesses are stubbed (`LedgerRefs::new_empty()`) — see the EE
-//! account update doc's "Open Questions" section.
+use std::{collections::HashMap, fmt, sync::Arc};
 
-use std::{fmt, sync::Arc};
-
-use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage, Storage};
+use alpen_ee_common::{
+    BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef, SequencerOLClient, Storage,
+};
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
 use rsp_primitives::genesis::Genesis;
@@ -20,11 +18,13 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
+use strata_identifiers::L1Height;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore};
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
+    AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs,
+    UpdateProofPubParams,
 };
 
 use super::ChunkTask;
@@ -101,6 +101,8 @@ pub(crate) struct AcctSpec {
     chunk_receipts: Arc<dyn ReceiptStore>,
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
+    ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
+    genesis_l1_height: L1Height,
     genesis: Genesis,
 }
 
@@ -109,12 +111,16 @@ impl AcctSpec {
         chunk_receipts: Arc<dyn ReceiptStore>,
         batch_storage: Arc<dyn BatchStorage>,
         storage: Arc<EeNodeStorage>,
+        ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
+        genesis_l1_height: L1Height,
         genesis: Genesis,
     ) -> Self {
         Self {
             chunk_receipts,
             batch_storage,
             storage,
+            ol_client,
+            genesis_l1_height,
             genesis,
         }
     }
@@ -140,7 +146,7 @@ impl ProofSpec for AcctSpec {
 
         // 2. Batch metadata. The first block is the one immediately after `prev_block`; we resolve
         //    it via the FIRST chunk's parent_blkid.
-        let (batch, _status) = self
+        let (batch, status) = self
             .batch_storage
             .get_batch_by_id(batch_id)
             .await
@@ -148,46 +154,72 @@ impl ProofSpec for AcctSpec {
             .ok_or_else(|| {
                 PaasError::PermanentFailure(format!("batch {batch_id} not in storage"))
             })?;
+        let da_refs = da_refs_from_status(batch_id, status)?;
 
         // 3. Previous EE account state.
         //
-        //    We read the latest OL-accepted EeAccountState and verify its
-        //    tip matches the first chunk's parent. This works because only
-        //    one batch is proved at a time — the batch lifecycle
-        //    (BatchLifecycleState::proof_pending) advances the frontier
-        //    one batch at a time, so by the time we're here the previous
-        //    batch has already landed on OL and best_ee_account_state
-        //    reflects it.
+        //    We need the EE account state as it was JUST BEFORE this
+        //    batch's first block. There are two ways to read it:
         //
-        //    If batch pipelining is ever added (multiple batches proving
-        //    concurrently), this call would return a stale pre-state and
-        //    the check below would fire as TransientFailure. The fix
-        //    would be a local EeAccountState projection that walks
-        //    sequenced-but-unposted batches forward from the OL tip.
-        let acct_at_epoch = self
-            .storage
-            .best_ee_account_state()
-            .await
-            .map_err(|e| PaasError::Storage(format!("best_ee_account_state: {e}")))?;
-        let acct_at_epoch = acct_at_epoch.ok_or_else(|| {
-            PaasError::TransientFailure(
-                "no EE account state available yet (genesis not loaded?)".to_string(),
-            )
-        })?;
-        let pre_ee_state = acct_at_epoch.ee_state().clone();
-
+        //      (a) `best_ee_account_state()` — the last OL-accepted state.
+        //          Cheap and correct only when the batch lifecycle proves
+        //          batches strictly serially: by the time batch N is in
+        //          ProofReady, batch N-1's SAU has already landed on OL.
+        //
+        //      (b) The local `ExecBlockRecord` for this batch's first
+        //          block's parent — its `account_state()` is the
+        //          authoritative post-state of that parent, which is
+        //          exactly the pre-state for our batch.
+        //
+        //    (b) is robust to batch pipelining (multiple batches proving
+        //          concurrently), faster prover backends (where batch N
+        //          can hit `fetch_input` before batch N-1's SAU has been
+        //          submitted, applied on OL, and observed by the
+        //          tracker), and recovery scenarios. We use (b) and only
+        //          fall back to (a) when the parent record isn't in
+        //          local storage (genesis, or an unrelated bug surfacing
+        //          a missing record).
         let first_chunk = chunks.first().ok_or_else(|| {
             PaasError::PermanentFailure("first chunk missing after non-empty check".to_string())
         })?;
         let first_transition = decode_chunk_transition(first_chunk)?;
-        if first_transition.parent_exec_blkid() != pre_ee_state.last_exec_blkid() {
-            return Err(PaasError::TransientFailure(format!(
-                "EE pre-state mismatch for batch {batch_id}: \
-                 first chunk parent={:?}, ee_state.last_exec_blkid={:?}",
-                first_transition.parent_exec_blkid(),
-                pre_ee_state.last_exec_blkid(),
-            )));
-        }
+        let parent_blkid = first_transition.parent_exec_blkid();
+
+        let pre_ee_state = match self
+            .storage
+            .get_exec_block(parent_blkid)
+            .await
+            .map_err(|e| {
+                PaasError::Storage(format!("get_exec_block(parent={parent_blkid:?}): {e}"))
+            })? {
+            Some(parent_record) => parent_record.account_state().clone(),
+            None => {
+                // Parent record not in local storage; fall back to the
+                // OL-accepted state. Expected at genesis; otherwise
+                // surface as transient (the alpen-client may still be
+                // populating its local exec store).
+                let acct_at_epoch = self
+                    .storage
+                    .best_ee_account_state()
+                    .await
+                    .map_err(|e| PaasError::Storage(format!("best_ee_account_state: {e}")))?
+                    .ok_or_else(|| {
+                        PaasError::TransientFailure(
+                            "no EE account state available yet (genesis not loaded?)".to_string(),
+                        )
+                    })?;
+                let fallback = acct_at_epoch.ee_state().clone();
+                if fallback.last_exec_blkid() != parent_blkid {
+                    return Err(PaasError::TransientFailure(format!(
+                        "EE pre-state for batch {batch_id} unavailable: \
+                         no exec record for parent={parent_blkid:?}, \
+                         and OL-accepted tip={:?} doesn't match",
+                        fallback.last_exec_blkid(),
+                    )));
+                }
+                fallback
+            }
+        };
 
         // 4. ee_acct private input.
         //
@@ -210,10 +242,6 @@ impl ProofSpec for AcctSpec {
         //    messages, outputs, next_inbox_msg_idx, and new_tip_blkid.
         //    This is the authoritative source (same data the update
         //    submitter reads), so proof-input and submission agree.
-        //
-        // TODO(STR-1369): wire real `LedgerRefs` from
-        //   `BatchStatus::DaComplete { da }` (see update_builder.rs
-        //   lines 139-161 for the reference construction).
         let block_hashes: Vec<Hash> = batch.blocks_iter().collect();
         let mut processed_inputs: u32 = 0;
         let mut messages = Vec::new();
@@ -292,12 +320,14 @@ impl ProofSpec for AcctSpec {
         let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs, 0);
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
+        let ledger_refs =
+            build_ledger_refs(&da_refs, self.ol_client.as_ref(), self.genesis_l1_height).await?;
 
         let pub_params = UpdateProofPubParams::new(
             cur_state,
             new_state,
             messages,
-            LedgerRefs::new_empty(),
+            ledger_refs,
             update_outputs,
             extra_data_bytes,
         );
@@ -319,6 +349,64 @@ impl ProofSpec for AcctSpec {
             update_private_input,
         })
     }
+}
+
+fn da_refs_from_status(batch_id: BatchId, status: BatchStatus) -> ProverResult<Vec<L1DaBlockRef>> {
+    match status {
+        BatchStatus::DaComplete { da }
+        | BatchStatus::ProofPending { da }
+        | BatchStatus::ProofReady { da, .. } => Ok(da),
+        BatchStatus::Genesis | BatchStatus::Sealed | BatchStatus::DaPending { .. } => Err(
+            PaasError::TransientFailure(format!("batch {batch_id} does not have DA refs yet")),
+        ),
+    }
+}
+
+async fn build_ledger_refs(
+    da_refs: &[L1DaBlockRef],
+    ol_client: &(dyn SequencerOLClient + Send + Sync),
+    genesis_l1_height: L1Height,
+) -> ProverResult<LedgerRefs> {
+    let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
+    heights.sort_unstable();
+    heights.dedup();
+
+    let mut l1_header_commitments = HashMap::with_capacity(heights.len());
+    for height in heights {
+        let hash = ol_client
+            .get_l1_header_commitment(height)
+            .await
+            .map_err(|e| {
+                PaasError::TransientFailure(format!(
+                    "get L1 header commitment for height {height}: {e}"
+                ))
+            })?;
+        l1_header_commitments.insert(height, hash);
+    }
+
+    let mmr_offset = genesis_l1_height as u64 + 1;
+    let mut l1_header_refs = da_refs
+        .iter()
+        .map(|da_ref| {
+            let height = da_ref.block.height();
+            let hash = l1_header_commitments.get(&height).copied().ok_or_else(|| {
+                PaasError::TransientFailure(format!(
+                    "missing L1 header commitment for height {height}"
+                ))
+            })?;
+            let mmr_idx = (height as u64).checked_sub(mmr_offset).ok_or_else(|| {
+                PaasError::PermanentFailure(format!(
+                    "L1 height {height} is before MMR start offset {mmr_offset}"
+                ))
+            })?;
+
+            Ok(AccumulatorClaim::new(mmr_idx, *hash.as_ref()))
+        })
+        .collect::<ProverResult<Vec<_>>>()?;
+    l1_header_refs.sort_by_key(|claim| claim.idx());
+    l1_header_refs.dedup_by_key(|claim| claim.idx());
+
+    Ok(LedgerRefs::new(l1_header_refs))
 }
 
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.

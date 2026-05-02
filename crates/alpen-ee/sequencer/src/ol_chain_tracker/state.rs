@@ -189,12 +189,18 @@ impl OLChainTrackerState {
             to_slot = max_slot;
         }
 
-        // Blocks are present
-        // Index of first block with slot >= from_slot
-        let from_idx = self.blocks.partition_point(|b| b.slot() < from_slot);
+        if from_slot > to_slot {
+            let next_inbox_msg_idx = self.next_inbox_msg_idx_at_or_before(to_slot);
+            return Ok(InboxMessages::new_empty(next_inbox_msg_idx));
+        }
 
-        // Get next_inbox_msg_idx from the block before from_idx, or use base
-        let next_inbox_msg_idx = from_idx
+        // Blocks are present. `from_idx` is the first block with
+        // slot >= from_slot and `to_idx_exclusive` is the first block after
+        // to_slot.
+        let from_idx = self.blocks.partition_point(|b| b.slot() < from_slot);
+        let to_idx_exclusive = self.blocks.partition_point(|b| b.slot() <= to_slot);
+
+        let next_inbox_msg_idx = to_idx_exclusive
             .checked_sub(1)
             .and_then(|i| self.blocks.get(i))
             .and_then(|b| self.data.get(b.blkid()))
@@ -204,7 +210,7 @@ impl OLChainTrackerState {
             .blocks
             .iter()
             .skip(from_idx)
-            .take_while(|b| b.slot() <= to_slot)
+            .take(to_idx_exclusive.saturating_sub(from_idx))
             .map(|b| {
                 self.data
                     .get(b.blkid())
@@ -222,6 +228,14 @@ impl OLChainTrackerState {
             messages,
             next_inbox_msg_idx,
         })
+    }
+
+    fn next_inbox_msg_idx_at_or_before(&self, slot: u64) -> u64 {
+        let idx = self.blocks.partition_point(|b| b.slot() <= slot);
+        idx.checked_sub(1)
+            .and_then(|i| self.blocks.get(i))
+            .and_then(|b| self.data.get(b.blkid()))
+            .map_or(self.base_block_next_inbox_msg_idx, |d| d.next_inbox_msg_idx)
     }
 }
 
@@ -501,13 +515,13 @@ mod tests {
             let mut state = OLChainTrackerState::new_empty(base, 0);
 
             state
-                .append_block(make_block(11), vec![make_message(100)], 0)
+                .append_block(make_block(11), vec![make_message(100)], 1)
                 .unwrap();
             state
-                .append_block(make_block(12), vec![make_message(200)], 1)
+                .append_block(make_block(12), vec![make_message(200)], 2)
                 .unwrap();
             state
-                .append_block(make_block(13), vec![make_message(300)], 2)
+                .append_block(make_block(13), vec![make_message(300)], 3)
                 .unwrap();
 
             let messages = state.get_inbox_messages(11, 13).unwrap();
@@ -515,6 +529,7 @@ mod tests {
             assert_eq!(messages.messages[0].payload_value().to_sat(), 100);
             assert_eq!(messages.messages[1].payload_value().to_sat(), 200);
             assert_eq!(messages.messages[2].payload_value().to_sat(), 300);
+            assert_eq!(messages.next_inbox_msg_idx(), 3);
         }
 
         #[test]
@@ -523,18 +538,19 @@ mod tests {
             let mut state = OLChainTrackerState::new_empty(base, 0);
 
             state
-                .append_block(make_block(11), vec![make_message(100)], 0)
+                .append_block(make_block(11), vec![make_message(100)], 1)
                 .unwrap();
             state
-                .append_block(make_block(12), vec![make_message(200)], 0)
+                .append_block(make_block(12), vec![make_message(200)], 2)
                 .unwrap();
             state
-                .append_block(make_block(13), vec![make_message(300)], 0)
+                .append_block(make_block(13), vec![make_message(300)], 3)
                 .unwrap();
 
             let messages = state.get_inbox_messages(12, 12).unwrap();
             assert_eq!(messages.messages.len(), 1);
             assert_eq!(messages.messages[0].payload_value().to_sat(), 200);
+            assert_eq!(messages.next_inbox_msg_idx(), 2);
         }
 
         #[test]
@@ -552,6 +568,7 @@ mod tests {
             // Request from slot 5, but min is 11
             let messages = state.get_inbox_messages(5, 12).unwrap();
             assert_eq!(messages.messages.len(), 2);
+            assert_eq!(messages.next_inbox_msg_idx(), 2);
         }
 
         #[test]
@@ -569,6 +586,7 @@ mod tests {
             // Request to slot 20, but max is 12
             let messages = state.get_inbox_messages(11, 20).unwrap();
             assert_eq!(messages.messages.len(), 2);
+            assert_eq!(messages.next_inbox_msg_idx(), 2);
         }
 
         #[test]
@@ -583,16 +601,11 @@ mod tests {
                 .append_block(make_block(12), vec![make_message(200)], 2)
                 .unwrap();
 
-            // Request range completely below tracked blocks (after clamping from<to check)
-            // from=20 gets clamped to min=11, to=25 gets clamped to max=12
-            // This actually returns messages since clamping brings it into range
+            // Request range completely above tracked blocks. This returns no
+            // messages, but still reports the latest tracked inbox index.
             let messages = state.get_inbox_messages(20, 25).unwrap();
-            // After clamping: from=11, to=12 (since 20>12 clamps to 12, 25>12 clamps to 12)
-            // Actually from=20 < min=11 is false, so no clamping on from
-            // Wait, 20 > 11 so from_slot < min_slot is false
-            // to=25 > max=12 so to_slot gets clamped to 12
-            // Final range: from=20, to=12 ... but 20 > 12, so filter returns nothing
             assert!(messages.messages.is_empty());
+            assert_eq!(messages.next_inbox_msg_idx(), 2);
         }
 
         #[test]
@@ -610,6 +623,7 @@ mod tests {
 
             let messages = state.get_inbox_messages(11, 11).unwrap();
             assert_eq!(messages.messages.len(), 3);
+            assert_eq!(messages.next_inbox_msg_idx(), 3);
         }
     }
 }

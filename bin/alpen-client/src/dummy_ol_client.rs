@@ -40,6 +40,7 @@ impl OLClient for DummyOLClient {
             tip: self.genesis_epoch.to_block_commitment(),
             confirmed: self.genesis_epoch,
             finalized: self.genesis_epoch,
+            latest_terminal: self.genesis_epoch,
         })
     }
 

@@ -5,7 +5,6 @@
 
 use std::slice;
 
-use anyhow::Context;
 use bdk_wallet::bitcoin::{
     consensus::{self, deserialize},
     hashes::Hash,
@@ -27,35 +26,42 @@ use strata_primitives::{buf::Buf32, constants::RECOVER_DELAY};
 
 use crate::{
     constants::{BRIDGE_OUT_AMOUNT, MAGIC_BYTES, NETWORK},
-    parse::{generate_taproot_address, parse_operator_keys},
+    error::Error,
+    parse::generate_taproot_address,
 };
 
 /// Creates a deposit transaction (DT)
 ///
 /// # Arguments
 /// * `tx_bytes` - Raw DRT transaction bytes
-/// * `operator_keys` - Vector of operator secret keys as bytes (78 bytes each)
+/// * `signers` - Operator private keys (already parsed). The order of these keys matters: the
+///   derived pubkeys feed [`generate_taproot_address`] which computes the operator-aggregated key
+///   the DRT P2TR output was locked to. That aggregation is order-sensitive (it does not sort), so
+///   passing the keys in a different order than the one used to build the original DRT will produce
+///   a different aggregate pubkey and the DT will fail to spend. Keep the same order across DRT
+///   construction and DT signing.
 /// * `dt_index` - Deposit transaction index for metadata
 ///
 /// # Returns
-/// The signed and serialized deposit transaction
+/// * `Result<Vec<u8>, Error>` - The signed and serialized deposit transaction
 pub(crate) fn create_deposit_transaction_cli(
     tx_bytes: Vec<u8>,
-    operator_keys: Vec<[u8; 78]>,
+    signers: Vec<EvenSecretKey>,
     dt_index: u32,
-) -> anyhow::Result<Vec<u8>> {
-    let drt_tx = deserialize(&tx_bytes).context("failed to parse DRT")?;
-
-    let signers = parse_operator_keys(&operator_keys).context("failed to parse operator keys")?;
+) -> Result<Vec<u8>, Error> {
+    let drt_tx =
+        deserialize(&tx_bytes).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {e}")))?;
 
     let pubkeys = signers
         .iter()
         .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0.serialize()))
         .collect::<Vec<_>>();
 
-    let (_address, agg_pubkey) = generate_taproot_address(&pubkeys, NETWORK)?;
+    let (_address, agg_pubkey) =
+        generate_taproot_address(&pubkeys, NETWORK).map_err(|e| Error::TxBuilder(e.to_string()))?;
 
-    let drt_data = parse_drt(&drt_tx).context("failed to parse DRT")?;
+    let drt_data =
+        parse_drt(&drt_tx).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
 
     let takeback_hash = build_deposit_request_spend_info(
         drt_data.header_aux().recovery_pk(),
@@ -63,13 +69,13 @@ pub(crate) fn create_deposit_transaction_cli(
         RECOVER_DELAY,
     )
     .merkle_root()
-    .context("missing takeback script merkle root")?;
+    .ok_or_else(|| Error::TxBuilder("Missing takeback script merkle root".to_string()))?;
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
     let dt_tag = DepositTxHeaderAux::new(dt_index).build_tag_data();
     let sps50_script = ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&dt_tag.as_ref())
-        .context("failed to encode SPS-50 script")?;
+        .map_err(|e| Error::TxBuilder(e.to_string()))?;
 
     let mut unsigned_tx = create_dummy_tx(1, 2);
     unsigned_tx.output[0].script_pubkey = sps50_script;
@@ -82,7 +88,7 @@ pub(crate) fn create_deposit_transaction_cli(
     let deposit_request_output = drt_tx
         .output
         .get(1)
-        .context("DRT missing P2TR output at index 1")?;
+        .ok_or_else(|| Error::TxParser("DRT missing P2TR output at index 1".to_string()))?;
 
     let signed_tx =
         sign_deposit_transaction(unsigned_tx, deposit_request_output, takeback_hash, &signers)?;
@@ -110,8 +116,9 @@ fn sign_deposit_transaction(
     prevout: &TxOut,
     takeback_hash: TapNodeHash,
     signers: &[EvenSecretKey],
-) -> anyhow::Result<Transaction> {
-    let mut psbt = Psbt::from_unsigned_tx(unsigned_tx.clone()).context("failed to create PSBT")?;
+) -> Result<Transaction, Error> {
+    let mut psbt = Psbt::from_unsigned_tx(unsigned_tx.clone())
+        .map_err(|e| Error::TxBuilder(format!("Failed to create PSBT: {}", e)))?;
 
     if let Some(input) = psbt.inputs.get_mut(0) {
         input.witness_utxo = Some(prevout.clone());
@@ -123,7 +130,7 @@ fn sign_deposit_transaction(
 
     let sighash = sighash_cache
         .taproot_key_spend_signature_hash(0, &prevouts_ref, TapSighashType::Default)
-        .context("sighash creation failed")?;
+        .map_err(|e| Error::TxBuilder(format!("Sighash creation failed: {e}")))?;
 
     let msg = sighash.to_byte_array();
     let tweak = Musig2Tweak::TaprootScript(takeback_hash.to_byte_array());
@@ -152,7 +159,7 @@ fn sign_deposit_transaction(
 ///
 /// # Returns
 /// Finalized transaction ready for broadcast
-fn finalize_and_extract_tx(mut psbt: Psbt) -> anyhow::Result<Transaction> {
+fn finalize_and_extract_tx(mut psbt: Psbt) -> Result<Transaction, Error> {
     for input in &mut psbt.inputs {
         if input.tap_key_sig.is_some() {
             input.final_script_witness = Some(Witness::new());
@@ -168,5 +175,5 @@ fn finalize_and_extract_tx(mut psbt: Psbt) -> anyhow::Result<Transaction> {
 
     psbt.clone()
         .extract_tx()
-        .context("transaction extraction failed")
+        .map_err(|e| Error::TxBuilder(format!("Transaction extraction failed: {}", e)))
 }

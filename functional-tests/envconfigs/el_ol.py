@@ -25,6 +25,7 @@ class EeOLEnv(flexitest.EnvConfig):
                         (in addition to sequencer) to help form mesh topology.
                         Requires enable_discovery=True. (default False)
         pre_generate_blocks: How many bitcoin blocks to pre-generate
+        batch_sealing_block_count: Number of EE blocks before sealing an alpen-client DA batch
     """
 
     def __init__(
@@ -37,6 +38,10 @@ class EeOLEnv(flexitest.EnvConfig):
         seal_epoch_slots: int | None = None,
         admin_confirmation_depth: int | None = None,
         fund_test_cli_wallet: bool = False,
+        ol_block_time_ms: int | None = None,
+        dev_native_noop_prover: bool = False,
+        dev_track_finalized_epoch: bool = False,
+        batch_sealing_block_count: int = 10,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
@@ -45,6 +50,10 @@ class EeOLEnv(flexitest.EnvConfig):
         self.pre_generate_blocks = pre_generate_blocks
         self.admin_confirmation_depth = admin_confirmation_depth
         self.fund_test_cli_wallet = fund_test_cli_wallet
+        self.ol_block_time_ms = ol_block_time_ms
+        self.dev_native_noop_prover = dev_native_noop_prover
+        self.dev_track_finalized_epoch = dev_track_finalized_epoch
+        self.batch_sealing_block_count = batch_sealing_block_count
         self.epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
@@ -61,6 +70,7 @@ class EeOLEnv(flexitest.EnvConfig):
             epoch_sealing=self.epoch_seal_config,
             fund_test_cli_wallet=self.fund_test_cli_wallet,
             admin_confirmation_depth=self.admin_confirmation_depth,
+            ol_block_time_ms=self.ol_block_time_ms,
         )
         strata_services = strata_config._get_services(ectx)
 
@@ -77,6 +87,9 @@ class EeOLEnv(flexitest.EnvConfig):
             self.pure_discovery,
             bitcoin_service=bitcoin,
             ol_endpoint=ol_endpoint,
+            dev_native_noop_prover=self.dev_native_noop_prover,
+            dev_track_finalized_epoch=self.dev_track_finalized_epoch,
+            batch_sealing_block_count=self.batch_sealing_block_count,
         )
 
         services = {**alpen_services, **strata_services}

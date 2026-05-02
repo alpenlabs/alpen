@@ -79,6 +79,16 @@ class RelayerConfig:
 
 
 @dataclass
+class LoggingConfig:
+    service_label: str | None = field(default=None)
+    otlp_url: str | None = field(default=None)
+    log_dir: str | None = field(default=None)
+    log_file_prefix: str | None = field(default=None)
+    json_format: bool | None = field(default=None)
+    metrics_port: int | None = field(default=None)
+
+
+@dataclass
 class SequencerConfig:
     ol_block_time_ms: int = field(default=5_000)
     max_txs_per_block: int = field(default=100)
@@ -138,6 +148,7 @@ class StrataConfig:
     sync: SyncConfig = field(default_factory=SyncConfig)
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     def as_toml_string(self) -> str:
         d = asdict(self)

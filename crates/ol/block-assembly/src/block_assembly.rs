@@ -440,15 +440,51 @@ where
     );
 
     for (txid, mempool_tx) in mempool_txs {
+        let tx_target = mempool_tx.target();
+        let tx_type = mempool_tx.type_id();
+        let effect_transfer_count = mempool_tx.data().effects().transfers_iter().count();
+        let effect_message_count = mempool_tx.data().effects().messages_iter().count();
+        let total_sent_sats = mempool_tx
+            .data()
+            .effects()
+            .get_total_value_sent()
+            .map(|amount| amount.to_sat());
+        let (sau_seq_no, sau_new_next_msg_idx, sau_processed_message_count) =
+            match mempool_tx.payload() {
+                TransactionPayload::SnarkAccountUpdate(payload) => {
+                    let operation = payload.operation();
+                    (
+                        Some(operation.update().seq_no()),
+                        Some(operation.update().proof_state().new_next_msg_idx()),
+                        Some(operation.messages_iter().count()),
+                    )
+                }
+                TransactionPayload::GenericAccountMessage(_) => (None, None, None),
+            };
+
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
         // This only reads from state, so no rollback needed on failure.
         let tx = match add_accumulator_proofs(proof_gen, &staging_state, mempool_tx) {
             Ok(tx) => tx,
             Err(e) => {
-                debug!(?txid, %e, "failed to validate/generate proofs for transaction");
+                let reason = block_assembly_error_to_mempool_reason(&e);
+                warn!(
+                    ?txid,
+                    %tx_type,
+                    ?tx_target,
+                    ?sau_seq_no,
+                    ?sau_new_next_msg_idx,
+                    ?sau_processed_message_count,
+                    effect_transfer_count,
+                    effect_message_count,
+                    ?total_sent_sats,
+                    ?reason,
+                    error = %e,
+                    "failed to validate/generate proofs for transaction"
+                );
                 #[cfg(test)]
                 eprintln!("TX CONVERSION FAILED: {e:?}");
-                failed_txs.push((txid, block_assembly_error_to_mempool_reason(&e)));
+                failed_txs.push((txid, reason));
                 continue;
             }
         };
@@ -526,13 +562,27 @@ where
                 eprintln!("TX EXECUTION FAILED: {e:?}");
 
                 // Failure: discard tx_buffer (logs) and restore state from backup.
-                debug!(?txid, %e, "transaction execution failed during staging");
+                let reason = stf_exec_error_to_mempool_reason(&e);
+                warn!(
+                    ?txid,
+                    %tx_type,
+                    ?tx_target,
+                    ?sau_seq_no,
+                    ?sau_new_next_msg_idx,
+                    ?sau_processed_message_count,
+                    effect_transfer_count,
+                    effect_message_count,
+                    ?total_sent_sats,
+                    ?reason,
+                    error = %e,
+                    "transaction execution failed during staging"
+                );
 
                 staging_state = DaAccumulatingState::new_with_accumulator(
                     WriteTrackingState::new(parent_state, backup_batch),
                     backup_accumulator,
                 );
-                failed_txs.push((txid, stf_exec_error_to_mempool_reason(&e)));
+                failed_txs.push((txid, reason));
             }
         }
         debug!(%txid, "successful tx execution in block assembly");

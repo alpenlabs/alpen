@@ -12,6 +12,9 @@ pub struct OLChainStatus {
 
     /// Finalized epoch commitment.
     pub finalized: EpochCommitment,
+
+    /// Latest epoch terminal block processed by the OL fork-choice manager.
+    pub latest_terminal: EpochCommitment,
 }
 
 impl OLChainStatus {
@@ -28,6 +31,11 @@ impl OLChainStatus {
     /// Returns the finalized epoch commitment.
     pub fn finalized(&self) -> &EpochCommitment {
         &self.finalized
+    }
+
+    /// Returns the latest completed OL epoch.
+    pub fn latest_terminal(&self) -> &EpochCommitment {
+        &self.latest_terminal
     }
 }
 

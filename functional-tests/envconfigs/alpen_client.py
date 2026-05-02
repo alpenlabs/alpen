@@ -86,6 +86,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
         batch_sealing_block_count: int = 10,
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
+        dev_native_noop_prover: bool = False,
+        dev_track_finalized_epoch: bool = False,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -132,6 +134,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
             enable_discovery=enable_discovery,
             ol_endpoint=ol_endpoint,
             da_config=da_config,
+            dev_native_noop_prover=dev_native_noop_prover,
+            dev_track_finalized_epoch=dev_track_finalized_epoch,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()
