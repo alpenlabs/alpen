@@ -65,8 +65,11 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         btc_rpc = bitcoin.create_rpc()
 
         initial = get_account_balance(rpc, TEST_ACCOUNT_ID_HEX)
-        if initial != 0:
-            raise AssertionError(f"expected 0 starting balance, got {initial}")
+        logger.info(
+            "starting balance for account %s: %d sats",
+            TEST_ACCOUNT_ID_HEX,
+            initial,
+        )
 
         logger.info(
             "injecting deposit with unregistered serial=%d amount=%d",
@@ -91,11 +94,13 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         strata.wait_for_additional_blocks(2 * slots_per_epoch, rpc, timeout_per_block=15)
 
         balance = get_account_balance(rpc, TEST_ACCOUNT_ID_HEX)
-        if balance != 0:
+        delta = balance - initial
+        if delta != 0:
             raise AssertionError(
-                f"deposit with unregistered serial should not credit any account, "
-                f"but registered account at serial {TEST_ACCOUNT_SERIAL} has balance {balance}"
+                f"deposit with unregistered serial must not credit any account, "
+                f"but account at serial {TEST_ACCOUNT_SERIAL} balance changed by {delta} sats "
+                f"(initial={initial}, final={balance})"
             )
 
-        logger.info("deposit with serial=0 was correctly not credited")
+        logger.info("deposit with serial=0 did not credit any account (delta=0)")
         return True
