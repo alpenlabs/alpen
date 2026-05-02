@@ -10,8 +10,21 @@ use strata_btc_types::BlockHashExt;
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::{buf::Buf32, L1Height};
 use strata_storage::BroadcastDbOps;
+use tracing::{info, warn};
 
 use super::error::{BroadcasterError, BroadcasterResult};
+
+/// Classifies a bitcoind `-25` reject reason as benign (already accepted) or
+/// not. Bitcoind's reject strings use hyphenated tokens (see
+/// `validation.cpp`/`policy/policy.cpp`): `txn-already-in-mempool`,
+/// `txn-already-known`, `txn-already-in-block-chain`. A space-separated check
+/// like `"already in mempool"` does not match any of these and would route
+/// every benign `-25` to `InvalidInputs`, causing spurious envelope rebuilds.
+fn is_benign_minus25_message(msg: &str) -> bool {
+    msg.contains("already-in-mempool")
+        || msg.contains("already-known")
+        || msg.contains("already-in-block-chain")
+}
 
 /// IO context abstraction for broadcaster service internals.
 pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
@@ -58,7 +71,7 @@ pub(crate) enum PublishTxOutcome {
     /// Transaction was accepted for broadcast.
     Published,
 
-    /// Transaction was already accepted earlier and is already in mempool.
+    /// Transaction is already accepted and present in mempool.
     AlreadyInMempool,
 
     /// Transaction has invalid/missing inputs and should be marked invalid.
@@ -117,19 +130,94 @@ where
         &'a self,
         tx: &'a Transaction,
     ) -> BroadcasterResult<PublishTxOutcome> {
+        let txid = tx.compute_txid();
         match self.rpc_client.send_raw_transaction(tx).await {
-            Ok(_) => Ok(PublishTxOutcome::Published),
-            Err(ClientError::Server(-25, _)) => Ok(PublishTxOutcome::AlreadyInMempool),
-            Err(err)
-                if err.is_missing_or_invalid_input()
-                    || matches!(err, ClientError::Server(-22, _)) =>
-            {
+            Ok(_) => {
+                info!(%txid, "sendrawtransaction accepted (Published)");
+                Ok(PublishTxOutcome::Published)
+            }
+            Err(ClientError::Server(-25, msg)) => {
+                // Bitcoind reuses code -25 for several distinct reject reasons.
+                // "txn-already-in-mempool" / "txn-already-known" mean the tx is
+                // already accepted; fold to AlreadyInMempool.
+                // "bad-txns-inputs-missingorspent" means the chosen UTXO has
+                // already been spent or evicted; the entry must be re-signed
+                // against a fresh listunspent snapshot. Mapping it blindly to
+                // AlreadyInMempool pins the entry at Published forever and
+                // stalls the watcher's curr_payloadidx.
+                if is_benign_minus25_message(&msg) {
+                    warn!(%txid, %msg, "sendrawtransaction reports tx already accepted (AlreadyInMempool)");
+                    Ok(PublishTxOutcome::AlreadyInMempool)
+                } else {
+                    warn!(%txid, %msg, "sendrawtransaction -25 with non-benign message (treated as InvalidInputs)");
+                    Ok(PublishTxOutcome::InvalidInputs)
+                }
+            }
+            Err(ClientError::Server(-22, msg)) => {
+                warn!(%txid, %msg, "sendrawtransaction returned -22 (treated as InvalidInputs)");
                 Ok(PublishTxOutcome::InvalidInputs)
             }
-            Err(err @ ClientError::Status(500, _)) => Ok(PublishTxOutcome::RetryLater {
-                reason: err.to_string(),
-            }),
-            Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
+            Err(err) if err.is_missing_or_invalid_input() => {
+                warn!(%txid, %err, "sendrawtransaction missing/invalid input (treated as InvalidInputs)");
+                Ok(PublishTxOutcome::InvalidInputs)
+            }
+            Err(err @ ClientError::Status(500, _)) => {
+                warn!(%txid, %err, "sendrawtransaction HTTP 500 (treated as RetryLater)");
+                Ok(PublishTxOutcome::RetryLater {
+                    reason: err.to_string(),
+                })
+            }
+            Err(ClientError::Server(code, msg)) => {
+                warn!(%txid, %code, %msg, "sendrawtransaction returned unhandled bitcoin server error");
+                Err(BroadcasterError::Rpc(anyhow!(
+                    "bitcoin server error {code}: {msg}"
+                )))
+            }
+            Err(err) => {
+                warn!(%txid, %err, "sendrawtransaction returned unexpected error");
+                Err(BroadcasterError::Rpc(anyhow!(err)))
+            }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::is_benign_minus25_message;
+
+    #[test]
+    fn benign_minus25_strings_match() {
+        // Bitcoind reject reasons that mean "the tx is already accepted",
+        // safe to fold to AlreadyInMempool. Strings come from bitcoind's
+        // validation.cpp / policy.cpp.
+        assert!(is_benign_minus25_message("txn-already-in-mempool"));
+        assert!(is_benign_minus25_message("txn-already-known"));
+        assert!(is_benign_minus25_message("txn-already-in-block-chain"));
+    }
+
+    #[test]
+    fn missing_input_minus25_is_not_benign() {
+        // The case that motivated this disambiguation: input UTXO is gone,
+        // entry must be re-signed against a fresh listunspent.
+        assert!(!is_benign_minus25_message("bad-txns-inputs-missingorspent"));
+    }
+
+    #[test]
+    fn other_minus25_reasons_are_not_benign() {
+        // Catch-all: anything we have not explicitly classified as benign
+        // (e.g. RBF / fee policy violations) routes to InvalidInputs so the
+        // watcher rebuilds rather than pinning at Published.
+        assert!(!is_benign_minus25_message("txn-mempool-conflict"));
+        assert!(!is_benign_minus25_message("min relay fee not met"));
+    }
+
+    #[test]
+    fn space_separated_does_not_match_hyphenated() {
+        // Space-separated forms do not appear in bitcoind reject strings.
+        // Keep them non-benign so only real `already-*` tokens map to
+        // AlreadyInMempool.
+        assert!(!is_benign_minus25_message("already in mempool"));
+        assert!(!is_benign_minus25_message("already known"));
     }
 }

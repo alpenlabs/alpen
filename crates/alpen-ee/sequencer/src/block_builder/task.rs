@@ -217,8 +217,8 @@ async fn build_next_block(
         .await
         .context("build_next_block: failed to get best exec block")?;
 
-    // Check if last local block is not as expected from previous block building cycle
-    // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
+    // Check the parent expected by the block target. A mismatch means another
+    // builder advanced the local EE tip.
     if last_local_block.blockhash() != expected_block_target.parent {
         warn!(
             expected = %expected_block_target.parent,
@@ -227,8 +227,7 @@ async fn build_next_block(
         )
     }
 
-    // Ensure blocktime >= configured blocktime
-    // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
+    // Enforce the configured blocktime against the current local tip.
     let timestamp_ms = clock.current_timestamp();
     validate_blocktime_constraint(
         timestamp_ms,
@@ -241,15 +240,36 @@ async fn build_next_block(
         .get_finalized_block()
         .await
         .context("build_next_block: failed to get finalized OL block")?;
+
+    // Record a monotonic OL commitment on the new exec block. During restart
+    // catch-up, finalization lag, or reorg handling, the OL tracker can report
+    // a block behind the local EE tip. Writing that lower slot makes inbox
+    // fetching include slots already reflected in account state.
+    let effective_ol_block: OLBlockCommitment =
+        if best_ol_block.slot() < last_local_block.ol_block().slot() {
+            *last_local_block.ol_block()
+        } else {
+            best_ol_block
+        };
+
     let (inbox_messages, next_inbox_msg_idx) = if should_fetch_inbox_messages(
         last_local_block.ol_block().blkid(),
-        best_ol_block.blkid(),
+        effective_ol_block.blkid(),
     ) {
-        ol_chain_handle
-            .get_inbox_messages(last_local_block.ol_block().slot(), best_ol_block.slot())
-            .await
-            .context("build_next_block: failed to get inbox messages")?
-            .into_parts()
+        // Fetch only slots newer than the last OL slot reflected in account
+        // state. Re-including a drained slot produces a SAU whose
+        // processed_messages do not match new_next_inbox_msg_idx, and OL
+        // rejects it with "invalid next msg index".
+        let from_slot = last_local_block.ol_block().slot().saturating_add(1);
+        if from_slot > effective_ol_block.slot() {
+            (vec![], last_local_block.next_inbox_msg_idx())
+        } else {
+            ol_chain_handle
+                .get_inbox_messages(from_slot, effective_ol_block.slot())
+                .await
+                .context("build_next_block: failed to get inbox messages")?
+                .into_parts()
+        }
     } else {
         (vec![], last_local_block.next_inbox_msg_idx())
     };
@@ -272,7 +292,7 @@ async fn build_next_block(
         package,
         account_state,
         last_local_block.blocknum(),
-        best_ol_block,
+        effective_ol_block,
         timestamp_ms,
         parent_blockhash,
         next_inbox_msg_idx,

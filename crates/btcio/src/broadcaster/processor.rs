@@ -58,11 +58,10 @@ where
 {
     let result = match txentry.status {
         L1TxStatus::Unpublished => publish_tx(io, txentry).await.map(Some),
-        L1TxStatus::Published | L1TxStatus::Confirmed { .. } => {
-            check_tx_confirmations(io, txentry, txid, params)
-                .await
-                .map(Some)
-        }
+        L1TxStatus::Published => probe_published_entry(io, txentry, txid, params).await.map(Some),
+        L1TxStatus::Confirmed { .. } => check_tx_confirmations(io, txentry, txid, params)
+            .await
+            .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
         L1TxStatus::InvalidInputs => Ok(None),
     };
@@ -70,6 +69,47 @@ where
         debug!(?updated_status);
     }
     result
+}
+
+/// Resolves a `Published` entry by combining a confirmation lookup with a
+/// re-publish probe.
+///
+/// A `Published` entry that gets `Ok(None)` from `gettransaction` could be in
+/// one of two states:
+/// 1. Transient miss: the tx is in mempool but the wallet's chain syncer
+///    hasn't observed it yet. Holding `Published` lets it advance once the
+///    syncer catches up.
+/// 2. Genuinely dropped: the tx was evicted from mempool (fee policy, RBF
+///    conflict, etc.) or never relayed. If we keep holding `Published` the
+///    watcher's `curr_payloadidx` stalls forever.
+///
+/// `gettransaction` alone cannot distinguish these. Re-attempting publication
+/// can: bitcoind responds with `txn-already-in-mempool` (benign, fold to
+/// `Published`) when case 1 holds, and with `bad-txns-inputs-missingorspent`
+/// (mapped to `InvalidInputs`) when the inputs are gone, which lets the
+/// watcher rebuild the envelope.
+async fn probe_published_entry<C>(
+    io: &C,
+    txentry: &L1TxEntry,
+    txid: &Txid,
+    params: &BtcioParams,
+) -> BroadcasterResult<L1TxStatus>
+where
+    C: BroadcasterIoContext,
+{
+    let conf_status = check_tx_confirmations(io, txentry, txid, params).await?;
+    // Confirmed/Finalized: lookup found the tx with a block. Done.
+    if !matches!(conf_status, L1TxStatus::Published) {
+        return Ok(conf_status);
+    }
+    // Held at `Published` because lookup returned not-found. Probe via
+    // re-publish. `publish_tx` returns `InvalidInputs` if the inputs are
+    // genuinely gone, which exits the stuck state. Anything else (already in
+    // mempool, freshly accepted, retry-later) keeps us at `Published`.
+    match publish_tx(io, txentry).await? {
+        L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
+        _ => Ok(L1TxStatus::Published),
+    }
 }
 
 /// Resolves `Published`/`Confirmed` entries to their next confirmation-derived status.
@@ -91,9 +131,9 @@ where
 
         match txinfo_res {
             Ok(Some(info)) => match (info.confirmations, &txentry.status) {
-                // A previously published tx with 0 confirmations remains published.
+                // A `Published` tx with 0 confirmations remains published.
                 (0, L1TxStatus::Published) => Ok(L1TxStatus::Published),
-                // A previously confirmed tx with 0 confirmations regresses to unpublished.
+                // A confirmed tx with 0 confirmations regresses to unpublished.
                 (0, _) => Ok(L1TxStatus::Unpublished),
                 (confirmations, _) => {
                     let block_hash = info.block_hash.expect("confirmed tx must have block_hash");
@@ -116,7 +156,18 @@ where
                     }
                 }
             },
-            Ok(None) => Ok(L1TxStatus::Unpublished),
+            // A `gettransaction`-style lookup returns "tx not found" both for
+            // unknown txs and for newly-broadcast txs that the wallet's chain
+            // syncer has not yet observed. Reverting an already-Published entry
+            // to Unpublished on this transient miss creates a publish/revert
+            // oscillation that prevents the entry from ever advancing to
+            // Confirmed (the watcher's curr_payloadidx then stalls). For
+            // entries we know we already published, hold the Published status
+            // and re-check on the next tick.
+            Ok(None) => match &txentry.status {
+                L1TxStatus::Published => Ok(L1TxStatus::Published),
+                _ => Ok(L1TxStatus::Unpublished),
+            },
             Err(e) => Err(e),
         }
     }
@@ -603,6 +654,86 @@ mod test {
                 );
             });
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_published_entry_missing_tx_holds_published() {
+        // Bitcoind's `gettransaction` can briefly report a freshly broadcast
+        // tx as missing before the wallet's chain syncer catches up. A
+        // `Published` entry must not regress to `Unpublished` on that
+        // transient miss; otherwise the broadcaster oscillates and the
+        // watcher's curr_payloadidx never advances past it.
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry must hold its status when get_transaction returns NotFound"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_dropped_from_mempool_advances_to_invalid_inputs() {
+        // A `Published` entry whose lookup says "not found" AND whose
+        // re-publish probe returns `InvalidInputs` (e.g. its inputs were
+        // spent or evicted) must transition to `InvalidInputs` so the
+        // watcher's `determine_payload_next_status` flips the bundle to
+        // `NeedsResign` and the envelope is rebuilt against fresh UTXOs.
+        // Without the publish-probe in `probe_published_entry`, the entry
+        // would stay `Published` forever and the watcher's
+        // `curr_payloadidx` would stall.
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::InvalidInputs),
+            "Published entry whose re-publish probe returns InvalidInputs must \
+             transition to InvalidInputs so the watcher rebuilds the envelope"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_already_in_mempool_holds_published() {
+        // A `Published` entry whose lookup says "not found" but whose
+        // re-publish probe returns `AlreadyInMempool` is in the transient
+        // wallet-syncer-lag state. Stay `Published`; do not regress.
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(txid, MockBroadcastResult::AlreadyInMempool);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry whose probe says already-in-mempool must hold"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_confirmed_entry_missing_tx_regresses_to_unpublished() {
+        // Confirmed entries that go missing on lookup should still regress to
+        // Unpublished so the broadcaster re-publishes (e.g. after a reorg
+        // dropped them from the wallet view).
+        let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Unpublished),
+            "Confirmed entry that disappears should regress to Unpublished"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
