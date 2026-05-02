@@ -118,7 +118,7 @@ fn prepare_deposit_request(
     // The Alpen EE is the first user account registered at genesis. System
     // serials occupy 0..SYSTEM_RESERVED_ACCTS, so it lands at serial 128.
     // Encoding 0 here resolves to the placeholder system slot and the OL
-    // silently discards the deposit. TODO(STR-XXXX): query the EE serial
+    // silently discards the deposit. TODO(STR-2021): query the EE serial
     // from OL params or via RPC instead of hardcoding.
     let deposit_descriptor = DepositDescriptor::new(
         AccountSerial::new(SYSTEM_RESERVED_ACCTS),

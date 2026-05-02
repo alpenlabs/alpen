@@ -21,6 +21,7 @@ the same loss-of-funds path.
 """
 
 import logging
+import time
 
 import flexitest
 
@@ -88,10 +89,20 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         addr = btc_rpc.proxy.getnewaddress()
         btc_rpc.proxy.generatetoaddress(8, addr)
 
-        # Cross at least one terminal block so the deposit-bearing manifest is
-        # processed by the OL STF.
-        slots_per_epoch = strata.props["slots_per_epoch"]
-        strata.wait_for_additional_blocks(2 * slots_per_epoch, rpc, timeout_per_block=15)
+        # The deposit-bearing manifest is only processed once an epoch closes
+        # after the deposit lands on L1. Poll chain status for the tip epoch
+        # to advance rather than wait a fixed slot count.
+        start_epoch = int(rpc.strata_getChainStatus()["tip"]["epoch"])
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            btc_rpc.proxy.generatetoaddress(2, addr)
+            time.sleep(0.5)
+            current_epoch = int(rpc.strata_getChainStatus()["tip"]["epoch"])
+            if current_epoch > start_epoch:
+                logger.info("tip epoch advanced %d -> %d", start_epoch, current_epoch)
+                break
+        else:
+            raise AssertionError(f"tip epoch did not advance past {start_epoch} within 60s")
 
         balance = get_account_balance(rpc, TEST_ACCOUNT_ID_HEX)
         delta = balance - initial
