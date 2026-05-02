@@ -181,7 +181,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::is_benign_minus25_message;

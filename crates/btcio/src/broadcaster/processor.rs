@@ -4,7 +4,7 @@ use tracing::*;
 
 use super::{
     error::{BroadcasterError, BroadcasterResult},
-    io::{BroadcasterIoContext, PublishTxOutcome},
+    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo},
     state::{BroadcasterState, IndexedEntry},
 };
 use crate::BtcioParams;
@@ -58,7 +58,9 @@ where
 {
     let result = match txentry.status {
         L1TxStatus::Unpublished => publish_tx(io, txentry).await.map(Some),
-        L1TxStatus::Published => probe_published_entry(io, txentry, txid, params).await.map(Some),
+        L1TxStatus::Published => probe_published_entry(io, txentry, txid, params)
+            .await
+            .map(Some),
         L1TxStatus::Confirmed { .. } => check_tx_confirmations(io, txentry, txid, params)
             .await
             .map(Some),
@@ -71,23 +73,18 @@ where
     result
 }
 
-/// Resolves a `Published` entry by combining a confirmation lookup with a
-/// re-publish probe.
+/// Resolves a `Published` entry from a confirmation lookup, falling back to a
+/// re-publish probe only when the lookup actually misses.
 ///
-/// A `Published` entry that gets `Ok(None)` from `gettransaction` could be in
-/// one of two states:
-/// 1. Transient miss: the tx is in mempool but the wallet's chain syncer
-///    hasn't observed it yet. Holding `Published` lets it advance once the
-///    syncer catches up.
-/// 2. Genuinely dropped: the tx was evicted from mempool (fee policy, RBF
-///    conflict, etc.) or never relayed. If we keep holding `Published` the
-///    watcher's `curr_payloadidx` stalls forever.
+/// `gettransaction` returns three distinguishable shapes for a Published entry:
 ///
-/// `gettransaction` alone cannot distinguish these. Re-attempting publication
-/// can: bitcoind responds with `txn-already-in-mempool` (benign, fold to
-/// `Published`) when case 1 holds, and with `bad-txns-inputs-missingorspent`
-/// (mapped to `InvalidInputs`) when the inputs are gone, which lets the
-/// watcher rebuild the envelope.
+/// 1. `Some(info)` with `confirmations >= 1`: tx mined, derive Confirmed/Finalized.
+/// 2. `Some(info)` with `confirmations == 0`: tx alive in mempool. Hold at Published. Re-publishing
+///    here would only spam bitcoind and the logs every poll for the entire pre-confirmation window.
+/// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss for a freshly broadcast
+///    tx, or a genuinely dropped tx (mempool eviction, RBF). Re-publish to disambiguate: benign
+///    mempool messages fold back to Published, `bad-txns-inputs-missingorspent` routes to
+///    InvalidInputs so the watcher rebuilds the envelope.
 async fn probe_published_entry<C>(
     io: &C,
     txentry: &L1TxEntry,
@@ -97,22 +94,52 @@ async fn probe_published_entry<C>(
 where
     C: BroadcasterIoContext,
 {
-    let conf_status = check_tx_confirmations(io, txentry, txid, params).await?;
-    // Confirmed/Finalized: lookup found the tx with a block. Done.
-    if !matches!(conf_status, L1TxStatus::Published) {
-        return Ok(conf_status);
-    }
-    // Held at `Published` because lookup returned not-found. Probe via
-    // re-publish. `publish_tx` returns `InvalidInputs` if the inputs are
-    // genuinely gone, which exits the stuck state. Anything else (already in
-    // mempool, freshly accepted, retry-later) keeps us at `Published`.
-    match publish_tx(io, txentry).await? {
-        L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
-        _ => Ok(L1TxStatus::Published),
+    let txinfo_res = io.get_transaction(txid).await;
+    debug!(?txinfo_res, "checked transaction status");
+    let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
+
+    match txinfo_res? {
+        Some(info) if info.confirmations >= 1 => Ok(confirmation_status(&info, reorg_safe_depth)),
+        Some(_) => Ok(L1TxStatus::Published),
+        None => match publish_tx(io, txentry).await? {
+            L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
+            _ => Ok(L1TxStatus::Published),
+        },
     }
 }
 
-/// Resolves `Published`/`Confirmed` entries to their next confirmation-derived status.
+/// Maps a confirmed `TxConfirmationInfo` (`info.confirmations >= 1`) to the
+/// corresponding `Confirmed` or `Finalized` status. Caller must ensure the
+/// `confirmations >= 1` precondition; the block_hash/block_height fields are
+/// only populated by bitcoind once a tx is mined.
+fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1TxStatus {
+    let block_hash = info.block_hash.expect("confirmed tx must have block_hash");
+    let block_height = info
+        .block_height
+        .expect("confirmed tx must have block_height");
+    let confirmations = info.confirmations as u64;
+    if info.confirmations >= reorg_safe_depth {
+        L1TxStatus::Finalized {
+            confirmations,
+            block_hash,
+            block_height,
+        }
+    } else {
+        L1TxStatus::Confirmed {
+            confirmations,
+            block_hash,
+            block_height,
+        }
+    }
+}
+
+/// Resolves a `Confirmed` entry to its next confirmation-derived status. A
+/// confirmed tx that disappears or drops to 0 confirmations regresses to
+/// `Unpublished` so the broadcaster re-publishes (typical reorg recovery).
+///
+/// Callers in `Published` state must use `probe_published_entry` instead; that
+/// path holds 0-conf and not-found differently to avoid publish/revert
+/// oscillation and unnecessary re-broadcasts.
 async fn check_tx_confirmations<C>(
     io: &C,
     txentry: &L1TxEntry,
@@ -125,50 +152,12 @@ where
     async {
         let txinfo_res = io.get_transaction(txid).await;
         debug!(?txinfo_res, "checked transaction status");
+        let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
-        let reorg_safe_depth = params.l1_reorg_safe_depth();
-        let reorg_safe_depth: i64 = reorg_safe_depth.into();
-
-        match txinfo_res {
-            Ok(Some(info)) => match (info.confirmations, &txentry.status) {
-                // A `Published` tx with 0 confirmations remains published.
-                (0, L1TxStatus::Published) => Ok(L1TxStatus::Published),
-                // A confirmed tx with 0 confirmations regresses to unpublished.
-                (0, _) => Ok(L1TxStatus::Unpublished),
-                (confirmations, _) => {
-                    let block_hash = info.block_hash.expect("confirmed tx must have block_hash");
-                    let block_height = info
-                        .block_height
-                        .expect("confirmed tx must have block_height");
-
-                    if confirmations >= reorg_safe_depth {
-                        Ok(L1TxStatus::Finalized {
-                            confirmations: confirmations as u64,
-                            block_hash,
-                            block_height,
-                        })
-                    } else {
-                        Ok(L1TxStatus::Confirmed {
-                            confirmations: confirmations as u64,
-                            block_hash,
-                            block_height,
-                        })
-                    }
-                }
-            },
-            // A `gettransaction`-style lookup returns "tx not found" both for
-            // unknown txs and for newly-broadcast txs that the wallet's chain
-            // syncer has not yet observed. Reverting an already-Published entry
-            // to Unpublished on this transient miss creates a publish/revert
-            // oscillation that prevents the entry from ever advancing to
-            // Confirmed (the watcher's curr_payloadidx then stalls). For
-            // entries we know we already published, hold the Published status
-            // and re-check on the next tick.
-            Ok(None) => match &txentry.status {
-                L1TxStatus::Published => Ok(L1TxStatus::Published),
-                _ => Ok(L1TxStatus::Unpublished),
-            },
-            Err(e) => Err(e),
+        match txinfo_res? {
+            Some(info) if info.confirmations == 0 => Ok(L1TxStatus::Unpublished),
+            Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+            None => Ok(L1TxStatus::Unpublished),
         }
     }
     .instrument(debug_span!(
@@ -716,6 +705,32 @@ mod test {
             res,
             Some(L1TxStatus::Published),
             "Published entry whose probe says already-in-mempool must hold"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_at_zero_conf_does_not_republish() {
+        // A `Published` entry that `gettransaction` reports as 0-conf in the
+        // wallet is alive in mempool and waiting to be mined. Re-publishing
+        // every poll for the entire pre-confirmation window would only spam
+        // bitcoind and the broadcaster logs. The probe must hold at Published
+        // without calling `send_raw_transaction`. We poison the broadcast path
+        // so any re-publish would surface as `InvalidInputs`; the assertion
+        // proves the probe never went down that road.
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(
+                txid,
+                MockTxLookupResult::Found(confirmation_info(0, 0, Buf32::zero())),
+            )
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry found at 0-conf in wallet must hold without re-publishing"
         );
     }
 
