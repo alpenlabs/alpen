@@ -67,3 +67,88 @@ where
         Box::pin(fut)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::convert::Infallible;
+
+    use http::Request;
+
+    use super::*;
+
+    /// Mock inner service that returns 418 with a marker header so we can
+    /// distinguish delegated responses from short-circuited ones.
+    #[derive(Clone, Copy)]
+    struct MockInner;
+
+    impl Service<HttpRequest<HttpBody>> for MockInner {
+        type Response = HttpResponse<HttpBody>;
+        type Error = Infallible;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _req: HttpRequest<HttpBody>) -> Self::Future {
+            Box::pin(async {
+                Ok(HttpResponse::builder()
+                    .status(StatusCode::IM_A_TEAPOT)
+                    .header("x-from-inner", "yes")
+                    .body(HttpBody::empty())
+                    .expect("mock response builds"))
+            })
+        }
+    }
+
+    fn req(method: Method, path: &str) -> HttpRequest<HttpBody> {
+        Request::builder()
+            .method(method)
+            .uri(path)
+            .body(HttpBody::empty())
+            .expect("test request builds")
+    }
+
+    #[tokio::test]
+    async fn get_explorer_returns_html_short_circuit() {
+        let mut svc = ExplorerLayer.layer(MockInner);
+        let res = svc
+            .call(req(Method::GET, "/explorer"))
+            .await
+            .expect("call");
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers().get("content-type").expect("content-type"),
+            "text/html; charset=utf-8"
+        );
+        // Inner marker absent => we short-circuited rather than delegating.
+        assert!(res.headers().get("x-from-inner").is_none());
+    }
+
+    #[tokio::test]
+    async fn get_other_path_delegates_to_inner() {
+        let mut svc = ExplorerLayer.layer(MockInner);
+        let res = svc
+            .call(req(Method::GET, "/something-else"))
+            .await
+            .expect("call");
+        assert_eq!(res.status(), StatusCode::IM_A_TEAPOT);
+        assert_eq!(
+            res.headers().get("x-from-inner").expect("inner marker"),
+            "yes"
+        );
+    }
+
+    #[tokio::test]
+    async fn post_explorer_path_delegates_to_inner() {
+        // Only GET /explorer is intercepted; jsonrpsee handles POST for
+        // JSON-RPC on every path including /explorer.
+        let mut svc = ExplorerLayer.layer(MockInner);
+        let res = svc
+            .call(req(Method::POST, "/explorer"))
+            .await
+            .expect("call");
+        assert_eq!(res.status(), StatusCode::IM_A_TEAPOT);
+    }
+}
