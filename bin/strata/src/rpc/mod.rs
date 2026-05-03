@@ -10,6 +10,8 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
+use tower::ServiceBuilder;
+use tower_http::cors::CorsLayer;
 use node::*;
 use provider::NodeRpcProvider;
 #[cfg(feature = "sequencer")]
@@ -197,7 +199,15 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     }
 
     let addr = format!("{}:{}", deps.rpc_host, deps.rpc_port);
+    // Permissive CORS so that browser-based tools (e.g. the OL explorer
+    // hosted at a different origin) can call the JSON-RPC. This is a
+    // developer-facing endpoint with no authenticated state, so allowing
+    // any origin/method/header is appropriate. Adjust if the RPC ever
+    // grows session/cookie state.
+    let cors = CorsLayer::permissive();
+    let http_middleware = ServiceBuilder::new().layer(cors);
     let rpc_server = ServerBuilder::new()
+        .set_http_middleware(http_middleware)
         .build(&addr)
         .await
         .map_err(|e| anyhow!("Failed to build RPC server on {addr}: {e}"))?;
