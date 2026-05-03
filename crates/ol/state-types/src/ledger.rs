@@ -40,6 +40,21 @@ impl TsnlLedgerAccountsTable {
         self.get_acct_entry_mut(id).map(|e| &mut e.state)
     }
 
+    /// Returns an iterator over all account entries in ascending ID order.
+    pub fn entries(&self) -> impl Iterator<Item = &TsnlAccountEntry> {
+        self.accounts.iter()
+    }
+
+    /// Returns the number of accounts in the ledger.
+    pub fn len(&self) -> usize {
+        self.accounts.len()
+    }
+
+    /// Returns whether the ledger has no accounts.
+    pub fn is_empty(&self) -> bool {
+        self.accounts.is_empty()
+    }
+
     /// Creates a new account.
     ///
     /// This does not check serial uniqueness/ordering.
@@ -95,6 +110,16 @@ impl TsnlLedgerAccountsTable {
 impl TsnlAccountEntry {
     fn new(id: AccountId, state: OLAccountState) -> Self {
         Self { id, state }
+    }
+
+    /// Returns the account ID.
+    pub fn id(&self) -> AccountId {
+        self.id
+    }
+
+    /// Returns the account state.
+    pub fn state(&self) -> &OLAccountState {
+        &self.state
     }
 }
 

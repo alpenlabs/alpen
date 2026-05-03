@@ -81,6 +81,11 @@ impl OLState {
         &self.epoch
     }
 
+    /// Returns the ledger accounts table.
+    pub fn ledger(&self) -> &TsnlLedgerAccountsTable {
+        &self.ledger
+    }
+
     /// Checks that a batch can be applied safely.
     ///
     /// This checks:

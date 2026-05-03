@@ -19,9 +19,10 @@ use strata_ledger_types::{IAccountState, ISnarkAccountState};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
-    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEpochSummary, RpcBlockEntry,
-    RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo, RpcCheckpointL1Ref,
-    RpcOLBlockInfo, RpcOLChainStatus, RpcOLTransaction, RpcSnarkAccountState, RpcUpdateInputData,
+    OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEntry, RpcAccountEpochSummary,
+    RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo,
+    RpcCheckpointL1Ref, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus,
+    RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -194,6 +195,50 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             .ok_or_else(|| {
                 not_found_error(format!("No epoch commitment found for epoch {}", epoch - 1))
             })
+    }
+
+    /// Resolves an [`OLBlockOrTag`] to a concrete [`OLBlockCommitment`].
+    ///
+    /// `Latest`, `Confirmed`, and `Finalized` come from the OL sync status.
+    /// `OLBlockId` requires fetching the block to read its slot. `Slot` looks
+    /// up the canonical block at that slot.
+    async fn resolve_block_or_tag(
+        &self,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<OLBlockCommitment> {
+        Ok(match block_or_tag {
+            OLBlockOrTag::Latest => {
+                self.provider
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?
+                    .tip
+            }
+            OLBlockOrTag::Confirmed => {
+                // TODO(STR-2420): prev_epoch is not exactly the confirmed epoch.
+                self.provider
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?
+                    .prev_epoch
+                    .to_block_commitment()
+            }
+            OLBlockOrTag::Finalized => {
+                self.provider
+                    .get_ol_sync_status()
+                    .ok_or_else(|| internal_error("OL sync status not available"))?
+                    .finalized_epoch
+                    .to_block_commitment()
+            }
+            OLBlockOrTag::OLBlockId(block_id) => {
+                let block = self.get_block(block_id).await?;
+                OLBlockCommitment::new(block.header().slot(), block_id)
+            }
+            OLBlockOrTag::Slot(slot) => self
+                .provider
+                .get_canonical_block_at(slot)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
+        })
     }
 
     /// Walks the canonical chain backwards from `end_slot` to `start_slot`,
@@ -1063,6 +1108,87 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         }
         entries.reverse();
 
+        Ok(entries)
+    }
+
+    async fn get_block_by_slot(&self, slot: u64) -> RpcResult<Option<RpcOLBlockDetail>> {
+        let Some(blkid) = self.get_canonical_block_at_height(slot).await? else {
+            return Ok(None);
+        };
+        let block = self.get_block(blkid).await?;
+        Ok(Some(RpcOLBlockDetail::from(&block)))
+    }
+
+    async fn get_recent_blocks(&self, count: u64) -> RpcResult<Vec<RpcOLBlockSummary>> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        if count as usize > self.max_headers_range {
+            return Err(invalid_params_error(format!(
+                "count {} exceeds max_headers_range {}",
+                count, self.max_headers_range
+            )));
+        }
+
+        let tip_slot = self
+            .provider
+            .get_ol_sync_status()
+            .ok_or_else(|| internal_error("OL sync status not available"))?
+            .tip
+            .slot();
+
+        let Some(tip_blkid) = self.get_canonical_block_at_height(tip_slot).await? else {
+            return Ok(Vec::new());
+        };
+
+        let mut cur_blkid = tip_blkid;
+        let mut summaries = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            let block = self.get_block(cur_blkid).await?;
+            let header = block.header();
+            summaries.push(RpcOLBlockSummary::from(&block));
+            if header.slot() == 0 {
+                break;
+            }
+            cur_blkid = *header.parent_blkid();
+        }
+        summaries.reverse();
+        Ok(summaries)
+    }
+
+    async fn get_block_transactions(&self, slot: u64) -> RpcResult<Vec<RpcOLTxDetail>> {
+        let blkid = self
+            .get_canonical_block_at_height(slot)
+            .await?
+            .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?;
+        let block = self.get_block(blkid).await?;
+        let txs = block
+            .body()
+            .tx_segment()
+            .map(|seg| seg.txs().iter().map(RpcOLTxDetail::from).collect())
+            .unwrap_or_default();
+        Ok(txs)
+    }
+
+    async fn list_accounts(
+        &self,
+        block_or_tag: OLBlockOrTag,
+    ) -> RpcResult<Vec<RpcAccountEntry>> {
+        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
+        let ol_state = self
+            .provider
+            .get_toplevel_ol_state(block_commitment)
+            .await
+            .map_err(db_error)?
+            .ok_or_else(|| {
+                not_found_error(format!("No OL state found for block {block_commitment}"))
+            })?;
+
+        let entries = ol_state
+            .ledger()
+            .entries()
+            .map(RpcAccountEntry::from)
+            .collect();
         Ok(entries)
     }
 }

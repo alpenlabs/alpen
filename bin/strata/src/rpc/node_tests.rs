@@ -2785,3 +2785,206 @@ async fn raw_blocks_range_exceeds_max_returns_invalid_params() {
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
 }
+
+// ── get_block_by_slot ──
+
+#[tokio::test]
+async fn get_block_by_slot_returns_decoded_detail() {
+    let block = make_block(7, 1, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(7, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            1,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let detail = rpc
+        .get_block_by_slot(7)
+        .await
+        .expect("rpc call")
+        .expect("block present");
+    assert_eq!(detail.header().slot(), 7);
+    assert_eq!(detail.header().epoch(), 1);
+    assert_eq!(detail.header().blkid(), blkid);
+    assert_eq!(detail.tx_count(), 0);
+    assert!(detail.l1_update().is_none());
+}
+
+#[tokio::test]
+async fn get_block_by_slot_unknown_returns_none() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(0, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let detail = rpc.get_block_by_slot(42).await.expect("rpc call");
+    assert!(detail.is_none());
+}
+
+// ── get_recent_blocks ──
+
+#[tokio::test]
+async fn get_recent_blocks_walks_backwards_in_order() {
+    let block0 = make_block(0, 0, null_blkid());
+    let blkid0 = block0.header().compute_blkid();
+    let block1 = make_block(1, 0, blkid0);
+    let blkid1 = block1.header().compute_blkid();
+    let block2 = make_block(2, 0, blkid1);
+    let blkid2 = block2.header().compute_blkid();
+
+    let tip = OLBlockCommitment::new(2, blkid2);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block0, genesis_ol_state())
+        .with_block_and_state(&block1, genesis_ol_state())
+        .with_block_and_state(&block2, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc.get_recent_blocks(3).await.expect("recent blocks");
+    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries[0].slot(), 0);
+    assert_eq!(summaries[1].slot(), 1);
+    assert_eq!(summaries[2].slot(), 2);
+    assert_eq!(summaries[2].blkid(), blkid2);
+    assert!(summaries.iter().all(|s| s.tx_count() == 0));
+}
+
+#[tokio::test]
+async fn get_recent_blocks_zero_returns_empty() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(5, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc.get_recent_blocks(0).await.expect("rpc call");
+    assert!(summaries.is_empty());
+}
+
+#[tokio::test]
+async fn get_recent_blocks_caps_at_genesis_when_count_exceeds_tip() {
+    let block0 = make_block(0, 0, null_blkid());
+    let blkid0 = block0.header().compute_blkid();
+    let block1 = make_block(1, 0, blkid0);
+    let blkid1 = block1.header().compute_blkid();
+
+    let tip = OLBlockCommitment::new(1, blkid1);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block0, genesis_ol_state())
+        .with_block_and_state(&block1, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc.get_recent_blocks(10).await.expect("rpc call");
+    assert_eq!(summaries.len(), 2);
+    assert_eq!(summaries[0].slot(), 0);
+    assert_eq!(summaries[1].slot(), 1);
+}
+
+// ── get_block_transactions ──
+
+#[tokio::test]
+async fn get_block_transactions_empty_block_returns_empty() {
+    let block = make_block(3, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(3, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let txs = rpc.get_block_transactions(3).await.expect("txs");
+    assert!(txs.is_empty());
+}
+
+#[tokio::test]
+async fn get_block_transactions_unknown_slot_errors() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(0, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let result = rpc.get_block_transactions(99).await;
+    assert!(result.is_err());
+}
+
+// ── list_accounts ──
+
+#[tokio::test]
+async fn list_accounts_returns_ledger_entries() {
+    let acct = AccountId::from([0x11; 32]);
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(
+            &block,
+            ol_state_with_snark_account(acct, 4, 7, DEFAULT_NEXT_INBOX_MSG_IDX),
+        );
+    let rpc = make_rpc(provider);
+
+    let entries = rpc
+        .list_accounts(OLBlockOrTag::Slot(4))
+        .await
+        .expect("list accounts");
+    let our_entry = entries
+        .iter()
+        .find(|e| e.id().0 == *acct.inner())
+        .expect("account present in ledger");
+    assert_eq!(our_entry.account_type(), RpcAccountType::Snark);
+    let snark = our_entry.snark().expect("snark summary");
+    assert_eq!(snark.seq_no(), 7);
+}
