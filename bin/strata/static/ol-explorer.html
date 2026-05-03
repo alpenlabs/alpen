@@ -1,0 +1,564 @@
+<!doctype html>
+<!--
+  Minimal OL Explorer (STR-3098)
+
+  Self-contained HTML + vanilla JS + Tailwind CDN. Open this file in a
+  browser and point it at a strata node's RPC URL. The node must expose
+  the decoded endpoints from STR-3097 (PR #1747):
+    strata_getChainStatus
+    strata_getRecentBlocks
+    strata_getBlockBySlot
+    strata_getBlockTransactions
+    strata_listAccounts
+
+  CORS note: when opened from disk (file://) the browser will block RPC
+  calls to a node on a different origin unless the node is configured to
+  allow `null` / `*` in `Access-Control-Allow-Origin`. For local dev,
+  start strata with permissive CORS, or eventually serve this HTML from
+  the strata binary at `GET /explorer` (Mode B, follow-up ticket).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OL Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .row-link { cursor: pointer; }
+      .row-link:hover { background-color: rgb(241 245 249); }
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-900">
+    <header class="bg-slate-900 text-slate-100 border-b border-slate-700">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
+        <a href="#/dashboard" class="text-lg font-semibold tracking-tight">OL Explorer</a>
+        <nav class="flex gap-3 text-sm text-slate-300">
+          <a href="#/dashboard" class="hover:text-white" data-nav="dashboard">Dashboard</a>
+          <a href="#/blocks" class="hover:text-white" data-nav="blocks">Blocks</a>
+          <a href="#/accounts" class="hover:text-white" data-nav="accounts">Accounts</a>
+        </nav>
+        <div class="ml-auto flex items-center gap-2 text-sm">
+          <label for="node-url" class="text-slate-400">Node</label>
+          <input
+            id="node-url"
+            type="text"
+            class="bg-slate-800 border border-slate-700 rounded px-2 py-1 mono w-72"
+            placeholder="http://localhost:9944"
+          />
+          <button
+            id="connect-btn"
+            class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded text-sm font-medium"
+          >Connect</button>
+          <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-500" title="disconnected"></span>
+        </div>
+      </div>
+    </header>
+
+    <div id="error-banner" class="hidden bg-rose-100 text-rose-900 border-b border-rose-300">
+      <div class="max-w-7xl mx-auto px-4 py-2 text-sm flex items-center gap-3">
+        <span id="error-message" class="mono"></span>
+        <button id="error-dismiss" class="ml-auto text-rose-700 hover:text-rose-900 text-xs">dismiss</button>
+      </div>
+    </div>
+
+    <main id="app" class="max-w-7xl mx-auto px-4 py-6"></main>
+
+    <footer class="max-w-7xl mx-auto px-4 py-6 text-xs text-slate-500">
+      Internal tool. Source: bin/strata/static/ol-explorer.html. Tracks STR-3098.
+    </footer>
+
+    <script>
+      // ---- State ----
+      const state = {
+        nodeUrl: null,
+        connected: false,
+        autoRefresh: null, // setInterval handle
+      };
+
+      const STORAGE_KEY = "ol-explorer-node-url";
+      const REFRESH_MS = 5000;
+      const RECENT_BLOCKS_COUNT = 20;
+      const ACCOUNTS_PAGE_SIZE = 50;
+
+      // ---- RPC helper ----
+      async function rpc(method, params) {
+        if (!state.nodeUrl) {
+          throw new Error("no node URL configured");
+        }
+        const body = JSON.stringify({
+          jsonrpc: "2.0",
+          id: Math.floor(Math.random() * 1_000_000),
+          method,
+          params,
+        });
+        const res = await fetch(state.nodeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        if (!res.ok) {
+          throw new Error(`http ${res.status}: ${await res.text()}`);
+        }
+        const json = await res.json();
+        if (json.error) {
+          throw new Error(`rpc error ${json.error.code}: ${json.error.message}`);
+        }
+        return json.result;
+      }
+
+      // ---- Status / errors ----
+      const $ = (id) => document.getElementById(id);
+      const setStatus = (connected) => {
+        state.connected = connected;
+        $("status-dot").className =
+          "w-2 h-2 rounded-full " + (connected ? "bg-emerald-400" : "bg-slate-500");
+        $("status-dot").title = connected ? "connected" : "disconnected";
+        $("connect-btn").textContent = connected ? "Disconnect" : "Connect";
+        $("connect-btn").className =
+          (connected
+            ? "bg-rose-600 hover:bg-rose-500"
+            : "bg-emerald-600 hover:bg-emerald-500") +
+          " px-3 py-1 rounded text-sm font-medium";
+      };
+      const showError = (msg) => {
+        $("error-message").textContent = msg;
+        $("error-banner").classList.remove("hidden");
+      };
+      const hideError = () => $("error-banner").classList.add("hidden");
+
+      // ---- Formatters ----
+      const truncHex = (hex, head = 8, tail = 6) => {
+        if (!hex) return "";
+        const s = String(hex);
+        if (s.length <= head + tail + 2) return s;
+        return `${s.slice(0, head + 2)}...${s.slice(-tail)}`;
+      };
+      const fmtTime = (unixSecs) => {
+        if (!unixSecs) return "-";
+        const d = new Date(Number(unixSecs) * 1000);
+        return d.toISOString().replace("T", " ").replace("Z", " UTC");
+      };
+      const fmtSats = (sats) => {
+        const n = Number(sats || 0);
+        // Format as decimal BTC with 8 decimals plus thousands separators
+        // for the sats integer presentation.
+        const btc = (n / 100_000_000).toFixed(8);
+        return `${n.toLocaleString()} (${btc} BTC)`;
+      };
+      const escapeHtml = (s) =>
+        String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+
+      // ---- Views ----
+      async function viewDashboard(app) {
+        app.innerHTML = `
+          <h1 class="text-2xl font-semibold mb-4">Dashboard</h1>
+          <div id="dashboard-stats" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6"></div>
+          <h2 class="text-lg font-semibold mt-8 mb-3">Recent blocks</h2>
+          <div id="dashboard-recent" class="bg-white rounded shadow-sm border border-slate-200"></div>
+        `;
+        if (!state.connected) {
+          app.querySelector("#dashboard-stats").innerHTML = noNodeHint();
+          return;
+        }
+        try {
+          const [status, recent] = await Promise.all([
+            rpc("strata_getChainStatus", []),
+            rpc("strata_getRecentBlocks", [10]),
+          ]);
+          renderStatusCards(app.querySelector("#dashboard-stats"), status);
+          renderBlocksTable(app.querySelector("#dashboard-recent"), recent, { compact: true });
+        } catch (e) {
+          showError(`dashboard: ${e.message}`);
+        }
+      }
+
+      function renderStatusCards(container, status) {
+        const tip = status?.tip ?? {};
+        const card = (label, value, sub = "") => `
+          <div class="bg-white rounded shadow-sm border border-slate-200 p-4">
+            <div class="text-xs text-slate-500 uppercase tracking-wide">${escapeHtml(label)}</div>
+            <div class="mt-1 text-2xl font-semibold mono">${escapeHtml(value)}</div>
+            ${sub ? `<div class="text-xs text-slate-500 mt-1 mono">${escapeHtml(sub)}</div>` : ""}
+          </div>
+        `;
+        container.innerHTML = [
+          card("Tip slot", tip.slot ?? "-", `epoch ${tip.epoch ?? "-"}${tip.is_terminal ? " (terminal)" : ""}`),
+          card("Tip block", truncHex(tip.blkid)),
+          card("Confirmed epoch", status?.confirmed?.epoch ?? "-",
+               `last slot ${status?.confirmed?.last_slot ?? "-"}`),
+          card("Finalized epoch", status?.finalized?.epoch ?? "-",
+               `last slot ${status?.finalized?.last_slot ?? "-"}`),
+        ].join("");
+      }
+
+      function renderBlocksTable(container, blocks, { compact = false } = {}) {
+        if (!blocks || blocks.length === 0) {
+          container.innerHTML = `<div class="p-4 text-sm text-slate-500">no blocks</div>`;
+          return;
+        }
+        const rows = blocks
+          .slice()
+          .reverse() // newest first in list view
+          .map(
+            (b) => `
+            <tr class="row-link border-t border-slate-100" data-href="#/block/${b.slot}">
+              <td class="py-2 px-3 mono">${b.slot}</td>
+              <td class="py-2 px-3 mono">${b.epoch}</td>
+              <td class="py-2 px-3 mono text-slate-700">${truncHex(b.blkid)}</td>
+              <td class="py-2 px-3 mono text-slate-500">${escapeHtml(fmtTime(b.timestamp))}</td>
+              <td class="py-2 px-3 mono text-right">${b.tx_count}</td>
+              <td class="py-2 px-3 text-xs">
+                ${b.is_terminal ? '<span class="bg-amber-100 text-amber-900 px-2 py-0.5 rounded">terminal</span>' : ""}
+              </td>
+            </tr>
+          `,
+          )
+          .join("");
+        container.innerHTML = `
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+              <tr>
+                <th class="py-2 px-3 text-left">Slot</th>
+                <th class="py-2 px-3 text-left">Epoch</th>
+                <th class="py-2 px-3 text-left">Block ID</th>
+                <th class="py-2 px-3 text-left">Time</th>
+                <th class="py-2 px-3 text-right">Txs</th>
+                <th class="py-2 px-3"></th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+        container.querySelectorAll("[data-href]").forEach((tr) => {
+          tr.addEventListener("click", () => (location.hash = tr.dataset.href));
+        });
+      }
+
+      async function viewBlocks(app) {
+        app.innerHTML = `
+          <h1 class="text-2xl font-semibold mb-4">Recent blocks</h1>
+          <div id="blocks-table" class="bg-white rounded shadow-sm border border-slate-200"></div>
+        `;
+        if (!state.connected) {
+          app.querySelector("#blocks-table").innerHTML = `<div class="p-4 text-sm text-slate-500">${noNodeHint()}</div>`;
+          return;
+        }
+        try {
+          const blocks = await rpc("strata_getRecentBlocks", [RECENT_BLOCKS_COUNT]);
+          renderBlocksTable(app.querySelector("#blocks-table"), blocks);
+        } catch (e) {
+          showError(`blocks: ${e.message}`);
+        }
+      }
+
+      async function viewBlockDetail(app, slot) {
+        app.innerHTML = `
+          <div class="flex items-center gap-3 mb-4">
+            <a href="#/blocks" class="text-slate-500 hover:text-slate-900 text-sm">&larr; blocks</a>
+            <h1 class="text-2xl font-semibold">Block at slot ${escapeHtml(slot)}</h1>
+          </div>
+          <div id="block-header" class="bg-white rounded shadow-sm border border-slate-200 p-4 mb-6"></div>
+          <h2 class="text-lg font-semibold mb-3">Transactions</h2>
+          <div id="block-txs" class="bg-white rounded shadow-sm border border-slate-200"></div>
+        `;
+        if (!state.connected) {
+          app.querySelector("#block-header").innerHTML = noNodeHint();
+          return;
+        }
+        try {
+          const slotN = Number(slot);
+          const [detail, txs] = await Promise.all([
+            rpc("strata_getBlockBySlot", [slotN]),
+            rpc("strata_getBlockTransactions", [slotN]),
+          ]);
+          if (!detail) {
+            app.querySelector("#block-header").innerHTML = `<div class="text-sm text-slate-500">no block at slot ${escapeHtml(slot)}</div>`;
+            app.querySelector("#block-txs").innerHTML = "";
+            return;
+          }
+          renderBlockHeader(app.querySelector("#block-header"), detail);
+          renderTxs(app.querySelector("#block-txs"), txs);
+        } catch (e) {
+          showError(`block: ${e.message}`);
+        }
+      }
+
+      function renderBlockHeader(container, d) {
+        const h = d.header ?? {};
+        const l1 = d.l1_update;
+        const row = (k, v) => `
+          <div class="grid grid-cols-3 gap-2 py-1 text-sm">
+            <div class="text-slate-500">${escapeHtml(k)}</div>
+            <div class="col-span-2 mono break-all">${escapeHtml(v)}</div>
+          </div>
+        `;
+        const fields = [
+          row("slot", h.slot),
+          row("epoch", h.epoch),
+          row("blkid", h.blkid),
+          row("parent", h.parent_blkid),
+          row("timestamp", `${h.timestamp}  (${fmtTime(h.timestamp)})`),
+          row("state_root", h.state_root),
+          row("body_root", h.body_root),
+          row("logs_root", h.logs_root),
+          row("is_terminal", String(h.is_terminal)),
+          row("tx_count", d.tx_count),
+          row("signature", d.signature ?? "(none)"),
+        ];
+        if (l1) {
+          fields.push(
+            row("l1_update.preseal_state_root", l1.preseal_state_root),
+            row("l1_update.manifest_count", l1.manifest_count),
+          );
+        }
+        container.innerHTML = fields.join("");
+      }
+
+      function renderTxs(container, txs) {
+        if (!txs || txs.length === 0) {
+          container.innerHTML = `<div class="p-4 text-sm text-slate-500">no transactions in this block</div>`;
+          return;
+        }
+        const rows = txs
+          .map((tx, i) => {
+            const kindTag = tx.kind?.type ?? "unknown";
+            const sauBadge =
+              kindTag === "snark_account_update"
+                ? `<span class="bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded text-xs">SAU seq=${tx.kind.seq_no}</span>`
+                : `<span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs">GAM</span>`;
+            const target = tx.target ? truncHex(tx.target) : "-";
+            const xferCount = tx.effects?.transfers?.length ?? 0;
+            const msgCount = tx.effects?.messages?.length ?? 0;
+            return `
+            <tr class="border-t border-slate-100">
+              <td class="py-2 px-3 mono text-slate-500">${i}</td>
+              <td class="py-2 px-3">${sauBadge}</td>
+              <td class="py-2 px-3 mono text-slate-700">${escapeHtml(truncHex(tx.txid))}</td>
+              <td class="py-2 px-3 mono text-slate-700">${escapeHtml(target)}</td>
+              <td class="py-2 px-3 text-right text-xs text-slate-500">${xferCount} xfer / ${msgCount} msg</td>
+            </tr>
+          `;
+          })
+          .join("");
+        container.innerHTML = `
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+              <tr>
+                <th class="py-2 px-3 text-left">#</th>
+                <th class="py-2 px-3 text-left">Kind</th>
+                <th class="py-2 px-3 text-left">Tx ID</th>
+                <th class="py-2 px-3 text-left">Target</th>
+                <th class="py-2 px-3 text-right">Effects</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      async function viewAccounts(app) {
+        app.innerHTML = `
+          <div class="flex items-center justify-between mb-4">
+            <h1 class="text-2xl font-semibold">Accounts</h1>
+            <div id="accounts-page-info" class="text-sm text-slate-500"></div>
+          </div>
+          <div id="accounts-table" class="bg-white rounded shadow-sm border border-slate-200"></div>
+          <div class="flex justify-end gap-2 mt-3">
+            <button id="accounts-prev" class="bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-sm" disabled>Prev</button>
+            <button id="accounts-next" class="bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded text-sm" disabled>Next</button>
+          </div>
+        `;
+        if (!state.connected) {
+          app.querySelector("#accounts-table").innerHTML = `<div class="p-4 text-sm text-slate-500">${noNodeHint()}</div>`;
+          return;
+        }
+        const offsets = [0]; // stack of page offsets for prev nav
+        const loadPage = async (start) => {
+          try {
+            const page = await rpc("strata_listAccounts", ["latest", start, ACCOUNTS_PAGE_SIZE]);
+            renderAccountsTable(app.querySelector("#accounts-table"), page);
+            const total = page.total ?? 0;
+            const shown = page.entries?.length ?? 0;
+            app.querySelector("#accounts-page-info").textContent =
+              `${start + 1}-${start + shown} of ${total}`;
+            const prevBtn = app.querySelector("#accounts-prev");
+            const nextBtn = app.querySelector("#accounts-next");
+            prevBtn.disabled = offsets.length <= 1;
+            nextBtn.disabled = page.next_offset == null;
+            prevBtn.onclick = () => {
+              if (offsets.length > 1) {
+                offsets.pop();
+                loadPage(offsets[offsets.length - 1]);
+              }
+            };
+            nextBtn.onclick = () => {
+              if (page.next_offset != null) {
+                offsets.push(page.next_offset);
+                loadPage(page.next_offset);
+              }
+            };
+          } catch (e) {
+            showError(`accounts: ${e.message}`);
+          }
+        };
+        loadPage(0);
+      }
+
+      function renderAccountsTable(container, page) {
+        const entries = page?.entries ?? [];
+        if (entries.length === 0) {
+          container.innerHTML = `<div class="p-4 text-sm text-slate-500">no accounts on the ledger at this block</div>`;
+          return;
+        }
+        const rows = entries
+          .map((e) => {
+            const kindTag = e.kind?.type ?? "unknown";
+            const sub =
+              kindTag === "snark"
+                ? `seq=${e.kind.seq_no} · inbox=${e.kind.next_inbox_msg_idx}`
+                : "";
+            return `
+              <tr class="border-t border-slate-100">
+                <td class="py-2 px-3 mono">${e.serial}</td>
+                <td class="py-2 px-3 mono text-slate-700">${escapeHtml(truncHex(e.id))}</td>
+                <td class="py-2 px-3 mono text-right">${escapeHtml(fmtSats(e.balance_sats))}</td>
+                <td class="py-2 px-3 text-xs">
+                  ${
+                    kindTag === "snark"
+                      ? `<span class="bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded">snark</span>`
+                      : `<span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">empty</span>`
+                  }
+                </td>
+                <td class="py-2 px-3 mono text-xs text-slate-500">${escapeHtml(sub)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+        container.innerHTML = `
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+              <tr>
+                <th class="py-2 px-3 text-left">Serial</th>
+                <th class="py-2 px-3 text-left">Account ID</th>
+                <th class="py-2 px-3 text-right">Balance (sats)</th>
+                <th class="py-2 px-3 text-left">Kind</th>
+                <th class="py-2 px-3 text-left">Snark state</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      function noNodeHint() {
+        return `<div class="p-4 text-sm text-slate-500">
+          Enter a strata node URL above and click <span class="font-medium">Connect</span>.
+        </div>`;
+      }
+
+      // ---- Router ----
+      const routes = [
+        { match: /^#\/dashboard$/, handler: viewDashboard, refresh: true, nav: "dashboard" },
+        { match: /^#\/blocks$/, handler: viewBlocks, nav: "blocks" },
+        { match: /^#\/block\/(\d+)$/, handler: (app, m) => viewBlockDetail(app, m[1]) },
+        { match: /^#\/accounts$/, handler: viewAccounts, nav: "accounts" },
+      ];
+
+      function clearAutoRefresh() {
+        if (state.autoRefresh) {
+          clearInterval(state.autoRefresh);
+          state.autoRefresh = null;
+        }
+      }
+
+      function highlightNav(navKey) {
+        document.querySelectorAll("[data-nav]").forEach((a) => {
+          a.classList.toggle("text-white", a.dataset.nav === navKey);
+          a.classList.toggle("font-medium", a.dataset.nav === navKey);
+        });
+      }
+
+      async function renderCurrentRoute() {
+        clearAutoRefresh();
+        const hash = location.hash || "#/dashboard";
+        const app = $("app");
+        for (const route of routes) {
+          const m = hash.match(route.match);
+          if (m) {
+            highlightNav(route.nav ?? "");
+            await route.handler(app, m);
+            if (route.refresh && state.connected) {
+              state.autoRefresh = setInterval(
+                () => route.handler(app, m).catch((e) => showError(e.message)),
+                REFRESH_MS,
+              );
+            }
+            return;
+          }
+        }
+        // Unknown hash: redirect to dashboard.
+        location.hash = "#/dashboard";
+      }
+
+      // ---- Connect / disconnect ----
+      async function connect(url) {
+        state.nodeUrl = url;
+        try {
+          await rpc("strata_getChainStatus", []);
+          setStatus(true);
+          hideError();
+          localStorage.setItem(STORAGE_KEY, url);
+        } catch (e) {
+          setStatus(false);
+          showError(`connect: ${e.message}`);
+        }
+        renderCurrentRoute();
+      }
+
+      function disconnect() {
+        state.nodeUrl = null;
+        setStatus(false);
+        clearAutoRefresh();
+        renderCurrentRoute();
+      }
+
+      // ---- Wire up ----
+      window.addEventListener("DOMContentLoaded", () => {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) $("node-url").value = stored;
+
+        $("connect-btn").addEventListener("click", () => {
+          if (state.connected) {
+            disconnect();
+          } else {
+            const url = $("node-url").value.trim();
+            if (!url) {
+              showError("enter a node URL first");
+              return;
+            }
+            connect(url);
+          }
+        });
+
+        $("error-dismiss").addEventListener("click", hideError);
+
+        window.addEventListener("hashchange", renderCurrentRoute);
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            clearAutoRefresh();
+          } else {
+            renderCurrentRoute();
+          }
+        });
+
+        // Initial render. If no node configured, the views will show a
+        // hint asking the user to connect.
+        renderCurrentRoute();
+      });
+    </script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 //! OL RPC server implementation.
 
 pub(crate) mod errors;
+mod explorer;
 mod node;
 #[cfg(test)]
 mod node_tests;
@@ -197,7 +198,12 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     }
 
     let addr = format!("{}:{}", deps.rpc_host, deps.rpc_port);
+    // Compose jsonrpsee with a tower layer that serves the embedded OL
+    // explorer HTML at `GET /explorer`. Anything that isn't that exact
+    // path falls through to the JSON-RPC handler unchanged.
+    let http_middleware = tower::ServiceBuilder::new().layer(explorer::ExplorerLayer);
     let rpc_server = ServerBuilder::new()
+        .set_http_middleware(http_middleware)
         .build(&addr)
         .await
         .map_err(|e| anyhow!("Failed to build RPC server on {addr}: {e}"))?;
