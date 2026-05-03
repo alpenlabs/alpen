@@ -14,11 +14,6 @@ use strata_snark_acct_types::{SnarkAccountUpdate, UpdateOperationData};
 
 use crate::RpcSnarkAccountUpdate;
 
-/// Type discriminator for GAM transactions in [`RpcOLTxDetail::type_id`].
-const TX_TYPE_ID_GAM: u16 = 0;
-/// Type discriminator for SAU transactions in [`RpcOLTxDetail::type_id`].
-const TX_TYPE_ID_SAU: u16 = 1;
-
 /// OL transaction for submission (excludes accumulator proofs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
@@ -161,25 +156,21 @@ pub enum RpcTxConversionError {
 /// Decoded view of a transaction included in a block.
 ///
 /// Returned by `strata_getBlockTransactions`. Carries the computed txid, the
-/// payload type, the target account, constraints, and a summary of effects.
-/// SAU-specific fields are populated when `type_id == 1`.
+/// target account (if any), constraints, effects, and a tagged
+/// [`RpcOLTxKind`] that carries any payload-type-specific fields inline.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLTxDetail {
     /// Computed transaction ID (tree hash of `OLTransactionData`).
     txid: OLTxId,
-    /// Numeric type discriminator: 0 = GAM, 1 = SAU.
-    type_id: u16,
-    /// Human-readable type name.
-    type_name: String,
-    /// Target account.
-    target: HexBytes32,
+    /// Target account, or `None` if this transaction type carries no target.
+    target: Option<HexBytes32>,
     /// Inclusion constraints.
     constraints: RpcTxConstraints,
     /// Effects produced when this transaction is applied.
     effects: RpcTxEffectsView,
-    /// SAU-specific fields, present only when `type_id == 1`.
-    sau: Option<RpcSauTxSummary>,
+    /// Payload-type discriminator with type-specific fields inline.
+    kind: RpcOLTxKind,
 }
 
 impl RpcOLTxDetail {
@@ -187,16 +178,8 @@ impl RpcOLTxDetail {
         self.txid
     }
 
-    pub fn type_id(&self) -> u16 {
-        self.type_id
-    }
-
-    pub fn type_name(&self) -> &str {
-        &self.type_name
-    }
-
-    pub fn target(&self) -> &HexBytes32 {
-        &self.target
+    pub fn target(&self) -> Option<&HexBytes32> {
+        self.target.as_ref()
     }
 
     pub fn constraints(&self) -> &RpcTxConstraints {
@@ -207,8 +190,8 @@ impl RpcOLTxDetail {
         &self.effects
     }
 
-    pub fn sau(&self) -> Option<&RpcSauTxSummary> {
-        self.sau.as_ref()
+    pub fn kind(&self) -> &RpcOLTxKind {
+        &self.kind
     }
 }
 
@@ -216,34 +199,37 @@ impl From<&OLTransaction> for RpcOLTxDetail {
     fn from(tx: &OLTransaction) -> Self {
         let txid = tx.compute_txid();
         let data = tx.data();
-        let (type_id, type_name, sau) = match data.payload() {
-            TransactionPayload::GenericAccountMessage(_) => (
-                TX_TYPE_ID_GAM,
-                "generic_account_message".to_string(),
-                None,
-            ),
-            TransactionPayload::SnarkAccountUpdate(sau_payload) => (
-                TX_TYPE_ID_SAU,
-                "snark_account_update".to_string(),
-                Some(RpcSauTxSummary::from(sau_payload)),
-            ),
+        let kind = match data.payload() {
+            TransactionPayload::GenericAccountMessage(_) => RpcOLTxKind::GenericAccountMessage,
+            TransactionPayload::SnarkAccountUpdate(sau_payload) => {
+                RpcOLTxKind::SnarkAccountUpdate(RpcSauTxSummary::from(sau_payload))
+            }
         };
         let target = tx
             .target()
-            .map(|a| HexBytes32::from(<[u8; 32]>::from(a)))
-            .unwrap_or_else(|| HexBytes32::from([0u8; 32]));
+            .map(|a| HexBytes32::from(<[u8; 32]>::from(a)));
         let constraints = RpcTxConstraints::from(data.constraints().clone());
         let effects = RpcTxEffectsView::from(data.effects());
         Self {
             txid,
-            type_id,
-            type_name,
             target,
             constraints,
             effects,
-            sau,
+            kind,
         }
     }
+}
+
+/// Payload-type discriminator for [`RpcOLTxDetail`].
+///
+/// Mirrors the on-chain [`TransactionPayload`] enum and carries any
+/// type-specific summary data inline, so the wire format is self-describing.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RpcOLTxKind {
+    GenericAccountMessage,
+    SnarkAccountUpdate(RpcSauTxSummary),
 }
 
 /// Summary of transfers and messages produced by a transaction.
