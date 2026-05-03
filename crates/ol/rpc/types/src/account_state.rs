@@ -66,10 +66,8 @@ pub struct RpcAccountEntry {
     serial: u32,
     /// Balance in sats.
     balance_sats: u64,
-    /// Account type: "empty" or "snark".
-    account_type: RpcAccountType,
-    /// Snark-specific summary, present only when `account_type == "snark"`.
-    snark: Option<RpcAccountSnarkSummary>,
+    /// Account-type discriminator with type-specific fields inline.
+    kind: RpcAccountKind,
 }
 
 impl RpcAccountEntry {
@@ -85,48 +83,50 @@ impl RpcAccountEntry {
         self.balance_sats
     }
 
-    pub fn account_type(&self) -> RpcAccountType {
-        self.account_type
+    pub fn kind(&self) -> &RpcAccountKind {
+        &self.kind
     }
 
+    /// Convenience accessor: returns the snark summary when the account
+    /// is a snark account, `None` otherwise.
     pub fn snark(&self) -> Option<&RpcAccountSnarkSummary> {
-        self.snark.as_ref()
+        match &self.kind {
+            RpcAccountKind::Snark(summary) => Some(summary),
+            RpcAccountKind::Empty => None,
+        }
     }
 }
 
 impl From<&TsnlAccountEntry> for RpcAccountEntry {
     fn from(entry: &TsnlAccountEntry) -> Self {
         let state = entry.state();
-        let snark_summary = state.as_snark_account().ok().map(|snark| {
-            let inner_state = snark.inner_state_root();
-            RpcAccountSnarkSummary {
+        let kind = match state.as_snark_account().ok() {
+            Some(snark) => RpcAccountKind::Snark(RpcAccountSnarkSummary {
                 seq_no: *snark.seqno().inner(),
-                inner_state_root: HexBytes32::from(inner_state.0),
+                inner_state_root: HexBytes32::from(snark.inner_state_root().0),
                 next_inbox_msg_idx: snark.next_inbox_msg_idx(),
-            }
-        });
-        let account_type = if snark_summary.is_some() {
-            RpcAccountType::Snark
-        } else {
-            RpcAccountType::Empty
+            }),
+            None => RpcAccountKind::Empty,
         };
         Self {
             id: HexBytes32::from(<[u8; 32]>::from(entry.id())),
             serial: *state.serial().inner(),
             balance_sats: state.balance().to_sat(),
-            account_type,
-            snark: snark_summary,
+            kind,
         }
     }
 }
 
-/// Account type discriminator for [`RpcAccountEntry`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Account-type discriminator for [`RpcAccountEntry`].
+///
+/// Mirrors the on-chain `OLAccountTypeState` and carries snark-specific
+/// summary data inline so the wire format is self-describing.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum RpcAccountType {
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RpcAccountKind {
     Empty,
-    Snark,
+    Snark(RpcAccountSnarkSummary),
 }
 
 /// Snark-account summary fields surfaced in account listings.

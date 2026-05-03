@@ -383,6 +383,31 @@ fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
     OLBlock::new(signed, body)
 }
 
+fn make_block_with_gam_tx(
+    slot: u64,
+    epoch: u32,
+    parent: OLBlockId,
+    tx_target: AccountId,
+    tx_data: Vec<u8>,
+) -> OLBlock {
+    let header = OLBlockHeader::new(
+        0,
+        0.into(),
+        slot,
+        epoch,
+        parent,
+        Buf32::zero(),
+        Buf32::zero(),
+        Buf32::zero(),
+    );
+    let signed = SignedOLBlockHeader::new(header, Buf64::zero());
+    let tx_data_inner = OLTransactionData::new_gam(tx_target, tx_data);
+    let tx = OLTransaction::new(tx_data_inner, TxProofs::new_empty());
+    let segment = OLTxSegment::new(vec![tx]).expect("segment with one tx");
+    let body = OLBlockBody::new_common(segment);
+    OLBlock::new(signed, body)
+}
+
 fn genesis_ol_state() -> OLState {
     let params = OLParams::new_empty(test_l1_commitment());
     OLState::from_genesis_params(&params).expect("genesis state")
@@ -2963,6 +2988,45 @@ async fn get_block_transactions_unknown_slot_errors() {
     assert!(result.is_err());
 }
 
+#[tokio::test]
+async fn get_block_transactions_decodes_gam_tx() {
+    // Exercises the From<&OLTransaction> conversion path with a real,
+    // non-empty block. `OLTransactionData::new_gam` pushes the data into
+    // tx effects as a message, so we can assert both the kind and the
+    // effects round-trip correctly.
+    let target = test_account_id(0xab);
+    let payload_bytes = b"hello".to_vec();
+    let block = make_block_with_gam_tx(7, 1, null_blkid(), target, payload_bytes.clone());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(7, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            1,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let txs = rpc.get_block_transactions(7).await.expect("get txs");
+    assert_eq!(txs.len(), 1);
+    let detail = &txs[0];
+    assert!(matches!(detail.kind(), RpcOLTxKind::GenericAccountMessage));
+    assert_eq!(
+        detail.target().expect("gam target").0,
+        *target.inner(),
+        "target round-trips through HexBytes32"
+    );
+    let messages = detail.effects().messages();
+    assert_eq!(messages.len(), 1, "gam pushes one message effect");
+    assert_eq!(messages[0].dest().0, *target.inner());
+    assert_eq!(messages[0].data().0, payload_bytes);
+}
+
 // ── list_accounts ──
 
 #[tokio::test]
@@ -2996,7 +3060,7 @@ async fn list_accounts_returns_ledger_entries() {
         .iter()
         .find(|e| e.id().0 == *acct.inner())
         .expect("account present in ledger");
-    assert_eq!(our_entry.account_type(), RpcAccountType::Snark);
+    assert!(matches!(our_entry.kind(), RpcAccountKind::Snark(_)));
     let snark = our_entry.snark().expect("snark summary");
     assert_eq!(snark.seq_no(), 7);
     assert_eq!(page.total(), page.entries().len() as u64);
