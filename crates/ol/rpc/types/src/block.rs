@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
 use strata_identifiers::{Epoch, Slot};
-use strata_ol_chain_types_new::OLBlock;
-use strata_primitives::{HexBytes, HexBytes32, OLBlockId};
+use strata_ol_chain_types_new::{OLBlock, OLL1Update};
+use strata_primitives::{HexBytes, HexBytes32, HexBytes64, OLBlockId};
 
 /// Rpc version of OL block entry in a slot range.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -109,6 +109,149 @@ impl From<&OLBlock> for RpcBlockHeaderEntry {
             body_root: HexBytes32::from(header.body_root().0),
             logs_root: HexBytes32::from(header.logs_root().0),
             is_terminal: header.is_terminal(),
+        }
+    }
+}
+
+/// Lightweight summary of an OL block for list views.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcOLBlockSummary {
+    slot: Slot,
+    epoch: Epoch,
+    blkid: OLBlockId,
+    timestamp: u64,
+    tx_count: u32,
+    is_terminal: bool,
+}
+
+impl RpcOLBlockSummary {
+    pub fn slot(&self) -> Slot {
+        self.slot
+    }
+
+    pub fn epoch(&self) -> Epoch {
+        self.epoch
+    }
+
+    pub fn blkid(&self) -> OLBlockId {
+        self.blkid
+    }
+
+    pub fn timestamp(&self) -> u64 {
+        self.timestamp
+    }
+
+    pub fn tx_count(&self) -> u32 {
+        self.tx_count
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.is_terminal
+    }
+}
+
+impl From<&OLBlock> for RpcOLBlockSummary {
+    fn from(block: &OLBlock) -> Self {
+        let header = block.header();
+        let tx_count = block
+            .body()
+            .tx_segment()
+            .map(|seg| seg.txs().len() as u32)
+            .unwrap_or(0);
+        Self {
+            slot: header.slot(),
+            epoch: header.epoch(),
+            blkid: header.compute_blkid(),
+            timestamp: header.timestamp(),
+            tx_count,
+            is_terminal: header.is_terminal(),
+        }
+    }
+}
+
+/// Detailed view of an OL block returned by `getBlockBySlot`.
+///
+/// Composes [`RpcBlockHeaderEntry`] with body and credential fields decoded
+/// from the SSZ block.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcOLBlockDetail {
+    /// Decoded header fields.
+    header: RpcBlockHeaderEntry,
+    /// Schnorr signature over the header, if present.
+    signature: Option<HexBytes64>,
+    /// Number of transactions in the block.
+    tx_count: u32,
+    /// L1 update summary, present only on terminal blocks.
+    l1_update: Option<RpcOLL1UpdateSummary>,
+}
+
+impl RpcOLBlockDetail {
+    pub fn header(&self) -> &RpcBlockHeaderEntry {
+        &self.header
+    }
+
+    pub fn signature(&self) -> Option<&HexBytes64> {
+        self.signature.as_ref()
+    }
+
+    pub fn tx_count(&self) -> u32 {
+        self.tx_count
+    }
+
+    pub fn l1_update(&self) -> Option<&RpcOLL1UpdateSummary> {
+        self.l1_update.as_ref()
+    }
+}
+
+impl From<&OLBlock> for RpcOLBlockDetail {
+    fn from(block: &OLBlock) -> Self {
+        let header = RpcBlockHeaderEntry::from(block);
+        let signature = block
+            .signed_header()
+            .signature()
+            .map(|sig| HexBytes64::from(sig.0));
+        let body = block.body();
+        let tx_count = body
+            .tx_segment()
+            .map(|seg| seg.txs().len() as u32)
+            .unwrap_or(0);
+        let l1_update = body.l1_update().map(RpcOLL1UpdateSummary::from);
+        Self {
+            header,
+            signature,
+            tx_count,
+            l1_update,
+        }
+    }
+}
+
+/// Summary of an OL L1 update segment included in a terminal block.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcOLL1UpdateSummary {
+    /// State root captured before the seal was applied.
+    preseal_state_root: HexBytes32,
+    /// Number of L1 manifests included in the seal.
+    manifest_count: u32,
+}
+
+impl RpcOLL1UpdateSummary {
+    pub fn preseal_state_root(&self) -> &HexBytes32 {
+        &self.preseal_state_root
+    }
+
+    pub fn manifest_count(&self) -> u32 {
+        self.manifest_count
+    }
+}
+
+impl From<&OLL1Update> for RpcOLL1UpdateSummary {
+    fn from(update: &OLL1Update) -> Self {
+        Self {
+            preseal_state_root: HexBytes32::from(update.preseal_state_root().0),
+            manifest_count: update.manifest_cont().manifests().len() as u32,
         }
     }
 }
