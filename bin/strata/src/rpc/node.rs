@@ -16,9 +16,9 @@ use strata_ol_chain_types_new::{OLBlock, OLTransaction, TransactionPayload};
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_ol_rpc_types::{
     OLBlockOrTag, OLRpcProvider, RpcAccountBlockSummary, RpcAccountEntry, RpcAccountEpochSummary,
-    RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus, RpcCheckpointInfo,
-    RpcCheckpointL1Ref, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary, RpcOLChainStatus,
-    RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
+    RpcAccountListPage, RpcBlockEntry, RpcBlockHeaderEntry, RpcCheckpointConfStatus,
+    RpcCheckpointInfo, RpcCheckpointL1Ref, RpcOLBlockDetail, RpcOLBlockInfo, RpcOLBlockSummary,
+    RpcOLChainStatus, RpcOLTransaction, RpcOLTxDetail, RpcSnarkAccountState, RpcUpdateInputData,
 };
 use strata_ol_state_types::OLState;
 use strata_primitives::{HexBytes, HexBytes32};
@@ -169,11 +169,10 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     .tip
             }
             OLBlockOrTag::Confirmed => {
-                // TODO(STR-2420): prev_epoch is not exactly the confirmed epoch.
                 self.provider
                     .get_ol_sync_status()
                     .ok_or_else(|| internal_error("OL sync status not available"))?
-                    .prev_epoch
+                    .confirmed_epoch
                     .to_block_commitment()
             }
             OLBlockOrTag::Finalized => {
@@ -1002,7 +1001,19 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
     async fn list_accounts(
         &self,
         block_or_tag: OLBlockOrTag,
-    ) -> RpcResult<Vec<RpcAccountEntry>> {
+        start: u64,
+        count: u64,
+    ) -> RpcResult<RpcAccountListPage> {
+        if count == 0 {
+            return Ok(RpcAccountListPage::new(Vec::new(), 0, None));
+        }
+        if count as usize > self.max_headers_range {
+            return Err(invalid_params_error(format!(
+                "count {} exceeds max_headers_range {}",
+                count, self.max_headers_range
+            )));
+        }
+
         let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
         let ol_state = self
             .provider
@@ -1013,11 +1024,20 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
                 not_found_error(format!("No OL state found for block {block_commitment}"))
             })?;
 
-        let entries = ol_state
-            .ledger()
+        let ledger = ol_state.ledger();
+        let total = ledger.len() as u64;
+        let entries: Vec<_> = ledger
             .entries()
+            .skip(start as usize)
+            .take(count as usize)
             .map(RpcAccountEntry::from)
             .collect();
-        Ok(entries)
+        let consumed = start.saturating_add(entries.len() as u64);
+        let next_offset = if consumed < total && (entries.len() as u64) == count {
+            Some(consumed)
+        } else {
+            None
+        };
+        Ok(RpcAccountListPage::new(entries, total, next_offset))
     }
 }

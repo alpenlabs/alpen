@@ -159,3 +159,41 @@ impl RpcAccountSnarkSummary {
         self.next_inbox_msg_idx
     }
 }
+
+/// Paginated response for `strata_listAccounts`.
+///
+/// Wraps a slice of accounts plus pagination metadata so callers can
+/// iterate the ledger without forcing the server to materialize every
+/// entry in a single response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
+pub struct RpcAccountListPage {
+    /// Accounts in the requested page, in ascending account-id order.
+    entries: Vec<RpcAccountEntry>,
+    /// Total number of accounts on the ledger at the queried block.
+    total: u64,
+    /// Offset to pass for the next page, or `None` if this is the last page.
+    next_offset: Option<u64>,
+}
+
+impl RpcAccountListPage {
+    pub fn new(entries: Vec<RpcAccountEntry>, total: u64, next_offset: Option<u64>) -> Self {
+        Self {
+            entries,
+            total,
+            next_offset,
+        }
+    }
+
+    pub fn entries(&self) -> &[RpcAccountEntry] {
+        &self.entries
+    }
+
+    pub fn total(&self) -> u64 {
+        self.total
+    }
+
+    pub fn next_offset(&self) -> Option<u64> {
+        self.next_offset
+    }
+}
