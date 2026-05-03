@@ -958,18 +958,17 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             )));
         }
 
-        let tip_slot = self
+        // Walk parents from the sync-status tip directly so we read a consistent
+        // chain anchored to the tip we observed (rather than re-resolving the
+        // canonical block at the tip slot, which costs an extra DB hit and could
+        // disagree with the snapshot if a reorg races us).
+        let mut cur_blkid = *self
             .provider
             .get_ol_sync_status()
             .ok_or_else(|| internal_error("OL sync status not available"))?
             .tip
-            .slot();
+            .blkid();
 
-        let Some(tip_blkid) = self.get_canonical_block_at_height(tip_slot).await? else {
-            return Ok(Vec::new());
-        };
-
-        let mut cur_blkid = tip_blkid;
         let mut summaries = Vec::with_capacity(count as usize);
         for _ in 0..count {
             let block = self.get_block(cur_blkid).await?;

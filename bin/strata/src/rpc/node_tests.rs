@@ -410,6 +410,17 @@ fn ol_state_with_empty_account(account_id: AccountId, slot: u64) -> OLState {
     state.into_inner()
 }
 
+fn ol_state_with_n_empty_accounts(account_ids: &[AccountId], slot: u64) -> OLState {
+    let base = genesis_ol_state();
+    let mut state = MemoryStateBaseLayer::new(base);
+    state.set_cur_slot(slot);
+    for id in account_ids {
+        let new_acct = NewAccountData::new(BitcoinAmount::from(0), NewAccountTypeState::Empty);
+        state.create_new_account(*id, new_acct).unwrap();
+    }
+    state.into_inner()
+}
+
 const TEST_GENESIS_L1_HEIGHT: L1Height = 0;
 
 const TEST_MAX_HEADERS_RANGE: usize = 5000;
@@ -2246,4 +2257,106 @@ async fn list_accounts_zero_count_returns_empty_page() {
         .expect("list accounts");
     assert!(page.entries().is_empty());
     assert!(page.next_offset().is_none());
+}
+
+#[tokio::test]
+async fn list_accounts_paginates_with_start_and_count() {
+    // Three sequential account ids so iteration order is well-defined.
+    let acct_a = test_account_id(1);
+    let acct_b = test_account_id(2);
+    let acct_c = test_account_id(3);
+
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
+
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(
+            &block,
+            ol_state_with_n_empty_accounts(&[acct_a, acct_b, acct_c], 4),
+        );
+    let rpc = make_rpc(provider);
+
+    // First page: count=2 from offset 0. Expect 2 entries, more available.
+    let page1 = rpc
+        .list_accounts(OLBlockOrTag::Slot(4), 0, 2)
+        .await
+        .expect("page 1");
+    assert_eq!(page1.entries().len(), 2);
+    assert_eq!(page1.total(), 3);
+    assert_eq!(page1.next_offset(), Some(2));
+
+    // Second page: count=2 from offset 2. Only 1 entry left, no more pages.
+    let page2 = rpc
+        .list_accounts(OLBlockOrTag::Slot(4), 2, 2)
+        .await
+        .expect("page 2");
+    assert_eq!(page2.entries().len(), 1);
+    assert_eq!(page2.total(), 3);
+    assert!(page2.next_offset().is_none());
+
+    // Walking past the end yields an empty page.
+    let page3 = rpc
+        .list_accounts(OLBlockOrTag::Slot(4), 10, 2)
+        .await
+        .expect("page 3");
+    assert!(page3.entries().is_empty());
+    assert_eq!(page3.total(), 3);
+    assert!(page3.next_offset().is_none());
+}
+
+#[tokio::test]
+async fn list_accounts_resolves_confirmed_tag_to_confirmed_epoch() {
+    // Regression cover for the codex P2 finding: `Confirmed` must resolve to
+    // `confirmed_epoch`, not `prev_epoch`. Set them to different blocks with
+    // different ledger contents so a misroute would surface as a mismatched
+    // account count.
+
+    let acct_a = test_account_id(1);
+    let acct_b = test_account_id(2);
+
+    // Confirmed-state block has 1 account.
+    let confirmed_block = make_block(5, 1, null_blkid());
+    let confirmed_blkid = confirmed_block.header().compute_blkid();
+    let confirmed_epoch_commitment = EpochCommitment::new(1, 5, confirmed_blkid);
+    let confirmed_state = ol_state_with_n_empty_accounts(&[acct_a], 5);
+
+    // Local-tip / prev-epoch block has 2 accounts (the bug would route here).
+    let prev_block = make_block(10, 2, confirmed_blkid);
+    let prev_blkid = prev_block.header().compute_blkid();
+    let prev_epoch_commitment = EpochCommitment::new(2, 10, prev_blkid);
+    let prev_state = ol_state_with_n_empty_accounts(&[acct_a, acct_b], 10);
+
+    let tip = OLBlockCommitment::new(10, prev_blkid);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            2,
+            false,
+            prev_epoch_commitment,
+            confirmed_epoch_commitment,
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&confirmed_block, confirmed_state)
+        .with_block_and_state(&prev_block, prev_state);
+    let rpc = make_rpc(provider);
+
+    let page = rpc
+        .list_accounts(OLBlockOrTag::Confirmed, 0, 100)
+        .await
+        .expect("confirmed page");
+    assert_eq!(
+        page.total(),
+        1,
+        "confirmed tag must resolve to confirmed_epoch (1 account), \
+         not prev_epoch (would be 2 accounts)"
+    );
 }
