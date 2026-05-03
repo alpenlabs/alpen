@@ -2976,15 +2976,67 @@ async fn list_accounts_returns_ledger_entries() {
         );
     let rpc = make_rpc(provider);
 
-    let entries = rpc
-        .list_accounts(OLBlockOrTag::Slot(4))
+    let page = rpc
+        .list_accounts(OLBlockOrTag::Slot(4), 0, 100)
         .await
         .expect("list accounts");
-    let our_entry = entries
+    let our_entry = page
+        .entries()
         .iter()
         .find(|e| e.id().0 == *acct.inner())
         .expect("account present in ledger");
     assert_eq!(our_entry.account_type(), RpcAccountType::Snark);
     let snark = our_entry.snark().expect("snark summary");
     assert_eq!(snark.seq_no(), 7);
+    assert_eq!(page.total(), page.entries().len() as u64);
+    assert!(page.next_offset().is_none());
+}
+
+#[tokio::test]
+async fn list_accounts_count_exceeds_max_returns_invalid_params() {
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let result = rpc
+        .list_accounts(OLBlockOrTag::Slot(4), 0, (TEST_MAX_HEADERS_RANGE as u64) + 1)
+        .await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
+}
+
+#[tokio::test]
+async fn list_accounts_zero_count_returns_empty_page() {
+    let block = make_block(4, 0, null_blkid());
+    let blkid = block.header().compute_blkid();
+    let tip = OLBlockCommitment::new(4, blkid);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block, genesis_ol_state());
+    let rpc = make_rpc(provider);
+
+    let page = rpc
+        .list_accounts(OLBlockOrTag::Slot(4), 0, 0)
+        .await
+        .expect("list accounts");
+    assert!(page.entries().is_empty());
+    assert!(page.next_offset().is_none());
 }
