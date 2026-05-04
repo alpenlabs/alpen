@@ -259,6 +259,20 @@ mod tests {
     }
 
     #[test]
+    fn test_account_change_rejects_invalid_tag() {
+        let err = decode_buf_exact::<AccountChange>(&[3]).unwrap_err();
+        assert!(matches!(err, CodecError::InvalidVariant("AccountChange")));
+    }
+
+    #[test]
+    fn test_account_change_rejects_trailing_bytes() {
+        let encoded = encode_to_vec(&AccountChange::Deleted).unwrap();
+        let mut with_trailing = encoded;
+        with_trailing.push(0xff);
+        assert!(decode_buf_exact::<AccountChange>(&with_trailing).is_err());
+    }
+
+    #[test]
     fn test_account_diff_apply() {
         let mut snapshot = AccountSnapshot {
             balance: U256::from(100),

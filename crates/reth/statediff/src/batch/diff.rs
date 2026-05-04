@@ -153,4 +153,38 @@ mod tests {
         assert!(encoded.len() > 1024);
         assert!(encoded.len() < 1100); // Not too much overhead
     }
+
+    #[test]
+    fn test_batch_state_diff_rejects_trailing_bytes() {
+        let mut encoded = encode_to_vec(&BatchStateDiff::new()).unwrap();
+        encoded.push(0xff);
+        assert!(decode_buf_exact::<BatchStateDiff>(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_batch_state_diff_rejects_truncated_bytecode_payload() {
+        let mut diff = BatchStateDiff::new();
+        diff.deployed_bytecodes
+            .insert(B256::from([0x44u8; 32]), Bytes::from_static(&[1, 2, 3, 4]));
+
+        let mut encoded = encode_to_vec(&diff).unwrap();
+        encoded.pop();
+        assert!(decode_buf_exact::<BatchStateDiff>(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_batch_state_diff_rejects_bytecode_length_overrun() {
+        let mut diff = BatchStateDiff::new();
+        diff.deployed_bytecodes.insert(
+            B256::from([0x55u8; 32]),
+            Bytes::from_static(&[0xaa, 0xbb, 0xcc]),
+        );
+
+        let mut encoded = encode_to_vec(&diff).unwrap();
+        let offset = 12 + 32;
+        let oversized_len = encode_to_vec(&(10u32)).unwrap();
+        encoded[offset..offset + 4].copy_from_slice(&oversized_len);
+
+        assert!(decode_buf_exact::<BatchStateDiff>(&encoded).is_err());
+    }
 }
