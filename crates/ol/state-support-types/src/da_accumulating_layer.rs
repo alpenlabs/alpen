@@ -350,8 +350,11 @@ impl EpochDaAccumulator {
     /// adding more transactions would risk exceeding `OL_DA_DIFF_MAX_SIZE`.
     /// Overestimates are acceptable; underestimates are not.
     pub fn estimated_encoded_size(&self) -> usize {
-        // Global diff: 1 byte mask + up to 2 bytes slot counter.
-        let global_size = 3;
+        // Global diff:
+        // * 1 byte mask
+        // * up to 2 bytes for slot counter
+        // * up to 9 bytes for limbo funds counter
+        let global_size = 1 + 2 + 9;
 
         // New accounts list: 2-byte u16 length prefix + per-entry overhead.
         // Per new account: 32 (AccountId) + 8 (balance) + 1 (type disc)
