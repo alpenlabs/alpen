@@ -210,10 +210,6 @@ impl StateReconstructor {
     /// from test fixtures instead of going through a chain spec or DB-backed
     /// state source.
     #[cfg(test)]
-    #[expect(
-        dead_code,
-        reason = "test-only state seeding helper is used by follow-up parity coverage"
-    )]
     pub(crate) fn from_state_parts(
         accounts: &BTreeMap<Address, StateAccount>,
         storage: &BTreeMap<Address, BTreeMap<U256, U256>>,
@@ -222,6 +218,10 @@ impl StateReconstructor {
 
         for (address, account) in accounts {
             let mut state_account = account.clone();
+            if state_account.is_account_empty() {
+                continue;
+            }
+
             let mut storage_trie = MptNode::default();
 
             if let Some(account_storage) = storage.get(address) {
@@ -245,5 +245,325 @@ impl StateReconstructor {
         }
 
         Ok(reconstructor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_mpt::EMPTY_ROOT;
+
+    use super::*;
+    use crate::{
+        test_utils::{
+            account_change, addr, batch_diff, block_diff, bytecode, canonical_accounts,
+            canonical_state_root, deployed_bytecode, hash, slot, snapshot, state_account,
+            storage_change, value, CanonicalState,
+        },
+        BlockStateChanges,
+    };
+
+    // The oracle below intentionally shares the same MPT primitives as the
+    // reconstructor. These tests verify diff application produces the expected
+    // post-state inputs and roots, not that the root algorithm is independently
+    // reimplemented.
+    fn assert_reconstruction_matches(
+        reconstructor: &StateReconstructor,
+        expected_state: &CanonicalState,
+        expected_slots: &[(Address, U256)],
+        expected_bytecodes: &[(B256, &[u8])],
+        diff: &BatchStateDiff,
+    ) {
+        let expected_accounts = canonical_accounts(expected_state).unwrap();
+        assert_eq!(
+            reconstructor.state_root(),
+            canonical_state_root(expected_state).unwrap()
+        );
+
+        let addresses = expected_state
+            .accounts
+            .keys()
+            .chain(expected_state.storage.keys())
+            .copied()
+            .collect::<BTreeSet<_>>();
+
+        for address in addresses {
+            let actual_account = reconstructor.account(address);
+            let expected_account = expected_accounts.get(&address);
+
+            match (actual_account, expected_account) {
+                (Some(actual), Some(expected)) => {
+                    assert_eq!(actual.balance, expected.balance);
+                    assert_eq!(actual.nonce, expected.nonce);
+                    assert_eq!(actual.code_hash, expected.code_hash);
+                    assert_eq!(actual.storage_root, expected.storage_root);
+                    assert_eq!(reconstructor.storage_root(address), expected.storage_root);
+                }
+                (None, None) => {
+                    assert_eq!(reconstructor.storage_root(address), EMPTY_ROOT);
+                }
+                (actual, expected) => panic!(
+                    "account mismatch for {address:?}: actual={actual:?} expected={expected:?}"
+                ),
+            }
+        }
+
+        for (address, slot_key) in expected_slots {
+            let expected_value = expected_state
+                .storage
+                .get(address)
+                .and_then(|storage| storage.get(slot_key))
+                .copied()
+                .unwrap_or(U256::ZERO);
+            assert_eq!(
+                reconstructor.storage_slot(*address, *slot_key),
+                expected_value,
+                "slot mismatch for address {address:?} slot {slot_key:?}"
+            );
+        }
+
+        for (code_hash, expected_bytecode) in expected_bytecodes {
+            assert_eq!(
+                diff.deployed_bytecodes
+                    .get(code_hash)
+                    .map(|bytes| bytes.as_ref()),
+                Some(*expected_bytecode)
+            );
+        }
+    }
+
+    fn roundtrip_batch_diff(blocks: &[BlockStateChanges]) -> BatchStateDiff {
+        let diff = batch_diff(blocks);
+        let encoded = encode_to_vec(&diff).unwrap();
+        decode_buf_exact(&encoded).unwrap()
+    }
+
+    #[test]
+    fn test_reconstruct_storage_only_change_matches_canonical_oracle() {
+        let address = addr(0x11);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+        let pre_state = CanonicalState::new()
+            .with_account(address, state_account(100, 2, hash(0x21)))
+            .set_storage_slot(address, slot_one, value(10));
+        let expected_state = pre_state
+            .clone()
+            .set_storage_slot(address, slot_one, value(11))
+            .set_storage_slot(address, slot_two, value(22));
+
+        let mut block = block_diff();
+        storage_change(&mut block, address, slot_one, value(10), value(11));
+        storage_change(&mut block, address, slot_two, U256::ZERO, value(22));
+
+        let diff = roundtrip_batch_diff(&[block]);
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one), (address, slot_two)],
+            &[],
+            &diff,
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_zero_slot_reset_matches_canonical_oracle() {
+        let address = addr(0x12);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+        let pre_state = CanonicalState::new()
+            .with_account(address, state_account(250, 3, hash(0x22)))
+            .set_storage_slot(address, slot_one, value(5))
+            .set_storage_slot(address, slot_two, value(8));
+        let expected_state = pre_state.clone().remove_storage_slot(address, slot_one);
+
+        let mut block = block_diff();
+        storage_change(&mut block, address, slot_one, value(5), U256::ZERO);
+
+        let diff = roundtrip_batch_diff(&[block]);
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one), (address, slot_two)],
+            &[],
+            &diff,
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_created_then_deleted_matches_canonical_oracle() {
+        let address = addr(0x13);
+        let slot_one = slot(1);
+        let pre_state = CanonicalState::new();
+        let expected_state = CanonicalState::new();
+
+        let mut block_one = block_diff();
+        account_change(
+            &mut block_one,
+            address,
+            None,
+            Some(snapshot(75, 1, hash(0x23))),
+        );
+        storage_change(&mut block_one, address, slot_one, U256::ZERO, value(9));
+
+        let mut block_two = block_diff();
+        account_change(
+            &mut block_two,
+            address,
+            Some(snapshot(75, 1, hash(0x23))),
+            None,
+        );
+        storage_change(&mut block_two, address, slot_one, value(9), U256::ZERO);
+
+        let diff = roundtrip_batch_diff(&[block_one, block_two]);
+        assert!(diff.is_empty());
+
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one)],
+            &[],
+            &diff,
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_mid_batch_revert_matches_canonical_oracle() {
+        let address = addr(0x14);
+        let slot_one = slot(1);
+        let pre_state = CanonicalState::new()
+            .with_account(address, state_account(100, 4, hash(0x24)))
+            .set_storage_slot(address, slot_one, value(5));
+        let expected_state = pre_state.clone();
+
+        let mut block_one = block_diff();
+        account_change(
+            &mut block_one,
+            address,
+            Some(snapshot(100, 4, hash(0x24))),
+            Some(snapshot(150, 5, hash(0x24))),
+        );
+        storage_change(&mut block_one, address, slot_one, value(5), value(6));
+
+        let mut block_two = block_diff();
+        account_change(
+            &mut block_two,
+            address,
+            Some(snapshot(150, 5, hash(0x24))),
+            Some(snapshot(100, 4, hash(0x24))),
+        );
+        storage_change(&mut block_two, address, slot_one, value(6), value(5));
+
+        let diff = roundtrip_batch_diff(&[block_one, block_two]);
+        assert!(diff.is_empty());
+
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one)],
+            &[],
+            &diff,
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_code_churn_matches_canonical_oracle() {
+        let address = addr(0x15);
+        let slot_one = slot(1);
+        let old_hash = hash(0x25);
+        let new_hash = hash(0x26);
+        let new_bytecode = [0x60, 0x80, 0x60, 0x40, 0x52];
+        let pre_state = CanonicalState::new()
+            .with_account(address, state_account(500, 8, old_hash))
+            .set_storage_slot(address, slot_one, value(1));
+        let expected_state = CanonicalState::new()
+            .with_account(address, state_account(500, 8, new_hash))
+            .set_storage_slot(address, slot_one, value(3));
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(500, 8, old_hash)),
+            Some(snapshot(500, 8, new_hash)),
+        );
+        storage_change(&mut block, address, slot_one, value(1), value(3));
+        deployed_bytecode(&mut block, new_hash, bytecode(&new_bytecode));
+
+        let diff = roundtrip_batch_diff(&[block]);
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, slot_one)],
+            &[(new_hash, &new_bytecode)],
+            &diff,
+        );
+    }
+
+    #[test]
+    fn test_reconstruct_selfdestruct_recreate_matches_canonical_oracle() {
+        let address = addr(0x16);
+        let old_hash = hash(0x27);
+        let new_hash = hash(0x28);
+        let old_slot = slot(1);
+        let new_slot = slot(2);
+        let pre_state = CanonicalState::new()
+            .with_account(address, state_account(900, 7, old_hash))
+            .set_storage_slot(address, old_slot, value(33));
+        let expected_state = CanonicalState::new()
+            .with_account(address, state_account(55, 1, new_hash))
+            .set_storage_slot(address, new_slot, value(44));
+
+        let mut block_one = block_diff();
+        account_change(
+            &mut block_one,
+            address,
+            Some(snapshot(900, 7, old_hash)),
+            None,
+        );
+        storage_change(&mut block_one, address, old_slot, value(33), U256::ZERO);
+
+        let mut block_two = block_diff();
+        account_change(
+            &mut block_two,
+            address,
+            None,
+            Some(snapshot(55, 1, new_hash)),
+        );
+        storage_change(&mut block_two, address, new_slot, U256::ZERO, value(44));
+
+        let diff = roundtrip_batch_diff(&[block_one, block_two]);
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        assert_reconstruction_matches(
+            &reconstructor,
+            &expected_state,
+            &[(address, old_slot), (address, new_slot)],
+            &[],
+            &diff,
+        );
     }
 }
