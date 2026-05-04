@@ -5,11 +5,13 @@
 use std::mem;
 
 use ssz_primitives::FixedBytes;
+use ssz_types::VariableList;
 use strata_acct_types::{
     AccountId, AccumulatorClaim, BitcoinAmount, Hash, MessageEntry, Mmr64, MsgPayload,
     RawMerkleProof, SentMessage, SentTransfer, StrataHasher, TxEffects, tree_hash::TreeHash,
 };
 use strata_asm_common::AsmManifest;
+use strata_codec::{Codec, decode_buf_exact};
 use strata_identifiers::{
     AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, Slot, WtxidsRoot,
 };
@@ -60,6 +62,16 @@ pub fn execute_block_with_outputs(
 ) -> ExecResult<ConstructBlockOutput> {
     let block_context = BlockContext::new(block_info, parent_header);
     construct_block(state, block_context, components)
+}
+
+/// Find and decode a single typed log emitted by `serial` in the block output.
+pub fn find_typed_log<T: Codec>(output: &ConstructBlockOutput, serial: AccountSerial) -> Option<T> {
+    output
+        .outputs()
+        .logs()
+        .iter()
+        .find(|l| l.account_serial() == serial)
+        .and_then(|l| decode_buf_exact::<T>(l.payload()).ok())
 }
 
 /// Build and execute a chain of empty blocks starting from genesis.
@@ -650,6 +662,7 @@ pub struct SnarkUpdateBuilder {
     effects: TxEffects,
     ledger_ref_claims: Vec<AccumulatorClaim>,
     ledger_ref_proofs: Vec<RawMerkleProof>,
+    extra_data: VariableList<u8, 1024>,
 }
 
 impl SnarkUpdateBuilder {
@@ -663,7 +676,21 @@ impl SnarkUpdateBuilder {
             effects: TxEffects::default(),
             ledger_ref_claims: vec![],
             ledger_ref_proofs: vec![],
+            extra_data: VariableList::default(),
         }
+    }
+
+    pub fn with_extra_data(mut self, extra_data: VariableList<u8, 1024>) -> Self {
+        self.extra_data = extra_data;
+        self
+    }
+
+    pub fn try_with_extra_data<T: TryInto<VariableList<u8, 1024>>>(
+        mut self,
+        extra_data: T,
+    ) -> Result<Self, T::Error> {
+        self.extra_data = extra_data.try_into()?;
+        Ok(self)
     }
 
     /// Add processed messages
@@ -716,7 +743,7 @@ impl SnarkUpdateBuilder {
         let update_data = SauTxUpdateData {
             seq_no: self.seq_no,
             proof_state,
-            extra_data: vec![].try_into().unwrap(),
+            extra_data: self.extra_data,
         };
 
         // Build ledger refs
