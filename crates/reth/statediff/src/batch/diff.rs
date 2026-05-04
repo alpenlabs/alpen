@@ -14,6 +14,8 @@ use crate::codec::{CodecAddress, CodecB256};
 ///
 /// This is the type that gets posted to the DA layer. It represents
 /// the net change over a range of blocks, with reverts already filtered out.
+/// The current encoding is pinned by golden fixtures under `testdata/` to catch
+/// accidental wire-format drift until a deliberate compatibility migration exists.
 #[derive(Clone, Debug, Default)]
 pub struct BatchStateDiff {
     /// Account changes, sorted by address for deterministic encoding.
@@ -87,9 +89,16 @@ impl Codec for BatchStateDiff {
 mod tests {
     use alloy_primitives::U256;
     use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_da_framework::SignedVarInt;
 
     use super::*;
-    use crate::batch::AccountDiff;
+    use crate::{
+        batch::AccountDiff,
+        test_utils::{
+            account_change, block_diff, deployed_bytecode, hash, snapshot, storage_change,
+        },
+        BatchBuilder,
+    };
 
     #[test]
     fn test_batch_state_diff_roundtrip() {
@@ -181,10 +190,184 @@ mod tests {
         );
 
         let mut encoded = encode_to_vec(&diff).unwrap();
+        // Layout here is: 3 x 4-byte map counts, then the 32-byte bytecode hash,
+        // then the bytecode length field we intentionally corrupt.
         let offset = 12 + 32;
         let oversized_len = encode_to_vec(&(10u32)).unwrap();
         encoded[offset..offset + 4].copy_from_slice(&oversized_len);
 
         assert!(decode_buf_exact::<BatchStateDiff>(&encoded).is_err());
+    }
+
+    fn fixture_single_account_create() -> BatchStateDiff {
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            Address::from([0x11u8; 20]),
+            None,
+            Some(snapshot(1000, 1, hash(0x21))),
+        );
+        BatchStateDiff::from(block)
+    }
+
+    fn fixture_storage_only_update() -> BatchStateDiff {
+        let address = Address::from([0x12u8; 20]);
+        let mut block = block_diff();
+        storage_change(
+            &mut block,
+            address,
+            U256::from(1),
+            U256::from(5),
+            U256::from(7),
+        );
+        storage_change(
+            &mut block,
+            address,
+            U256::from(2),
+            U256::ZERO,
+            U256::from(9),
+        );
+        BatchStateDiff::from(block)
+    }
+
+    fn fixture_selfdestruct_recreate() -> BatchStateDiff {
+        let address = Address::from([0x13u8; 20]);
+
+        let mut block_one = block_diff();
+        account_change(
+            &mut block_one,
+            address,
+            Some(snapshot(900, 7, hash(0x22))),
+            None,
+        );
+        storage_change(
+            &mut block_one,
+            address,
+            U256::from(1),
+            U256::from(33),
+            U256::ZERO,
+        );
+
+        let mut block_two = block_diff();
+        account_change(
+            &mut block_two,
+            address,
+            None,
+            Some(snapshot(55, 1, hash(0x23))),
+        );
+        storage_change(
+            &mut block_two,
+            address,
+            U256::from(2),
+            U256::ZERO,
+            U256::from(44),
+        );
+
+        let mut builder = BatchBuilder::new();
+        builder.apply_block(&block_one);
+        builder.apply_block(&block_two);
+        builder.build()
+    }
+
+    fn fixture_code_hash_and_bytecode_update() -> BatchStateDiff {
+        let address = Address::from([0x14u8; 20]);
+        let old_hash = hash(0x24);
+        let new_hash = hash(0x25);
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address,
+            Some(snapshot(500, 8, old_hash)),
+            Some(snapshot(500, 8, new_hash)),
+        );
+        storage_change(
+            &mut block,
+            address,
+            U256::from(1),
+            U256::from(1),
+            U256::from(3),
+        );
+        deployed_bytecode(
+            &mut block,
+            new_hash,
+            Bytes::from_static(&[0x60, 0x80, 0x60, 0x40, 0x52]),
+        );
+        BatchStateDiff::from(block)
+    }
+
+    fn fixture_cases() -> [(&'static str, BatchStateDiff); 5] {
+        [
+            ("empty_batch", BatchStateDiff::new()),
+            ("single_account_create", fixture_single_account_create()),
+            ("storage_only_update", fixture_storage_only_update()),
+            ("selfdestruct_recreate", fixture_selfdestruct_recreate()),
+            (
+                "code_hash_and_bytecode_update",
+                fixture_code_hash_and_bytecode_update(),
+            ),
+        ]
+    }
+
+    fn assert_account_diff_semantics(actual: &AccountDiff, expected: &AccountDiff) {
+        assert_eq!(actual.balance.diff(), expected.balance.diff());
+        assert_eq!(
+            actual.nonce.diff().and_then(SignedVarInt::to_i64),
+            expected.nonce.diff().and_then(SignedVarInt::to_i64)
+        );
+        assert_eq!(
+            actual.code_hash.new_value().map(|value| value.0),
+            expected.code_hash.new_value().map(|value| value.0)
+        );
+    }
+
+    fn assert_account_change_semantics(actual: &AccountChange, expected: &AccountChange) {
+        match (actual, expected) {
+            (AccountChange::Created(actual), AccountChange::Created(expected))
+            | (AccountChange::Updated(actual), AccountChange::Updated(expected)) => {
+                assert_account_diff_semantics(actual, expected);
+            }
+            (AccountChange::Deleted, AccountChange::Deleted) => {}
+            _ => panic!("account change variant mismatch"),
+        }
+    }
+
+    fn assert_batch_diff_semantics(actual: &BatchStateDiff, expected: &BatchStateDiff) {
+        assert_eq!(actual.accounts.len(), expected.accounts.len());
+        assert_eq!(actual.storage, expected.storage);
+        assert_eq!(actual.deployed_bytecodes, expected.deployed_bytecodes);
+
+        for (address, expected_change) in &expected.accounts {
+            let actual_change = actual.accounts.get(address).unwrap();
+            assert_account_change_semantics(actual_change, expected_change);
+        }
+    }
+
+    fn fixture_bytes(name: &str) -> &'static [u8] {
+        match name {
+            "empty_batch" => include_bytes!("../../testdata/empty_batch.bin"),
+            "single_account_create" => include_bytes!("../../testdata/single_account_create.bin"),
+            "storage_only_update" => include_bytes!("../../testdata/storage_only_update.bin"),
+            "selfdestruct_recreate" => include_bytes!("../../testdata/selfdestruct_recreate.bin"),
+            "code_hash_and_bytecode_update" => {
+                include_bytes!("../../testdata/code_hash_and_bytecode_update.bin")
+            }
+            _ => panic!("unknown fixture {name}"),
+        }
+    }
+
+    #[test]
+    fn test_batch_state_diff_golden_fixtures() {
+        for (name, expected_diff) in fixture_cases() {
+            let fixture = fixture_bytes(name);
+            let encoded = encode_to_vec(&expected_diff).unwrap();
+            assert_eq!(
+                encoded.as_slice(),
+                fixture,
+                "fixture bytes changed for {name}"
+            );
+
+            let decoded: BatchStateDiff = decode_buf_exact(fixture).unwrap();
+            assert_batch_diff_semantics(&decoded, &expected_diff);
+        }
     }
 }
