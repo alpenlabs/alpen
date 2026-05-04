@@ -1,5 +1,7 @@
 //! State reconstruction from batch diffs.
 
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use alpen_chainspec::chain_value_parser;
@@ -200,5 +202,48 @@ impl StateReconstructor {
         self.state_trie
             .get_rlp(&keccak(address))
             .unwrap_or_default()
+    }
+
+    /// Creates a reconstructor from explicit canonical account and storage state.
+    ///
+    /// This helper exists for oracle tests that need to seed pre-state directly
+    /// from test fixtures instead of going through a chain spec or DB-backed
+    /// state source.
+    #[cfg(test)]
+    #[expect(
+        dead_code,
+        reason = "test-only state seeding helper is used by follow-up parity coverage"
+    )]
+    pub(crate) fn from_state_parts(
+        accounts: &BTreeMap<Address, StateAccount>,
+        storage: &BTreeMap<Address, BTreeMap<U256, U256>>,
+    ) -> Result<Self, ReconstructError> {
+        let mut reconstructor = Self::new();
+
+        for (address, account) in accounts {
+            let mut state_account = account.clone();
+            let mut storage_trie = MptNode::default();
+
+            if let Some(account_storage) = storage.get(address) {
+                for (slot_key, slot_value) in account_storage {
+                    if slot_value.is_zero() {
+                        continue;
+                    }
+
+                    storage_trie.insert_rlp(&keccak(slot_key.to_be_bytes::<32>()), *slot_value)?;
+                }
+            }
+
+            state_account.storage_root = storage_trie.hash();
+            if !storage_trie.is_empty() {
+                reconstructor.storage_trie.insert(*address, storage_trie);
+            }
+
+            reconstructor
+                .state_trie
+                .insert_rlp(&keccak(address), state_account)?;
+        }
+
+        Ok(reconstructor)
     }
 }
