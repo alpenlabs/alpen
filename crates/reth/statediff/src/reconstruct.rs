@@ -209,6 +209,9 @@ impl StateReconstructor {
     /// This helper exists for oracle tests that need to seed pre-state directly
     /// from test fixtures instead of going through a chain spec or DB-backed
     /// state source.
+    ///
+    /// Empty accounts are skipped during seeding, matching the canonical-state
+    /// oracle behavior used by the reconstruction tests.
     #[cfg(test)]
     pub(crate) fn from_state_parts(
         accounts: &BTreeMap<Address, StateAccount>,
@@ -252,6 +255,7 @@ impl StateReconstructor {
 mod tests {
     use std::collections::BTreeSet;
 
+    use proptest::prelude::*;
     use strata_codec::{decode_buf_exact, encode_to_vec};
     use strata_mpt::EMPTY_ROOT;
 
@@ -565,5 +569,146 @@ mod tests {
             &[],
             &diff,
         );
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_batch_builder_elides_reverted_changes(
+            initial_balance in 1u64..10_000,
+            initial_nonce in 1u64..100,
+            changed_balance in 1u64..10_000,
+            changed_nonce in 1u64..100,
+            initial_slot in 0u64..500,
+            changed_slot in 0u64..500,
+        ) {
+            let address = addr(0x31);
+            let slot_key = U256::from(1);
+            let code_hash = hash(0x41);
+
+            prop_assume!(
+                initial_balance != changed_balance
+                    || initial_nonce != changed_nonce
+                    || initial_slot != changed_slot
+            );
+
+            let mut block_one = block_diff();
+            account_change(
+                &mut block_one,
+                address,
+                Some(snapshot(initial_balance, initial_nonce, code_hash)),
+                Some(snapshot(changed_balance, changed_nonce, code_hash)),
+            );
+            storage_change(
+                &mut block_one,
+                address,
+                slot_key,
+                U256::from(initial_slot),
+                U256::from(changed_slot),
+            );
+
+            let mut block_two = block_diff();
+            account_change(
+                &mut block_two,
+                address,
+                Some(snapshot(changed_balance, changed_nonce, code_hash)),
+                Some(snapshot(initial_balance, initial_nonce, code_hash)),
+            );
+            storage_change(
+                &mut block_two,
+                address,
+                slot_key,
+                U256::from(changed_slot),
+                U256::from(initial_slot),
+            );
+
+            let diff = batch_diff(&[block_one, block_two]);
+            prop_assert!(diff.is_empty());
+        }
+
+        #[test]
+        fn proptest_batch_state_diff_encoding_is_deterministic(
+            balance in 1u64..10_000,
+            nonce in 1u64..100,
+            slot_before in 0u64..500,
+            slot_after in 0u64..500,
+        ) {
+            let address = addr(0x32);
+            let code_hash = hash(0x42);
+            let slot_key = U256::from(1);
+
+            let mut block = block_diff();
+            account_change(
+                &mut block,
+                address,
+                Some(snapshot(balance, nonce, code_hash)),
+                Some(snapshot(balance.saturating_add(1), nonce.saturating_add(1), code_hash)),
+            );
+            storage_change(
+                &mut block,
+                address,
+                slot_key,
+                U256::from(slot_before),
+                U256::from(slot_after),
+            );
+
+            let first = encode_to_vec(&batch_diff(&[block.clone()])).unwrap();
+            let second = encode_to_vec(&batch_diff(&[block])).unwrap();
+            prop_assert_eq!(first, second);
+        }
+
+        #[test]
+        fn proptest_reconstruction_matches_canonical_oracle(
+            pre_balance in 1u64..10_000,
+            post_balance in 1u64..10_000,
+            pre_nonce in 1u64..100,
+            post_nonce in 1u64..100,
+            pre_slot in 0u64..500,
+            post_slot in 0u64..500,
+        ) {
+            let address = addr(0x33);
+            let code_hash = hash(0x43);
+            let slot_key = U256::from(1);
+            let pre_state = CanonicalState::new()
+                .with_account(address, state_account(pre_balance, pre_nonce, code_hash))
+                .set_storage_slot(address, slot_key, U256::from(pre_slot));
+
+            let expected_state = if post_slot == 0 {
+                CanonicalState::new()
+                    .with_account(address, state_account(post_balance, post_nonce, code_hash))
+                    .remove_storage_slot(address, slot_key)
+            } else {
+                CanonicalState::new()
+                    .with_account(address, state_account(post_balance, post_nonce, code_hash))
+                    .set_storage_slot(address, slot_key, U256::from(post_slot))
+            };
+
+            let mut block = block_diff();
+            account_change(
+                &mut block,
+                address,
+                Some(snapshot(pre_balance, pre_nonce, code_hash)),
+                Some(snapshot(post_balance, post_nonce, code_hash)),
+            );
+            storage_change(
+                &mut block,
+                address,
+                slot_key,
+                U256::from(pre_slot),
+                U256::from(post_slot),
+            );
+
+            let diff = roundtrip_batch_diff(&[block]);
+            let mut reconstructor =
+                StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+            reconstructor.apply_diff(&diff).unwrap();
+
+            assert_reconstruction_matches(
+                &reconstructor,
+                &expected_state,
+                &[(address, slot_key)],
+                &[],
+                &diff,
+            );
+        }
     }
 }
