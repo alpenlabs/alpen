@@ -16,51 +16,76 @@ pub enum DbError {
     NullOLBlock,
 
     /// OL slot was skipped in sequential persistence.
-    #[error("OL entries must be persisted sequentially; next: {expected}; got: {got}")]
+    #[error("OL entries must be persisted sequentially but provided nonsequentially (exp next {expected}, got {got})")]
     SkippedOLSlot { expected: u64, got: u64 },
 
     /// Transaction conflict: slot is already filled.
-    #[error("Txn conflict: OL slot {0} already filled")]
+    #[error("likely db txn conflict, OL slot {0} already filled")]
     TxnFilledOLSlot(u64),
 
     /// Transaction conflict: expected slot to be empty.
-    #[error("Txn conflict: OL slot {0} should be empty")]
+    #[error("likely db txn conflict, OL slot {0} should be empty")]
     TxnExpectEmptyOLSlot(u64),
 
     /// Account state is missing for the given block.
-    #[error("Account state expected to be present; block_id = {0}")]
+    #[error("account state missing (at blkid {0})")]
     MissingAccountState(OLBlockId),
 
     /// Finalized chain is empty.
-    #[error("Finalized exec block expected to be present")]
+    #[error("finalized exec block expected to be present")]
     FinalizedExecChainEmpty,
 
     /// Exec block is missing.
-    #[error("Exec block expected to be present; blockhahs = {0:?}")]
+    #[error("missing expected exec blkid {0}")]
     MissingExecBlock(Hash),
 
-    #[error("Expected exec block finalized chain to be empty")]
+    #[error("expected exec block finalized chain to be empty")]
     FinalizedExecChainGenesisBlockMismatch,
 
-    #[error("Provided block does not extend chain; {0:?}")]
+    #[error("provided blkid {0} does not extend chain")]
     ExecBlockDoesNotExtendChain(Hash),
 
-    #[error("Txn conflict: expected finalized height {0} to be empty")]
+    /// Walk from `new_tip` failed to reach the current finalized tip.
+    ///
+    /// This indicates one of:
+    /// - `new_tip` is non-canonical (does not descend from finalized tip),
+    /// - storage inconsistency (parent links / block numbers disagree), or
+    /// - walk exceeded the expected height-difference budget without reaching the tip (e.g.
+    ///   cyclic/corrupt parent links above finalized height).
+    #[error("walk failed to reach finalized tip (new tip {new_tip}, finalized height {finalized_height})")]
+    FinalizedWalkNotDescending {
+        new_tip: Hash,
+        finalized_height: u64,
+    },
+
+    /// Walk from `new_tip` did not reach finalized tip within expected height-difference budget.
+    ///
+    /// This usually indicates cyclic/corrupt parent links above finalized height, or severe
+    /// block-number/parent inconsistency that prevented convergence.
+    #[error("walk exhausted step budget before reaching tip (new tip {new_tip}, finalized height {finalized_height}, max steps {max_steps})")]
+    FinalizedWalkStepBudgetExceeded {
+        new_tip: Hash,
+        finalized_height: u64,
+        max_steps: u64,
+    },
+
+    #[error("likely db txn conflict, expected finalized height {0} to be empty")]
     TxnExpectEmptyFinalized(u64),
 
-    #[error("Txn conflict: expected finalized height {0} to be {1:?}")]
+    #[error("likely db txn conflict, expected finalized height {0} to be {1}")]
     TxnExpectFinalized(u64, Hash),
 
     /// Attempted to delete a finalized block.
-    #[error("Cannot delete finalized block: {0:?}")]
+    #[error("tried to delete finalized block {0}")]
     CannotDeleteFinalizedBlock(Hash),
 
     /// Batch not found when trying to update status.
-    #[error("Batch not found: {0:?}")]
+    #[error("batch {0} not found")]
     BatchNotFound(BatchId),
 
     /// Chunk not found when trying to update status.
-    #[error("Chunk not found: {0:?}")]
+    // NOTE: `ChunkId` doesn't implement `Display`, so use `Debug` here.
+    #[error("chunk {0:?} not found")]
     ChunkNotFound(ChunkId),
 
     /// Batch deserialization error.
@@ -68,7 +93,7 @@ pub enum DbError {
     BatchDeserialize(String),
 
     /// Database operation error.
-    #[error("Database: {0}")]
+    #[error("db ops: {0}")]
     DbOpsError(#[from] OpsError),
 
     /// Sled database error.

@@ -28,12 +28,14 @@ pub trait ExecBlockStorage: Send + Sync {
     /// calling multiple times with the same hash should succeed. Fails if block doesn't exist.
     async fn init_finalized_chain(&self, hash: Hash) -> Result<(), StorageError>;
 
-    /// Extend the finalized chain by one block.
+    /// Extend the finalized chain up to and including `new_tip`.
     ///
-    /// The block must have been saved via `save_exec_block` and its parent hash must match the
-    /// current best finalized block. Fails if chain is empty, block doesn't exist, or parent
-    /// hash doesn't match.
-    async fn extend_finalized_chain(&self, hash: Hash) -> Result<(), StorageError>;
+    /// Walks parent links from `new_tip` back to the current best finalized block and inserts
+    /// each missing canonical block in order. Atomic: either all intermediate finalized entries
+    /// are inserted or none are. Works for both single-block and multi-block extensions.
+    /// Fails if chain is empty, `new_tip` is unknown, an intermediate parent is missing, or
+    /// `new_tip` does not descend from the current finalized tip.
+    async fn extend_finalized_chain(&self, new_tip: Hash) -> Result<(), StorageError>;
 
     /// Revert the finalized chain to a specified height.
     ///
@@ -148,6 +150,56 @@ macro_rules! exec_block_storage_tests {
         async fn test_extend_finalized_chain() {
             let storage = $setup_expr;
             $crate::exec_block_storage_test_fns::test_extend_finalized_chain(&storage).await;
+        }
+
+        #[tokio::test]
+        async fn test_extend_finalized_chain_multi_block() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_extend_finalized_chain_multi_block(&storage)
+                .await;
+        }
+
+        #[tokio::test]
+        async fn test_extend_finalized_chain_single_step() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_extend_finalized_chain_single_step(&storage)
+                .await;
+        }
+
+        #[tokio::test]
+        async fn test_extend_finalized_chain_is_noop_at_tip() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_extend_finalized_chain_is_noop_at_tip(
+                &storage,
+            )
+            .await;
+        }
+
+        #[tokio::test]
+        async fn test_extend_finalized_chain_non_descendant_tip() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_extend_finalized_chain_non_descendant_tip(
+                &storage,
+            )
+            .await;
+        }
+
+        #[tokio::test]
+        async fn test_extend_finalized_chain_missing_parent() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_extend_finalized_chain_missing_parent(
+                &storage,
+            )
+            .await;
+        }
+
+        #[tokio::test]
+        async fn test_extend_finalized_chain_cycle_rejected() {
+            let storage = $setup_expr;
+            $crate::exec_block_storage_test_fns::test_extend_finalized_chain_cycle_rejected(
+                &storage,
+            )
+            .await;
         }
 
         #[tokio::test]
@@ -543,6 +595,142 @@ pub mod exec_block_storage_test_fns {
         let best = storage.best_finalized_block().await.unwrap().unwrap();
         assert_eq!(best.blockhash(), hash1);
         assert_eq!(best.blocknum(), 1);
+    }
+
+    /// Save a block and its (empty) payload to storage.
+    async fn save_block(storage: &impl ExecBlockStorage, block: ExecBlockRecord) {
+        storage
+            .save_exec_block(block, ExecBlockPayload::from_bytes(vec![]))
+            .await
+            .unwrap();
+    }
+
+    /// Build and save a contiguous chain of `len` blocks starting at genesis, returning
+    /// the sequence of block hashes. Block `i` has `blocknum = i` and parent = `hashes[i - 1]`
+    /// (or `Hash::default()` for genesis). The finalized chain is also initialized at
+    /// `hashes[0]`.
+    async fn save_linear_chain(storage: &impl ExecBlockStorage, len: u64) -> Vec<Hash> {
+        let mut hashes = Vec::with_capacity(len as usize);
+        for i in 0..len {
+            let hash = hash_from_u8(i as u8);
+            let parent = if i == 0 {
+                Hash::default()
+            } else {
+                hashes[(i - 1) as usize]
+            };
+            save_block(storage, create_exec_block(i, parent, hash, i)).await;
+            hashes.push(hash);
+        }
+        storage.init_finalized_chain(hashes[0]).await.unwrap();
+        hashes
+    }
+
+    /// Assert `best_finalized_block()` matches the expected hash and blocknum.
+    async fn assert_best_finalized(
+        storage: &impl ExecBlockStorage,
+        expected_hash: Hash,
+        expected_blocknum: u64,
+    ) {
+        let best = storage.best_finalized_block().await.unwrap().unwrap();
+        assert_eq!(best.blockhash(), expected_hash);
+        assert_eq!(best.blocknum(), expected_blocknum);
+    }
+
+    /// Test extending finalized chain to a tip with multiple intermediate blocks.
+    pub async fn test_extend_finalized_chain_multi_block(storage: &impl ExecBlockStorage) {
+        let hashes = save_linear_chain(storage, 4).await;
+
+        storage.extend_finalized_chain(hashes[3]).await.unwrap();
+
+        assert_best_finalized(storage, hashes[3], 3).await;
+        for (i, h) in hashes.iter().enumerate().skip(1) {
+            assert_eq!(
+                storage.get_finalized_height(*h).await.unwrap().unwrap(),
+                i as u64
+            );
+        }
+    }
+
+    /// Test single-step extension through `extend_finalized_chain`.
+    pub async fn test_extend_finalized_chain_single_step(storage: &impl ExecBlockStorage) {
+        let hashes = save_linear_chain(storage, 2).await;
+
+        storage.extend_finalized_chain(hashes[1]).await.unwrap();
+
+        assert_best_finalized(storage, hashes[1], 1).await;
+    }
+
+    /// Test idempotent no-op when extending to current finalized tip.
+    pub async fn test_extend_finalized_chain_is_noop_at_tip(storage: &impl ExecBlockStorage) {
+        let hashes = save_linear_chain(storage, 3).await;
+
+        storage.extend_finalized_chain(hashes[2]).await.unwrap();
+        // Calling again with the current tip should be a no-op success.
+        storage.extend_finalized_chain(hashes[2]).await.unwrap();
+
+        assert_best_finalized(storage, hashes[2], 2).await;
+    }
+
+    /// Test extending finalized chain to a tip that does not descend from current finalized tip.
+    pub async fn test_extend_finalized_chain_non_descendant_tip(storage: &impl ExecBlockStorage) {
+        let hashes = save_linear_chain(storage, 2).await;
+
+        // Build a sibling fork branching from genesis.
+        let fork1 = hash_from_u8(11);
+        let fork2 = hash_from_u8(12);
+        save_block(storage, create_exec_block(1, hashes[0], fork1, 10)).await;
+        save_block(storage, create_exec_block(2, fork1, fork2, 11)).await;
+
+        storage.extend_finalized_chain(hashes[1]).await.unwrap();
+
+        let result = storage.extend_finalized_chain(fork2).await;
+        assert!(result.is_err());
+
+        assert_best_finalized(storage, hashes[1], 1).await;
+    }
+
+    /// Test extending finalized chain to a tip when an intermediate parent record is missing.
+    pub async fn test_extend_finalized_chain_missing_parent(storage: &impl ExecBlockStorage) {
+        let genesis_hash = hash_from_u8(0);
+        save_block(
+            storage,
+            create_exec_block(0, Hash::default(), genesis_hash, 0),
+        )
+        .await;
+        storage.init_finalized_chain(genesis_hash).await.unwrap();
+
+        // Block at height 2 whose parent (height 1) was never saved.
+        let missing_parent = hash_from_u8(1);
+        let tip_hash = hash_from_u8(2);
+        save_block(storage, create_exec_block(2, missing_parent, tip_hash, 1)).await;
+
+        let result = storage.extend_finalized_chain(tip_hash).await;
+        assert!(result.is_err());
+
+        assert_best_finalized(storage, genesis_hash, 0).await;
+    }
+
+    /// Test extending finalized chain to a cyclic parent graph is rejected.
+    pub async fn test_extend_finalized_chain_cycle_rejected(storage: &impl ExecBlockStorage) {
+        let genesis_hash = hash_from_u8(0);
+        save_block(
+            storage,
+            create_exec_block(0, Hash::default(), genesis_hash, 0),
+        )
+        .await;
+        storage.init_finalized_chain(genesis_hash).await.unwrap();
+
+        // Corrupt graph above finalized tip:
+        // h3 -> h2 and h2 -> h3 (cycle), never descending to finalized tip.
+        let h2 = hash_from_u8(2);
+        let h3 = hash_from_u8(3);
+        save_block(storage, create_exec_block(2, h3, h2, 2)).await;
+        save_block(storage, create_exec_block(3, h2, h3, 3)).await;
+
+        let result = storage.extend_finalized_chain(h3).await;
+        assert!(result.is_err());
+
+        assert_best_finalized(storage, genesis_hash, 0).await;
     }
 
     /// Test extending before initializing
