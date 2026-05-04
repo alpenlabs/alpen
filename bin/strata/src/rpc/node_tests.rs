@@ -43,7 +43,7 @@ type InboxFetchFn = Box<dyn Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry
 
 struct MockProvider {
     blocks: HashMap<OLBlockId, OLBlock>,
-    canonical_slots: HashMap<u64, OLBlockCommitment>,
+    canonical_slots: HashMap<Slot, OLBlockCommitment>,
     states: HashMap<OLBlockCommitment, Arc<OLState>>,
     epoch_commitments: HashMap<Epoch, EpochCommitment>,
     epoch_summaries: HashMap<EpochCommitment, EpochSummary>,
@@ -370,7 +370,7 @@ fn make_sync_status(
     )
 }
 
-fn make_block(slot: u64, epoch: u32, parent: OLBlockId) -> OLBlock {
+fn make_block(slot: Slot, epoch: Epoch, parent: OLBlockId) -> OLBlock {
     let header = OLBlockHeader::new(
         0,
         0.into(),
@@ -393,7 +393,7 @@ fn genesis_ol_state() -> OLState {
 
 fn ol_state_with_snark_account(
     account_id: AccountId,
-    slot: u64,
+    slot: Slot,
     seq_no: u64,
     next_inbox_msg_idx: u64,
 ) -> OLState {
@@ -417,7 +417,7 @@ fn ol_state_with_snark_account(
     state.into_inner()
 }
 
-fn ol_state_with_empty_account(account_id: AccountId, slot: u64) -> OLState {
+fn ol_state_with_empty_account(account_id: AccountId, slot: Slot) -> OLState {
     let base = genesis_ol_state();
     let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
@@ -440,7 +440,7 @@ fn make_gam_rpc_tx(target: AccountId, payload: Vec<u8>) -> RpcOLTransaction {
     RpcOLTransaction::new_payload(RpcTransactionPayload::GenericAccountMessage(gam))
 }
 
-fn test_epoch_commitment(epoch: Epoch, slot: u64, blkid_tag: u8) -> EpochCommitment {
+fn test_epoch_commitment(epoch: Epoch, slot: Slot, blkid_tag: u8) -> EpochCommitment {
     EpochCommitment::new(epoch, slot, fixed_ol_block_id(blkid_tag))
 }
 
