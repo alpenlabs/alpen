@@ -6,6 +6,7 @@ use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
 use strata_snark_acct_sys as snark_sys;
+use tracing::*;
 
 use crate::{
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
@@ -36,7 +37,8 @@ pub(crate) fn process_message<S: IStateAccessorMut>(
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
                 // If we don't find it then we can sweep it into limbo.
-                state.add_limbo_funds_coin(coin)?;
+                warn!(%target, "target account does not exist");
+                handle_misplaced_funds(state, coin)?;
                 return Ok(());
             }
 
@@ -74,7 +76,8 @@ pub(crate) fn process_transfer<S: IStateAccessorMut>(
         // Bridge gateway transfer, not permitted.
         BRIDGE_GATEWAY_ACCT_ID => {
             // Just sweep to limbo unconditionally.
-            state.add_limbo_funds_coin(coin)?;
+            warn!("limboing transfer to bridge gateway acct");
+            handle_misplaced_funds(state, coin)?;
         }
 
         // Any other address we assume is a ledger account, so we have to look it up.
@@ -82,7 +85,8 @@ pub(crate) fn process_transfer<S: IStateAccessorMut>(
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
                 // If we don't find it then we can sweep it into limbo.
-                state.add_limbo_funds_coin(coin)?;
+                warn!(%target, "limboing transfer to non-existent account");
+                handle_misplaced_funds(state, coin)?;
                 return Ok(());
             }
 
@@ -100,7 +104,7 @@ pub(crate) fn process_transfer<S: IStateAccessorMut>(
 
 fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     state: &mut S,
-    _sender: AccountId,
+    sender: AccountId,
     payload: MsgPayload,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
@@ -109,13 +113,15 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     // 1. Parse the message from the payload data.
     let Ok(msg) = MsgRef::try_from(payload.data()) else {
         // Invalid message format, sweep to limbo.
-        state.add_limbo_funds_coin(coin)?;
+        warn!(%sender, "limboing malformed message sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
 
     let Some(withdrawal_data) = msg.try_as_withdrawal() else {
         // Not a withdrawal message, or malformed, sweep to limbo.
-        state.add_limbo_funds_coin(coin)?;
+        warn!(%sender, "limboing non-withdrawal message sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
 
@@ -129,7 +135,8 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     let amt_raw: u64 = withdrawal_amt.into();
     if amt_raw == 0 || !amt_raw.is_multiple_of(withdrawal_denom) {
         // Sweep to limbo.
-        state.add_limbo_funds_coin(coin)?;
+        warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     }
 
@@ -153,5 +160,17 @@ fn handle_snark_account_message<S: ISnarkAccountStateMut>(
 ) -> ExecResult<()> {
     let cur_epoch = context.epoch();
     snark_sys::handle_snark_msg(cur_epoch, sastate, sender, payload)?;
+    Ok(())
+}
+
+/// Handles misplaced funds.
+///
+/// This currently just sends funds to limbo.  It's broken out so that we can
+/// maintain the same code path when we change this behavior.
+pub(crate) fn handle_misplaced_funds(
+    state: &mut impl IStateAccessorMut,
+    coin: Coin,
+) -> ExecResult<()> {
+    state.add_limbo_funds_coin(coin)?;
     Ok(())
 }

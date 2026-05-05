@@ -18,7 +18,7 @@ use strata_ol_msg_types::DepositMsgData;
 use tracing::warn;
 
 use crate::{
-    account_processing,
+    account_processing::{self, handle_misplaced_funds},
     constants::BRIDGE_GATEWAY_ACCT_ID,
     context::BasicExecContext,
     errors::{ExecError, ExecResult},
@@ -133,8 +133,9 @@ fn process_deposit_log<S: IStateAccessorMut>(
     // Parse the raw destination bytes into account serial + subject.
     let Ok(descriptor) = DepositDescriptor::decode_from_slice(&deposit.destination) else {
         // Malformed destination descriptor, sweep to limbo.
+        let coin = Coin::new_unchecked(amt_btc);
         warn!(amount = %deposit.amount, "limboing deposit with malformed destination descriptor");
-        state.add_limbo_funds_coin(Coin::new_unchecked(amt_btc))?;
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
 
@@ -144,8 +145,9 @@ fn process_deposit_log<S: IStateAccessorMut>(
     // Convert the account serial to account ID.
     let Some(dest_id) = state.find_account_id_by_serial(acct_serial)? else {
         // Account serial not found, sweep to limbo.
+        let coin = Coin::new_unchecked(amt_btc);
         warn!(?acct_serial, amount = %deposit.amount, "limboing deposit for unknown account serial");
-        state.add_limbo_funds_coin(Coin::new_unchecked(amt_btc))?;
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
 
