@@ -20,9 +20,10 @@ use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_proto_bridge_v1_txs::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_identifiers::{AccountSerial, SubjectIdBytes, SYSTEM_RESERVED_ACCTS};
+use strata_identifiers::SubjectIdBytes;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_bridge_types::DepositDescriptor;
+use strata_ol_stf::ALPEN_EE_ACCT_SERIAL;
 use strata_primitives::crypto::even_kp;
 
 use crate::{
@@ -115,16 +116,11 @@ fn prepare_deposit_request(
 
     let alpen_subject_bytes =
         SubjectIdBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
-    // The Alpen EE is the first user account registered at genesis. System
-    // serials occupy 0..SYSTEM_RESERVED_ACCTS, so it lands at serial 128.
-    // Encoding 0 here resolves to the placeholder system slot and the OL
-    // silently discards the deposit. TODO(STR-2021): query the EE serial
-    // from OL params or via RPC instead of hardcoding.
-    let deposit_descriptor = DepositDescriptor::new(
-        AccountSerial::new(SYSTEM_RESERVED_ACCTS),
-        alpen_subject_bytes,
-    )
-    .expect("EE serial is within valid range");
+    // Encoding the wrong serial here (e.g. 0) resolves to a placeholder
+    // system slot and the OL silently discards the deposit. The constant
+    // pins the OL-side identity of the Alpen EE account.
+    let deposit_descriptor = DepositDescriptor::new(ALPEN_EE_ACCT_SERIAL, alpen_subject_bytes)
+        .expect("EE serial is within valid range");
     let header_aux = DrtHeaderAux::new(
         recovery_public_key.serialize(),
         deposit_descriptor.encode_to_varvec(),

@@ -21,12 +21,13 @@ the same loss-of-funds path.
 """
 
 import logging
-import time
 
 import flexitest
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
+from common.test_cli import create_mock_deposit
+from common.wait import wait_until_with_value
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,6 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         ctx.set_env("ol_isolated")
 
     def main(self, ctx):
-        from common.test_cli import create_mock_deposit
-
         strata = self.get_service(ServiceType.Strata)
         bitcoin = self.get_service(ServiceType.Bitcoin)
 
@@ -90,19 +89,22 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         btc_rpc.proxy.generatetoaddress(8, addr)
 
         # The deposit-bearing manifest is only processed once an epoch closes
-        # after the deposit lands on L1. Poll chain status for the tip epoch
-        # to advance rather than wait a fixed slot count.
+        # after the deposit lands on L1. Mine and poll the tip epoch rather
+        # than waiting a fixed slot count.
         start_epoch = int(rpc.strata_getChainStatus()["tip"]["epoch"])
-        deadline = time.time() + 60
-        while time.time() < deadline:
+
+        def mine_and_get_tip_epoch() -> int:
             btc_rpc.proxy.generatetoaddress(2, addr)
-            time.sleep(0.5)
-            current_epoch = int(rpc.strata_getChainStatus()["tip"]["epoch"])
-            if current_epoch > start_epoch:
-                logger.info("tip epoch advanced %d -> %d", start_epoch, current_epoch)
-                break
-        else:
-            raise AssertionError(f"tip epoch did not advance past {start_epoch} within 60s")
+            return int(rpc.strata_getChainStatus()["tip"]["epoch"])
+
+        current_epoch = wait_until_with_value(
+            mine_and_get_tip_epoch,
+            lambda epoch: epoch > start_epoch,
+            error_with=f"tip epoch did not advance past {start_epoch} within 60s",
+            timeout=60,
+            step=0.5,
+        )
+        logger.info("tip epoch advanced %d -> %d", start_epoch, current_epoch)
 
         balance = get_account_balance(rpc, TEST_ACCOUNT_ID_HEX)
         delta = balance - initial
