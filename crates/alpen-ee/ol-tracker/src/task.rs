@@ -113,9 +113,9 @@ pub(crate) async fn track_ol_state(
     // which can lag badly when the native noop prover emits SAUs quickly.
     let mut effective_ol_status = ol_status;
     let best_ol_commitment = if track_finalized_epoch {
-        let latest_terminal = ol_status.latest_terminal;
-        effective_ol_status.confirmed = latest_terminal;
-        effective_ol_status.finalized = latest_terminal;
+        let latest = ol_status.latest;
+        effective_ol_status.confirmed = latest;
+        effective_ol_status.finalized = latest;
         &effective_ol_status.confirmed
     } else {
         &effective_ol_status.confirmed
@@ -126,7 +126,7 @@ pub(crate) async fn track_ol_state(
     debug!(
         %best_local_epoch,
         %best_ol_epoch,
-        latest_terminal_epoch = %ol_status.latest_terminal.epoch(),
+        latest_epoch = %ol_status.latest.epoch(),
         track_finalized_epoch,
         "check best ol epoch"
     );
@@ -343,7 +343,7 @@ mod tests {
                     tip: make_block_commitment(31, 104),
                     confirmed: make_epoch_commitment(3, 30, 103),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(3, 30, 103),
+                    latest: make_epoch_commitment(3, 30, 103),
                 })
             });
 
@@ -371,7 +371,7 @@ mod tests {
                     tip: make_block_commitment(31, 104),
                     confirmed: make_epoch_commitment(3, 30, 103),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(3, 30, 103),
+                    latest: make_epoch_commitment(3, 30, 103),
                 })
             });
 
@@ -399,7 +399,7 @@ mod tests {
                     tip: make_block_commitment(31, 200),
                     confirmed: make_epoch_commitment(3, 30, 199), // Same epoch, different block ID
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(3, 30, 199),
+                    latest: make_epoch_commitment(3, 30, 199),
                 })
             });
 
@@ -431,7 +431,7 @@ mod tests {
                     tip: make_block_commitment(41, 105),
                     confirmed: make_epoch_commitment(4, 40, 104),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(4, 40, 104),
+                    latest: make_epoch_commitment(4, 40, 104),
                 })
             });
 
@@ -464,7 +464,7 @@ mod tests {
                     tip: make_block_commitment(51, 106),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(5, 50, 105),
+                    latest: make_epoch_commitment(5, 50, 105),
                 })
             });
 
@@ -486,7 +486,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_dev_tracking_uses_latest_terminal_when_confirmed_stalls() {
+        async fn test_dev_tracking_uses_latest_when_confirmed_stalls() {
             // Scenario: Strata's local OL tip has completed epochs, but the
             // CSM-gated confirmed/finalized epochs are still at genesis.
             // Expected: dev tracking extends through the latest terminal epoch
@@ -504,7 +504,7 @@ mod tests {
                     tip: make_block_commitment(31, 104),
                     confirmed: make_epoch_commitment(0, 0, 100),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(3, 30, 103),
+                    latest: make_epoch_commitment(3, 30, 103),
                 })
             });
 
@@ -549,7 +549,7 @@ mod tests {
                     tip: make_block_commitment(101, 111),
                     confirmed: make_epoch_commitment(10, 100, 110),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(10, 100, 110),
+                    latest: make_epoch_commitment(10, 100, 110),
                 })
             });
 
@@ -592,7 +592,7 @@ mod tests {
                     tip: make_block_commitment(51, 106),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
-                    latest_terminal: make_epoch_commitment(5, 50, 105),
+                    latest: make_epoch_commitment(5, 50, 105),
                 })
             });
 

@@ -294,7 +294,7 @@ mod tests {
                     FINALIZED_SLOT,
                     BLOCK_ID_BYTES[FINALIZED_EPOCH as usize],
                 ),
-                latest_terminal: make_epoch_commitment(
+                latest: make_epoch_commitment(
                     CONFIRMED_EPOCH,
                     CONFIRMED_SLOT,
                     BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize],
@@ -334,7 +334,7 @@ mod tests {
                 tip: make_block_commitment(50, 105),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
-                latest_terminal: make_epoch_commitment(4, 40, 104),
+                latest: make_epoch_commitment(4, 40, 104),
             };
 
             // Confirmed epoch is missing
@@ -368,7 +368,7 @@ mod tests {
                 tip: make_block_commitment(50, 105),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
-                latest_terminal: make_epoch_commitment(4, 40, 104),
+                latest: make_epoch_commitment(4, 40, 104),
             };
 
             // First call for confirmed succeeds, second call for finalized returns None
@@ -403,7 +403,7 @@ mod tests {
                 tip: make_block_commitment(50, 105),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
-                latest_terminal: make_epoch_commitment(4, 40, 104),
+                latest: make_epoch_commitment(4, 40, 104),
             };
 
             let mut mock_storage = MockStorage::new();
@@ -454,7 +454,7 @@ mod tests {
                     FINALIZED_SLOT,
                     BLOCK_ID_BYTES[FINALIZED_EPOCH as usize],
                 ),
-                latest_terminal: make_epoch_commitment(
+                latest: make_epoch_commitment(
                     CONFIRMED_EPOCH,
                     CONFIRMED_SLOT,
                     BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize],

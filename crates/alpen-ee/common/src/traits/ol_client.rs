@@ -32,12 +32,12 @@ pub trait OLClient: Sized + Send + Sync {
 pub async fn chain_status_checked(client: &impl OLClient) -> Result<OLChainStatus, OLClientError> {
     let status = client.chain_status().await?;
     if status.finalized.last_slot() > status.confirmed.last_slot()
-        || status.confirmed.last_slot() > status.latest_terminal.last_slot()
-        || status.latest_terminal.last_slot() > status.tip.slot()
+        || status.confirmed.last_slot() > status.latest.last_slot()
+        || status.latest.last_slot() > status.tip.slot()
     {
         return Err(OLClientError::InvalidChainStatusSlotOrder {
             tip: status.tip.slot(),
-            latest_terminal: status.latest_terminal.last_slot(),
+            latest: status.latest.last_slot(),
             confirmed: status.confirmed.last_slot(),
             finalized: status.finalized.last_slot(),
         });
@@ -147,11 +147,11 @@ pub enum OLClientError {
     /// Chain status slots are not in the correct order
     /// (tip >= latest terminal >= confirmed >= finalized).
     #[error(
-        "unexpected chain status slot order: tip={tip}, latest_terminal={latest_terminal}, confirmed={confirmed}, finalized={finalized}"
+        "unexpected chain status slot order: tip={tip}, latest={latest}, confirmed={confirmed}, finalized={finalized}"
     )]
     InvalidChainStatusSlotOrder {
         tip: u64,
-        latest_terminal: u64,
+        latest: u64,
         confirmed: u64,
         finalized: u64,
     },

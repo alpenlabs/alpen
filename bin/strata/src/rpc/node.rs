@@ -575,14 +575,9 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         );
         let confirmed = chain_sync_status.confirmed_epoch;
         let finalized = chain_sync_status.finalized_epoch;
-        let latest_terminal = chain_sync_status.prev_epoch;
+        let latest = chain_sync_status.prev_epoch;
 
-        Ok(RpcOLChainStatus::new(
-            tip,
-            confirmed,
-            finalized,
-            latest_terminal,
-        ))
+        Ok(RpcOLChainStatus::new(tip, confirmed, finalized, latest))
     }
 
     async fn get_checkpoint_info(&self, epoch: Epoch) -> RpcResult<Option<RpcCheckpointInfo>> {

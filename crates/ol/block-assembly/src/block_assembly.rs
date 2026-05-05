@@ -449,18 +449,10 @@ where
             .effects()
             .get_total_value_sent()
             .map(|amount| amount.to_sat());
-        let (sau_seq_no, sau_new_next_msg_idx, sau_processed_message_count) =
-            match mempool_tx.payload() {
-                TransactionPayload::SnarkAccountUpdate(payload) => {
-                    let operation = payload.operation();
-                    (
-                        Some(operation.update().seq_no()),
-                        Some(operation.update().proof_state().new_next_msg_idx()),
-                        Some(operation.messages_iter().count()),
-                    )
-                }
-                TransactionPayload::GenericAccountMessage(_) => (None, None, None),
-            };
+        let sau_summary = sau_summary_for_logs(mempool_tx.payload());
+        let sau_seq_no = sau_summary.as_ref().map(|s| s.seq_no);
+        let sau_new_next_msg_idx = sau_summary.as_ref().map(|s| s.new_next_msg_idx);
+        let sau_processed_message_count = sau_summary.as_ref().map(|s| s.processed_message_count);
 
         // Step 1: Validate and generate accumulator proofs, convert to OL transaction.
         // This only reads from state, so no rollback needed on failure.
@@ -704,6 +696,32 @@ where
     // Build full block template
     let template = FullBlockTemplate::new(header, body);
     Ok((template, final_state))
+}
+
+/// Per-transaction Snark Account Update fields surfaced in tx-level
+/// `warn!` events for debugging.
+#[derive(Debug, Clone, Copy)]
+struct SauSummary {
+    seq_no: u64,
+    new_next_msg_idx: u64,
+    processed_message_count: usize,
+}
+
+/// Returns a [`SauSummary`] for [`TransactionPayload::SnarkAccountUpdate`]
+/// payloads, or `None` for payloads without an SAU update (e.g. plain
+/// account messages).
+fn sau_summary_for_logs(payload: &TransactionPayload) -> Option<SauSummary> {
+    match payload {
+        TransactionPayload::SnarkAccountUpdate(p) => {
+            let operation = p.operation();
+            Some(SauSummary {
+                seq_no: operation.update().seq_no(),
+                new_next_msg_idx: operation.update().proof_state().new_next_msg_idx(),
+                processed_message_count: operation.messages_iter().count(),
+            })
+        }
+        TransactionPayload::GenericAccountMessage(_) => None,
+    }
 }
 
 /// Adds accumulator proofs for [`TransactionPayload::SnarkAccountUpdate`] transactions.

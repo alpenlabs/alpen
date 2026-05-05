@@ -110,7 +110,7 @@ impl OLClient for RpcOLClient {
                     tip: OLBlockCommitment::new(status.tip().slot(), status.tip().blkid()),
                     confirmed: *status.confirmed(),
                     finalized: *status.finalized(),
-                    latest_terminal: *status.latest_terminal(),
+                    latest: *status.latest(),
                 })
             },
         )
