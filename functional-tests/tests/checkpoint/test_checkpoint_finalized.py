@@ -12,6 +12,8 @@ from tests.checkpoint.helpers import mine_until_finalized_epoch
 
 logger = logging.getLogger(__name__)
 
+ZERO_HASH = "00" * 32
+
 
 @flexitest.register
 class TestCheckpointFinalized(StrataNodeTest):
@@ -47,5 +49,21 @@ class TestCheckpointFinalized(StrataNodeTest):
                 step=1.0,
             )
             logger.info("finalized epoch advanced to %s", epoch["epoch"])
+
+            # The L1 reference returned by getCheckpointInfo must carry the real
+            # txid/wtxid extracted by CSM, not the legacy zero placeholders.
+            info = strata_rpc.call("strata_getCheckpointInfo", target_epoch)
+            assert info is not None, f"no checkpoint info for finalized epoch {target_epoch}"
+            status = info["confirmation_status"]
+            assert status["status"] == "finalized", (
+                f"epoch {target_epoch} not finalized in checkpoint info: {status}"
+            )
+            l1_ref = status["l1_reference"]
+            assert l1_ref["txid"] != ZERO_HASH, (
+                f"epoch {target_epoch} l1_reference has zero txid: {l1_ref}"
+            )
+            assert l1_ref["wtxid"] != ZERO_HASH, (
+                f"epoch {target_epoch} l1_reference has zero wtxid: {l1_ref}"
+            )
 
         return True
