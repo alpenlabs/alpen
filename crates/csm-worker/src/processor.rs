@@ -162,7 +162,7 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
     let observation = CheckpointL1Ref::new(*asm_block, extracted.txid, extracted.wtxid);
     state
         .ctx
-        .put_checkpoint_l1_ref(commitment, observation.clone())?;
+        .put_checkpoint_l1_observation(commitment, extracted.payload, observation.clone())?;
 
     // Update cached confirmed epoch monotonically.
     if state
@@ -477,6 +477,17 @@ mod tests {
             Buf32::from(tx.compute_wtxid().to_byte_array())
         );
         assert_eq!(observation.l1_commitment, asm_block);
+
+        // The L1-observed payload is persisted alongside the L1 ref so future
+        // checkpoint-sync consumers can reconstruct the checkpoint without
+        // re-fetching from L1.
+        let payload = storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_observed_payload_blocking(commitment)
+            .expect("query l1-observed payload")
+            .expect("payload should be persisted");
+        assert_eq!(payload.new_tip().epoch, epoch);
+        assert_eq!(*payload.new_tip().l2_commitment(), ol_tip);
     }
 
     #[test]
@@ -540,5 +551,36 @@ mod tests {
             observation.is_none(),
             "no l1 ref should be written when no tx matches"
         );
+    }
+
+    #[test]
+    fn observation_write_is_idempotent_on_repeat_log() {
+        let epoch = 9u32;
+        let (log, ol_tip, block, tx) = tip_log_and_block_for_epoch(epoch);
+        let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_block(block));
+        state.last_asm_block = Some(asm_block);
+
+        process_log(&mut state, &log, &asm_block).expect("first tip log should process");
+        process_log(&mut state, &log, &asm_block).expect("second tip log should process");
+
+        let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
+        let observation = storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_blocking(commitment)
+            .expect("query l1 ref")
+            .expect("observation should be written");
+        assert_eq!(
+            observation.txid,
+            Buf32::from(tx.compute_txid().to_byte_array())
+        );
+
+        let payload = storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_observed_payload_blocking(commitment)
+            .expect("query l1-observed payload")
+            .expect("payload should be persisted");
+        assert_eq!(payload.new_tip().epoch, epoch);
     }
 }

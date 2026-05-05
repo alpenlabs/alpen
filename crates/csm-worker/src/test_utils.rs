@@ -87,35 +87,15 @@ impl CsmWorkerContext for StubCtx {
         self.status_channel.update_client_state(state, block);
     }
 
-    fn put_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-        observation: CheckpointL1Ref,
-    ) -> anyhow::Result<()> {
-        self.storage
-            .ol_checkpoint()
-            .put_checkpoint_l1_ref_blocking(commitment, observation)?;
-        Ok(())
-    }
-
-    fn get_checkpoint_payload(
-        &self,
-        commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<CheckpointPayload>> {
-        Ok(self
-            .storage
-            .ol_checkpoint()
-            .get_checkpoint_payload_entry_blocking(commitment)?)
-    }
-
-    fn put_checkpoint_payload(
+    fn put_checkpoint_l1_observation(
         &self,
         commitment: EpochCommitment,
         payload: CheckpointPayload,
+        l1_ref: CheckpointL1Ref,
     ) -> anyhow::Result<()> {
         self.storage
             .ol_checkpoint()
-            .put_checkpoint_payload_entry_blocking(commitment, payload)?;
+            .put_checkpoint_l1_observation_blocking(commitment, payload, l1_ref)?;
         Ok(())
     }
 

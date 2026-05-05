@@ -25,24 +25,13 @@ pub trait CsmWorkerContext: Send + Sync {
     /// Publishes the current client state and the L1 block it is anchored at.
     fn publish_client_state(&self, state: ClientState, block: L1BlockCommitment);
 
-    /// Records that the given checkpoint epoch was observed on L1.
-    fn put_checkpoint_l1_ref(
-        &self,
-        commitment: EpochCommitment,
-        observation: CheckpointL1Ref,
-    ) -> anyhow::Result<()>;
-
-    /// Returns the persisted checkpoint payload for `commitment`, if any.
-    fn get_checkpoint_payload(
-        &self,
-        commitment: EpochCommitment,
-    ) -> anyhow::Result<Option<CheckpointPayload>>;
-
-    /// Persists a checkpoint payload extracted from L1.
-    fn put_checkpoint_payload(
+    /// Atomically records the L1-observed checkpoint payload and L1 ref for
+    /// `commitment`.
+    fn put_checkpoint_l1_observation(
         &self,
         commitment: EpochCommitment,
         payload: CheckpointPayload,
+        l1_ref: CheckpointL1Ref,
     ) -> anyhow::Result<()>;
 
     /// Fetches an L1 block by its block id.
