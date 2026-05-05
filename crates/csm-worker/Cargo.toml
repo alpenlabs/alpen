@@ -37,8 +37,8 @@ strata-asm-proto-txs-test-utils.workspace = true
 strata-codec.workspace = true
 strata-codec-utils.workspace = true
 strata-status.workspace = true
+strata-test-utils-l2.workspace = true
 threadpool.workspace = true
-serde_json.workspace = true
 
 [features]
 debug-utils = ["strata-common/debug-utils"]

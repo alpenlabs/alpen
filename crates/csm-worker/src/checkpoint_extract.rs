@@ -88,7 +88,12 @@ pub(crate) fn extract_matching_checkpoint(
 
 #[cfg(test)]
 mod tests {
-    use bitcoin::{Block, Transaction, absolute::LockTime};
+    use bitcoin::{
+        Block, BlockHash, CompactTarget, Transaction, TxMerkleNode,
+        absolute::LockTime,
+        block::{Header, Version as BlockVersion},
+        hashes::{Hash, sha256d},
+    };
     use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
     use strata_asm_proto_checkpoint_types::{
         CheckpointPayload, test_utils::create_test_checkpoint_payload,
@@ -110,16 +115,12 @@ mod tests {
     fn create_block_from_txs(txs: Vec<Transaction>) -> Block {
         // Header values don't matter for the extractor; only txdata is read.
         Block {
-            header: bitcoin::block::Header {
-                version: bitcoin::block::Version::TWO,
-                prev_blockhash: bitcoin::BlockHash::from_raw_hash(
-                    bitcoin::hashes::sha256d::Hash::all_zeros(),
-                ),
-                merkle_root: bitcoin::TxMerkleNode::from_raw_hash(
-                    bitcoin::hashes::sha256d::Hash::all_zeros(),
-                ),
+            header: Header {
+                version: BlockVersion::TWO,
+                prev_blockhash: BlockHash::from_raw_hash(sha256d::Hash::all_zeros()),
+                merkle_root: TxMerkleNode::from_raw_hash(sha256d::Hash::all_zeros()),
                 time: 0,
-                bits: bitcoin::CompactTarget::from_consensus(0),
+                bits: CompactTarget::from_consensus(0),
                 nonce: 0,
             },
             txdata: txs,

@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use strata_asm_common::AsmLogEntry;
 use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
 use strata_checkpoint_types::BatchInfo;
@@ -10,7 +11,10 @@ use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
 
-use crate::{context::CsmWorkerContext, state::CsmWorkerState};
+use crate::{
+    checkpoint_extract::extract_matching_checkpoint, context::CsmWorkerContext,
+    state::CsmWorkerState,
+};
 
 pub(crate) fn process_log<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
@@ -138,11 +142,24 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
     let tip = checkpoint_tip_update.tip();
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
-    // Upstream tip logs do not include txid/wtxid.
-    let checkpoint_txid = Buf32::zero();
-    let checkpoint_wtxid = checkpoint_txid;
 
-    let observation = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
+    // ASM signed off on this block, so a fetch failure means the bitcoind RPC is
+    // unreachable beyond what `get_l1_block`'s internal retry can absorb. Bubble
+    // the error so the operator notices instead of losing the txid silently.
+    let block = state
+        .ctx
+        .get_l1_block(asm_block.blkid())
+        .with_context(|| format!("fetching L1 block {asm_block} for checkpoint observation"))?;
+
+    let extracted = extract_matching_checkpoint(&block, state.ctx.magic_bytes(), tip)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "no checkpoint envelope tx in L1 block {asm_block} matched the validated tip for epoch {}",
+                tip.epoch
+            )
+        })?;
+
+    let observation = CheckpointL1Ref::new(*asm_block, extracted.txid, extracted.wtxid);
     state
         .ctx
         .put_checkpoint_l1_ref(commitment, observation.clone())?;
@@ -172,8 +189,8 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
     debug!(
         ?commitment,
         l1_height = asm_block.height(),
-        ?checkpoint_txid,
-        ?checkpoint_wtxid,
+        txid = ?extracted.txid,
+        wtxid = ?extracted.wtxid,
         "Recorded OL checkpoint L1 ref from tip update"
     );
     Ok(())
@@ -207,14 +224,25 @@ fn checkpoint_from_tip_update(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{collections::HashMap, sync::Arc};
 
+    use bitcoin::{
+        Block, BlockHash, CompactTarget, Transaction, TxMerkleNode,
+        block::{Header, Version as BlockVersion},
+        hashes::{Hash, sha256d},
+    };
     use strata_asm_common::AsmLogEntry;
     use strata_asm_logs::{CheckpointTipUpdate, constants::DEPOSIT_LOG_TYPE_ID};
-    use strata_asm_proto_checkpoint_types::CheckpointTip;
+    use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
+    use strata_asm_proto_checkpoint_types::{
+        CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
+    };
+    use strata_asm_proto_txs_test_utils::create_reveal_transaction_stub;
+    use strata_codec::encode_to_vec;
+    use strata_codec_utils::CodecSsz;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_params::{Params, RollupParams, SyncParams};
+    use strata_params::Params;
     use strata_primitives::{
         buf::Buf32,
         epoch::EpochCommitment,
@@ -228,81 +256,26 @@ mod tests {
     use super::process_log;
     use crate::{state::CsmWorkerState, test_utils::StubCtx};
 
-    /// Helper to create a test CSM worker state
-    fn create_test_state() -> (CsmWorkerState<StubCtx>, Arc<strata_storage::NodeStorage>) {
-        // rollup params (taken from a fntests run).
-        // Don't we have some util fn for such?
-        let params_json = r#"{
-            "magic_bytes": "ALPN",
-            "block_time": 1000,
-            "cred_rule": {
-                "schnorr_key": "c18d86b16f91b01a6599c3a290c1f255784f89dfe31ea65f64c4bdbd01564873"
-            },
-            "genesis_l1_view": {
-                "blk": {
-                    "height": 100,
-                    "blkid": "a99c81cc79d156fda27bf222537ce1de784921a52730df60ead99404b43f622a"
-                },
-                "next_target": 545259519,
-                "epoch_start_timestamp": 1296688602,
-                "last_11_timestamps": [
-                    1760287556, 1760287556, 1760287557, 1760287557, 1760287557,
-                    1760287557, 1760287557, 1760287557, 1760287558, 1760287558, 1760287558
-                ]
-            },
-            "operators": [
-                    "6e31167a21a20186c270091f3705ba9ba0f9649af9281a4331962a2f02f0b382",
-                    "59df7b48d6adbb11fb9f8e4d4a296df83b3edcff6573e80b6c77cdcc4a729ecc",
-                    "9ac5088dcf5dea3593e6095250875c89a0138b3e027f615d782be2080a5e4bac",
-                    "f86435262dde652b3aef97a4a8cc9ae19aa5da13159e778da0fbceb3a3adb923"
-                ],
-            "evm_genesis_block_hash": "46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc",
-            "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
-            "l1_reorg_safe_depth": 4,
-            "target_l2_batch_size": 64,
-            "deposit_amount": 1000000000,
-            "recovery_delay": 1008,
-            "checkpoint_predicate": "AlwaysAccept",
-            "dispatch_assignment_dur": 64,
-            "proof_publish_mode": {
-                "timeout": 1
-            },
-            "max_deposits_in_block": 16,
-            "network": "signet"
-        }"#;
+    fn create_test_params_arc() -> Arc<Params> {
+        Arc::new(strata_test_utils_l2::gen_params())
+    }
 
-        let rollup_params: RollupParams =
-            serde_json::from_str(params_json).expect("Failed to parse test params");
-
-        let params = Params {
-            rollup: rollup_params,
-            run: SyncParams {
-                l1_follow_distance: 10,
-                client_checkpoint_interval: 100,
-                l2_blocks_fetch_limit: 1000,
-            },
-        };
-        let params = Arc::new(params);
-
-        // Create an in-memory database for testing
+    /// Sets up storage seeded with an empty client state and a fresh status channel.
+    fn create_test_storage() -> (Arc<strata_storage::NodeStorage>, Arc<StatusChannel>) {
         let db = get_test_sled_backend();
         let pool = threadpool::ThreadPool::new(4);
-
         let storage = Arc::new(create_node_storage(db, pool).expect("Failed to create storage"));
 
-        // Initialize with empty client state
         let initial_state = ClientState::new(None, None);
         let initial_block = L1BlockCommitment::new(0, L1BlockId::default());
-
         storage
             .client_state()
             .put_update_blocking(
                 &initial_block,
-                ClientUpdateOutput::new(initial_state.clone(), vec![]),
+                ClientUpdateOutput::new(initial_state, vec![]),
             )
             .expect("Failed to initialize client state");
 
-        // Create status channel with proper arguments
         let mut arbgen = ArbitraryGenerator::new();
         let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
@@ -311,14 +284,43 @@ mod tests {
             None,
             None,
         ));
+        (storage, status_channel)
+    }
 
-        let ctx = StubCtx::new(
-            storage.clone(),
+    /// Builds a default `StubCtx` with a panicking `get_l1_block`.
+    fn default_stub_ctx(
+        params: &Params,
+        storage: Arc<strata_storage::NodeStorage>,
+        status_channel: Arc<StatusChannel>,
+    ) -> StubCtx {
+        StubCtx::new(
+            storage,
             status_channel,
             params.rollup.l1_reorg_safe_depth,
-        );
-        let state = CsmWorkerState::new(params.clone(), storage.clone(), ctx).unwrap();
+            params.rollup.magic_bytes,
+        )
+    }
 
+    /// Helper to create a test CSM worker state with the default panicking stub ctx.
+    fn create_test_state() -> (CsmWorkerState<StubCtx>, Arc<strata_storage::NodeStorage>) {
+        let params = create_test_params_arc();
+        let (storage, status_channel) = create_test_storage();
+        let ctx = default_stub_ctx(&params, storage.clone(), status_channel);
+        let state = CsmWorkerState::new(params, storage.clone(), ctx).unwrap();
+        (state, storage)
+    }
+
+    /// Like [`create_test_state`] but lets the caller customize the `StubCtx`.
+    fn create_test_state_with_ctx<F>(
+        configure: F,
+    ) -> (CsmWorkerState<StubCtx>, Arc<strata_storage::NodeStorage>)
+    where
+        F: FnOnce(StubCtx) -> StubCtx,
+    {
+        let params = create_test_params_arc();
+        let (storage, status_channel) = create_test_storage();
+        let ctx = configure(default_stub_ctx(&params, storage.clone(), status_channel));
+        let state = CsmWorkerState::new(params, storage.clone(), ctx).unwrap();
         (state, storage)
     }
 
@@ -373,28 +375,27 @@ mod tests {
 
     #[test]
     fn test_process_sequential_checkpoint_tip_logs_happy_path() {
-        let (mut state, _) = create_test_state();
-        let mut arbgen = ArbitraryGenerator::new();
+        // Stage a matching envelope-bearing L1 block per epoch, keyed by the
+        // synthetic L1BlockId we feed into `process_log`.
+        let mut blocks_by_id = HashMap::new();
+        let mut log_for_epoch = HashMap::new();
+        for epoch in 1u32..=2u32 {
+            let (log, _ol_tip, block, _tx) = tip_log_and_block_for_epoch(epoch);
+            let blkid = L1BlockId::from(Buf32::from([epoch as u8; 32]));
+            blocks_by_id.insert(blkid, block);
+            log_for_epoch.insert(epoch, (blkid, log));
+        }
+
+        let (mut state, _) = create_test_state_with_ctx(|c| c.with_l1_blocks_by_id(blocks_by_id));
 
         for epoch in 1u32..=2u32 {
-            let asm_block = L1BlockCommitment::new(200 + epoch, arbgen.generate());
+            let (blkid, log) = &log_for_epoch[&epoch];
+            let asm_block = L1BlockCommitment::new(200 + epoch, *blkid);
             state.last_asm_block = Some(asm_block);
 
-            let ol_tip = OLBlockCommitment::new(
-                (epoch * 10) as u64,
-                OLBlockId::from(Buf32::from([epoch as u8; 32])),
-            );
-            let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-            let tip_update = CheckpointTipUpdate::new(tip);
-            let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
-
-            let result = process_log(&mut state, &log, &asm_block);
-            assert!(
-                result.is_ok(),
-                "process_log should succeed for tip epoch {}: {:?}",
-                epoch,
-                result
-            );
+            process_log(&mut state, log, &asm_block).unwrap_or_else(|e| {
+                panic!("process_log should succeed for tip epoch {epoch}: {e:?}")
+            });
 
             assert_eq!(
                 state.last_processed_epoch,
@@ -412,49 +413,132 @@ mod tests {
         assert_eq!(declared_final_epoch.epoch(), 1);
     }
 
+    /// Builds a tip log + matching block carrying a checkpoint envelope tx.
+    fn tip_log_and_block_for_epoch(
+        epoch: u32,
+    ) -> (AsmLogEntry, OLBlockCommitment, Block, Transaction) {
+        let ol_tip = OLBlockCommitment::new(
+            epoch as u64 * 10,
+            OLBlockId::from(Buf32::from([epoch as u8; 32])),
+        );
+        let payload_tip = CheckpointTip::new(epoch, 200, ol_tip);
+        let sidecar = CheckpointSidecar::new(
+            vec![],
+            vec![],
+            TerminalHeaderComplement::new(0, Buf32::zero().into(), Buf32::zero(), Buf32::zero()),
+        )
+        .expect("sidecar");
+        let payload = CheckpointPayload::new(payload_tip, sidecar, vec![]).expect("payload");
+        let bytes = encode_to_vec(&CodecSsz::new(payload)).expect("encode");
+        let tx = create_reveal_transaction_stub(bytes, &OL_STF_CHECKPOINT_TX_TAG);
+
+        let block = Block {
+            header: Header {
+                version: BlockVersion::TWO,
+                prev_blockhash: BlockHash::from_raw_hash(sha256d::Hash::all_zeros()),
+                merkle_root: TxMerkleNode::from_raw_hash(sha256d::Hash::all_zeros()),
+                time: 0,
+                bits: CompactTarget::from_consensus(0),
+                nonce: 0,
+            },
+            txdata: vec![tx.clone()],
+        };
+
+        let tip_log = AsmLogEntry::from_log(&CheckpointTipUpdate::new(CheckpointTip::new(
+            epoch, 200, ol_tip,
+        )))
+        .expect("tip log");
+
+        (tip_log, ol_tip, block, tx)
+    }
+
     #[test]
-    fn test_process_checkpoint_tip_log_writes_observation_without_payload() {
-        let (mut state, storage) = create_test_state();
-
+    fn writes_real_txid_and_wtxid_when_block_carries_matching_checkpoint() {
         let epoch = 9u32;
+        let (log, ol_tip, block, tx) = tip_log_and_block_for_epoch(epoch);
         let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_block(block));
         state.last_asm_block = Some(asm_block);
-
-        let ol_tip = OLBlockCommitment::new(90, OLBlockId::from(Buf32::from([epoch as u8; 32])));
-        let tip = CheckpointTip::new(epoch, asm_block.height(), ol_tip);
-        let tip_update = CheckpointTipUpdate::new(tip);
-        let log = AsmLogEntry::from_log(&tip_update).expect("make tip log");
-
         process_log(&mut state, &log, &asm_block).expect("tip log should process");
 
         let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
         let observation = storage
             .ol_checkpoint()
             .get_checkpoint_l1_ref_blocking(commitment)
-            .expect("query l1 ref");
+            .expect("query l1 ref")
+            .expect("observation should be written");
         assert_eq!(
-            observation.as_ref().map(|entry| entry.txid),
-            Some(Buf32::zero()),
-            "l1 ref should persist placeholder checkpoint txid for tip logs"
+            observation.txid,
+            Buf32::from(tx.compute_txid().to_byte_array())
         );
         assert_eq!(
-            observation.as_ref().map(|entry| entry.wtxid),
-            Some(Buf32::zero()),
-            "l1 ref should persist placeholder checkpoint wtxid for tip logs"
+            observation.wtxid,
+            Buf32::from(tx.compute_wtxid().to_byte_array())
         );
-        assert_eq!(
-            observation.as_ref().map(|entry| entry.l1_commitment),
-            Some(asm_block),
-            "l1 ref should be written from tip log"
+        assert_eq!(observation.l1_commitment, asm_block);
+    }
+
+    #[test]
+    fn errors_when_l1_block_fetch_fails() {
+        let epoch = 9u32;
+        let (log, ol_tip, _block, _tx) = tip_log_and_block_for_epoch(epoch);
+        let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
+        state.last_asm_block = Some(asm_block);
+        let err =
+            process_log(&mut state, &log, &asm_block).expect_err("fetch failure should propagate");
+        assert!(
+            err.to_string().contains("fetching L1 block"),
+            "unexpected error: {err}"
         );
 
-        let payload = storage
+        let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
+        let observation = storage
             .ol_checkpoint()
-            .get_checkpoint_payload_entry_blocking(commitment)
-            .expect("query payload entry");
+            .get_checkpoint_l1_ref_blocking(commitment)
+            .expect("query l1 ref");
         assert!(
-            payload.is_none(),
-            "tip log path should not require payload entry to write observation"
+            observation.is_none(),
+            "no l1 ref should be written on fetch failure"
+        );
+    }
+
+    #[test]
+    fn errors_when_no_matching_checkpoint_in_block() {
+        let epoch = 9u32;
+        let (log, ol_tip, _carrier_block, _tx) = tip_log_and_block_for_epoch(epoch);
+        let empty_block = Block {
+            header: Header {
+                version: BlockVersion::TWO,
+                prev_blockhash: BlockHash::from_raw_hash(sha256d::Hash::all_zeros()),
+                merkle_root: TxMerkleNode::from_raw_hash(sha256d::Hash::all_zeros()),
+                time: 0,
+                bits: CompactTarget::from_consensus(0),
+                nonce: 0,
+            },
+            txdata: vec![],
+        };
+
+        let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_block(empty_block));
+        state.last_asm_block = Some(asm_block);
+        let err = process_log(&mut state, &log, &asm_block)
+            .expect_err("missing matching tx should propagate");
+        assert!(
+            err.to_string().contains("no checkpoint envelope tx"),
+            "unexpected error: {err}"
+        );
+
+        let commitment = EpochCommitment::from_terminal(epoch, ol_tip);
+        let observation = storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_blocking(commitment)
+            .expect("query l1 ref");
+        assert!(
+            observation.is_none(),
+            "no l1 ref should be written when no tx matches"
         );
     }
 }

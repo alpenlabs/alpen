@@ -6,8 +6,10 @@ use bitcoin::Block;
 use bitcoind_async_client::{client::Client, traits::Reader};
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_btc_types::L1BlockIdBitcoinExt;
+use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_csm_worker::CsmWorkerContext;
+use strata_l1_txfmt::MagicBytes;
 use strata_params::Params;
 use strata_primitives::{
     epoch::EpochCommitment,
@@ -97,13 +99,22 @@ impl CsmWorkerContext for CsmWorkerCtx {
     }
 
     fn get_l1_block(&self, blockid: &L1BlockId) -> anyhow::Result<Block> {
+        // ASM has already processed this block, so bitcoind must have it. Retry
+        // with backoff to absorb transient failures (RPC timeout, replica lag).
         let hash = blockid.to_block_hash();
-        self.handle
-            .block_on(self.bitcoin_client.get_block(&hash))
-            .map_err(|e| anyhow::anyhow!("failed to fetch L1 block {blockid}: {e}"))
+        let backoff = ExponentialBackoff::new(200, 15, 10);
+        retry_with_backoff("csm_get_l1_block", 10, &backoff, || {
+            self.handle
+                .block_on(self.bitcoin_client.get_block(&hash))
+                .map_err(|e| anyhow::anyhow!("fetch L1 block {blockid}: {e}"))
+        })
     }
 
     fn l1_reorg_safe_depth(&self) -> u32 {
         self.params.rollup.l1_reorg_safe_depth
+    }
+
+    fn magic_bytes(&self) -> MagicBytes {
+        self.params.rollup.magic_bytes
     }
 }

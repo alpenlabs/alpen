@@ -201,7 +201,7 @@ mod tests {
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId};
-    use strata_params::{Params, RollupParams, SyncParams};
+    use strata_params::Params;
     use strata_primitives::prelude::*;
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
@@ -211,55 +211,7 @@ mod tests {
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<Params> {
-        let params_json = r#"{
-            "magic_bytes": "ALPN",
-            "block_time": 1000,
-            "cred_rule": {
-                "schnorr_key": "c18d86b16f91b01a6599c3a290c1f255784f89dfe31ea65f64c4bdbd01564873"
-            },
-            "genesis_l1_view": {
-                "blk": {
-                    "height": 100,
-                    "blkid": "a99c81cc79d156fda27bf222537ce1de784921a52730df60ead99404b43f622a"
-                },
-                "next_target": 545259519,
-                "epoch_start_timestamp": 1296688602,
-                "last_11_timestamps": [
-                    1760287556, 1760287556, 1760287557, 1760287557, 1760287557,
-                    1760287557, 1760287557, 1760287557, 1760287558, 1760287558, 1760287558
-                ]
-            },
-            "operators": [
-                "6e31167a21a20186c270091f3705ba9ba0f9649af9281a4331962a2f02f0b382",
-                "59df7b48d6adbb11fb9f8e4d4a296df83b3edcff6573e80b6c77cdcc4a729ecc",
-                "9ac5088dcf5dea3593e6095250875c89a0138b3e027f615d782be2080a5e4bac",
-                "f86435262dde652b3aef97a4a8cc9ae19aa5da13159e778da0fbceb3a3adb923"
-            ],
-            "evm_genesis_block_hash": "46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc",
-            "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
-            "l1_reorg_safe_depth": 4,
-            "target_l2_batch_size": 64,
-            "deposit_amount": 1000000000,
-            "recovery_delay": 1008,
-            "checkpoint_predicate": "AlwaysAccept",
-            "dispatch_assignment_dur": 64,
-            "proof_publish_mode": {
-                "timeout": 1
-            },
-            "max_deposits_in_block": 16,
-            "network": "signet"
-        }"#;
-
-        let rollup_params: RollupParams =
-            serde_json::from_str(params_json).expect("Failed to parse test params");
-        Arc::new(Params {
-            rollup: rollup_params,
-            run: SyncParams {
-                l1_follow_distance: 10,
-                client_checkpoint_interval: 100,
-                l2_blocks_fetch_limit: 1000,
-            },
-        })
+        Arc::new(strata_test_utils_l2::gen_params())
     }
 
     fn create_test_storage_and_status(
@@ -350,7 +302,12 @@ mod tests {
             )
             .expect("insert epoch 2 observation");
 
-        let ctx = StubCtx::new(storage.clone(), status_channel, 4);
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.rollup.magic_bytes,
+        );
         let state = CsmWorkerState::new(params, storage, ctx).expect("state init");
 
         assert_eq!(state.confirmed_epoch, Some(commitment_2));

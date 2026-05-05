@@ -1,10 +1,11 @@
 //! Shared test helpers for the CSM worker.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::Block;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
@@ -14,13 +15,25 @@ use strata_storage::NodeStorage;
 
 use crate::context::CsmWorkerContext;
 
+/// What `get_l1_block` does when called.
+enum L1Fetch {
+    /// Caller didn't configure a fetch result; panic if requested.
+    Unset,
+    /// Return the given block for any blockid.
+    AnyBlock(Block),
+    /// Look up the block by its id; missing entries error.
+    ByBlockId(HashMap<L1BlockId, Block>),
+    /// Return an error on any blockid.
+    Fail,
+}
+
 /// Test context backed by a real `NodeStorage` and `StatusChannel`.
-///
-/// Tests that don't exercise the L1 fetch path get a panicking `get_l1_block`.
 pub(crate) struct StubCtx {
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     finality_depth: u32,
+    magic: MagicBytes,
+    l1_fetch: L1Fetch,
 }
 
 impl StubCtx {
@@ -28,12 +41,33 @@ impl StubCtx {
         storage: Arc<NodeStorage>,
         status_channel: Arc<StatusChannel>,
         finality_depth: u32,
+        magic: MagicBytes,
     ) -> Self {
         Self {
             storage,
             status_channel,
             finality_depth,
+            magic,
+            l1_fetch: L1Fetch::Unset,
         }
+    }
+
+    /// Configures `get_l1_block` to return `block` for any blockid.
+    pub(crate) fn with_l1_block(mut self, block: Block) -> Self {
+        self.l1_fetch = L1Fetch::AnyBlock(block);
+        self
+    }
+
+    /// Configures `get_l1_block` to look up the response by blockid.
+    pub(crate) fn with_l1_blocks_by_id(mut self, blocks: HashMap<L1BlockId, Block>) -> Self {
+        self.l1_fetch = L1Fetch::ByBlockId(blocks);
+        self
+    }
+
+    /// Configures `get_l1_block` to return an error on any blockid.
+    pub(crate) fn with_l1_fetch_failure(mut self) -> Self {
+        self.l1_fetch = L1Fetch::Fail;
+        self
     }
 }
 
@@ -85,11 +119,23 @@ impl CsmWorkerContext for StubCtx {
         Ok(())
     }
 
-    fn get_l1_block(&self, _blockid: &L1BlockId) -> anyhow::Result<Block> {
-        panic!("test should not fetch L1 block")
+    fn get_l1_block(&self, blockid: &L1BlockId) -> anyhow::Result<Block> {
+        match &self.l1_fetch {
+            L1Fetch::Unset => panic!("test should not fetch L1 block"),
+            L1Fetch::AnyBlock(b) => Ok(b.clone()),
+            L1Fetch::ByBlockId(map) => map
+                .get(blockid)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("no test block configured for {blockid}")),
+            L1Fetch::Fail => Err(anyhow::anyhow!("simulated L1 fetch failure")),
+        }
     }
 
     fn l1_reorg_safe_depth(&self) -> u32 {
         self.finality_depth
+    }
+
+    fn magic_bytes(&self) -> MagicBytes {
+        self.magic
     }
 }

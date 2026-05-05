@@ -3,6 +3,7 @@
 use bitcoin::Block;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
@@ -49,4 +50,7 @@ pub trait CsmWorkerContext: Send + Sync {
 
     /// L1 reorg-safe depth used to decide checkpoint finality.
     fn l1_reorg_safe_depth(&self) -> u32;
+
+    /// SPS-50 magic bytes used to identify protocol transactions.
+    fn magic_bytes(&self) -> MagicBytes;
 }

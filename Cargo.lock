@@ -15345,6 +15345,7 @@ dependencies = [
  "strata-db-types",
  "strata-eectl",
  "strata-identifiers",
+ "strata-l1-txfmt",
  "strata-merkle",
  "strata-node-context",
  "strata-ol-chain-types",
@@ -15411,7 +15412,6 @@ dependencies = [
  "anyhow",
  "bitcoin",
  "serde",
- "serde_json",
  "strata-asm-common",
  "strata-asm-logs",
  "strata-asm-proto-checkpoint-txs",
@@ -15432,6 +15432,7 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "strata-test-utils",
+ "strata-test-utils-l2",
  "threadpool",
  "tracing",
 ]
