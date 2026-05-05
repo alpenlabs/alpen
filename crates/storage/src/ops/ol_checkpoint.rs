@@ -28,6 +28,10 @@ inst_ops_simple! {
         get_checkpoint_l1_ref(epoch: EpochCommitment) => Option<CheckpointL1Ref>;
         del_checkpoint_l1_ref(epoch: EpochCommitment) => bool;
         del_checkpoint_l1_refs_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
+        put_checkpoint_l1_observation(commitment: EpochCommitment, payload: CheckpointPayload, l1_ref: CheckpointL1Ref) => ();
+        get_checkpoint_l1_observed_payload(epoch: EpochCommitment) => Option<CheckpointPayload>;
+        del_checkpoint_l1_observed_payload(epoch: EpochCommitment) => bool;
+        del_checkpoint_l1_observed_payloads_from_epoch(start_epoch: Epoch) => Vec<EpochCommitment>;
         get_next_unsigned_checkpoint_epoch() => Option<Epoch>;
     }
 }

@@ -657,6 +657,87 @@ pub fn proptest_l1_ref_entry_roundtrip(
     assert_eq!(stored, observation);
 }
 
+pub fn test_put_checkpoint_l1_observation_writes_both(db: &impl OLCheckpointDatabase) {
+    let payload = payload_for_epoch(5);
+    let key = checkpoint_epoch_commitment(&payload);
+    let observation = l1_ref_entry(50);
+
+    db.put_checkpoint_l1_observation(key, payload.clone(), observation.clone())
+        .expect("put observation");
+
+    let stored_payload = db
+        .get_checkpoint_l1_observed_payload(key)
+        .expect("get l1-observed payload")
+        .expect("payload should exist");
+    assert_eq!(stored_payload, payload);
+
+    let stored_ref = db
+        .get_checkpoint_l1_ref(key)
+        .expect("get l1 ref")
+        .expect("l1 ref should exist");
+    assert_eq!(stored_ref, observation);
+}
+
+pub fn test_put_checkpoint_l1_observation_overwrites(db: &impl OLCheckpointDatabase) {
+    let payload = payload_for_epoch(6);
+    let key = checkpoint_epoch_commitment(&payload);
+
+    db.put_checkpoint_l1_observation(key, payload.clone(), l1_ref_entry(60))
+        .expect("first put");
+
+    let new_observation = l1_ref_entry(61);
+    db.put_checkpoint_l1_observation(key, payload.clone(), new_observation.clone())
+        .expect("second put overwrites");
+
+    let stored = db
+        .get_checkpoint_l1_ref(key)
+        .expect("get l1 ref")
+        .expect("l1 ref should exist");
+    assert_eq!(stored, new_observation);
+
+    let stored_payload = db
+        .get_checkpoint_l1_observed_payload(key)
+        .expect("get l1-observed payload")
+        .expect("payload should exist");
+    assert_eq!(stored_payload, payload);
+}
+
+pub fn test_put_checkpoint_l1_observation_rejects_mismatched_commitment(
+    db: &impl OLCheckpointDatabase,
+) {
+    let payload = payload_for_epoch(7);
+    let mismatched =
+        EpochCommitment::from_terminal(Epoch::from(8u32), *payload.new_tip().l2_commitment());
+    assert!(db
+        .put_checkpoint_l1_observation(mismatched, payload, l1_ref_entry(70))
+        .is_err());
+}
+
+pub fn test_l1_observed_payload_separate_from_sequencer_payload(
+    db: &impl OLCheckpointDatabase,
+) {
+    let sequencer_payload = payload_for_epoch(11);
+    let key = checkpoint_epoch_commitment(&sequencer_payload);
+
+    db.put_checkpoint_payload_entry(key, sequencer_payload.clone())
+        .expect("put sequencer payload");
+    db.put_checkpoint_l1_observation(key, sequencer_payload.clone(), l1_ref_entry(110))
+        .expect("put l1 observation");
+
+    // Both entries are independently readable; the sequencer table is untouched
+    // by the L1-observation write.
+    let from_sequencer = db
+        .get_checkpoint_payload_entry(key)
+        .expect("get sequencer payload")
+        .expect("entry should exist");
+    let from_l1 = db
+        .get_checkpoint_l1_observed_payload(key)
+        .expect("get l1-observed payload")
+        .expect("entry should exist");
+    assert_eq!(from_sequencer, sequencer_payload);
+    assert_eq!(from_l1, sequencer_payload);
+}
+
 #[macro_export]
 macro_rules! ol_checkpoint_db_tests {
     ($setup_expr:expr) => {
@@ -774,6 +855,30 @@ macro_rules! ol_checkpoint_db_tests {
         fn test_del_checkpoint_l1_refs_from_epoch() {
             let db = $setup_expr;
             $crate::ol_checkpoint_tests::test_del_checkpoint_l1_refs_from_epoch(&db);
+        }
+
+        #[test]
+        fn test_put_checkpoint_l1_observation_writes_both() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_put_checkpoint_l1_observation_writes_both(&db);
+        }
+
+        #[test]
+        fn test_put_checkpoint_l1_observation_overwrites() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_put_checkpoint_l1_observation_overwrites(&db);
+        }
+
+        #[test]
+        fn test_put_checkpoint_l1_observation_rejects_mismatched_commitment() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_put_checkpoint_l1_observation_rejects_mismatched_commitment(&db);
+        }
+
+        #[test]
+        fn test_l1_observed_payload_separate_from_sequencer_payload() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_l1_observed_payload_separate_from_sequencer_payload(&db);
         }
 
         #[test]

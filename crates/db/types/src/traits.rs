@@ -388,6 +388,37 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
         &self,
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;
+
+    /// Atomically inserts the L1-observed checkpoint payload and the L1 ref
+    /// for `commitment`.
+    ///
+    /// The payload is stored in a separate table from the sequencer's
+    /// locally-built payloads so the two sources of truth stay distinct.
+    /// Overwrites any existing entries.
+    fn put_checkpoint_l1_observation(
+        &self,
+        commitment: EpochCommitment,
+        payload: CheckpointPayload,
+        l1_ref: CheckpointL1Ref,
+    ) -> DbResult<()>;
+
+    /// Get the L1-observed checkpoint payload by epoch commitment.
+    fn get_checkpoint_l1_observed_payload(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<CheckpointPayload>>;
+
+    /// Delete the L1-observed checkpoint payload by epoch commitment.
+    ///
+    /// Returns true if it existed and was deleted.
+    fn del_checkpoint_l1_observed_payload(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete L1-observed checkpoint payloads from the specified epoch onwards
+    /// (inclusive). Returns a vector of deleted epoch commitments.
+    fn del_checkpoint_l1_observed_payloads_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
 }
 
 /// Encapsulates provider and store traits to create/update [`BundledPayloadEntry`] in the
