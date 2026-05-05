@@ -160,6 +160,15 @@ jobs:
 
           ls -la docker/strata/artifacts/ docker/strata/artifacts/elfs/sp1/
 
+          # Echo VKs for cross-validation against ci-genparams workflow
+          CHECKPOINT_VK=$(./target/release/strata-datatool genparams \
+            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.checkpoint_predicate')
+          echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
+
+          ALPEN_VK=$(./target/release/strata-datatool gen-ol-params \
+            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.accounts | to_entries[0].value.predicate')
+          echo "Alpen VK (ci-build): ${ALPEN_VK}"
+
       # --- Build and push via Buildx ------------------------------------------
       - name: Build and push Docker image
         env:
