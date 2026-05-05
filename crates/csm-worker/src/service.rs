@@ -1,10 +1,15 @@
 //! CSM worker service implementation.
 
+use std::marker::PhantomData;
+
 use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{
+    context::CsmWorkerContext, processor::process_log, state::CsmWorkerState,
+    status::CsmWorkerStatus,
+};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -15,10 +20,12 @@ use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStat
 /// The service follows the listener pattern - it passively observes ASM status updates
 /// via the service framework's `StatusMonitorInput` without ASM being aware of it.
 #[derive(Debug)]
-pub struct CsmWorkerService;
+pub struct CsmWorkerService<C> {
+    _ctx: PhantomData<C>,
+}
 
-impl Service for CsmWorkerService {
-    type State = CsmWorkerState;
+impl<C: CsmWorkerContext + 'static> Service for CsmWorkerService<C> {
+    type State = CsmWorkerState<C>;
     type Msg = AsmWorkerStatus;
     type Status = CsmWorkerStatus;
 
@@ -32,7 +39,7 @@ impl Service for CsmWorkerService {
     }
 }
 
-impl SyncService for CsmWorkerService {
+impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
     fn process_input(state: &mut Self::State, asm_status: Self::Msg) -> anyhow::Result<Response> {
         strata_common::check_bail_trigger(strata_common::BAIL_CSM_EVENT);
 
@@ -59,7 +66,7 @@ impl SyncService for CsmWorkerService {
 
         // Advance finalized epoch from the observation queue based on L1 depth.
         let current_l1_tip = asm_block.height();
-        let finality_depth = state.params.rollup.l1_reorg_safe_depth.max(1);
+        let finality_depth = state.ctx.l1_reorg_safe_depth().max(1);
         while let Some((commitment, observation)) = state.observed_checkpoints.front() {
             if state
                 .finalized_epoch
@@ -92,8 +99,8 @@ impl SyncService for CsmWorkerService {
             || state.finalized_epoch != prev_finalized_epoch
         {
             state
-                .status_channel
-                .update_client_state(state.cur_state.as_ref().clone(), asm_block);
+                .ctx
+                .publish_client_state(state.cur_state.as_ref().clone(), asm_block);
         }
 
         Ok(Response::Continue)

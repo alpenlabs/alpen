@@ -5,11 +5,15 @@
 //! checkpoint subprotocol.
 
 mod constants;
+mod context;
 mod processor;
 mod service;
 mod state;
 mod status;
+#[cfg(test)]
+mod test_utils;
 
+pub use context::CsmWorkerContext;
 pub use service::CsmWorkerService;
 pub use state::CsmWorkerState;
 pub use status::CsmWorkerStatus;

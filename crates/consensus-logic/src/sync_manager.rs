@@ -27,6 +27,7 @@ use tokio::{runtime::Handle, sync::mpsc};
 use crate::{
     asm_worker_context::AsmWorkerCtx,
     chain_worker_context::ChainWorkerCtx,
+    csm_worker_context::CsmWorkerCtx,
     exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
     message::ForkChoiceMessage,
@@ -111,7 +112,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         asm_storage,
         rollup_params,
         asm_params,
-        bitcoin_client,
+        bitcoin_client.clone(),
     )?);
 
     // Launch CSM listener service that listens to ASM status updates
@@ -126,6 +127,7 @@ pub fn start_sync_tasks<E: ExecEngineCtl + Sync + Send + 'static>(
         csm_storage,
         csm_st_ch.into(),
         csm_asm_monitor,
+        bitcoin_client,
     )?;
 
     // Start the fork choice manager thread.  If we haven't done genesis yet
@@ -165,6 +167,7 @@ pub fn spawn_csm_listener_with_ctx(
         nodectx.storage().clone(),
         nodectx.status_channel().clone(),
         asm_monitor,
+        nodectx.bitcoin_client().clone(),
     )
 }
 
@@ -174,13 +177,21 @@ fn spawn_csm_listener(
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
     asm_monitor: &ServiceMonitor<AsmWorkerStatus>,
+    bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
     // Create CSM worker state.
-    let csm_state = CsmWorkerState::new(params, storage.clone(), status_channel.clone())?;
+    let ctx = CsmWorkerCtx::new(
+        executor.handle().clone(),
+        bitcoin_client,
+        params.clone(),
+        storage.clone(),
+        status_channel,
+    );
+    let csm_state = CsmWorkerState::new(params, storage.clone(), ctx)?;
 
     // Get the starting block from CSM's last processed block
     // If CSM hasn't processed any blocks yet, we get the latest ASM state from storage
-    let from_block = if let Some(last_block) = csm_state.last_asm_block() {
+    let from_block = if let Some(last_block) = csm_state.get_last_asm_block() {
         last_block
     } else {
         // Get the latest ASM state as fallback
@@ -215,7 +226,7 @@ fn spawn_csm_listener(
     let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
 
     // Launch the CSM worker service (which acts as a listener to ASM worker).
-    let csm_monitor = ServiceBuilder::<CsmWorkerService, _>::new()
+    let csm_monitor = ServiceBuilder::<CsmWorkerService<CsmWorkerCtx>, _>::new()
         .with_state(csm_state)
         .with_input(csm_input)
         .launch_sync("csm_worker", executor)?;

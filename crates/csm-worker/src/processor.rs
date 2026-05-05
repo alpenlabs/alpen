@@ -10,10 +10,10 @@ use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use tracing::*;
 
-use crate::state::CsmWorkerState;
+use crate::{context::CsmWorkerContext, state::CsmWorkerState};
 
-pub(crate) fn process_log(
-    state: &mut CsmWorkerState,
+pub(crate) fn process_log<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
     log: &AsmLogEntry,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
@@ -36,8 +36,8 @@ pub(crate) fn process_log(
 }
 
 /// Process a checkpoint tip update log from the checkpoint subprotocol.
-fn process_checkpoint_tip_log(
-    state: &mut CsmWorkerState,
+fn process_checkpoint_tip_log<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
     checkpoint_tip_update: &CheckpointTipUpdate,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
@@ -75,8 +75,8 @@ fn process_checkpoint_tip_log(
 }
 
 /// Update and persist client state from a checkpoint.
-fn update_client_state_with_checkpoint(
-    state: &mut CsmWorkerState,
+fn update_client_state_with_checkpoint<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
 ) -> anyhow::Result<()> {
@@ -114,7 +114,7 @@ fn update_client_state_with_checkpoint(
 
     // Store the new client state
     let l1_block = state.last_asm_block.expect("should have ASM block");
-    state.storage.client_state().put_update_blocking(
+    state.ctx.put_client_state_update(
         &l1_block,
         ClientUpdateOutput::new(next_state.clone(), vec![]),
     )?;
@@ -124,27 +124,28 @@ fn update_client_state_with_checkpoint(
 
     // Update status channel
     state
-        .status_channel
-        .update_client_state(state.cur_state.as_ref().clone(), l1_block);
+        .ctx
+        .publish_client_state(state.cur_state.as_ref().clone(), l1_block);
 
     Ok(())
 }
 
-fn mark_ol_checkpoint_l1_observed(
-    state: &mut CsmWorkerState,
+fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
     checkpoint_tip_update: &CheckpointTipUpdate,
     asm_block: &L1BlockCommitment,
 ) -> anyhow::Result<()> {
     let tip = checkpoint_tip_update.tip();
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
-    let ol_checkpoint = state.storage.ol_checkpoint();
     // Upstream tip logs do not include txid/wtxid.
     let checkpoint_txid = Buf32::zero();
     let checkpoint_wtxid = checkpoint_txid;
 
     let observation = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
-    ol_checkpoint.put_checkpoint_l1_ref_blocking(commitment, observation.clone())?;
+    state
+        .ctx
+        .put_checkpoint_l1_ref(commitment, observation.clone())?;
 
     // Update cached confirmed epoch monotonically.
     if state
@@ -225,10 +226,10 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::process_log;
-    use crate::state::CsmWorkerState;
+    use crate::{state::CsmWorkerState, test_utils::StubCtx};
 
     /// Helper to create a test CSM worker state
-    fn create_test_state() -> (CsmWorkerState, Arc<strata_storage::NodeStorage>) {
+    fn create_test_state() -> (CsmWorkerState<StubCtx>, Arc<strata_storage::NodeStorage>) {
         // rollup params (taken from a fntests run).
         // Don't we have some util fn for such?
         let params_json = r#"{
@@ -303,16 +304,20 @@ mod tests {
 
         // Create status channel with proper arguments
         let mut arbgen = ArbitraryGenerator::new();
-        let status_channel = StatusChannel::new(
+        let status_channel = Arc::new(StatusChannel::new(
             arbgen.generate(),
             arbgen.generate(),
             arbgen.generate(),
             None,
             None,
-        );
+        ));
 
-        let state =
-            CsmWorkerState::new(params.clone(), storage.clone(), status_channel.into()).unwrap();
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            params.rollup.l1_reorg_safe_depth,
+        );
+        let state = CsmWorkerState::new(params.clone(), storage.clone(), ctx).unwrap();
 
         (state, storage)
     }

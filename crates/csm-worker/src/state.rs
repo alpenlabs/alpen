@@ -7,10 +7,9 @@ use strata_identifiers::Epoch;
 use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
-use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
-use crate::constants;
+use crate::{constants, context::CsmWorkerContext};
 
 /// State for the CSM worker service.
 ///
@@ -18,14 +17,11 @@ use crate::constants;
 /// status updates, processing checkpoint logs from the checkpoint subprotocol.
 #[expect(
     missing_debug_implementations,
-    reason = "NodeStorage doesn't implement Debug"
+    reason = "context generic doesn't require Debug"
 )]
-pub struct CsmWorkerState {
-    /// Consensus parameters.
-    pub(crate) params: Arc<Params>,
-
-    /// Node storage handle.
-    pub(crate) storage: Arc<NodeStorage>,
+pub struct CsmWorkerState<C: CsmWorkerContext> {
+    /// External services and configuration.
+    pub(crate) ctx: C,
 
     /// Current client state.
     pub(crate) cur_state: Arc<ClientState>,
@@ -47,18 +43,15 @@ pub struct CsmWorkerState {
     /// Items are appended when new observation facts are written and consumed as
     /// finalized depth progresses.
     pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
-
-    /// Status channel for publishing state updates.
-    pub(crate) status_channel: Arc<StatusChannel>,
 }
 
-impl CsmWorkerState {
+impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// Create a new CSM worker state.
-    pub fn new(
-        params: Arc<Params>,
-        storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
-    ) -> anyhow::Result<Self> {
+    ///
+    /// `params` and `storage` are read once at startup to bootstrap the
+    /// in-memory finalization queue; runtime persistence and L1 fetches go
+    /// through `ctx`.
+    pub fn new(params: Arc<Params>, storage: Arc<NodeStorage>, ctx: C) -> anyhow::Result<Self> {
         // Load the most recent client state from storage
         let (cur_block, cur_state) = storage
             .client_state()
@@ -101,20 +94,18 @@ impl CsmWorkerState {
         }
 
         Ok(Self {
-            params,
-            storage,
+            ctx,
             cur_state: Arc::new(cur_state),
             last_asm_block: Some(cur_block),
             last_processed_epoch: None,
             confirmed_epoch,
             finalized_epoch,
             observed_checkpoints,
-            status_channel,
         })
     }
 
     /// Get the last ASM block that was processed.
-    pub fn last_asm_block(&self) -> Option<L1BlockCommitment> {
+    pub fn get_last_asm_block(&self) -> Option<L1BlockCommitment> {
         self.last_asm_block
     }
 }
@@ -195,7 +186,7 @@ fn max_epoch_commitment(
     }
 }
 
-impl ServiceState for CsmWorkerState {
+impl<C: CsmWorkerContext + 'static> ServiceState for CsmWorkerState<C> {
     fn name(&self) -> &str {
         constants::SERVICE_NAME
     }
@@ -209,7 +200,7 @@ mod tests {
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::Buf32;
+    use strata_identifiers::{Buf32, L1BlockId};
     use strata_params::{Params, RollupParams, SyncParams};
     use strata_primitives::prelude::*;
     use strata_status::StatusChannel;
@@ -217,6 +208,7 @@ mod tests {
     use strata_test_utils::ArbitraryGenerator;
 
     use super::CsmWorkerState;
+    use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<Params> {
         let params_json = r#"{
@@ -358,7 +350,8 @@ mod tests {
             )
             .expect("insert epoch 2 observation");
 
-        let state = CsmWorkerState::new(params, storage, status_channel).expect("state init");
+        let ctx = StubCtx::new(storage.clone(), status_channel, 4);
+        let state = CsmWorkerState::new(params, storage, ctx).expect("state init");
 
         assert_eq!(state.confirmed_epoch, Some(commitment_2));
         assert_eq!(state.finalized_epoch, Some(commitment_1));
