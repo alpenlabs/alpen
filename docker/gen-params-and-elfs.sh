@@ -13,7 +13,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Source .env — set -a exports all vars automatically
 if [ -f "${SCRIPT_DIR}/.env" ]; then
     set -a
-    # shellcheck source=.env.example
+    # .env path is dynamic — shellcheck can't follow it
+    # shellcheck disable=SC1091
     . "${SCRIPT_DIR}/.env"
     set +a
 fi
