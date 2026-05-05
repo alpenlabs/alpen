@@ -99,8 +99,9 @@ where
     let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
     match txinfo_res? {
-        Some(info) if info.confirmations >= 1 => Ok(confirmation_status(&info, reorg_safe_depth)),
-        Some(_) => Ok(L1TxStatus::Published),
+        // `confirmation_status` returns `Published` for 0-conf, which is the
+        // correct sighting for an already-Published entry still in mempool.
+        Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
         None => match publish_tx(io, txentry).await? {
             L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
             _ => Ok(L1TxStatus::Published),
@@ -108,11 +109,17 @@ where
     }
 }
 
-/// Maps a confirmed `TxConfirmationInfo` (`info.confirmations >= 1`) to the
-/// corresponding `Confirmed` or `Finalized` status. Caller must ensure the
-/// `confirmations >= 1` precondition; the block_hash/block_height fields are
-/// only populated by bitcoind once a tx is mined.
+/// Maps `TxConfirmationInfo` to the natural confirmation-derived status.
+///
+/// `confirmations <= 0` means the tx is visible to bitcoind but not anchored
+/// to the canonical chain (mempool-only, or on a side branch after reorg);
+/// returns [`L1TxStatus::Published`]. Callers that need different 0-conf
+/// semantics — e.g. regressing a `Confirmed` entry to `Unpublished` on
+/// reorg drop — must override the result themselves.
 fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1TxStatus {
+    if info.confirmations <= 0 {
+        return L1TxStatus::Published;
+    }
     let block_hash = info.block_hash.expect("confirmed tx must have block_hash");
     let block_height = info
         .block_height
@@ -838,5 +845,53 @@ mod test {
                 );
             });
         }
+    }
+
+    // ── confirmation_status ──
+
+    #[test]
+    fn confirmation_status_zero_confirmations_returns_published() {
+        // 0-conf means the tx is in the mempool but not anchored to a block;
+        // bitcoind leaves block_hash/block_height as None in that case.
+        let info = TxConfirmationInfo {
+            confirmations: 0,
+            block_hash: None,
+            block_height: None,
+        };
+        assert_eq!(confirmation_status(&info, 6), L1TxStatus::Published);
+    }
+
+    #[test]
+    fn confirmation_status_negative_confirmations_returns_published() {
+        // Negative confirmations mean the tx is on a side branch after a reorg;
+        // treat it like 0-conf rather than synthesising a phantom Confirmed entry.
+        let info = TxConfirmationInfo {
+            confirmations: -2,
+            block_hash: None,
+            block_height: None,
+        };
+        assert_eq!(confirmation_status(&info, 6), L1TxStatus::Published);
+    }
+
+    #[test]
+    fn confirmation_status_below_reorg_depth_is_confirmed() {
+        let block_hash = Buf32::new([7u8; 32]);
+        let block_height: L1Height = 100;
+        let info = confirmation_info(3, block_height, block_hash);
+        assert_eq!(
+            confirmation_status(&info, 6),
+            confirmed_status(3, block_height, block_hash),
+        );
+    }
+
+    #[test]
+    fn confirmation_status_at_or_above_reorg_depth_is_finalized() {
+        let block_hash = Buf32::new([7u8; 32]);
+        let block_height: L1Height = 100;
+        let info = confirmation_info(6, block_height, block_hash);
+        assert_eq!(
+            confirmation_status(&info, 6),
+            finalized_status(6, block_height, block_hash),
+        );
     }
 }
