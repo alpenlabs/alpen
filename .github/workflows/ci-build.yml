@@ -64,11 +64,85 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------------
+  # Build SP1 artifacts (datatool + guest ELFs) — shared by all images
+  # ---------------------------------------------------------------------------
+  build-sp1-artifacts:
+    name: Build SP1 artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Inline cleanup before checkout — the local composite action needs the
+      # repo to exist, but the repo is too large to clone without freeing space.
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/local/.ghcup \
+            /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" /usr/share/swift \
+            /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
+
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (pinned 2026-04-21)
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          key: sp1-artifacts-builder
+          cache-on-failure: true
+
+      - name: Install SP1 toolchain
+        run: |
+          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
+          ~/.sp1/bin/sp1up
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.sp1/bin:$PATH"
+          cargo prove --version
+
+      - name: Build strata-datatool + SP1 guest ELFs
+        run: |
+          cargo build --bin strata-datatool --features sp1-builder --release
+
+          mkdir -p artifacts/elfs/sp1
+          install -m 0755 target/release/strata-datatool artifacts/strata-datatool
+
+          # strata-sp1-guest-builder writes compiled ELFs to
+          # provers/sp1/guest-*/cache/*.elf.
+          cp -v provers/sp1/guest-checkpoint/cache/guest-checkpoint.elf \
+               provers/sp1/guest-alpen-chunk/cache/guest-alpen-chunk.elf \
+               provers/sp1/guest-alpen-acct/cache/guest-alpen-acct.elf \
+            artifacts/elfs/sp1/
+
+          ls -la artifacts/ artifacts/elfs/sp1/
+
+          # Echo VKs for cross-validation against ci-genparams workflow
+          CHECKPOINT_VK=$(./target/release/strata-datatool genparams \
+            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.checkpoint_predicate')
+          echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
+
+          ALPEN_VK=$(./target/release/strata-datatool gen-ol-params \
+            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.accounts | to_entries[0].value.predicate')
+          echo "Alpen VK (ci-build): ${ALPEN_VK}"
+
+      - name: Upload SP1 artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sp1-artifacts
+          path: artifacts/
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
   # Build and push each program in parallel
   # ---------------------------------------------------------------------------
   build-and-push:
     name: "Build ${{ matrix.program }}"
-    needs: [prepare]
+    needs: [prepare, build-sp1-artifacts]
     runs-on: ubuntu-latest
     environment: prod
     permissions:
@@ -117,57 +191,31 @@ jobs:
         with:
           mask-password: "true"
 
-      # --- strata-only: pre-build datatool + SP1 guest ELFs on the runner ----
-      - name: Set up Rust toolchain (strata)
-        if: matrix.program == 'strata'
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable (pinned 2026-04-21)
+      # --- Download pre-built SP1 artifacts from shared job --------------------
+      - name: Download SP1 artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          toolchain: stable
+          name: sp1-artifacts
+          path: sp1-artifacts/
 
-      - name: Cache cargo (strata datatool)
-        if: matrix.program == 'strata'
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-        with:
-          key: strata-datatool-sp1-docker-builder
-          cache-on-failure: true
+      - name: Stage SP1 ELFs for alpen-client
+        if: matrix.program == 'alpen-client'
+        run: |
+          mkdir -p docker/alpen-client/artifacts/elfs/sp1
+          cp -v sp1-artifacts/elfs/sp1/guest-alpen-chunk.elf \
+               sp1-artifacts/elfs/sp1/guest-alpen-acct.elf \
+            docker/alpen-client/artifacts/elfs/sp1/
+          ls -la docker/alpen-client/artifacts/elfs/sp1/
 
-      - name: Install SP1 toolchain (strata)
+      - name: Stage SP1 artifacts for strata
         if: matrix.program == 'strata'
         run: |
-          curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash
-          ~/.sp1/bin/sp1up
-          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.sp1/bin:$PATH"
-          cargo prove --version
-
-      - name: Build strata-datatool + SP1 guest ELFs
-        if: matrix.program == 'strata'
-        run: |
-          cargo build --bin strata-datatool --features sp1-builder --release
-
           mkdir -p docker/strata/artifacts/elfs/sp1
-          install -m 0755 target/release/strata-datatool docker/strata/artifacts/strata-datatool
-
-          # strata only reads guest-checkpoint.elf at runtime. The other
-          # guest ELFs are embedded inside the datatool binary (via
-          # strata-sp1-guest-builder's build script) and re-emitted by
-          # `datatool genparams --elf-dir` during params generation.
-          #
-          # strata-sp1-guest-builder writes compiled ELFs to
-          # provers/sp1/guest-*/cache/*.elf.
-          cp -v provers/sp1/guest-checkpoint/cache/guest-checkpoint.elf \
+          install -m 0755 sp1-artifacts/strata-datatool \
+            docker/strata/artifacts/strata-datatool
+          cp -v sp1-artifacts/elfs/sp1/guest-checkpoint.elf \
             docker/strata/artifacts/elfs/sp1/
-
           ls -la docker/strata/artifacts/ docker/strata/artifacts/elfs/sp1/
-
-          # Echo VKs for cross-validation against ci-genparams workflow
-          CHECKPOINT_VK=$(./target/release/strata-datatool genparams \
-            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.checkpoint_predicate')
-          echo "Checkpoint VK (ci-build): ${CHECKPOINT_VK}"
-
-          ALPEN_VK=$(./target/release/strata-datatool gen-ol-params \
-            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json | jq -r '.accounts | to_entries[0].value.predicate')
-          echo "Alpen VK (ci-build): ${ALPEN_VK}"
 
       # --- Build and push via Buildx ------------------------------------------
       - name: Build and push Docker image
