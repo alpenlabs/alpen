@@ -26,3 +26,6 @@ mod ledger_references;
 
 #[cfg(test)]
 mod stf;
+
+#[cfg(test)]
+mod limbo;
