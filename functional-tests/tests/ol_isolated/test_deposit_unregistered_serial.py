@@ -1,6 +1,6 @@
 """
 Regression test: a deposit whose descriptor encodes an unregistered account
-serial must not credit any account.
+serial must not credit the registered Alpen EE test account.
 
 Background. The alpen-cli historically encoded `AccountSerial::zero()` in
 the deposit descriptor (see `bin/alpen-cli/src/cmd/deposit.rs`). Serial 0
@@ -110,10 +110,10 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         delta = balance - initial
         if delta != 0:
             raise AssertionError(
-                f"deposit with unregistered serial must not credit any account, "
+                f"deposit with unregistered serial must not credit the registered test account, "
                 f"but account at serial {TEST_ACCOUNT_SERIAL} balance changed by {delta} sats "
                 f"(initial={initial}, final={balance})"
             )
 
-        logger.info("deposit with serial=0 did not credit any account (delta=0)")
+        logger.info("deposit with serial=0 did not credit the registered test account (delta=0)")
         return True
