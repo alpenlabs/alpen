@@ -65,7 +65,7 @@ where
             .await
             .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
-        L1TxStatus::InvalidInputs => Ok(None),
+        L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. } => Ok(None),
     };
     if let Ok(ref updated_status) = result {
         debug!(?updated_status);

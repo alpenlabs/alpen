@@ -16,8 +16,8 @@ use bitcoin::{
         TaprootSpendInfo,
     },
     transaction::Version,
-    Address, Amount, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid,
-    Witness,
+    Address, Amount, FeeRate, Network, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+    Txid, Witness,
 };
 use bitcoind_async_client::{
     corepc_types::model::ListUnspentItem,
@@ -137,15 +137,29 @@ pub struct EnvelopeData {
     pub reveal_script: ScriptBuf,
     /// The taproot spend info for constructing the witness.
     pub taproot_spend_info: TaprootSpendInfo,
+    /// Fee rate used to construct the envelope transactions.
+    pub fee_rate_sat_vb: FeeRate,
+    /// Absolute fee paid by the commit transaction.
+    pub commit_fee_sats: Amount,
+    /// Absolute fee paid by the reveal transaction.
+    pub reveal_fee_sats: Amount,
+    fee_bumping_enabled: bool,
 }
 
 impl EnvelopeData {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "EnvelopeData is a plain construction bundle for transaction metadata"
+    )]
     pub fn new(
         commit_tx: Transaction,
         reveal_tx: Transaction,
         sighash: Buf32,
         reveal_script: ScriptBuf,
         taproot_spend_info: TaprootSpendInfo,
+        fee_rate_sat_vb: FeeRate,
+        commit_fee_sats: Amount,
+        reveal_fee_sats: Amount,
     ) -> Self {
         Self {
             commit_tx,
@@ -153,7 +167,21 @@ impl EnvelopeData {
             sighash,
             reveal_script,
             taproot_spend_info,
+            fee_rate_sat_vb,
+            commit_fee_sats,
+            reveal_fee_sats,
+            fee_bumping_enabled: false,
         }
+    }
+
+    /// Returns whether broadcast should create fee-bump node records for this envelope.
+    pub(crate) fn fee_bumping_enabled(&self) -> bool {
+        self.fee_bumping_enabled
+    }
+
+    /// Sets whether broadcast should create fee-bump node records for this envelope.
+    pub(crate) fn set_fee_bumping_enabled(&mut self, enabled: bool) {
+        self.fee_bumping_enabled = enabled;
     }
 }
 
@@ -179,7 +207,9 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         BITCOIN_DUST_LIMIT,
         Some(envelope_pubkey),
     );
-    create_envelope_transactions(&env_config, payload, utxos)
+    let mut envelope = create_envelope_transactions(&env_config, payload, utxos)?;
+    envelope.set_fee_bumping_enabled(ctx.config.fee_bumping.is_enabled());
+    Ok(envelope)
 }
 
 /// Builds envelope transactions using a temporary keypair and signs both commit and reveal
@@ -204,6 +234,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
         Some(pubkey),
     );
     let mut envelope = create_envelope_transactions(&env_config, payload, utxos)?;
+    envelope.set_fee_bumping_enabled(ctx.config.fee_bumping.is_enabled());
 
     let signed_commit = ctx
         .client
@@ -285,13 +316,14 @@ pub fn create_envelope_transactions(
     );
 
     // Build commit tx
-    let (commit_tx, _) = build_commit_transaction(
+    let (commit_tx, consumed_utxos) = build_commit_transaction(
         utxos,
         reveal_address,
         env_config.sequencer_address.clone(),
         commit_value,
         env_config.fee_rate,
     )?;
+    let commit_fee_sats = calculate_transaction_fee_from_utxos(&commit_tx, &consumed_utxos);
 
     let output_to_reveal = commit_tx.output[0].clone();
 
@@ -307,6 +339,13 @@ pub fn create_envelope_transactions(
             .control_block(&(reveal_script.clone(), LeafVersion::TapScript))
             .ok_or(anyhow!("Cannot create control block".to_string()))?,
     )?;
+    let reveal_fee_sats = commit_value.saturating_sub(
+        reveal_tx
+            .output
+            .iter()
+            .map(|output| output.value.to_sat())
+            .sum(),
+    );
 
     // Compute sighash for the reveal tx
     let sighash = compute_reveal_sighash(&reveal_tx, &output_to_reveal, &reveal_script)?;
@@ -317,7 +356,20 @@ pub fn create_envelope_transactions(
         sighash,
         reveal_script,
         taproot_spend_info,
+        FeeRate::from_sat_per_vb(env_config.fee_rate).expect("fee rate must fit"),
+        Amount::from_sat(commit_fee_sats),
+        Amount::from_sat(reveal_fee_sats),
     ))
+}
+
+fn calculate_transaction_fee_from_utxos(tx: &Transaction, utxos: &[ListUnspentItem]) -> u64 {
+    let input_total = utxos.iter().map(|utxo| utxo.amount.to_sat()).sum::<u64>();
+    let output_total = tx
+        .output
+        .iter()
+        .map(|output| output.value.to_sat())
+        .sum::<u64>();
+    input_total.saturating_sub(output_total)
 }
 
 /// Computes the taproot script-spend sighash for the reveal transaction.
@@ -809,6 +861,15 @@ mod tests {
         }
     }
 
+    fn assert_all_inputs_opt_into_rbf(tx: &Transaction) {
+        assert!(
+            tx.input
+                .iter()
+                .all(|input| input.sequence == Sequence::ENABLE_RBF_NO_LOCKTIME),
+            "all writer-built transaction inputs must opt into RBF"
+        );
+    }
+
     #[test]
     fn test_build_reveal_transaction() {
         let (ctx, _, _, utxos) = get_mock_data();
@@ -844,6 +905,7 @@ mod tests {
         tx.input[0].witness.push(control_block.serialize());
 
         assert_eq!(tx.input.len(), 1);
+        assert_all_inputs_opt_into_rbf(&tx);
         assert_eq!(tx.input[0].previous_output.vout, utxo.vout);
 
         assert_eq!(tx.output.len(), 2);
@@ -915,6 +977,7 @@ mod tests {
             unsigned.commit_tx.input[0].previous_output.vout, utxos[2].vout,
             "utxo should be chosen correctly"
         );
+        assert_all_inputs_opt_into_rbf(&unsigned.commit_tx);
 
         assert_eq!(
             unsigned.reveal_tx.input[0].previous_output.txid,
@@ -925,6 +988,7 @@ mod tests {
             unsigned.reveal_tx.input[0].previous_output.vout, 0,
             "reveal should use commit as input"
         );
+        assert_all_inputs_opt_into_rbf(&unsigned.reveal_tx);
 
         assert_eq!(
             unsigned.reveal_tx.output[1].script_pubkey,

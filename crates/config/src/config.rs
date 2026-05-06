@@ -476,7 +476,9 @@ pub struct Config {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
+    use crate::btcio::{
+        FeeBumpPolicy, FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig,
+    };
 
     #[test]
     fn test_config_load() {
@@ -953,11 +955,103 @@ mod test {
             reveal_amount: 100,
             bundle_interval_ms: 1_000,
             l1_fee_policy_config: L1FeePolicyConfig::new(FeePolicy::BitcoinD { conf_target: 6 }),
+            fee_bumping: Default::default(),
         };
 
         let toml = toml::to_string(&config).expect("writer config should serialize");
 
         assert!(toml.contains("fee_policy = \"bitcoind\""));
         assert!(toml.contains("bitcoind_conf_target = 6"));
+    }
+
+    #[test]
+    fn test_writer_config_defaults_fee_bumping_disabled() {
+        let config: WriterConfig = toml::from_str(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "bitcoind"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+            "#,
+        )
+        .expect("writer config should parse");
+
+        assert_eq!(config.fee_bumping.policy, FeeBumpPolicy::Disabled);
+        assert_eq!(config.fee_bumping.min_age_blocks.get(), 2);
+        assert_eq!(config.fee_bumping.max_attempts.get(), 5);
+        assert_eq!(config.fee_bumping.min_fee_rate_delta_sat_vb.get(), 1);
+    }
+
+    #[test]
+    fn test_writer_config_rejects_rbf_until_runtime_is_wired() {
+        let error = toml::from_str::<WriterConfig>(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "bitcoind"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+
+            [fee_bumping]
+            policy = "rbf"
+            min_age_blocks = 2
+            max_attempts = 5
+            multiplier_bps = 12_500
+            min_fee_rate_delta_sat_vb = 1
+            max_fee_rate_sat_vb = 1_000
+            "#,
+        )
+        .expect_err("writer config should reject unsupported RBF fee bumping");
+
+        assert!(
+            error.to_string().contains("not supported"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_writer_config_rejects_fee_bumping_multiplier_below_one_hundred_percent() {
+        let error = toml::from_str::<WriterConfig>(
+            r#"
+            write_poll_dur_ms = 200
+            fee_policy = "bitcoind"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+
+            [fee_bumping]
+            policy = "disabled"
+            multiplier_bps = 9_999
+            "#,
+        )
+        .expect_err("fee bumping config should reject fee-lowering multiplier");
+
+        assert!(
+            error.to_string().contains("must be at least 10_000"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_writer_config_rejects_zero_fee_bumping_nonzero_fields() {
+        for field in [
+            "max_attempts",
+            "min_fee_rate_delta_sat_vb",
+            "max_fee_rate_sat_vb",
+        ] {
+            let toml = format!(
+                r#"
+                write_poll_dur_ms = 200
+                fee_policy = "bitcoind"
+                reveal_amount = 100
+                bundle_interval_ms = 1_000
+
+                [fee_bumping]
+                policy = "disabled"
+                {field} = 0
+                "#
+            );
+
+            toml::from_str::<WriterConfig>(&toml)
+                .expect_err("fee bumping config should reject zero nonzero fields");
+        }
     }
 }

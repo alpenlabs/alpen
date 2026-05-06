@@ -6,7 +6,7 @@ use std::fmt;
 use arbitrary::Arbitrary;
 use bitcoin::{
     consensus::{self, deserialize, serialize},
-    Transaction,
+    FeeRate, Transaction,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -172,6 +172,9 @@ pub struct L1TxEntry {
 
     /// The status of the transaction in bitcoin
     pub status: L1TxStatus,
+
+    /// Optional metadata used by writer-side RBF replacement logic.
+    pub rbf: Option<L1TxRbfInfo>,
 }
 
 impl L1TxEntry {
@@ -180,6 +183,20 @@ impl L1TxEntry {
         Self {
             tx_raw: serialize(tx),
             status: L1TxStatus::Unpublished,
+            rbf: None,
+        }
+    }
+
+    /// Create a new writer-owned [`L1TxEntry`] with RBF metadata.
+    pub fn from_tx_with_fee_rate(tx: &Transaction, fee_rate: FeeRate) -> Self {
+        Self {
+            tx_raw: serialize(tx),
+            status: L1TxStatus::Unpublished,
+            rbf: Some(L1TxRbfInfo {
+                first_published_l1_height: None,
+                fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+                bump_count: 0,
+            }),
         }
     }
 
@@ -199,12 +216,39 @@ impl L1TxEntry {
     }
 
     pub fn is_valid(&self) -> bool {
-        !matches!(self.status, L1TxStatus::InvalidInputs)
+        !matches!(
+            self.status,
+            L1TxStatus::InvalidInputs | L1TxStatus::Replaced { .. }
+        )
     }
 
     pub fn is_finalized(&self) -> bool {
         matches!(self.status, L1TxStatus::Finalized { .. })
     }
+}
+
+/// RBF metadata for one concrete broadcast transaction.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    Arbitrary,
+    Serialize,
+    Deserialize,
+)]
+pub struct L1TxRbfInfo {
+    /// L1 height where this transaction was first observed as published.
+    pub first_published_l1_height: Option<L1Height>,
+
+    /// Fee rate used to construct this transaction in sat/vB.
+    pub fee_rate_sat_vb: u64,
+
+    /// Number of replacements already made for this logical writer transaction.
+    pub bump_count: u32,
 }
 
 /// The possible statuses of a publishable transaction
@@ -239,6 +283,12 @@ pub enum L1TxStatus {
 
     /// The transaction is not included in L1 because it's inputs were invalid
     InvalidInputs,
+
+    /// The transaction has been superseded by an RBF replacement.
+    Replaced {
+        /// Replacement transaction id.
+        by: L1TxId,
+    },
 }
 
 impl fmt::Display for L1TxStatus {
@@ -267,6 +317,7 @@ impl fmt::Display for L1TxStatus {
                 )
             }
             Self::InvalidInputs => f.write_str("invalid_inputs"),
+            Self::Replaced { by } => write!(f, "replaced_by({by})"),
         }
     }
 }
@@ -572,12 +623,16 @@ mod tests {
             (
                 L1TxStatus::Finalized {
                     confirmations: 100,
-                    block_hash: Buf32::zero(),
+                    block_hash: L1BlockHash::zero(),
                     block_height: 42,
                 },
                 r#"{"status":"Finalized","confirmations":100,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
             ),
             (L1TxStatus::InvalidInputs, r#"{"status":"InvalidInputs"}"#),
+            (
+                L1TxStatus::Replaced { by: L1TxId::zero() },
+                r#"{"status":"Replaced","by":"0000000000000000000000000000000000000000000000000000000000000000"}"#,
+            ),
         ];
 
         // check serialization and deserialization
@@ -655,7 +710,7 @@ mod tests {
             commit_txid: L1TxId::from(commit_bytes),
             commit_wtxid: L1WtxId::from(commit_witness_bytes),
             reveals: vec![RevealTxMeta {
-                vout_index: 0,
+                vout_index: 1,
                 txid: L1TxId::from(reveal_bytes),
                 wtxid: L1WtxId::from(reveal_witness_bytes),
                 tx_bytes: Vec::new(),

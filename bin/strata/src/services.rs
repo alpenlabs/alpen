@@ -132,16 +132,16 @@ mod sequencer_services {
             let ctx = Arc::new(ctx);
 
             let (watcher_handle, _) = WatcherBuilder::new(
-                ctx,
+                ctx.clone(),
                 writer_ops.clone(),
-                broadcast_handle,
+                broadcast_handle.clone(),
                 Duration::from_millis(config.write_poll_dur_ms),
             )
             .launch(executor)
             .await?;
 
             let _ = BundlerBuilder::new(
-                writer_ops,
+                writer_ops.clone(),
                 Duration::from_millis(config.bundle_interval_ms),
                 intent_rx,
             )

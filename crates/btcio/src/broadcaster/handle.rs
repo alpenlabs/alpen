@@ -97,34 +97,25 @@ impl L1BroadcastHandle {
         Ok(idx)
     }
 
-    /// Updates an existing entry and notifies the broadcaster service.
-    pub(crate) async fn put_tx_entry_by_idx(
-        &self,
-        idx: u64,
-        txentry: L1TxEntry,
-    ) -> BroadcasterResult<()> {
-        assert!(txentry.try_to_tx().is_ok(), "invalid tx entry {txentry:?}");
-
-        self.ops
-            .put_tx_entry_by_idx_async(idx, txentry.clone())
-            .await?;
-
-        if self
-            .sender
-            .send(BroadcasterInputMessage::NotifyNewEntry { idx, txentry })
-            .await
-            .is_err()
-        {
-            // Not really an error, it just means it's shutting down; we'll pick
-            // it up when we restart by scanning persisted entries.
-            warn!("L1 broadcaster service is unavailable");
-        }
-
-        Ok(())
-    }
-
     pub async fn get_tx_entry_by_id_async(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>> {
         self.ops.get_tx_entry_by_id_async(txid).await
+    }
+
+    pub async fn get_active_tx_entry_by_id_async(
+        &self,
+        mut txid: Buf32,
+    ) -> DbResult<Option<(Buf32, L1TxEntry)>> {
+        for _ in 0..16 {
+            let Some(entry) = self.get_tx_entry_by_id_async(txid).await? else {
+                return Ok(None);
+            };
+            match entry.status {
+                L1TxStatus::Replaced { by } => txid = Buf32(by.0),
+                _ => return Ok(Some((txid, entry))),
+            }
+        }
+
+        Ok(None)
     }
 
     pub async fn get_last_tx_entry(&self) -> DbResult<Option<L1TxEntry>> {
@@ -133,5 +124,10 @@ impl L1BroadcastHandle {
 
     pub async fn get_tx_entry_by_idx_async(&self, idx: u64) -> DbResult<Option<L1TxEntry>> {
         self.ops.get_tx_entry_async(idx).await
+    }
+
+    pub async fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> BroadcasterResult<()> {
+        self.ops.put_tx_entry_by_idx_async(idx, txentry).await?;
+        Ok(())
     }
 }
