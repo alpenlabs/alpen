@@ -289,7 +289,7 @@ mod test {
     use strata_db_types::types::{L1TxEntry, L1TxStatus};
     use strata_identifiers::test_utils::buf32_strategy;
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::{L1Height, buf::Buf32};
+    use strata_primitives::{buf::Buf32, L1Height};
     use tokio::runtime::Builder;
 
     use super::*;
