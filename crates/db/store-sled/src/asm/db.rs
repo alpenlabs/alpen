@@ -47,14 +47,21 @@ impl AsmDatabase for AsmDBSled {
         let state = self.asm_state_tree.last()?;
         let logs = self.asm_log_tree.last()?;
 
-        // Assert that the block for the state and for the logs is the same.
-        // It should be because we are putting it within transaction.
-        Ok(state.and_then(|s| {
-            logs.map(|l| {
-                assert_eq!(s.0, l.0);
-                (s.0, AsmState::new(s.1, l.1))
-            })
-        }))
+        match (state, logs) {
+            (Some((state_block, state)), Some((logs_block, logs))) if state_block == logs_block => {
+                Ok(Some((state_block, AsmState::new(state, logs))))
+            }
+            (Some((state_block, _)), Some((logs_block, _))) => {
+                // The state and log entries are written in one transaction, but this method reads
+                // the two trees separately. A concurrent append can commit between those reads, so
+                // fall back to the latest block that both trees had to contain when observed.
+                let latest_common_block = state_block.min(logs_block);
+                Ok(self
+                    .get_asm_state(latest_common_block)?
+                    .map(|state| (latest_common_block, state)))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn get_asm_states_from(

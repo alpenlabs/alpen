@@ -14423,6 +14423,7 @@ dependencies = [
  "anyhow",
  "serde",
  "ssz",
+ "strata-acct-types",
  "strata-checkpoint-types",
  "strata-db-types",
  "strata-identifiers",

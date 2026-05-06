@@ -6,19 +6,23 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
+use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
-use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager};
+use strata_storage::{
+    MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
+    OLStateManager,
+};
 use tokio::{runtime::Handle, sync::watch};
 use tracing::debug;
 
@@ -50,6 +54,9 @@ pub struct ChainWorkerContextImpl {
     /// Manager for OL state indexing data (per-block writes, epoch finalization).
     ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
 
+    /// Manager for append-only MMR proof indices.
+    mmr_index_mgr: Arc<MmrIndexManager>,
+
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
 
@@ -72,6 +79,7 @@ impl ChainWorkerContextImpl {
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
+            mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
@@ -165,8 +173,28 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .put_write_batch_blocking(commitment, wb.clone())?;
 
         let writes = build_indexing_writes(commitment, output);
-        self.ol_state_indexing_mgr
-            .apply_block_indexing_blocking(epoch, commitment, writes)?;
+        match self
+            .ol_state_indexing_mgr
+            .apply_block_indexing_blocking(epoch, commitment, writes)
+        {
+            Ok(()) => {
+                index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+            }
+            Err(DbError::BlockIndexingConflict {
+                attempted,
+                last_applied,
+                ..
+            }) if attempted == commitment && last_applied == commitment => {
+                index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+                return Err(DbError::BlockIndexingConflict {
+                    epoch,
+                    attempted,
+                    last_applied,
+                }
+                .into());
+            }
+            Err(e) => return Err(e.into()),
+        }
 
         Ok(())
     }
@@ -345,4 +373,61 @@ fn build_indexing_writes(
     }
 
     IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
+}
+
+/// Applies snark inbox writes to the MMR proof index.
+///
+/// The OL state itself stores the compact MMR root/peaks. Block assembly needs
+/// historical nodes from [`MmrIndexManager`] to generate proofs for later snark
+/// account updates, so the chain worker mirrors each accepted inbox append into
+/// the proof index. The operation is idempotent for crash-restart retries.
+fn index_inbox_mmr_writes(
+    mmr_index_mgr: &MmrIndexManager,
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<()> {
+    for write in output.indexer_writes().inbox_messages() {
+        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(write.entry()).into();
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(write.account_id()));
+        let leaf_count = handle.get_num_leaves_blocking()?;
+
+        if write.index() < leaf_count {
+            let Some(existing_hash) = handle.get_leaf_blocking(write.index())? else {
+                return Err(
+                    DbError::MmrLeafNotFoundForAccount(write.index(), write.account_id()).into(),
+                );
+            };
+
+            if existing_hash != expected_hash {
+                return Err(DbError::MmrLeafHashMismatch {
+                    idx: write.index(),
+                    expected: expected_hash,
+                    got: existing_hash,
+                }
+                .into());
+            }
+
+            continue;
+        }
+
+        if write.index() > leaf_count {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: write.index(),
+                cur: leaf_count,
+            }
+            .into());
+        }
+
+        let appended_idx = handle.append_leaf_with_preimage_blocking(expected_hash, entry_bytes)?;
+        if appended_idx != write.index() {
+            return Err(WorkerError::Unexpected(format!(
+                "snark inbox MMR append index mismatch for account {}: expected {}, got {}",
+                write.account_id(),
+                write.index(),
+                appended_idx
+            )));
+        }
+    }
+
+    Ok(())
 }
