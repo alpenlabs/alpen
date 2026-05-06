@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bitcoin::Transaction;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::TxidExt;
 use strata_db_types::types::{BundledPayloadEntry, L1TxEntry, L1TxId};
@@ -84,13 +85,19 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         broadcast_handle
-            .put_tx_entry(to_raw_buf32(cid), L1TxEntry::from_tx(&envelope.commit_tx))
+            .put_tx_entry(
+                to_raw_buf32(cid),
+                tx_entry_from_envelope(&envelope.commit_tx, &envelope),
+            )
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
         let rid = to_l1_txid(envelope.reveal_tx.compute_txid());
         broadcast_handle
-            .put_tx_entry(to_raw_buf32(rid), L1TxEntry::from_tx(&envelope.reveal_tx))
+            .put_tx_entry(
+                to_raw_buf32(rid),
+                tx_entry_from_envelope(&envelope.reveal_tx, &envelope),
+            )
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
@@ -131,16 +138,10 @@ pub(crate) async fn complete_reveal_and_broadcast(
         .map_err(EnvelopeError::Other)?;
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
-        broadcast_handle
-            .put_tx_entry(to_raw_buf32(cid), L1TxEntry::from_tx(&envelope.commit_tx))
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        put_tx_entry_if_missing(broadcast_handle, cid, &envelope.commit_tx, envelope).await?;
 
         let rid = to_l1_txid(reveal_tx.compute_txid());
-        broadcast_handle
-            .put_tx_entry(to_raw_buf32(rid), L1TxEntry::from_tx(&reveal_tx))
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        put_tx_entry_if_missing(broadcast_handle, rid, &reveal_tx, envelope).await?;
 
         info!(?cid, reveal_txid = ?rid, "commit and reveal stored for broadcast");
         Ok(rid)
@@ -149,9 +150,40 @@ pub(crate) async fn complete_reveal_and_broadcast(
     .await
 }
 
+fn tx_entry_from_envelope(tx: &Transaction, envelope: &EnvelopeData) -> L1TxEntry {
+    if envelope.fee_bumping_enabled() {
+        L1TxEntry::from_tx_with_fee_rate(tx, envelope.fee_rate_sat_vb)
+    } else {
+        L1TxEntry::from_tx(tx)
+    }
+}
+
+async fn put_tx_entry_if_missing(
+    broadcast_handle: &L1BroadcastHandle,
+    txid: L1TxId,
+    tx: &Transaction,
+    envelope: &EnvelopeData,
+) -> Result<(), EnvelopeError> {
+    if broadcast_handle
+        .get_tx_entry_by_id_async(to_raw_buf32(txid))
+        .await
+        .map_err(|e| EnvelopeError::Other(e.into()))?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    broadcast_handle
+        .put_tx_entry(to_raw_buf32(txid), tx_entry_from_envelope(tx, envelope))
+        .await
+        .map_err(|e| EnvelopeError::Other(e.into()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use strata_btc_types::TxidExt;
+    use strata_config::btcio::{FeeBumpPolicy, FeeBumpingConfig, WriterConfig};
     use strata_csm_types::L1Payload;
     use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus};
     use strata_l1_txfmt::TagData;
@@ -163,13 +195,30 @@ mod test {
             test_context::{get_writer_context, get_writer_context_with_client},
             TestBitcoinClient,
         },
-        writer::test_utils::{get_broadcast_handle, get_envelope_ops},
+        writer::{
+            test_utils::{get_broadcast_handle, get_envelope_ops},
+            WriterContext,
+        },
     };
 
     fn unsigned_test_entry() -> BundledPayloadEntry {
         let tag = TagData::new(1, 1, vec![]).unwrap();
         let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
         BundledPayloadEntry::new_unsigned(payload)
+    }
+
+    fn get_fee_bumping_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
+        let ctx = get_writer_context();
+        Arc::new(WriterContext {
+            config: Arc::new(WriterConfig {
+                fee_bumping: FeeBumpingConfig {
+                    policy: FeeBumpPolicy::Rbf,
+                    ..FeeBumpingConfig::default()
+                },
+                ..(*ctx.config).clone()
+            }),
+            ..(*ctx).clone()
+        })
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -232,7 +281,6 @@ mod test {
             .unwrap()
             .is_some());
     }
-
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_payload_envelopes_preserves_not_enough_utxos() {
         let client = Arc::new(TestBitcoinClient::new(1).with_utxo_amount_sats(1000));
@@ -256,5 +304,33 @@ mod test {
             .unwrap_err();
 
         assert!(matches!(err, EnvelopeError::NotEnoughUtxos(_, 1000)));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sign_and_broadcast_payload_envelopes_persists_rbf_metadata() {
+        let bcast_handle = get_broadcast_handle();
+        let ctx = get_fee_bumping_writer_context();
+
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
+        let entry = BundledPayloadEntry::new_unsigned(payload);
+
+        let (cid, rid) = sign_and_broadcast_payload_envelopes(7, &entry, ctx, &bcast_handle)
+            .await
+            .unwrap();
+
+        let commit_entry = bcast_handle
+            .get_tx_entry_by_id_async(to_raw_buf32(cid))
+            .await
+            .unwrap()
+            .expect("commit entry must exist");
+        let reveal_entry = bcast_handle
+            .get_tx_entry_by_id_async(to_raw_buf32(rid))
+            .await
+            .unwrap()
+            .expect("reveal entry must exist");
+
+        assert!(commit_entry.rbf.is_some());
+        assert!(reveal_entry.rbf.is_some());
     }
 }

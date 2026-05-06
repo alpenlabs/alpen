@@ -73,7 +73,28 @@ pub fn build_chunked_envelope_txs(
 
     let sequencer_xonly = XOnlyPublicKey::from_keypair(sequencer_keypair).0;
     let commit_op_return = build_commit_op_return(magic_bytes, da_blob_version);
+    let artifacts = build_reveal_artifacts(chunks, sequencer_xonly, config)?;
 
+    let commit_tx = build_multi_output_commit(config, &artifacts, &commit_op_return, utxos)?;
+    let reveal_txs = build_reveals_for_commit(
+        &config.sequencer_address,
+        config.reveal_amount,
+        &artifacts,
+        sequencer_keypair,
+        &commit_tx,
+    )?;
+
+    Ok(ChunkedEnvelopeTxs {
+        commit_tx,
+        reveal_txs,
+    })
+}
+
+fn build_reveal_artifacts(
+    chunks: &[Vec<u8>],
+    sequencer_xonly: XOnlyPublicKey,
+    config: &EnvelopeConfig,
+) -> Result<Vec<RevealArtifact>, EnvelopeError> {
     let mut artifacts = Vec::with_capacity(chunks.len());
     for chunk in chunks {
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(&sequencer_xonly.serialize())?
@@ -100,8 +121,16 @@ pub fn build_chunked_envelope_txs(
             commit_value,
         });
     }
+    Ok(artifacts)
+}
 
-    let commit_tx = build_multi_output_commit(config, &artifacts, &commit_op_return, utxos)?;
+fn build_reveals_for_commit(
+    sequencer_address: &Address,
+    reveal_amount: u64,
+    artifacts: &[RevealArtifact],
+    sequencer_keypair: &Keypair,
+    commit_tx: &Transaction,
+) -> Result<Vec<Transaction>, EnvelopeError> {
     let commit_txid = commit_tx.compute_txid();
 
     let mut reveal_txs = Vec::with_capacity(artifacts.len());
@@ -109,27 +138,14 @@ pub fn build_chunked_envelope_txs(
     // Reveals spend commit outputs starting at vout=1 (vout=0 is the OP_RETURN).
     for (i, artifact) in artifacts.iter().enumerate() {
         let vout = (i + 1) as u32;
-        let commit_output = &commit_tx.output[vout as usize];
+        let commit_output = commit_tx
+            .output
+            .get(vout as usize)
+            .ok_or(EnvelopeError::NotEnoughUtxos(reveal_amount, 0))?;
 
-        let control_block = artifact
-            .spend_info
-            .control_block(&(artifact.reveal_script.clone(), LeafVersion::TapScript))
-            .ok_or_else(|| anyhow!("cannot create control block for reveal {i}"))?;
-
-        // Verify the commit output covers reveal fee + dust.
-        let reveal_vsize = get_size(
-            &[make_txin(commit_txid, vout)],
-            &[TxOut {
-                value: Amount::from_sat(config.reveal_amount),
-                script_pubkey: config.sequencer_address.script_pubkey(),
-            }],
-            Some(&artifact.reveal_script),
-            Some(&control_block),
-        );
-        let required = config.reveal_amount + (reveal_vsize as u64) * config.fee_rate;
-        if commit_output.value < Amount::from_sat(required) {
+        if commit_output.value < Amount::from_sat(reveal_amount) {
             return Err(EnvelopeError::NotEnoughUtxos(
-                required,
+                reveal_amount,
                 commit_output.value.to_sat(),
             ));
         }
@@ -139,8 +155,8 @@ pub fn build_chunked_envelope_txs(
             version: Version(2),
             input: vec![make_txin(commit_txid, vout)],
             output: vec![TxOut {
-                value: Amount::from_sat(config.reveal_amount),
-                script_pubkey: config.sequencer_address.script_pubkey(),
+                value: Amount::from_sat(reveal_amount),
+                script_pubkey: sequencer_address.script_pubkey(),
             }],
         };
 
@@ -155,10 +171,7 @@ pub fn build_chunked_envelope_txs(
         reveal_txs.push(reveal_tx);
     }
 
-    Ok(ChunkedEnvelopeTxs {
-        commit_tx,
-        reveal_txs,
-    })
+    Ok(reveal_txs)
 }
 
 /// Sizes the commit output funding one reveal tx.

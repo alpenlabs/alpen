@@ -17,6 +17,8 @@ mod service_executor;
 mod services;
 
 #[cfg(feature = "sequencer")]
+use std::num::{NonZeroU32, NonZeroU64};
+#[cfg(feature = "sequencer")]
 use std::{env, process, sync::Arc, time::Duration};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
@@ -54,6 +56,8 @@ use bitcoind_async_client::{
     Auth, Client as BtcClient,
 };
 use clap::{ArgAction, Parser};
+#[cfg(feature = "sequencer")]
+use eyre::eyre;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
@@ -71,7 +75,10 @@ use strata_btcio::{
 };
 use strata_common::healthz::{start_health_check_server, HealthCheckState};
 #[cfg(feature = "sequencer")]
-use strata_config::btcio::{FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy, WriterConfig};
+use strata_config::btcio::{
+    FeeBumpPolicy, FeeBumpingConfig, FeePolicy, L1FeePolicyConfig, MempoolExplorerFeePolicy,
+    WriterConfig,
+};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
@@ -696,9 +703,9 @@ fn main() {
                     btc_client.clone(),
                     writer_config,
                     btcio_params,
-                    sequencer_address,
+                    sequencer_address.clone(),
                     sequencer_keypair,
-                    envelope_ops,
+                    envelope_ops.clone(),
                     broadcast_handle.clone(),
                 )
                 .map_err(|e| eyre::eyre!("creating chunked envelope task: {e}"))?;
@@ -1079,6 +1086,30 @@ pub struct AdditionalConfig {
     #[arg(long)]
     pub max_withdrawal_amount: Option<u64>,
 
+    /// BTCIO fee bumping policy for EE DA publication.
+    #[arg(long, value_parser = ["disabled", "rbf"], default_value = "disabled")]
+    pub btcio_fee_bumping_policy: String,
+
+    /// L1 block age before a published BTCIO transaction is considered stale.
+    #[arg(long, default_value = "2")]
+    pub btcio_fee_bumping_min_age_blocks: u32,
+
+    /// Maximum broadcast attempts for one BTCIO fee-bump node.
+    #[arg(long, default_value = "5")]
+    pub btcio_fee_bumping_max_attempts: u32,
+
+    /// Minimum multiplicative BTCIO fee bump in basis points.
+    #[arg(long, default_value_t = 12_500)]
+    pub btcio_fee_bumping_multiplier_bps: u32,
+
+    /// Minimum additive BTCIO fee-rate bump in sat/vB.
+    #[arg(long, default_value = "1")]
+    pub btcio_fee_bumping_min_delta_sat_vb: u64,
+
+    /// Maximum BTCIO replacement fee rate in sat/vB.
+    #[arg(long, default_value_t = 1_000)]
+    pub btcio_fee_bumping_max_fee_rate_sat_vb: u64,
+
     /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
     /// instead of the SP1 remote host.
     ///
@@ -1159,6 +1190,66 @@ impl AdditionalConfig {
             _ => Some("trace"),
         }
     }
+
+    /// Builds the BTCIO fee-bumping config from CLI flags.
+    #[cfg(feature = "sequencer")]
+    fn btcio_fee_bumping_config(&self) -> eyre::Result<FeeBumpingConfig> {
+        let policy = match self.btcio_fee_bumping_policy.as_str() {
+            "disabled" => FeeBumpPolicy::Disabled,
+            "rbf" => FeeBumpPolicy::Rbf,
+            policy => eyre::bail!("unsupported BTCIO fee bumping policy: {policy}"),
+        };
+
+        let config = FeeBumpingConfig {
+            policy,
+            min_age_blocks: NonZeroU32::new(self.btcio_fee_bumping_min_age_blocks).ok_or_else(
+                || eyre!("BTCIO fee bumping minimum age blocks must be greater than zero"),
+            )?,
+            max_attempts: NonZeroU32::new(self.btcio_fee_bumping_max_attempts).ok_or_else(
+                || eyre!("BTCIO fee bumping maximum attempts must be greater than zero"),
+            )?,
+            multiplier_bps: self.btcio_fee_bumping_multiplier_bps,
+            min_fee_rate_delta_sat_vb: NonZeroU64::new(self.btcio_fee_bumping_min_delta_sat_vb)
+                .ok_or_else(|| {
+                    eyre!("BTCIO fee bumping minimum delta must be greater than zero")
+                })?,
+            max_fee_rate_sat_vb: NonZeroU64::new(self.btcio_fee_bumping_max_fee_rate_sat_vb)
+                .ok_or_else(|| {
+                    eyre!("BTCIO fee bumping maximum fee rate must be greater than zero")
+                })?,
+        };
+        config
+            .validate()
+            .map_err(|err| eyre!("invalid BTCIO fee bumping config: {err}"))?;
+        Ok(config)
+    }
+}
+
+#[cfg(feature = "sequencer")]
+fn sequencer_privkey_from_env(sequencer_enabled: bool) -> eyre::Result<Option<Buf32>> {
+    if !sequencer_enabled {
+        return Ok(None);
+    }
+
+    let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
+        eyre::eyre!(
+            "SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer"
+        )
+    })?;
+
+    let privkey = privkey_str
+        .parse::<Buf32>()
+        .map_err(|e| eyre::eyre!("Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"))?;
+
+    Ok(Some(privkey))
+}
+
+#[cfg(feature = "sequencer")]
+fn sequencer_bitcoin_keypair(privkey: &Buf32) -> eyre::Result<Keypair> {
+    let secret_key =
+        SecretKey::from_slice(privkey.as_ref()).context("invalid sequencer private key")?;
+    let secp = Secp256k1::signing_only();
+    Ok(Keypair::from_secret_key(&secp, &secret_key))
 }
 
 /// Run node with logging
@@ -1236,32 +1327,6 @@ fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
         .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
 }
 
-#[cfg(feature = "sequencer")]
-fn sequencer_privkey_from_env(sequencer_enabled: bool) -> eyre::Result<Option<Buf32>> {
-    if !sequencer_enabled {
-        return Ok(None);
-    }
-
-    let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
-        eyre::eyre!(
-            "SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer"
-        )
-    })?;
-
-    let privkey = privkey_str
-        .parse::<Buf32>()
-        .map_err(|e| eyre::eyre!("Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"))?;
-
-    Ok(Some(privkey))
-}
-
-#[cfg(feature = "sequencer")]
-fn sequencer_bitcoin_keypair(privkey: &Buf32) -> eyre::Result<Keypair> {
-    let sk = SecretKey::from_slice(privkey.as_ref()).context("invalid sequencer private key")?;
-    let secp = Secp256k1::signing_only();
-    Ok(Keypair::from_secret_key(&secp, &sk))
-}
-
 // Mirrors `bitcoind-async-client`'s upstream defaults.
 #[cfg(feature = "sequencer")]
 const DEFAULT_BTCIO_RETRY_COUNT: u16 = 3;
@@ -1334,6 +1399,7 @@ fn resolve_writer_config(ext: &AdditionalConfig) -> eyre::Result<WriterConfig> {
     };
     Ok(WriterConfig {
         l1_fee_policy_config: L1FeePolicyConfig::new(fee_policy),
+        fee_bumping: ext.btcio_fee_bumping_config()?,
         ..WriterConfig::default()
     })
 }

@@ -81,7 +81,7 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
     fn get_tx_status(
         &self,
         txid: L1TxId,
-    ) -> impl Future<Output = anyhow::Result<Option<L1TxEntry>>> + Send;
+    ) -> impl Future<Output = anyhow::Result<Option<(L1TxId, L1TxEntry)>>> + Send;
 
     fn report_status(
         &self,
@@ -166,10 +166,11 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
             .map_err(Into::into)
     }
 
-    async fn get_tx_status(&self, txid: L1TxId) -> anyhow::Result<Option<L1TxEntry>> {
+    async fn get_tx_status(&self, txid: L1TxId) -> anyhow::Result<Option<(L1TxId, L1TxEntry)>> {
         self.broadcast_handle
-            .get_tx_entry_by_id_async(Buf32(txid.0))
+            .get_active_tx_entry_by_id_async(to_raw_buf32(txid))
             .await
+            .map(|entry| entry.map(|(txid, entry)| (L1TxId::from(txid.0), entry)))
             .map_err(Into::into)
     }
 
@@ -372,18 +373,22 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             trace!("waiting for signer to provide reveal signature");
             return Ok(());
         };
-        let Some(envelope) = self.envelope_cache.remove(&self.curr_payloadidx) else {
-            // Cache miss (e.g. restart) — reset to Unsigned to rebuild
-            // envelope from scratch (new UTXOs, new sighash).
-            // Safe: nothing has been broadcast yet.
-            warn!("envelope not in cache, resetting to Unsigned");
-            let mut updated_entry = payloadentry.clone();
-            updated_entry.payload_signature = None;
-            updated_entry.status = L1BundleStatus::Unsigned;
-            self.ctx
-                .put_payload_entry(self.curr_payloadidx, updated_entry)
-                .await?;
-            return Ok(());
+        let envelope = match self.envelope_cache.remove(&self.curr_payloadidx) {
+            Some(envelope) => envelope,
+            None => {
+                warn!(
+                    payload_idx = %self.curr_payloadidx,
+                    commit_txid = ?payloadentry.commit_txid,
+                    reveal_txid = ?payloadentry.reveal_txid,
+                    "envelope not in cache, resetting to Unsigned");
+                let mut updated_entry = payloadentry.clone();
+                updated_entry.payload_signature = None;
+                updated_entry.status = L1BundleStatus::Unsigned;
+                self.ctx
+                    .put_payload_entry(self.curr_payloadidx, updated_entry)
+                    .await?;
+                return Ok(());
+            }
         };
         match self
             .ctx
@@ -415,7 +420,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
         let reveal_tx = self.ctx.get_tx_status(payloadentry.reveal_txid).await?;
 
         match (commit_tx, reveal_tx) {
-            (Some(ctx), Some(rtx)) => {
+            (Some((commit_txid, ctx)), Some((reveal_txid, rtx))) => {
                 let new_status = determine_payload_next_status(&ctx.status, &rtx.status);
                 debug!(?new_status, "The next status for payload");
                 if matches!(
@@ -425,8 +430,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     debug!(
                         component = "btcio_writer",
                         payload_idx = self.curr_payloadidx,
-                        commit_txid = ?payloadentry.commit_txid,
-                        reveal_txid = ?payloadentry.reveal_txid,
+                        ?commit_txid,
+                        ?reveal_txid,
                         payload_status = ?new_status,
                         commit_l1_status = ?ctx.status,
                         reveal_l1_status = ?rtx.status,
@@ -434,11 +439,11 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     );
                 }
 
-                self.ctx.report_status(&payloadentry, &new_status).await;
-
-                // Update payloadentry with new status
                 let mut updated_entry = payloadentry.clone();
+                updated_entry.commit_txid = commit_txid;
+                updated_entry.reveal_txid = reveal_txid;
                 updated_entry.status = new_status.clone();
+                self.ctx.report_status(&updated_entry, &new_status).await;
                 self.ctx
                     .put_payload_entry(self.curr_payloadidx, updated_entry)
                     .await?;
@@ -493,6 +498,11 @@ pub(crate) fn determine_payload_next_status(
         (_, L1TxStatus::Confirmed { .. }) => L1BundleStatus::Confirmed,
         // If reveal is published regardless of commit, the payload is published
         (_, L1TxStatus::Published) => L1BundleStatus::Published,
+        // Replacement chains are normally followed before this function. If a
+        // stale entry reaches here, keep the watcher from needlessly resigning.
+        (L1TxStatus::Replaced { .. }, _) | (_, L1TxStatus::Replaced { .. }) => {
+            L1BundleStatus::Published
+        }
         // if commit has invalid inputs, needs resign
         (L1TxStatus::InvalidInputs, _) => L1BundleStatus::NeedsResign,
         // If commit is unpublished, both are upublished
@@ -521,7 +531,7 @@ mod tests {
         secp256k1::{XOnlyPublicKey, SECP256K1},
         taproot::TaprootBuilder,
         transaction::Version,
-        Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+        Amount, FeeRate, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     };
     use bitcoind_async_client::error::ClientError;
     use strata_csm_types::L1Payload;
@@ -607,13 +617,18 @@ mod tests {
                 script_pubkey: ScriptBuf::new(),
             }],
         };
-        EnvelopeData::new(
+        let mut envelope = EnvelopeData::new(
             commit_tx,
             reveal_tx,
             Buf32([42u8; 32]),
             reveal_script,
             taproot_spend_info,
-        )
+            FeeRate::from_sat_per_vb(2).expect("fee rate must fit"),
+            Amount::from_sat(100),
+            Amount::from_sat(50),
+        );
+        envelope.set_fee_bumping_enabled(true);
+        envelope
     }
 
     struct MockWatcherContext {
@@ -722,8 +737,12 @@ mod tests {
                 .map_err(Into::into)
         }
 
-        async fn get_tx_status(&self, _txid: L1TxId) -> anyhow::Result<Option<L1TxEntry>> {
-            Ok(None)
+        async fn get_tx_status(&self, txid: L1TxId) -> anyhow::Result<Option<(L1TxId, L1TxEntry)>> {
+            self.broadcast_handle
+                .get_active_tx_entry_by_id_async(to_raw_buf32(txid))
+                .await
+                .map(|entry| entry.map(|(txid, entry)| (L1TxId::from(txid.0), entry)))
+                .map_err(Into::into)
         }
 
         async fn report_status(&self, _entry: &BundledPayloadEntry, _status: &L1BundleStatus) {}
@@ -772,6 +791,64 @@ mod tests {
         assert_eq!(stored.reveal_txid, L1TxId::zero());
         assert_eq!(state.curr_payloadidx, 0);
         assert!(state.envelope_cache.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_status_resolves_active_fee_bump_txids() {
+        let ctx = MockWatcherContext::new(false);
+        let mut entry = test_unsigned_entry();
+        entry.status = L1BundleStatus::Published;
+        entry.commit_txid = L1TxId::from([0x10; 32]);
+        entry.reveal_txid = L1TxId::from([0x20; 32]);
+
+        let replacement_commit_txid = L1TxId::from([0x11; 32]);
+        let replacement_reveal_txid = L1TxId::from([0x21; 32]);
+        let envelope = minimal_envelope_data();
+        let finalized = L1TxStatus::Finalized {
+            confirmations: 6,
+            block_hash: L1BlockHash::from([0xBB; 32]),
+            block_height: 100,
+        };
+        let mut replacement_commit_entry = L1TxEntry::from_tx(&envelope.commit_tx);
+        replacement_commit_entry.status = finalized.clone();
+        let mut replacement_reveal_entry = L1TxEntry::from_tx(&envelope.reveal_tx);
+        replacement_reveal_entry.status = finalized;
+
+        let mut original_commit_entry = L1TxEntry::from_tx(&envelope.commit_tx);
+        original_commit_entry.status = L1TxStatus::Replaced {
+            by: replacement_commit_txid,
+        };
+        let mut original_reveal_entry = L1TxEntry::from_tx(&envelope.reveal_tx);
+        original_reveal_entry.status = L1TxStatus::Replaced {
+            by: replacement_reveal_txid,
+        };
+
+        for (txid, tx_entry) in [
+            (to_raw_buf32(entry.commit_txid), original_commit_entry),
+            (to_raw_buf32(entry.reveal_txid), original_reveal_entry),
+            (
+                to_raw_buf32(replacement_commit_txid),
+                replacement_commit_entry,
+            ),
+            (
+                to_raw_buf32(replacement_reveal_txid),
+                replacement_reveal_entry,
+            ),
+        ] {
+            ctx.broadcast_handle
+                .put_tx_entry(txid, tx_entry)
+                .await
+                .unwrap();
+        }
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_broadcast_status(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Finalized);
+        assert_eq!(stored.commit_txid, replacement_commit_txid);
+        assert_eq!(stored.reveal_txid, replacement_reveal_txid);
+        assert_eq!(state.curr_payloadidx, 1);
     }
 
     #[tokio::test]
@@ -902,5 +979,29 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    async fn test_pending_reveal_cache_miss_resets_to_unsigned() {
+        let envelope = minimal_envelope_data();
+        let commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
+        let reveal_txid = to_l1_txid(envelope.reveal_tx.compute_txid());
+        let ctx = MockWatcherContext::new(true);
+
+        let mut entry = test_unsigned_entry();
+        entry.commit_txid = commit_txid;
+        entry.reveal_txid = reveal_txid;
+        entry.status = L1BundleStatus::PendingRevealTxSign(Buf32([42u8; 32]));
+        entry.payload_signature = Some(Buf64([1u8; 64]));
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_pending_reveal_tx_sign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        assert_eq!(stored.payload_signature, None);
+        assert_eq!(stored.commit_txid, L1TxId::from(commit_txid.0));
+        assert_eq!(stored.reveal_txid, L1TxId::from(reveal_txid.0));
     }
 }
