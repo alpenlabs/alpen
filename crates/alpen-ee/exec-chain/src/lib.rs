@@ -2,11 +2,11 @@
 
 mod handle;
 mod orphan_tracker;
+pub mod service;
 mod state;
 mod task;
 mod unfinalized_tracker;
 
-pub use handle::{
-    build_exec_chain_consensus_forwarder_task, build_exec_chain_task, ExecChainHandle,
-};
+pub use handle::ExecChainHandle;
+pub use service::{ExecChainMsg, ExecChainService, ExecChainServiceState, ExecChainStatus};
 pub use state::{init_exec_chain_state_from_storage, ExecChainState, ExecChainStateError};

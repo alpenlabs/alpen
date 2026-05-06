@@ -1283,11 +1283,14 @@ name = "alpen-ee-exec-chain"
 version = "0.3.0-alpha.1"
 dependencies = [
  "alpen-ee-common",
+ "anyhow",
  "eyre",
+ "serde",
  "strata-acct-types",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
+ "strata-service",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

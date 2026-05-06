@@ -25,10 +25,7 @@ use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
 use alpen_ee_engine::{create_engine_control_task, sync_chainstate_to_engine, AlpenRethExecEngine};
 #[cfg(feature = "sequencer")]
-use alpen_ee_exec_chain::{
-    build_exec_chain_consensus_forwarder_task, build_exec_chain_task,
-    init_exec_chain_state_from_storage,
-};
+use alpen_ee_exec_chain::init_exec_chain_state_from_storage;
 #[cfg(feature = "sequencer")]
 use alpen_ee_genesis::ensure_finalized_exec_chain_genesis;
 use alpen_ee_genesis::{ensure_batch_genesis, ensure_genesis_ee_account_state};
@@ -439,8 +436,15 @@ fn main() {
                     node.beacon_engine_handle.clone(),
                 ));
 
-                let (exec_chain_handle, exec_chain_task) =
-                    build_exec_chain_task(exec_chain_state, preconf_tx.clone(), storage.clone());
+                let exec_chain_handle = services::exec_chain::start_exec_chain_service(
+                    exec_chain_state,
+                    preconf_tx.clone(),
+                    storage.clone(),
+                    consensus_watcher.clone(),
+                    &service_executor,
+                )
+                .await
+                .map_err(|e| eyre::eyre!("failed to start exec chain service: {e}"))?;
 
                 let (ol_chain_tracker, ol_chain_tracker_task) = build_ol_chain_tracker(
                     ol_chain_tracker_state,
@@ -727,15 +731,6 @@ fn main() {
                     ext.genesis_l1_height,
                 );
 
-                node.task_executor
-                    .spawn_critical("exec_chain", exec_chain_task);
-                node.task_executor.spawn_critical(
-                    "exec_chain_consensus_forwarder",
-                    build_exec_chain_consensus_forwarder_task(
-                        exec_chain_handle.clone(),
-                        consensus_watcher,
-                    ),
-                );
                 node.task_executor
                     .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
                 node.task_executor.spawn_critical(
