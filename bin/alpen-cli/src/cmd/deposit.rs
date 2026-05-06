@@ -116,9 +116,6 @@ fn prepare_deposit_request(
 
     let alpen_subject_bytes =
         SubjectIdBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
-    // Encoding the wrong serial here (e.g. 0) resolves to a placeholder
-    // system slot and the OL silently discards the deposit. The constant
-    // pins the OL-side identity of the Alpen EE account.
     let deposit_descriptor = DepositDescriptor::new(ALPEN_EE_ACCT_SERIAL, alpen_subject_bytes)
         .expect("EE serial is within valid range");
     let header_aux = DrtHeaderAux::new(
