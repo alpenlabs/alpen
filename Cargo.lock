@@ -13878,6 +13878,7 @@ dependencies = [
  "format_serde_error",
  "jsonrpsee",
  "metrics-exporter-prometheus",
+ "proptest",
  "serde_json",
  "ssz",
  "strata-acct-types",
@@ -15512,6 +15513,7 @@ name = "strata-ol-stf"
 version = "0.1.0"
 dependencies = [
  "ssz_primitives",
+ "ssz_types",
  "strata-acct-types",
  "strata-asm-common",
  "strata-asm-logs",

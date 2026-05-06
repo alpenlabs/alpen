@@ -1,5 +1,5 @@
-# Generates SP1 verification key (checkpoint_predicate) when prover-related
-# code changes, and dispatches the result to the deployments repo.
+# Generates SP1 verification keys (checkpoint_predicate + alpen_predicate)
+# when prover-related code changes, and dispatches to the deployments repo.
 #
 # This is separated from ci-build.yml because the VK only changes when guest
 # program ELFs change — most merges to main don't affect it.
@@ -47,6 +47,7 @@ jobs:
       contents: read
     outputs:
       checkpoint_predicate: ${{ steps.extract.outputs.checkpoint_predicate }}
+      alpen_predicate: ${{ steps.extract.outputs.alpen_predicate }}
       commit_sha: ${{ steps.resolve.outputs.commit_sha }}
     steps:
       - name: Checkout repository
@@ -98,7 +99,20 @@ jobs:
           fi
 
           echo "checkpoint_predicate=${CHECKPOINT_PREDICATE}" >> "$GITHUB_OUTPUT"
-          echo "Checkpoint predicate (first 80 chars): ${CHECKPOINT_PREDICATE:0:80}..."
+          echo "Checkpoint predicate: ${CHECKPOINT_PREDICATE}"
+
+          OL_PARAMS_OUTPUT=$(./target/release/strata-datatool gen-ol-params \
+            --genesis-l1-view-file .github/fixtures/genesis-l1-view.json)
+
+          ALPEN_PREDICATE=$(echo "$OL_PARAMS_OUTPUT" | jq -r '.accounts | to_entries[0].value.predicate')
+          if [ -z "$ALPEN_PREDICATE" ] || [ "$ALPEN_PREDICATE" = "null" ]; then
+            echo "::error::Failed to extract alpen_predicate from ol-params"
+            echo "OL params output: $OL_PARAMS_OUTPUT"
+            exit 1
+          fi
+
+          echo "alpen_predicate=${ALPEN_PREDICATE}" >> "$GITHUB_OUTPUT"
+          echo "Alpen predicate: ${ALPEN_PREDICATE}"
 
   # ---------------------------------------------------------------------------
   # Dispatch VK update to deployments repo
@@ -115,16 +129,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.DEPLOYMENTS_DISPATCH_TOKEN }}
           CHECKPOINT_PREDICATE: ${{ needs.genparams.outputs.checkpoint_predicate }}
+          ALPEN_PREDICATE: ${{ needs.genparams.outputs.alpen_predicate }}
           COMMIT_SHA: ${{ needs.genparams.outputs.commit_sha }}
         run: |
           jq -n \
             --arg cp "$CHECKPOINT_PREDICATE" \
+            --arg ap "$ALPEN_PREDICATE" \
             --arg sha "$COMMIT_SHA" \
             --arg ref "${GITHUB_REF_NAME}" \
             '{
               event_type: "new-arch-vk-update",
               client_payload: {
                 checkpoint_predicate: $cp,
+                alpen_predicate: $ap,
                 commit_sha: $sha,
                 ref: $ref
               }

@@ -179,7 +179,8 @@ async fn test_hard_limit_rollback_discards_tx2_log() {
         .build();
     let tx2_id = tx2.compute_txid();
 
-    let seeded_count = (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1;
+    // tx1 emits 1 log (snark-update); tx2 would emit 2 (withdrawal + snark-update).
+    let seeded_count = (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2;
     // Offset seeded log source serials away from test account serials (1..10)
     // so seeded checkpoint logs cannot collide with real tx-emitted sources.
     let seeded_logs: Vec<_> = (0..seeded_count)
@@ -205,8 +206,8 @@ async fn test_hard_limit_rollback_discards_tx2_log() {
 
     assert_eq!(
         output.accumulated_da.logs().len(),
-        seeded_count,
-        "rolled-back tx2 log must not be appended to accumulated DA logs"
+        seeded_count + 1,
+        "only tx1's snark-update log should be appended; tx2 was rolled back"
     );
     assert_eq!(
         withdrawal_intents(&output).len(),

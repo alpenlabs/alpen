@@ -2396,9 +2396,8 @@ mod tests {
             .build();
         let tx_overflow_id = tx_overflow.compute_txid();
 
-        // Pre-fill the buffer so that tx_fill's 10 logs exactly reach the cap,
-        // leaving no room for tx_overflow's 1 log.
-        let prefill = MAX_LOGS_PER_BLOCK as usize - 10;
+        // tx_fill emits 11 logs (10 withdrawals + 1 snark-update); tx_overflow emits 2.
+        let prefill = MAX_LOGS_PER_BLOCK as usize - 11;
         output_buffer
             .emit_logs((0..prefill).map(|i| OLLog::new(AccountSerial::from(i as u32), vec![])))
             .expect("pre-fill should succeed");
@@ -2559,10 +2558,10 @@ mod tests {
         let tx1_id = tx1.compute_txid();
         let tx2_id = tx2.compute_txid();
 
-        // Control case: one below hard-1 (i.e. hard-2) should still accept tx1.
+        // tx1 emits 2 logs (withdrawal + snark-update).
         let control = run_process_transactions_with_seeded_checkpoint_logs(
             account_id,
-            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 3,
             vec![(tx1_id, tx1.clone())],
         )
         .await;
@@ -2576,11 +2575,9 @@ mod tests {
             "tx1 should be accepted just below the hard threshold"
         );
 
-        // Seed one below hard limit so tx1's single log tips verdict to
-        // HardLimitExceeded (roll back current tx, then stop).
         let out = run_process_transactions_with_seeded_checkpoint_logs(
             account_id,
-            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 1,
+            (MAX_OL_LOGS_PER_CHECKPOINT as usize) - 2,
             vec![(tx1_id, tx1), (tx2_id, tx2)],
         )
         .await;

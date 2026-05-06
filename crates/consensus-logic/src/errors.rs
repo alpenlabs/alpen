@@ -39,6 +39,15 @@ pub enum Error {
     #[error("invalid state transition on block {0:?}: {1}")]
     InvalidStateTsn(L2BlockId, TsnError),
 
+    #[error("OL block {0:?} missing signature")]
+    MissingBlockSignature(OLBlockId),
+
+    #[error("OL block {0:?} signature invalid")]
+    InvalidBlockSignature(OLBlockId),
+
+    #[error("unexpected genesis OL block {0:?}")]
+    UnexpectedGenesisBlock(OLBlockId),
+
     #[error("csm dropped")]
     CsmDropped,
 
