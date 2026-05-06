@@ -30,9 +30,9 @@ use crate::{
 };
 
 /// Address where withdrawal intent msgs are forwarded.
-// TODO(STR-3315): de-duplicate with `BRIDGE_GATEWAY_REF` in
-// `crates/alpen-ee/sequencer/src/block_builder/config.rs` once a shared
-// home for bridge account constants exists.
+// TODO(STR-3358): de-duplicate with the default bridge gateway account in
+// `crates/alpen-ee/sequencer/src/block_builder/config.rs` once a shared home
+// for bridge account constants exists.
 const BRIDGE_GATEWAY_REF: u8 = 0x10;
 const BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(BRIDGE_GATEWAY_REF);
 

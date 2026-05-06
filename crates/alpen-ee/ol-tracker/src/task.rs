@@ -88,7 +88,7 @@ pub(crate) struct OLEpochOperations {
 pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
     /// TODO: stream
-    Extend(Vec<OLEpochOperations>, Box<OLChainStatus>),
+    Extend(Vec<OLEpochOperations>, OLChainStatus),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
     /// Local tip is synced with OL chain, nothing to do.
@@ -109,8 +109,9 @@ pub(crate) async fn track_ol_state(
     //
     // The dev/test path advances against the latest terminal OL epoch that
     // Strata has processed locally. This lets the EE block builder consume OL
-    // inbox messages without waiting for the checkpoint observation cadence,
-    // which can lag badly when the native noop prover emits SAUs quickly.
+    // inbox messages without waiting for the CSM/checkpoint-observation path,
+    // whose lag is not solved just by shortening regtest L1 block time when the
+    // native noop prover emits SAUs quickly.
     let mut effective_ol_status = ol_status;
     let best_ol_commitment = if track_finalized_epoch {
         let latest = ol_status.latest;
@@ -204,10 +205,7 @@ pub(crate) async fn track_ol_state(
         }
 
         // maybe stream all missing epochs ?
-        return Ok(TrackOLAction::Extend(
-            epoch_operations,
-            Box::new(effective_ol_status),
-        ));
+        return Ok(TrackOLAction::Extend(epoch_operations, effective_ol_status));
     }
 
     unreachable!("There should not be a valid case that is not covered above")

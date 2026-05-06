@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 # serial 128 (system serials occupy 0..128).
 ALPEN_EE_ACCOUNT_SERIAL = 128
 
-# DT input value (DRT output 1) must exceed `denomination` so the DT has a
-# positive mining fee. The bridge subprotocol enforces DT output 1 ==
-# denomination (10 BTC); the difference is the miner fee. 1000 sats covers a
-# small Schnorr-witness DT comfortably under any sane regtest mempool min
-# relay rate.
+# DT input value (DRT output 1) must exceed the configured bridge denomination
+# so the DT has a positive mining fee. The bridge subprotocol validates DT
+# output 1 against that denomination; the difference is the miner fee. 1000 sats
+# covers a small Schnorr-witness DT comfortably under any sane regtest mempool
+# min relay rate.
 DT_FEE_BUFFER_SATS = 1_000
 
 
