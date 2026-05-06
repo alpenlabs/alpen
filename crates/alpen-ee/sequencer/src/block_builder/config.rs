@@ -7,7 +7,8 @@ const DEFAULT_BLOCKTIME_MS: u64 = 5_000;
 /// Default number of deposits to process per ee block.
 const DEFAULT_DEPOSITS_PER_BLOCK: NonZeroU8 = NonZeroU8::new(16).expect("16 is always NonZero");
 /// Default bridge gateway account on OL.
-const DEFAULT_BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(1); // TODO: correct account id
+// TODO(STR-3358): Don't hardcode here
+const DEFAULT_BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(0x10);
 /// Default time to wait on errors during block building.
 const DEFAULT_ERROR_BACKOFF_MS: u64 = 100;
 
