@@ -14,6 +14,7 @@ on:
       - "crates/**"
       - "docker/strata/**"
       - "docker/alpen-client/**"
+      - "docker/strata-signer/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -53,7 +54,7 @@ jobs:
           INPUT: ${{ inputs.programs }}
         run: |
           # New architecture images only — pushed to shared ECR account
-          ALL='["strata","alpen-client"]'
+          ALL='["strata","alpen-client","strata-signer"]'
 
           if [ -z "$INPUT" ]; then
             echo "matrix={\"program\":${ALL}}" >> "$GITHUB_OUTPUT"
