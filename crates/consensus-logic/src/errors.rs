@@ -54,6 +54,22 @@ pub enum Error {
     #[error("unexpected genesis OL block {0:?}")]
     UnexpectedGenesisBlock(OLBlockId),
 
+    /// Reorg has a non-empty down branch but its pivot is not before the current tip.
+    #[error("OL reorg pivot {0} not before current tip {1}")]
+    InvalidOLReorgPivot(OLBlockCommitment, OLBlockCommitment),
+
+    /// Reorg has no down branch, but its pivot is not the current tip.
+    #[error("invalid OL reorg pivot mismatch with empty down (expected {0}, got {1})")]
+    InvalidOLReorgEmptyDownPivot(OLBlockCommitment, OLBlockCommitment),
+
+    /// FCM attempted to apply a block whose header parent is not the current tip.
+    #[error("OL apply block parent mismatch for block {0} (expected {1}, got {2})")]
+    OLApplyBlockParentMismatch(OLBlockCommitment, OLBlockCommitment, OLBlockId),
+
+    /// FCM finished applying a tip update but did not land on the expected block ID.
+    #[error("OL apply tip mismatch (expected {0}, got {1})")]
+    OLApplyTipMismatch(OLBlockCommitment, OLBlockCommitment),
+
     #[error("csm dropped")]
     CsmDropped,
 
