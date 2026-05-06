@@ -82,7 +82,7 @@ services:
   alpen-client:
     build:
       context: ..
-      dockerfile: docker/alpen-client/Dockerfile
+      dockerfile: docker/alpen-client/Dockerfile.local
     image: alpen-client:latest
     depends_on:
       init:
