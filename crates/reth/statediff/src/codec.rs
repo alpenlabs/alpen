@@ -424,6 +424,15 @@ mod tests {
     }
 
     #[test]
+    fn test_trimmed_u256_rejects_oversized_length_prefix() {
+        let err = decode_buf_exact::<TrimmedU256>(&[33]).unwrap_err();
+        assert!(matches!(
+            err,
+            CodecError::MalformedField("TrimmedU256 length exceeds 32")
+        ));
+    }
+
+    #[test]
     fn test_trimmed_storage_value_none() {
         let val = TrimmedStorageValue(None);
         let encoded = encode_to_vec(&val).unwrap();
@@ -467,6 +476,15 @@ mod tests {
         assert_eq!(encoded[0], 20);
         let decoded: TrimmedStorageValue = decode_buf_exact(&encoded).unwrap();
         assert_eq!(val, decoded);
+    }
+
+    #[test]
+    fn test_trimmed_storage_value_rejects_oversized_length_prefix() {
+        let err = decode_buf_exact::<TrimmedStorageValue>(&[33]).unwrap_err();
+        assert!(matches!(
+            err,
+            CodecError::MalformedField("TrimmedStorageValue length exceeds 32")
+        ));
     }
 
     #[test]
@@ -554,6 +572,18 @@ mod tests {
         let decoded: SignedU256Delta = decode_buf_exact(&encoded).unwrap();
         assert_eq!(decoded.magnitude(), large);
         assert!(decoded.is_nonnegative());
+    }
+
+    #[test]
+    fn test_signed_u256_delta_rejects_invalid_tag() {
+        let err = decode_buf_exact::<SignedU256Delta>(&[0x03]).unwrap_err();
+        assert!(matches!(err, CodecError::InvalidVariant("SignedU256Delta")));
+    }
+
+    #[test]
+    fn test_trimmed_u256_rejects_trailing_bytes() {
+        let encoded = vec![0, 0xff];
+        assert!(decode_buf_exact::<TrimmedU256>(&encoded).is_err());
     }
 
     #[test]

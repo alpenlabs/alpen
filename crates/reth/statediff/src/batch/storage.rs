@@ -124,4 +124,30 @@ mod tests {
         );
         assert_eq!(decoded.slots.get(&U256::from(3)), Some(&None));
     }
+
+    #[test]
+    fn test_storage_diff_rejects_truncated_key() {
+        let mut encoded = encode_to_vec(&1u32).unwrap();
+        encoded.extend_from_slice(&[0u8; 31]);
+        assert!(decode_buf_exact::<StorageDiff>(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_storage_diff_rejects_truncated_value() {
+        let mut encoded = encode_to_vec(&1u32).unwrap();
+        encoded.extend_from_slice(&U256::from(7).to_be_bytes::<32>());
+        encoded.push(2);
+        encoded.push(0x12);
+        assert!(decode_buf_exact::<StorageDiff>(&encoded).is_err());
+    }
+
+    #[test]
+    fn test_storage_diff_rejects_trailing_bytes() {
+        let mut diff = StorageDiff::new();
+        diff.set_slot(U256::from(1), U256::from(100));
+
+        let mut encoded = encode_to_vec(&diff).unwrap();
+        encoded.push(0xff);
+        assert!(decode_buf_exact::<StorageDiff>(&encoded).is_err());
+    }
 }

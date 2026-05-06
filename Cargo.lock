@@ -1529,6 +1529,7 @@ dependencies = [
  "alpen-chainspec",
  "bincode",
  "eyre",
+ "proptest",
  "revm",
  "revm-primitives",
  "serde",
