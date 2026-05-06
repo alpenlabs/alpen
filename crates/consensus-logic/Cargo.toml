@@ -14,7 +14,6 @@ strata-asm-spec-debug = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-chain-worker.workspace = true
-strata-chain-worker-new.workspace = true
 strata-chainexec.workspace = true
 strata-chaintsn.workspace = true
 strata-checkpoint-types.workspace = true
@@ -52,8 +51,8 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-strata-db-types = { workspace = true, features = ["stubs"] }
 strata-db-store-sled = { workspace = true, features = ["test_utils"] }
+strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-test-utils-l2.workspace = true
 
 rand = { version = "0.8.5", features = ["getrandom", "std_rng"] }

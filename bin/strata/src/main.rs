@@ -22,6 +22,7 @@ mod args;
 mod config;
 mod context;
 mod errors;
+mod fcm;
 mod genesis;
 mod helpers;
 mod init_db;

@@ -18,6 +18,12 @@ pub enum Error {
     #[error("L2 blkid {0:?} missing from database")]
     MissingL2Block(L2BlockId),
 
+    #[error("missing OL block {0}")]
+    MissingOLBlock(OLBlockId),
+
+    #[error("missing OL state for block {0}")]
+    MissingOLState(OLBlockCommitment),
+
     #[error("L1 blkid {0:?} missing from database")]
     MissingL1Block(L1BlockId),
 

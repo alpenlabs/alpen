@@ -16,15 +16,18 @@ pub enum FcmEvent {
 pub struct FcmInput {
     fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
     // TODO: Rename CheckpointState to sth like ClientStateAtL1
-    clstate_rx: watch::Receiver<CheckpointState>,
+    checkpoint_state_rx: watch::Receiver<CheckpointState>,
 }
 
 impl FcmInput {
     pub fn new(
         fcm_rx: mpsc::Receiver<ForkChoiceMessage>,
-        clstate_rx: watch::Receiver<CheckpointState>,
+        checkpoint_state_rx: watch::Receiver<CheckpointState>,
     ) -> Self {
-        Self { fcm_rx, clstate_rx }
+        Self {
+            fcm_rx,
+            checkpoint_state_rx,
+        }
     }
 }
 
@@ -42,7 +45,7 @@ impl AsyncServiceInput for FcmInput {
                 });
                 Some(msg)
             }
-            c = wait_for_client_change(&mut self.clstate_rx) => {
+            c = wait_for_client_change(&mut self.checkpoint_state_rx) => {
                 let msg = c.map(|_| FcmEvent::NewStateUpdate).unwrap_or_else(|_| {
                     trace!("ClientState update channel closed");
                     FcmEvent::Abort

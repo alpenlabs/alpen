@@ -1,29 +1,30 @@
 use std::{collections::VecDeque, sync::Arc, time};
 
 use anyhow::anyhow;
-use strata_chain_worker_new::WorkerResult;
-use strata_db_types::DbError;
 use strata_ol_state_types::OLState;
+use strata_params::Params;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
-use strata_storage::OLBlockManager;
 use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use crate::{
-    errors::Error, fcm::context::FcmContext, unfinalized_tracker::UnfinalizedBlockTracker,
+    errors::Error,
+    fcm::context::{FcmContext, FcmStorage},
+    unfinalized_tracker::UnfinalizedBlockTracker,
 };
 
-#[expect(
-    missing_debug_implementations,
-    reason = "Debug is not applicable to FcmState"
-)]
-pub struct FcmState {
-    ctx: FcmContext,
+/// Runtime container for the FCM service.
+///
+/// `params` is immutable launch configuration.  The mutable fork-choice state
+/// lives in [`FcmInnerState`].
+pub(crate) struct FcmServiceState<C: FcmContext> {
+    ctx: Arc<C>,
+    params: Arc<Params>,
     inner_state: FcmInnerState,
 }
 
-impl FcmState {
+impl<C: FcmContext> FcmServiceState<C> {
     pub(crate) fn cur_ol_state(&self) -> Arc<OLState> {
         self.inner_state.cur_olstate.clone()
     }
@@ -79,11 +80,11 @@ impl FcmState {
         &mut self,
         block: OLBlockCommitment,
         state: Arc<OLState>,
-    ) -> WorkerResult<()> {
+    ) -> anyhow::Result<()> {
         self.inner_state.cur_best_block = block;
         self.inner_state.cur_olstate = state;
         metrics::gauge!("strata_ol_tip_slot").set(block.slot() as f64);
-        self.ctx().chain_worker().update_safe_tip(block).await
+        self.ctx().update_safe_tip(block).await
     }
 
     pub(crate) fn find_latest_pending_finalizable_epoch(&self) -> Option<(usize, EpochCommitment)> {
@@ -109,16 +110,16 @@ impl FcmState {
 
     pub(crate) async fn finalize_epoch(&mut self, epoch: EpochCommitment) -> anyhow::Result<()> {
         // Safety check.
-        let csm_status = self.ctx().csm_monitor().get_current();
-        let fin_epoch = csm_status
-            .last_finalized_epoch
+        let fin_epoch = self
+            .ctx()
+            .last_finalized_epoch()
             .unwrap_or(EpochCommitment::null());
         if epoch.epoch() < fin_epoch.epoch() {
             return Err(Error::FinalizeOldEpoch(epoch, fin_epoch).into());
         }
 
         // Do the leg work of applying the finalization.
-        self.ctx().chain_worker().finalize_epoch(epoch).await?;
+        self.ctx().finalize_epoch(epoch).await?;
 
         // Now update the in memory bookkeeping about it.
         self.chain_tracker_mut().update_finalized_epoch(&epoch)?;
@@ -153,26 +154,32 @@ impl FcmState {
         // manager this is less significant because we're cloning what's already in memory
         let block = self
             .ctx()
-            .storage()
-            .ol_block()
-            .get_block_data_async(blkid)
+            .get_ol_block(blkid)
             .await?
-            .ok_or(Error::MissingL2Block(blkid))?;
+            .ok_or(Error::MissingOLBlock(blkid))?;
         Ok(block.header().slot())
     }
 }
 
-impl FcmState {
-    pub(crate) fn new(ctx: FcmContext, inner_state: FcmInnerState) -> Self {
-        Self { ctx, inner_state }
+impl<C: FcmContext> FcmServiceState<C> {
+    pub(crate) fn new(ctx: Arc<C>, params: Arc<Params>, inner_state: FcmInnerState) -> Self {
+        Self {
+            ctx,
+            params,
+            inner_state,
+        }
     }
 
-    pub(crate) fn ctx(&self) -> &FcmContext {
-        &self.ctx
+    pub(crate) fn ctx(&self) -> &C {
+        self.ctx.as_ref()
+    }
+
+    pub(crate) fn params(&self) -> &Params {
+        &self.params
     }
 }
 
-impl ServiceState for FcmState {
+impl<C: FcmContext> ServiceState for FcmServiceState<C> {
     // FIXME: these methods should really be within `Service` trait
     fn name(&self) -> &str {
         "fcm"
@@ -207,22 +214,22 @@ impl FcmInnerState {
 }
 
 /// Creates the forkchoice manager state from a database and rollup params.
-pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmState> {
+pub(crate) async fn init_fcm_service_state<C: FcmContext>(
+    params: Arc<Params>,
+    fcm_ctx: Arc<C>,
+) -> anyhow::Result<FcmServiceState<C>> {
     // Load data about the last finalized block so we can use that to initialize
     // the finalized tracker.
 
-    let storage = fcm_ctx.storage().clone();
     let genesis_blkid = loop {
-        if let Some(blkcommt) = storage.ol_block().get_canonical_block_at_async(0).await? {
+        if let Some(blkcommt) = fcm_ctx.get_canonical_block_at(0).await? {
             break *blkcommt.blkid();
         }
         let _ = sleep(time::Duration::from_secs(1)).await;
     };
 
     let finalized_epoch = fcm_ctx
-        .csm_monitor()
-        .get_current()
-        .last_finalized_epoch
+        .last_finalized_epoch()
         .unwrap_or(EpochCommitment::new(0, 0, genesis_blkid));
 
     debug!(?finalized_epoch, "loading from finalized block...");
@@ -230,48 +237,47 @@ pub async fn init_fcm_service_state(fcm_ctx: FcmContext) -> anyhow::Result<FcmSt
     // Populate the unfinalized block tracker.
     let mut chain_tracker = UnfinalizedBlockTracker::new_empty(finalized_epoch);
     chain_tracker
-        .load_unfinalized_ol_blocks_async(storage.ol_block().as_ref())
+        .load_unfinalized_ol_blocks_async(fcm_ctx.as_ref())
         .await?;
 
-    let cur_tip_block = determine_start_tip(&chain_tracker, storage.ol_block()).await?;
+    let cur_tip_block = determine_start_tip(&chain_tracker, fcm_ctx.as_ref()).await?;
     debug!(?chain_tracker, "init chain tracker");
 
     // Load in that block's ol_state.
     let tip_blkid = cur_tip_block;
-    let ol_state = storage
-        .ol_state()
-        .get_toplevel_ol_state_async(tip_blkid)
+    let ol_state = fcm_ctx
+        .get_toplevel_ol_state(tip_blkid)
         .await?
-        .ok_or(DbError::MissingSlotWriteBatch(*tip_blkid.blkid()))?;
+        .ok_or(Error::MissingOLState(tip_blkid))?;
 
     let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
 
     // Actually assemble the forkchoice manager state.
-    Ok(FcmState::new(fcm_ctx, fcm_inner))
+    Ok(FcmServiceState::new(fcm_ctx, params, fcm_inner))
 }
 
 /// Determines the starting chain tip.  For now, this is just the block with the
 /// highest index, choosing the lowest ordered blockid in the case of ties.
 async fn determine_start_tip(
     unfin: &UnfinalizedBlockTracker,
-    ol_block_mgr: &OLBlockManager,
+    storage: &(impl FcmStorage + ?Sized),
 ) -> anyhow::Result<L2BlockCommitment> {
     let mut iter = unfin.chain_tips_iter();
 
     let mut best = iter.next().expect("fcm: no chain tips");
-    let mut best_slot = ol_block_mgr
-        .get_block_data_async(*best)
+    let mut best_slot = storage
+        .get_ol_block(*best)
         .await?
-        .ok_or(Error::MissingL2Block(*best))?
+        .ok_or(Error::MissingOLBlock(*best))?
         .header()
         .slot();
 
     // Iterate through the remaining elements and choose.
     for blkid in iter {
-        let blkid_slot = ol_block_mgr
-            .get_block_data_async(*blkid)
+        let blkid_slot = storage
+            .get_ol_block(*blkid)
             .await?
-            .ok_or(Error::MissingL2Block(*best))?
+            .ok_or(Error::MissingOLBlock(*blkid))?
             .header()
             .slot();
 
