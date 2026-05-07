@@ -44,7 +44,7 @@ mod tests {
         let start_slot = state.cur_slot();
 
         let diff = StateDiff::new(
-            GlobalStateDiff::new(DaCounter::new_changed(1u16)),
+            GlobalStateDiff::new(DaCounter::new_changed(1u16), DaCounter::new_unchanged()),
             LedgerDiff::default(),
         );
         let payload = OLDaPayloadV1::new(diff);

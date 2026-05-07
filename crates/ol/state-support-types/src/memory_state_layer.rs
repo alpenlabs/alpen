@@ -71,6 +71,10 @@ impl IStateAccessor for MemoryStateBaseLayer {
         self.state.global.get_cur_slot()
     }
 
+    fn limbo_funds(&self) -> BitcoinAmount {
+        self.state.global.limbo_funds()
+    }
+
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
@@ -125,6 +129,26 @@ impl IStateAccessorMut for MemoryStateBaseLayer {
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.state.global.set_cur_slot(slot);
+    }
+
+    fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
+        let cur = self.state.global.limbo_funds();
+        let amt = coin.amt();
+        if cur.checked_add(amt).is_none() {
+            return Err(StateError::LimboFundsOverflow { cur, add: amt });
+        }
+        self.state.global.add_limbo_funds_coin(coin);
+        Ok(())
+    }
+
+    fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
+        self.state
+            .global
+            .take_limbo_funds_coin(amt)
+            .ok_or(StateError::InsufficientLimboFunds {
+                need: amt,
+                have: self.state.global.limbo_funds(),
+            })
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {

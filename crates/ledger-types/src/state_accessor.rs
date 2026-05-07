@@ -3,6 +3,7 @@ use strata_asm_manifest_types::AsmManifest;
 use strata_identifiers::{Buf32, EpochCommitment, L1BlockId, L1Height};
 
 use crate::{
+    Coin,
     account::{IAccountState, IAccountStateMut, NewAccountData},
     errors::StateResult,
 };
@@ -20,6 +21,9 @@ pub trait IStateAccessor {
 
     /// Gets the current slot.
     fn cur_slot(&self) -> u64;
+
+    /// Gets the current amount of funds in limbo.
+    fn limbo_funds(&self) -> BitcoinAmount;
 
     // ===== Epochal state methods =====
 
@@ -72,6 +76,16 @@ pub trait IStateAccessorMut: IStateAccessor {
     /// Sets the current slot.
     fn set_cur_slot(&mut self, slot: u64);
 
+    /// Adds a coin to the funds in limbo.
+    ///
+    /// This uses the [`Coin`] abstraction since it represents a credit.
+    fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()>;
+
+    /// Takes a coin from the funds in limbo.
+    ///
+    /// This uses the [`Coin`] abstraction since it represents a credit.
+    fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin>;
+
     // ===== Epochal state methods =====
 
     /// Sets the current epoch.
@@ -88,6 +102,9 @@ pub trait IStateAccessorMut: IStateAccessor {
     fn set_asm_recorded_epoch(&mut self, epoch: EpochCommitment);
 
     /// Sets the total OL ledger balance.
+    ///
+    /// This does not use the [`Coin`] abstraction since it represents an
+    /// obligation to fulfill, not a credit.
     fn set_total_ledger_balance(&mut self, amt: BitcoinAmount);
 
     // ===== Account methods =====

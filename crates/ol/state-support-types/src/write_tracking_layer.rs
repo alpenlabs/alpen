@@ -92,6 +92,14 @@ where
             .unwrap_or_else(|| self.base.cur_slot())
     }
 
+    fn limbo_funds(&self) -> BitcoinAmount {
+        self.batch
+            .global_writes()
+            .limbo_funds_sats
+            .map(BitcoinAmount::from_sat)
+            .unwrap_or_else(|| self.base.limbo_funds())
+    }
+
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
@@ -191,6 +199,29 @@ where
 
     fn set_cur_slot(&mut self, slot: u64) {
         self.batch.global_writes_mut().cur_slot = Some(slot);
+    }
+
+    fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
+        let cur = self.limbo_funds();
+        let amt = coin.amt();
+        let new = cur
+            .checked_add(amt)
+            .ok_or(StateError::LimboFundsOverflow { cur, add: amt })?;
+        self.batch.global_writes_mut().limbo_funds_sats = Some(new.to_sat());
+        coin.safely_consume_unchecked();
+        Ok(())
+    }
+
+    fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
+        let cur = self.limbo_funds();
+        let new = cur
+            .checked_sub(amt)
+            .ok_or(StateError::InsufficientLimboFunds {
+                need: amt,
+                have: cur,
+            })?;
+        self.batch.global_writes_mut().limbo_funds_sats = Some(new.to_sat());
+        Ok(Coin::new_unchecked(amt))
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {

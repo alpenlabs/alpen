@@ -191,6 +191,9 @@ pub struct EpochDaAccumulator {
     /// Slot counter builder for the epoch.
     slot_builder: Option<DaCounterBuilder<CtrU64ByU16>>,
 
+    /// Limbo funds counter builder for the epoch.
+    limbo_funds_builder: Option<DaCounterBuilder<CtrU64BySignedVarInt>>,
+
     /// Expected first serial based on the pre-state next_account_serial.
     expected_first_serial: Option<AccountSerial>,
 
@@ -208,6 +211,10 @@ impl fmt::Debug for EpochDaAccumulator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EpochDaAccumulator")
             .field("slot_builder_set", &self.slot_builder.is_some())
+            .field(
+                "limbo_funds_builder_set",
+                &self.limbo_funds_builder.is_some(),
+            )
             .field("expected_first_serial", &self.expected_first_serial)
             .field("new_account_records", &self.new_account_records)
             .field("new_account_ids", &self.new_account_ids)
@@ -222,6 +229,19 @@ impl EpochDaAccumulator {
         let builder = self
             .slot_builder
             .get_or_insert_with(|| DaCounterBuilder::<CtrU64ByU16>::from_source(prior));
+        builder.set(new)?;
+        Ok(())
+    }
+
+    /// Records a limbo funds change event.
+    fn record_limbo_funds_change(
+        &mut self,
+        prior: u64,
+        new: u64,
+    ) -> Result<(), DaAccumulationError> {
+        let builder = self
+            .limbo_funds_builder
+            .get_or_insert_with(|| DaCounterBuilder::<CtrU64BySignedVarInt>::from_source(prior));
         builder.set(new)?;
         Ok(())
     }
@@ -330,8 +350,11 @@ impl EpochDaAccumulator {
     /// adding more transactions would risk exceeding `OL_DA_DIFF_MAX_SIZE`.
     /// Overestimates are acceptable; underestimates are not.
     pub fn estimated_encoded_size(&self) -> usize {
-        // Global diff: 1 byte mask + up to 2 bytes slot counter.
-        let global_size = 3;
+        // Global diff:
+        // * 1 byte mask
+        // * up to 2 bytes for slot counter
+        // * up to 9 bytes for limbo funds counter
+        let global_size = 1 + 2 + 9;
 
         // New accounts list: 2-byte u16 length prefix + per-entry overhead.
         // Per new account: 32 (AccountId) + 8 (balance) + 1 (type disc)
@@ -387,7 +410,13 @@ impl EpochDaAccumulator {
             DaCounter::new_unchanged()
         };
 
-        Ok(GlobalStateDiff::new(cur_slot))
+        let limbo_funds_sats = if let Some(builder) = self.limbo_funds_builder.take() {
+            builder.into_write()?
+        } else {
+            DaCounter::new_unchanged()
+        };
+
+        Ok(GlobalStateDiff::new(cur_slot, limbo_funds_sats))
     }
 
     /// Builds the ledger diff for the epoch.
@@ -606,6 +635,10 @@ impl<S: IStateAccessor> IStateAccessor for DaAccumulatingState<S> {
         self.inner.cur_slot()
     }
 
+    fn limbo_funds(&self) -> BitcoinAmount {
+        self.inner.limbo_funds()
+    }
+
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {
@@ -670,6 +703,30 @@ where
             self.pending_epoch_error = Some(err);
         }
         self.inner.set_cur_slot(slot);
+    }
+
+    fn add_limbo_funds_coin(&mut self, coin: Coin) -> StateResult<()> {
+        let prior = self.inner.limbo_funds().to_sat();
+        self.inner.add_limbo_funds_coin(coin)?;
+        let new = self.inner.limbo_funds().to_sat();
+        if let Err(err) = self.epoch_acc.record_limbo_funds_change(prior, new)
+            && self.pending_epoch_error.is_none()
+        {
+            self.pending_epoch_error = Some(err);
+        }
+        Ok(())
+    }
+
+    fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> StateResult<Coin> {
+        let prior = self.inner.limbo_funds().to_sat();
+        let coin = self.inner.take_limbo_funds_coin(amt)?;
+        let new = self.inner.limbo_funds().to_sat();
+        if let Err(err) = self.epoch_acc.record_limbo_funds_change(prior, new)
+            && self.pending_epoch_error.is_none()
+        {
+            self.pending_epoch_error = Some(err);
+        }
+        Ok(coin)
     }
 
     fn set_cur_epoch(&mut self, epoch: u32) {

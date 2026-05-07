@@ -82,6 +82,8 @@ fn test_snark_update_multiple_output_messages() {
     // Setup: genesis with snark account
     let genesis_block = setup_genesis_with_snark_account(&mut state, snark_id, 100_000_000);
 
+    let limbo_before = state.limbo_funds();
+
     // Create update with multiple output messages using SnarkUpdateBuilder
     let tx = SnarkUpdateBuilder::from_snark_state(
         state
@@ -112,6 +114,17 @@ fn test_snark_update_multiple_output_messages() {
         BitcoinAmount::from_sat(85_000_000),
         "Balance should be reduced by total message value"
     );
+
+    // All three output messages target the bridge gateway account
+    // (SEQUENCER_ACCT_ID aliases BRIDGE_GATEWAY_ACCT_ID) with payload data
+    // that does not parse as a valid MsgRef, so all three sweep their
+    // values into limbo (10M + 5M + 0).
+    let limbo_after = state.limbo_funds();
+    assert_eq!(
+        limbo_after.to_sat() - limbo_before.to_sat(),
+        15_000_000,
+        "Limbo should grow by total of malformed bridge-gateway message values"
+    );
 }
 
 #[test]
@@ -125,6 +138,8 @@ fn test_snark_update_transfers_and_messages_combined() {
 
     // Create recipient account
     create_empty_account(&mut state, recipient_id);
+
+    let limbo_before = state.limbo_funds();
 
     // Create update with both transfers and messages using SnarkUpdateBuilder
     let tx = SnarkUpdateBuilder::from_snark_state(
@@ -161,6 +176,16 @@ fn test_snark_update_transfers_and_messages_combined() {
         recipient.balance(),
         BitcoinAmount::from_sat(25_000_000),
         "Recipient should receive 25M"
+    );
+
+    // The output message to the bridge gateway carries payload data
+    // (`vec![42, 43, 44]`) that does not parse as a valid MsgRef, so its
+    // 15M value is swept into limbo.
+    let limbo_after = state.limbo_funds();
+    assert_eq!(
+        limbo_after.to_sat() - limbo_before.to_sat(),
+        15_000_000,
+        "Limbo should grow by malformed bridge-gateway message value"
     );
 }
 

@@ -108,6 +108,17 @@ impl<'batches, 'base, S: IStateAccessor + IComputeStateRootWithWrites> IStateAcc
         self.resolve(|b| b.global_writes().cur_slot, || self.base.cur_slot())
     }
 
+    fn limbo_funds(&self) -> BitcoinAmount {
+        self.resolve(
+            |b| {
+                b.global_writes()
+                    .limbo_funds_sats
+                    .map(BitcoinAmount::from_sat)
+            },
+            || self.base.limbo_funds(),
+        )
+    }
+
     // ===== Epochal state methods =====
 
     fn cur_epoch(&self) -> u32 {

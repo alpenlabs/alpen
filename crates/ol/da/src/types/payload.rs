@@ -128,6 +128,21 @@ impl<S: IStateAccessorMut> DaWrite for OLStateDiff<S> {
         self.diff.global.cur_slot.apply(&mut cur_slot, &())?;
         target.set_cur_slot(cur_slot);
 
+        if let Some(d) = self.diff.global.limbo_funds_sats.diff() {
+            let amt = BitcoinAmount::from_sat(d.magnitude());
+            if d.is_positive() {
+                let coin = Coin::new_unchecked(amt);
+                target
+                    .add_limbo_funds_coin(coin)
+                    .map_err(|_| DaError::InvalidStateDiff("failed to apply limbo funds diff"))?;
+            } else {
+                let coin = target
+                    .take_limbo_funds_coin(amt)
+                    .map_err(|_| DaError::InvalidStateDiff("insufficient limbo funds for diff"))?;
+                coin.safely_consume_unchecked();
+            }
+        }
+
         let pre_state_next_serial = target.next_account_serial();
         // NOTE: `validate_ledger_entries` is intentionally not called here;
         // it was already called in `poll_context` which runs before `apply`.
@@ -415,6 +430,34 @@ mod tests {
             .expect("read account")
             .expect("account exists");
         assert_eq!(account.balance(), BitcoinAmount::from_sat(2_000));
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_updates_limbo_funds() {
+        let mut state = create_test_genesis_state();
+        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
+
+        let global_diff = GlobalStateDiff::new(
+            DaCounter::new_unchanged(),
+            DaCounter::new_changed(SignedVarInt::positive(1_500)),
+        );
+        let diff = StateDiff::new(global_diff, LedgerDiff::default());
+
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply limbo add diff");
+
+        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_500));
+
+        let global_diff = GlobalStateDiff::new(
+            DaCounter::new_unchanged(),
+            DaCounter::new_changed(SignedVarInt::negative(400)),
+        );
+        let diff = StateDiff::new(global_diff, LedgerDiff::default());
+
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply limbo take diff");
+
+        assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(1_100));
     }
 
     #[test]

@@ -109,7 +109,10 @@ mod tests {
         let slot_delta_u16 =
             u16::try_from(slot_delta).expect("slot delta exceeds u16::MAX; epoch too long");
         let da_diff = StateDiff::new(
-            GlobalStateDiff::new(DaCounter::new_changed(slot_delta_u16)),
+            GlobalStateDiff::new(
+                DaCounter::new_changed(slot_delta_u16),
+                DaCounter::new_unchanged(),
+            ),
             LedgerDiff::default(),
         );
         let da_state_diff_bytes =
@@ -177,7 +180,10 @@ mod tests {
         let bad_delta = u16::try_from(slot_delta.saturating_sub(1))
             .expect("slot delta exceeds u16::MAX; epoch too long");
         let bad_da_diff = StateDiff::new(
-            GlobalStateDiff::new(DaCounter::new_changed(bad_delta)),
+            GlobalStateDiff::new(
+                DaCounter::new_changed(bad_delta),
+                DaCounter::new_unchanged(),
+            ),
             LedgerDiff::default(),
         );
         input.da_state_diff_bytes =

@@ -1,7 +1,8 @@
 //! Global state variables that are always accessible.
 
-use strata_acct_types::AccountSerial;
+use strata_acct_types::{AccountSerial, BitcoinAmount};
 use strata_identifiers::Slot;
+use strata_ledger_types::Coin;
 
 use crate::ssz_generated::ssz::state::GlobalState;
 
@@ -12,6 +13,7 @@ impl GlobalState {
             cur_slot,
             // FIXME(STR-3227): fix this conversion
             next_avail_serial: next_avail_serial.into_inner() as u64,
+            limbo_funds_sats: 0,
         }
     }
 
@@ -35,6 +37,51 @@ impl GlobalState {
     pub fn set_next_avail_serial(&mut self, serial: AccountSerial) {
         // FIXME(STR-3227): fix this conversion
         self.next_avail_serial = serial.into_inner() as u64;
+    }
+
+    /// Gets the amount of funds in limbo.
+    pub fn limbo_funds(&self) -> BitcoinAmount {
+        BitcoinAmount::from_sat(self.limbo_funds_sats)
+    }
+
+    /// Attempts to add limbo funds.
+    pub fn add_limbo_funds(&mut self, amt: BitcoinAmount) -> bool {
+        let Some(new_lf) = self.limbo_funds().checked_add(amt) else {
+            return false;
+        };
+        self.limbo_funds_sats = new_lf.to_sat();
+        true
+    }
+
+    /// Adds a [`Coin`] to limbo funds, consuming it.
+    ///
+    /// # Panics
+    ///
+    /// If there's balance overflow.
+    pub fn add_limbo_funds_coin(&mut self, coin: Coin) {
+        assert!(
+            self.add_limbo_funds(coin.amt()),
+            "ol/state: limbo funds overflow"
+        );
+        coin.safely_consume_unchecked();
+    }
+
+    /// Takes some limbo funds as a [`Coin`], if possible.
+    pub fn take_limbo_funds_coin(&mut self, amt: BitcoinAmount) -> Option<Coin> {
+        let lf = self.limbo_funds();
+
+        let new_lf = lf.checked_sub(amt)?;
+
+        // This sanity check should be optimized out.
+        assert_eq!(
+            new_lf.checked_add(amt),
+            Some(lf),
+            "ol/state: inconsistent limbo funds change"
+        );
+
+        let coin = Coin::new_unchecked(amt);
+        self.limbo_funds_sats = new_lf.to_sat();
+        Some(coin)
     }
 }
 

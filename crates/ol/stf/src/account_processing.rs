@@ -6,7 +6,7 @@ use strata_msg_fmt::MsgRef;
 use strata_ol_chain_types_new::SimpleWithdrawalIntentLogData;
 use strata_ol_msg_types::OLMessageExt;
 use strata_snark_acct_sys as snark_sys;
-use tracing::warn;
+use tracing::*;
 
 use crate::{
     constants::{BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL},
@@ -32,17 +32,19 @@ pub(crate) fn process_message<S: IStateAccessorMut>(
 
         // Any other address we assume is a ledger account, so we have to look it up.
         _ => {
+            let coin = Coin::new_unchecked(msg.value());
+
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
-                // If we don't find it then we can just ignore it.
-                // TODO do something with the funds we're throwing away by doing this
+                // If we don't find it then we can sweep it into limbo.
+                warn!(%target, "target account does not exist");
+                handle_misplaced_funds(state, coin)?;
                 return Ok(());
             }
 
             // Update the account within a closure.
             state.update_account(target, |acct_state| -> ExecResult<()> {
                 // First, just increase the balance right now.
-                let coin = Coin::new_unchecked(msg.value());
                 acct_state.add_balance(coin);
 
                 // Then depending on the type we call a different handler function
@@ -68,25 +70,29 @@ pub(crate) fn process_transfer<S: IStateAccessorMut>(
     value: BitcoinAmount,
     _context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
+    let coin = Coin::new_unchecked(value);
+
     match target {
-        // Bridge gateway transfer.
+        // Bridge gateway transfer, not permitted.
         BRIDGE_GATEWAY_ACCT_ID => {
-            // TODO: what do we do with direct transfers to bridge accounts? Emit log?
+            // Just sweep to limbo unconditionally.
+            warn!("limboing transfer to bridge gateway acct");
+            handle_misplaced_funds(state, coin)?;
         }
 
         // Any other address we assume is a ledger account, so we have to look it up.
         _ => {
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
-                // If we don't find it then we can just ignore it.
-                // TODO: do something with the funds we're throwing away by doing this
+                // If we don't find it then we can sweep it into limbo.
+                warn!(%target, "limboing transfer to non-existent account");
+                handle_misplaced_funds(state, coin)?;
                 return Ok(());
             }
 
             // Update the account within a closure.
             state.update_account(target, |acct_state| -> ExecResult<()> {
                 // Just increase the balance right now.
-                let coin = Coin::new_unchecked(value);
                 acct_state.add_balance(coin);
                 Ok(())
             })??;
@@ -97,21 +103,25 @@ pub(crate) fn process_transfer<S: IStateAccessorMut>(
 }
 
 fn handle_bridge_gateway_message<S: IStateAccessorMut>(
-    _state: &mut S,
-    _sender: AccountId,
+    state: &mut S,
+    sender: AccountId,
     payload: MsgPayload,
     context: &BasicExecContext<'_>,
 ) -> ExecResult<()> {
+    let coin = Coin::new_unchecked(payload.value());
+
     // 1. Parse the message from the payload data.
     let Ok(msg) = MsgRef::try_from(payload.data()) else {
-        // Invalid message format, just ignore.
+        // Invalid message format, sweep to limbo.
+        warn!(%sender, "limboing malformed message sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
 
     let Some(withdrawal_data) = msg.try_as_withdrawal() else {
-        // Not a withdrawal message, or malformed, just ignore.
-        //
-        // TODO maybe reroute this to a different thing?
+        // Not a withdrawal message, or malformed, sweep to limbo.
+        warn!(%sender, "limboing non-withdrawal message sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     };
 
@@ -124,7 +134,9 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     // 3. Verify the amount is a positive exact multiple of the denomination.
     let amt_raw: u64 = withdrawal_amt.into();
     if amt_raw == 0 || !amt_raw.is_multiple_of(withdrawal_denom) {
-        warn!(%amt_raw, "ignoring withdrawal with invalid amount");
+        // Sweep to limbo.
+        warn!(%sender, %amt_raw, "limboing bad amount sent to bridge gateway acct");
+        handle_misplaced_funds(state, coin)?;
         return Ok(());
     }
 
@@ -135,6 +147,7 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
         dest: withdrawal_data.into_dest_desc(),
     };
     context.emit_typed_log(BRIDGE_GATEWAY_ACCT_SERIAL, &log_data)?;
+    coin.safely_consume_unchecked();
 
     Ok(())
 }
@@ -147,5 +160,17 @@ fn handle_snark_account_message<S: ISnarkAccountStateMut>(
 ) -> ExecResult<()> {
     let cur_epoch = context.epoch();
     snark_sys::handle_snark_msg(cur_epoch, sastate, sender, payload)?;
+    Ok(())
+}
+
+/// Handles misplaced funds.
+///
+/// This currently just sends funds to limbo.  It's broken out so that we can
+/// maintain the same code path when we change this behavior.
+pub(crate) fn handle_misplaced_funds(
+    state: &mut impl IStateAccessorMut,
+    coin: Coin,
+) -> ExecResult<()> {
+    state.add_limbo_funds_coin(coin)?;
     Ok(())
 }
