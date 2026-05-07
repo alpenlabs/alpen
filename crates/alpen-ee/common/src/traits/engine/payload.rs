@@ -23,6 +23,8 @@ pub trait EnginePayload: Sized + Clone {
     fn blocknum(&self) -> u64;
     /// Returns the block hash of this payload.
     fn blockhash(&self) -> Hash;
+    /// Returns the execution state root of this payload.
+    fn state_root(&self) -> Hash;
     /// Returns the withdrawal intents included in this payload.
     fn withdrawal_intents(&self) -> &[WithdrawalIntent];
 
@@ -52,6 +54,10 @@ impl EnginePayload for AlpenBuiltPayload {
 
     fn blockhash(&self) -> Hash {
         self.block().hash().0.into()
+    }
+
+    fn state_root(&self) -> Hash {
+        self.block().header().state_root.0.into()
     }
 
     fn withdrawal_intents(&self) -> &[WithdrawalIntent] {

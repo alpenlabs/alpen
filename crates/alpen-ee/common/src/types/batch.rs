@@ -49,12 +49,23 @@ impl BatchId {
     }
 }
 
-/// Batch-DA related data in an L1 block
+/// EE DA txs for a specific batch that confirmed in a single L1 block.
+///
+/// A batch's DA is published as one commit tx plus one reveal tx per chunk.
+/// The commit tx carries the DA marker in output 0 and funds each reveal from
+/// subsequent P2TR outputs. Reveal txs spend those commit outputs and carry DA
+/// chunk bytes in their tapscripts.
+///
+/// If a batch's commit and reveal txs confirm across different Bitcoin blocks,
+/// that batch has multiple [`L1DaBlockRef`] values: one per L1 block that
+/// contains at least one of that batch's EE DA txs. If several batches publish
+/// DA txs into the same Bitcoin block, each batch still gets its own
+/// [`L1DaBlockRef`] containing only the txs that belong to that batch.
 #[derive(Debug, Clone)]
 pub struct L1DaBlockRef {
-    /// L1 block holding DA txns.
+    /// L1 block holding this batch's DA txs below.
     pub block: L1BlockCommitment,
-    /// relevant transactions in this block.
+    /// This batch's DA txs confirmed in this block as `(txid, wtxid)` pairs.
     pub txns: Vec<(Txid, Wtxid)>,
     // inclusion merkle proof ?
 }
