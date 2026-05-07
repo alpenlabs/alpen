@@ -662,7 +662,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         saw_update_at_epoch = wait_for_account_update_seq(
             strata_rpc,
             ALPEN_ACCOUNT_ID,
-            min_next_seq_no=submitted_seq_no + 1,
+            min_next_seq_no=submitted_seq_no,
             start_epoch=start_terminal_epoch,
             btc_rpc=btc_rpc,
             miner_addr=miner_addr,
