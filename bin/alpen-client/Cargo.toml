@@ -46,12 +46,14 @@ alpen-reth-evm = { workspace = true, optional = true }
 alpen-reth-exex = { workspace = true, optional = true }
 alpen-reth-node.workspace = true
 alpen-reth-witness.workspace = true
+bitcoin.workspace = true
 bitcoind-async-client = { workspace = true, optional = true }
 ssz.workspace = true
 strata-acct-types.workspace = true
 strata-btcio = { workspace = true, optional = true }
 strata-codec.workspace = true
 strata-common = { workspace = true, features = ["async"] }
+strata-crypto.workspace = true
 strata-config = { workspace = true, optional = true }
 strata-db-types.workspace = true
 strata-ee-acct-runtime.workspace = true

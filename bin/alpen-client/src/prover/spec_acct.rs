@@ -5,29 +5,47 @@
 //! `ReceiptStore`) and the prior batch's end-state, then assembles
 //! `ee_acct_runtime::PrivateInput` + `snark_acct_runtime::PrivateInput`.
 //!
-//! DA witnesses are stubbed (`LedgerRefs::new_empty()`) — see the EE
-//! account update doc's "Open Questions" section.
+//! DA witnesses are built from `BatchStatus::DaComplete { da }` and
+//! anchored to a sequencer-selected L1 tip
+//! (`l1_reorg_safe_depth`-confirmation horizon below the chain tip,
+//! falling back to the highest DA block when DA is freshly published).
 
-use std::{fmt, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
-use alpen_ee_common::{BatchId, BatchStorage, ExecBlockStorage, Storage};
-use alpen_ee_database::EeNodeStorage;
+use alpen_ee_common::{
+    BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef, Storage,
+};
+use alpen_ee_database::{BroadcastDbOps, EeNodeStorage};
 use async_trait::async_trait;
+use bitcoin::{
+    consensus::{deserialize, serialize},
+    hashes::Hash as _,
+    Transaction,
+};
+use bitcoind_async_client::{traits::Reader, Client as BtcClient};
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
+use strata_btcio::writer::chunked_envelope::extract_chunk_envelope_payload;
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
+use strata_ee_acct_runtime::{
+    ChunkInput, DaBlockWitness, DaWitness, EePrivateInput, RevealWitness,
+};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore};
+use strata_primitives::{buf::Buf32, l1::L1BlockIdBitcoinExt};
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
+    AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs,
+    UpdateProofPubParams,
 };
 
-use super::ChunkTask;
+use super::{
+    da_witness_build::{build_coinbase_inclusion_proof, build_wtxid_inclusion_proof},
+    ChunkTask,
+};
 
 /// Batch-id-shaped task identifier for paas. Newtype over [`BatchId`]
 /// for the same reasons [`super::ChunkTask`] wraps `ChunkId`.
@@ -101,7 +119,16 @@ pub(crate) struct AcctSpec {
     chunk_receipts: Arc<dyn ReceiptStore>,
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
+    broadcast_ops: Arc<BroadcastDbOps>,
+    btc_client: Arc<BtcClient>,
     genesis: Genesis,
+    /// Number of L1 confirmations to keep on top of the proof's anchor
+    /// tip. The acct proof's `l1_block_hash` is chosen `depth` blocks
+    /// below the chain tip when possible, so OL canonicality checks the
+    /// proof against an L1 reference that's already past the local
+    /// reorg-safe horizon. Falls back to the highest DA block when the
+    /// chain tip isn't deep enough yet (DA freshly published).
+    l1_reorg_safe_depth: u32,
 }
 
 impl AcctSpec {
@@ -109,13 +136,19 @@ impl AcctSpec {
         chunk_receipts: Arc<dyn ReceiptStore>,
         batch_storage: Arc<dyn BatchStorage>,
         storage: Arc<EeNodeStorage>,
+        broadcast_ops: Arc<BroadcastDbOps>,
+        btc_client: Arc<BtcClient>,
         genesis: Genesis,
+        l1_reorg_safe_depth: u32,
     ) -> Self {
         Self {
             chunk_receipts,
             batch_storage,
             storage,
+            broadcast_ops,
+            btc_client,
             genesis,
+            l1_reorg_safe_depth,
         }
     }
 }
@@ -140,7 +173,7 @@ impl ProofSpec for AcctSpec {
 
         // 2. Batch metadata. The first block is the one immediately after `prev_block`; we resolve
         //    it via the FIRST chunk's parent_blkid.
-        let (batch, _status) = self
+        let (batch, status) = self
             .batch_storage
             .get_batch_by_id(batch_id)
             .await
@@ -191,16 +224,13 @@ impl ProofSpec for AcctSpec {
 
         // 4. ee_acct private input.
         //
-        //    `raw_prev_header` and `raw_partial_pre_state` are carried
-        //    through the acct guest but not consumed for verification
-        //    today — the guest verifies chunk proofs via predicate key
-        //    and checks state transitions via UpdateProofPubParams. The
-        //    pre-state fields are reserved for future DA blob consistency
-        //    verification inside the acct guest.
-        //
-        // TODO(STR-1369): once DA verification is added to the acct
-        //   guest, source these from the batch's range witness (same
-        //   RangeWitnessExtractor used by ChunkSpec).
+        //    `raw_prev_header` and `raw_partial_pre_state` are still
+        //    empty placeholders. They feed the deferred state-diff
+        //    consistency check in the guest (apply state_diff to
+        //    pre-state, compare to the chunk-aggregated tip state root).
+        //    Once that check lands, source these from the batch's range
+        //    witness via `RangeWitnessExtractor` — same one `ChunkSpec`
+        //    uses for per-chunk witnesses.
         let ee_private_input = EePrivateInput::new(Vec::new(), Vec::new(), chunks.clone());
 
         // 5. Build UpdateProofPubParams from ExecBlockRecords.
@@ -210,10 +240,6 @@ impl ProofSpec for AcctSpec {
         //    messages, outputs, next_inbox_msg_idx, and new_tip_blkid.
         //    This is the authoritative source (same data the update
         //    submitter reads), so proof-input and submission agree.
-        //
-        // TODO(STR-1369): wire real `LedgerRefs` from
-        //   `BatchStatus::DaComplete { da }` (see update_builder.rs
-        //   lines 139-161 for the reference construction).
         let block_hashes: Vec<Hash> = batch.blocks_iter().collect();
         let mut processed_inputs: u32 = 0;
         let mut messages = Vec::new();
@@ -287,11 +313,31 @@ impl ProofSpec for AcctSpec {
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
 
+        // Pick the L1 anchor: deepest height we can reach `≥` than the
+        // highest DA block while sitting `l1_reorg_safe_depth` confirmations
+        // below the chain tip. Same anchor flows into the DA witness's
+        // `l1_block_hash` and the highest-idx `LedgerRefs` claim — the
+        // guest binds them together (`bind_da_witness_to_ledger_refs`).
+        let safe_tip = select_safe_tip(
+            da_refs_from_status(&status),
+            self.l1_reorg_safe_depth,
+            &*self.btc_client,
+        )
+        .await?;
+
+        // OL handshake: one AccumulatorClaim per L1 block touched by DA,
+        // plus the safe-tip block when it sits above all DA blocks.
+        // Ordered ascending by height. OL re-checks each `idx ↦ entry_hash`
+        // against its own L1 Header MMR; the highest-idx entry's
+        // `entry_hash` is the tip the proof anchors to (matches
+        // `da_witness.l1_block_hash` set in `build_da_witness`).
+        let ledger_refs = build_ledger_refs(da_refs_from_status(&status), safe_tip);
+
         let pub_params = UpdateProofPubParams::new(
             cur_state,
             new_state,
             messages,
-            LedgerRefs::new_empty(),
+            ledger_refs,
             update_outputs,
             extra_data_bytes,
         );
@@ -307,12 +353,285 @@ impl ProofSpec for AcctSpec {
         let update_private_input =
             UpdatePrivateInput::new(pub_params, pre_ee_state.as_ssz_bytes(), coinputs);
 
+        // DA witness: full reveal-tx inclusion proofs anchored to
+        // `safe_tip`. Envelope payloads come from the broadcast DB;
+        // headers, coinbase, and Merkle paths come from the L1 client.
+        // Each block's `raw_header_chain_to_tip` bridges from that
+        // block up to `safe_tip` via prev_blockhash chaining, so a
+        // header chain of 0..N hops is uniformly handled in-guest.
+        let da_witness = build_da_witness(
+            da_refs_from_status(&status),
+            safe_tip,
+            &self.broadcast_ops,
+            &*self.btc_client,
+        )
+        .await?;
+
         Ok(EeAcctProofInput {
             genesis: self.genesis.clone(),
             ee_private_input,
             update_private_input,
+            da_witness,
         })
     }
+}
+
+/// Extracts the DA L1 block refs from a [`BatchStatus`] if it carries
+/// any. Returns `&[]` for variants without DA data (Genesis, Sealed,
+/// DaPending) — `fetch_input` should still produce a structurally
+/// valid (but empty) [`DaWitness`] in those cases so the guest input
+/// shape stays uniform.
+fn da_refs_from_status(status: &BatchStatus) -> &[L1DaBlockRef] {
+    match status {
+        BatchStatus::DaComplete { da }
+        | BatchStatus::ProofPending { da }
+        | BatchStatus::ProofReady { da, .. } => da.as_slice(),
+        BatchStatus::Genesis | BatchStatus::Sealed | BatchStatus::DaPending { .. } => &[],
+    }
+}
+
+/// L1 anchor the acct proof binds its DA inclusion checks to.
+///
+/// `height` is at least the highest DA-touched block's height; when
+/// the chain has advanced enough above the DA, it sits
+/// `l1_reorg_safe_depth` confirmations below the chain tip — the same
+/// horizon `BroadcasterProcessor` uses to mark txs finalized.
+#[derive(Clone, Copy, Debug)]
+struct SafeTip {
+    height: u64,
+    hash: [u8; 32],
+}
+
+/// Subset of [`Reader`] that [`select_safe_tip`] depends on.
+///
+/// Lets the unit tests stub two methods instead of the ten the full
+/// `Reader` trait expects. Blanket-impl below covers the production
+/// path where `select_safe_tip` runs on the real `BtcClient`.
+trait SafeTipReader {
+    async fn chain_tip_height(&self) -> ProverResult<u64>;
+    async fn block_hash_at(&self, height: u64) -> ProverResult<[u8; 32]>;
+}
+
+impl<R: Reader + Sync> SafeTipReader for R {
+    async fn chain_tip_height(&self) -> ProverResult<u64> {
+        self.get_block_count()
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_block_count: {e}")))
+    }
+
+    async fn block_hash_at(&self, height: u64) -> ProverResult<[u8; 32]> {
+        let hash = self
+            .get_block_hash(height)
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_block_hash({height}): {e}")))?;
+        Ok(hash.to_byte_array())
+    }
+}
+
+/// Picks the L1 anchor for the proof.
+///
+/// Returns the deepest tip such that `tip.height ≥ max_da_height` and
+/// `tip.height + l1_reorg_safe_depth ≤ chain_tip_height`. Falls back
+/// to the highest DA-touched block when DA is too fresh for the safe
+/// depth to apply on top — in that regime OL canonicality enforces
+/// the depth on its end and the proof still anchors correctly.
+async fn select_safe_tip(
+    da_refs: &[L1DaBlockRef],
+    l1_reorg_safe_depth: u32,
+    btc: &impl SafeTipReader,
+) -> ProverResult<Option<SafeTip>> {
+    if da_refs.is_empty() {
+        return Ok(None);
+    }
+
+    let max_da_height = da_refs
+        .iter()
+        .map(|r| r.block.height() as u64)
+        .max()
+        .expect("non-empty per check above");
+
+    let chain_tip_height = btc.chain_tip_height().await?;
+    let depth_safe_height = chain_tip_height.saturating_sub(l1_reorg_safe_depth as u64);
+    let height = max_da_height.max(depth_safe_height);
+
+    // Reuse the DA ref's hash when the safe tip lands on a DA block —
+    // saves one RPC round trip in the freshly-published case.
+    let hash = if height == max_da_height {
+        let tip_ref = da_refs
+            .iter()
+            .find(|r| r.block.height() as u64 == max_da_height)
+            .expect("max_da_height was derived from da_refs");
+        *AsRef::<[u8; 32]>::as_ref(tip_ref.block.blkid())
+    } else {
+        btc.block_hash_at(height).await?
+    };
+
+    Ok(Some(SafeTip { height, hash }))
+}
+
+/// Builds a full [`DaWitness`] for the batch under proof, anchored to
+/// `safe_tip`.
+///
+/// For each [`L1DaBlockRef`]: fetches the L1 block, serializes its
+/// header and coinbase, builds a coinbase-txid → header.merkle_root
+/// Merkle proof, and per reveal builds a wtxid → witness-root proof
+/// plus lifts the envelope payload from the local broadcast DB.
+/// Header-chain bridging fetches headers for the heights between each
+/// DA block and the safe tip — `raw_header_chain_to_tip` is empty for
+/// a block that already sits at the tip, otherwise carries the
+/// successor headers up to and including `safe_tip`.
+async fn build_da_witness(
+    da_refs: &[L1DaBlockRef],
+    safe_tip: Option<SafeTip>,
+    broadcast_ops: &BroadcastDbOps,
+    btc: &impl Reader,
+) -> ProverResult<DaWitness> {
+    if da_refs.is_empty() {
+        return Ok(DaWitness::empty());
+    }
+    let safe_tip = safe_tip.expect("non-empty da_refs imply Some(safe_tip)");
+
+    let mut sorted: Vec<&L1DaBlockRef> = da_refs.iter().collect();
+    sorted.sort_by_key(|r| r.block.height());
+
+    let tip_height = safe_tip.height;
+    let l1_block_hash = safe_tip.hash;
+
+    // Pre-fetch headers for every height in [min_da_height + 1, tip].
+    // Each DA block's `raw_header_chain_to_tip` slice is then a window
+    // of this map — bridges the block up to the safe tip via
+    // prev_blockhash chaining. Using height-indexed fetch keeps us on
+    // the canonical chain the L1 client sees.
+    let min_height = sorted[0].block.height() as u64;
+    let mut header_at_height: HashMap<u64, Vec<u8>> = HashMap::new();
+    for h in (min_height + 1)..=tip_height {
+        let header = btc
+            .get_block_header_at(h)
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_block_header_at({h}): {e}")))?;
+        header_at_height.insert(h, serialize(&header));
+    }
+
+    let mut blocks = Vec::with_capacity(sorted.len());
+    for r in sorted {
+        let height = r.block.height() as u64;
+        let block_hash = r.block.blkid().to_block_hash();
+        let block = btc
+            .get_block(&block_hash)
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_block({block_hash}): {e}")))?;
+
+        if block.txdata.is_empty() {
+            return Err(PaasError::PermanentFailure(format!(
+                "L1 block {block_hash} has empty txdata"
+            )));
+        }
+        let coinbase_proof = build_coinbase_inclusion_proof(&block.txdata);
+        let raw_coinbase_tx = serialize(&block.txdata[0]);
+        let raw_header = serialize(&block.header);
+
+        let raw_header_chain_to_tip: Vec<Vec<u8>> = ((height + 1)..=tip_height)
+            .map(|h| {
+                header_at_height
+                    .get(&h)
+                    .cloned()
+                    .expect("pre-fetched above")
+            })
+            .collect();
+
+        let mut reveals = Vec::with_capacity(r.txns.len());
+        for (txid, wtxid) in &r.txns {
+            let pos = block
+                .txdata
+                .iter()
+                .position(|t| t.compute_txid().to_byte_array() == txid.to_byte_array())
+                .ok_or_else(|| {
+                    PaasError::PermanentFailure(format!(
+                        "reveal txid {txid} not found in L1 block {block_hash}"
+                    ))
+                })?;
+            let wtxid_proof = build_wtxid_inclusion_proof(&block.txdata, pos);
+            let envelope_payload = lift_reveal_envelope(broadcast_ops, txid).await?;
+            reveals.push(RevealWitness::new(
+                txid.to_byte_array(),
+                wtxid.to_byte_array(),
+                wtxid_proof,
+                envelope_payload,
+            ));
+        }
+
+        blocks.push(DaBlockWitness::new(
+            raw_header,
+            raw_header_chain_to_tip,
+            raw_coinbase_tx,
+            coinbase_proof,
+            reveals,
+        ));
+    }
+
+    Ok(DaWitness::new(l1_block_hash, blocks))
+}
+
+/// Builds [`LedgerRefs`] for the OL — one [`AccumulatorClaim`] per
+/// [`L1DaBlockRef`], plus one for the safe-tip block when it sits
+/// strictly above all DA blocks. `idx` = block height,
+/// `entry_hash` = block hash. Sorted ascending by height.
+///
+/// On the OL side, each claim is re-verified against the L1 Header MMR
+/// (height-indexed) when processing the resulting `EEUpdate`. The
+/// safe-tip claim is what the OL canonicality + reorg-depth check
+/// applies to; the in-between DA-block claims attest "DA was published
+/// in these L1 blocks; you (OL) decide canonicality."
+///
+/// Because the highest-idx claim's `entry_hash` must equal
+/// `da_witness.l1_block_hash` (verified in-guest by
+/// `bind_da_witness_to_ledger_refs`), the safe-tip claim is the one
+/// that anchors the whole proof when present.
+fn build_ledger_refs(da_refs: &[L1DaBlockRef], safe_tip: Option<SafeTip>) -> LedgerRefs {
+    let mut sorted: Vec<&L1DaBlockRef> = da_refs.iter().collect();
+    sorted.sort_by_key(|r| r.block.height());
+    let max_da_height = sorted.last().map(|r| r.block.height() as u64);
+    let mut claims: Vec<AccumulatorClaim> = sorted
+        .into_iter()
+        .map(|r| {
+            let height = r.block.height() as u64;
+            let hash: [u8; 32] = *AsRef::<[u8; 32]>::as_ref(r.block.blkid());
+            AccumulatorClaim::new(height, hash)
+        })
+        .collect();
+    if let (Some(tip), Some(max_da)) = (safe_tip, max_da_height) {
+        if tip.height > max_da {
+            claims.push(AccumulatorClaim::new(tip.height, tip.hash));
+        }
+    }
+    LedgerRefs::new(claims)
+}
+
+/// Fetches a reveal tx body from the broadcast DB and extracts the
+/// chunked-envelope payload bytes that `decode_da_chunk` consumes.
+///
+/// Returns [`PaasError::TransientFailure`] if the broadcast entry is
+/// not yet present (still being indexed) and [`PaasError::PermanentFailure`]
+/// if the cached bytes fail to deserialize or the witness layout is
+/// malformed (data corruption).
+async fn lift_reveal_envelope(
+    broadcast_ops: &BroadcastDbOps,
+    txid: &bitcoin::Txid,
+) -> ProverResult<Vec<u8>> {
+    let txid_buf: Buf32 = txid.to_byte_array().into();
+    let entry = broadcast_ops
+        .get_tx_entry_by_id_async(txid_buf)
+        .await
+        .map_err(|e| PaasError::Storage(format!("get_tx_entry_by_id({txid}): {e}")))?
+        .ok_or_else(|| {
+            PaasError::TransientFailure(format!(
+                "broadcast entry for reveal txid {txid} not yet present"
+            ))
+        })?;
+    let tx: Transaction = deserialize(entry.tx_raw())
+        .map_err(|e| PaasError::PermanentFailure(format!("deserialize reveal {txid}: {e}")))?;
+    extract_chunk_envelope_payload(&tx)
+        .map_err(|e| PaasError::PermanentFailure(format!("extract envelope for {txid}: {e}")))
 }
 
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.
@@ -358,4 +677,176 @@ async fn collect_chunk_inputs_for_batch(
     }
 
     Ok(chunks)
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::{Txid, Wtxid};
+    use strata_identifiers::{L1BlockCommitment, L1BlockId};
+    use strata_primitives::buf::Buf32;
+
+    use super::*;
+
+    fn ref_with(height: u32, blkid_byte: u8, txns: &[(u8, u8)]) -> L1DaBlockRef {
+        let blkid = L1BlockId::from(Buf32::from([blkid_byte; 32]));
+        let block = L1BlockCommitment::new(height, blkid);
+        let txns = txns
+            .iter()
+            .map(|(t, w)| {
+                (
+                    Txid::from_byte_array([*t; 32]),
+                    Wtxid::from_byte_array([*w; 32]),
+                )
+            })
+            .collect();
+        L1DaBlockRef::new(block, txns)
+    }
+
+    #[test]
+    fn da_refs_from_status_returns_da_for_proof_pending() {
+        let refs = vec![ref_with(100, 0xaa, &[(1, 2)])];
+        let status = BatchStatus::ProofPending { da: refs.clone() };
+        assert_eq!(da_refs_from_status(&status).len(), 1);
+    }
+
+    #[test]
+    fn da_refs_from_status_returns_empty_for_genesis() {
+        let status = BatchStatus::Genesis;
+        assert!(da_refs_from_status(&status).is_empty());
+    }
+
+    #[test]
+    fn build_ledger_refs_is_empty_for_no_da() {
+        let refs: Vec<L1DaBlockRef> = Vec::new();
+        let lr = build_ledger_refs(&refs, None);
+        assert!(lr.l1_header_refs().is_empty());
+    }
+
+    #[test]
+    fn build_ledger_refs_sorts_ascending_by_height() {
+        let refs = vec![
+            ref_with(200, 0xbb, &[]),
+            ref_with(100, 0xaa, &[]),
+            ref_with(150, 0xcc, &[]),
+        ];
+        // Safe tip lands on the highest DA block — no extra claim
+        // appended; the highest-idx entry must still match the tip
+        // the proof anchors to.
+        let safe_tip = Some(SafeTip {
+            height: 200,
+            hash: [0xbb; 32],
+        });
+        let lr = build_ledger_refs(&refs, safe_tip);
+        let claims = lr.l1_header_refs();
+        assert_eq!(claims.len(), 3);
+        assert_eq!(claims[0].idx(), 100);
+        assert_eq!(claims[1].idx(), 150);
+        assert_eq!(claims[2].idx(), 200);
+        assert_eq!(claims[2].entry_hash().as_ref(), &[0xbb; 32]);
+    }
+
+    #[test]
+    fn build_ledger_refs_appends_safe_tip_above_da() {
+        // Safe tip is `l1_reorg_safe_depth` blocks past the DA tip —
+        // there should be an extra claim for the deeper anchor, and the
+        // highest-idx entry's hash should match `safe_tip.hash` so the
+        // in-guest `bind_da_witness_to_ledger_refs` finds the right tip.
+        let refs = vec![ref_with(100, 0xaa, &[]), ref_with(150, 0xcc, &[])];
+        let safe_tip = Some(SafeTip {
+            height: 200,
+            hash: [0xee; 32],
+        });
+        let lr = build_ledger_refs(&refs, safe_tip);
+        let claims = lr.l1_header_refs();
+        assert_eq!(claims.len(), 3);
+        assert_eq!(claims[2].idx(), 200);
+        assert_eq!(claims[2].entry_hash().as_ref(), &[0xee; 32]);
+    }
+
+    #[test]
+    fn build_ledger_refs_skips_safe_tip_when_equal_to_da_tip() {
+        // DA freshly published — safe tip cannot sit above the DA tip,
+        // so no extra claim. Highest-idx entry stays the DA tip.
+        let refs = vec![ref_with(100, 0xaa, &[]), ref_with(150, 0xcc, &[])];
+        let safe_tip = Some(SafeTip {
+            height: 150,
+            hash: [0xcc; 32],
+        });
+        let lr = build_ledger_refs(&refs, safe_tip);
+        let claims = lr.l1_header_refs();
+        assert_eq!(claims.len(), 2);
+        assert_eq!(claims[1].idx(), 150);
+    }
+
+    /// Stub `SafeTipReader` with predictable answers; panics if asked
+    /// for a height it wasn't configured for, so accidental RPC use
+    /// shows up in the test rather than silently passing.
+    struct StubReader {
+        chain_tip: u64,
+        hash_at_height: HashMap<u64, [u8; 32]>,
+    }
+
+    impl SafeTipReader for StubReader {
+        async fn chain_tip_height(&self) -> ProverResult<u64> {
+            Ok(self.chain_tip)
+        }
+
+        async fn block_hash_at(&self, height: u64) -> ProverResult<[u8; 32]> {
+            self.hash_at_height.get(&height).copied().ok_or_else(|| {
+                PaasError::Storage(format!(
+                    "StubReader: hash not configured for height {height}"
+                ))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn select_safe_tip_returns_none_for_no_da() {
+        let btc = StubReader {
+            chain_tip: 1000,
+            hash_at_height: HashMap::new(),
+        };
+        let tip = select_safe_tip(&[], 6, &btc).await.unwrap();
+        assert!(tip.is_none());
+    }
+
+    #[tokio::test]
+    async fn select_safe_tip_picks_deeper_anchor_when_chain_advanced() {
+        let refs = vec![ref_with(100, 0xaa, &[]), ref_with(150, 0xcc, &[])];
+        let btc = StubReader {
+            chain_tip: 200,
+            hash_at_height: HashMap::from([(194, [0x55; 32])]),
+        };
+        // chain_tip - depth = 200 - 6 = 194 > 150 (max DA height).
+        let tip = select_safe_tip(&refs, 6, &btc).await.unwrap().unwrap();
+        assert_eq!(tip.height, 194);
+        assert_eq!(tip.hash, [0x55; 32]);
+    }
+
+    #[tokio::test]
+    async fn select_safe_tip_falls_back_to_da_tip_when_da_fresh() {
+        let refs = vec![ref_with(100, 0xaa, &[]), ref_with(150, 0xcc, &[])];
+        // chain_tip - depth = 152 - 6 = 146 < 150 (max DA height) →
+        // anchor at the DA tip; reuse its hash without RPC round-trip
+        // (StubReader has no entry at 146, so any RPC would error).
+        let btc = StubReader {
+            chain_tip: 152,
+            hash_at_height: HashMap::new(),
+        };
+        let tip = select_safe_tip(&refs, 6, &btc).await.unwrap().unwrap();
+        assert_eq!(tip.height, 150);
+        assert_eq!(tip.hash, [0xcc; 32]);
+    }
+
+    #[tokio::test]
+    async fn select_safe_tip_zero_depth_picks_chain_tip() {
+        let refs = vec![ref_with(100, 0xaa, &[])];
+        let btc = StubReader {
+            chain_tip: 200,
+            hash_at_height: HashMap::from([(200, [0x77; 32])]),
+        };
+        let tip = select_safe_tip(&refs, 0, &btc).await.unwrap().unwrap();
+        assert_eq!(tip.height, 200);
+        assert_eq!(tip.hash, [0x77; 32]);
+    }
 }

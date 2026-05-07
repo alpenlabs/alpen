@@ -573,6 +573,7 @@ fn main() {
                     }),
                     ..WriterConfig::default()
                 });
+                let btc_client_for_acct = btc_client.clone();
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
                     btc_client,
                     writer_config,
@@ -597,7 +598,7 @@ fn main() {
                 let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
                     blob_provider.clone(),
                     envelope_handle,
-                    broadcast_ops,
+                    broadcast_ops.clone(),
                     magic_bytes,
                 ));
 
@@ -673,7 +674,10 @@ fn main() {
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
                     storage.clone(),
+                    broadcast_ops.clone(),
+                    btc_client_for_acct.clone(),
                     genesis,
+                    btcio_params.l1_reorg_safe_depth(),
                 ))
                 .task_store(task_store)
                 .receipt_hook(AcctReceiptHook::new(

@@ -28,6 +28,7 @@
 //! ```
 
 mod batch_prover;
+mod da_witness_build;
 mod hooks;
 mod spec_acct;
 mod spec_chunk;
