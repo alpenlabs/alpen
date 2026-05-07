@@ -308,7 +308,7 @@ alloy = { version = "1.0.41", features = [
 alloy-consensus = { version = "1.0.41", default-features = false }
 alloy-eips = { version = "1.0.41", default-features = false }
 alloy-genesis = { version = "1.0.41", default-features = false }
-alloy-network = { version = "1.0.41", default-features = false }
+alloy-network = { version = "2.0.1", default-features = false }
 alloy-primitives = { version = "1.4.1", default-features = false, features = [
   "sha3-keccak",
   "map-foldhash",
