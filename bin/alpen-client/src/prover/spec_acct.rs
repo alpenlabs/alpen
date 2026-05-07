@@ -12,6 +12,7 @@
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
+use alloy_primitives::B256;
 use alpen_ee_common::{
     BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef, Storage,
 };
@@ -44,7 +45,7 @@ use strata_snark_acct_types::{
 
 use super::{
     da_witness_build::{build_coinbase_inclusion_proof, build_wtxid_inclusion_proof},
-    ChunkTask,
+    ChunkTask, RangeWitnessFn,
 };
 
 /// Batch-id-shaped task identifier for paas. Newtype over [`BatchId`]
@@ -121,6 +122,13 @@ pub(crate) struct AcctSpec {
     storage: Arc<EeNodeStorage>,
     broadcast_ops: Arc<BroadcastDbOps>,
     btc_client: Arc<BtcClient>,
+    /// Same closure [`super::ChunkSpec`] uses; produces a sparse
+    /// [`alpen_reth_witness::RangeWitnessData`] covering the union of
+    /// all blocks' read sets in a range. We call it on the batch's
+    /// `(first_block, last_block)` so the guest can apply the
+    /// reassembled state diff against the same MPT shape the chunk
+    /// pipeline witnesses.
+    range_witness_fn: Arc<RangeWitnessFn>,
     genesis: Genesis,
     /// Number of L1 confirmations to keep on top of the proof's anchor
     /// tip. The acct proof's `l1_block_hash` is chosen `depth` blocks
@@ -138,6 +146,7 @@ impl AcctSpec {
         storage: Arc<EeNodeStorage>,
         broadcast_ops: Arc<BroadcastDbOps>,
         btc_client: Arc<BtcClient>,
+        range_witness_fn: Arc<RangeWitnessFn>,
         genesis: Genesis,
         l1_reorg_safe_depth: u32,
     ) -> Self {
@@ -147,6 +156,7 @@ impl AcctSpec {
             storage,
             broadcast_ops,
             btc_client,
+            range_witness_fn,
             genesis,
             l1_reorg_safe_depth,
         }
@@ -224,14 +234,36 @@ impl ProofSpec for AcctSpec {
 
         // 4. ee_acct private input.
         //
-        //    `raw_prev_header` and `raw_partial_pre_state` are still
-        //    empty placeholders. They feed the deferred state-diff
-        //    consistency check in the guest (apply state_diff to
-        //    pre-state, compare to the chunk-aggregated tip state root).
-        //    Once that check lands, source these from the batch's range
-        //    witness via `RangeWitnessExtractor` — same one `ChunkSpec`
-        //    uses for per-chunk witnesses.
-        let ee_private_input = EePrivateInput::new(Vec::new(), Vec::new(), chunks.clone());
+        //    Pre-state for the in-guest state-diff consistency check:
+        //    extract a sparse `EvmPartialState` covering the union of
+        //    the batch's blocks' read sets via `RangeWitnessExtractor`
+        //    (same closure `ChunkSpec` uses for per-chunk witnesses;
+        //    here we span the full batch instead of a single chunk).
+        //
+        //    `raw_prev_header` is unused by today's acct guest (the
+        //    chunk pubvals already pin parent/tip via `_exec_blkid`),
+        //    so we leave it empty — populating it would only matter if
+        //    we later add a header-chain check independent of chunk
+        //    pubvals.
+        let batch_block_hashes: Vec<Hash> = batch.blocks_iter().collect();
+        let first_block_hash = B256::from(
+            batch_block_hashes
+                .first()
+                .copied()
+                .expect("batch has chunks ⇒ at least one block")
+                .0,
+        );
+        let last_block_hash_eth = B256::from(batch.last_block().0);
+        let range_fn = self.range_witness_fn.clone();
+        let range_data =
+            tokio::task::spawn_blocking(move || (range_fn)(first_block_hash, last_block_hash_eth))
+                .await
+                .map_err(|e| PaasError::TransientFailure(format!("witness extraction join: {e}")))?
+                .map_err(|e| PaasError::TransientFailure(format!("witness extraction: {e}")))?;
+        let raw_partial_pre_state = range_data.raw_partial_pre_state;
+
+        let ee_private_input =
+            EePrivateInput::new(Vec::new(), raw_partial_pre_state, chunks.clone());
 
         // 5. Build UpdateProofPubParams from ExecBlockRecords.
         //

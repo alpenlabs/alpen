@@ -663,7 +663,7 @@ fn main() {
                     batch_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
-                    range_witness_fn,
+                    range_witness_fn.clone(),
                 ))
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
@@ -676,6 +676,7 @@ fn main() {
                     storage.clone(),
                     broadcast_ops.clone(),
                     btc_client_for_acct.clone(),
+                    range_witness_fn.clone(),
                     genesis,
                     btcio_params.l1_reorg_safe_depth(),
                 ))
