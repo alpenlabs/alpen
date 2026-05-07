@@ -15,7 +15,6 @@ shrex.workspace = true
 strata-acct-types.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-manifest-types.workspace = true
-strata-asm-params.workspace = true
 strata-asm-proto-admin-txs = { workspace = true, features = ["test-utils"] }
 strata-asm-proto-bridge-v1-txs = { workspace = true, features = ["test-utils"] }
 strata-btcio.workspace = true

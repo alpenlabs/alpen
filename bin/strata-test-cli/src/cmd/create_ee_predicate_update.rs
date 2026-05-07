@@ -22,10 +22,9 @@ use bdk_wallet::{
 };
 use serde_json::{json, Value};
 use ssz::Encode as _;
-use strata_asm_params::Role;
 use strata_asm_proto_admin_txs::{
     actions::{
-        updates::predicate::{PredicateUpdate, ProofType},
+        updates::{EeStfVkUpdate, OlStfVkUpdate},
         MultisigAction, UpdateAction,
     },
     parser::SignedPayload,
@@ -124,6 +123,12 @@ const MIN_REVEAL_OUTPUT_SATS: u64 = 546;
 const DEFAULT_RETRY_COUNT: usize = 5;
 const RETRY_SLEEP_MS: u64 = 200;
 
+#[derive(Clone, Copy, Debug)]
+enum PredicateUpdateTarget {
+    EeStfVk,
+    OlStfVk,
+}
+
 #[derive(Debug)]
 struct PredicateUpdateRequest {
     seq_no: u64,
@@ -134,8 +139,7 @@ struct PredicateUpdateRequest {
     btc_password: String,
     fee_rate: u64,
     commit_output_sats: u64,
-    proof_type: ProofType,
-    role: Role,
+    target: PredicateUpdateTarget,
 }
 
 pub(crate) fn create_ee_predicate_update(
@@ -150,8 +154,7 @@ pub(crate) fn create_ee_predicate_update(
         btc_password: args.btc_password,
         fee_rate: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
-        proof_type: ProofType::EeStf,
-        role: Role::AlpenAdministrator,
+        target: PredicateUpdateTarget::EeStfVk,
     })
 }
 
@@ -167,8 +170,7 @@ pub(crate) fn create_checkpoint_predicate_update(
         btc_password: args.btc_password,
         fee_rate: args.fee_rate,
         commit_output_sats: args.commit_output_sats,
-        proof_type: ProofType::OLStf,
-        role: Role::StrataAdministrator,
+        target: PredicateUpdateTarget::OlStfVk,
     })
 }
 
@@ -211,9 +213,8 @@ fn build_admin_commit_reveal_pair(
     let xpriv = Xpriv::from_str(&args.admin_xpriv).context("invalid admin xpriv")?;
     let admin_secret_key = xpriv.private_key;
 
-    let action = build_predicate_update_action(args.predicate.clone(), args.proof_type);
-    let signed_payload =
-        create_signed_payload(action.clone(), args.seq_no, &admin_secret_key, args.role);
+    let action = build_predicate_update_action(args.predicate.clone(), args.target);
+    let signed_payload = create_signed_payload(action.clone(), args.seq_no, &admin_secret_key);
 
     let envelope_bytes = signed_payload.as_ssz_bytes();
     let (envelope_keypair, envelope_xonly) = generate_keypair(admin_secret_key)?;
@@ -291,24 +292,23 @@ fn build_admin_commit_reveal_pair(
     Ok((commit_tx, reveal_tx))
 }
 
-fn build_predicate_update_action(key: PredicateKey, proof_type: ProofType) -> MultisigAction {
-    let update = PredicateUpdate::new(key, proof_type);
-    MultisigAction::Update(UpdateAction::from(update))
+fn build_predicate_update_action(
+    key: PredicateKey,
+    target: PredicateUpdateTarget,
+) -> MultisigAction {
+    let update = match target {
+        PredicateUpdateTarget::EeStfVk => UpdateAction::EeStfVk(EeStfVkUpdate::new(key)),
+        PredicateUpdateTarget::OlStfVk => UpdateAction::OlStfVk(OlStfVkUpdate::new(key)),
+    };
+    MultisigAction::Update(update)
 }
 
 fn create_signed_payload(
     action: MultisigAction,
     seq_no: u64,
     admin_secret_key: &SecretKey,
-    role: Role,
 ) -> SignedPayload {
-    let signatures = create_signature_set(
-        slice::from_ref(admin_secret_key),
-        &[0],
-        &action,
-        role,
-        seq_no,
-    );
+    let signatures = create_signature_set(slice::from_ref(admin_secret_key), &[0], &action, seq_no);
     SignedPayload::new(seq_no, action, signatures)
 }
 
