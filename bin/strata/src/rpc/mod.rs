@@ -10,8 +10,6 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
-use tower::ServiceBuilder;
-use tower_http::cors::CorsLayer;
 use node::*;
 use provider::NodeRpcProvider;
 #[cfg(feature = "sequencer")]
@@ -31,6 +29,8 @@ use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
 use strata_primitives::buf::Buf32;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
+use tower::ServiceBuilder;
+use tower_http::cors::CorsLayer;
 
 use crate::run_context::RunContext;
 #[cfg(feature = "sequencer")]

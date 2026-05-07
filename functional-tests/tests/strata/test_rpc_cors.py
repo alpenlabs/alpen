@@ -49,9 +49,7 @@ class TestRpcCors(StrataNodeTest):
         assert acam == "*" or "POST" in acam, f"preflight ACAM={acam!r}"
         acah = preflight.headers.get("access-control-allow-headers", "")
         assert acah, "preflight missing ACAH"
-        logger.info(
-            "preflight ok: ACAO=%s ACAM=%s ACAH=%s", acao, acam, acah
-        )
+        logger.info("preflight ok: ACAO=%s ACAM=%s ACAH=%s", acao, acam, acah)
 
         # 2. Actual cross-origin POST: response must echo ACAO so the
         #    browser surfaces the body to the calling page.
