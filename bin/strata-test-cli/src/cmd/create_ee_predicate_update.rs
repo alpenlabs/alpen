@@ -20,7 +20,7 @@ use bdk_wallet::{
     },
     KeychainKind, TxOrdering,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use ssz::Encode as _;
 use strata_asm_params::Role;
 use strata_asm_proto_admin_txs::{
@@ -79,7 +79,7 @@ pub struct CreateEePredicateUpdateArgs {
 }
 
 fn parse_predicate_key(value: &str) -> Result<PredicateKey, String> {
-    serde_json::from_str(&format!("\"{value}\"")).map_err(|e| e.to_string())
+    serde_json::from_value(Value::String(value.to_owned())).map_err(|e| e.to_string())
 }
 
 /// Minimum non-dust value for the reveal output.
@@ -117,7 +117,7 @@ pub(crate) fn create_ee_predicate_update(
     Ok(())
 }
 
-// TODO(STR-3191): deduplicate ennvelope commit/reveal transaction
+// TODO(STR-3191): deduplicate envelope commit/reveal transaction
 fn build_admin_commit_reveal_pair(
     args: &CreateEePredicateUpdateArgs,
 ) -> anyhow::Result<(Transaction, Transaction)> {
