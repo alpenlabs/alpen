@@ -157,8 +157,8 @@ where
                 warn!(%txid, %msg, "sendrawtransaction returned -22 (treated as InvalidInputs)");
                 Ok(PublishTxOutcome::InvalidInputs)
             }
-            Err(err) if err.is_missing_or_invalid_input() => {
-                warn!(%txid, %err, "sendrawtransaction missing/invalid input (treated as InvalidInputs)");
+            Err(err) if err.is_rpc_verify_rejected() => {
+                warn!(%txid, %err, "sendrawtransaction verify-rejected (treated as InvalidInputs)");
                 Ok(PublishTxOutcome::InvalidInputs)
             }
             Err(err @ ClientError::Status(500, _)) => {

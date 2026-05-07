@@ -596,7 +596,9 @@ async fn check_commit_and_broadcast_reveals(
                 );
             }
             Err(e)
-                if e.is_missing_or_invalid_input() || matches!(e, ClientError::Server(-22, _)) =>
+                if e.is_rpc_verify_error()
+                    || e.is_rpc_verify_rejected()
+                    || matches!(e, ClientError::Server(-22, _)) =>
             {
                 warn!(
                     envelope_idx,
