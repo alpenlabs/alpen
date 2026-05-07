@@ -20,14 +20,19 @@ mod taproot;
 mod utils;
 
 use cmd::{
-    build_snark_withdrawal::build_snark_withdrawal, compute_drt_output::compute_drt_output,
-    convert_to_xonly_pk::convert_to_xonly_pk, create_deposit_tx::create_deposit_tx,
+    build_snark_withdrawal::build_snark_withdrawal,
+    compute_drt_output::compute_drt_output,
+    convert_to_xonly_pk::convert_to_xonly_pk,
+    create_deposit_tx::create_deposit_tx,
     create_ee_predicate_update::{create_checkpoint_predicate_update, create_ee_predicate_update},
     create_mock_deposit::create_mock_deposit,
     create_withdrawal_fulfillment::create_withdrawal_fulfillment,
-    extract_p2tr_pubkey::extract_p2tr_pubkey, get_address::get_address,
-    musig_aggregate_pks::musig_aggregate_pks, sign_schnorr_sig::sign_schnorr_sig,
-    xonlypk_to_descriptor::xonlypk_to_descriptor, Commands, TopLevel,
+    extract_p2tr_pubkey::extract_p2tr_pubkey,
+    get_address::get_address,
+    musig_aggregate_pks::musig_aggregate_pks,
+    sign_schnorr_sig::sign_schnorr_sig,
+    xonlypk_to_descriptor::xonlypk_to_descriptor,
+    Commands, TopLevel,
 };
 
 fn main() {

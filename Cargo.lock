@@ -16900,7 +16900,6 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-logs",
  "strata-asm-manifest-types",
- "strata-asm-params",
  "strata-asm-proto-admin-txs",
  "strata-asm-proto-bridge-v1-txs",
  "strata-cli-common",

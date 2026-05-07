@@ -5,7 +5,7 @@ use std::{fmt, sync::Arc};
 use anyhow::{Context, anyhow};
 use bitcoin::secp256k1::XOnlyPublicKey;
 use strata_asm_common::Subprotocol;
-use strata_asm_proto_checkpoint::subprotocol::CheckpointSubprotocol;
+use strata_asm_proto_checkpoint::CheckpointSubprotocol;
 use strata_btcio::writer::{EnvelopeSigningMode, EnvelopeSigningModeProvider};
 use strata_identifiers::Buf32;
 use strata_predicate::PredicateTypeId;
@@ -25,7 +25,6 @@ impl fmt::Debug for CheckpointSequencerKeyProvider {
 }
 
 impl CheckpointSequencerKeyProvider {
-    /// Creates a provider backed by node storage.
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
         Self { storage }
     }

@@ -27,8 +27,6 @@ use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
 use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
-#[cfg(feature = "sequencer")]
-use strata_primitives::buf::Buf32;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tower::ServiceBuilder;
@@ -105,7 +103,6 @@ impl SeqRpcDeps {
         &self.blockasm_handle
     }
 
-    /// Returns the current sequencer key provider.
     fn sequencer_key_provider(&self) -> CheckpointSequencerKeyProvider {
         self.sequencer_key_provider.clone()
     }
