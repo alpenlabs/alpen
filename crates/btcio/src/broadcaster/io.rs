@@ -153,6 +153,13 @@ where
                     Ok(PublishTxOutcome::InvalidInputs)
                 }
             }
+            // Bitcoin Core returns RPC_VERIFY_ALREADY_IN_UTXO_SET (-27) when
+            // sendrawtransaction sees a tx already accepted into chainstate.
+            // Source: https://github.com/bitcoin/bitcoin/blob/master/src/rpc/protocol.h#L24
+            Err(ClientError::Server(-27, msg)) => {
+                info!(%txid, %msg, "sendrawtransaction reports tx already in chainstate (Published)");
+                Ok(PublishTxOutcome::Published)
+            }
             Err(ClientError::Server(-22, msg)) => {
                 warn!(%txid, %msg, "sendrawtransaction returned -22 (treated as InvalidInputs)");
                 Ok(PublishTxOutcome::InvalidInputs)
