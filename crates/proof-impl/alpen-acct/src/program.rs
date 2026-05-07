@@ -1,7 +1,7 @@
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
-use strata_ee_acct_runtime::EePrivateInput;
+use strata_ee_acct_runtime::{DaWitness, EePrivateInput};
 use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::PrivateInput as UpdatePrivateInput;
 use strata_snark_acct_types::UpdateProofPubParams;
@@ -29,6 +29,11 @@ pub struct EeAcctProofInput {
     pub genesis: Genesis,
     pub ee_private_input: EePrivateInput,
     pub update_private_input: UpdatePrivateInput,
+    /// DA correctness witness — reveal-tx envelope payloads, Bitcoin
+    /// Merkle inclusion proofs, and the L1 tip hash the proof anchors to.
+    /// Consumed by [`process_ee_acct_update`] to verify the published DA
+    /// matches the batch under proof.
+    pub da_witness: DaWitness,
 }
 
 #[derive(Debug)]
@@ -70,6 +75,10 @@ impl ZkVmProgram for EeAcctProgram {
         let upd_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.update_private_input)
             .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
         builder.write_buf(&upd_rkyv_bytes)?;
+
+        let da_rkyv_bytes = rkyv::to_bytes::<RkyvError>(&input.da_witness)
+            .map_err(|e| ZkVmInputError::InputBuild(e.to_string()))?;
+        builder.write_buf(&da_rkyv_bytes)?;
 
         builder.build()
     }
@@ -154,6 +163,7 @@ mod tests {
             genesis,
             ee_private_input,
             update_private_input,
+            da_witness: strata_ee_acct_runtime::DaWitness::empty(),
         };
 
         // Predicate is carried through but never evaluated in this

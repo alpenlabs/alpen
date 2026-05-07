@@ -14,7 +14,7 @@
 use ssz::Encode;
 use strata_acct_types::BitcoinAmount;
 use strata_codec::encode_to_vec;
-use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
+use strata_ee_acct_runtime::{ChunkInput, DaWitness, EePrivateInput};
 use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_proofimpl_alpen_chunk::EeChunkProgram;
@@ -73,10 +73,16 @@ fn prepare_input() -> EeAcctProofInput {
     let chunk_inputs = vec![ChunkInput::new(chunk_transition, Vec::new())];
     let ee_private_input = EePrivateInput::new(Vec::new(), Vec::new(), chunk_inputs);
 
+    // No DA on this perf fixture — the guest skips DA verification when the
+    // witness is empty, matching the zero-chunks-zero-DA baseline used by
+    // `test_native_acct_execution_zero_chunks`.
+    let da_witness = DaWitness::empty();
+
     EeAcctProofInput {
         genesis,
         ee_private_input,
         update_private_input,
+        da_witness,
     }
 }
 
