@@ -16,10 +16,10 @@ a user bitcoin wallet:
      broadcast it, and assert the recipient bitcoin address received the
      funds.
 
-Bridge denomination is fixed at 10 BTC (`BRIDGE_OUT_AMOUNT`). Operator keys
-come from the strata datadir's `bridge-operator_keys` file, which the
-strata factory has already wired into the bridge subprotocol's genesis
-state.
+Bridge denomination and operator fee are read from `asm-params.json`.
+Operator keys come from the strata datadir's `bridge-operator_keys` file,
+which the strata factory has already wired into the bridge subprotocol's
+genesis state.
 """
 
 import logging
@@ -367,7 +367,6 @@ def wait_for_checkpoint_at_epoch(
     )
 
 
-@flexitest.register
 def submit_deposits_and_assert_ol_credit(
     btc_rpc,
     strata_rpc,
@@ -511,15 +510,17 @@ def wait_for_wf_settlement(
     slots_per_epoch: int,
 ) -> None:
     """Wait for ASM checkpoint, broadcast the WF tx, verify recipient credit."""
+    # OL summaries can expose the SAU before the checkpoint that relays it into ASM.
+    assignment_checkpoint_epoch = saw_update_at_epoch + 2
     validated_epoch = wait_for_checkpoint_at_epoch(
         strata_log,
-        saw_update_at_epoch,
+        assignment_checkpoint_epoch,
         btc_rpc,
         miner_addr,
         after_offset=strata_checkpoint_log_offset,
         timeout=600,
     )
-    logger.info("ASM checkpoint validated OL epoch %d", validated_epoch)
+    logger.info("ASM checkpoint validated bridgeout assignment epoch %d", validated_epoch)
 
     fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
     btc_rpc.proxy.generatetoaddress(8, miner_addr)
@@ -565,6 +566,7 @@ def wait_for_wf_settlement(
     logger.info("WF %s settled %d sats to %s", wf_txid, received_delta_sats, recipient_btc_addr)
 
 
+@flexitest.register
 class TestRealBridgeDepositWithdraw(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
         # `el_ol_bridge` mirrors `el_ol` but runs the OL with a 500ms block

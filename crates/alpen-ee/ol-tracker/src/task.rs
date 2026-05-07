@@ -88,7 +88,7 @@ pub(crate) struct OLEpochOperations {
 pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
     /// TODO: stream
-    Extend(Vec<OLEpochOperations>, OLChainStatus),
+    Extend(Vec<OLEpochOperations>, Box<OLChainStatus>),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
     /// Local tip is synced with OL chain, nothing to do.
@@ -205,7 +205,10 @@ pub(crate) async fn track_ol_state(
         }
 
         // maybe stream all missing epochs ?
-        return Ok(TrackOLAction::Extend(epoch_operations, effective_ol_status));
+        return Ok(TrackOLAction::Extend(
+            epoch_operations,
+            Box::new(effective_ol_status),
+        ));
     }
 
     unreachable!("There should not be a valid case that is not covered above")
