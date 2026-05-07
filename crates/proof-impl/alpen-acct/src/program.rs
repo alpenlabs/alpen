@@ -122,6 +122,7 @@ mod tests {
         let initial_blkid = Hash::zero();
         let initial_state = EeAccountState::new(
             initial_blkid,
+            Hash::zero(),
             BitcoinAmount::from_sat(0),
             Vec::new(),
             Vec::new(),
@@ -129,7 +130,8 @@ mod tests {
         let state_root = initial_state.compute_state_root();
 
         // Extra data: tip stays the same, nothing processed.
-        let extra_data = UpdateExtraData::new(initial_blkid, 0, 0);
+        let extra_data =
+            UpdateExtraData::new(initial_blkid, initial_state.last_exec_state_root(), 0, 0);
         let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
 
         // With zero chunks and no state change, pre == post state root.

@@ -358,7 +358,8 @@ mod tests {
             ExecInputs::new_empty(),
             ExecOutputs::new_empty(),
         );
-        let account_state = EeAccountState::new(hash, BitcoinAmount::ZERO, vec![], vec![]);
+        let account_state =
+            EeAccountState::new(hash, Hash::zero(), BitcoinAmount::ZERO, vec![], vec![]);
         ExecBlockRecord::new(
             package,
             account_state,

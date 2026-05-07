@@ -170,6 +170,7 @@ pub fn assert_both_paths_succeed(
 pub(crate) fn create_initial_state() -> (EeAccountState, SnarkAccountState) {
     let ee_state = EeAccountState::new(
         Hash::new([0u8; 32]),
+        Hash::zero(),
         BitcoinAmount::from(0u64),
         Vec::new(),
         Vec::new(),

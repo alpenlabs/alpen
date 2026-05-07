@@ -106,7 +106,12 @@ fn test_output_mismatch_fails() {
         )))
         .unwrap();
 
-    let extra_data = UpdateExtraData::new(initial_state.last_exec_blkid(), 0, 0);
+    let extra_data = UpdateExtraData::new(
+        initial_state.last_exec_blkid(),
+        initial_state.last_exec_state_root(),
+        0,
+        0,
+    );
     let extra_data_buf = encode_to_vec(&extra_data).unwrap();
 
     let operation = UpdateOperationData::new(
@@ -134,7 +139,7 @@ fn test_extra_data_tip_mismatch() {
 
     // Manually construct operation data with a wrong tip.
     let wrong_tip = Hash::new([0xAA; 32]);
-    let extra_data = UpdateExtraData::new(wrong_tip, 0, 0);
+    let extra_data = UpdateExtraData::new(wrong_tip, initial_state.last_exec_state_root(), 0, 0);
     let extra_data_buf = encode_to_vec(&extra_data).unwrap();
 
     let operation = UpdateOperationData::new(
@@ -342,6 +347,7 @@ fn test_deposit_mismatch_in_chunk() {
 
     let initial_state = strata_ee_acct_types::EeAccountState::new(
         Hash::new([0u8; 32]),
+        Hash::zero(),
         BitcoinAmount::from(0u64),
         vec![PendingInputEntry::Deposit(deposit)],
         Vec::new(),
@@ -384,6 +390,7 @@ fn test_input_count_mismatch() {
 
     let initial_state = strata_ee_acct_types::EeAccountState::new(
         Hash::new([0u8; 32]),
+        Hash::zero(),
         BitcoinAmount::from(0u64),
         Vec::new(),
         Vec::new(),

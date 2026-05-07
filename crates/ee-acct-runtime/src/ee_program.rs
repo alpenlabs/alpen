@@ -62,6 +62,7 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
     ) -> ProgramResult<(), Self::Error> {
         // Update final execution head block.
         state.set_last_exec_blkid(*extra_data.new_tip_blkid());
+        state.set_last_exec_state_root(*extra_data.new_tip_state_root());
 
         Ok(())
     }

@@ -350,6 +350,10 @@ mod tests {
             self.blockhash
         }
 
+        fn state_root(&self) -> Hash {
+            Hash::zero()
+        }
+
         fn withdrawal_intents(&self) -> &[alpen_reth_node::WithdrawalIntent] {
             &[]
         }
@@ -468,7 +472,13 @@ mod tests {
             ExecInputs::new_empty(),
             ExecOutputs::new_empty(),
         );
-        let account_state = EeAccountState::new(block_hash, BitcoinAmount::ZERO, vec![], vec![]);
+        let account_state = EeAccountState::new(
+            block_hash,
+            Hash::zero(),
+            BitcoinAmount::ZERO,
+            vec![],
+            vec![],
+        );
 
         // Create OL block commitment
         let mut ol_block_bytes = [0u8; 32];
