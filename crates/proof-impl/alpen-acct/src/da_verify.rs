@@ -7,24 +7,18 @@
 //!   to the chunk transitions under proof;
 //! - verify each reveal-tx wtxid is included in an L1 block whose header chains up to the public
 //!   `l1_block_hash`, and that the coinbase tx is itself in that block;
+//! - apply the reassembled `DaBlob.state_diff` to the partial pre-state carried in
+//!   `EePrivateInput::raw_partial_pre_state` and assert the resulting state root equals the last
+//!   chunk's `tip_state_root` SSZ pubval — binding "what was published on L1" to "what was actually
+//!   executed by the chunks";
 //! - bind `da_witness.l1_block_hash` to the highest-idx [`LedgerRefs`] claim (via
 //!   [`bind_da_witness_to_ledger_refs`]).
 //!
-//! # Deferred work: state-diff consistency
-//!
-//! The `DaBlob.state_diff` carried on L1 is reassembled and `batch_id`-bound,
-//! but the outer proof does **not** yet verify that applying it to the
-//! pre-state produces the post-state the chunk transitions converged on.
-//! Closing that gap requires:
-//!
-//! - `ChunkTransition` to expose the post-execution state root in its SSZ pubvals (today it carries
-//!   only `parent_exec_blkid`/`tip_exec_blkid`),
-//! - the host to populate `EePrivateInput::raw_partial_pre_state` with the sparse-MPT witness
-//!   `BatchStateDiff::apply` consumes (today an empty placeholder; sourced from the same
-//!   `RangeWitnessExtractor` the chunk pipeline already uses).
-//!
-//! Both items belong on a follow-up branch coordinated with a chunk SP1
-//! ELF redeploy + chunk predicate key rotation.
+//! The state-diff check is skipped when `raw_partial_pre_state` is empty
+//! (e.g. zero-DA batches whose host doesn't populate it) — the inclusion
+//! checks above already bind the bytes published to the chunks under
+//! proof, so this is a strict superset rather than a different root of
+//! trust.
 //
 // FIXME(#1751): the chunked-envelope wire format is being redesigned in
 // alpenlabs/alpen#1751. When it lands, the reassembly path here will
@@ -35,14 +29,17 @@
 // keeps working — that part survives.
 
 use alpen_ee_common::{DaBlob, ReassemblyError, reassemble_da_blob};
+use alpen_reth_statediff::{ReconstructError, apply_batch_state_diff_to_ethereum_state};
 use bitcoin::{
     Transaction, block::Header as BitcoinHeader, consensus::deserialize as btc_deserialize,
     hashes::Hash as _,
 };
 use ssz::Decode;
 use strata_acct_types::Hash;
+use strata_codec::{CodecError, decode_buf_exact};
 use strata_ee_acct_runtime::{ArchivedDaBlockWitness, ArchivedDaWitness, ArchivedEePrivateInput};
 use strata_ee_chain_types::ChunkTransition;
+use strata_evm_ee::EvmPartialState;
 use strata_snark_acct_types::LedgerRefs;
 
 use crate::da_inclusion::{
@@ -94,17 +91,32 @@ pub enum DaVerificationError {
     },
     #[error("DA blocks present but LedgerRefs is empty")]
     LedgerRefsEmpty,
+    #[error("partial pre-state decode failed: {0}")]
+    PartialPreStateDecode(CodecError),
+    #[error("state-diff apply failed: {0}")]
+    StateDiffApply(#[from] ReconstructError),
+    #[error(
+        "post-apply state root does not match last chunk's tip_state_root: \
+         computed={computed:?}, expected={expected:?}"
+    )]
+    StateRootMismatch {
+        computed: [u8; 32],
+        expected: [u8; 32],
+    },
 }
 
 /// Runs the DA-correctness checks the outer proof currently enforces.
 ///
-/// Returns the reassembled [`DaBlob`] on success so the deferred
-/// state-diff consistency check (see module-level note) can use it
-/// without re-decoding once it lands.
+/// Returns the reassembled [`DaBlob`] on success so callers don't have
+/// to re-decode for downstream uses.
 ///
 /// Skips reassembly entirely when the witness carries no DA blocks —
 /// keeps zero-DA batches (e.g. genesis or perf fixtures) working
-/// without requiring the host to plumb witnesses unconditionally.
+/// without requiring the host to plumb witnesses unconditionally. The
+/// state-diff consistency check is also skipped when
+/// `raw_partial_pre_state` is empty so test fixtures and intermediate
+/// host states keep working until [`super::EeAcctProofInput`] is fully
+/// populated.
 pub fn verify_da_witness(
     ee_input: &ArchivedEePrivateInput,
     da_witness: &ArchivedDaWitness,
@@ -120,7 +132,44 @@ pub fn verify_da_witness(
         verify_block_inclusion(block, l1_block_hash)?;
     }
 
+    let raw_pre_state = ee_input.raw_partial_pre_state();
+    if !raw_pre_state.is_empty() {
+        verify_state_diff_against_chunks(ee_input, raw_pre_state, &blob)?;
+    }
+
     Ok(Some(blob))
+}
+
+/// Applies the reassembled `DaBlob.state_diff` to the partial pre-state
+/// the host plumbs in `EePrivateInput`, then asserts the resulting
+/// state root matches the **last** chunk's `tip_state_root` SSZ pubval.
+///
+/// The chunk pipeline already verifies each chunk's `tip_state_root`
+/// against the executor-computed post-state root (see
+/// `verify_chunk_transition`), so the equality the acct guest enforces
+/// here closes the loop: the bytes published on L1 (now bound by the
+/// inclusion checks above) decode to a `state_diff` whose application
+/// produces the same post-state the chunks executed to.
+fn verify_state_diff_against_chunks(
+    ee_input: &ArchivedEePrivateInput,
+    raw_pre_state: &[u8],
+    blob: &DaBlob,
+) -> Result<(), DaVerificationError> {
+    let chunks = ee_input.chunks();
+    let last = chunks.last().ok_or(DaVerificationError::NoChunks)?;
+    let last_chunk = ChunkTransition::from_ssz_bytes(last.chunk_transition_ssz())
+        .map_err(DaVerificationError::LastChunkDecode)?;
+    let expected: [u8; 32] = last_chunk.tip_state_root().0;
+
+    let mut pre_state: EvmPartialState =
+        decode_buf_exact(raw_pre_state).map_err(DaVerificationError::PartialPreStateDecode)?;
+    apply_batch_state_diff_to_ethereum_state(pre_state.ethereum_state_mut(), &blob.state_diff)?;
+
+    let computed: [u8; 32] = pre_state.ethereum_state().state_root().0;
+    if computed != expected {
+        return Err(DaVerificationError::StateRootMismatch { computed, expected });
+    }
+    Ok(())
 }
 
 /// Cross-checks that `DaWitness.l1_block_hash` (the tip the in-proof

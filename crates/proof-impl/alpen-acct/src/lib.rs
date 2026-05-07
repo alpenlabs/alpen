@@ -40,12 +40,11 @@ pub use program::{EeAcctProgram, EeAcctProofInput};
 ///   chunk transitions under proof;
 /// - verify each reveal-tx wtxid is included in an L1 block whose header chains up to the public
 ///   `l1_block_hash`;
+/// - apply the published state diff to the partial pre-state and assert the resulting state root
+///   matches the last chunk's `tip_state_root` pubval (binding "what was published" to "what was
+///   actually executed");
 /// - bind `da_witness.l1_block_hash` to the highest-idx `LedgerRefs` claim so the OL canonicality
 ///   check anchors to the same L1 tip as the in-proof inclusion checks.
-///
-/// State-diff consistency (`apply_state_diff(pre_state, blob.state_diff)`
-/// matching the chunk-aggregated post-state root) is **not** checked here;
-/// see `verify_da_witness` for the deferred-work note.
 pub fn process_ee_acct_update(zkvm: &impl ZkVmEnvSerde, chunk_predicate_key: &PredicateKey) {
     let genesis: Genesis = zkvm.read_serde();
     let chain_spec: Arc<ChainSpec> = Arc::new((&genesis).try_into().unwrap());
