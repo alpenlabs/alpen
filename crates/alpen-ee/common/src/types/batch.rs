@@ -204,6 +204,15 @@ impl Batch {
         self.idx
     }
 
+    // NOTE: Currently, sequence no = batch index - 1. This may change in the future.
+    /// Returns the OL snark-account update sequence number for this batch.
+    ///
+    /// Genesis is stored as batch index 0 and has no update. The first real
+    /// batch has index 1 and maps to update sequence number 0.
+    pub fn update_seq_no(&self) -> Option<u64> {
+        self.idx.checked_sub(1)
+    }
+
     /// last block of the previous batch.
     pub fn prev_block(&self) -> Hash {
         self.prev_block

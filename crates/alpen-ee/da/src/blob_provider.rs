@@ -131,9 +131,13 @@ where
         // 4. Read the last block's header for chain-reconstruction metadata.
         let evm_header = self.header_summary.header_summary(batch.last_blocknum())?;
 
+        let update_seq_no = batch
+            .update_seq_no()
+            .ok_or_else(|| eyre::eyre!("cannot build DA blob for genesis batch"))?;
+
         // 5. Construct the DaBlob with metadata.
         Ok(DaBlob {
-            batch_id,
+            update_seq_no,
             evm_header,
             state_diff,
         })

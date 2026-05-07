@@ -41,10 +41,8 @@ pub(super) async fn build_update_from_batch(
         .await?
         .ok_or_else(|| eyre!("missing proof: {}", proof_id))?;
 
-    // NOTE: Currently, sequence no = batch index - 1. This may change in the future.
     let seq_no = batch
-        .idx()
-        .checked_sub(1)
+        .update_seq_no()
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
     let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
