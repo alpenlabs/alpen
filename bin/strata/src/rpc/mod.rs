@@ -6,7 +6,7 @@ mod node;
 mod node_tests;
 mod provider;
 
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use jsonrpsee::{RpcModule, server::ServerBuilder, types::ErrorObjectOwned};
@@ -35,6 +35,8 @@ use tower_http::cors::CorsLayer;
 use crate::run_context::RunContext;
 #[cfg(feature = "sequencer")]
 use crate::sequencer::OLSeqRpcServer;
+
+const STRATA_RPC_PERMISSIVE_CORS_ENV_VAR: &str = "STRATA_RPC_PERMISSIVE_CORS";
 
 /// Dependencies needed by the RPC server.
 /// Grouped to reduce parameter count when spawning the RPC task.
@@ -88,6 +90,31 @@ impl SeqRpcDeps {
     /// Returns the block assembly handle.
     fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
         &self.blockasm_handle
+    }
+}
+
+fn rpc_permissive_cors_enabled() -> Result<bool> {
+    match env::var(STRATA_RPC_PERMISSIVE_CORS_ENV_VAR) {
+        Ok(value) => {
+            if !value.is_ascii() {
+                return Err(anyhow!(
+                    "{STRATA_RPC_PERMISSIVE_CORS_ENV_VAR} must be ASCII"
+                ));
+            }
+
+            match value.to_ascii_lowercase().as_str() {
+                "1" | "true" | "yes" | "on" => Ok(true),
+                "0" | "false" | "no" | "off" => Ok(false),
+                _ => Err(anyhow!(
+                    "{STRATA_RPC_PERMISSIVE_CORS_ENV_VAR} must be one of \
+                     1/true/yes/on or 0/false/no/off"
+                )),
+            }
+        }
+        Err(env::VarError::NotPresent) => Ok(false),
+        Err(env::VarError::NotUnicode(_)) => Err(anyhow!(
+            "{STRATA_RPC_PERMISSIVE_CORS_ENV_VAR} must be ASCII"
+        )),
     }
 }
 
@@ -199,12 +226,11 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
     }
 
     let addr = format!("{}:{}", deps.rpc_host, deps.rpc_port);
-    // Permissive CORS so that browser-based tools (e.g. the OL explorer
-    // hosted at a different origin) can call the JSON-RPC. This is a
-    // developer-facing endpoint with no authenticated state, so allowing
-    // any origin/method/header is appropriate. Adjust if the RPC ever
-    // grows session/cookie state.
-    let cors = CorsLayer::permissive();
+    let cors = if rpc_permissive_cors_enabled()? {
+        CorsLayer::permissive()
+    } else {
+        CorsLayer::new()
+    };
     let http_middleware = ServiceBuilder::new().layer(cors);
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(http_middleware)

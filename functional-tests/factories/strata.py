@@ -4,6 +4,7 @@ Creates Strata sequencer and fullnode instances.
 """
 
 import contextlib
+import os
 from pathlib import Path
 from typing import NamedTuple
 
@@ -60,6 +61,7 @@ class StrataFactory(flexitest.Factory):
         epoch_sealing_config: EpochSealingConfig | None = None,
         use_unchecked_cred_rule: bool = False,
         admin_confirmation_depth: int | None = None,
+        env: dict[str, str] | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -74,6 +76,7 @@ class StrataFactory(flexitest.Factory):
             epoch_sealing_config: Epoch sealing config for TOML. Default used if None.
             use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
+            env: Additional process environment variables.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -162,6 +165,11 @@ class StrataFactory(flexitest.Factory):
             for key, value in config_overrides.items():
                 cmd.extend(["-o", f"{key}={value}"])
 
+        process_env = None
+        if env is not None:
+            process_env = os.environ.copy()
+            process_env.update(env)
+
         rpc_url = f"http://{rpc_host}:{rpc_port}"
 
         resolved_slots_per_epoch = 4
@@ -182,6 +190,7 @@ class StrataFactory(flexitest.Factory):
             cmd,
             stdout=str(logfile),
             name=f"{ServiceType.Strata}_{mode}",
+            env=process_env,
         )
         svc.stop_timeout = 30
         try:

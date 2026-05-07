@@ -1,4 +1,4 @@
-"""Test that strata JSON-RPC CORS is non-permissive by default."""
+"""Test that strata JSON-RPC CORS can be made permissive by env var."""
 
 import logging
 
@@ -7,9 +7,11 @@ import requests
 
 from common.base_test import StrataNodeTest
 from common.config import ServiceType
+from envconfigs.strata import StrataEnvConfig
 
 logger = logging.getLogger(__name__)
 
+PERMISSIVE_CORS_ENV = {"STRATA_RPC_PERMISSIVE_CORS": "1"}
 ORIGIN = "https://example.com"
 PROTOCOL_VERSION_BODY = {
     "jsonrpc": "2.0",
@@ -40,9 +42,17 @@ def _request_protocol_version(rpc_url: str):
     )
 
 
-def _assert_no_cors(response, label: str):
+def _assert_permissive_preflight(response):
+    assert response.status_code in (200, 204), (
+        f"preflight expected 200/204, got {response.status_code}"
+    )
     acao = response.headers.get("access-control-allow-origin")
-    assert acao is None, f"{label} ACAO={acao!r}"
+    assert acao in ("*", ORIGIN), f"preflight ACAO={acao!r}"
+    acam = (response.headers.get("access-control-allow-methods") or "").upper()
+    assert acam == "*" or "POST" in acam, f"preflight ACAM={acam!r}"
+    acah = response.headers.get("access-control-allow-headers", "")
+    assert acah, "preflight missing ACAH"
+    logger.info("preflight ok: ACAO=%s ACAM=%s ACAH=%s", acao, acam, acah)
 
 
 def _assert_protocol_version_response(response):
@@ -53,19 +63,20 @@ def _assert_protocol_version_response(response):
 
 
 @flexitest.register
-class TestRpcCors(StrataNodeTest):
+class TestRpcCorsEnv(StrataNodeTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("basic")
+        ctx.set_env(StrataEnvConfig(pre_generate_blocks=110, strata_env=PERMISSIVE_CORS_ENV))
 
     def main(self, ctx):
         strata = self.get_service(ServiceType.Strata)
         strata.wait_for_rpc_ready(timeout=10)
         rpc_url = strata.props["rpc_url"]
 
-        _assert_no_cors(_request_preflight(rpc_url), "preflight")
+        _assert_permissive_preflight(_request_preflight(rpc_url))
         res = _request_protocol_version(rpc_url)
         payload = _assert_protocol_version_response(res)
-        _assert_no_cors(res, "POST")
-        logger.info("cross-origin POST default closed: version=%s", payload["result"])
+        post_acao = res.headers.get("access-control-allow-origin")
+        assert post_acao in ("*", ORIGIN), f"POST ACAO={post_acao!r}"
+        logger.info("cross-origin POST ok: ACAO=%s, version=%s", post_acao, payload["result"])
 
         return True
