@@ -22,7 +22,7 @@ pub(crate) struct ChunkedWriterContext<R: Reader + Signer + Wallet> {
     pub sequencer_address: Address,
 
     /// keypair for signing reveal tapscript spends.
-    pub sequencer_keypair: Arc<Keypair>,
+    pub sequencer_keypair: Keypair,
 
     /// Bitcoin client to sign and submit transactions.
     pub client: Arc<R>,
@@ -33,7 +33,7 @@ impl<R: Reader + Signer + Wallet> ChunkedWriterContext<R> {
         btcio_params: BtcioParams,
         config: Arc<WriterConfig>,
         sequencer_address: Address,
-        sequencer_keypair: Arc<Keypair>,
+        sequencer_keypair: Keypair,
         client: Arc<R>,
     ) -> Self {
         Self {

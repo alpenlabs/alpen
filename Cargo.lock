@@ -1178,7 +1178,6 @@ dependencies = [
  "serde",
  "strata-acct-types",
  "strata-codec",
- "strata-crypto",
  "strata-ee-acct-types",
  "strata-ee-chain-types",
  "strata-identifiers",
@@ -1377,7 +1376,6 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
- "tree_hash 0.15.0",
 ]
 
 [[package]]

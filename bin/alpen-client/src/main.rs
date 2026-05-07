@@ -44,7 +44,14 @@ use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
 #[cfg(feature = "sequencer")]
-use bitcoind_async_client::{traits::Wallet as _, Auth, Client as BtcClient};
+use bitcoind_async_client::{
+    corepc_types::bitcoin::{
+        key::Keypair,
+        secp256k1::{Secp256k1, SecretKey},
+    },
+    traits::Wallet as _,
+    Auth, Client as BtcClient,
+};
 use clap::Parser;
 use eyre::Context;
 use reth_chainspec::ChainSpec;
@@ -224,21 +231,19 @@ fn main() {
             #[cfg(feature = "sequencer")]
             let block_builder_config = block_builder_config_from_env(ext.sequencer)?;
 
-            // Parse sequencer private key from environment variable (only in sequencer mode)
+            #[cfg(feature = "sequencer")]
+            let sequencer_privkey = sequencer_privkey_from_env(ext.sequencer)?;
+
+            #[cfg(feature = "sequencer")]
+            let sequencer_keypair = match sequencer_privkey.as_ref() {
+                Some(privkey) => Some(sequencer_bitcoin_keypair(privkey)?),
+                None => None,
+            }
+            .ok_or_else(|| eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair"))?;
+
             let gossip_config = {
                 #[cfg(feature = "sequencer")]
                 {
-                    let sequencer_privkey = if ext.sequencer {
-                        let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
-                            eyre::eyre!("SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer")
-                        })?;
-                        Some(privkey_str.parse::<Buf32>().map_err(|e| {
-                            eyre::eyre!("Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}")
-                        })?)
-                    } else {
-                        None
-                    };
-
                     GossipConfig {
                         sequencer_pubkey: ext.sequencer_pubkey,
                         sequencer_enabled: ext.sequencer,
@@ -578,6 +583,7 @@ fn main() {
                     writer_config,
                     btcio_params,
                     sequencer_address,
+                    sequencer_keypair,
                     envelope_ops,
                     broadcast_handle.clone(),
                 )
@@ -985,6 +991,32 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
     s.parse::<MagicBytes>()
         .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
+}
+
+#[cfg(feature = "sequencer")]
+fn sequencer_privkey_from_env(sequencer_enabled: bool) -> eyre::Result<Option<Buf32>> {
+    if !sequencer_enabled {
+        return Ok(None);
+    }
+
+    let privkey_str = env::var("SEQUENCER_PRIVATE_KEY").map_err(|_| {
+        eyre::eyre!(
+            "SEQUENCER_PRIVATE_KEY environment variable is required when running with --sequencer"
+        )
+    })?;
+
+    let privkey = privkey_str
+        .parse::<Buf32>()
+        .map_err(|e| eyre::eyre!("Failed to parse SEQUENCER_PRIVATE_KEY as hex: {e}"))?;
+
+    Ok(Some(privkey))
+}
+
+#[cfg(feature = "sequencer")]
+fn sequencer_bitcoin_keypair(privkey: &Buf32) -> eyre::Result<Keypair> {
+    let sk = SecretKey::from_slice(privkey.as_ref()).context("invalid sequencer private key")?;
+    let secp = Secp256k1::signing_only();
+    Ok(Keypair::from_secret_key(&secp, &sk))
 }
 
 /// Parse the EE block time from the environment variable.

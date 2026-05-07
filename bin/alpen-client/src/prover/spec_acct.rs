@@ -270,6 +270,7 @@ impl ProofSpec for AcctSpec {
                 ))
             })?;
         let new_tip_blkid = last_record.package().exec_blkid();
+        let new_tip_state_root = last_record.account_state().last_exec_state_root();
         let new_inbox_idx = last_record.next_inbox_msg_idx();
         let message_count = messages.len() as u64;
         let pre_inbox_idx = new_inbox_idx.checked_sub(message_count).ok_or_else(|| {
@@ -279,17 +280,16 @@ impl ProofSpec for AcctSpec {
             ))
         })?;
 
-        // Derive pre/post state roots. We advance `pre_ee_state` the same
-        // way the EE program's `pre_finalize_state` does (set tip blkid)
-        // so the proof guest's computation from `raw_pre_state` arrives at
-        // the same post-root.
-        let mut post_ee_state = pre_ee_state.clone();
-        post_ee_state.set_last_exec_blkid(new_tip_blkid);
+        // The stored exec block record contains the full post-batch EE
+        // account state, including consumed queues and the execution state
+        // root tracked by `UpdateExtraData`.
+        let post_ee_state = last_record.account_state().clone();
 
         let cur_state = ProofState::new(pre_ee_state.compute_state_root(), pre_inbox_idx);
         let new_state = ProofState::new(post_ee_state.compute_state_root(), new_inbox_idx);
 
-        let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs, 0);
+        let extra_data =
+            UpdateExtraData::new(new_tip_blkid, new_tip_state_root, processed_inputs, 0);
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
 

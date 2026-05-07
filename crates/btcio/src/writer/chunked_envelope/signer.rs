@@ -92,7 +92,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             &entry.chunk_data,
             &entry.magic_bytes,
             entry.da_blob_version,
-            ctx.sequencer_keypair.as_ref(),
+            &ctx.sequencer_keypair,
             utxos,
         )?;
 

@@ -115,7 +115,7 @@ pub fn create_chunked_envelope_task(
     config: Arc<WriterConfig>,
     btcio_params: BtcioParams,
     sequencer_address: Address,
-    sequencer_keypair: Arc<Keypair>,
+    sequencer_keypair: Keypair,
     ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
 ) -> anyhow::Result<(Arc<ChunkedEnvelopeHandle>, impl Future<Output = ()>)> {

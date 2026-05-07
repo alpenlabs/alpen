@@ -77,6 +77,13 @@ fn compute_inner_state_from_chain_config(chain_config: Option<&Path>) -> anyhow:
     };
     let genesis_info = get_alpen_ee_genesis_block_info(&genesis_json)?;
     let blockhash = genesis_info.blockhash.0.into();
-    let ee_state = EeAccountState::new(blockhash, BitcoinAmount::zero(), Vec::new(), Vec::new());
+    let state_root = genesis_info.stateroot.0.into();
+    let ee_state = EeAccountState::new(
+        blockhash,
+        state_root,
+        BitcoinAmount::zero(),
+        Vec::new(),
+        Vec::new(),
+    );
     Ok(ee_state.compute_state_root())
 }
