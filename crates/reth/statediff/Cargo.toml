@@ -12,6 +12,7 @@ alpen-chainspec.workspace = true
 eyre.workspace = true
 revm.workspace = true
 revm-primitives.workspace = true
+rsp-mpt.workspace = true
 serde.workspace = true
 strata-codec.workspace = true
 strata-da-framework.workspace = true

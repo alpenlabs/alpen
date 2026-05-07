@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use alpen_chainspec::chain_value_parser;
 use revm_primitives::{alloy_primitives::Address, B256, U256};
+use rsp_mpt::EthereumState;
 use strata_da_framework::ContextlessDaWrite;
 use strata_mpt::{keccak, MptNode, StateAccount, EMPTY_ROOT, KECCAK_EMPTY};
 use thiserror::Error as ThisError;
@@ -249,6 +250,134 @@ impl StateReconstructor {
 
         Ok(reconstructor)
     }
+}
+
+/// Applies a [`BatchStateDiff`] to a populated [`EthereumState`] sparse-MPT
+/// witness in place.
+///
+/// Mirrors [`StateReconstructor::apply_diff`] but operates on the sparse
+/// MPT shape produced by `RangeWitnessExtractor` (and consumed by the
+/// chunk pipeline), so the EE outer (acct) proof can apply a reassembled
+/// diff to the same pre-state the chunk witnesses already carry and read
+/// the resulting state root via [`EthereumState::state_root`].
+///
+/// `EthereumState` keys both `state_trie` and `storage_tries` by hashed
+/// address (`B256 = keccak256(Address)`); the lookup translation is done
+/// inline via [`keccak`].
+///
+/// MPT primitive failures (malformed sparse trie, missing nodes, …) are
+/// treated as panics — they only happen on a broken witness, which is a
+/// host bug we don't try to handle in-proof. Matches the pattern used by
+/// [`EthereumState::update`] itself.
+pub fn apply_batch_state_diff_to_ethereum_state(
+    state: &mut EthereumState,
+    diff: &BatchStateDiff,
+) -> Result<(), ReconstructError> {
+    for (address, change) in &diff.accounts {
+        let hashed_addr: B256 = keccak(address).into();
+
+        match change {
+            AccountChange::Created(account_diff) | AccountChange::Updated(account_diff) => {
+                let current: Option<StateAccount> = state
+                    .state_trie
+                    .get_rlp(hashed_addr.as_slice())
+                    .unwrap_or_default();
+
+                let mut snapshot = current
+                    .as_ref()
+                    .map(AccountSnapshot::from)
+                    .unwrap_or_default();
+
+                account_diff.apply(&mut snapshot)?;
+
+                let mut state_account = StateAccount {
+                    nonce: snapshot.nonce,
+                    balance: snapshot.balance,
+                    storage_root: Default::default(),
+                    code_hash: snapshot.code_hash,
+                };
+
+                if state_account.is_account_empty() {
+                    continue;
+                }
+
+                state_account.storage_root = {
+                    let acc_storage_trie = state.storage_tries.entry(hashed_addr).or_default();
+                    if let Some(storage_diff) = diff.storage.get(address) {
+                        for (slot_key, slot_value) in storage_diff.iter() {
+                            let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
+                            match slot_value {
+                                Some(v) if !v.is_zero() => {
+                                    acc_storage_trie
+                                        .insert_rlp(&slot_trie_path, *v)
+                                        .expect("storage trie insert");
+                                }
+                                _ => {
+                                    acc_storage_trie
+                                        .delete(&slot_trie_path)
+                                        .expect("storage trie delete");
+                                }
+                            }
+                        }
+                    }
+                    acc_storage_trie.hash()
+                };
+
+                state
+                    .state_trie
+                    .insert_rlp(hashed_addr.as_slice(), state_account)
+                    .expect("state trie insert");
+            }
+            AccountChange::Deleted => {
+                state
+                    .state_trie
+                    .delete(hashed_addr.as_slice())
+                    .expect("state trie delete");
+                state.storage_tries.remove(&hashed_addr);
+            }
+        }
+    }
+
+    // Storage-only changes for accounts not in the accounts map (e.g. an
+    // existing account whose nonce/balance/code didn't change but whose
+    // storage did).
+    for (address, storage_diff) in &diff.storage {
+        if diff.accounts.contains_key(address) {
+            continue;
+        }
+
+        let hashed_addr: B256 = keccak(address).into();
+        let current: Option<StateAccount> = state
+            .state_trie
+            .get_rlp(hashed_addr.as_slice())
+            .unwrap_or_default();
+
+        if let Some(mut state_account) = current {
+            let acc_storage_trie = state.storage_tries.entry(hashed_addr).or_default();
+            for (slot_key, slot_value) in storage_diff.iter() {
+                let slot_trie_path = keccak(slot_key.to_be_bytes::<32>());
+                match slot_value {
+                    Some(v) if !v.is_zero() => {
+                        acc_storage_trie
+                            .insert_rlp(&slot_trie_path, *v)
+                            .expect("storage-only insert");
+                    }
+                    _ => {
+                        acc_storage_trie
+                            .delete(&slot_trie_path)
+                            .expect("storage-only delete");
+                    }
+                }
+            }
+            state_account.storage_root = acc_storage_trie.hash();
+            state
+                .state_trie
+                .insert_rlp(hashed_addr.as_slice(), state_account)
+                .expect("state trie insert (storage-only)");
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -710,5 +839,71 @@ mod tests {
                 &diff,
             );
         }
+    }
+
+    /// Cross-verifies that [`apply_batch_state_diff_to_ethereum_state`]
+    /// (acct-guest path) produces the same post-state root as
+    /// [`StateReconstructor::apply_diff`] (existing oracle path) when both
+    /// start from the same empty state and consume the same diff.
+    ///
+    /// Empty start is sufficient here: the diff's `Created` variants
+    /// produce all the post-state, no pre-state is required. Tests that
+    /// exercise populated pre-state for `EthereumState` live alongside the
+    /// chunk pipeline where the witness-extraction wiring exists.
+    #[test]
+    fn apply_to_ethereum_state_matches_state_reconstructor_oracle() {
+        let address_a = addr(0xA1);
+        let address_b = addr(0xB2);
+        let slot_one = slot(1);
+        let slot_two = slot(2);
+
+        let pre_state = CanonicalState::new();
+        let expected_state = CanonicalState::new()
+            .with_account(address_a, state_account(500, 1, hash(0x33)))
+            .set_storage_slot(address_a, slot_one, value(100))
+            .with_account(address_b, state_account(750, 2, hash(0x44)))
+            .set_storage_slot(address_b, slot_two, value(200));
+
+        let mut block = block_diff();
+        account_change(
+            &mut block,
+            address_a,
+            None,
+            Some(snapshot(500, 1, hash(0x33))),
+        );
+        storage_change(&mut block, address_a, slot_one, U256::ZERO, value(100));
+        account_change(
+            &mut block,
+            address_b,
+            None,
+            Some(snapshot(750, 2, hash(0x44))),
+        );
+        storage_change(&mut block, address_b, slot_two, U256::ZERO, value(200));
+
+        let diff = roundtrip_batch_diff(&[block]);
+
+        // Oracle path.
+        let mut reconstructor =
+            StateReconstructor::from_state_parts(&pre_state.accounts, &pre_state.storage).unwrap();
+        reconstructor.apply_diff(&diff).unwrap();
+
+        // New path: apply to a fresh empty EthereumState — `EthereumState`
+        // has no `Default` impl, so build via its public fields.
+        let mut state = EthereumState {
+            state_trie: Default::default(),
+            storage_tries: Default::default(),
+        };
+        apply_batch_state_diff_to_ethereum_state(&mut state, &diff).unwrap();
+
+        assert_eq!(
+            reconstructor.state_root(),
+            state.state_root(),
+            "ethereum-state apply must agree with reconstructor oracle"
+        );
+        assert_eq!(
+            state.state_root(),
+            canonical_state_root(&expected_state).unwrap(),
+            "ethereum-state apply must match canonical post-state root"
+        );
     }
 }
