@@ -1,13 +1,13 @@
 """
-Regression test: a deposit whose descriptor encodes an unregistered account
-serial must not credit the registered Alpen EE test account.
+Regression test: a deposit whose descriptor encodes the wrong account serial
+must not credit the registered Alpen EE test account.
 
 Background. The alpen-cli historically encoded `AccountSerial::zero()` in
 the deposit descriptor (see `bin/alpen-cli/src/cmd/deposit.rs`). Serial 0
 falls inside the system-reserved range (0..128) and resolves to the
 placeholder `AccountId::zero()` rather than to a real account. The OL
-then silently discards the funds inside `account_processing::process_message`
-(the target-does-not-exist branch).
+then handles the funds through the target-does-not-exist branch in
+`account_processing::process_message`.
 
 This test injects a mock deposit with `account_serial=0` via the debug
 subprotocol. That path goes through the same `process_asm_log -> process_deposit_log
@@ -16,8 +16,8 @@ failure deterministically without standing up bridge operators.
 
 We assert the registered test account at serial 128 is not credited. Once
 the alpen-cli is fixed (separate commit in this PR) the wallet stops
-encoding serial=0, but this test guards the OL against silently re-introducing
-the same loss-of-funds path.
+encoding serial=0, but this test keeps the regression observable at the OL
+boundary.
 """
 
 import logging
