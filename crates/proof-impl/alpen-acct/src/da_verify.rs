@@ -276,9 +276,12 @@ mod tests {
     use super::*;
 
     fn fake_chunk_transition(parent: Hash, tip: Hash) -> ChunkTransition {
+        // The DA-verify tests don't exercise the state-diff binding,
+        // so the tip state root is a placeholder.
         ChunkTransition::new(
             parent,
             tip,
+            Hash::from([0u8; 32]),
             ExecInputs::new_empty(),
             ExecOutputs::new_empty(),
         )

@@ -124,6 +124,7 @@ mod tests {
         let body = EvmBlockBody::from_alloy_body(witness.current_block.body().clone());
         let block = EvmBlock::new(evm_header, body);
         let tip_blkid: Hash = block.get_header().compute_block_id();
+        let tip_state_root: Hash = block.get_header().get_state_root();
 
         // Execute the block to get outputs.
         let chain_spec: Arc<reth_chainspec::ChainSpec> =
@@ -137,8 +138,13 @@ mod tests {
         let outputs = output.outputs().clone();
 
         // Build chunk transition.
-        let chunk_transition =
-            ChunkTransition::new(parent_blkid, tip_blkid, inputs.clone(), outputs.clone());
+        let chunk_transition = ChunkTransition::new(
+            parent_blkid,
+            tip_blkid,
+            tip_state_root,
+            inputs.clone(),
+            outputs.clone(),
+        );
 
         // Encode block, header, and state for the private input.
         let raw_block_data =

@@ -245,7 +245,10 @@ pub(crate) fn simple_chunk(
     for d in deposits {
         inputs.add_subject_deposit(d);
     }
-    ChunkTransition::new(parent, tip, inputs, outputs)
+    // ee-acct-runtime tests verify update aggregation under
+    // `always_accept` chunk predicates and don't go through chunk
+    // verification, so the tip state root is unused here.
+    ChunkTransition::new(parent, tip, Hash::from([0u8; 32]), inputs, outputs)
 }
 
 /// Creates a [`ChunkTransition`] for testing (thin wrapper).
@@ -255,7 +258,7 @@ pub(crate) fn create_chunk_transition(
     inputs: ExecInputs,
     outputs: ExecOutputs,
 ) -> ChunkTransition {
-    ChunkTransition::new(parent, tip, inputs, outputs)
+    ChunkTransition::new(parent, tip, Hash::from([0u8; 32]), inputs, outputs)
 }
 
 /// Wraps chunk transitions into [`ChunkInput`]s with empty proofs.

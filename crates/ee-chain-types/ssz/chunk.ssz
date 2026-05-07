@@ -8,6 +8,13 @@ class ChunkTransition(Container):
     ### New tip exec blkid.
     tip_exec_blkid: Bytes32
 
+    ### Post-execution state root of the chunk's tip block.
+    ###
+    ### Exposed so the outer (acct) proof can bind a reassembled
+    ### `BatchStateDiff` (applied to the pre-state) to what the chunk
+    ### actually executed, without having to parse the tip block header.
+    tip_state_root: Bytes32
+
     ### Inputs processed in the chunk.
     inputs: io.ExecInputs
 

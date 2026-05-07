@@ -176,9 +176,15 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
         tsn.outputs(),
     )?;
 
-    // 4. Compute the final state root and make sure it matches.
+    // 4. Compute the final state root and make sure it matches both the
+    // tip block header *and* the chunk transition's pubval. The tip-state-
+    // root pubval is what the outer (acct) proof binds a reassembled
+    // BatchStateDiff against, so the equality has to hold here.
     let computed_post_sr = state.compute_state_root()?;
     if computed_post_sr != new_tip_header.get_state_root() {
+        return Err(EnvError::MismatchedChainSegment);
+    }
+    if computed_post_sr != tsn.tip_state_root() {
         return Err(EnvError::MismatchedChainSegment);
     }
 
