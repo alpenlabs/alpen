@@ -463,7 +463,7 @@ reqwest = { version = "0.12.7", default-features = false, features = [
   "zstd",
   "json",
 ] }
-rkyv = { version = "0.8.14", features = ["little_endian", "pointer_width_32"] }
+rkyv = { version = "0.8.16", features = ["little_endian", "pointer_width_32"] }
 rkyv_impl = "0.2.2"
 rlp = "0.6.1"
 schemars = "1"
