@@ -1,16 +1,12 @@
-//! Builds and signs a chunked envelope, then stores transactions in the broadcast database.
-//!
-//! This module orchestrates the full build-sign-store pipeline for a
-//! chunked envelope entry — matching the pattern used by the parent single-reveal
-//! [`signer`](super::super::signer) module.
+//! Builds and signs a chunked envelope for lifecycle persistence.
 //!
 //! **Signing strategy:**
 //! - **Commit tx**: Signed via bitcoind wallet RPC (`sign_raw_transaction_with_wallet`) because its
 //!   inputs are wallet-managed UTXOs.
-//! - **Reveal txs**: Pre-signed in [`build_chunked_envelope_txs`] using ephemeral in-memory
-//!   keypairs (one per reveal). Each reveal spends a P2TR output created by the commit, so the
-//!   ephemeral key only needs to live long enough to produce the tapscript spend signature. This
-//!   matches the existing single-reveal approach.
+//! - **Reveal txs**: Signed in [`build_chunked_envelope_txs`] under the EE sequencer's BIP340
+//!   Schnorr key (the same key used for gossip preconfirmation packages). Each reveal's tapscript
+//!   is `<sequencer_pk> OP_CHECKSIG OP_FALSE OP_IF <chunk> OP_ENDIF`. The spend signature
+//!   transitively authenticates the commit because reveals spend commit outputs.
 
 use std::sync::Arc;
 
@@ -24,12 +20,9 @@ use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
-use crate::{
-    broadcaster::L1BroadcastHandle,
-    writer::{
-        builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
-        fees::resolve_fee_rate,
-    },
+use crate::writer::{
+    builder::{EnvelopeConfig, EnvelopeError, BITCOIN_DUST_LIMIT},
+    fees::resolve_fee_rate,
 };
 
 fn format_reveal_refs(reveals: &[RevealTxMeta]) -> Vec<String> {
@@ -39,26 +32,31 @@ fn format_reveal_refs(reveals: &[RevealTxMeta]) -> Vec<String> {
         .collect()
 }
 
+/// Signed chunked-envelope metadata ready for lifecycle persistence.
+pub(crate) struct SignedChunkedEnvelope {
+    /// Updated chunked-envelope row containing txids, reveal bytes, and status.
+    pub entry: ChunkedEnvelopeEntry,
+    /// Wallet-signed commit tx entry, initially stored as unpublished.
+    pub commit_tx_entry: L1TxEntry,
+}
+
 /// Builds and signs a chunked envelope's commit + N reveal transactions.
 ///
-/// The commit tx is signed via wallet RPC and stored in the broadcast database.
-/// Reveal txs are signed and stored in the entry's `reveals` field (with raw bytes),
-/// but are NOT added to the broadcast DB yet. The watcher will add them after
-/// the commit tx is published, preventing `InvalidInputs` errors.
+/// The commit tx is signed via wallet RPC and returned as a broadcast DB entry.
+/// Reveal txs are signed under the sequencer keypair and stored in the returned
+/// chunked-envelope row with raw bytes. The lifecycle driver persists these
+/// artifacts before attempting immediate commit publication.
 ///
 /// Returns the updated entry with status [`Unpublished`](ChunkedEnvelopeStatus::Unpublished).
 pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
-    prev_tail_wtxid: Buf32,
-    broadcast_handle: &L1BroadcastHandle,
     ctx: Arc<ChunkedWriterContext<R>>,
-) -> Result<ChunkedEnvelopeEntry, EnvelopeError> {
+) -> Result<SignedChunkedEnvelope, EnvelopeError> {
     let sign_chunked_envelope_span = debug_span!(
         "btcio_chunked_envelope_sign",
         envelope_idx,
         chunk_count = entry.chunk_data.len(),
-        %prev_tail_wtxid,
     );
 
     async {
@@ -93,7 +91,8 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             &env_config,
             &entry.chunk_data,
             &entry.magic_bytes,
-            &prev_tail_wtxid,
+            entry.da_blob_version,
+            ctx.sequencer_keypair.as_ref(),
             utxos,
         )?;
 
@@ -105,13 +104,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
             .tx;
         let commit_txid: Buf32 = signed_commit.compute_txid().to_buf32();
-
-        // Store ONLY the commit tx in broadcast DB. Reveals will be added after
-        // commit is published to prevent InvalidInputs errors.
-        broadcast_handle
-            .put_tx_entry(commit_txid, L1TxEntry::from_tx(&signed_commit))
-            .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+        let commit_wtxid: Buf32 = signed_commit.compute_wtxid().to_buf32();
 
         // Store reveal metadata and raw bytes locally. They'll be added to broadcast
         // DB by the watcher after commit is published.
@@ -121,8 +114,9 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             let wtxid: Buf32 = reveal_tx.compute_wtxid().to_buf32();
             let tx_bytes = btc_serialize(reveal_tx);
 
+            // vout_index is i+1 because vout 0 is the commit OP_RETURN.
             reveals.push(RevealTxMeta {
-                vout_index: i as u32,
+                vout_index: (i + 1) as u32,
                 txid,
                 wtxid,
                 tx_bytes,
@@ -132,17 +126,21 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
         let reveal_refs = format_reveal_refs(&reveals);
         debug!(
             %commit_txid,
+            %commit_wtxid,
             reveal_count = reveals.len(),
             ?reveal_refs,
-            "signed chunked envelope, commit stored, reveals pending"
+            "signed chunked envelope, ready for persistence"
         );
 
         let mut updated = entry.clone();
-        updated.prev_tail_wtxid = prev_tail_wtxid;
         updated.commit_txid = commit_txid;
+        updated.commit_wtxid = commit_wtxid;
         updated.reveals = reveals;
         updated.status = ChunkedEnvelopeStatus::Unpublished;
-        Ok(updated)
+        Ok(SignedChunkedEnvelope {
+            entry: updated,
+            commit_tx_entry: L1TxEntry::from_tx(&signed_commit),
+        })
     }
     .instrument(sign_chunked_envelope_span)
     .await

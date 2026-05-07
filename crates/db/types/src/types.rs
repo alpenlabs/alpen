@@ -438,18 +438,22 @@ pub type L1PayloadIntentIndex = u64;
 /// A chunked envelope entry representing a commit tx funding N reveal txs.
 ///
 /// Used for posting large DA blobs that exceed single-transaction limits.
-/// Each reveal contains a chunk of the original blob with header metadata
-/// for reassembly.
+/// The commit tx publishes the EE DA marker via an OP_RETURN at output 0
+/// (`magic + version`); each subsequent P2TR output funds a
+/// reveal whose tapscript carries one chunk under `<sequencer_pk> OP_CHECKSIG`.
+/// Reveals do NOT reference each other; entries are independent across batches.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct ChunkedEnvelopeEntry {
-    /// Opaque witness data per reveal, ordered by output index.
+    /// Raw chunk payloads, ordered by commit-output index.
     pub chunk_data: Vec<Vec<u8>>,
-    /// OP_RETURN tag magic bytes.
+    /// OP_RETURN magic bytes (4) used in the commit tx.
     pub magic_bytes: MagicBytes,
-    /// Wtxid of the last reveal in the preceding envelope, or zero for the first.
-    pub prev_tail_wtxid: Buf32,
+    /// DA blob version carried in the commit OP_RETURN.
+    pub da_blob_version: u32,
     /// Commit transaction ID. Zero if unsigned.
     pub commit_txid: Buf32,
+    /// Witness transaction ID of the commit. Zero if unsigned.
+    pub commit_wtxid: Buf32,
     /// Per-reveal metadata, ordered by output index. Empty if unsigned.
     pub reveals: Vec<RevealTxMeta>,
     /// Lifecycle status.
@@ -459,27 +463,22 @@ pub struct ChunkedEnvelopeEntry {
 impl ChunkedEnvelopeEntry {
     /// Creates a new unsigned entry with no transaction metadata.
     ///
-    /// Transaction IDs, reveal metadata, and `prev_tail_wtxid` are populated
-    /// at signing time by the watcher (which guarantees the predecessor entry
-    /// is already signed).
-    pub fn new_unsigned(chunk_data: Vec<Vec<u8>>, magic_bytes: MagicBytes) -> Self {
+    /// Transaction IDs and reveal metadata are populated at signing time by
+    /// the watcher.
+    pub fn new_unsigned(
+        chunk_data: Vec<Vec<u8>>,
+        magic_bytes: MagicBytes,
+        da_blob_version: u32,
+    ) -> Self {
         Self {
             chunk_data,
             magic_bytes,
-            prev_tail_wtxid: Buf32::zero(),
+            da_blob_version,
             commit_txid: Buf32::zero(),
+            commit_wtxid: Buf32::zero(),
             reveals: Vec::new(),
             status: ChunkedEnvelopeStatus::Unsigned,
         }
-    }
-
-    /// Returns the wtxid of the last reveal, or [`prev_tail_wtxid`](Self::prev_tail_wtxid) if
-    /// unsigned.
-    pub fn tail_wtxid(&self) -> Buf32 {
-        self.reveals
-            .last()
-            .map(|r| r.wtxid)
-            .unwrap_or(self.prev_tail_wtxid)
     }
 }
 
@@ -631,8 +630,9 @@ mod tests {
         let entry = ChunkedEnvelopeEntry {
             chunk_data: vec![vec![1], vec![2]],
             magic_bytes: MagicBytes::new([0; 4]),
-            prev_tail_wtxid: Buf32::zero(),
+            da_blob_version: 1,
             commit_txid: Buf32::from([1; 32]),
+            commit_wtxid: Buf32::from([4; 32]),
             reveals: vec![RevealTxMeta {
                 vout_index: 0,
                 txid: Buf32::from([2; 32]),

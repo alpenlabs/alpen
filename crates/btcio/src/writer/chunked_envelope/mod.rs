@@ -2,6 +2,7 @@
 //! transactions, each carrying opaque witness data.
 
 pub(crate) mod builder;
+pub(crate) mod commit_op_return;
 mod context;
 mod handle;
 mod signer;
