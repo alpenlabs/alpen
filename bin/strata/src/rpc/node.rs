@@ -400,13 +400,13 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             return Ok(None);
         };
 
-        // Snark-only fields are zeroed for non-snark accounts. `RpcAccountBlockSummary`
-        // exposes `next_inbox_msg_idx` directly rather than a full `ProofState`, since
-        // per-block summaries focus on changes rather than full proof state.
+        // Snark-only fields are zeroed for non-snark accounts. For block
+        // summaries, `next_inbox_msg_idx` tracks the inbox accumulator leaf
+        // count after this block, not the snark proof-state read cursor.
         let (next_seq_no, next_inbox_msg_idx) = match account_state.as_snark_account() {
             Ok(snark_state) => (
                 *snark_state.seqno().inner(),
-                snark_state.next_inbox_msg_idx(),
+                snark_state.inbox_mmr().num_entries(),
             ),
             Err(_) => (0, 0),
         };

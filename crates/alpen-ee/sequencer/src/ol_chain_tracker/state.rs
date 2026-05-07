@@ -139,6 +139,11 @@ impl OLChainTrackerState {
             return Err(eyre!("unknown block: {next_base:?}"));
         };
 
+        self.base_block_next_inbox_msg_idx = self
+            .data
+            .get(next_base.blkid())
+            .expect("tracked block must have inbox data")
+            .next_inbox_msg_idx;
         self.base_block = next_base;
         for _ in 0..=prune_idx {
             let block = self.blocks.pop_front().expect("should exist");
@@ -362,19 +367,20 @@ mod tests {
             let block13 = make_block(13);
 
             state
-                .append_block(block11, vec![make_message(1)], 0)
+                .append_block(block11, vec![make_message(1)], 1)
                 .unwrap();
             state
-                .append_block(block12, vec![make_message(2)], 0)
+                .append_block(block12, vec![make_message(2)], 2)
                 .unwrap();
             state
-                .append_block(block13, vec![make_message(3)], 0)
+                .append_block(block13, vec![make_message(3)], 3)
                 .unwrap();
 
             state.prune_blocks(block12).unwrap();
 
             // block12 becomes new base, blocks 11 and 12 are removed
             assert_eq!(state.base_block, block12);
+            assert_eq!(state.base_block_next_inbox_msg_idx, 2);
             assert_eq!(state.blocks.len(), 1);
             assert_eq!(state.blocks.front().unwrap().slot(), 13);
             // Data for pruned blocks should be removed
@@ -391,12 +397,13 @@ mod tests {
             let block11 = make_block(11);
             let block12 = make_block(12);
 
-            state.append_block(block11, vec![], 0).unwrap();
-            state.append_block(block12, vec![], 0).unwrap();
+            state.append_block(block11, vec![], 1).unwrap();
+            state.append_block(block12, vec![], 2).unwrap();
 
             state.prune_blocks(block11).unwrap();
 
             assert_eq!(state.base_block, block11);
+            assert_eq!(state.base_block_next_inbox_msg_idx, 1);
             assert_eq!(state.blocks.len(), 1);
             assert_eq!(state.blocks.front().unwrap().slot(), 12);
         }
@@ -409,13 +416,31 @@ mod tests {
             let block11 = make_block(11);
             let block12 = make_block(12);
 
-            state.append_block(block11, vec![], 0).unwrap();
-            state.append_block(block12, vec![], 0).unwrap();
+            state.append_block(block11, vec![], 1).unwrap();
+            state.append_block(block12, vec![], 2).unwrap();
 
             state.prune_blocks(block12).unwrap();
 
             assert_eq!(state.base_block, block12);
+            assert_eq!(state.base_block_next_inbox_msg_idx, 2);
             assert!(state.blocks.is_empty());
+        }
+
+        #[test]
+        fn empty_after_prune_returns_new_base_inbox_idx() {
+            let base = make_block(10);
+            let mut state = OLChainTrackerState::new_empty(base, 0);
+
+            let block11 = make_block(11);
+            state
+                .append_block(block11, vec![make_message(100)], 1)
+                .unwrap();
+
+            state.prune_blocks(block11).unwrap();
+
+            let messages = state.get_inbox_messages(11, 11).unwrap();
+            assert!(messages.messages.is_empty());
+            assert_eq!(messages.next_inbox_msg_idx(), 1);
         }
 
         #[test]

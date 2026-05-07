@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    slice,
     sync::{Arc, Mutex},
 };
 
@@ -397,6 +398,16 @@ fn ol_state_with_snark_account(
     seq_no: u64,
     next_inbox_msg_idx: u64,
 ) -> OLState {
+    ol_state_with_snark_account_and_inbox_entries(account_id, slot, seq_no, next_inbox_msg_idx, &[])
+}
+
+fn ol_state_with_snark_account_and_inbox_entries(
+    account_id: AccountId,
+    slot: Slot,
+    seq_no: u64,
+    next_inbox_msg_idx: u64,
+    inbox_messages: &[MessageEntry],
+) -> OLState {
     let base = genesis_ol_state();
     let mut state = MemoryStateBaseLayer::new(base);
     state.set_cur_slot(slot);
@@ -412,6 +423,9 @@ fn ol_state_with_snark_account(
         .update_account(account_id, |acct| {
             let s = acct.as_snark_account_mut().unwrap();
             s.set_proof_state_directly(Hash::zero(), next_inbox_msg_idx, Seqno::from(seq_no));
+            for message in inbox_messages {
+                s.insert_inbox_message(message.clone()).unwrap();
+            }
         })
         .unwrap();
     state.into_inner()
@@ -1233,6 +1247,49 @@ async fn blocks_summaries_snark_vs_non_snark() {
     assert_eq!(empty.len(), 1);
     assert_eq!(empty[0].next_seq_no(), 0);
     assert_eq!(empty[0].next_inbox_msg_idx(), 0);
+}
+
+#[tokio::test]
+async fn blocks_summaries_reports_inbox_accumulator_count() {
+    let account_id = test_account_id(3);
+
+    let block0 = make_block(0, 0, null_blkid());
+    let blkid0 = block0.header().compute_blkid();
+    let block1 = make_block(1, 0, blkid0);
+    let blkid1 = block1.header().compute_blkid();
+
+    let tip = OLBlockCommitment::new(1, blkid1);
+    let deposit_message = make_message_entry(test_account_id(50), 0, 1_000, vec![0x02, 0xaa]);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            0,
+            false,
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&block0, ol_state_with_snark_account(account_id, 0, 0, 0))
+        .with_block_and_state(
+            &block1,
+            ol_state_with_snark_account_and_inbox_entries(
+                account_id,
+                1,
+                0,
+                0,
+                slice::from_ref(&deposit_message),
+            ),
+        );
+    let rpc = make_rpc(provider);
+
+    let summaries = rpc
+        .get_blocks_summaries(account_id, 0, 1)
+        .await
+        .expect("summaries");
+
+    assert_eq!(summaries.len(), 2);
+    assert_eq!(summaries[0].next_inbox_msg_idx(), 0);
+    assert_eq!(summaries[1].next_inbox_msg_idx(), 1);
 }
 
 // ── get_blocks_summaries: indexed activity ──

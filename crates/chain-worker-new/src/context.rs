@@ -6,19 +6,23 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ssz::Encode;
+use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
     ol_state_index::{AccountUpdateMeta, AccountUpdateRecord, InboxMessageRecord, IndexingWrites},
 };
-use strata_identifiers::{AccountId, OLBlockCommitment, OLBlockId};
+use strata_identifiers::{AccountId, Hash, OLBlockCommitment, OLBlockId};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::{OLAccountState, OLState, WriteBatch};
 use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
-use strata_storage::{OLBlockManager, OLCheckpointManager, OLStateIndexingManager, OLStateManager};
+use strata_storage::{
+    MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
+    OLStateManager,
+};
 use tokio::{runtime::Handle, sync::watch};
 use tracing::debug;
 
@@ -50,6 +54,9 @@ pub struct ChainWorkerContextImpl {
     /// Manager for OL state indexing data (per-block writes, epoch finalization).
     ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
 
+    /// Manager for append-only MMR proof indices.
+    mmr_index_mgr: Arc<MmrIndexManager>,
+
     /// Status channel to send/receive messages.
     status_channel: Arc<StatusChannel>,
 
@@ -72,6 +79,7 @@ impl ChainWorkerContextImpl {
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
+            mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
             params: nodectx.params().clone(),
@@ -165,8 +173,23 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
             .put_write_batch_blocking(commitment, wb.clone())?;
 
         let writes = build_indexing_writes(commitment, output);
-        self.ol_state_indexing_mgr
-            .apply_block_indexing_blocking(epoch, commitment, writes)?;
+        match self
+            .ol_state_indexing_mgr
+            .apply_block_indexing_blocking(epoch, commitment, writes)
+        {
+            Ok(()) => {
+                index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+            }
+            Err(DbError::BlockIndexingConflict {
+                attempted,
+                last_applied,
+                ..
+            }) if attempted == commitment && last_applied == commitment => {
+                index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+                debug!(%commitment, "block indexing already applied; treating as retry");
+            }
+            Err(e) => return Err(e.into()),
+        }
 
         Ok(())
     }
@@ -345,4 +368,167 @@ fn build_indexing_writes(
     }
 
     IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
+}
+
+/// Applies snark inbox writes to the MMR proof index.
+///
+/// The OL state itself stores the compact MMR root/peaks. Block assembly needs
+/// historical nodes from [`MmrIndexManager`] to generate proofs for later snark
+/// account updates, so the chain worker mirrors each accepted inbox append into
+/// the proof index. The operation is idempotent for crash-restart retries.
+fn index_inbox_mmr_writes(
+    mmr_index_mgr: &MmrIndexManager,
+    output: &OLBlockExecutionOutput,
+) -> WorkerResult<()> {
+    for write in output.indexer_writes().inbox_messages() {
+        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(write.entry()).into();
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(write.account_id()));
+        let leaf_count = handle.get_num_leaves_blocking()?;
+
+        if write.index() < leaf_count {
+            let Some(existing_hash) = handle.get_leaf_blocking(write.index())? else {
+                return Err(
+                    DbError::MmrLeafNotFoundForAccount(write.index(), write.account_id()).into(),
+                );
+            };
+
+            if existing_hash != expected_hash {
+                return Err(DbError::MmrLeafHashMismatch {
+                    idx: write.index(),
+                    expected: expected_hash,
+                    got: existing_hash,
+                }
+                .into());
+            }
+
+            continue;
+        }
+
+        if write.index() > leaf_count {
+            return Err(DbError::MmrIndexOutOfRange {
+                requested: write.index(),
+                cur: leaf_count,
+            }
+            .into());
+        }
+
+        let appended_idx = handle.append_leaf_with_preimage_blocking(expected_hash, entry_bytes)?;
+        if appended_idx != write.index() {
+            return Err(WorkerError::Unexpected(format!(
+                "snark inbox MMR append index mismatch for account {}: expected {}, got {}",
+                write.account_id(),
+                write.index(),
+                appended_idx
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
+    use strata_identifiers::Buf32;
+    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites};
+
+    use super::*;
+
+    fn setup_mmr_index_manager() -> MmrIndexManager {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = Arc::new(typed_sled::SledDb::new(db).unwrap());
+        let mmr_db = Arc::new(MmrIndexDb::new(sled_db, SledDbConfig::test()).unwrap());
+        MmrIndexManager::new(threadpool::ThreadPool::new(1), mmr_db)
+    }
+
+    fn message_entry(source_seed: u8, value_sats: u64) -> MessageEntry {
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![source_seed]);
+        MessageEntry::new(AccountId::from([source_seed; 32]), 0, payload)
+    }
+
+    fn output_with_inbox_messages(
+        writes: impl IntoIterator<Item = (AccountId, MessageEntry, u64)>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        for (account_id, entry, index) in writes {
+            indexer_writes.push_inbox_message(InboxMessageWrite::new(account_id, entry, index));
+        }
+
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
+    }
+
+    fn assert_mmr_entry(
+        mmr_index_mgr: &MmrIndexManager,
+        account_id: AccountId,
+        index: u64,
+        entry: &MessageEntry,
+    ) {
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(entry).into();
+
+        assert_eq!(
+            handle.get_leaf_blocking(index).unwrap(),
+            Some(expected_hash)
+        );
+        assert_eq!(handle.get_blocking(index).unwrap(), entry.as_ssz_bytes());
+    }
+
+    #[test]
+    fn index_inbox_mmr_writes_stores_expected_leaves_and_preimages() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let account_one = AccountId::from([1u8; 32]);
+        let account_two = AccountId::from([2u8; 32]);
+        let entry_one = message_entry(10, 100);
+        let entry_two = message_entry(11, 200);
+        let entry_three = message_entry(12, 300);
+        let output = output_with_inbox_messages([
+            (account_one, entry_one.clone(), 0),
+            (account_one, entry_two.clone(), 1),
+            (account_two, entry_three.clone(), 0),
+        ]);
+
+        index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::SnarkMsgInbox(account_one))
+                .get_num_leaves_blocking()
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::SnarkMsgInbox(account_two))
+                .get_num_leaves_blocking()
+                .unwrap(),
+            1
+        );
+        assert_mmr_entry(&mmr_index_mgr, account_one, 0, &entry_one);
+        assert_mmr_entry(&mmr_index_mgr, account_one, 1, &entry_two);
+        assert_mmr_entry(&mmr_index_mgr, account_two, 0, &entry_three);
+    }
+
+    #[test]
+    fn index_inbox_mmr_writes_is_idempotent() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let account_id = AccountId::from([3u8; 32]);
+        let entry_one = message_entry(13, 400);
+        let entry_two = message_entry(14, 500);
+        let output = output_with_inbox_messages([
+            (account_id, entry_one.clone(), 0),
+            (account_id, entry_two.clone(), 1),
+        ]);
+
+        index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
+        index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
+        assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry_one);
+        assert_mmr_entry(&mmr_index_mgr, account_id, 1, &entry_two);
+    }
 }
