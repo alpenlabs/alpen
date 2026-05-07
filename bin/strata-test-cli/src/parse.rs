@@ -1,3 +1,4 @@
+use anyhow::Context;
 use bdk_wallet::bitcoin::{
     bip32::Xpriv, secp256k1::SECP256K1, taproot::TaprootBuilder, Address, Network, PublicKey,
     XOnlyPublicKey,
@@ -37,20 +38,20 @@ pub(crate) fn parse_operator_keys(operator_keys: &[[u8; 78]]) -> Result<Vec<Even
 /// * `network` - Bitcoin network (mainnet, testnet, regtest, etc.)
 ///
 /// # Returns
-/// * `Result<(Address, XOnlyPublicKey), Error>` - Taproot address and internal pubkey
+/// * Taproot address and internal pubkey
 pub(crate) fn generate_taproot_address(
     operator_wallet_pks: &[Buf32],
     network: Network,
-) -> Result<(Address, XOnlyPublicKey), Error> {
+) -> anyhow::Result<(Address, XOnlyPublicKey)> {
     // Aggregate the operator public keys into a single x-only pubkey
-    let x_only_pub_key = aggregate_schnorr_keys(operator_wallet_pks.iter())
-        .map_err(|e| Error::TxBuilder(format!("Failed to aggregate keys: {}", e)))?;
+    let x_only_pub_key =
+        aggregate_schnorr_keys(operator_wallet_pks.iter()).context("failed to aggregate keys")?;
 
     // Build the taproot spending tree (empty tree in this case)
     let taproot_builder = TaprootBuilder::new();
     let spend_info = taproot_builder
         .finalize(SECP256K1, x_only_pub_key)
-        .map_err(|_| Error::TxBuilder("Taproot finalization failed".to_string()))?;
+        .map_err(|_| anyhow::anyhow!("taproot finalization failed"))?;
     let merkle_root = spend_info.merkle_root();
 
     // Create the P2TR address
