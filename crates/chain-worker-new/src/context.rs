@@ -186,12 +186,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
                 ..
             }) if attempted == commitment && last_applied == commitment => {
                 index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
-                return Err(DbError::BlockIndexingConflict {
-                    epoch,
-                    attempted,
-                    last_applied,
-                }
-                .into());
+                debug!(%commitment, "block indexing already applied; treating as retry");
             }
             Err(e) => return Err(e.into()),
         }
@@ -430,4 +425,110 @@ fn index_inbox_mmr_writes(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_db_store_sled::{MmrIndexDb, SledDbConfig};
+    use strata_identifiers::Buf32;
+    use strata_ol_state_support_types::{InboxMessageWrite, IndexerWrites};
+
+    use super::*;
+
+    fn setup_mmr_index_manager() -> MmrIndexManager {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let sled_db = Arc::new(typed_sled::SledDb::new(db).unwrap());
+        let mmr_db = Arc::new(MmrIndexDb::new(sled_db, SledDbConfig::test()).unwrap());
+        MmrIndexManager::new(threadpool::ThreadPool::new(1), mmr_db)
+    }
+
+    fn message_entry(source_seed: u8, value_sats: u64) -> MessageEntry {
+        let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![source_seed]);
+        MessageEntry::new(AccountId::from([source_seed; 32]), 0, payload)
+    }
+
+    fn output_with_inbox_messages(
+        writes: impl IntoIterator<Item = (AccountId, MessageEntry, u64)>,
+    ) -> OLBlockExecutionOutput {
+        let mut indexer_writes = IndexerWrites::new();
+        for (account_id, entry, index) in writes {
+            indexer_writes.push_inbox_message(InboxMessageWrite::new(account_id, entry, index));
+        }
+
+        OLBlockExecutionOutput::new(Buf32::zero(), WriteBatch::default(), indexer_writes)
+    }
+
+    fn assert_mmr_entry(
+        mmr_index_mgr: &MmrIndexManager,
+        account_id: AccountId,
+        index: u64,
+        entry: &MessageEntry,
+    ) {
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        let expected_hash: Hash = <MessageEntry as TreeHash>::tree_hash_root(entry).into();
+
+        assert_eq!(
+            handle.get_leaf_blocking(index).unwrap(),
+            Some(expected_hash)
+        );
+        assert_eq!(handle.get_blocking(index).unwrap(), entry.as_ssz_bytes());
+    }
+
+    #[test]
+    fn index_inbox_mmr_writes_stores_expected_leaves_and_preimages() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let account_one = AccountId::from([1u8; 32]);
+        let account_two = AccountId::from([2u8; 32]);
+        let entry_one = message_entry(10, 100);
+        let entry_two = message_entry(11, 200);
+        let entry_three = message_entry(12, 300);
+        let output = output_with_inbox_messages([
+            (account_one, entry_one.clone(), 0),
+            (account_one, entry_two.clone(), 1),
+            (account_two, entry_three.clone(), 0),
+        ]);
+
+        index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::SnarkMsgInbox(account_one))
+                .get_num_leaves_blocking()
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            mmr_index_mgr
+                .get_handle(MmrId::SnarkMsgInbox(account_two))
+                .get_num_leaves_blocking()
+                .unwrap(),
+            1
+        );
+        assert_mmr_entry(&mmr_index_mgr, account_one, 0, &entry_one);
+        assert_mmr_entry(&mmr_index_mgr, account_one, 1, &entry_two);
+        assert_mmr_entry(&mmr_index_mgr, account_two, 0, &entry_three);
+    }
+
+    #[test]
+    fn index_inbox_mmr_writes_is_idempotent() {
+        let mmr_index_mgr = setup_mmr_index_manager();
+        let account_id = AccountId::from([3u8; 32]);
+        let entry_one = message_entry(13, 400);
+        let entry_two = message_entry(14, 500);
+        let output = output_with_inbox_messages([
+            (account_id, entry_one.clone(), 0),
+            (account_id, entry_two.clone(), 1),
+        ]);
+
+        index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
+        index_inbox_mmr_writes(&mmr_index_mgr, &output).unwrap();
+
+        let handle = mmr_index_mgr.get_handle(MmrId::SnarkMsgInbox(account_id));
+        assert_eq!(handle.get_num_leaves_blocking().unwrap(), 2);
+        assert_mmr_entry(&mmr_index_mgr, account_id, 0, &entry_one);
+        assert_mmr_entry(&mmr_index_mgr, account_id, 1, &entry_two);
+    }
 }

@@ -113,9 +113,7 @@ where
 ///
 /// `confirmations <= 0` means the tx is visible to bitcoind but not anchored
 /// to the canonical chain (mempool-only, or on a side branch after reorg);
-/// returns [`L1TxStatus::Published`]. Callers that need different 0-conf
-/// semantics — e.g. regressing a `Confirmed` entry to `Unpublished` on
-/// reorg drop — must override the result themselves.
+/// returns [`L1TxStatus::Published`].
 fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1TxStatus {
     if info.confirmations <= 0 {
         return L1TxStatus::Published;
@@ -141,12 +139,11 @@ fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1Tx
 }
 
 /// Resolves a `Confirmed` entry to its next confirmation-derived status. A
-/// confirmed tx that disappears or drops to 0 confirmations regresses to
-/// `Unpublished` so the broadcaster re-publishes (typical reorg recovery).
+/// confirmed tx that disappears regresses to `Unpublished` so the broadcaster
+/// re-publishes (typical reorg recovery).
 ///
 /// Callers in `Published` state must use `probe_published_entry` instead; that
-/// path holds 0-conf and not-found differently to avoid publish/revert
-/// oscillation and unnecessary re-broadcasts.
+/// path probes not-found transactions before deciding whether they were dropped.
 async fn check_tx_confirmations<C>(
     io: &C,
     txentry: &L1TxEntry,
@@ -161,11 +158,10 @@ where
         debug!(?txinfo_res, "checked transaction status");
         let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
-        match txinfo_res? {
-            Some(info) if info.confirmations == 0 => Ok(L1TxStatus::Unpublished),
-            Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
-            None => Ok(L1TxStatus::Unpublished),
-        }
+        Ok(txinfo_res?
+            .as_ref()
+            .map(|info| confirmation_status(info, reorg_safe_depth))
+            .unwrap_or(L1TxStatus::Unpublished))
     }
     .instrument(debug_span!(
         "check_tx_confirmations",
@@ -611,8 +607,8 @@ mod test {
                 let res = process_status(&io, &e, &txid, &btcio_params).await;
                 assert_eq!(
                     res,
-                    Some(L1TxStatus::Unpublished),
-                    "Status should revert to unpublished if confirmed tx now has 0 confirmations"
+                    Some(L1TxStatus::Published),
+                    "Status should revert to published if confirmed tx is visible at 0 confirmations"
                 );
 
                 let io = MockIoContext::default().with_tx_lookup(
@@ -673,14 +669,6 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_published_entry_dropped_from_mempool_advances_to_invalid_inputs() {
-        // A `Published` entry whose lookup says "not found" AND whose
-        // re-publish probe returns `InvalidInputs` (e.g. its inputs were
-        // spent or evicted) must transition to `InvalidInputs` so the
-        // watcher's `determine_payload_next_status` flips the bundle to
-        // `NeedsResign` and the envelope is rebuilt against fresh UTXOs.
-        // Without the publish-probe in `probe_published_entry`, the entry
-        // would stay `Published` forever and the watcher's
-        // `curr_payloadidx` would stall.
         let (e, txid) = entry_with_txid(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
 
@@ -717,13 +705,6 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_published_entry_at_zero_conf_does_not_republish() {
-        // A `Published` entry that `gettransaction` reports as 0-conf in the
-        // wallet is alive in mempool and waiting to be mined. Re-publishing
-        // every poll for the entire pre-confirmation window would only spam
-        // bitcoind and the broadcaster logs. The probe must hold at Published
-        // without calling `send_raw_transaction`. We poison the broadcast path
-        // so any re-publish would surface as `InvalidInputs`; the assertion
-        // proves the probe never went down that road.
         let (e, txid) = entry_with_txid(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
 

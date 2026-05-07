@@ -14422,9 +14422,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "sled",
  "ssz",
  "strata-acct-types",
  "strata-checkpoint-types",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-node-context",
@@ -14438,8 +14440,10 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "thiserror 2.0.18",
+ "threadpool",
  "tokio",
  "tracing",
+ "typed-sled",
 ]
 
 [[package]]
