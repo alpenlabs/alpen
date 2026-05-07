@@ -99,7 +99,7 @@ jobs:
           rustup default "$RUST_NIGHTLY"
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@58e862542551f667fa44c8a2a4a1d64ad477c96a # v2.75.17
+        uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2.75.20
         with:
           tool: cargo-llvm-cov
 
