@@ -296,7 +296,7 @@ make_buf = { git = "https://github.com/alpenlabs/make_buf", version = "1.0.2" }
 
 # IMPORTANT: ensure alloy-* and revm packages are of the same version as inside reth dependency
 # reth dependencies:
-alloy = { version = "1.0.41", features = [
+alloy = { version = "2.0.1", features = [
   "std",
   "rpc-client-ws",
   "network",
