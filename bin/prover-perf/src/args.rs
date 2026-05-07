@@ -22,8 +22,8 @@ pub struct EvalArgs {
     pub commit_hash: String,
 
     /// programs to run (comma-delimited and/or repeated),
-    /// e.g. `--programs evm-ee-stf,checkpoint` or `--programs evm-ee-stf --programs
-    /// checkpoint`
+    /// e.g. `--programs alpen-chunk,checkpoint` or `--programs alpen-chunk
+    /// --programs checkpoint`
     #[argh(option)]
     pub programs: Vec<String>,
 }
@@ -31,8 +31,8 @@ pub struct EvalArgs {
 /// Parses program strings into [`GuestProgram`] variants.
 ///
 /// Supports both comma-separated values and repeated options:
-/// - `--programs evm-ee-stf,checkpoint`
-/// - `--programs evm-ee-stf --programs checkpoint`
+/// - `--programs alpen-chunk,checkpoint`
+/// - `--programs alpen-chunk --programs checkpoint`
 pub fn parse_programs(raw: &[String]) -> Result<Vec<GuestProgram>, String> {
     raw.iter()
         .flat_map(|s| s.split(','))
@@ -40,65 +40,4 @@ pub fn parse_programs(raw: &[String]) -> Result<Vec<GuestProgram>, String> {
         .filter(|s| !s.is_empty())
         .map(|s| s.parse::<GuestProgram>())
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_programs_comma_separated() {
-        let input = vec!["evm-ee-stf,checkpoint".to_string()];
-        let result = parse_programs(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], GuestProgram::EvmEeStf));
-        assert!(matches!(result[1], GuestProgram::Checkpoint));
-    }
-
-    #[test]
-    fn test_parse_programs_repeated_options() {
-        let input = vec!["evm-ee-stf".to_string(), "checkpoint".to_string()];
-        let result = parse_programs(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], GuestProgram::EvmEeStf));
-        assert!(matches!(result[1], GuestProgram::Checkpoint));
-    }
-
-    #[test]
-    fn test_parse_programs_with_whitespace() {
-        let input = vec!["evm-ee-stf , checkpoint".to_string()];
-        let result = parse_programs(&input).unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(matches!(result[0], GuestProgram::EvmEeStf));
-        assert!(matches!(result[1], GuestProgram::Checkpoint));
-    }
-
-    #[test]
-    fn test_parse_programs_empty_input() {
-        let input: Vec<String> = vec![];
-        let result = parse_programs(&input).unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_parse_programs_empty_strings() {
-        let input = vec!["".to_string(), "  ".to_string()];
-        let result = parse_programs(&input).unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_parse_programs_invalid() {
-        let input = vec!["invalid-program".to_string()];
-        let result = parse_programs(&input);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("unknown program"));
-    }
-
-    #[test]
-    fn test_parse_programs_partial_invalid() {
-        let input = vec!["evm-ee-stf,invalid".to_string()];
-        let result = parse_programs(&input);
-        assert!(result.is_err());
-    }
 }

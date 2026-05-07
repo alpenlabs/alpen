@@ -92,7 +92,7 @@ mod tests {
 
     fn load_witness() -> EthClientExecutorInput {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../proof-impl/evm-ee-stf/test_data/witness_params.json");
+            .join("../../test-utils/data/evm_ee/witness_params.json");
         let json = fs::read_to_string(path).expect("read witness JSON");
         let data: WitnessData = serde_json::from_str(&json).expect("parse witness JSON");
         data.witness

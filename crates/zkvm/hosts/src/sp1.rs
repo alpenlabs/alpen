@@ -28,11 +28,6 @@ macro_rules! define_host {
 
 // Define hosts using the macro
 define_host!(
-    EVM_EE_STF_HOST,
-    GUEST_EVM_EE_STF_ELF,
-    "guest-evm-ee-stf.elf"
-);
-define_host!(
     CHECKPOINT_HOST,
     GUEST_CHECKPOINT_ELF,
     "guest-checkpoint.elf"

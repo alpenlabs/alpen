@@ -1,14 +1,16 @@
 use std::str::FromStr;
 
+mod alpen_acct;
+mod alpen_chunk;
 mod checkpoint;
-mod evm_ee;
 
 use crate::PerformanceReport;
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum GuestProgram {
-    EvmEeStf,
+    AlpenAcct,
+    AlpenChunk,
     Checkpoint,
 }
 
@@ -17,7 +19,8 @@ impl FromStr for GuestProgram {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "evm-ee-stf" => Ok(GuestProgram::EvmEeStf),
+            "alpen-acct" => Ok(GuestProgram::AlpenAcct),
+            "alpen-chunk" => Ok(GuestProgram::AlpenChunk),
             "checkpoint" => Ok(GuestProgram::Checkpoint),
             _ => Err(format!("unknown program: {s}")),
         }
@@ -29,11 +32,12 @@ impl FromStr for GuestProgram {
 /// Generates [`PerformanceReport`] for each invocation.
 #[cfg(feature = "sp1")]
 pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
-    use strata_zkvm_hosts::sp1::{CHECKPOINT_HOST, EVM_EE_STF_HOST};
+    use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST, CHECKPOINT_HOST};
     programs
         .iter()
         .map(|program| match program {
-            GuestProgram::EvmEeStf => evm_ee::gen_perf_report(&**EVM_EE_STF_HOST),
+            GuestProgram::AlpenAcct => alpen_acct::gen_perf_report(&**ALPEN_ACCT_HOST),
+            GuestProgram::AlpenChunk => alpen_chunk::gen_perf_report(&**ALPEN_CHUNK_HOST),
             GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**CHECKPOINT_HOST),
         })
         .collect()

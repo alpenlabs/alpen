@@ -238,7 +238,8 @@ mod tests {
 
     fn get_mock_data() -> TestData {
         let json_content = read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data/witness_params.json"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../test-utils/data/evm_ee/witness_params.json"),
         )
         .expect("Failed to read the blob data file");
 

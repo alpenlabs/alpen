@@ -7,21 +7,35 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+ssz.workspace = true
 zkaleido.workspace = true
 
 # proof programs
+strata-proofimpl-alpen-acct.workspace = true
+strata-proofimpl-alpen-chunk.workspace = true
 strata-proofimpl-checkpoint.workspace = true
-strata-proofimpl-evm-ee-stf.workspace = true
 
+strata-acct-types.workspace = true
 strata-codec.workspace = true
 strata-da-framework.workspace = true
+strata-ee-acct-runtime.workspace = true
+strata-ee-acct-types.workspace = true
+strata-ee-chain-types.workspace = true
+strata-ee-chunk-runtime.workspace = true
+strata-evm-ee.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
 strata-ol-chain-types-new.workspace = true
 strata-ol-da.workspace = true
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
-strata-test-utils-evm-ee.workspace = true
+strata-snark-acct-runtime.workspace = true
+strata-snark-acct-types.workspace = true
 strata-zkvm-hosts.workspace = true
+
+reth-chainspec.workspace = true
+reth-primitives-traits.workspace = true
+rsp-client-executor.workspace = true
+serde = { workspace = true, features = ["derive"] }
 
 # sp1
 sp1-sdk.workspace = true
@@ -35,6 +49,9 @@ reqwest.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+strata-predicate.workspace = true
 
 [features]
 default = ["sp1"]
