@@ -42,6 +42,7 @@ use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs,
     UpdateProofPubParams,
 };
+use tokio::task;
 
 use super::{
     da_witness_build::{build_coinbase_inclusion_proof, build_wtxid_inclusion_proof},
@@ -140,6 +141,12 @@ pub(crate) struct AcctSpec {
 }
 
 impl AcctSpec {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "AcctSpec is wired in once at startup; \
+                  collapsing into a builder/config struct would just \
+                  add indirection without locality benefit"
+    )]
     pub(crate) fn new(
         chunk_receipts: Arc<dyn ReceiptStore>,
         batch_storage: Arc<dyn BatchStorage>,
@@ -256,7 +263,7 @@ impl ProofSpec for AcctSpec {
         let last_block_hash_eth = B256::from(batch.last_block().0);
         let range_fn = self.range_witness_fn.clone();
         let range_data =
-            tokio::task::spawn_blocking(move || (range_fn)(first_block_hash, last_block_hash_eth))
+            task::spawn_blocking(move || (range_fn)(first_block_hash, last_block_hash_eth))
                 .await
                 .map_err(|e| PaasError::TransientFailure(format!("witness extraction join: {e}")))?
                 .map_err(|e| PaasError::TransientFailure(format!("witness extraction: {e}")))?;

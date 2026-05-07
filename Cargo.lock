@@ -1534,6 +1534,7 @@ dependencies = [
  "proptest",
  "revm",
  "revm-primitives",
+ "rsp-mpt",
  "serde",
  "serde_json",
  "strata-codec",
