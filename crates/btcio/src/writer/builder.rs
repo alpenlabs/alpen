@@ -134,6 +134,8 @@ pub struct EnvelopeData {
     pub reveal_script: ScriptBuf,
     /// The taproot spend info for constructing the witness.
     pub taproot_spend_info: TaprootSpendInfo,
+    /// The x-only public key committed to by the envelope reveal script.
+    pub envelope_pubkey: XOnlyPublicKey,
 }
 
 impl EnvelopeData {
@@ -143,6 +145,7 @@ impl EnvelopeData {
         sighash: Buf32,
         reveal_script: ScriptBuf,
         taproot_spend_info: TaprootSpendInfo,
+        envelope_pubkey: XOnlyPublicKey,
     ) -> Self {
         Self {
             commit_tx,
@@ -150,6 +153,7 @@ impl EnvelopeData {
             sighash,
             reveal_script,
             taproot_spend_info,
+            envelope_pubkey,
         }
     }
 }
@@ -161,13 +165,11 @@ impl EnvelopeData {
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
+    envelope_pubkey: XOnlyPublicKey,
 ) -> Result<EnvelopeData, EnvelopeError> {
     let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
         .await
         .map_err(EnvelopeError::PrereqFetch)?;
-    let envelope_pubkey = ctx
-        .envelope_pubkey
-        .ok_or(EnvelopeError::MissingEnvelopePubkey)?;
     let env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
@@ -182,7 +184,7 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 /// Builds envelope transactions using a temporary keypair and signs both commit and reveal
 /// in-process.
 ///
-/// Used when `CredRule::Unchecked` is configured — no external signer is needed.
+/// Used when no external signer is required.
 pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
@@ -314,6 +316,7 @@ pub fn create_envelope_transactions(
         sighash,
         reveal_script,
         taproot_spend_info,
+        public_key,
     ))
 }
 

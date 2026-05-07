@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = ["sequencer"]
 sequencer = [
+  "dep:strata-asm-proto-checkpoint",
   "dep:strata-asm-proto-checkpoint-txs",
   "dep:strata-codec",
   "dep:strata-codec-utils",
@@ -13,6 +14,7 @@ sequencer = [
   "dep:strata-ol-block-assembly",
   "dep:strata-ol-sequencer",
   "dep:strata-ol-state-provider",
+  "dep:strata-predicate",
 ]
 debug-asm = ["strata-consensus-logic/debug-asm"]
 debug-utils = [
@@ -44,6 +46,7 @@ ssz.workspace = true
 strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
+strata-asm-proto-checkpoint = { workspace = true, optional = true }
 strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true

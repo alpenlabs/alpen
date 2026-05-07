@@ -35,6 +35,8 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+#[cfg(feature = "sequencer")]
+use crate::checkpoint_auth::CheckpointSequencerKeyProvider;
 use crate::run_context::RunContext;
 #[cfg(feature = "sequencer")]
 use crate::sequencer::OLSeqRpcServer;
@@ -74,8 +76,8 @@ struct SeqRpcDeps {
     /// Block assembly handle.
     blockasm_handle: Arc<BlockasmHandle>,
 
-    /// Schnorr public key for verifying reveal-tx signatures submitted via RPC.
-    sequencer_pubkey: Option<Buf32>,
+    /// Source for verifying reveal-tx signatures submitted via RPC.
+    sequencer_key_provider: CheckpointSequencerKeyProvider,
 }
 
 #[cfg(feature = "sequencer")]
@@ -84,12 +86,12 @@ impl SeqRpcDeps {
     fn new(
         envelope_handle: Arc<EnvelopeHandle>,
         blockasm_handle: Arc<BlockasmHandle>,
-        sequencer_pubkey: Option<Buf32>,
+        sequencer_key_provider: CheckpointSequencerKeyProvider,
     ) -> Self {
         Self {
             envelope_handle,
             blockasm_handle,
-            sequencer_pubkey,
+            sequencer_key_provider,
         }
     }
 
@@ -101,6 +103,11 @@ impl SeqRpcDeps {
     /// Returns the block assembly handle.
     fn blockasm_handle(&self) -> &Arc<BlockasmHandle> {
         &self.blockasm_handle
+    }
+
+    /// Returns the current sequencer key provider.
+    fn sequencer_key_provider(&self) -> CheckpointSequencerKeyProvider {
+        self.sequencer_key_provider.clone()
     }
 }
 
@@ -134,11 +141,10 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     // Bundle RPC dependencies from context for the async task
     #[cfg(feature = "sequencer")]
     let seq_deps = runctx.sequencer_handles().map(|handles| {
-        let sequencer_pubkey = runctx.params().rollup.cred_rule.schnorr_key().copied();
         SeqRpcDeps::new(
             handles.envelope_handle().clone(),
             handles.blockasm_handle().clone(),
-            sequencer_pubkey,
+            CheckpointSequencerKeyProvider::new(runctx.storage().clone()),
         )
     });
 
@@ -253,7 +259,7 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
             sequencer_deps.blockasm_handle().clone(),
             sequencer_deps.envelope_handle().clone(),
             deps.fcm_handle.clone(),
-            sequencer_deps.sequencer_pubkey,
+            sequencer_deps.sequencer_key_provider(),
         );
         let ol_seq_module = OLSequencerRpcServer::into_rpc(ol_seq_listener);
         module

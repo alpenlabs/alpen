@@ -27,6 +27,7 @@ use strata_storage::NodeStorage;
 use tracing::{info, warn};
 
 use crate::{
+    checkpoint_auth::CheckpointSequencerKeyProvider,
     rpc::errors::{db_error, internal_error, not_found_error},
     sequencer::tip::resolve_canonical_tip,
 };
@@ -48,10 +49,8 @@ pub(crate) struct OLSeqRpcServer {
     /// Fork choice manager handle.
     fcm_handle: Arc<FcmServiceHandle>,
 
-    /// Schnorr public key for verifying reveal-tx signatures.
-    ///
-    /// `None` when the sequencer runs with `CredRule::Unchecked` — verification is skipped.
-    sequencer_pubkey: Option<Buf32>,
+    /// Source for the active checkpoint sequencer key.
+    sequencer_key_provider: CheckpointSequencerKeyProvider,
 }
 
 impl OLSeqRpcServer {
@@ -62,7 +61,7 @@ impl OLSeqRpcServer {
         blockasm_handle: Arc<BlockasmHandle>,
         envelope_handle: Arc<EnvelopeHandle>,
         fcm_handle: Arc<FcmServiceHandle>,
-        sequencer_pubkey: Option<Buf32>,
+        sequencer_key_provider: CheckpointSequencerKeyProvider,
     ) -> Self {
         Self {
             storage,
@@ -70,7 +69,7 @@ impl OLSeqRpcServer {
             blockasm_handle,
             envelope_handle,
             fcm_handle,
-            sequencer_pubkey,
+            sequencer_key_provider,
         }
     }
 }
@@ -218,7 +217,9 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
 
         let sig = Buf64(sig.0);
         if self
-            .sequencer_pubkey
+            .sequencer_key_provider
+            .current_pubkey()
+            .map_err(|e| internal_error(e.to_string()))?
             .is_some_and(|pk| !verify_schnorr_sig(&sig, &stored_sighash, &pk))
         {
             return Err(internal_error(format!(
