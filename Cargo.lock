@@ -1050,7 +1050,6 @@ dependencies = [
  "strata-identifiers",
  "strata-l1-txfmt",
  "strata-ol-bridge-types",
- "strata-ol-stf",
  "strata-params",
  "strata-primitives",
  "strata-test-utils-btcio 0.1.0",

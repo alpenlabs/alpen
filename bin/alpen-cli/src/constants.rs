@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use alloy::consensus::constants::ETH_TO_WEI;
 use bdk_wallet::bitcoin::{bip32::ChildNumber, Amount, Network};
+use strata_identifiers::{AccountSerial, SYSTEM_RESERVED_ACCTS};
 
 /// Number of blocks that the wallet considers a transaction "buried" or final taking into account
 /// reorgs that might happen.
@@ -31,6 +32,12 @@ pub const MAGIC_BYTES_LEN: usize = 4;
 pub const DEFAULT_NETWORK: Network = Network::Signet;
 pub const DEFAULT_BRIDGE_ALPEN_ADDRESS: &str = "0x5400000000000000000000000000000000000001";
 pub const SIGNET_BLOCK_TIME: Duration = Duration::from_secs(10 * 60); // 10 minutes
+
+/// Serial of the Alpen EE account used in deposit descriptors.
+///
+/// System serials occupy `0..SYSTEM_RESERVED_ACCTS`, so the Alpen EE account
+/// currently lands at `SYSTEM_RESERVED_ACCTS` by genesis registration order.
+pub const ALPEN_EE_ACCT_SERIAL: AccountSerial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
 
 /// Alpen CLI [`DerivationPath`](bdk_wallet::bitcoin::bip32::DerivationPath) for Alpen EVM wallet
 ///

@@ -41,6 +41,8 @@ TEST_ACCOUNT_SERIAL = 128
 UNREGISTERED_SERIAL = 0
 
 DEPOSIT_AMOUNT_SATS = 1_000_000_000
+DEPOSIT_CONFIRMATION_DEPTH = 6
+INITIAL_DEPOSIT_BLOCKS = 8
 
 
 def get_account_balance(rpc, account_id_hex: str) -> int:
@@ -50,6 +52,14 @@ def get_account_balance(rpc, account_id_hex: str) -> int:
     if not summaries:
         return 0
     return summaries[0]["balance"]
+
+
+def get_confirmations_in_mined_blocks(btc_rpc, txid: str, block_hashes: list[str]) -> int:
+    for index, block_hash in enumerate(block_hashes):
+        block = btc_rpc.proxy.getblock(block_hash, 1)
+        if txid in block["tx"]:
+            return len(block_hashes) - index
+    return 0
 
 
 @flexitest.register
@@ -86,7 +96,14 @@ class TestDepositUnregisteredSerial(StrataNodeTest):
         logger.info("mock deposit broadcast txid=%s", txid)
 
         addr = btc_rpc.proxy.getnewaddress()
-        btc_rpc.proxy.generatetoaddress(8, addr)
+        block_hashes = btc_rpc.proxy.generatetoaddress(INITIAL_DEPOSIT_BLOCKS, addr)
+        confirmations = get_confirmations_in_mined_blocks(btc_rpc, txid, block_hashes)
+        if confirmations < DEPOSIT_CONFIRMATION_DEPTH:
+            raise AssertionError(
+                f"mock deposit tx {txid} has {confirmations} confirmations, "
+                f"expected at least {DEPOSIT_CONFIRMATION_DEPTH}"
+            )
+        logger.info("mock deposit tx %s confirmed with %d confirmations", txid, confirmations)
 
         # The deposit-bearing manifest is only processed once an epoch closes
         # after the deposit lands on L1. Mine and poll the tip epoch rather

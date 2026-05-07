@@ -23,12 +23,11 @@ use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_identifiers::SubjectIdBytes;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_stf::ALPEN_EE_ACCT_SERIAL;
 use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::SIGNET_BLOCK_TIME,
+    constants::{ALPEN_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
