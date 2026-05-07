@@ -4,6 +4,7 @@
 #![expect(unused, reason = "lots of stuff being refactored")]
 
 mod block_assembly;
+mod da_witness;
 mod ee_program;
 mod errors;
 mod private_input;
@@ -11,6 +12,10 @@ mod update_processing;
 mod verification_state;
 
 pub use block_assembly::apply_input_messages;
+pub use da_witness::{
+    ArchivedBitcoinMerkleProof, ArchivedDaBlockWitness, ArchivedDaWitness, ArchivedRevealWitness,
+    BitcoinMerkleProof, DaBlockWitness, DaWitness, RevealWitness,
+};
 pub use ee_program::EeSnarkAccountProgram;
 pub use private_input::{
     ArchivedChunkInput, ArchivedPrivateInput as ArchivedEePrivateInput, ChunkInput,
