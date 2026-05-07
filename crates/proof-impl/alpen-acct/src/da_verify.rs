@@ -26,13 +26,13 @@
 //! Both items belong on a follow-up branch coordinated with a chunk SP1
 //! ELF redeploy + chunk predicate key rotation.
 //
-// FIXME(ee-da-envelope-redesign): the chunked-envelope wire format is
-// being redesigned in alpenlabs/alpen#1751. When it lands, the
-// reassembly path here will need to source `blob_hash` from the commit
-// tx's OP_RETURN (instead of per-chunk headers), verify the commit tx's
-// inclusion in its L1 block, and add a schnorr signature check on each
-// reveal under `sequencer_pk`. The wtxid Merkle proof against the
-// witness-commitment in the coinbase keeps working — that part survives.
+// FIXME(#1751): the chunked-envelope wire format is being redesigned in
+// alpenlabs/alpen#1751. When it lands, the reassembly path here will
+// need to source `blob_hash` from the commit tx's OP_RETURN (instead of
+// per-chunk headers), verify the commit tx's inclusion in its L1 block,
+// and add a schnorr signature check on each reveal under `sequencer_pk`.
+// The wtxid Merkle proof against the witness-commitment in the coinbase
+// keeps working — that part survives.
 
 use alpen_ee_common::{DaBlob, ReassemblyError, reassemble_da_blob};
 use bitcoin::{
@@ -123,11 +123,11 @@ pub fn verify_da_witness(
     Ok(Some(blob))
 }
 
-/// Cross-checks that [`DaWitness::l1_block_hash`] (the tip the in-proof
+/// Cross-checks that `DaWitness.l1_block_hash` (the tip the in-proof
 /// inclusion checks anchored to) matches the highest-idx entry in
 /// [`LedgerRefs`] (the tip the OL canonicality check will anchor to).
 ///
-/// Without this binding, a host could pass a [`DaWitness`] anchored to
+/// Without this binding, a host could pass a `DaWitness` anchored to
 /// one tip and a [`LedgerRefs`] anchored to another, in which case
 /// inclusion verifies against tip A while OL canonicality verifies
 /// tip B — defeating the intended chain-of-custody.

@@ -6,10 +6,10 @@
 //! Used by the EE outer (acct) proof's host-side input assembly to plumb
 //! DA witness data into the prover.
 //
-// FIXME(ee-da-envelope-redesign): the chunked-envelope wire format is
-// being redesigned in alpenlabs/alpen#1751 ("EE DA Chunked Envelope
-// Redesign"). Once that lands, this extractor (and the matching
-// guest-side reassembly) needs to be reworked:
+// FIXME(#1751): the chunked-envelope wire format is being redesigned in
+// alpenlabs/alpen#1751 ("EE DA Chunked Envelope Redesign"). Once that
+// lands, this extractor (and the matching guest-side reassembly) needs
+// to be reworked:
 //   - the per-chunk witness header (`version || blob_hash || chunk_index || total_chunks`) goes
 //     away — chunks become raw payload bytes only;
 //   - `blob_hash` moves to the commit tx's OP_RETURN, so the acct host must also fetch the commit
