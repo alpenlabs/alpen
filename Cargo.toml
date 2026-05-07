@@ -393,7 +393,7 @@ reth-trie-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.9.1" }
 rsp-client-executor = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.9.1b" }
 rsp-mpt = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.9.1b" }
 rsp-primitives = { git = "https://github.com/succinctlabs/rsp", tag = "reth-1.9.1b" }
-sp1-helper = "5.2.1"
+sp1-helper = "6.1.0"
 sp1-sdk = "5.2.1"
 sp1-verifier = "5.2.1"
 
