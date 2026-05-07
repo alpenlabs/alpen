@@ -480,6 +480,17 @@ async fn apply_tip_update<C: FcmContext>(
             // blocks we're applying.
             intermediate.push(new);
 
+            for blkid in intermediate {
+                advance_fcm_to_block(blkid, fcm_state).await?;
+            }
+
+            let final_tip = fcm_state.cur_best_block();
+            let expected_slot = fcm_state.get_block_slot(new).await?;
+            let expected_tip = OLBlockCommitment::new(expected_slot, new);
+            if final_tip != expected_tip {
+                return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
+            }
+
             Ok(())
         }
 
@@ -1088,6 +1099,46 @@ mod tests {
         }
     }
 
+    /// Fixed linear chain used by LongExtend tests.
+    struct LinearChain {
+        genesis: ExecutedBlock,
+        x1: ExecutedBlock,
+        x2: ExecutedBlock,
+        x3: ExecutedBlock,
+        x4: ExecutedBlock,
+    }
+
+    impl LinearChain {
+        fn new() -> Self {
+            let (genesis, mut state) = execute_test_genesis();
+            let x1 = execute_test_block(&mut state, &genesis.block, 3_100, 1);
+            let x2 = execute_test_block(&mut state, &x1.block, 3_200, 2);
+            let x3 = execute_test_block(&mut state, &x2.block, 3_300, 3);
+            let x4 = execute_test_block(&mut state, &x3.block, 3_400, 4);
+
+            Self {
+                genesis,
+                x1,
+                x2,
+                x3,
+                x4,
+            }
+        }
+
+        fn fixture_without_x4(&self) -> FcmTestFixture {
+            let common_blocks = [&self.x1, &self.x2, &self.x3];
+            FcmTestFixture::new(&self.genesis, &common_blocks)
+        }
+
+        fn tracker_through_x3(&self) -> UnfinalizedBlockTracker {
+            tracker_with_blocks(&self.genesis, &[&self.x1, &self.x2, &self.x3])
+        }
+
+        fn tracker_through_x4(&self) -> UnfinalizedBlockTracker {
+            tracker_with_blocks(&self.genesis, &[&self.x1, &self.x2, &self.x3, &self.x4])
+        }
+    }
+
     #[tokio::test]
     async fn reorg_applies_up_branch_to_new_tip() -> anyhow::Result<()> {
         let fork = TestFork::new();
@@ -1218,6 +1269,68 @@ mod tests {
         assert_eq!(status.tip, fork.b3.commitment());
         assert_eq!(fcm_state.cur_best_block(), fork.b3.commitment());
         assert_eq!(fixture.ctx.executed_blocks(), vec![fork.b3.commitment()]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn long_extend_applies_intermediate_blocks_to_new_tip() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Valid);
+        let tracker = chain.tracker_through_x4();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+        let update = expected_tip_update(&chain.x1, &chain.x4, fcm_state.chain_tracker())?;
+
+        assert!(matches!(update, TipUpdate::LongExtend(..)));
+
+        apply_tip_update(update, &mut fcm_state, &chain.x4.block).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
+        assert_eq!(
+            fcm_state.cur_ol_state().global_state().get_cur_slot(),
+            chain.x4.state.global_state().get_cur_slot()
+        );
+        assert_eq!(
+            fixture.ctx.safe_tip_updates(),
+            vec![
+                chain.x2.commitment(),
+                chain.x3.commitment(),
+                chain.x4.commitment()
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_publishes_long_extend_new_tip() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Valid);
+        let tracker = chain.tracker_through_x3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+
+        process_fc_message(
+            &ForkChoiceMessage::NewBlock(chain.x4.blkid()),
+            &mut fcm_state,
+        )
+        .await?;
+
+        let statuses = fixture.ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        let status = &statuses[0];
+        assert_eq!(status.tip, chain.x4.commitment());
+        assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
+        assert_eq!(fixture.ctx.executed_blocks(), vec![chain.x4.commitment()]);
+        assert_eq!(
+            fixture.ctx.safe_tip_updates(),
+            vec![
+                chain.x2.commitment(),
+                chain.x3.commitment(),
+                chain.x4.commitment()
+            ]
+        );
 
         Ok(())
     }
