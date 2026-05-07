@@ -1,32 +1,11 @@
 services:
-  init:
-    build:
-      context: ..
-      dockerfile: docker/strata-datatool/Dockerfile.local
-    image: strata-init:latest
-    env_file:
-      - .env
-    environment:
-      OUTPUT_DIR: /app/configs/generated
-    volumes:
-      # Mounts the entire configs/ directory so init can:
-      #   - write generated params to configs/generated/
-      #   - write .env.alpen to configs/generated/
-      # Committed files: config.seq.toml, config.toml, sequencer.toml, strata-signer/
-      # Generated files: generated/ (keys, params, .env.alpen)
-      - ./configs:/app/configs
-    networks:
-      - alpen_network
-    restart: "no"
-
   strata:
     build:
       context: ..
       dockerfile: docker/strata/Dockerfile.local
+      args:
+        CARGO_FEATURES: ${STRATA_CARGO_FEATURES:-}
     image: strata:latest
-    depends_on:
-      init:
-        condition: service_completed_successfully
     env_file:
       - .env
     environment:
@@ -46,6 +25,8 @@ services:
       - ./configs/generated/rollup-params.json:/app/configs/generated/rollup-params.json:ro
       - ./configs/generated/ol-params.json:/app/configs/generated/ol-params.json:ro
       - ./configs/generated/asm-params.json:/app/configs/generated/asm-params.json:ro
+      # SP1 ELFs (empty dir when SP1 disabled — harmless)
+      - ./elfs:/app/elfs/sp1:ro
       - strata-data:/app/data
     ports:
       - "8432:8432"
@@ -85,10 +66,9 @@ services:
       dockerfile: docker/alpen-client/Dockerfile.local
     image: alpen-client:latest
     depends_on:
-      init:
-        condition: service_completed_successfully
       strata:
         condition: service_healthy
+    # Remove --dev-native-prover when using real SP1 proofs.
     command: ["--dev-native-prover"]
     env_file:
       - .env
@@ -97,6 +77,8 @@ services:
       # Alpen-client reads only the JWT secret for authrpc.
       # Env vars (pubkey, chain spec, etc.) come from env_file above.
       - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
+      # SP1 ELFs (empty dir when SP1 disabled — harmless)
+      - ./elfs:/app/elfs/sp1:ro
       - alpen-client-data:/app/data
     ports:
       - "8545:8545"

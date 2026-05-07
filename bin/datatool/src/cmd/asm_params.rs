@@ -89,7 +89,7 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
         .map(|xpriv| xpriv.to_keypair(SECP256K1).public_key())
         .collect();
 
-    // Build admin subprotocol params using the first operator's key for both threshold configs.
+    // Build admin subprotocol params using the operator keys for all three admin roles.
     let admin_keys: Vec<CompressedPublicKey> = pubkeys
         .iter()
         .copied()

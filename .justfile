@@ -10,7 +10,7 @@ docker_dir := "docker"
 docker_datadir := ".data"
 prover_perf_eval_dir := "bin/prover-perf"
 prover_proofs_cache_dir := "provers/tests/proofs"
-prover_programs := "evm-ee-stf,checkpoint,"
+prover_programs := "alpen-chunk,alpen-acct,checkpoint,"
 profile := env("PROFILE", "release")
 cargo_install_extra_flags := env("CARGO_INSTALL_EXTRA_FLAGS", "")
 features := env("FEATURES", "")
@@ -377,8 +377,7 @@ docker-signet-down:
 # Start sequencer stack (signet + sequencer)
 [group('docker')]
 docker-seq-up: docker-signet-up
-    mkdir -p {{docker_dir}}/configs/generated
-    cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml run --rm init
+    cd {{docker_dir}} && ./gen-params-and-elfs.sh
     cd {{docker_dir}} && docker compose -f compose-ol-el-seq.yml up -d
 
 # Stop sequencer stack (signet + sequencer)

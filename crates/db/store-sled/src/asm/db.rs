@@ -44,17 +44,15 @@ impl AsmDatabase for AsmDBSled {
 
     fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
         // Relying on the lexicographical order of L1BlockCommitment.
-        let state = self.asm_state_tree.last()?;
-        let logs = self.asm_log_tree.last()?;
-
-        // Assert that the block for the state and for the logs is the same.
-        // It should be because we are putting it within transaction.
-        Ok(state.and_then(|s| {
-            logs.map(|l| {
-                assert_eq!(s.0, l.0);
-                (s.0, AsmState::new(s.1, l.1))
-            })
-        }))
+        match (self.asm_state_tree.last()?, self.asm_log_tree.last()?) {
+            (Some((state_block, _)), Some((logs_block, _))) => {
+                let latest_common_block = state_block.min(logs_block);
+                Ok(self
+                    .get_asm_state(latest_common_block)?
+                    .map(|state| (latest_common_block, state)))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn get_asm_states_from(

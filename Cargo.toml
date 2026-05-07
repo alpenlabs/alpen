@@ -414,7 +414,7 @@ bitcoin = { version = "0.32.6", features = ["serde"] }
 bitcoin-bosd = { git = "https://github.com/alpenlabs/bitcoin-bosd", version = "0.10.0", tag = "v0.10.0", features = [
   "ssz",
 ] }
-bitcoind-async-client = { version = "0.10.2", features = ["29_0"] }
+bitcoind-async-client = { version = "0.10.5", features = ["29_0"] }
 bitvec = { version = "1.0.1", features = ["serde"] }
 borsh = { version = "1.6.1", features = ["derive"] }
 bytes = "1.11.1"
@@ -424,7 +424,7 @@ ciborium = "0.2"
 clap = { version = "4.5.60", default-features = false, features = ["derive"] }
 corepc-node = { version = "0.10.0", features = ["29_0"] }
 criterion = { version = "0.8.2", features = ["html_reports"] }
-deadpool = "0.12.1"
+deadpool = "0.13.0"
 digest = "0.10"
 ethnum = "1.5.0"
 eyre = "0.6"
@@ -463,7 +463,7 @@ reqwest = { version = "0.12.7", default-features = false, features = [
   "zstd",
   "json",
 ] }
-rkyv = { version = "0.8.14", features = ["little_endian", "pointer_width_32"] }
+rkyv = { version = "0.8.16", features = ["little_endian", "pointer_width_32"] }
 rkyv_impl = "0.2.2"
 rlp = "0.6.1"
 schemars = "1"

@@ -4,7 +4,7 @@ use tracing::*;
 
 use super::{
     error::{BroadcasterError, BroadcasterResult},
-    io::{BroadcasterIoContext, PublishTxOutcome},
+    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo},
     state::{BroadcasterState, IndexedEntry},
 };
 use crate::BtcioParams;
@@ -59,7 +59,7 @@ where
     let result = match txentry.status {
         L1TxStatus::Unpublished => publish_tx(io, txentry).await.map(Some),
         L1TxStatus::Published | L1TxStatus::Confirmed { .. } => {
-            check_tx_confirmations(io, txentry, txid, params)
+            resolve_broadcast_entry_status(io, txentry, txid, params)
                 .await
                 .map(Some)
         }
@@ -72,8 +72,19 @@ where
     result
 }
 
-/// Resolves `Published`/`Confirmed` entries to their next confirmation-derived status.
-async fn check_tx_confirmations<C>(
+/// Resolves a broadcast entry from a confirmation lookup, falling back to a
+/// re-publish probe when the lookup misses.
+///
+/// `gettransaction` returns three distinguishable shapes for a broadcast entry:
+///
+/// 1. `Some(info)` with `confirmations >= 1`: tx mined, derive Confirmed/Finalized.
+/// 2. `Some(info)` with `confirmations == 0`: tx alive in mempool. Hold at Published. Re-publishing
+///    here would only spam bitcoind and the logs every poll for the entire pre-confirmation window.
+/// 3. `Ok(None)`: not found at all. Could be a transient wallet-syncer miss for a freshly broadcast
+///    tx, or a genuinely dropped tx (mempool eviction, RBF). Re-publish to disambiguate: benign
+///    mempool messages fold back to Published, `bad-txns-inputs-missingorspent` routes to
+///    InvalidInputs so the watcher rebuilds the envelope.
+async fn resolve_broadcast_entry_status<C>(
     io: &C,
     txentry: &L1TxEntry,
     txid: &Txid,
@@ -82,51 +93,46 @@ async fn check_tx_confirmations<C>(
 where
     C: BroadcasterIoContext,
 {
-    async {
-        let txinfo_res = io.get_transaction(txid).await;
-        debug!(?txinfo_res, "checked transaction status");
+    let txinfo_res = io.get_transaction(txid).await;
+    debug!(?txinfo_res, "checked transaction status");
+    let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
-        let reorg_safe_depth = params.l1_reorg_safe_depth();
-        let reorg_safe_depth: i64 = reorg_safe_depth.into();
+    match txinfo_res? {
+        Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+        None => match publish_tx(io, txentry).await? {
+            L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
+            _ => Ok(L1TxStatus::Published),
+        },
+    }
+}
 
-        match txinfo_res {
-            Ok(Some(info)) => match (info.confirmations, &txentry.status) {
-                // A previously published tx with 0 confirmations remains published.
-                (0, L1TxStatus::Published) => Ok(L1TxStatus::Published),
-                // A previously confirmed tx with 0 confirmations regresses to unpublished.
-                (0, _) => Ok(L1TxStatus::Unpublished),
-                (confirmations, _) => {
-                    let block_hash = info.block_hash.expect("confirmed tx must have block_hash");
-                    let block_height = info
-                        .block_height
-                        .expect("confirmed tx must have block_height");
-
-                    if confirmations >= reorg_safe_depth {
-                        Ok(L1TxStatus::Finalized {
-                            confirmations: confirmations as u64,
-                            block_hash,
-                            block_height,
-                        })
-                    } else {
-                        Ok(L1TxStatus::Confirmed {
-                            confirmations: confirmations as u64,
-                            block_hash,
-                            block_height,
-                        })
-                    }
-                }
-            },
-            Ok(None) => Ok(L1TxStatus::Unpublished),
-            Err(e) => Err(e),
+/// Maps `TxConfirmationInfo` to the natural confirmation-derived status.
+///
+/// `confirmations <= 0` means the tx is visible to bitcoind but not anchored
+/// to the canonical chain (mempool-only, or on a side branch after reorg);
+/// returns [`L1TxStatus::Published`].
+fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1TxStatus {
+    if info.confirmations <= 0 {
+        return L1TxStatus::Published;
+    }
+    let block_hash = info.block_hash.expect("confirmed tx must have block_hash");
+    let block_height = info
+        .block_height
+        .expect("confirmed tx must have block_height");
+    let confirmations = info.confirmations as u64;
+    if info.confirmations >= reorg_safe_depth {
+        L1TxStatus::Finalized {
+            confirmations,
+            block_hash,
+            block_height,
+        }
+    } else {
+        L1TxStatus::Confirmed {
+            confirmations,
+            block_hash,
+            block_height,
         }
     }
-    .instrument(debug_span!(
-        "check_tx_confirmations",
-        component = "btcio_broadcaster",
-        %txid,
-        current_status = ?txentry.status
-    ))
-    .await
 }
 
 /// Attempts to broadcast an unpublished entry and maps publication outcomes to statuses.
@@ -564,8 +570,8 @@ mod test {
                 let res = process_status(&io, &e, &txid, &btcio_params).await;
                 assert_eq!(
                     res,
-                    Some(L1TxStatus::Unpublished),
-                    "Status should revert to unpublished if confirmed tx now has 0 confirmations"
+                    Some(L1TxStatus::Published),
+                    "Status should revert to published if confirmed tx is visible at 0 confirmations"
                 );
 
                 let io = MockIoContext::default().with_tx_lookup(
@@ -603,6 +609,110 @@ mod test {
                 );
             });
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_published_entry_missing_tx_holds_published() {
+        // Bitcoind's `gettransaction` can briefly report a freshly broadcast
+        // tx as missing before the wallet's chain syncer catches up. A
+        // `Published` entry must not regress to `Unpublished` on that
+        // transient miss; otherwise the broadcaster oscillates and the
+        // watcher's curr_payloadidx never advances past it.
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry must hold its status when get_transaction returns NotFound"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_dropped_from_mempool_advances_to_invalid_inputs() {
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::InvalidInputs),
+            "Published entry whose re-publish probe returns InvalidInputs must \
+             transition to InvalidInputs so the watcher rebuilds the envelope"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_already_in_mempool_holds_published() {
+        // A `Published` entry whose lookup says "not found" but whose
+        // re-publish probe returns `AlreadyInMempool` is in the transient
+        // wallet-syncer-lag state. Stay `Published`; do not regress.
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(txid, MockBroadcastResult::AlreadyInMempool);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry whose probe says already-in-mempool must hold"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_at_zero_conf_does_not_republish() {
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(
+                txid,
+                MockTxLookupResult::Found(confirmation_info(0, 0, Buf32::zero())),
+            )
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry found at 0-conf in wallet must hold without re-publishing"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_handle_confirmed_entry_missing_tx_probes_before_regressing() {
+        let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::Missing);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Confirmed entry that disappears should probe before changing status"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_confirmed_entry_missing_tx_with_invalid_inputs_marks_invalid_inputs() {
+        let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::Missing)
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::InvalidInputs),
+            "Confirmed entry with invalid inputs should trigger envelope rebuild"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -692,5 +802,53 @@ mod test {
                 );
             });
         }
+    }
+
+    // ── confirmation_status ──
+
+    #[test]
+    fn confirmation_status_zero_confirmations_returns_published() {
+        // 0-conf means the tx is in the mempool but not anchored to a block;
+        // bitcoind leaves block_hash/block_height as None in that case.
+        let info = TxConfirmationInfo {
+            confirmations: 0,
+            block_hash: None,
+            block_height: None,
+        };
+        assert_eq!(confirmation_status(&info, 6), L1TxStatus::Published);
+    }
+
+    #[test]
+    fn confirmation_status_negative_confirmations_returns_published() {
+        // Negative confirmations mean the tx is on a side branch after a reorg;
+        // treat it like 0-conf rather than synthesising a phantom Confirmed entry.
+        let info = TxConfirmationInfo {
+            confirmations: -2,
+            block_hash: None,
+            block_height: None,
+        };
+        assert_eq!(confirmation_status(&info, 6), L1TxStatus::Published);
+    }
+
+    #[test]
+    fn confirmation_status_below_reorg_depth_is_confirmed() {
+        let block_hash = Buf32::new([7u8; 32]);
+        let block_height: L1Height = 100;
+        let info = confirmation_info(3, block_height, block_hash);
+        assert_eq!(
+            confirmation_status(&info, 6),
+            confirmed_status(3, block_height, block_hash),
+        );
+    }
+
+    #[test]
+    fn confirmation_status_at_or_above_reorg_depth_is_finalized() {
+        let block_hash = Buf32::new([7u8; 32]);
+        let block_height: L1Height = 100;
+        let info = confirmation_info(6, block_height, block_hash);
+        assert_eq!(
+            confirmation_status(&info, 6),
+            finalized_status(6, block_height, block_hash),
+        );
     }
 }

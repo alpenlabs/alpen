@@ -51,3 +51,7 @@ secret = "configs/jwt.hex"
 refresh_interval = 10
 stale_duration = 120
 relay_misc = true
+
+# Uncomment for real SP1 proving (requires strata built with prover,sp1 features)
+# [prover]
+# backend = "sp1"

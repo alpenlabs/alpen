@@ -308,6 +308,25 @@ impl MmrIndexHandle {
         })
     }
 
+    /// Appends a caller-provided leaf hash and stores its preimage bytes.
+    pub fn append_leaf_with_preimage_blocking(
+        &self,
+        hash: Hash,
+        preimage: Vec<u8>,
+    ) -> DbResult<u64> {
+        run_with_precondition_retries(self.max_retries, || {
+            self.append_leaf_once_blocking(hash, Some(preimage.clone()))
+        })
+    }
+
+    /// Appends a caller-provided leaf hash and stores its preimage bytes.
+    pub async fn append_leaf_with_preimage(&self, hash: Hash, preimage: Vec<u8>) -> DbResult<u64> {
+        let this = self.clone();
+        spawn_blocking(move || this.append_leaf_with_preimage_blocking(hash, preimage))
+            .await
+            .map_err(|_| DbError::WorkerFailedStrangely)?
+    }
+
     /// Appends a preimage and stores it as bytes in the preimage table.
     pub fn append_blocking(&self, preimage: Vec<u8>) -> DbResult<u64> {
         self.append_with_hasher_blocking::<Sha256Hasher>(preimage)

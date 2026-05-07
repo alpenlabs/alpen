@@ -16,15 +16,16 @@ struct TestData {
     witness: EthClientExecutorInput,
 }
 
-/// Helper function to load witness test data from the reference implementation.
+/// Helper function to load witness test data from the canonical fixture
+/// under test-utils/data/evm_ee.
 fn load_witness_test_data() -> EthClientExecutorInput {
     let test_data_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("proof-impl/evm-ee-stf/test_data/witness_params.json");
+        .join("test-utils/data/evm_ee/witness_params.json");
 
     let json_content = read_to_string(&test_data_path)
-        .expect("Failed to read witness_params.json - make sure reference crate exists");
+        .expect("Failed to read witness_params.json from test-utils/data/evm_ee");
 
     let test_data: TestData =
         serde_json::from_str(&json_content).expect("Failed to parse test data");

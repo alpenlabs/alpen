@@ -56,6 +56,50 @@ fn should_fetch_inbox_messages(last_local_ol_blkid: &OLBlockId, best_ol_blkid: &
     last_local_ol_blkid != best_ol_blkid
 }
 
+/// Picks the OL block commitment to record on the next exec block.
+///
+/// During restart catch-up, finalization lag, or reorg handling, the OL
+/// tracker can report a block behind the local EE tip. Returning
+/// `last_local_ol_block` in that case keeps the OL slot recorded on the EE
+/// chain monotonic; using the older `best_ol_block` would cause inbox
+/// fetching to re-include slots already reflected in account state.
+fn effective_ol_block(
+    best_ol_block: OLBlockCommitment,
+    last_local_ol_block: OLBlockCommitment,
+) -> OLBlockCommitment {
+    if best_ol_block.slot() < last_local_ol_block.slot() {
+        last_local_ol_block
+    } else {
+        best_ol_block
+    }
+}
+
+/// Computes the inbox-fetch slot range for the next exec block.
+///
+/// Returns `None` when no fetch is needed: either the OL tip is unchanged
+/// from what's already in account state, or the slot delta is empty.
+/// Otherwise returns `Some((from_slot, to_slot))` with both ends inclusive.
+///
+/// `from_slot = last_local_ol_slot + 1` is the off-by-one fix: the previously
+/// recorded slot's messages are already drained, so re-fetching it produces a
+/// SAU whose `processed_messages` does not match `new_next_inbox_msg_idx` and
+/// OL rejects it with "invalid next msg index".
+fn compute_inbox_fetch_range(
+    last_local_ol_slot: u64,
+    last_local_ol_blkid: &OLBlockId,
+    effective_ol_slot: u64,
+    effective_ol_blkid: &OLBlockId,
+) -> Option<(u64, u64)> {
+    if !should_fetch_inbox_messages(last_local_ol_blkid, effective_ol_blkid) {
+        return None;
+    }
+    let from_slot = last_local_ol_slot.saturating_add(1);
+    if from_slot > effective_ol_slot {
+        return None;
+    }
+    Some((from_slot, effective_ol_slot))
+}
+
 /// Constructs BlockAssemblyInputs from the current state.
 fn create_block_assembly_inputs<'a>(
     last_local_block: &ExecBlockRecord,
@@ -217,8 +261,8 @@ async fn build_next_block(
         .await
         .context("build_next_block: failed to get best exec block")?;
 
-    // Check if last local block is not as expected from previous block building cycle
-    // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
+    // Check the parent expected by the block target. A mismatch means another
+    // builder advanced the local EE tip.
     if last_local_block.blockhash() != expected_block_target.parent {
         warn!(
             expected = %expected_block_target.parent,
@@ -227,8 +271,7 @@ async fn build_next_block(
         )
     }
 
-    // Ensure blocktime >= configured blocktime
-    // This shouldn't happen in a single sequencer case, but checking for sanity anyway.
+    // Enforce the configured blocktime against the current local tip.
     let timestamp_ms = clock.current_timestamp();
     validate_blocktime_constraint(
         timestamp_ms,
@@ -241,17 +284,21 @@ async fn build_next_block(
         .get_finalized_block()
         .await
         .context("build_next_block: failed to get finalized OL block")?;
-    let (inbox_messages, next_inbox_msg_idx) = if should_fetch_inbox_messages(
+
+    let effective_ol_block = effective_ol_block(best_ol_block, *last_local_block.ol_block());
+
+    let (inbox_messages, next_inbox_msg_idx) = match compute_inbox_fetch_range(
+        last_local_block.ol_block().slot(),
         last_local_block.ol_block().blkid(),
-        best_ol_block.blkid(),
+        effective_ol_block.slot(),
+        effective_ol_block.blkid(),
     ) {
-        ol_chain_handle
-            .get_inbox_messages(last_local_block.ol_block().slot(), best_ol_block.slot())
+        Some((from_slot, to_slot)) => ol_chain_handle
+            .get_inbox_messages(from_slot, to_slot)
             .await
             .context("build_next_block: failed to get inbox messages")?
-            .into_parts()
-    } else {
-        (vec![], last_local_block.next_inbox_msg_idx())
+            .into_parts(),
+        None => (vec![], last_local_block.next_inbox_msg_idx()),
     };
 
     // build next block
@@ -272,7 +319,7 @@ async fn build_next_block(
         package,
         account_state,
         last_local_block.blocknum(),
-        best_ol_block,
+        effective_ol_block,
         timestamp_ms,
         parent_blockhash,
         next_inbox_msg_idx,
@@ -376,6 +423,85 @@ mod tests {
             assert_eq!(inputs.inbox_messages.len(), 2);
             assert_eq!(inputs.inbox_messages[0].source(), msg1.source());
             assert_eq!(inputs.inbox_messages[1].source(), msg2.source());
+        }
+    }
+
+    mod effective_ol_block_tests {
+        use super::*;
+
+        #[test]
+        fn picks_best_when_best_is_ahead() {
+            let last = make_ol_block(5);
+            let best = make_ol_block(10);
+            assert_eq!(effective_ol_block(best, last), best);
+        }
+
+        #[test]
+        fn picks_best_when_slots_equal() {
+            // Equal slots: best wins. Different blkid at the same slot still
+            // means the OL tracker advanced (e.g. reorg sibling).
+            let last = make_ol_block(5);
+            let best = make_ol_block(5);
+            assert_eq!(effective_ol_block(best, last), best);
+        }
+
+        #[test]
+        fn falls_back_to_last_when_best_is_behind() {
+            // Restart catch-up / finalization lag: tracker behind the local
+            // tip. Falling back to `last` keeps the recorded OL slot
+            // monotonic; using `best` here would re-include drained slots.
+            let last = make_ol_block(10);
+            let best = make_ol_block(5);
+            assert_eq!(effective_ol_block(best, last), last);
+        }
+    }
+
+    mod compute_inbox_fetch_range_tests {
+        use super::*;
+
+        fn blkid(byte: u8) -> OLBlockId {
+            let mut bytes = [0u8; 32];
+            bytes[31] = byte;
+            OLBlockId::from(Buf32::from(bytes))
+        }
+
+        #[test]
+        fn returns_none_when_blkids_match() {
+            // OL tip unchanged: nothing new to fetch even if slots happened
+            // to differ (would mean a slot was rewritten in place).
+            let id = blkid(1);
+            assert_eq!(compute_inbox_fetch_range(5, &id, 5, &id), None);
+        }
+
+        #[test]
+        fn returns_none_when_range_is_empty() {
+            // Different blkids but `from > to` — can happen if `effective_ol`
+            // falls back to `last_local` after a behind-tracker case and the
+            // siblings carry the same slot but different ids. No slots to
+            // pull.
+            assert_eq!(compute_inbox_fetch_range(5, &blkid(1), 5, &blkid(2)), None);
+        }
+
+        #[test]
+        fn fetches_only_new_slots_off_by_one_regression() {
+            // Last local OL block at slot 5, new effective at slot 7.
+            // The fetch must start at slot 6, NOT slot 5: re-including slot 5
+            // would re-process messages already drained into account state
+            // and OL would reject the resulting SAU with "invalid next msg
+            // index".
+            assert_eq!(
+                compute_inbox_fetch_range(5, &blkid(1), 7, &blkid(2)),
+                Some((6, 7)),
+            );
+        }
+
+        #[test]
+        fn single_slot_advance_returns_singleton_range() {
+            // Slot 5 -> slot 6: fetch [6, 6].
+            assert_eq!(
+                compute_inbox_fetch_range(5, &blkid(1), 6, &blkid(2)),
+                Some((6, 6)),
+            );
         }
     }
 }

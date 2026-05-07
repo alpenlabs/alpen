@@ -1529,6 +1529,7 @@ dependencies = [
  "alpen-chainspec",
  "bincode",
  "eyre",
+ "proptest",
  "revm",
  "revm-primitives",
  "serde",
@@ -2972,9 +2973,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoind-async-client"
-version = "0.10.2"
+version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe2cbde433d230760d71ccf2bc2eef53ca98b2cd7b31d67a19ad3d466cee67a3"
+checksum = "e6092f4da3f6e25a5c452dc387c13972f03a53c414e4999f9beff555af305e52"
 dependencies = [
  "base64 0.22.1",
  "bitcoin",
@@ -3695,6 +3696,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.16.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d64e8af5551369d19cf50138de61f1c42074ab970f74e99be916646777f8fc87"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "unicode-width 0.2.0",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "const-hex"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4288,21 +4301,20 @@ dependencies = [
 
 [[package]]
 name = "deadpool"
-version = "0.12.3"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+checksum = "883466cb8db62725aee5f4a6011e8a5d42912b42632df32aad57fc91127c6e04"
 dependencies = [
  "deadpool-runtime",
- "lazy_static",
  "num_cpus",
  "tokio",
 ]
 
 [[package]]
 name = "deadpool-runtime"
-version = "0.1.4"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+checksum = "2657f61fb1dd8bf37a8d51093cc7cee4e77125b22f7753f49b289f831bec2bae"
 
 [[package]]
 name = "debug-helper"
@@ -4471,14 +4483,13 @@ dependencies = [
 
 [[package]]
 name = "dialoguer"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
+checksum = "25f104b501bf2364e78d0d3974cbc774f738f5865306ed128e1e0d7499c0ad96"
 dependencies = [
- "console",
+ "console 0.16.3",
  "shell-words",
  "tempfile",
- "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -5211,9 +5222,9 @@ checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "futures"
-version = "0.3.31"
+version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
+checksum = "8b147ee9d1f6d097cef9ce628cd2ee62288d963e16fb287bd9286455b241382d"
 dependencies = [
  "futures-channel",
  "futures-core",
@@ -5242,9 +5253,9 @@ checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
 
 [[package]]
 name = "futures-executor"
-version = "0.3.31"
+version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e28d1d997f585e54aebc3f97d39e72338912123a67330d723fdbb564d646c9f"
+checksum = "baf29c38818342a3b26b5b923639e7b1f4a61fc5e76102d4b1981c6dc7a7579d"
 dependencies = [
  "futures-core",
  "futures-task",
@@ -6256,7 +6267,7 @@ version = "0.17.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
 dependencies = [
- "console",
+ "console 0.15.11",
  "number_prefix",
  "portable-atomic",
  "tokio",
@@ -7789,15 +7800,14 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.78"
+version = "0.10.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f38c4372413cdaaf3cc79dd92d29d7d9f5ab09b51b10dded508fb90bb70b9222"
+checksum = "bf0b434746ee2832f4f0baf10137e1cabb18cbe6912c69e2e33263c45250f542"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
  "foreign-types",
  "libc",
- "once_cell",
  "openssl-macros",
  "openssl-sys",
 ]
@@ -7827,9 +7837,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.114"
+version = "0.9.115"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13ce1245cd07fcc4cfdb438f7507b0c7e4f3849a69fd84d52374c66d83741bb6"
+checksum = "158fe5b292746440aa6e7a7e690e55aeb72d41505e2804c23c6973ad0e9c9781"
 dependencies = [
  "cc",
  "libc",
@@ -12042,13 +12052,13 @@ dependencies = [
 
 [[package]]
 name = "rkyv"
-version = "0.8.15"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a30e631b7f4a03dee9056b8ef6982e8ba371dd5bedb74d3ec86df4499132c70"
+checksum = "73389e0c99e664f919275ab5b5b0471391fe9a8de61e1dff9b1eaf56a90f16e3"
 dependencies = [
  "bytecheck",
  "bytes",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.0",
  "indexmap 2.13.0",
  "munge",
  "ptr_meta",
@@ -12061,9 +12071,9 @@ dependencies = [
 
 [[package]]
 name = "rkyv_derive"
-version = "0.8.15"
+version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8100bb34c0a1d0f907143db3149e6b4eea3c33b9ee8b189720168e818303986f"
+checksum = "5d2ed0b54125315fb36bd021e82d314d1c126548f871634b483f46b31d13cac6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -14073,6 +14083,7 @@ dependencies = [
  "ssz_derive",
  "strata-asm-common",
  "strata-asm-params",
+ "strata-asm-proto-txs-test-utils",
  "strata-crypto",
  "strata-identifiers",
  "strata-l1-envelope-fmt",
@@ -14422,8 +14433,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
+ "sled",
  "ssz",
+ "strata-acct-types",
  "strata-checkpoint-types",
+ "strata-db-store-sled",
  "strata-db-types",
  "strata-identifiers",
  "strata-node-context",
@@ -14437,8 +14451,10 @@ dependencies = [
  "strata-status",
  "strata-storage",
  "thiserror 2.0.18",
+ "threadpool",
  "tokio",
  "tracing",
+ "typed-sled",
 ]
 
 [[package]]
@@ -15410,6 +15426,7 @@ dependencies = [
  "strata-ol-mempool",
  "strata-ol-sequencer",
  "strata-ol-state-types",
+ "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-types",
  "strata-status",
@@ -15736,19 +15753,33 @@ dependencies = [
  "argh",
  "num-format",
  "reqwest 0.12.28",
+ "reth-chainspec",
+ "reth-primitives-traits",
+ "rsp-client-executor",
+ "serde",
  "serde_json",
  "sp1-sdk",
+ "ssz",
+ "strata-acct-types",
  "strata-codec",
  "strata-da-framework",
+ "strata-ee-acct-runtime",
+ "strata-ee-acct-types",
+ "strata-ee-chain-types",
+ "strata-ee-chunk-runtime",
+ "strata-evm-ee",
  "strata-identifiers",
  "strata-ledger-types",
  "strata-ol-chain-types-new",
  "strata-ol-da",
  "strata-ol-stf",
+ "strata-predicate",
+ "strata-proofimpl-alpen-acct",
+ "strata-proofimpl-alpen-chunk",
  "strata-proofimpl-checkpoint",
- "strata-proofimpl-evm-ee-stf",
+ "strata-snark-acct-runtime",
+ "strata-snark-acct-types",
  "strata-sp1-guest-builder",
- "strata-test-utils-evm-ee",
  "strata-zkvm-hosts",
  "tokio",
  "tracing",
@@ -16073,6 +16104,7 @@ dependencies = [
 name = "strata-test-cli"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "anyhow",
  "argh",
  "bdk_bitcoind_rpc",
  "bdk_wallet",
@@ -16086,17 +16118,21 @@ dependencies = [
  "strata-acct-types",
  "strata-asm-logs",
  "strata-asm-manifest-types",
+ "strata-asm-params",
+ "strata-asm-proto-admin-txs",
  "strata-asm-proto-bridge-v1-txs",
  "strata-cli-common",
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-msg-fmt",
  "strata-ol-bridge-types",
  "strata-ol-msg-types",
  "strata-ol-rpc-types",
  "strata-ol-stf",
+ "strata-predicate",
  "strata-primitives",
  "strata-snark-acct-types",
  "thiserror 2.0.18",

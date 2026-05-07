@@ -271,7 +271,13 @@ impl ProofSpec for AcctSpec {
             })?;
         let new_tip_blkid = last_record.package().exec_blkid();
         let new_inbox_idx = last_record.next_inbox_msg_idx();
-        let pre_inbox_idx = new_inbox_idx - messages.len() as u64;
+        let message_count = messages.len() as u64;
+        let pre_inbox_idx = new_inbox_idx.checked_sub(message_count).ok_or_else(|| {
+            PaasError::TransientFailure(format!(
+                "inconsistent inbox indices for batch {batch_id}: \
+                 new_inbox_idx={new_inbox_idx}, message_count={message_count}"
+            ))
+        })?;
 
         // Derive pre/post state roots. We advance `pre_ee_state` the same
         // way the EE program's `pre_finalize_state` does (set tip blkid)

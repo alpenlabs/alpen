@@ -56,6 +56,8 @@ mod codec;
 mod reconstruct;
 #[cfg(feature = "serde")]
 mod serde_impl;
+#[cfg(test)]
+pub(crate) mod test_utils;
 
 // Re-export main types at crate level for convenience
 pub use batch::{AccountChange, AccountDiff, BatchBuilder, BatchStateDiff, StorageDiff};

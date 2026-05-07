@@ -3,6 +3,7 @@
 //! Creates a Bitcoin transaction that injects a [`DepositLog`] into the ASM
 //! via the debug subprotocol's MockAsmLog mechanism (subprotocol ID 255, tx_type 1).
 
+use anyhow::Context;
 use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
     TxOrdering,
@@ -15,7 +16,6 @@ use strata_ol_bridge_types::DepositDescriptor;
 use crate::{
     bridge::types::BitcoinDConfig,
     constants::MAGIC_BYTES,
-    error::Error,
     taproot::{new_bitcoind_client, sync_wallet, taproot_wallet},
 };
 
@@ -35,30 +35,29 @@ pub(crate) fn create_mock_deposit_tx(
     account_serial: u32,
     amount: u64,
     bitcoind_config: BitcoinDConfig,
-) -> Result<Vec<u8>, Error> {
+) -> anyhow::Result<Vec<u8>> {
     // Build the deposit descriptor and encode it as bridge-v1 would
     let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
-        SubjectIdBytes::try_new(vec![0u8; 32])
-            .ok_or_else(|| Error::TxBuilder("failed to create subject bytes".to_string()))?,
+        SubjectIdBytes::try_new(vec![0u8; 32]).context("failed to create subject bytes")?,
     )
-    .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
+    .context("failed to create deposit descriptor")?;
 
     let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
 
     // Encode as AsmLogEntry via the AsmLog trait
     let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
-        .map_err(|e| Error::TxBuilder(format!("failed to encode deposit log: {e}")))?;
+        .context("failed to encode deposit log")?;
     let raw_bytes = log_entry.into_bytes();
 
     // Build SPS-50 tag: debug subprotocol (255), MockAsmLog tx_type (1), aux = raw log bytes
     let tag = TagDataRef::new(DEBUG_SUBPROTOCOL_ID, MOCK_ASM_LOG_TX_TYPE, &raw_bytes)
-        .map_err(|e| Error::TxBuilder(format!("failed to build tag data: {e}")))?;
+        .context("failed to build tag data")?;
 
     // Encode into OP_RETURN script
     let op_return_script = ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&tag)
-        .map_err(|e| Error::TxBuilder(format!("failed to encode OP_RETURN: {e}")))?;
+        .context("failed to encode OP_RETURN")?;
 
     // Build and sign the Bitcoin transaction using BDK wallet
     let tx = build_and_sign_tx(op_return_script, bitcoind_config)?;
@@ -74,26 +73,25 @@ pub(crate) fn create_mock_deposit_tx(
 pub(crate) fn build_mock_deposit_op_return(
     account_serial: u32,
     amount: u64,
-) -> Result<ScriptBuf, Error> {
+) -> anyhow::Result<ScriptBuf> {
     let descriptor = DepositDescriptor::new(
         AccountSerial::from(account_serial),
-        SubjectIdBytes::try_new(vec![0u8; 32])
-            .ok_or_else(|| Error::TxBuilder("failed to create subject bytes".to_string()))?,
+        SubjectIdBytes::try_new(vec![0u8; 32]).context("failed to create subject bytes")?,
     )
-    .map_err(|e| Error::TxBuilder(format!("failed to create deposit descriptor: {e}")))?;
+    .context("failed to create deposit descriptor")?;
 
     let deposit_log = DepositLog::new(descriptor.encode_to_varvec(), amount);
 
     let log_entry = strata_asm_manifest_types::AsmLogEntry::from_log(&deposit_log)
-        .map_err(|e| Error::TxBuilder(format!("failed to encode deposit log: {e}")))?;
+        .context("failed to encode deposit log")?;
     let raw_bytes = log_entry.into_bytes();
 
     let tag = TagDataRef::new(DEBUG_SUBPROTOCOL_ID, MOCK_ASM_LOG_TX_TYPE, &raw_bytes)
-        .map_err(|e| Error::TxBuilder(format!("failed to build tag data: {e}")))?;
+        .context("failed to build tag data")?;
 
     ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&tag)
-        .map_err(|e| Error::TxBuilder(format!("failed to encode OP_RETURN: {e}")))
+        .context("failed to encode OP_RETURN")
 }
 
 /// Builds a Bitcoin transaction with the given OP_RETURN script, funds it from
@@ -101,7 +99,7 @@ pub(crate) fn build_mock_deposit_op_return(
 fn build_and_sign_tx(
     op_return_script: ScriptBuf,
     bitcoind_config: BitcoinDConfig,
-) -> Result<Transaction, Error> {
+) -> anyhow::Result<Transaction> {
     let mut wallet = taproot_wallet()?;
     let client = new_bitcoind_client(
         &bitcoind_config.bitcoind_url,
@@ -121,17 +119,14 @@ fn build_and_sign_tx(
         // Preserve insertion order so the OP_RETURN is the first output.
         // The SPS-50 parser requires the tag output at index 0.
         builder.ordering(TxOrdering::Untouched);
-        builder
-            .finish()
-            .map_err(|e| Error::TxBuilder(format!("failed to build PSBT: {e}")))?
+        builder.finish().context("failed to build PSBT")?
     };
 
     wallet
         .sign(&mut psbt, Default::default())
-        .map_err(|e| Error::TxBuilder(format!("signing failed: {e}")))?;
+        .context("signing failed")?;
 
-    psbt.extract_tx()
-        .map_err(|e| Error::TxBuilder(format!("tx extraction failed: {e}")))
+    psbt.extract_tx().context("tx extraction failed")
 }
 
 #[cfg(test)]
