@@ -49,7 +49,7 @@ impl Frontier {
 ///
 /// 4 Frontiers (each tracks the latest batch at that status or beyond):
 /// 1. da_pending     - latest batch with DA posted (status >= DaPending)
-/// 2. da_complete    - latest batch with DA confirmed (status >= DaComplete)
+/// 2. da_complete    - latest batch with DA complete (status >= DaComplete)
 /// 3. proof_pending  - latest batch with proof requested (status >= ProofPending)
 /// 4. proof_ready    - latest batch with proof complete (status == ProofReady)
 ///
@@ -63,7 +63,7 @@ pub struct BatchLifecycleState {
     /// Latest batch with DA posted (status >= DaPending).
     da_pending: Frontier,
 
-    /// Latest batch with DA confirmed (status >= DaComplete).
+    /// Latest batch with DA complete (status >= DaComplete).
     da_complete: Frontier,
 
     /// Latest batch with proof requested (status >= ProofPending).
