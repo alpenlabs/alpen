@@ -18,7 +18,7 @@ use super::error::{BroadcasterError, BroadcasterResult};
 /// `txn-already-known`, `txn-already-in-block-chain`. A space-separated check
 /// like `"already in mempool"` does not match any of these and would route
 /// every benign `-25` to `InvalidInputs`, causing spurious envelope rebuilds.
-fn is_benign_minus25_message(msg: &str) -> bool {
+pub(crate) fn is_benign_minus25_message(msg: &str) -> bool {
     msg.contains("already-in-mempool")
         || msg.contains("already-known")
         || msg.contains("already-in-block-chain")

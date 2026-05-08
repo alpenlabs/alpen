@@ -29,7 +29,11 @@ use super::{
     context::ChunkedWriterContext,
     signer::{sign_chunked_envelope, SignedChunkedEnvelope},
 };
-use crate::{broadcaster::L1BroadcastHandle, writer::builder::EnvelopeError, BtcioParams};
+use crate::{
+    broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
+    writer::builder::EnvelopeError,
+    BtcioParams,
+};
 
 /// Maximum number of envelope rows to fetch per storage scan batch.
 ///
@@ -256,12 +260,13 @@ enum CommitPublishResult {
 /// Polls entries and drives them through signing, broadcast, and confirmation.
 ///
 /// The lifecycle is:
-/// 1. `Unsigned`/`NeedsResign` → sign commit+reveals, store commit in broadcast DB → `Unpublished`.
-/// 2. `Unpublished` → wait for commit acceptance/rejection → `CommitPublished` or `NeedsResign`.
-/// 3. `CommitPublished` → enqueue reveals when mempool-policy safe and wait for publication →
+/// 1. `Unsigned`/`NeedsResign` -> sign commit+reveals, store commit in broadcast DB ->
+///    `Unpublished`.
+/// 2. `Unpublished` -> wait for commit acceptance/rejection -> `CommitPublished` or `NeedsResign`.
+/// 3. `CommitPublished` -> enqueue reveals when mempool-policy safe and wait for publication ->
 ///    `Published`.
-/// 4. `Published` → wait for confirmation → `Confirmed`
-/// 5. `Confirmed` → wait for finalization → `Finalized`
+/// 4. `Published` -> wait for confirmation -> `Confirmed`
+/// 5. `Confirmed` -> wait for finalization -> `Finalized`
 async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     mut state: ChunkedEnvelopeWatcherState,
     ctx: Arc<ChunkedWriterContext<R>>,
@@ -460,14 +465,25 @@ async fn publish_commit_immediately<R: Broadcaster>(
             info!(%txid, "chunked envelope commit accepted by bitcoind");
             Ok(CommitPublishResult::Published)
         }
-        Err(ClientError::Server(-25, _)) | Err(ClientError::Server(-27, _)) => {
-            info!(
-                %txid,
-                "chunked envelope commit already known or already in block"
-            );
+        Err(ClientError::Server(-25, msg)) => {
+            // Bitcoind reuses -25 (RPC_VERIFY_ERROR) for both benign
+            // already-accepted reasons and genuine rejections such as
+            // `bad-txns-inputs-missingorspent`. Mapping the whole code to
+            // Published would unlock successor signing and enqueue reveal
+            // handling for a commit bitcoind never accepted.
+            if is_benign_minus25_message(&msg) {
+                info!(%txid, %msg, "chunked envelope commit already known or already in block");
+                Ok(CommitPublishResult::Published)
+            } else {
+                warn!(%txid, %msg, "commit broadcast rejected by mempool (-25); will resign");
+                Ok(CommitPublishResult::InvalidInputs)
+            }
+        }
+        Err(ClientError::Server(-27, _)) => {
+            info!(%txid, "chunked envelope commit already in chainstate");
             Ok(CommitPublishResult::Published)
         }
-        Err(e) if e.is_missing_or_invalid_input() || matches!(e, ClientError::Server(-22, _)) => {
+        Err(e) if e.is_rpc_verify_error() || matches!(e, ClientError::Server(-22, _)) => {
             warn!(%txid, ?e, "commit broadcast rejected by mempool; will resign");
             Ok(CommitPublishResult::InvalidInputs)
         }

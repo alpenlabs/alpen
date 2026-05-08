@@ -70,10 +70,12 @@ class TestDaEmptyBatchTest(BaseTest):
                 f"  DaBlob: last_block_num={blob.last_block_num}, "
                 f"state_diff={len(blob.state_diff)} bytes, is_empty={is_empty}"
             )
-            if is_empty:
+            if is_empty and blob.last_block_num > pre_block:
                 empty_batch_found = True
-                assert blob.last_block_num > 0, "Empty batch should have valid last_block_num"
+                assert blob.last_block_num > pre_block, (
+                    f"Empty batch should be newer than pre-test block {pre_block}"
+                )
                 assert blob.update_seq_no >= 0, "Empty batch should have valid update_seq_no"
 
-        assert empty_batch_found, "No empty batch found"
+        assert empty_batch_found, f"No empty batch found after pre-test block {pre_block}"
         return True

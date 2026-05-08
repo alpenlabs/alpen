@@ -199,7 +199,10 @@ class TestDaMultiChunkTest(BaseTest):
                         f"  Reassembled blob: last_block_num={result.blob.last_block_num}, "
                         f"total_chunks={result.total_chunks}, total_size={result.total_size} bytes"
                     )
-                    if result.total_chunks >= min_expected_chunks:
+                    if (
+                        result.blob.last_block_num >= max_contract_block
+                        and result.total_chunks >= min_expected_chunks
+                    ):
                         multi_chunk_result = result
                         logger.info(f"  Found multi-chunk blob with {result.total_chunks} chunks!")
             else:
