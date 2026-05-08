@@ -1,5 +1,8 @@
 [client]
 rpc_port = 8432
+admin_rpc_host = "127.0.0.1"
+admin_rpc_port = 8434
+admin_rpc_bearer_token = "dev-only-change-me"
 l2_blocks_fetch_limit = 1_000
 datadir = "/path/to/data/directory"
 # sequencer_key = "/path/to/data/directory/"

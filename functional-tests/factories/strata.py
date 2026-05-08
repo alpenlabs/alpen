@@ -91,10 +91,19 @@ class StrataFactory(flexitest.Factory):
         datadir = Path(ctx.make_service_dir(f"{ServiceType.Strata}_{mode}"))
         rpc_port = self.next_port()
         rpc_host = "127.0.0.1"
+        admin_rpc_port = self.next_port()
+        admin_rpc_host = "127.0.0.1"
+        admin_rpc_token = "test-admin-token"
         logfile = datadir / "service.log"
 
         # Create config
-        client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
+        client_config = ClientConfig(
+            rpc_host=rpc_host,
+            rpc_port=rpc_port,
+            admin_rpc_host=admin_rpc_host,
+            admin_rpc_port=admin_rpc_port,
+            admin_rpc_bearer_token=admin_rpc_token,
+        )
         # Leave log_dir/log_file_prefix unset so strata writes tracing to
         # stdout/stderr; the harness captures both into service.log.
         logging_config = LoggingConfig()
@@ -161,6 +170,10 @@ class StrataFactory(flexitest.Factory):
             rpc_host,
             "--rpc-port",
             str(rpc_port),
+            "--admin-rpc-host",
+            admin_rpc_host,
+            "--admin-rpc-port",
+            str(admin_rpc_port),
         ]
 
         if is_sequencer:
@@ -183,6 +196,7 @@ class StrataFactory(flexitest.Factory):
             process_env.update(env)
 
         rpc_url = f"http://{rpc_host}:{rpc_port}"
+        admin_rpc_url = f"http://{admin_rpc_host}:{admin_rpc_port}"
 
         resolved_slots_per_epoch = 4
         if epoch_sealing_config is not None and epoch_sealing_config.slots_per_epoch is not None:
@@ -192,6 +206,10 @@ class StrataFactory(flexitest.Factory):
             "rpc_port": rpc_port,
             "rpc_host": rpc_host,
             "rpc_url": rpc_url,
+            "admin_rpc_port": admin_rpc_port,
+            "admin_rpc_host": admin_rpc_host,
+            "admin_rpc_url": admin_rpc_url,
+            "admin_rpc_token": admin_rpc_token,
             "datadir": str(datadir),
             "mode": mode,
             "slots_per_epoch": resolved_slots_per_epoch,

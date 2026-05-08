@@ -33,10 +33,17 @@ class JsonRpcClient:
         version = rpc.strata_protocolVersion()
     """
 
-    def __init__(self, url: str, name: str | None = None, timeout: int = 30):
+    def __init__(
+        self,
+        url: str,
+        name: str | None = None,
+        timeout: int = 30,
+        headers: dict[str, str] | None = None,
+    ):
         self.url = url
         self.name = name or url
         self.timeout = timeout
+        self.headers = headers or {}
         self.id_counter = 0
         self.logger = logging.getLogger(f"rpc.{self.name}")
         self.pre_call_hook: Callable[[str], None] = lambda _: None
@@ -86,6 +93,7 @@ class JsonRpcClient:
             resp = requests.post(
                 self.url,
                 json=payload,
+                headers=self.headers,
                 timeout=self.timeout,
             )
             resp.raise_for_status()
