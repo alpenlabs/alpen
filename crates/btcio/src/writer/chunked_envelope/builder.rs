@@ -278,6 +278,7 @@ fn make_txin(txid: bitcoin::Txid, vout: u32) -> TxIn {
 #[cfg(test)]
 mod tests {
     use bitcoin::{
+        opcodes::all::OP_RETURN,
         secp256k1::{rand, Keypair, Secp256k1},
         Network, ScriptBuf, SignedAmount, Txid,
     };
@@ -369,7 +370,7 @@ mod tests {
         assert_eq!(
             op_return_bytes,
             [
-                bitcoin::opcodes::all::OP_RETURN.to_u8(),
+                OP_RETURN.to_u8(),
                 COMMIT_OP_RETURN_PAYLOAD_LEN as u8,
                 0xAA,
                 0xBB,

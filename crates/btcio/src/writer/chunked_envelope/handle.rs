@@ -453,9 +453,18 @@ async fn publish_commit_immediately<R: Broadcaster>(
 ) -> anyhow::Result<CommitPublishResult> {
     let tx = commit_tx_entry.try_to_tx()?;
     let txid = tx.compute_txid();
+    debug!(%txid, vsize = tx.vsize(), "broadcasting chunked envelope commit");
 
     match client.send_raw_transaction(&tx).await {
-        Ok(_) | Err(ClientError::Server(-25, _)) | Err(ClientError::Server(-27, _)) => {
+        Ok(_) => {
+            info!(%txid, "chunked envelope commit accepted by bitcoind");
+            Ok(CommitPublishResult::Published)
+        }
+        Err(ClientError::Server(-25, _)) | Err(ClientError::Server(-27, _)) => {
+            info!(
+                %txid,
+                "chunked envelope commit already known or already in block"
+            );
             Ok(CommitPublishResult::Published)
         }
         Err(e) if e.is_missing_or_invalid_input() || matches!(e, ClientError::Server(-22, _)) => {
@@ -485,6 +494,13 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
     broadcast_handle
         .put_tx_entry(entry.commit_txid, commit_tx_entry.clone())
         .await?;
+    debug!(
+        envelope_idx,
+        commit_txid = %entry.commit_txid,
+        commit_wtxid = %entry.commit_wtxid,
+        reveal_count = entry.reveals.len(),
+        "persisted signed chunked envelope before commit broadcast"
+    );
 
     match publish_commit_immediately(ctx.client.as_ref(), &commit_tx_entry).await? {
         CommitPublishResult::Published => {
@@ -501,6 +517,12 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
             entry.status = ChunkedEnvelopeStatus::CommitPublished;
             ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
                 .await?;
+            info!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                reveal_count = entry.reveals.len(),
+                "chunked envelope commit published"
+            );
         }
         CommitPublishResult::InvalidInputs => {
             commit_tx_entry.status = L1TxStatus::InvalidInputs;
@@ -510,6 +532,11 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
             entry.status = ChunkedEnvelopeStatus::NeedsResign;
             ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
                 .await?;
+            warn!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                "chunked envelope commit has invalid inputs; entry needs resign"
+            );
         }
         CommitPublishResult::Deferred(reason) => {
             // The broadcaster owns retrying the persisted commit tx. The
@@ -621,11 +648,32 @@ async fn check_commit_and_enqueue_reveals(
     };
 
     match commit.status {
-        L1TxStatus::InvalidInputs => return Ok(ChunkedEnvelopeStatus::NeedsResign),
-        L1TxStatus::Unpublished => return Ok(ChunkedEnvelopeStatus::Unpublished),
+        L1TxStatus::InvalidInputs => {
+            warn!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                "chunked envelope commit has invalid inputs during status check"
+            );
+            return Ok(ChunkedEnvelopeStatus::NeedsResign);
+        }
+        L1TxStatus::Unpublished => {
+            debug!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                "chunked envelope commit still unpublished"
+            );
+            return Ok(ChunkedEnvelopeStatus::Unpublished);
+        }
         L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => {}
     }
 
+    debug!(
+        envelope_idx,
+        commit_txid = %entry.commit_txid,
+        commit_status = ?commit.status,
+        reveal_count = entry.reveals.len(),
+        "chunked envelope commit publication observed"
+    );
     try_enqueue_reveals_if_policy_safe(envelope_idx, entry, &commit, bcast).await?;
 
     Ok(ChunkedEnvelopeStatus::CommitPublished)

@@ -9,6 +9,7 @@ from common.base_test import BaseTest
 from common.config.constants import ServiceType
 from common.evm import DEV_ACCOUNT_ADDRESS, send_eth_transfer
 from common.services import AlpenClientService, BitcoinService
+from common.wait import wait_until_with_value
 from envconfigs.alpen_client import AlpenClientEnv
 from tests.alpen_client.ee_da.codec import DaEnvelope
 
@@ -27,9 +28,9 @@ class TestDaPendingRecoveryRestartTest(BaseTest):
     4. asserting the second DA blob appears before the first could finalize
     """
 
-    BATCH_SEALING_BLOCK_COUNT = 10
+    BATCH_SEALING_BLOCK_COUNT = 3
     L1_REORG_SAFE_DEPTH = 6
-    PHASE_BLOCK_WAIT = 25
+    PHASE_BLOCK_WAIT = 8
     PHASE_TX_COUNT = 4
     POLL_ATTEMPTS = 4
     BLOCKS_PER_POLL = 2
@@ -51,7 +52,10 @@ class TestDaPendingRecoveryRestartTest(BaseTest):
         btc_rpc = bitcoin.create_rpc()
         mine_address = btc_rpc.proxy.getnewaddress()
         all_envelopes: list[DaEnvelope] = []
-        end_l1 = btc_rpc.proxy.getblockcount()
+        # Capture L1 baseline once so subsequent scans include any DA tx
+        # confirmed at or after this point (the scanner is now idempotent
+        # and must always be invoked from a stable lower bound).
+        baseline_l1_height = btc_rpc.proxy.getblockcount()
 
         eth_rpc = sequencer.create_rpc()
         next_nonce = int(eth_rpc.eth_getTransactionCount(DEV_ACCOUNT_ADDRESS, "latest"), 16)
@@ -60,11 +64,11 @@ class TestDaPendingRecoveryRestartTest(BaseTest):
         phase_a_deploy_block = self.submit_transfers(eth_rpc, next_nonce, "phase-a")
         next_nonce += self.PHASE_TX_COUNT
         sequencer.advance_to_next_da_window(self.PHASE_BLOCK_WAIT)
-        phase_a_blob, end_l1, mined_phase_a = sequencer.wait_for_non_empty_blob(
+        phase_a_blob, _, mined_phase_a = sequencer.wait_for_non_empty_blob(
             btc_rpc,
             mine_address,
             all_envelopes,
-            end_l1,
+            baseline_l1_height,
             phase_a_deploy_block,
             "phase-a",
             poll_attempts=self.POLL_ATTEMPTS,
@@ -89,7 +93,7 @@ class TestDaPendingRecoveryRestartTest(BaseTest):
             btc_rpc,
             mine_address,
             all_envelopes,
-            end_l1,
+            baseline_l1_height,
             phase_b_deploy_block,
             "phase-b",
             poll_attempts=self.POLL_ATTEMPTS,
@@ -122,9 +126,27 @@ class TestDaPendingRecoveryRestartTest(BaseTest):
         recipient = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
         deploy_block = int(eth_rpc.eth_blockNumber(), 16)
         logger.info("Submitting %s transfers for %s...", self.PHASE_TX_COUNT, phase_name)
+        gas_price = self.wait_for_gas_price(eth_rpc, phase_name)
         for offset in range(self.PHASE_TX_COUNT):
-            tx_hash = send_eth_transfer(eth_rpc, start_nonce + offset, recipient, 10**18)
+            tx_hash = send_eth_transfer(
+                eth_rpc, start_nonce + offset, recipient, 10**18, gas_price=gas_price
+            )
             logger.info(
                 "  %s tx %s/%s: %s...", phase_name, offset + 1, self.PHASE_TX_COUNT, tx_hash[:20]
             )
         return deploy_block
+
+    def wait_for_gas_price(self, eth_rpc, phase_name: str) -> int:
+        """Wait for post-restart RPC readiness before submitting phase transactions."""
+        original_timeout = eth_rpc.timeout
+        eth_rpc.timeout = 5
+        try:
+            return wait_until_with_value(
+                lambda: int(eth_rpc.eth_gasPrice(), 16),
+                lambda price: price > 0,
+                error_with=f"{phase_name}: eth_gasPrice did not respond",
+                timeout=60,
+                step=1,
+            )
+        finally:
+            eth_rpc.timeout = original_timeout

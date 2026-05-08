@@ -7,7 +7,7 @@ use strata_snark_acct_runtime::IExtraData;
 impl_type_flat_struct! {
     /// Message sent in the extra data field in the update operation.
     ///
-    /// TODO(STR-TBD): `new_tip_state_root` is required by EE proof/reconstruction so
+    /// TODO(STR-3373): `new_tip_state_root` is required by EE proof/reconstruction so
     /// [`EeAccountState`] can commit to the full last execution block state.
     /// However, OL currently copies SAU `extra_data` byte-for-byte into
     /// `SnarkAccountUpdateLogData`, which means this field is also published in

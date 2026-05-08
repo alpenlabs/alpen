@@ -71,7 +71,7 @@ impl<
 
     pub async fn start(mut self) -> eyre::Result<()> {
         debug!("start state diff generator");
-        // TODO(STR-TBD): Make state-diff generation catch up after restart. DA posting
+        // TODO(STR-3372): Make state-diff generation catch up after restart. DA posting
         // waits until every block in a sealed batch has a state-diff row. If the client
         // restarts after EVM blocks were already accepted but before their state diffs
         // were written, the batch can stay sealed forever. The fix should replay the

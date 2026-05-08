@@ -67,6 +67,11 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .network()
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
+
+        // NOTE: passing `min_conf = 0` would also include unconfirmed UTXOs and mitigate the
+        // lack-of-UTXO problem, but it complicates fee bumping (RBF/CPFP over chained unconfirmed
+        // ancestors) and has mempool-policy and reorg-safety implications, so it is left as a
+        // future consideration.
         let utxos = ctx
             .client
             .list_unspent(None, None, None, None, None)
@@ -74,9 +79,30 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .map_err(|e| EnvelopeError::Other(e.into()))?
             .0;
 
+        let spendable_utxo_count = utxos
+            .iter()
+            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT as i64)
+            .count();
+
+        let spendable_value_sats: i64 = utxos
+            .iter()
+            .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT as i64)
+            .map(|u| u.amount.to_sat())
+            .sum();
+
         let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
             .await
             .map_err(EnvelopeError::Other)?;
+
+        debug!(
+            envelope_idx,
+            chunk_count = entry.chunk_data.len(),
+            utxo_count = utxos.len(),
+            spendable_utxo_count,
+            spendable_value_sats,
+            fee_rate,
+            "loaded wallet state for chunked envelope signing"
+        );
 
         let env_config = EnvelopeConfig::new(
             ctx.btcio_params.magic_bytes,

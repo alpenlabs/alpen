@@ -100,7 +100,7 @@ impl TryFrom<DBBatch> for Batch {
 pub(crate) struct DBL1DaBlockRef {
     /// L1BlockCommitment serialized via its Borsh impl.
     block: L1BlockCommitment,
-    /// Transactions as (txid, wtxid) pairs, stored as raw bytes.
+    /// This batch's DA txs in this L1 block as raw `(txid, wtxid)` pairs.
     txns: Vec<DBTxidPair>,
 }
 

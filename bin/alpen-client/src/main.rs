@@ -235,11 +235,15 @@ fn main() {
             let sequencer_privkey = sequencer_privkey_from_env(ext.sequencer)?;
 
             #[cfg(feature = "sequencer")]
+            // NOTE: ATM we reuse `SEQUENCER_PRIVATE_KEY` for both gossip
+            // package signing and EE DA reveal tapscript signing. That is
+            // operationally convenient for now, but it couples network
+            // identity with Bitcoin DA spend authority. Should we split this
+            // into a dedicated DA reveal signing key/config?
             let sequencer_keypair = match sequencer_privkey.as_ref() {
                 Some(privkey) => Some(sequencer_bitcoin_keypair(privkey)?),
                 None => None,
-            }
-            .ok_or_else(|| eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair"))?;
+            };
 
             let gossip_config = {
                 #[cfg(feature = "sequencer")]
@@ -578,6 +582,9 @@ fn main() {
                     }),
                     ..WriterConfig::default()
                 });
+                let sequencer_keypair = sequencer_keypair.ok_or_else(|| {
+                    eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
+                })?;
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
                     btc_client,
                     writer_config,

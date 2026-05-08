@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use alloy_eips::eip4895::Withdrawal;
 use alloy_primitives::B256;
 use alloy_rpc_types_engine::{ForkchoiceState, PayloadAttributes};
@@ -13,6 +15,7 @@ use alpen_reth_node::{
 use eyre::{eyre, Context};
 use reth_node_builder::{ConsensusEngineHandle, PayloadBuilderAttributes};
 use reth_payload_builder::PayloadBuilderHandle;
+use tracing::{debug, warn};
 
 #[derive(Debug)]
 pub(crate) struct AlpenRethPayloadEngine {
@@ -54,6 +57,9 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
         &self,
         build_attrs: PayloadBuildAttributes,
     ) -> eyre::Result<AlpenBuiltPayload> {
+        let parent = build_attrs.parent();
+        let timestamp = build_attrs.timestamp();
+        let deposit_count = build_attrs.deposits().len();
         let withdrawals = build_attrs
             .deposits()
             .iter()
@@ -81,21 +87,99 @@ impl PayloadBuilderEngine for AlpenRethPayloadEngine {
         });
 
         let payload_builder_attrs =
-            AlpenPayloadBuilderAttributes::try_new(build_attrs.parent(), payload_attrs, 0)?;
+            AlpenPayloadBuilderAttributes::try_new(parent, payload_attrs, 0)?;
 
-        let payload_id = self
+        let build_started = Instant::now();
+        debug!(
+            %parent,
+            timestamp,
+            deposit_count,
+            "requesting payload builder job"
+        );
+        let payload_id = match self
             .payload_builder_handle
             .send_new_payload(payload_builder_attrs)
             .await
-            .context("failed to communicate with payload builder")?
-            .context("failed to build payload")?;
+        {
+            Ok(Ok(payload_id)) => {
+                debug!(
+                    %parent,
+                    timestamp,
+                    deposit_count,
+                    ?payload_id,
+                    elapsed_ms = build_started.elapsed().as_millis(),
+                    "payload builder accepted job"
+                );
+                payload_id
+            }
+            Ok(Err(err)) => {
+                warn!(
+                    %parent,
+                    timestamp,
+                    deposit_count,
+                    elapsed_ms = build_started.elapsed().as_millis(),
+                    error = %err,
+                    "payload builder rejected job"
+                );
+                return Err(err).context("failed to build payload");
+            }
+            Err(err) => {
+                warn!(
+                    %parent,
+                    timestamp,
+                    deposit_count,
+                    elapsed_ms = build_started.elapsed().as_millis(),
+                    error = %err,
+                    "failed to communicate with payload builder"
+                );
+                return Err(err).context("failed to communicate with payload builder");
+            }
+        };
 
-        let payload = self
+        let resolve_started = Instant::now();
+        let payload = match self
             .payload_builder_handle
             .resolve_kind(payload_id, reth_node_builder::PayloadKind::WaitForPending)
             .await
-            .ok_or(eyre::eyre!("build payload missing"))?
-            .context("failed build payload")?;
+        {
+            Some(Ok(payload)) => {
+                debug!(
+                    %parent,
+                    timestamp,
+                    deposit_count,
+                    ?payload_id,
+                    resolve_elapsed_ms = resolve_started.elapsed().as_millis(),
+                    total_elapsed_ms = build_started.elapsed().as_millis(),
+                    "payload builder resolved payload"
+                );
+                payload
+            }
+            Some(Err(err)) => {
+                warn!(
+                    %parent,
+                    timestamp,
+                    deposit_count,
+                    ?payload_id,
+                    resolve_elapsed_ms = resolve_started.elapsed().as_millis(),
+                    total_elapsed_ms = build_started.elapsed().as_millis(),
+                    error = %err,
+                    "payload builder failed while resolving payload"
+                );
+                return Err(err).context("failed build payload");
+            }
+            None => {
+                warn!(
+                    %parent,
+                    timestamp,
+                    deposit_count,
+                    ?payload_id,
+                    resolve_elapsed_ms = resolve_started.elapsed().as_millis(),
+                    total_elapsed_ms = build_started.elapsed().as_millis(),
+                    "payload builder returned no payload"
+                );
+                return Err(eyre::eyre!("build payload missing"));
+            }
+        };
 
         Ok(payload)
     }

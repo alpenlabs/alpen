@@ -8,8 +8,8 @@ use strata_codec::{decode_buf_exact, encode_to_vec, Codec, CodecError};
 
 /// Current EE DA blob encoding version.
 ///
-/// The commit transaction carries this version next to the EE DA magic bytes in OP_RETURN.
-/// so L1 scanners can associate reassembled blob bytes with the schema that
+/// The commit transaction carries this version next to the EE DA magic bytes
+/// in OP_RETURN, so L1 scanners can associate reassembled blob bytes with the schema that
 /// produced them. The current decoder handles only the present [`DaBlob`]
 /// shape; version dispatch can be added when a future blob schema is
 /// introduced.
@@ -21,8 +21,8 @@ pub const DA_BLOB_VERSION: u32 = 0;
 /// purely from L1 DA needs to build the next EVM block. A fresh sequencer has
 /// the [`BatchStateDiff`] for account/storage changes but **not** the block
 /// headers themselves, so these non-derivable header fields fill that gap. The
-/// terminal block hash is carried separately by ee account runtime `UpdateExtraData`, and the
-/// terminal post-state root is reconstructible by applying the DA state diffs.
+/// terminal block id and state root are EE account update metadata, not DA
+/// blob fields.
 ///
 /// - `base_fee`, `gas_used`, `gas_limit` feed the EIP-1559 base-fee calculation and gas-limit
 ///   adjustment for the next block.
