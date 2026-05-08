@@ -20,14 +20,14 @@ use rand_core::OsRng;
 use shrex::encode;
 use strata_asm_proto_bridge_v1_txs::deposit_request::DrtHeaderAux;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_identifiers::{AccountSerial, SubjectIdBytes};
+use strata_identifiers::SubjectIdBytes;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_primitives::crypto::even_kp;
 
 use crate::{
     alpen::AlpenWallet,
-    constants::SIGNET_BLOCK_TIME,
+    constants::{ALPEN_EE_ACCT_SERIAL, SIGNET_BLOCK_TIME},
     link::{OnchainObject, PrettyPrint},
     recovery::DescriptorRecovery,
     seed::Seed,
@@ -115,9 +115,8 @@ fn prepare_deposit_request(
 
     let alpen_subject_bytes =
         SubjectIdBytes::try_new(alpen_address.to_vec()).expect("must be valid subject bytes");
-    // Legacy: deposit intent supports a single execution environment (zero)
-    let deposit_descriptor = DepositDescriptor::new(AccountSerial::zero(), alpen_subject_bytes)
-        .expect("AccountSerial::zero() is always within valid range");
+    let deposit_descriptor = DepositDescriptor::new(ALPEN_EE_ACCT_SERIAL, alpen_subject_bytes)
+        .expect("EE serial is within valid range");
     let header_aux = DrtHeaderAux::new(
         recovery_public_key.serialize(),
         deposit_descriptor.encode_to_varvec(),

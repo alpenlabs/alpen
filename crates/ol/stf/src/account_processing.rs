@@ -36,8 +36,12 @@ pub(crate) fn process_message<S: IStateAccessorMut>(
 
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
-                // If we don't find it then we can sweep it into limbo.
-                warn!(%target, "target account does not exist");
+                warn!(
+                    %target,
+                    %sender,
+                    value = %msg.value(),
+                    "limboing message to nonexistent target account",
+                );
                 handle_misplaced_funds(state, coin)?;
                 return Ok(());
             }
@@ -84,8 +88,11 @@ pub(crate) fn process_transfer<S: IStateAccessorMut>(
         _ => {
             // Check if the account exists first.
             if !state.check_account_exists(target)? {
-                // If we don't find it then we can sweep it into limbo.
-                warn!(%target, "limboing transfer to non-existent account");
+                warn!(
+                    %target,
+                    %value,
+                    "limboing transfer to nonexistent target account",
+                );
                 handle_misplaced_funds(state, coin)?;
                 return Ok(());
             }
