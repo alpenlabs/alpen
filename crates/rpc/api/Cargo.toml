@@ -8,17 +8,11 @@ workspace = true
 
 [dependencies]
 strata-checkpoint-types.workspace = true
-strata-common.workspace = true
 strata-csm-types.workspace = true
-strata-db-types.workspace = true
 strata-ol-bridge-types.workspace = true
-strata-ol-chain-types.workspace = true
 strata-primitives.workspace = true
 strata-rpc-types.workspace = true
-strata-sequencer.workspace = true
-zkaleido.workspace = true
 
-bitcoin.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 
 [features]
