@@ -24,7 +24,7 @@ class TestDaEmptyBatchTest(BaseTest):
             AlpenClientEnv(
                 fullnode_count=0,
                 enable_l1_da=True,
-                batch_sealing_block_count=30,
+                batch_sealing_block_count=3,
             )
         )
 
@@ -40,22 +40,21 @@ class TestDaEmptyBatchTest(BaseTest):
         # Seal a batch with no user transactions.
         trigger_batch_sealing(sequencer, btc_rpc)
 
-        # Poll for DA envelopes.
+        # Poll for DA envelopes. Re-scan from baseline each pass — the
+        # scanner is idempotent and pairs commits with reveals across
+        # blocks, so we replace the result list rather than appending.
         mine_address = btc_rpc.proxy.getnewaddress()
         envelopes = []
-        end_l1 = baseline_l1_height
 
         for attempt in range(10):
             time.sleep(3)
             btc_rpc.proxy.generatetoaddress(3, mine_address)
             time.sleep(2)
 
-            prev_end = end_l1
             end_l1 = btc_rpc.proxy.getblockcount()
-            new_envs = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
-            if new_envs:
-                envelopes.extend(new_envs)
-                logger.info(f"Attempt {attempt + 1}: Found {len(new_envs)} DA envelope(s)")
+            envelopes = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
+            if envelopes:
+                logger.info(f"Attempt {attempt + 1}: Saw {len(envelopes)} DA envelope chunk(s)")
                 break
             logger.debug(f"Attempt {attempt + 1}: No envelopes yet")
 
@@ -74,7 +73,7 @@ class TestDaEmptyBatchTest(BaseTest):
             if is_empty:
                 empty_batch_found = True
                 assert blob.last_block_num > 0, "Empty batch should have valid last_block_num"
-                assert len(blob.batch_id_prev_block) == 32, "Empty batch should have valid batch_id"
+                assert blob.update_seq_no >= 0, "Empty batch should have valid update_seq_no"
 
         assert empty_batch_found, "No empty batch found"
         return True

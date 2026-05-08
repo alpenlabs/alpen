@@ -28,7 +28,7 @@ class TestDaNormalStateDiffTest(BaseTest):
             AlpenClientEnv(
                 fullnode_count=0,
                 enable_l1_da=True,
-                batch_sealing_block_count=30,
+                batch_sealing_block_count=3,
             )
         )
 
@@ -47,11 +47,9 @@ class TestDaNormalStateDiffTest(BaseTest):
             tx_hash = send_eth_transfer(eth_rpc, nonce + i, recipient, 10**18)
             logger.info(f"  TX {i + 1}/6: {tx_hash[:20]}...")
 
-        # Use a generous block count to ensure the batch containing the
-        # transfers is sealed AND the next batch starts (which triggers DA
-        # posting for the previous batch).  With batch_sealing_block_count=30,
-        # 65 blocks guarantees crossing at least two batch boundaries.
-        trigger_batch_sealing(sequencer, btc_rpc, num_blocks=65)
+        # Cross enough short test batches to seal the transfer batch and
+        # trigger DA posting for it.
+        trigger_batch_sealing(sequencer, btc_rpc, num_blocks=10)
 
         # Poll for DA envelopes.  After earlier tests the DA lifecycle may
         # need several cycles to catch up through intermediate batches, so
@@ -59,7 +57,6 @@ class TestDaNormalStateDiffTest(BaseTest):
         # we find a non-empty batch.
         mine_address = btc_rpc.proxy.getnewaddress()
         all_envs: list[DaEnvelope] = []
-        end_l1 = baseline_l1_height
         non_empty_blob = None
 
         for attempt in range(20):
@@ -67,12 +64,12 @@ class TestDaNormalStateDiffTest(BaseTest):
             btc_rpc.proxy.generatetoaddress(5, mine_address)
             time.sleep(3)
 
-            prev_end = end_l1
+            # Re-scan from baseline so commits and reveals are paired across
+            # scan windows. The scanner is idempotent so we replace the list.
             end_l1 = btc_rpc.proxy.getblockcount()
-            new_envs = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
-            if new_envs:
-                logger.info(f"Attempt {attempt + 1}: Found {len(new_envs)} DA envelope(s)")
-                all_envs.extend(new_envs)
+            all_envs = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
+            if all_envs:
+                logger.info(f"Attempt {attempt + 1}: Saw {len(all_envs)} DA envelope chunk(s)")
 
             # Check if we've found a non-empty batch yet
             blobs = reassemble_blobs_from_envelopes(all_envs)

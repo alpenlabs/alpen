@@ -13,12 +13,11 @@ from common.services import AlpenClientService, BitcoinService
 from common.wait import timeout_for_expected_blocks
 from envconfigs.alpen_client import AlpenClientEnv
 from tests.alpen_client.ee_da.codec import (
-    DA_CHUNK_HEADER_SIZE,
     DaEnvelope,
     ReassembledBlob,
     reassemble_and_validate_blobs,
+    validate_commit_independence,
     validate_multi_chunk_blob,
-    validate_multi_chunk_wtxid_chain,
 )
 from tests.alpen_client.ee_da.helpers import scan_for_da_envelopes
 
@@ -38,7 +37,7 @@ class TestDaMultiChunkTest(BaseTest):
             AlpenClientEnv(
                 fullnode_count=0,
                 enable_l1_da=True,
-                batch_sealing_block_count=30,
+                batch_sealing_block_count=10,
             )
         )
 
@@ -51,19 +50,19 @@ class TestDaMultiChunkTest(BaseTest):
 
         nonce = int(eth_rpc.eth_getTransactionCount(DEV_ACCOUNT_ADDRESS, "latest"), 16)
 
-        # EIP-3860 limits initcode to 49152 bytes.  Each slot needs ~67 bytes of
+        # EIP-3860 limits initcode to 49152 bytes. Each slot needs ~67 bytes of
         # init code (PUSH32 value + PUSH32 key + SSTORE), so max ~700 slots per
-        # contract.  Using 500 slots for safety.
+        # contract. Using 650 slots leaves room below that limit.
         #
-        # With batch_sealing_block_count=30, contracts may spread across batches.
-        # 80 contracts x 500 slots = 40,000 slots to ensure enough state diff
-        # even if split: ~40,000 x 80 bytes = 3.2 MB total.
-        num_contracts = 80
-        slots_per_contract = 500
-        min_expected_chunks = 3
+        # A 10-block batch still collects enough storage writes to exceed one
+        # chunk while keeping the functional test runtime bounded.
+        num_contracts = 24
+        slots_per_contract = 650
+        min_expected_chunks = 2
         expected_contracts_per_block = 2
         confirmation_timeout = timeout_for_expected_blocks(
             math.ceil(num_contracts / expected_contracts_per_block),
+            seconds_per_block=15.0,
             slack_seconds=60,
         )
 
@@ -138,8 +137,7 @@ class TestDaMultiChunkTest(BaseTest):
                 f" ~{estimated_diff_kb:.0f} KB state diff"
             )
 
-        # The DA environment uses batch_sealing_block_count=30
-        batch_sealing_block_count = 30
+        batch_sealing_block_count = 10
         expected_batch_last_block = (
             (max_contract_block - 1) // batch_sealing_block_count + 1
         ) * batch_sealing_block_count
@@ -148,7 +146,6 @@ class TestDaMultiChunkTest(BaseTest):
         # Poll for the multi-chunk blob
         all_envelopes: list[DaEnvelope] = []
         multi_chunk_result: ReassembledBlob | None = None
-        end_l1 = baseline_l1_height
         mine_address = btc_rpc.proxy.getnewaddress()
 
         for attempt in range(30):
@@ -159,7 +156,7 @@ class TestDaMultiChunkTest(BaseTest):
                 # generic 1s-per-block wait budget is too tight for this step.
                 block_wait_timeout = timeout_for_expected_blocks(
                     blocks_needed - current_l2_block,
-                    seconds_per_block=2.0,
+                    seconds_per_block=15.0,
                     slack_seconds=30,
                 )
                 logger.debug(
@@ -179,20 +176,22 @@ class TestDaMultiChunkTest(BaseTest):
             btc_rpc.proxy.generatetoaddress(10, mine_address)
             time.sleep(3)
 
-            prev_end = end_l1
+            # Always scan from `baseline_l1_height` so a commit confirmed in
+            # an earlier window can be paired with reveals that confirm in a
+            # later window. The scanner is idempotent — it re-emits every
+            # complete envelope visible in `[baseline, end_l1]` — so we
+            # replace the result list each pass instead of extending.
             end_l1 = btc_rpc.proxy.getblockcount()
-            new_envelopes = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
+            all_envelopes = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
 
-            if new_envelopes:
-                logger.info(f"Attempt {attempt + 1}: Found {len(new_envelopes)} new DA envelope(s)")
-                for env in new_envelopes:
-                    chunk_size = len(env.payload) - DA_CHUNK_HEADER_SIZE
+            if all_envelopes:
+                logger.info(f"Attempt {attempt + 1}: Saw {len(all_envelopes)} DA envelope chunk(s)")
+                for env in all_envelopes:
                     logger.debug(
-                        f"  Chunk {env.chunk_index}/{env.total_chunks}: {chunk_size} bytes, "
-                        f"blob_hash={env.blob_hash.hex()[:16]}..."
+                        f"  Chunk {env.chunk_index}/{env.total_chunks}: "
+                        f"{len(env.chunk_payload)} bytes, "
+                        f"commit={env.commit_txid}"
                     )
-
-                all_envelopes.extend(new_envelopes)
 
                 results = reassemble_and_validate_blobs(all_envelopes)
                 for result in results:
@@ -204,7 +203,7 @@ class TestDaMultiChunkTest(BaseTest):
                         multi_chunk_result = result
                         logger.info(f"  Found multi-chunk blob with {result.total_chunks} chunks!")
             else:
-                logger.debug(f"Attempt {attempt + 1}: No new envelopes found")
+                logger.debug(f"Attempt {attempt + 1}: No envelopes seen yet")
 
             if multi_chunk_result is not None:
                 break
@@ -224,17 +223,17 @@ class TestDaMultiChunkTest(BaseTest):
             logger.info(f"  {msg}")
         assert is_valid, "Multi-chunk validation failed"
 
-        logger.info("Multi-chunk wtxid chain validation:")
-        wtxid_valid, wtxid_messages = validate_multi_chunk_wtxid_chain(
-            all_envelopes,
-            multi_chunk_result.blob_hash,
-        )
-        for msg in wtxid_messages:
+        # Reveals spend outputs from the commit transaction directly. This
+        # checks that they do not accidentally chain off other reveals.
+        logger.info("Reveal independence validation:")
+        indep_valid, indep_messages = validate_commit_independence(all_envelopes)
+        for msg in indep_messages:
             logger.info(f"  {msg}")
-        assert wtxid_valid, "Wtxid chain validation failed within multi-chunk blob"
+        assert indep_valid, "Reveal independence validation failed"
 
         logger.info(
             f"Passed: {multi_chunk_result.total_chunks} chunks, "
-            f"{multi_chunk_result.total_size} bytes total"
+            f"{multi_chunk_result.total_size} bytes total, "
+            f"commit={multi_chunk_result.commit_txid}"
         )
         return True

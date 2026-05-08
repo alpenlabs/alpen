@@ -13,6 +13,7 @@ from factories.bitcoin import BitcoinFactory
 
 # Default magic bytes for DA testing (must be 4 bytes)
 DEFAULT_DA_MAGIC_BYTES = b"ALPN"
+DA_WALLET_FUNDING_OUTPUTS = 25
 
 
 class AlpenClientEnv(flexitest.EnvConfig):
@@ -102,8 +103,18 @@ class AlpenClientEnv(flexitest.EnvConfig):
 
                 btc_rpc = bitcoin.create_rpc()
                 btc_rpc.proxy.createwallet("testwallet")
-                address = btc_rpc.proxy.getnewaddress()
-                btc_rpc.proxy.generatetoaddress(101, address)
+                mining_address = btc_rpc.proxy.getnewaddress()
+                btc_rpc.proxy.generatetoaddress(101, mining_address)
+
+                # DA publishing can sign multiple commits before earlier
+                # change outputs become confirmed spendable. Split a matured
+                # coinbase into normal wallet UTXOs so the signer has an
+                # independent spend source for each pending commit.
+                funding_outputs = {
+                    btc_rpc.proxy.getnewaddress(): 1 for _ in range(DA_WALLET_FUNDING_OUTPUTS)
+                }
+                btc_rpc.proxy.sendmany("", funding_outputs)
+                btc_rpc.proxy.generatetoaddress(1, mining_address)
             else:
                 bitcoin = bitcoin_service
 
