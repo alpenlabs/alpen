@@ -28,6 +28,7 @@ pub fn sign_schnorr_sig(_msg: &Buf32, _sk: &Buf32) -> Buf64 {
 }
 
 /// Verify a Schnorr signature
+#[cfg(not(target_os = "zkvm"))]
 pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
     let msg = match Message::from_digest_slice(msg.as_ref()) {
         Ok(msg) => msg,
@@ -45,6 +46,24 @@ pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
     };
 
     sig.verify(&msg, &pk).is_ok()
+}
+
+/// Verify a Schnorr signature (zkvm version using k256 to avoid secp256k1 C FFI).
+#[cfg(target_os = "zkvm")]
+pub fn verify_schnorr_sig(sig: &Buf64, msg: &Buf32, pk: &Buf32) -> bool {
+    use k256::schnorr::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
+
+    let sig = match Signature::try_from(sig.as_slice()) {
+        Ok(sig) => sig,
+        Err(_) => return false,
+    };
+
+    let vk = match VerifyingKey::from_bytes(pk.as_slice()) {
+        Ok(vk) => vk,
+        Err(_) => return false,
+    };
+
+    vk.verify_prehash(msg.as_slice(), &sig).is_ok()
 }
 
 /// A secret key that is guaranteed to have a even x-only public key

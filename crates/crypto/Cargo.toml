@@ -23,6 +23,9 @@ ssz_derive.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 
+[target.'cfg(target_os = "zkvm")'.dependencies]
+k256 = { workspace = true, features = ["schnorr"] }
+
 [dev-dependencies]
 bitcoin.workspace = true
 proptest.workspace = true
