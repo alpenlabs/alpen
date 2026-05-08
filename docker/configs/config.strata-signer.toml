@@ -1,5 +1,5 @@
 sequencer_key = "/path/to/sequencer.key"
-sequencer_admin_endpoint = "ws://127.0.0.1:8434"
+sequencer_admin_endpoint = "ws://strata:8434"
 sequencer_admin_bearer_token = "dev-only-change-me"
 duty_poll_interval = 1000
 
