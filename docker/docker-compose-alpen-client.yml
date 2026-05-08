@@ -144,6 +144,12 @@ services:
       - "${GENESIS_L1_HEIGHT:-0}"
       - --batch-sealing-block-count
       - "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      - --btcio-fee-policy
+      - ${BTCIO_FEE_POLICY:-bitcoind}
+      - --btcio-conf-target
+      - "${BTCIO_CONF_TARGET:-1}"
+      - --btcio-fee-rate
+      - "${BTCIO_FEE_RATE:-1}"
       - --color
       - never
     environment:
