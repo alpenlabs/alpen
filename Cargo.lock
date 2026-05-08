@@ -14559,6 +14559,7 @@ name = "strata-common"
 version = "0.3.0-alpha.1"
 dependencies = [
  "deadpool",
+ "http 1.4.0",
  "jsonrpsee",
  "serde",
  "tokio",
@@ -15912,6 +15913,7 @@ dependencies = [
  "anyhow",
  "argh",
  "bitcoin",
+ "http 1.4.0",
  "serde",
  "strata-common",
  "strata-crypto",

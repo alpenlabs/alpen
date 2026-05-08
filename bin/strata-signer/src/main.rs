@@ -14,6 +14,7 @@ use args::Args;
 use config::SignerConfig;
 use constants::SHUTDOWN_TIMEOUT_MS;
 use helpers::load_seqkey;
+use http::{header::AUTHORIZATION, HeaderMap, HeaderValue};
 use strata_common::ws_client::{ManagedWsClient, WsClientConfig};
 use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_signer::SignerBuilder;
@@ -27,6 +28,9 @@ fn main() -> anyhow::Result<()> {
     // Load config from TOML file.
     let config_str = fs::read_to_string(&args.config)?;
     let config: SignerConfig = toml::from_str(&config_str)?;
+    if config.sequencer_admin_bearer_token.is_empty() {
+        anyhow::bail!("sequencer_admin_bearer_token must be set and non-empty");
+    }
 
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -56,11 +60,12 @@ fn main() -> anyhow::Result<()> {
 
     // Set up RPC client.
     let ws_config = WsClientConfig {
-        url: config.sequencer_endpoint.clone(),
+        url: config.sequencer_admin_endpoint.clone(),
+        headers: admin_auth_headers(&config.sequencer_admin_bearer_token)?,
     };
     let rpc = Arc::new(ManagedWsClient::new_with_default_pool(ws_config));
 
-    info!(sequencer_endpoint = %config.sequencer_endpoint, duty_poll_interval_ms = config.duty_poll_interval, "starting signer");
+    info!(sequencer_admin_endpoint = %config.sequencer_admin_endpoint, duty_poll_interval_ms = config.duty_poll_interval, "starting signer");
 
     // Launch signer service.
     let task_manager = TaskManager::new(handle.clone());
@@ -75,4 +80,29 @@ fn main() -> anyhow::Result<()> {
     task_manager.monitor(Some(Duration::from_millis(SHUTDOWN_TIMEOUT_MS)))?;
 
     Ok(())
+}
+
+fn admin_auth_headers(token: &str) -> anyhow::Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+    let value = HeaderValue::from_str(&format!("Bearer {token}"))?;
+    headers.insert(AUTHORIZATION, value);
+    Ok(headers)
+}
+
+#[cfg(test)]
+mod tests {
+    use http::header::HeaderName;
+
+    use super::*;
+
+    #[test]
+    fn admin_auth_headers_sets_authorization() {
+        let headers = admin_auth_headers("test-token").unwrap();
+        assert_eq!(
+            headers
+                .get(HeaderName::from_static("authorization"))
+                .unwrap(),
+            "Bearer test-token"
+        );
+    }
 }

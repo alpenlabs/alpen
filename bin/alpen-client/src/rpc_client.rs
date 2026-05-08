@@ -91,7 +91,10 @@ impl RpcTransportClient {
         };
 
         Ok(Self::Ws(ManagedWsClient::new_with_default_pool(
-            WsClientConfig { url: ws_url },
+            WsClientConfig {
+                url: ws_url,
+                headers: Default::default(),
+            },
         )))
     }
 }
