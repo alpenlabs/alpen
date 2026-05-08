@@ -2,7 +2,10 @@
 Strata service wrapper with Strata-specific health checks.
 """
 
+import atexit
+import contextlib
 import logging
+import subprocess
 from typing import Any, TypedDict
 
 from common.rpc import JsonRpcClient
@@ -11,6 +14,16 @@ from common.services.base import RpcService
 from common.wait import wait_until, wait_until_with_value
 
 logger = logging.getLogger(__name__)
+
+
+def _register_kill(proc):
+    """Register process for cleanup on exit."""
+
+    def kill():
+        with contextlib.suppress(Exception):
+            proc.kill()
+
+    atexit.register(kill)
 
 
 class StrataProps(TypedDict):
@@ -37,6 +50,7 @@ class StrataService(RpcService):
         cmd: list[str],
         stdout: str | None = None,
         name: str | None = None,
+        env: dict[str, str] | None = None,
     ):
         """
         Initialize Strata service.
@@ -46,8 +60,35 @@ class StrataService(RpcService):
             cmd: Command and arguments to execute
             stdout: Path to log file for stdout/stderr
             name: Service name for logging
+            env: Optional process environment
         """
         super().__init__(dict(props), cmd, stdout, name)
+        self._env = env
+
+    def start(self):
+        """Start the process with optional environment variables."""
+        if self.is_started():
+            raise RuntimeError("already running")
+
+        self._reset_state()
+
+        kwargs = {}
+        if self.stdout is not None:
+            if isinstance(self.stdout, str):
+                f = open(self.stdout, "a")  # noqa: SIM115
+                f.write(f"(process started as: {self.cmd})\n")
+                kwargs["stdout"] = f
+                kwargs["stderr"] = f
+            else:
+                kwargs["stdout"] = self.stdout
+
+        if self._env is not None:
+            kwargs["env"] = self._env
+
+        proc = subprocess.Popen(self.cmd, **kwargs)
+        _register_kill(proc)
+        self.proc = proc
+        self._update_status_msg()
 
     def _rpc_health_check(self, rpc):
         """Check Strata health by calling strata_protocolVersion."""
