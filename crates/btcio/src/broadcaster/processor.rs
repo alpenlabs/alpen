@@ -156,7 +156,7 @@ where
             Ok(PublishTxOutcome::Published) => Ok(L1TxStatus::Published),
             Ok(PublishTxOutcome::AlreadyInMempool) => Ok(L1TxStatus::Published),
             Ok(PublishTxOutcome::InvalidInputs) => {
-                warn!("tx excluded due to invalid inputs");
+                debug!("tx excluded due to invalid inputs");
                 Ok(L1TxStatus::InvalidInputs)
             }
             Ok(PublishTxOutcome::RetryLater { reason }) => {
@@ -164,7 +164,7 @@ where
                 Ok(L1TxStatus::Unpublished)
             }
             Err(err) => {
-                warn!(?err, "errored while broadcasting");
+                warn!(%err, "errored while broadcasting");
                 Err(err)
             }
         }

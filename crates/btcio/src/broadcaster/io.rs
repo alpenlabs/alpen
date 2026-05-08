@@ -10,7 +10,7 @@ use strata_btc_types::BlockHashExt;
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::{buf::Buf32, L1Height};
 use strata_storage::BroadcastDbOps;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use super::error::{BroadcasterError, BroadcasterResult};
 
@@ -121,8 +121,14 @@ where
                 block_hash: info.block_hash.map(|h| h.to_buf32()),
                 block_height: info.block_height,
             })),
-            Err(err) if err.is_tx_not_found() => Ok(None),
-            Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
+            Err(err) if err.is_tx_not_found() => {
+                debug!(%err, %txid, "get_transaction: tx not found");
+                Ok(None)
+            }
+            Err(err) => {
+                warn!(%err, %txid, "get_transaction failed");
+                Err(BroadcasterError::Rpc(anyhow!(err)))
+            }
         }
     }
 
