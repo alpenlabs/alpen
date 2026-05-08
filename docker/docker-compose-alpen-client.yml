@@ -144,6 +144,22 @@ services:
       - "${GENESIS_L1_HEIGHT:-0}"
       - --batch-sealing-block-count
       - "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      # btcio writer fee config. To switch policies, set BTCIO_FEE_POLICY
+      # in .env.alpen to one of: bitcoind | fixed | mempool. Required extras:
+      #   bitcoind: BTCIO_CONF_TARGET (default 1)
+      #   fixed:    BTCIO_FEE_RATE    (default 1 sat/vB)
+      #   mempool:  BTCIO_MEMPOOL_BASE_URL (e.g. https://mempool.space/signet)
+      #             plus optional BTCIO_MEMPOOL_TIER (default fastest)
+      - --btcio-fee-policy
+      - ${BTCIO_FEE_POLICY:-bitcoind}
+      - --btcio-conf-target
+      - "${BTCIO_CONF_TARGET:-1}"
+      - --btcio-fee-rate
+      - "${BTCIO_FEE_RATE:-1}"
+      - --btcio-mempool-base-url
+      - ${BTCIO_MEMPOOL_BASE_URL:-}
+      - --btcio-mempool-tier
+      - ${BTCIO_MEMPOOL_TIER:-fastest}
       - --color
       - never
     environment:

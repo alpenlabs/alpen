@@ -62,7 +62,7 @@ use strata_btcio::{
     BtcioParams,
 };
 #[cfg(feature = "sequencer")]
-use strata_config::btcio::{FeePolicy, WriterConfig};
+use strata_config::btcio::{FeePolicy, MempoolExplorerFeePolicy, WriterConfig};
 use strata_identifiers::{EpochCommitment, OLBlockId};
 use strata_l1_txfmt::MagicBytes;
 use strata_predicate::PredicateKey;
@@ -188,6 +188,44 @@ fn main() {
             );
 
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");
+
+            // Resolve and log btcio writer config up front (sequencer-only). The resolver is
+            // pure and validates per-policy required args, so misconfigurations surface here
+            // before any I/O (DB init, OL RPC, reth launch, Bitcoin RPC).
+            #[cfg(feature = "sequencer")]
+            let writer_config = if ext.sequencer {
+                let cfg = Arc::new(resolve_writer_config(&ext)?);
+                match &cfg.fee_policy {
+                    FeePolicy::BitcoinD { conf_target } => {
+                        info!(
+                            target: "alpen-client",
+                            policy = "bitcoind",
+                            conf_target,
+                            "btcio writer configured",
+                        );
+                    }
+                    FeePolicy::Fixed { fee_rate } => {
+                        info!(
+                            target: "alpen-client",
+                            policy = "fixed",
+                            fee_rate_sat_vb = fee_rate,
+                            "btcio writer configured",
+                        );
+                    }
+                    FeePolicy::MempoolExplorer { policy } => {
+                        info!(
+                            target: "alpen-client",
+                            policy = "mempool",
+                            tier = ?policy,
+                            base_url = ?cfg.mempool_base_url,
+                            "btcio writer configured",
+                        );
+                    }
+                }
+                Some(cfg)
+            } else {
+                None
+            };
 
             // OL client URL is not used when dummy_ol_client is enabled
             let ol_client_url = ext.ol_client_url.clone().unwrap_or_default();
@@ -450,6 +488,7 @@ fn main() {
                     create_batch_builder, create_batch_lifecycle_task,
                     create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
                 };
+
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
                     node.beacon_engine_handle.clone(),
@@ -550,13 +589,9 @@ fn main() {
                     .map_err(|e| eyre::eyre!("starting broadcaster service: {e}"))?,
                 );
 
-                // TODO(STR-2982): support custom btcio.write configurations via CLI flags or TOML
-                // config file. For now, we hardcode to `BitcoinD` so that functional-tests can
-                // pass.
-                let writer_config = Arc::new(WriterConfig {
-                    fee_policy: FeePolicy::BitcoinD { conf_target: 1 },
-                    ..WriterConfig::default()
-                });
+                let writer_config = writer_config
+                    .clone()
+                    .expect("writer_config resolved at startup when --sequencer is set");
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
                     btc_client,
                     writer_config,
@@ -760,6 +795,37 @@ pub struct AdditionalConfig {
     /// Lower values seal batches more frequently (useful for testing).
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
+
+    /// btcio writer fee policy.
+    ///
+    /// `bitcoind` uses `estimatesmartfee` with `--btcio-conf-target`.
+    /// `fixed` uses a constant sat/vB from `--btcio-fee-rate`
+    /// (useful on signet, e.g. `--btcio-fee-policy=fixed --btcio-fee-rate=1`).
+    #[cfg(feature = "sequencer")]
+    #[arg(long, value_enum, default_value_t = BtcioFeePolicyArg::Bitcoind)]
+    pub btcio_fee_policy: BtcioFeePolicyArg,
+
+    /// Confirmation target for `bitcoind` fee policy.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, default_value = "1")]
+    pub btcio_conf_target: u16,
+
+    /// Fixed fee rate in sat/vB. Required when `--btcio-fee-policy=fixed`.
+    #[cfg(feature = "sequencer")]
+    #[arg(long)]
+    pub btcio_fee_rate: Option<u64>,
+
+    /// Base URL of a mempool.space-compatible fee API. Required when
+    /// `--btcio-fee-policy=mempool`. Also used as a fallback for other
+    /// policies if set.
+    #[cfg(feature = "sequencer")]
+    #[arg(long)]
+    pub btcio_mempool_base_url: Option<String>,
+
+    /// Mempool fee tier when `--btcio-fee-policy=mempool`.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, value_enum, default_value_t = BtcioMempoolTierArg::Fastest)]
+    pub btcio_mempool_tier: BtcioMempoolTierArg,
 }
 
 /// Run node with logging
@@ -812,6 +878,148 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
     s.parse::<MagicBytes>()
         .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
+}
+
+/// CLI-selectable btcio fee policy variants. Mirrors [`FeePolicy`].
+#[cfg(feature = "sequencer")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum BtcioFeePolicyArg {
+    /// Use bitcoind's `estimatesmartfee` with `--btcio-conf-target`.
+    Bitcoind,
+    /// Use a fixed sat/vB rate from `--btcio-fee-rate`.
+    Fixed,
+    /// Use a mempool.space-compatible API at `--btcio-mempool-base-url`,
+    /// with the tier selected by `--btcio-mempool-tier`.
+    Mempool,
+}
+
+/// CLI-selectable mempool fee tier. Mirrors [`MempoolExplorerFeePolicy`].
+#[cfg(feature = "sequencer")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum BtcioMempoolTierArg {
+    Fastest,
+    HalfHour,
+    Hour,
+    Economy,
+    Minimum,
+}
+
+#[cfg(feature = "sequencer")]
+impl From<BtcioMempoolTierArg> for MempoolExplorerFeePolicy {
+    fn from(value: BtcioMempoolTierArg) -> Self {
+        match value {
+            BtcioMempoolTierArg::Fastest => Self::Fastest,
+            BtcioMempoolTierArg::HalfHour => Self::HalfHour,
+            BtcioMempoolTierArg::Hour => Self::Hour,
+            BtcioMempoolTierArg::Economy => Self::Economy,
+            BtcioMempoolTierArg::Minimum => Self::Minimum,
+        }
+    }
+}
+
+/// Builds a [`WriterConfig`] from the CLI flags, validating per-policy
+/// requirements.
+///
+/// An empty-string `--btcio-mempool-base-url` is treated as absent so that
+/// `${VAR:-}` defaults in docker-compose don't accidentally produce a `Some("")`
+/// that would propagate downstream as an invalid URL.
+#[cfg(feature = "sequencer")]
+fn resolve_writer_config(ext: &AdditionalConfig) -> eyre::Result<WriterConfig> {
+    let mempool_base_url = ext
+        .btcio_mempool_base_url
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+
+    let fee_policy = match ext.btcio_fee_policy {
+        BtcioFeePolicyArg::Bitcoind => FeePolicy::BitcoinD {
+            conf_target: ext.btcio_conf_target,
+        },
+        BtcioFeePolicyArg::Fixed => {
+            let fee_rate = ext.btcio_fee_rate.ok_or_else(|| {
+                eyre::eyre!("--btcio-fee-rate is required when --btcio-fee-policy=fixed")
+            })?;
+            FeePolicy::Fixed { fee_rate }
+        }
+        BtcioFeePolicyArg::Mempool => {
+            if mempool_base_url.is_none() {
+                eyre::bail!("--btcio-mempool-base-url is required when --btcio-fee-policy=mempool");
+            }
+            FeePolicy::MempoolExplorer {
+                policy: ext.btcio_mempool_tier.into(),
+            }
+        }
+    };
+    Ok(WriterConfig {
+        fee_policy,
+        mempool_base_url,
+        ..WriterConfig::default()
+    })
+}
+
+#[cfg(all(test, feature = "sequencer"))]
+mod resolve_writer_config_tests {
+    use super::*;
+
+    fn args(
+        policy: BtcioFeePolicyArg,
+        fee_rate: Option<u64>,
+        mempool_url: Option<&str>,
+    ) -> AdditionalConfig {
+        let argv = ["alpen-client", "--sequencer-pubkey", &"0".repeat(64)];
+        let mut cfg = <AdditionalConfig as clap::Parser>::parse_from(argv);
+        cfg.btcio_fee_policy = policy;
+        cfg.btcio_fee_rate = fee_rate;
+        cfg.btcio_mempool_base_url = mempool_url.map(str::to_owned);
+        cfg
+    }
+
+    #[test]
+    fn fixed_requires_fee_rate() {
+        let err = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, None, None)).unwrap_err();
+        assert!(err.to_string().contains("--btcio-fee-rate"));
+    }
+
+    #[test]
+    fn fixed_one_sat_vb() {
+        let cfg = resolve_writer_config(&args(BtcioFeePolicyArg::Fixed, Some(1), None)).unwrap();
+        assert_eq!(cfg.fee_policy, FeePolicy::Fixed { fee_rate: 1 });
+    }
+
+    #[test]
+    fn mempool_requires_base_url() {
+        let err = resolve_writer_config(&args(BtcioFeePolicyArg::Mempool, None, None)).unwrap_err();
+        assert!(err.to_string().contains("--btcio-mempool-base-url"));
+    }
+
+    #[test]
+    fn mempool_rejects_empty_base_url() {
+        let err =
+            resolve_writer_config(&args(BtcioFeePolicyArg::Mempool, None, Some(""))).unwrap_err();
+        assert!(err.to_string().contains("--btcio-mempool-base-url"));
+    }
+
+    #[test]
+    fn mempool_with_url_succeeds() {
+        let cfg = resolve_writer_config(&args(
+            BtcioFeePolicyArg::Mempool,
+            None,
+            Some("https://mempool.space/signet"),
+        ))
+        .unwrap();
+        assert!(matches!(cfg.fee_policy, FeePolicy::MempoolExplorer { .. }));
+        assert_eq!(
+            cfg.mempool_base_url.as_deref(),
+            Some("https://mempool.space/signet")
+        );
+    }
+
+    #[test]
+    fn empty_url_with_bitcoind_policy_drops_to_none() {
+        let cfg =
+            resolve_writer_config(&args(BtcioFeePolicyArg::Bitcoind, None, Some(""))).unwrap();
+        assert!(cfg.mempool_base_url.is_none());
+    }
 }
 
 /// Parse the EE block time from the environment variable.
