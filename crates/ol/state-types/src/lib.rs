@@ -32,4 +32,5 @@ pub mod test_utils;
 pub use batch_application::*;
 pub use serial_map::*;
 pub use ssz_generated::ssz::state::*;
+pub use toplevel::MMR_PREFILL_LEAF;
 pub use write_batch::*;

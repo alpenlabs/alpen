@@ -791,7 +791,9 @@ impl TestAccount {
 /// Storage fixture layer for block assembly tests.
 pub(crate) struct TestStorageFixture {
     storage: Arc<NodeStorage>,
-    l1_header_refs: Vec<(L1Height, AccumulatorClaim)>,
+    /// Seeded ASM-manifest claims. Each claim's `idx()` is the L1 height of the
+    /// corresponding manifest, since the ASM manifests MMR is height-indexed.
+    l1_header_refs: Vec<AccumulatorClaim>,
     inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
 }
 
@@ -810,7 +812,7 @@ impl TestStorageFixture {
     /// Sets seeded L1 header refs and inbox message claims produced during fixture setup.
     pub(crate) fn with_seeded_claims(
         mut self,
-        l1_header_refs: Vec<(L1Height, AccumulatorClaim)>,
+        l1_header_refs: Vec<AccumulatorClaim>,
         inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
     ) -> Self {
         self.l1_header_refs = l1_header_refs;
@@ -823,8 +825,8 @@ impl TestStorageFixture {
         &self.storage
     }
 
-    /// Returns configured L1 header refs keyed by L1 height.
-    pub(crate) fn l1_header_refs(&self) -> &[(L1Height, AccumulatorClaim)] {
+    /// Returns the seeded L1 header ref claims.
+    pub(crate) fn l1_header_refs(&self) -> &[AccumulatorClaim] {
         &self.l1_header_refs
     }
 
@@ -832,8 +834,8 @@ impl TestStorageFixture {
     pub(crate) fn l1_header_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
         self.l1_header_refs
             .iter()
-            .find(|(h, _)| *h == height)
-            .map(|(_, claim)| claim.clone())
+            .find(|claim| claim.idx() == height as u64)
+            .cloned()
     }
 
     /// Returns inbox message claims for a specific account.
@@ -933,7 +935,7 @@ impl TestEnv {
     }
 
     /// Returns configured L1 header refs keyed by L1 height.
-    pub(crate) fn l1_header_refs(&self) -> &[(L1Height, AccumulatorClaim)] {
+    pub(crate) fn l1_header_refs(&self) -> &[AccumulatorClaim] {
         self.fixture.l1_header_refs()
     }
 
@@ -1085,7 +1087,6 @@ pub(crate) struct TestStorageFixtureBuilder {
     parent_slot: Option<u64>,
     l1_manifest_height_range: Option<RangeInclusive<L1Height>>,
     l1_header_ref_heights: Vec<L1Height>,
-    expected_l1_header_ref_indices: Vec<(L1Height, u64)>,
     expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
     accounts: Vec<TestAccount>,
 }
@@ -1138,15 +1139,6 @@ impl TestStorageFixtureBuilder {
         self
     }
 
-    /// Asserts exact seeded L1 header ref indices as `(l1_height, expected_mmr_index)` entries.
-    pub(crate) fn with_expected_l1_header_ref_indices(
-        mut self,
-        expected: impl IntoIterator<Item = (L1Height, u64)>,
-    ) -> Self {
-        self.expected_l1_header_ref_indices = expected.into_iter().collect();
-        self
-    }
-
     /// Asserts exact seeded inbox message indices as `(account_id, [expected_mmr_index])` entries.
     ///
     /// Inbox messages come from account fixtures (`TestAccount::with_inbox`).
@@ -1172,8 +1164,11 @@ impl TestStorageFixtureBuilder {
                 .await;
         }
 
-        // Create genesis state
+        // Create genesis state and align the DB-side ASM MMR with the state's
+        // genesis prefill so leaf indices == L1 heights everywhere, even when
+        // no manifests are seeded.
         let mut state = create_test_genesis_state();
+        prefill_db_asm_mmr_to_match_state(fixture.storage().as_ref(), &state);
 
         // Add snark accounts
         let mut inbox_message_claims = Vec::new();
@@ -1222,38 +1217,21 @@ impl TestStorageFixtureBuilder {
         }
 
         // Seed requested L1 header refs into both state claims and the ASM MMR.
+        // The MMR is height-indexed, so each returned claim's `idx()` is the
+        // L1 height of the corresponding manifest.
         let mut l1_heights = self.l1_header_ref_heights.clone();
-        l1_heights.extend(
-            self.expected_l1_header_ref_indices
-                .iter()
-                .map(|(height, _)| *height),
-        );
         l1_heights.sort_unstable();
         l1_heights.dedup();
 
-        let seeded_l1_header_refs = if !l1_heights.is_empty() {
+        let seeded_l1_header_refs = if l1_heights.is_empty() {
+            vec![]
+        } else {
             let asm_manifests = create_test_manifests_for_heights(&l1_heights);
-            let claims_by_height = setup_manifests_in_state_and_storage(
+            setup_manifests_in_state_and_storage(
                 fixture.storage().as_ref(),
                 &mut state,
                 asm_manifests,
-            );
-
-            for (height, expected_idx) in &self.expected_l1_header_ref_indices {
-                let (_, claim) = claims_by_height
-                    .iter()
-                    .find(|(h, _)| h == height)
-                    .unwrap_or_else(|| panic!("missing seeded claim for l1 height {height}"));
-                assert_eq!(
-                    claim.idx(),
-                    *expected_idx,
-                    "seeded claim index mismatch for l1 height {height}"
-                );
-            }
-
-            claims_by_height
-        } else {
-            vec![]
+            )
         };
 
         let parent_commitment = if let Some(slot) = self.parent_slot {
@@ -1350,37 +1328,54 @@ fn create_test_manifests_for_heights(heights: &[L1Height]) -> Vec<AsmManifest> {
         .collect()
 }
 
+/// Aligns the DB-side ASM manifests MMR with the state's genesis prefill by
+/// appending sentinel leaves until the DB MMR has at least as many entries as
+/// the state MMR.
+///
+/// After this runs, leaf indices in both MMRs coincide with L1 block heights.
+fn prefill_db_asm_mmr_to_match_state(storage: &NodeStorage, state: &impl IStateAccessor) {
+    let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
+    let state_prefill = state.asm_manifests_mmr().num_entries();
+    let db_count = mmr_handle.get_num_leaves_blocking().unwrap();
+    let sentinel: Hash = strata_ol_state_types::MMR_PREFILL_LEAF.into();
+    for _ in db_count..state_prefill {
+        mmr_handle.append_leaf_blocking(sentinel).unwrap();
+    }
+}
+
 /// Setup manifests in both storage MMR and state's manifest MMR.
 ///
 /// This ensures consistency between proof generation (uses storage MMR) and
-/// verification (uses state's manifest MMR).
+/// verification (uses state's manifest MMR). The fixture caller is expected
+/// to have already prefilled the DB MMR via [`prefill_db_asm_mmr_to_match_state`].
 ///
-/// Returns `(l1_height, claim)` pairs for each inserted manifest.
+/// Each returned `AccumulatorClaim`'s `idx()` equals the L1 height of the
+/// corresponding manifest.
 fn setup_manifests_in_state_and_storage(
     storage: &NodeStorage,
     state: &mut impl IStateAccessorMut,
     manifests: Vec<AsmManifest>,
-) -> Vec<(L1Height, AccumulatorClaim)> {
+) -> Vec<AccumulatorClaim> {
     let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
 
-    let mut claims_by_l1_height = Vec::with_capacity(manifests.len());
-
+    let mut claims = Vec::with_capacity(manifests.len());
     for manifest in manifests {
-        // Compute manifest hash
         let manifest_hash: Hash = manifest.compute_hash().into();
-
-        // Add to storage MMR (for proof generation)
         let leaf_idx = mmr_handle.append_leaf_blocking(manifest_hash).unwrap();
-        let claim = AccumulatorClaim::new(leaf_idx, manifest_hash);
 
-        // Add to state's manifest MMR (for verification)
         let height = manifest.height();
         state.append_manifest(height, manifest);
-        claims_by_l1_height.push((height, claim));
+
+        debug_assert_eq!(
+            leaf_idx, height as u64,
+            "DB MMR index must equal L1 height after prefill alignment",
+        );
+
+        claims.push(AccumulatorClaim::new(height as u64, manifest_hash));
     }
 
-    claims_by_l1_height.sort_by_key(|(height, _)| *height);
-    claims_by_l1_height
+    claims.sort_by_key(|c| c.idx());
+    claims
 }
 
 fn build_inbox_claims_for_messages(

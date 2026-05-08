@@ -634,7 +634,6 @@ fn main() {
                     batch_storage_dyn.clone(),
                     storage.clone(),
                     ol_client.clone(),
-                    ext.genesis_l1_height,
                     genesis,
                 ))
                 .task_store(task_store)
@@ -728,7 +727,6 @@ fn main() {
                     batch_prover,
                     batch_lifecycle_handle.latest_proof_ready_watcher(),
                     status_watcher,
-                    ext.genesis_l1_height,
                 );
 
                 node.task_executor

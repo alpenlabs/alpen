@@ -10,7 +10,6 @@ use strata_acct_types::{
 };
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::UpdateExtraData;
-use strata_identifiers::L1Height;
 use strata_snark_acct_types::{
     LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, UpdateOperationData,
     UpdateOutputs,
@@ -24,7 +23,6 @@ pub(super) async fn build_update_from_batch(
     ol_client: &(impl SequencerOLClient + Send + Sync),
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,
-    genesis_l1_height: L1Height,
 ) -> Result<SnarkAccountUpdate> {
     // Get all blocks in the batch
     let blocks = try_join_all(batch.blocks_iter().map(|hash| {
@@ -48,7 +46,7 @@ pub(super) async fn build_update_from_batch(
 
     // Ledger refs MUST be byte-identical to what the prover commits — see
     // `build_ledger_refs_from_da` in alpen-ee-common.
-    let ledger_refs = build_ledger_refs_from_da(da_refs, ol_client, genesis_l1_height).await?;
+    let ledger_refs = build_ledger_refs_from_da(da_refs, ol_client).await?;
     let update_operation = build_update_operation(seq_no, ledger_refs, blocks)?;
 
     // Should we re-check that proof is valid ?

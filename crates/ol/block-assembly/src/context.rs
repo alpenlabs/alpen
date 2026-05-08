@@ -435,11 +435,7 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let claims = fixture
-            .l1_header_refs()
-            .iter()
-            .map(|(_, claim)| claim.clone())
-            .collect::<Vec<_>>();
+        let claims = fixture.l1_header_refs().to_vec();
 
         let ctx = create_test_context(fixture.storage().clone());
         let result = ctx
@@ -489,7 +485,7 @@ mod tests {
             matches!(
                 err,
                 BlockAssemblyError::L1HeaderHashMismatch {
-                    idx: 0,
+                    idx: 1,
                     expected,
                     actual
                 } if expected == wrong_hash && actual == expected_hash
@@ -534,7 +530,7 @@ mod tests {
             matches!(
                 &err,
                 BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { requested, cur })
-                    if *requested == nonexistent_idx && *cur == 1
+                    if *requested == nonexistent_idx && *cur == 2
             ),
             "Expected Db(MmrIndexOutOfRange) error, got: {:?}",
             err
@@ -542,7 +538,10 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_claim_empty_mmr() {
+    async fn test_l1_header_claim_with_only_genesis_prefill() {
+        // The MMR is height-indexed; with no real manifests seeded, the only
+        // leaf present is the genesis sentinel at index 0. A claim quoting any
+        // hash other than the sentinel must fail with a hash mismatch.
         let account_id = test_account_id(1);
         let fixture_builder =
             TestStorageFixtureBuilder::new().with_account(TestAccount::new(account_id, 100_000));
@@ -555,7 +554,6 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
 
-        // MMR index 0 is valid but the MMR is empty
         let claim = AccumulatorClaim::new(0, test_hash(42));
         let ctx = create_test_context(fixture.storage().clone());
 
@@ -564,19 +562,10 @@ mod tests {
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
         );
 
-        assert!(result.is_err(), "Should fail when MMR is empty");
-        let err = result.unwrap_err();
-        assert!(
-            matches!(
-                err,
-                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange {
-                    requested: 0,
-                    cur: 0
-                })
-            ),
-            "Expected Db(MmrIndexOutOfRange {{ requested: 0, cur: 0 }}), got: {:?}",
-            err
-        );
+        assert!(matches!(
+            result,
+            Err(BlockAssemblyError::L1HeaderHashMismatch { idx: 0, .. })
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread")]

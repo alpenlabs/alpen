@@ -56,7 +56,10 @@ fn test_snark_update_with_valid_ledger_reference() {
         manifest_tracker.num_entries(),
         "State MMR should match tracker MMR"
     );
-    assert_eq!(manifest1_index, 0, "First manifest should be at index 0");
+    assert_eq!(
+        manifest1_index, 1,
+        "First real manifest is for L1 height 1 and lands at MMR index 1 (index 0 is the genesis prefill)"
+    );
 
     // Step 2: Create a snark update that references the manifest
     // AccumulatorClaim.idx is the MMR leaf index directly
@@ -149,9 +152,11 @@ fn test_snark_update_with_invalid_ledger_reference() {
     // AccumulatorClaim.idx is the MMR leaf index directly
     let claim = AccumulatorClaim::new(manifest1_index, manifest1_hash.into_inner());
 
-    // Create an invalid proof with wrong cohashes
+    // Create an invalid proof with wrong cohashes. Using a value distinct from
+    // the genesis-prefill sentinel so the proof can't accidentally verify
+    // against the prefilled sibling at index 0.
     let invalid_proof = RawMerkleProof {
-        cohashes: vec![ssz_primitives::FixedBytes::<32>::from([0xff; 32])]
+        cohashes: vec![ssz_primitives::FixedBytes::<32>::from([0xeeu8; 32])]
             .try_into()
             .unwrap(),
     };
@@ -249,10 +254,10 @@ fn test_snark_update_with_mismatched_ledger_reference_proof_index() {
             let mut cohashes: Vec<_> = manifest1_proof.cohashes.iter().cloned().collect();
             // Corrupt the proof by replacing the first cohash with a bogus one
             if !cohashes.is_empty() {
-                cohashes[0] = ssz_primitives::FixedBytes::<32>::from([0xff; 32]);
+                cohashes[0] = ssz_primitives::FixedBytes::<32>::from([0xeeu8; 32]);
             } else {
                 // If no cohashes, add a bogus one
-                cohashes.push(ssz_primitives::FixedBytes::<32>::from([0xff; 32]));
+                cohashes.push(ssz_primitives::FixedBytes::<32>::from([0xeeu8; 32]));
             }
             cohashes
                 .try_into()

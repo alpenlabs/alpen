@@ -25,7 +25,6 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
 use strata_ee_chain_types::ChunkTransition;
-use strata_identifiers::L1Height;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStore};
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
@@ -150,7 +149,6 @@ pub(crate) struct AcctSpec {
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
     ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
-    genesis_l1_height: L1Height,
     genesis: Genesis,
 }
 
@@ -160,7 +158,6 @@ impl AcctSpec {
         batch_storage: Arc<dyn BatchStorage>,
         storage: Arc<EeNodeStorage>,
         ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
-        genesis_l1_height: L1Height,
         genesis: Genesis,
     ) -> Self {
         Self {
@@ -168,7 +165,6 @@ impl AcctSpec {
             batch_storage,
             storage,
             ol_client,
-            genesis_l1_height,
             genesis,
         }
     }
@@ -368,17 +364,13 @@ impl ProofSpec for AcctSpec {
             UpdateExtraData::new(new_tip_blkid, new_tip_state_root, processed_inputs, 0);
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
-        let ledger_refs =
-            build_ledger_refs_from_da(&da_refs, self.ol_client.as_ref(), self.genesis_l1_height)
-                .await
-                .map_err(|e| match e {
-                    LedgerRefsError::FetchCommitment { .. } => PaasError::TransientFailure(
-                        format!("build ledger refs for batch {batch_id}: {e}"),
-                    ),
-                    LedgerRefsError::OffsetUnderflow { .. } => PaasError::PermanentFailure(
-                        format!("build ledger refs for batch {batch_id}: {e}"),
-                    ),
-                })?;
+        let ledger_refs = build_ledger_refs_from_da(&da_refs, self.ol_client.as_ref())
+            .await
+            .map_err(|e| match e {
+                LedgerRefsError::FetchCommitment { .. } => PaasError::TransientFailure(format!(
+                    "build ledger refs for batch {batch_id}: {e}"
+                )),
+            })?;
 
         let pub_params = UpdateProofPubParams::new(
             cur_state,

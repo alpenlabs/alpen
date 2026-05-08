@@ -29,18 +29,15 @@ pub enum LedgerRefsError {
         #[source]
         source: OLClientError,
     },
-
-    /// An L1 height in the DA refs is before the configured MMR start offset.
-    #[error("L1 height {height} is before MMR start offset {mmr_offset}")]
-    OffsetUnderflow { height: L1Height, mmr_offset: u64 },
 }
 
 /// Builds canonical [`LedgerRefs`] from `da_refs`.
 ///
 /// Resolves each L1 height to its canonical L1 header commitment via
-/// `ol_client`, maps it to its MMR leaf index using `genesis_l1_height + 1`
-/// as the offset, then sorts and dedups by index (multiple DA txns may
-/// land in one L1 block).
+/// `ol_client`, uses the raw L1 height as the MMR leaf index (the OL
+/// ASM-manifests MMR is height-indexed, prefilled at genesis with
+/// zero-hash leaves), then sorts and dedups by index (multiple DA txns
+/// may land in one L1 block).
 ///
 /// The `?Sized` relaxation on the `impl SequencerOLClient` bound is
 /// required so that callers may pass a `&dyn SequencerOLClient`; the
@@ -48,10 +45,9 @@ pub enum LedgerRefsError {
 pub async fn build_ledger_refs_from_da(
     da_refs: &[L1DaBlockRef],
     ol_client: &(impl SequencerOLClient + ?Sized),
-    genesis_l1_height: L1Height,
 ) -> Result<LedgerRefs, LedgerRefsError> {
     let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
-    build_ledger_refs(da_refs, &l1_header_commitments, genesis_l1_height)
+    Ok(build_ledger_refs(da_refs, &l1_header_commitments))
 }
 
 async fn fetch_l1_header_commitments_by_height(
@@ -77,9 +73,7 @@ async fn fetch_l1_header_commitments_by_height(
 fn build_ledger_refs(
     da_refs: &[L1DaBlockRef],
     l1_header_commitments: &HashMap<L1Height, Hash>,
-    genesis_l1_height: L1Height,
-) -> Result<LedgerRefs, LedgerRefsError> {
-    let mmr_offset = genesis_l1_height as u64 + 1;
+) -> LedgerRefs {
     let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
@@ -90,15 +84,12 @@ fn build_ledger_refs(
             let hash = *l1_header_commitments
                 .get(&height)
                 .expect("commitment map covers every DA-ref height");
-            let mmr_idx = (height as u64)
-                .checked_sub(mmr_offset)
-                .ok_or(LedgerRefsError::OffsetUnderflow { height, mmr_offset })?;
-            Ok(AccumulatorClaim::new(mmr_idx, *hash.as_ref()))
+            AccumulatorClaim::new(height as u64, *hash.as_ref())
         })
-        .collect::<Result<Vec<_>, LedgerRefsError>>()?;
+        .collect();
 
     l1_header_refs.sort_by_key(|c| c.idx());
     l1_header_refs.dedup_by_key(|c| c.idx());
 
-    Ok(LedgerRefs::new(l1_header_refs))
+    LedgerRefs::new(l1_header_refs)
 }

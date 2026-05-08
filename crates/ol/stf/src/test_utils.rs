@@ -547,9 +547,24 @@ impl Default for ManifestMmrTracker {
 }
 
 impl ManifestMmrTracker {
+    /// Creates a tracker matching the test genesis state (genesis L1 height 0).
+    ///
+    /// This prefills the tracked MMR with a single sentinel leaf so its index
+    /// space lines up with `create_test_genesis_state`'s prefilled state MMR.
     pub fn new() -> Self {
+        Self::with_genesis_l1_height(0)
+    }
+
+    /// Creates a tracker prefilled with sentinel leaves up to and including
+    /// the given L1 height, so MMR indices match L1 heights.
+    pub fn with_genesis_l1_height(genesis_l1_height: u32) -> Self {
+        let prefill_count = genesis_l1_height as u64 + 1;
+        let mmr = <Mmr64 as strata_merkle::Mmr<StrataHasher>>::new_repeated(
+            strata_ol_state_types::MMR_PREFILL_LEAF,
+            prefill_count,
+        );
         Self {
-            mmr: Mmr64::from_generic(&CompactMmr64::new(64)),
+            mmr,
             proofs: Vec::new(),
         }
     }

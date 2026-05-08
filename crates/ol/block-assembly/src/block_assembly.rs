@@ -1108,8 +1108,10 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_claim_empty_mmr() {
-        // Create claim for MMR index 0 with arbitrary hash (MMR is empty)
+    async fn test_l1_header_claim_with_only_genesis_prefill() {
+        // No real manifests are seeded, so the MMR contains only the genesis
+        // sentinel at index 0. A claim quoting an arbitrary hash at that index
+        // must be rejected as a hash mismatch.
         let arbitrary_hash = test_hash(42);
         let invalid_claims = vec![AccumulatorClaim::new(0, arbitrary_hash)];
 
@@ -1130,24 +1132,16 @@ mod tests {
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
-        // Conversion should fail with an index/range DB error.
         let result = add_accumulator_proofs(
             &ctx,
             &MemoryStateBaseLayer::new(state.as_ref().clone()),
             mempool_tx,
         );
 
-        assert!(result.is_err(), "Should fail when MMR is empty");
-        let err = result.unwrap_err();
-        assert!(
-            matches!(
-                err,
-                BlockAssemblyError::Db(DbError::MmrIndexOutOfRange { .. })
-                    | BlockAssemblyError::Db(DbError::MmrLeafNotFound(_))
-            ),
-            "Expected Db(MmrIndexOutOfRange|MmrLeafNotFound), got: {:?}",
-            err
-        );
+        assert!(matches!(
+            result,
+            Err(BlockAssemblyError::L1HeaderHashMismatch { idx: 0, .. })
+        ));
     }
 
     #[test]
@@ -2025,8 +2019,7 @@ mod tests {
             .with_parent_slot(1) // Start from slot 1 instead of genesis to avoid genesis manifest conflicts
             .with_account(TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE))
             .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
-            .with_l1_header_refs([1, 2])
-            .with_expected_l1_header_ref_indices([(1, 0), (2, 1)]);
+            .with_l1_header_refs([1, 2]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
@@ -2046,7 +2039,7 @@ mod tests {
         let max_seeded_idx = env
             .l1_header_refs()
             .iter()
-            .map(|(_, claim)| claim.idx())
+            .map(|claim| claim.idx())
             .max()
             .expect("seeded claims");
         let missing_idx = max_seeded_idx + 100;
@@ -2886,11 +2879,7 @@ mod tests {
             .await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let mut claims: Vec<_> = env
-            .l1_header_refs()
-            .iter()
-            .map(|(_, claim)| claim.clone())
-            .collect();
+        let mut claims: Vec<_> = env.l1_header_refs().to_vec();
         claims.extend(claims.clone());
         assert_eq!(claims.len(), 50, "stress setup should build 50 claims");
 

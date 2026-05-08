@@ -17,7 +17,6 @@ impl EpochalState {
         last_l1_block: L1BlockCommitment,
         checkpointed_epoch: EpochCommitment,
         manifests_mmr: Mmr64,
-        manifests_mmr_offset: u64,
     ) -> Self {
         Self {
             total_ledger_funds,
@@ -25,7 +24,6 @@ impl EpochalState {
             last_l1_block,
             checkpointed_epoch,
             manifests_mmr,
-            manifests_mmr_offset,
         }
     }
 
@@ -51,7 +49,18 @@ impl EpochalState {
 
     /// Appends a new ASM manifest to the accumulator, also updating the last L1
     /// block height and other fields.
+    ///
+    /// The MMR is height-indexed: the leaf for an L1 block at height `h` lives
+    /// at MMR index `h`. The MMR is prefilled with zero-hash entries up to
+    /// `genesis_l1_height` at genesis, so callers must append manifests with
+    /// strictly contiguous heights matching the next available MMR index.
     pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
+        debug_assert_eq!(
+            self.manifests_mmr.num_entries(),
+            height as u64,
+            "append_manifest: height must equal next MMR index"
+        );
+
         let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
 
         Mmr::<StrataHasher>::add_leaf(&mut self.manifests_mmr, manifest_hash.into_inner())
@@ -86,13 +95,10 @@ impl EpochalState {
     }
 
     /// Gets the ASM manifests MMR.
+    ///
+    /// Indices into this MMR are L1 block heights.
     pub fn asm_manifests_mmr(&self) -> &Mmr64 {
         &self.manifests_mmr
-    }
-
-    /// Gets the offset for mapping L1 block heights to MMR leaf indices.
-    pub fn manifests_mmr_offset(&self) -> u64 {
-        self.manifests_mmr_offset
     }
 }
 
