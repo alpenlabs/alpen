@@ -1,3 +1,4 @@
+use strata_crypto::Musig2Error;
 use thiserror::Error;
 
 /// Error types for test CLI operations
@@ -24,11 +25,17 @@ pub(crate) enum Error {
     #[error("Invalid BitcoinD response")]
     BitcoinD,
 
-    #[error("Transaction builder error: {0}")]
+    #[error("transaction builder: {0}")]
     TxBuilder(String),
 
-    #[error("Transaction parser error: {0}")]
+    #[error("transaction parser: {0}")]
     TxParser(String),
+
+    #[error("transaction builder: key aggregation failed ({0})")]
+    KeyAggregation(#[from] Musig2Error),
+
+    #[error("transaction builder: taproot finalization failed")]
+    TaprootFinalization,
 
     #[error("Invalid hex string: {0}")]
     InvalidHex(String),

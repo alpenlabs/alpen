@@ -449,7 +449,7 @@ where
             .effects()
             .get_total_value_sent()
             .map(|amount| amount.to_sat());
-        let sau_summary = sau_summary_for_logs(mempool_tx.payload());
+        let sau_summary = SauSummary::from_tx_payload(mempool_tx.payload());
         let sau_seq_no = sau_summary.as_ref().map(|s| s.seq_no);
         let sau_new_next_msg_idx = sau_summary.as_ref().map(|s| s.new_next_msg_idx);
         let sau_processed_message_count = sau_summary.as_ref().map(|s| s.processed_message_count);
@@ -707,20 +707,22 @@ struct SauSummary {
     processed_message_count: usize,
 }
 
-/// Returns a [`SauSummary`] for [`TransactionPayload::SnarkAccountUpdate`]
-/// payloads, or `None` for payloads without an SAU update (e.g. plain
-/// account messages).
-fn sau_summary_for_logs(payload: &TransactionPayload) -> Option<SauSummary> {
-    match payload {
-        TransactionPayload::SnarkAccountUpdate(p) => {
-            let operation = p.operation();
-            Some(SauSummary {
-                seq_no: operation.update().seq_no(),
-                new_next_msg_idx: operation.update().proof_state().new_next_msg_idx(),
-                processed_message_count: operation.messages_iter().count(),
-            })
+impl SauSummary {
+    /// Returns a [`SauSummary`] for [`TransactionPayload::SnarkAccountUpdate`]
+    /// payloads, or `None` for payloads without an SAU update (e.g. plain
+    /// account messages).
+    fn from_tx_payload(payload: &TransactionPayload) -> Option<Self> {
+        match payload {
+            TransactionPayload::SnarkAccountUpdate(p) => {
+                let operation = p.operation();
+                Some(SauSummary {
+                    seq_no: operation.update().seq_no(),
+                    new_next_msg_idx: operation.update().proof_state().new_next_msg_idx(),
+                    processed_message_count: operation.messages_iter().count(),
+                })
+            }
+            TransactionPayload::GenericAccountMessage(_) => None,
         }
-        TransactionPayload::GenericAccountMessage(_) => None,
     }
 }
 

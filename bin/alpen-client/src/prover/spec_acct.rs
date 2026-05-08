@@ -7,7 +7,8 @@
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use alpen_ee_common::{
-    BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef, SequencerOLClient, Storage,
+    BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef, OLClientError,
+    SequencerOLClient, Storage,
 };
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
@@ -86,6 +87,66 @@ impl TryFrom<Vec<u8>> for BatchTask {
             Hash::from(prev),
             Hash::from(last),
         )))
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum AcctProofInputError {
+    #[error("failed to read parent exec block (parent {parent_blkid:?}, {reason})")]
+    ReadParentExecBlock { parent_blkid: Hash, reason: String },
+
+    #[error("failed to read best EE account state ({reason})")]
+    ReadBestEeAccountState { reason: String },
+
+    #[error("no EE account state available yet (genesis not loaded?)")]
+    NoEeAccountState,
+
+    #[error(
+        "EE pre-state unavailable for batch {batch_id} (missing parent {parent_blkid:?}, OL-accepted tip {ol_accepted_tip:?})"
+    )]
+    EePreStateUnavailable {
+        batch_id: BatchId,
+        parent_blkid: Hash,
+        ol_accepted_tip: Hash,
+    },
+
+    #[error("batch {batch_id} does not have DA refs yet (status {status})")]
+    BatchMissingDaRefs {
+        batch_id: BatchId,
+        status: &'static str,
+    },
+
+    #[error("failed to get L1 header commitment (height {height}, {source})")]
+    GetL1HeaderCommitment {
+        height: L1Height,
+        #[source]
+        source: OLClientError,
+    },
+
+    #[error("missing L1 header commitment (height {height})")]
+    MissingL1HeaderCommitment { height: L1Height },
+
+    #[error("L1 height before MMR start offset (height {height}, offset {mmr_offset})")]
+    L1HeightBeforeMmrStart { height: L1Height, mmr_offset: u64 },
+}
+
+impl From<AcctProofInputError> for PaasError {
+    fn from(error: AcctProofInputError) -> Self {
+        let message = error.to_string();
+        match error {
+            AcctProofInputError::ReadParentExecBlock { .. }
+            | AcctProofInputError::ReadBestEeAccountState { .. } => PaasError::Storage(message),
+            AcctProofInputError::L1HeightBeforeMmrStart { .. } => {
+                PaasError::PermanentFailure(message)
+            }
+            AcctProofInputError::NoEeAccountState
+            | AcctProofInputError::EePreStateUnavailable { .. }
+            | AcctProofInputError::BatchMissingDaRefs { .. }
+            | AcctProofInputError::GetL1HeaderCommitment { .. }
+            | AcctProofInputError::MissingL1HeaderCommitment { .. } => {
+                PaasError::TransientFailure(message)
+            }
+        }
     }
 }
 
@@ -189,8 +250,9 @@ impl ProofSpec for AcctSpec {
             .storage
             .get_exec_block(parent_blkid)
             .await
-            .map_err(|e| {
-                PaasError::Storage(format!("get_exec_block(parent={parent_blkid:?}): {e}"))
+            .map_err(|e| AcctProofInputError::ReadParentExecBlock {
+                parent_blkid,
+                reason: e.to_string(),
             })? {
             Some(parent_record) => parent_record.account_state().clone(),
             None => {
@@ -202,20 +264,18 @@ impl ProofSpec for AcctSpec {
                     .storage
                     .best_ee_account_state()
                     .await
-                    .map_err(|e| PaasError::Storage(format!("best_ee_account_state: {e}")))?
-                    .ok_or_else(|| {
-                        PaasError::TransientFailure(
-                            "no EE account state available yet (genesis not loaded?)".to_string(),
-                        )
-                    })?;
+                    .map_err(|e| AcctProofInputError::ReadBestEeAccountState {
+                        reason: e.to_string(),
+                    })?
+                    .ok_or(AcctProofInputError::NoEeAccountState)?;
                 let fallback = acct_at_epoch.ee_state().clone();
                 if fallback.last_exec_blkid() != parent_blkid {
-                    return Err(PaasError::TransientFailure(format!(
-                        "EE pre-state for batch {batch_id} unavailable: \
-                         no exec record for parent={parent_blkid:?}, \
-                         and OL-accepted tip={:?} doesn't match",
-                        fallback.last_exec_blkid(),
-                    )));
+                    return Err(AcctProofInputError::EePreStateUnavailable {
+                        batch_id,
+                        parent_blkid,
+                        ol_accepted_tip: fallback.last_exec_blkid(),
+                    }
+                    .into());
                 }
                 fallback
             }
@@ -356,9 +416,21 @@ fn da_refs_from_status(batch_id: BatchId, status: BatchStatus) -> ProverResult<V
         BatchStatus::DaComplete { da }
         | BatchStatus::ProofPending { da }
         | BatchStatus::ProofReady { da, .. } => Ok(da),
-        BatchStatus::Genesis | BatchStatus::Sealed | BatchStatus::DaPending { .. } => Err(
-            PaasError::TransientFailure(format!("batch {batch_id} does not have DA refs yet")),
-        ),
+        BatchStatus::Genesis => Err(AcctProofInputError::BatchMissingDaRefs {
+            batch_id,
+            status: "genesis",
+        }
+        .into()),
+        BatchStatus::Sealed => Err(AcctProofInputError::BatchMissingDaRefs {
+            batch_id,
+            status: "sealed",
+        }
+        .into()),
+        BatchStatus::DaPending { .. } => Err(AcctProofInputError::BatchMissingDaRefs {
+            batch_id,
+            status: "DA pending",
+        }
+        .into()),
     }
 }
 
@@ -376,11 +448,7 @@ async fn build_ledger_refs(
         let hash = ol_client
             .get_l1_header_commitment(height)
             .await
-            .map_err(|e| {
-                PaasError::TransientFailure(format!(
-                    "get L1 header commitment for height {height}: {e}"
-                ))
-            })?;
+            .map_err(|source| AcctProofInputError::GetL1HeaderCommitment { height, source })?;
         l1_header_commitments.insert(height, hash);
     }
 
@@ -389,15 +457,12 @@ async fn build_ledger_refs(
         .iter()
         .map(|da_ref| {
             let height = da_ref.block.height();
-            let hash = l1_header_commitments.get(&height).copied().ok_or_else(|| {
-                PaasError::TransientFailure(format!(
-                    "missing L1 header commitment for height {height}"
-                ))
-            })?;
+            let hash = l1_header_commitments
+                .get(&height)
+                .copied()
+                .ok_or_else(|| AcctProofInputError::MissingL1HeaderCommitment { height })?;
             let mmr_idx = (height as u64).checked_sub(mmr_offset).ok_or_else(|| {
-                PaasError::PermanentFailure(format!(
-                    "L1 height {height} is before MMR start offset {mmr_offset}"
-                ))
+                AcctProofInputError::L1HeightBeforeMmrStart { height, mmr_offset }
             })?;
 
             Ok(AccumulatorClaim::new(mmr_idx, *hash.as_ref()))

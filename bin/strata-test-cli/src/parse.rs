@@ -47,14 +47,14 @@ pub(crate) fn generate_taproot_address(
     network: Network,
 ) -> Result<(Address, XOnlyPublicKey), Error> {
     // Aggregate the operator public keys into a single x-only pubkey
-    let x_only_pub_key = aggregate_schnorr_keys(operator_wallet_pks.iter())
-        .map_err(|e| Error::TxBuilder(format!("Failed to aggregate keys: {}", e)))?;
+    let x_only_pub_key =
+        aggregate_schnorr_keys(operator_wallet_pks.iter()).map_err(Error::KeyAggregation)?;
 
     // Build the taproot spending tree (empty tree in this case)
     let taproot_builder = TaprootBuilder::new();
     let spend_info = taproot_builder
         .finalize(SECP256K1, x_only_pub_key)
-        .map_err(|_| Error::TxBuilder("Taproot finalization failed".to_string()))?;
+        .map_err(|_| Error::TaprootFinalization)?;
     let merkle_root = spend_info.merkle_root();
 
     // Create the P2TR address

@@ -49,19 +49,18 @@ pub(crate) fn create_deposit_transaction_cli(
     signers: Vec<EvenSecretKey>,
     dt_index: u32,
 ) -> Result<Vec<u8>, Error> {
-    let drt_tx =
-        deserialize(&tx_bytes).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {e}")))?;
+    let drt_tx = deserialize(&tx_bytes)
+        .map_err(|e| Error::TxParser(format!("failed to parse DRT ({e})")))?;
 
     let pubkeys = signers
         .iter()
         .map(|kp| Buf32::from(kp.x_only_public_key(SECP256K1).0.serialize()))
         .collect::<Vec<_>>();
 
-    let (_address, agg_pubkey) =
-        generate_taproot_address(&pubkeys, NETWORK).map_err(|e| Error::TxBuilder(e.to_string()))?;
+    let (_address, agg_pubkey) = generate_taproot_address(&pubkeys, NETWORK)?;
 
     let drt_data =
-        parse_drt(&drt_tx).map_err(|e| Error::TxParser(format!("Failed to parse DRT: {}", e)))?;
+        parse_drt(&drt_tx).map_err(|e| Error::TxParser(format!("failed to parse DRT ({e})")))?;
 
     let takeback_hash = build_deposit_request_spend_info(
         drt_data.header_aux().recovery_pk(),
@@ -69,13 +68,13 @@ pub(crate) fn create_deposit_transaction_cli(
         RECOVER_DELAY,
     )
     .merkle_root()
-    .ok_or_else(|| Error::TxBuilder("Missing takeback script merkle root".to_string()))?;
+    .ok_or_else(|| Error::TxBuilder("missing takeback script merkle root".to_string()))?;
 
     // Use canonical OP_RETURN construction from asm/txs/bridge-v1
     let dt_tag = DepositTxHeaderAux::new(dt_index).build_tag_data();
     let sps50_script = ParseConfig::new(MAGIC_BYTES)
         .encode_script_buf(&dt_tag.as_ref())
-        .map_err(|e| Error::TxBuilder(e.to_string()))?;
+        .map_err(|e| Error::TxBuilder(format!("failed to encode SPS-50 OP_RETURN ({e})")))?;
 
     let mut unsigned_tx = create_dummy_tx(1, 2);
     unsigned_tx.output[0].script_pubkey = sps50_script;
@@ -118,7 +117,7 @@ fn sign_deposit_transaction(
     signers: &[EvenSecretKey],
 ) -> Result<Transaction, Error> {
     let mut psbt = Psbt::from_unsigned_tx(unsigned_tx.clone())
-        .map_err(|e| Error::TxBuilder(format!("Failed to create PSBT: {}", e)))?;
+        .map_err(|e| Error::TxBuilder(format!("failed to create PSBT ({e})")))?;
 
     if let Some(input) = psbt.inputs.get_mut(0) {
         input.witness_utxo = Some(prevout.clone());
@@ -130,7 +129,7 @@ fn sign_deposit_transaction(
 
     let sighash = sighash_cache
         .taproot_key_spend_signature_hash(0, &prevouts_ref, TapSighashType::Default)
-        .map_err(|e| Error::TxBuilder(format!("Sighash creation failed: {e}")))?;
+        .map_err(|e| Error::TxBuilder(format!("sighash creation failed ({e})")))?;
 
     let msg = sighash.to_byte_array();
     let tweak = Musig2Tweak::TaprootScript(takeback_hash.to_byte_array());
@@ -175,5 +174,5 @@ fn finalize_and_extract_tx(mut psbt: Psbt) -> Result<Transaction, Error> {
 
     psbt.clone()
         .extract_tx()
-        .map_err(|e| Error::TxBuilder(format!("Transaction extraction failed: {}", e)))
+        .map_err(|e| Error::TxBuilder(format!("transaction extraction failed ({e})")))
 }

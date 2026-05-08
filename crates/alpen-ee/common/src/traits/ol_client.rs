@@ -127,27 +127,25 @@ pub async fn get_inbox_messages_checked(
 #[derive(Debug, Error)]
 pub enum OLClientError {
     /// End slot is less than or equal to start slot.
-    #[error(
-        "invalid slot range: end_slot ({max_slot}) must be greater than start_slot ({min_slot})"
-    )]
+    #[error("invalid slot range (end_slot {max_slot} must be greater than start_slot {min_slot})")]
     InvalidSlotRange { min_slot: u64, max_slot: u64 },
 
     /// Received a different number of blocks than expected.
-    #[error("unexpected block count: expected {expected} blocks, got {actual}")]
+    #[error("unexpected block count (expected {expected} blocks, got {actual})")]
     UnexpectedBlockCount { expected: usize, actual: usize },
 
     /// Received a different number of operation lists than expected.
-    #[error("unexpected operation count: expected {expected} operation lists, got {actual}")]
+    #[error("unexpected operation count (expected {expected} operation lists, got {actual})")]
     UnexpectedOperationCount { expected: usize, actual: usize },
 
     /// Received a different number of operation lists than expected.
-    #[error("unexpected inbox message count: expected {expected} message lists, got {actual}")]
+    #[error("unexpected inbox message count (expected {expected} message lists, got {actual})")]
     UnexpectedInboxMessageCount { expected: usize, actual: usize },
 
     /// Chain status slots are not in the correct order
     /// (tip >= latest terminal >= confirmed >= finalized).
     #[error(
-        "unexpected chain status slot order: tip={tip}, latest={latest}, confirmed={confirmed}, finalized={finalized}"
+        "unexpected chain status slot order (tip {tip}, latest {latest}, confirmed {confirmed}, finalized {finalized})"
     )]
     InvalidChainStatusSlotOrder {
         tip: u64,
@@ -157,11 +155,11 @@ pub enum OLClientError {
     },
 
     /// Network-related error occurred.
-    #[error("network error: {0}")]
+    #[error("network failure ({0})")]
     Network(String),
 
     /// RPC call failed.
-    #[error("rpc error: {0}")]
+    #[error("rpc failure ({0})")]
     Rpc(String),
 
     /// Other unspecified error.
