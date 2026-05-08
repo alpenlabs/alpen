@@ -497,6 +497,12 @@ ssz_types = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
 tree_hash = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
 tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.0" }
 
+# Replace only the service crates with the async lifecycle span fix until the next
+# strata-common tag includes it.
+[replace]
+"git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#strata-service@0.3.0-alpha.1" = { git = "https://github.com/alpenlabs/strata-common", rev = "a6f68180a58f203e9b11ca37d9f053e668586700" }
+"git+https://github.com/alpenlabs/strata-common?tag=v0.1.0-alpha-rc19#strata-tasks@0.3.0-alpha.1" = { git = "https://github.com/alpenlabs/strata-common", rev = "a6f68180a58f203e9b11ca37d9f053e668586700" }
+
 # This is needed for custom build of SP1
 [profile.release.build-override]
 opt-level = 3
