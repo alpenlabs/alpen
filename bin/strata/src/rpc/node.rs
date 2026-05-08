@@ -765,7 +765,10 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .ok_or_else(|| not_found_error(format!("No epoch commitment found for epoch {epoch}")))
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> RpcResult<Option<HexBytes32>> {
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> RpcResult<Option<HexBytes32>> {
         let manifest = self
             .provider
             .get_block_manifest_at_height(l1_height)

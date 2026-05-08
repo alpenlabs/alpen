@@ -88,7 +88,7 @@ fn verify_ledger_refs(
     proof_verifier: &mut impl TxProofVerifier,
     ledger_refs: &LedgerRefs,
 ) -> ExecResult<()> {
-    let manifest_claims = ledger_refs.l1_header_refs();
+    let manifest_claims = ledger_refs.asm_manifest_refs();
 
     for claim in manifest_claims {
         proof_verifier

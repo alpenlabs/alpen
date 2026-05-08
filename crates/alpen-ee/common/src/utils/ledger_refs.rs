@@ -23,7 +23,7 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum LedgerRefsError {
     /// Failed to fetch the canonical L1 header commitment for a given height.
-    #[error("get_l1_header_commitment({height}): {source}")]
+    #[error("get_asm_manifest_commitment({height}): {source}")]
     FetchCommitment {
         height: L1Height,
         #[source]
@@ -46,11 +46,12 @@ pub async fn build_ledger_refs_from_da(
     da_refs: &[L1DaBlockRef],
     ol_client: &(impl SequencerOLClient + ?Sized),
 ) -> Result<LedgerRefs, LedgerRefsError> {
-    let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
-    Ok(build_ledger_refs(da_refs, &l1_header_commitments))
+    let asm_manifest_commitments =
+        fetch_asm_manifest_commitments_by_height(da_refs, ol_client).await?;
+    Ok(build_ledger_refs(da_refs, &asm_manifest_commitments))
 }
 
-async fn fetch_l1_header_commitments_by_height(
+async fn fetch_asm_manifest_commitments_by_height(
     da_refs: &[L1DaBlockRef],
     ol_client: &(impl SequencerOLClient + ?Sized),
 ) -> Result<HashMap<L1Height, Hash>, LedgerRefsError> {
@@ -60,7 +61,7 @@ async fn fetch_l1_header_commitments_by_height(
 
     let pairs = try_join_all(heights.into_iter().map(|height| async move {
         let hash = ol_client
-            .get_l1_header_commitment(height)
+            .get_asm_manifest_commitment(height)
             .await
             .map_err(|source| LedgerRefsError::FetchCommitment { height, source })?;
         Ok::<_, LedgerRefsError>((height, hash))
@@ -72,24 +73,24 @@ async fn fetch_l1_header_commitments_by_height(
 
 fn build_ledger_refs(
     da_refs: &[L1DaBlockRef],
-    l1_header_commitments: &HashMap<L1Height, Hash>,
+    asm_manifest_commitments: &HashMap<L1Height, Hash>,
 ) -> LedgerRefs {
-    let mut l1_header_refs: Vec<AccumulatorClaim> = da_refs
+    let mut asm_manifest_refs: Vec<AccumulatorClaim> = da_refs
         .iter()
         .map(|da_ref| {
             let height = da_ref.block.height();
-            // `fetch_l1_header_commitments_by_height` populates an entry for
+            // `fetch_asm_manifest_commitments_by_height` populates an entry for
             // every height present in `da_refs`, so a miss here is a bug, not
             // a transient error — leave it as an `expect` to surface that.
-            let hash = *l1_header_commitments
+            let hash = *asm_manifest_commitments
                 .get(&height)
                 .expect("commitment map covers every DA-ref height");
             AccumulatorClaim::new(height as u64, *hash.as_ref())
         })
         .collect();
 
-    l1_header_refs.sort_by_key(|c| c.idx());
-    l1_header_refs.dedup_by_key(|c| c.idx());
+    asm_manifest_refs.sort_by_key(|c| c.idx());
+    asm_manifest_refs.dedup_by_key(|c| c.idx());
 
-    LedgerRefs::new(l1_header_refs)
+    LedgerRefs::new(asm_manifest_refs)
 }

@@ -82,7 +82,7 @@ fn block_assembly_error_to_mempool_reason(err: &BlockAssemblyError) -> MempoolTx
         BlockAssemblyError::InvalidAccumulatorClaim(_)
         | BlockAssemblyError::Acct(_)
         | BlockAssemblyError::State(_)
-        | BlockAssemblyError::L1HeaderHashMismatch { .. }
+        | BlockAssemblyError::AsmManifestHashMismatch { .. }
         | BlockAssemblyError::InboxEntryHashMismatch { .. }
         | BlockAssemblyError::AccountNotFound(_)
         | BlockAssemblyError::InboxProofCountMismatch { .. } => MempoolTxInvalidReason::Invalid,
@@ -798,8 +798,9 @@ fn add_accumulator_proofs<P: AccumulatorProofGenerator, S: IStateAccessor>(
     for check in proof_indexer.accumulator_checks() {
         match check {
             AccProofCheck::AsmHistory(claim) => {
-                let proofs = proof_gen.generate_l1_header_proofs(slice::from_ref(claim), state)?;
-                all_acc_proofs.extend(proofs.l1_headers_proofs().iter().cloned());
+                let proofs =
+                    proof_gen.generate_asm_manifest_proofs(slice::from_ref(claim), state)?;
+                all_acc_proofs.extend(proofs.asm_manifest_proofs().iter().cloned());
             }
             AccProofCheck::Inbox(claim) => {
                 let inbox_proofs = proof_gen.generate_inbox_proofs_for_claims(
@@ -851,11 +852,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_proof_gen_success() {
+    async fn test_asm_manifest_proof_gen_success() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
-            .with_l1_header_refs([1]);
+            .with_asm_manifests([1]);
         let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
         let state = fixture
             .storage()
@@ -864,13 +865,13 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let l1_claim = fixture
-            .l1_header_ref(1)
+        let asm_manifest_claim = fixture
+            .asm_manifest_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create tx with claims from the tracker using builder
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(vec![l1_claim])
+            .with_asm_manifest_claims(vec![asm_manifest_claim])
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
@@ -1014,11 +1015,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_claim_hash_mismatch() {
+    async fn test_asm_manifest_claim_hash_mismatch() {
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
-            .with_l1_header_refs([1]);
+            .with_asm_manifests([1]);
         let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
         let state = fixture
             .storage()
@@ -1028,7 +1029,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .l1_header_ref(1)
+            .asm_manifest_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with correct MMR index but wrong hash.
@@ -1041,7 +1042,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(seeded_claim.idx(), wrong_hash)];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(invalid_claims)
+            .with_asm_manifest_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
@@ -1052,19 +1053,19 @@ mod tests {
         assert!(result.is_err(), "Should fail with hash mismatch");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, BlockAssemblyError::L1HeaderHashMismatch { .. }),
-            "Expected L1HeaderHashMismatch, got: {:?}",
+            matches!(err, BlockAssemblyError::AsmManifestHashMismatch { .. }),
+            "Expected AsmManifestHashMismatch, got: {:?}",
             err
         );
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_claim_missing_index() {
+    async fn test_asm_manifest_claim_missing_index() {
         // Seed one L1 header so we can reuse its hash with a missing index.
         let account_id = test_account_id(1);
         let fixture_builder = TestStorageFixtureBuilder::new()
             .with_account(TestAccount::new(account_id, 100_000))
-            .with_l1_header_refs([1]);
+            .with_asm_manifests([1]);
         let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
         let state = fixture
             .storage()
@@ -1074,7 +1075,7 @@ mod tests {
             .expect("fetch stored state")
             .expect("stored state missing");
         let seeded_claim = fixture
-            .l1_header_ref(1)
+            .asm_manifest_ref(1)
             .expect("claim for L1 height 1 should exist");
 
         // Create claim with non-existent index.
@@ -1085,7 +1086,7 @@ mod tests {
         )];
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(invalid_claims)
+            .with_asm_manifest_claims(invalid_claims)
             .build();
         let ctx = create_test_context(fixture.storage().clone());
         let result = add_accumulator_proofs(
@@ -1108,7 +1109,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_claim_with_only_genesis_prefill() {
+    async fn test_asm_manifest_claim_with_only_genesis_prefill() {
         // No real manifests are seeded, so the MMR contains only the genesis
         // sentinel at index 0. A claim quoting an arbitrary hash at that index
         // must be rejected as a hash mismatch.
@@ -1128,7 +1129,7 @@ mod tests {
             .expect("stored state missing");
 
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(invalid_claims)
+            .with_asm_manifest_claims(invalid_claims)
             .build();
 
         let ctx = create_test_context(fixture.storage().clone());
@@ -1140,7 +1141,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(BlockAssemblyError::L1HeaderHashMismatch { idx: 0, .. })
+            Err(BlockAssemblyError::AsmManifestHashMismatch { idx: 0, .. })
         ));
     }
 
@@ -1312,12 +1313,12 @@ mod tests {
     /// the accumulator proofs are ordered: L1 headers first, then inbox proofs.
     /// This must match the verification order in snark-acct-sys verification.rs.
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_proof_ordering_l1_headers_before_inbox() {
+    async fn test_proof_ordering_asm_manifests_before_inbox() {
         let account_id = test_account_id(1);
         let source_account = test_account_id(2);
         let messages = generate_message_entries(2, source_account);
         let fixture_builder = TestStorageFixtureBuilder::new()
-            .with_l1_header_refs([1])
+            .with_asm_manifests([1])
             .with_account(TestAccount::new(account_id, 100_000).with_inbox(messages.clone()));
         let (fixture, parent_commitment) = fixture_builder.build_fixture().await;
         let state = fixture
@@ -1327,15 +1328,15 @@ mod tests {
             .await
             .expect("fetch stored state")
             .expect("stored state missing");
-        let l1_claims = vec![
+        let asm_manifest_claims = vec![
             fixture
-                .l1_header_ref(1)
+                .asm_manifest_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
 
         // Create tx with BOTH L1 claims and inbox messages
         let mempool_tx = MempoolSnarkTxBuilder::new(account_id)
-            .with_l1_claims(l1_claims.clone())
+            .with_asm_manifest_claims(asm_manifest_claims.clone())
             .with_processed_messages(messages.clone())
             .build();
 
@@ -1352,13 +1353,13 @@ mod tests {
         let acc_proofs = tx_proofs
             .accumulator_proofs()
             .expect("should have accumulator proofs");
-        let n_l1 = l1_claims.len();
+        let n_asm_manifests = asm_manifest_claims.len();
         let n_inbox = messages.len();
         assert_eq!(
             acc_proofs.proofs().len(),
-            n_l1 + n_inbox,
-            "Should have {n_l1} L1 header + {n_inbox} inbox = {} total accumulator proofs",
-            n_l1 + n_inbox
+            n_asm_manifests + n_inbox,
+            "Should have {n_asm_manifests} L1 header + {n_inbox} inbox = {} total accumulator proofs",
+            n_asm_manifests + n_inbox
         );
 
         // Verify predicate satisfier exists
@@ -1690,7 +1691,7 @@ mod tests {
         // Set last_l1_height to 2, but only provide manifests starting at 3.
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
-            .with_l1_header_refs([1, 2])
+            .with_asm_manifests([1, 2])
             .with_l1_manifest_height_range(3..=4);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
@@ -1713,7 +1714,7 @@ mod tests {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
             .with_l1_manifest_height_range(1..=3)
-            .with_l1_header_refs([1, 2, 3]);
+            .with_asm_manifests([1, 2, 3]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
@@ -1734,7 +1735,7 @@ mod tests {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
             .with_l1_manifest_height_range(1..=3)
-            .with_l1_header_refs([1, 2, 3, 4, 5]);
+            .with_asm_manifests([1, 2, 3, 4, 5]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
@@ -1755,7 +1756,7 @@ mod tests {
         let env_builder = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
             .with_l1_manifest_height_range(1..=2)
-            .with_l1_header_refs([1]);
+            .with_asm_manifests([1]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let mut env = TestEnv::from_fixture(fixture, parent_commitment);
 
@@ -2011,7 +2012,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_l1_header_mmr_claims() {
+    async fn test_asm_manifest_mmr_claims() {
         // Setup env with two snark accounts and manifests in both state and storage MMRs
         let account1 = test_account_id(1);
         let account2 = test_account_id(2);
@@ -2019,25 +2020,25 @@ mod tests {
             .with_parent_slot(1) // Start from slot 1 instead of genesis to avoid genesis manifest conflicts
             .with_account(TestAccount::new(account1, DEFAULT_ACCOUNT_BALANCE))
             .with_account(TestAccount::new(account2, DEFAULT_ACCOUNT_BALANCE))
-            .with_l1_header_refs([1, 2]);
+            .with_asm_manifests([1, 2]);
         let (fixture, parent_commitment) = env_builder.build_fixture().await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         // Valid tx for account1: L1 header claims exist in both MMRs for the requested L1 height.
         let valid_claims = vec![
-            env.l1_header_ref(1)
+            env.asm_manifest_ref(1)
                 .expect("claim for L1 height 1 should exist"),
         ];
         let valid_tx = MempoolSnarkTxBuilder::new(account1)
             .with_seq_no(0)
-            .with_l1_claims(valid_claims)
+            .with_asm_manifest_claims(valid_claims)
             .build();
         let valid_txid = valid_tx.compute_txid();
 
         // Invalid tx for account2: non-existent MMR index (no corresponding MMR leaf)
         let fake_hash = test_hash(99);
         let max_seeded_idx = env
-            .l1_header_refs()
+            .asm_manifest_refs()
             .iter()
             .map(|claim| claim.idx())
             .max()
@@ -2046,7 +2047,7 @@ mod tests {
         let invalid_claims = vec![AccumulatorClaim::new(missing_idx, fake_hash)];
         let invalid_tx = MempoolSnarkTxBuilder::new(account2)
             .with_seq_no(0)
-            .with_l1_claims(invalid_claims)
+            .with_asm_manifest_claims(invalid_claims)
             .build();
         let invalid_txid = invalid_tx.compute_txid();
 
@@ -2874,18 +2875,18 @@ mod tests {
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
             .with_parent_slot(1)
             .with_account(TestAccount::new(account_id, DEFAULT_ACCOUNT_BALANCE))
-            .with_l1_header_refs(1..=25)
+            .with_asm_manifests(1..=25)
             .build_fixture()
             .await;
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
-        let mut claims: Vec<_> = env.l1_header_refs().to_vec();
+        let mut claims: Vec<_> = env.asm_manifest_refs().to_vec();
         claims.extend(claims.clone());
         assert_eq!(claims.len(), 50, "stress setup should build 50 claims");
 
         let tx = MempoolSnarkTxBuilder::new(account_id)
             .with_seq_no(0)
-            .with_l1_claims(claims)
+            .with_asm_manifest_claims(claims)
             .build();
         let txid = tx.compute_txid();
 

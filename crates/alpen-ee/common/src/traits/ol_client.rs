@@ -86,10 +86,11 @@ pub trait SequencerOLClient {
     /// Retrieves latest account state in the OL Chain for this account.
     async fn get_latest_account_state(&self) -> Result<OLAccountStateView, OLClientError>;
 
-    /// Retrieves the canonical L1 header commitment for an L1 block height.
+    /// Retrieves the canonical ASM manifest commitment for an L1 block height.
     ///
     /// The returned hash is the exact MMR leaf value used by OL ledger-ref verification.
-    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError>;
+    async fn get_asm_manifest_commitment(&self, l1_height: L1Height)
+        -> Result<Hash, OLClientError>;
 
     /// Submits an account update with proof to the OL chain sequencer.
     ///

@@ -102,7 +102,10 @@ impl SequencerOLClient for DummyOLClient {
         })
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError> {
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> Result<Hash, OLClientError> {
         Ok(Hash::from(u64_to_256(l1_height as u64)))
     }
 

@@ -371,7 +371,7 @@ pub(crate) struct MempoolSnarkTxBuilder {
     seq_no: u64,
     processed_messages: Vec<MessageEntry>,
     new_msg_idx: u64,
-    l1_claims: Vec<AccumulatorClaim>,
+    asm_manifest_claims: Vec<AccumulatorClaim>,
     outputs: Vec<(AccountId, u64)>,
     output_messages: Vec<OutputMessage>,
 }
@@ -438,7 +438,7 @@ impl MempoolSnarkTxBuilder {
             seq_no: 0,
             processed_messages: Vec::new(),
             new_msg_idx: 0,
-            l1_claims: Vec::new(),
+            asm_manifest_claims: Vec::new(),
             outputs: Vec::new(),
             output_messages: Vec::new(),
         }
@@ -458,8 +458,8 @@ impl MempoolSnarkTxBuilder {
     }
 
     /// Sets L1 header claims from AccumulatorClaim objects.
-    pub(crate) fn with_l1_claims(mut self, claims: Vec<AccumulatorClaim>) -> Self {
-        self.l1_claims = claims;
+    pub(crate) fn with_asm_manifest_claims(mut self, claims: Vec<AccumulatorClaim>) -> Self {
+        self.asm_manifest_claims = claims;
         self
     }
 
@@ -521,11 +521,11 @@ impl MempoolSnarkTxBuilder {
         let proof_state = SauTxProofState::new(self.new_msg_idx, inner_state);
         let update_data = SauTxUpdateData::new(self.seq_no, proof_state, vec![]);
 
-        let ledger_refs = if self.l1_claims.is_empty() {
+        let ledger_refs = if self.asm_manifest_claims.is_empty() {
             SauTxLedgerRefs::new_empty()
         } else {
-            let claim_list =
-                ClaimList::new(self.l1_claims).expect("snark update has too many ASM claims");
+            let claim_list = ClaimList::new(self.asm_manifest_claims)
+                .expect("snark update has too many ASM claims");
             SauTxLedgerRefs::new_with_claims(claim_list)
         };
 
@@ -793,7 +793,7 @@ pub(crate) struct TestStorageFixture {
     storage: Arc<NodeStorage>,
     /// Seeded ASM-manifest claims. Each claim's `idx()` is the L1 height of the
     /// corresponding manifest, since the ASM manifests MMR is height-indexed.
-    l1_header_refs: Vec<AccumulatorClaim>,
+    asm_manifest_refs: Vec<AccumulatorClaim>,
     inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
 }
 
@@ -804,7 +804,7 @@ impl TestStorageFixture {
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
         Self {
             storage,
-            l1_header_refs: Vec::new(),
+            asm_manifest_refs: Vec::new(),
             inbox_message_claims: Vec::new(),
         }
     }
@@ -812,10 +812,10 @@ impl TestStorageFixture {
     /// Sets seeded L1 header refs and inbox message claims produced during fixture setup.
     pub(crate) fn with_seeded_claims(
         mut self,
-        l1_header_refs: Vec<AccumulatorClaim>,
+        asm_manifest_refs: Vec<AccumulatorClaim>,
         inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
     ) -> Self {
-        self.l1_header_refs = l1_header_refs;
+        self.asm_manifest_refs = asm_manifest_refs;
         self.inbox_message_claims = inbox_message_claims;
         self
     }
@@ -826,13 +826,13 @@ impl TestStorageFixture {
     }
 
     /// Returns the seeded L1 header ref claims.
-    pub(crate) fn l1_header_refs(&self) -> &[AccumulatorClaim] {
-        &self.l1_header_refs
+    pub(crate) fn asm_manifest_refs(&self) -> &[AccumulatorClaim] {
+        &self.asm_manifest_refs
     }
 
     /// Returns an L1 header ref for a specific L1 height.
-    pub(crate) fn l1_header_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
-        self.l1_header_refs
+    pub(crate) fn asm_manifest_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
+        self.asm_manifest_refs
             .iter()
             .find(|claim| claim.idx() == height as u64)
             .cloned()
@@ -935,13 +935,13 @@ impl TestEnv {
     }
 
     /// Returns configured L1 header refs keyed by L1 height.
-    pub(crate) fn l1_header_refs(&self) -> &[AccumulatorClaim] {
-        self.fixture.l1_header_refs()
+    pub(crate) fn asm_manifest_refs(&self) -> &[AccumulatorClaim] {
+        self.fixture.asm_manifest_refs()
     }
 
     /// Returns an L1 header ref for a specific L1 height.
-    pub(crate) fn l1_header_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
-        self.fixture.l1_header_ref(height)
+    pub(crate) fn asm_manifest_ref(&self, height: L1Height) -> Option<AccumulatorClaim> {
+        self.fixture.asm_manifest_ref(height)
     }
 
     /// Returns inbox message claims for a specific account.
@@ -1086,7 +1086,7 @@ pub(crate) fn block_and_post_state_from_output(
 pub(crate) struct TestStorageFixtureBuilder {
     parent_slot: Option<u64>,
     l1_manifest_height_range: Option<RangeInclusive<L1Height>>,
-    l1_header_ref_heights: Vec<L1Height>,
+    asm_manifest_heights: Vec<L1Height>,
     expected_inbox_message_indices: Vec<(AccountId, Vec<u64>)>,
     accounts: Vec<TestAccount>,
 }
@@ -1131,11 +1131,11 @@ impl TestStorageFixtureBuilder {
     }
 
     /// Seeds L1 header refs for the provided L1 heights.
-    pub(crate) fn with_l1_header_refs(
+    pub(crate) fn with_asm_manifests(
         mut self,
         heights: impl IntoIterator<Item = L1Height>,
     ) -> Self {
-        self.l1_header_ref_heights = heights.into_iter().collect();
+        self.asm_manifest_heights = heights.into_iter().collect();
         self
     }
 
@@ -1219,11 +1219,11 @@ impl TestStorageFixtureBuilder {
         // Seed requested L1 header refs into both state claims and the ASM MMR.
         // The MMR is height-indexed, so each returned claim's `idx()` is the
         // L1 height of the corresponding manifest.
-        let mut l1_heights = self.l1_header_ref_heights.clone();
+        let mut l1_heights = self.asm_manifest_heights.clone();
         l1_heights.sort_unstable();
         l1_heights.dedup();
 
-        let seeded_l1_header_refs = if l1_heights.is_empty() {
+        let seeded_asm_manifest_refs = if l1_heights.is_empty() {
             vec![]
         } else {
             let asm_manifests = create_test_manifests_for_heights(&l1_heights);
@@ -1301,7 +1301,7 @@ impl TestStorageFixtureBuilder {
         };
 
         let fixture =
-            Arc::new(fixture.with_seeded_claims(seeded_l1_header_refs, inbox_message_claims));
+            Arc::new(fixture.with_seeded_claims(seeded_asm_manifest_refs, inbox_message_claims));
         (fixture, parent_commitment)
     }
 }

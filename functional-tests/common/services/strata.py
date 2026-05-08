@@ -288,7 +288,7 @@ class StrataService(RpcService):
         )
         return self.get_cur_block_height(rpc)
 
-    def wait_for_l1_commitment_at(
+    def wait_for_asm_manifest_commitment_at(
         self,
         height: int,
         rpc: JsonRpcClient | None = None,
@@ -296,7 +296,7 @@ class StrataService(RpcService):
         poll_interval: float = 0.5,
         differs_from: object | None = None,
     ) -> object:
-        """Wait for an L1 header commitment at a given height.
+        """Wait for an ASM-manifest commitment at a given L1 height.
 
         Args:
             height: L1 block height to check.
@@ -307,7 +307,7 @@ class StrataService(RpcService):
                 from this value (useful for reorg detection).
 
         Returns:
-            The L1 header commitment value.
+            The ASM-manifest commitment value.
         """
         if rpc is None:
             rpc = self.create_rpc()
@@ -318,9 +318,9 @@ class StrataService(RpcService):
             return differs_from is None or v != differs_from
 
         return wait_until_with_value(
-            lambda: rpc.strata_getL1HeaderCommitment(height),
+            lambda: rpc.strata_getAsmManifestCommitment(height),
             predicate,
-            error_with=f"No L1 header commitment at height {height}",
+            error_with=f"No ASM manifest commitment at L1 height {height}",
             timeout=timeout,
             step=poll_interval,
         )

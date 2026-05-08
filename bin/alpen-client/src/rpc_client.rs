@@ -213,13 +213,16 @@ impl SequencerOLClient for RpcOLClient {
         })
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError> {
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> Result<Hash, OLClientError> {
         retry_with_backoff_async(
-            "ol_client_get_l1_header_commitment",
+            "ol_client_get_asm_manifest_commitment",
             DEFAULT_ENGINE_CALL_MAX_RETRIES,
             &ExponentialBackoff::default(),
             || async {
-                let commitment = call_rpc!(self, get_l1_header_commitment(l1_height))?;
+                let commitment = call_rpc!(self, get_asm_manifest_commitment(l1_height))?;
 
                 commitment.map(|h| Hash::from(h.0)).ok_or_else(|| {
                     OLClientError::rpc(format!(
@@ -238,7 +241,7 @@ impl SequencerOLClient for RpcOLClient {
         let next_inbox_msg_idx = operation.new_proof_state().next_inbox_msg_idx();
         let l1_ref_heights: Vec<_> = operation
             .ledger_refs()
-            .l1_header_refs()
+            .asm_manifest_refs()
             .iter()
             .map(|claim| claim.idx())
             .collect();

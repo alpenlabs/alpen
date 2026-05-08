@@ -64,9 +64,13 @@ pub trait OLClientRpc {
         account_id: AccountId,
     ) -> RpcResult<EpochCommitment>;
 
-    /// Get canonical L1 header commitment for the given L1 block height.
-    #[method(name = "getL1HeaderCommitment")]
-    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> RpcResult<Option<HexBytes32>>;
+    /// Get the canonical ASM-manifest commitment (the manifest's tree-hash root)
+    /// for the given L1 block height.
+    #[method(name = "getAsmManifestCommitment")]
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> RpcResult<Option<HexBytes32>>;
 
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]

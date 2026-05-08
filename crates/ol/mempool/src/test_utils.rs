@@ -128,7 +128,7 @@ pub(crate) fn create_test_snark_tx_from_update(
         operation.extra_data().to_vec(),
     );
 
-    let asm_hist_refs = operation.ledger_refs().l1_header_refs();
+    let asm_hist_refs = operation.ledger_refs().asm_manifest_refs();
     let sau_ledger_refs = if asm_hist_refs.is_empty() {
         SauTxLedgerRefs::new_empty()
     } else {
