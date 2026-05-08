@@ -48,7 +48,7 @@ struct RpcDeps {
     rpc_port: u16,
     admin_rpc_host: String,
     admin_rpc_port: u16,
-    admin_rpc_bearer_token: String,
+    admin_rpc_bearer_token: Option<String>,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
@@ -143,12 +143,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         rpc_port: runctx.config().client.rpc_port,
         admin_rpc_host: runctx.config().client.admin_rpc_host.clone(),
         admin_rpc_port: runctx.config().client.admin_rpc_port,
-        admin_rpc_bearer_token: runctx
-            .config()
-            .client
-            .admin_rpc_bearer_token
-            .clone()
-            .ok_or_else(|| anyhow!("client.admin_rpc_bearer_token must be set"))?,
+        admin_rpc_bearer_token: runctx.config().client.admin_rpc_bearer_token.clone(),
         genesis_l1_height: runctx.asm_params().anchor.block.height(),
         max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
@@ -163,9 +158,11 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     runctx
         .executor()
         .spawn_critical_async("main-rpc", spawn_public_rpc(deps.clone()));
-    runctx
-        .executor()
-        .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps));
+    if runctx.config().client.is_sequencer {
+        runctx
+            .executor()
+            .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps));
+    }
     Ok(())
 }
 
@@ -286,9 +283,11 @@ async fn spawn_admin_rpc(deps: RpcDeps) -> Result<()> {
     let module = build_admin_rpc_module(&deps)?;
     let addr = format!("{}:{}", deps.admin_rpc_host, deps.admin_rpc_port);
     info!(%addr, "starting admin RPC server");
-    let auth_layer = ServiceBuilder::new().layer(auth::AdminAuthLayer::new(
-        deps.admin_rpc_bearer_token.clone(),
-    ));
+    let token = deps
+        .admin_rpc_bearer_token
+        .clone()
+        .ok_or_else(|| anyhow!("client.admin_rpc_bearer_token must be set"))?;
+    let auth_layer = ServiceBuilder::new().layer(auth::AdminAuthLayer::new(token));
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(auth_layer)
         .build(&addr)

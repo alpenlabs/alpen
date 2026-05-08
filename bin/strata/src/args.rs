@@ -3,6 +3,7 @@
 use std::{env, path::PathBuf};
 
 use argh::FromArgs;
+use strata_config::Config;
 
 use crate::errors::*;
 
@@ -22,13 +23,11 @@ impl EnvArgs {
         })
     }
 
-    /// Get strings of overrides gathered from env.
-    pub(crate) fn get_overrides(&self) -> Vec<String> {
-        self.admin_rpc_token
-            .as_ref()
-            .map(|token| format!("client.admin_rpc_bearer_token={token}"))
-            .into_iter()
-            .collect()
+    /// Applies environment-only overrides directly to the parsed config.
+    pub(crate) fn apply_to_config(&self, config: &mut Config) {
+        if let Some(token) = &self.admin_rpc_token {
+            config.client.admin_rpc_bearer_token = Some(token.clone());
+        }
     }
 }
 
@@ -131,22 +130,70 @@ impl Args {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_env_args_without_token_generate_no_overrides() {
-        let env_args = EnvArgs {
-            admin_rpc_token: None,
-        };
-        assert!(env_args.get_overrides().is_empty());
+    fn test_config() -> Config {
+        toml::from_str(
+            r#"
+            [bitcoind]
+            rpc_url = "http://localhost:18332"
+            rpc_user = "alpen"
+            rpc_password = "alpen"
+            network = "regtest"
+
+            [client]
+            rpc_host = "0.0.0.0"
+            rpc_port = 8432
+            l2_blocks_fetch_limit = 1_000
+            datadir = "/path/to/data/directory"
+            sync_endpoint = "9.9.9.9:8432"
+            db_retry_count = 5
+
+            [sync]
+            l1_follow_distance = 6
+            client_checkpoint_interval = 10
+
+            [btcio.reader]
+            client_poll_dur_ms = 200
+
+            [btcio.writer]
+            write_poll_dur_ms = 200
+            fee_policy = "mempool"
+            mempool_base_url = "https://mempool.space/signet"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+
+            [btcio.broadcaster]
+            poll_interval_ms = 1_000
+
+            [exec.reth]
+            rpc_url = "http://localhost:8551"
+            secret = "jwt.hex"
+            "#,
+        )
+        .unwrap()
     }
 
     #[test]
-    fn test_env_args_admin_token_override() {
+    fn test_env_args_without_token_leave_config_unchanged() {
+        let env_args = EnvArgs {
+            admin_rpc_token: None,
+        };
+        let mut config = test_config();
+
+        env_args.apply_to_config(&mut config);
+        assert_eq!(config.client.admin_rpc_bearer_token, None);
+    }
+
+    #[test]
+    fn test_env_args_admin_token_applies_directly_to_config() {
         let env_args = EnvArgs {
             admin_rpc_token: Some("test-token".to_string()),
         };
+        let mut config = test_config();
+
+        env_args.apply_to_config(&mut config);
         assert_eq!(
-            env_args.get_overrides(),
-            vec!["client.admin_rpc_bearer_token=test-token"]
+            config.client.admin_rpc_bearer_token.as_deref(),
+            Some("test-token")
         );
     }
 
