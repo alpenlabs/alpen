@@ -142,6 +142,25 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
         return Err(InitError::MissingSyncEndpoint);
     }
 
+    if config
+        .client
+        .admin_rpc_bearer_token
+        .as_deref()
+        .is_none_or(str::is_empty)
+    {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.admin_rpc_bearer_token must be set and non-empty".to_string(),
+        }));
+    }
+
+    if config.client.rpc_host == config.client.admin_rpc_host
+        && config.client.rpc_port == config.client.admin_rpc_port
+    {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.admin_rpc_host/client.admin_rpc_port must differ from the public RPC listener".to_string(),
+        }));
+    }
+
     if config.client.is_sequencer && config.sequencer.is_none() {
         return Err(InitError::MissingSequencerConfig(PathBuf::from(
             "sequencer.toml",

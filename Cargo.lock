@@ -13886,6 +13886,7 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "format_serde_error",
+ "http 1.4.0",
  "jsonrpsee",
  "metrics-exporter-prometheus",
  "proptest",

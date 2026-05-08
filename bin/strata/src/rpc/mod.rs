@@ -1,5 +1,6 @@
 //! OL RPC server implementation.
 
+mod auth;
 pub(crate) mod errors;
 mod node;
 #[cfg(test)]
@@ -31,6 +32,7 @@ use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use tracing::info;
 
 use crate::run_context::RunContext;
 #[cfg(feature = "sequencer")]
@@ -40,9 +42,13 @@ const STRATA_RPC_PERMISSIVE_CORS_ENV_VAR: &str = "STRATA_RPC_PERMISSIVE_CORS";
 
 /// Dependencies needed by the RPC server.
 /// Grouped to reduce parameter count when spawning the RPC task.
+#[derive(Clone)]
 struct RpcDeps {
     rpc_host: String,
     rpc_port: u16,
+    admin_rpc_host: String,
+    admin_rpc_port: u16,
+    admin_rpc_bearer_token: String,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
@@ -56,6 +62,7 @@ struct RpcDeps {
 
 /// Dependencies required for sequencer specific rpc endpoints
 #[cfg(feature = "sequencer")]
+#[derive(Clone)]
 struct SeqRpcDeps {
     /// Envelope handle.
     envelope_handle: Arc<EnvelopeHandle>,
@@ -134,6 +141,14 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     let deps = RpcDeps {
         rpc_host: runctx.config().client.rpc_host.clone(),
         rpc_port: runctx.config().client.rpc_port,
+        admin_rpc_host: runctx.config().client.admin_rpc_host.clone(),
+        admin_rpc_port: runctx.config().client.admin_rpc_port,
+        admin_rpc_bearer_token: runctx
+            .config()
+            .client
+            .admin_rpc_bearer_token
+            .clone()
+            .ok_or_else(|| anyhow!("client.admin_rpc_bearer_token must be set"))?,
         genesis_l1_height: runctx.asm_params().anchor.block.height(),
         max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
@@ -147,34 +162,15 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
 
     runctx
         .executor()
-        .spawn_critical_async("main-rpc", spawn_rpc(deps));
+        .spawn_critical_async("main-rpc", spawn_public_rpc(deps.clone()));
+    runctx
+        .executor()
+        .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps));
     Ok(())
 }
 
-/// Spawns the RPC server.
-async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
-    let mut module = RpcModule::new(());
-
-    // Register existing protocol version method
-    let _ = module.register_method("strata_protocolVersion", |_, _, _ctx| {
-        Ok::<u32, ErrorObjectOwned>(1)
-    });
-
-    #[cfg(feature = "debug-utils")]
-    {
-        let _ = module.register_method("debug_bail", |params, _, _| {
-            let ctx: String = params.one()?;
-            let _ = BAIL_SENDER.send(Some(ctx));
-            Ok::<(), ErrorObjectOwned>(())
-        });
-
-        // Returns the registered bail tag identifiers. Functional tests use
-        // this to validate tag strings without maintaining a Python-side
-        // mirror of the Rust constants in `strata_common::bail_tags`.
-        let _ = module.register_method("debug_listBailTags", |_, _, _| {
-            Ok::<Vec<&'static str>, ErrorObjectOwned>(KNOWN_BAIL_TAGS.to_vec())
-        });
-    }
+fn build_public_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
+    let mut module = build_public_static_rpc_module();
 
     // Create and register OL client RPC server
     let client_provider = NodeRpcProvider::new(
@@ -208,9 +204,42 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         .merge(ol_fullnode_module)
         .map_err(|e| anyhow!("Failed to merge OL fullnode RPC module: {}", e))?;
 
+    Ok(module)
+}
+
+fn build_public_static_rpc_module() -> RpcModule<()> {
+    let mut module = RpcModule::new(());
+
+    // Register existing protocol version method
+    let _ = module.register_method("strata_protocolVersion", |_, _, _ctx| {
+        Ok::<u32, ErrorObjectOwned>(1)
+    });
+
+    #[cfg(feature = "debug-utils")]
+    {
+        let _ = module.register_method("debug_bail", |params, _, _| {
+            let ctx: String = params.one()?;
+            let _ = BAIL_SENDER.send(Some(ctx));
+            Ok::<(), ErrorObjectOwned>(())
+        });
+
+        // Returns the registered bail tag identifiers. Functional tests use
+        // this to validate tag strings without maintaining a Python-side
+        // mirror of the Rust constants in `strata_common::bail_tags`.
+        let _ = module.register_method("debug_listBailTags", |_, _, _| {
+            Ok::<Vec<&'static str>, ErrorObjectOwned>(KNOWN_BAIL_TAGS.to_vec())
+        });
+    }
+
+    module
+}
+
+fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
+    let mut module = RpcModule::new(());
+
     // Create sequencer rpc handler if running as sequencer
     #[cfg(feature = "sequencer")]
-    if let Some(sequencer_deps) = deps.seq_deps {
+    if let Some(sequencer_deps) = deps.seq_deps.as_ref() {
         let ol_seq_listener = OLSeqRpcServer::new(
             deps.storage.clone(),
             deps.status_channel.clone(),
@@ -225,6 +254,12 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
             .map_err(|e| anyhow!("Failed to merge OL sequencer RPC module: {}", e))?;
     }
 
+    Ok(module)
+}
+
+/// Spawns the public RPC server.
+async fn spawn_public_rpc(deps: RpcDeps) -> Result<()> {
+    let module = build_public_rpc_module(&deps)?;
     let addr = format!("{}:{}", deps.rpc_host, deps.rpc_port);
     let cors = if rpc_permissive_cors_enabled()? {
         CorsLayer::permissive()
@@ -232,16 +267,51 @@ async fn spawn_rpc(deps: RpcDeps) -> Result<()> {
         CorsLayer::new()
     };
     let http_middleware = ServiceBuilder::new().layer(cors);
+    info!(%addr, "starting public RPC server");
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(http_middleware)
         .build(&addr)
         .await
-        .map_err(|e| anyhow!("Failed to build RPC server on {addr}: {e}"))?;
+        .map_err(|e| anyhow!("Failed to build public RPC server on {addr}: {e}"))?;
 
     let rpc_handle = rpc_server.start(module);
 
-    // wait for rpc to stop
     rpc_handle.stopped().await;
 
     Ok(())
+}
+
+/// Spawns the admin RPC server.
+async fn spawn_admin_rpc(deps: RpcDeps) -> Result<()> {
+    let module = build_admin_rpc_module(&deps)?;
+    let addr = format!("{}:{}", deps.admin_rpc_host, deps.admin_rpc_port);
+    info!(%addr, "starting admin RPC server");
+    let auth_layer = ServiceBuilder::new().layer(auth::AdminAuthLayer::new(
+        deps.admin_rpc_bearer_token.clone(),
+    ));
+    let rpc_server = ServerBuilder::new()
+        .set_http_middleware(auth_layer)
+        .build(&addr)
+        .await
+        .map_err(|e| anyhow!("Failed to build admin RPC server on {addr}: {e}"))?;
+
+    let rpc_handle = rpc_server.start(module);
+    rpc_handle.stopped().await;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_static_rpc_module_does_not_include_admin_methods() {
+        let module = build_public_static_rpc_module();
+        assert!(
+            !module
+                .method_names()
+                .any(|method| method.contains("strataadmin_"))
+        );
+    }
 }

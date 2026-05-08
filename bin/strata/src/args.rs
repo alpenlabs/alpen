@@ -1,24 +1,34 @@
 //! CLI argument parsing and environment variable handling.
 
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 use argh::FromArgs;
 
 use crate::errors::*;
 
+const STRATA_ADMIN_RPC_TOKEN: &str = "STRATA_ADMIN_RPC_TOKEN";
+
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
-pub(crate) struct EnvArgs;
+pub(crate) struct EnvArgs {
+    admin_rpc_token: Option<String>,
+}
 
 impl EnvArgs {
     /// Loads environment variables that should override the config.
     pub(crate) fn from_env() -> Result<Self, InitError> {
-        Ok(Self)
+        Ok(Self {
+            admin_rpc_token: env::var(STRATA_ADMIN_RPC_TOKEN).ok(),
+        })
     }
 
     /// Get strings of overrides gathered from env.
     pub(crate) fn get_overrides(&self) -> Vec<String> {
-        Vec::new()
+        self.admin_rpc_token
+            .as_ref()
+            .map(|token| format!("client.admin_rpc_bearer_token={token}"))
+            .into_iter()
+            .collect()
     }
 }
 
@@ -66,6 +76,14 @@ pub(crate) struct Args {
     #[argh(option, description = "rpc port")]
     pub rpc_port: Option<u16>,
 
+    /// Admin RPC host that the client will listen to.
+    #[argh(option, description = "admin rpc host")]
+    pub admin_rpc_host: Option<String>,
+
+    /// Admin RPC port that the client will listen to.
+    #[argh(option, description = "admin rpc port")]
+    pub admin_rpc_port: Option<u16>,
+
     /// Other generic overrides to the config toml.
     /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000 -o exec.reth.rpc_url=http://reth`
     #[argh(option, short = 'o', description = "generic config overrides")]
@@ -98,6 +116,12 @@ impl Args {
         if let Some(rpc_port) = &self.rpc_port {
             overrides.push(format!("client.rpc_port={rpc_port}"));
         }
+        if let Some(admin_rpc_host) = &self.admin_rpc_host {
+            overrides.push(format!("client.admin_rpc_host={admin_rpc_host}"));
+        }
+        if let Some(admin_rpc_port) = &self.admin_rpc_port {
+            overrides.push(format!("client.admin_rpc_port={admin_rpc_port}"));
+        }
 
         Ok(overrides)
     }
@@ -108,8 +132,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_env_args_no_longer_generate_overrides() {
-        let env_args = EnvArgs;
+    fn test_env_args_without_token_generate_no_overrides() {
+        let env_args = EnvArgs {
+            admin_rpc_token: None,
+        };
         assert!(env_args.get_overrides().is_empty());
+    }
+
+    #[test]
+    fn test_env_args_admin_token_override() {
+        let env_args = EnvArgs {
+            admin_rpc_token: Some("test-token".to_string()),
+        };
+        assert_eq!(
+            env_args.get_overrides(),
+            vec!["client.admin_rpc_bearer_token=test-token"]
+        );
+    }
+
+    #[test]
+    fn test_args_admin_rpc_overrides() {
+        let args = Args {
+            config: PathBuf::from("config.toml"),
+            datadir: None,
+            sequencer: false,
+            rollup_params: None,
+            sequencer_config: None,
+            ol_params: None,
+            asm_params: None,
+            rpc_host: None,
+            rpc_port: None,
+            admin_rpc_host: Some("127.0.0.2".to_string()),
+            admin_rpc_port: Some(9544),
+            overrides: Vec::new(),
+        };
+
+        assert_eq!(
+            args.get_internal_overrides().unwrap(),
+            vec![
+                "client.admin_rpc_host=127.0.0.2",
+                "client.admin_rpc_port=9544"
+            ]
+        );
     }
 }
