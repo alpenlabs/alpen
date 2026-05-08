@@ -10,6 +10,7 @@ use strata_btc_types::BlockHashExt;
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::{buf::Buf32, L1Height};
 use strata_storage::BroadcastDbOps;
+use tracing::{debug, warn};
 
 use super::error::{BroadcasterError, BroadcasterResult};
 
@@ -108,8 +109,14 @@ where
                 block_hash: info.block_hash.map(|h| h.to_buf32()),
                 block_height: info.block_height,
             })),
-            Err(err) if err.is_tx_not_found() => Ok(None),
-            Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
+            Err(err) if err.is_tx_not_found() => {
+                debug!(%err, %txid, "get_transaction: tx not found");
+                Ok(None)
+            }
+            Err(err) => {
+                warn!(%err, %txid, "get_transaction failed");
+                Err(BroadcasterError::Rpc(anyhow!(err)))
+            }
         }
     }
 
@@ -119,17 +126,27 @@ where
     ) -> BroadcasterResult<PublishTxOutcome> {
         match self.rpc_client.send_raw_transaction(tx).await {
             Ok(_) => Ok(PublishTxOutcome::Published),
-            Err(ClientError::Server(-25, _)) => Ok(PublishTxOutcome::AlreadyInMempool),
+            Err(err @ ClientError::Server(-25, _)) => {
+                debug!(%err, "send_raw_transaction returned -25, treating as already in mempool");
+                Ok(PublishTxOutcome::AlreadyInMempool)
+            }
             Err(err)
                 if err.is_missing_or_invalid_input()
                     || matches!(err, ClientError::Server(-22, _)) =>
             {
+                warn!(%err, "send_raw_transaction rejected as invalid input");
                 Ok(PublishTxOutcome::InvalidInputs)
             }
-            Err(err @ ClientError::Status(500, _)) => Ok(PublishTxOutcome::RetryLater {
-                reason: err.to_string(),
-            }),
-            Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
+            Err(err @ ClientError::Status(500, _)) => {
+                debug!(%err, "send_raw_transaction got 500, will retry");
+                Ok(PublishTxOutcome::RetryLater {
+                    reason: err.to_string(),
+                })
+            }
+            Err(err) => {
+                warn!(%err, "send_raw_transaction failed");
+                Err(BroadcasterError::Rpc(anyhow!(err)))
+            }
         }
     }
 }

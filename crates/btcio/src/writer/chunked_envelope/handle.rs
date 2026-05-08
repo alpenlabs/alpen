@@ -601,7 +601,7 @@ async fn check_commit_and_broadcast_reveals(
                 warn!(
                     envelope_idx,
                     %txid,
-                    ?e,
+                    %e,
                     "reveal tx has invalid inputs, will re-sign"
                 );
                 return Ok(ChunkedEnvelopeStatus::NeedsResign);
@@ -612,7 +612,7 @@ async fn check_commit_and_broadcast_reveals(
                 warn!(
                     envelope_idx,
                     %txid,
-                    ?e,
+                    %e,
                     "broadcast returned error (may already be in mempool)"
                 );
             }
