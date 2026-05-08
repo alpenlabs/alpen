@@ -1,57 +1,15 @@
 //! Unit tests for the OL STF implementation.
 
-use strata_acct_types::{AccountId, BitcoinAmount};
-use strata_asm_common::AsmManifest;
-use strata_identifiers::{Buf32, L1BlockId, WtxidsRoot};
+use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_ol_chain_types_new::*;
-use strata_ol_state_support_types::{IndexerState, MemoryStateBaseLayer, WriteTrackingState};
-use strata_ol_state_types::{IStateBatchApplicable, OLSnarkAccountState};
-use strata_predicate::PredicateKey;
+use strata_ol_state_support_types::{IndexerState, WriteTrackingState};
+use strata_ol_state_types::IStateBatchApplicable;
 
 use crate::{
-    assembly::{BlockComponents, CompletedBlock},
-    context::BlockInfo,
-    errors::ExecError,
-    test_utils::*,
+    assembly::BlockComponents, context::BlockInfo, errors::ExecError, test_utils::*,
     verification::*,
 };
-
-// Helper function to create genesis block components with a manifest (making it terminal)
-fn genesis_block_components() -> BlockComponents {
-    let dummy_manifest = AsmManifest::new(
-        1, // Genesis manifest should be at height 1 when last_l1_height is 0
-        L1BlockId::from(Buf32::from([0u8; 32])),
-        WtxidsRoot::from(Buf32::from([0u8; 32])),
-        vec![],
-    )
-    .expect("test manifest should be valid");
-    BlockComponents::new_manifests(vec![dummy_manifest])
-}
-
-#[expect(dead_code, reason = "didn't want to remove this")]
-fn setup_terminal_genesis_with_snark_account(
-    state: &mut MemoryStateBaseLayer,
-    snark_id: AccountId,
-    initial_balance: u64,
-) -> CompletedBlock {
-    let snark_state =
-        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), make_state_root(1));
-    let new_acct_data = NewAccountData::new(
-        BitcoinAmount::from_sat(initial_balance),
-        NewAccountTypeState::Snark {
-            update_vk: snark_state.update_vk().clone(),
-            initial_state_root: snark_state.inner_state_root(),
-        },
-    );
-    state
-        .create_new_account(snark_id, new_acct_data)
-        .expect("should create snark account");
-
-    let genesis_info = BlockInfo::new_genesis(1_000_000);
-    execute_block(state, &genesis_info, None, genesis_block_components())
-        .expect("terminal genesis should execute")
-}
 
 #[test]
 fn test_genesis_block_processing() {
@@ -64,8 +22,13 @@ fn test_genesis_block_processing() {
 
     // Process genesis block (with manifest to make it terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis_block = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis block execution should succeed");
+    let genesis_block = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis block execution should succeed");
 
     // Verify genesis block header
     assert_header_position(genesis_block.header(), 0, 0);
@@ -96,8 +59,13 @@ fn test_post_genesis_blocks() {
 
     // Process genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis block should execute");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis block should execute");
 
     // Process block at slot 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -157,20 +125,7 @@ fn test_genesis_with_initial_transactions() {
     let gam_tx = make_gam_tx(target);
 
     // Create genesis components with both transactions and manifest (to make it terminal)
-    let dummy_manifest = AsmManifest::new(
-        1, // Genesis manifest should be at height 1 when last_l1_height is 0
-        L1BlockId::from(Buf32::from([0u8; 32])),
-        WtxidsRoot::from(Buf32::from([0u8; 32])),
-        vec![],
-    )
-    .expect("test manifest should be valid");
-    let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![gam_tx.clone()]).expect("tx segment should be within limits"),
-        Some(
-            OLL1ManifestContainer::new(vec![dummy_manifest])
-                .expect("single manifest should succeed"),
-        ),
-    );
+    let genesis_components = build_terminal_tx_components(vec![gam_tx.clone()]);
 
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(&mut state, &genesis_info, None, genesis_components)
@@ -261,8 +216,13 @@ fn test_state_persistence_across_blocks() {
 
     // Process genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis should execute");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis should execute");
 
     // Get state root after genesis
     let genesis_state_root = state
@@ -353,15 +313,8 @@ fn test_process_chain_with_multiple_epochs() {
         };
 
         let components = if is_terminal {
-            // Create a terminal block with a dummy manifest
-            let dummy_manifest = AsmManifest::new(
-                state.last_l1_height() + 1, // Next L1 height after state's last seen
-                L1BlockId::from(Buf32::from([0u8; 32])),
-                WtxidsRoot::from(Buf32::from([0u8; 32])),
-                vec![],
-            )
-            .expect("test manifest should be valid");
-            BlockComponents::new_manifests(vec![dummy_manifest])
+            // Create a terminal block with an empty manifest.
+            build_terminal_block_components(state.last_l1_height() + 1)
         } else {
             BlockComponents::new_empty()
         };
@@ -521,8 +474,13 @@ fn test_verify_valid_block_succeeds() {
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis block assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis block assembly should succeed");
 
     // Reset state for verification (verification should start from same initial state)
     let mut verify_state = make_genesis_state();
@@ -538,8 +496,13 @@ fn test_assemble_then_verify_roundtrip() {
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("test: Genesis block assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("test: Genesis block assembly should succeed");
 
     // Assemble block 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -623,15 +586,8 @@ fn test_multi_block_chain_verification() {
         };
 
         let components = if is_terminal {
-            // Create a terminal block with a dummy manifest
-            let dummy_manifest = AsmManifest::new(
-                state.last_l1_height() + 1, // Next L1 height after state's last seen
-                L1BlockId::from(Buf32::from([0u8; 32])),
-                WtxidsRoot::from(Buf32::from([0u8; 32])),
-                vec![],
-            )
-            .expect("test manifest should be valid");
-            BlockComponents::new_manifests(vec![dummy_manifest])
+            // Create a terminal block with an empty manifest.
+            build_terminal_block_components(state.last_l1_height() + 1)
         } else {
             BlockComponents::new_empty()
         };
@@ -677,20 +633,7 @@ fn test_verify_block_with_transactions() {
     let gam_tx = make_gam_tx(target);
 
     // Assemble genesis with transaction and manifest (terminal)
-    let dummy_manifest = AsmManifest::new(
-        1, // Genesis manifest should be at height 1 when last_l1_height is 0
-        L1BlockId::from(Buf32::from([0u8; 32])),
-        WtxidsRoot::from(Buf32::from([0u8; 32])),
-        vec![],
-    )
-    .expect("test manifest should be valid");
-    let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![gam_tx]).expect("tx segment should be within limits"),
-        Some(
-            OLL1ManifestContainer::new(vec![dummy_manifest])
-                .expect("single manifest should succeed"),
-        ),
-    );
+    let genesis_components = build_terminal_tx_components(vec![gam_tx]);
 
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(&mut state, &genesis_info, None, genesis_components)
@@ -722,8 +665,13 @@ fn test_verify_rejects_wrong_parent_blkid() {
 
     // Assemble genesis and block 1
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
@@ -761,8 +709,13 @@ fn test_verify_rejects_epoch_skip() {
 
     // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     // Assemble block 1 normally (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -800,8 +753,13 @@ fn test_verify_rejects_slot_skip() {
 
     // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     // Create block 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -839,8 +797,13 @@ fn test_verify_rejects_slot_backwards() {
 
     // Assemble genesis and block 1
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     let block1_info = BlockInfo::new(1001000, 1, 1);
     let block1 = execute_block(
@@ -968,8 +931,13 @@ fn test_verify_rejects_mismatched_state_root() {
 
     // Assemble a normal genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     // Tamper with the state root in the header
     let wrong_root = Buf32::from([99u8; 32]);
@@ -996,20 +964,7 @@ fn test_verify_rejects_mismatched_logs_root() {
     let gam_tx = make_gam_tx(target);
 
     // Create genesis with transaction and manifest (terminal)
-    let dummy_manifest = AsmManifest::new(
-        1, // Genesis manifest should be at height 1 when last_l1_height is 0
-        L1BlockId::from(Buf32::from([0u8; 32])),
-        WtxidsRoot::from(Buf32::from([0u8; 32])),
-        vec![],
-    )
-    .expect("test manifest should be valid");
-    let genesis_components = BlockComponents::new(
-        OLTxSegment::new(vec![gam_tx]).expect("tx segment should be within limits"),
-        Some(
-            OLL1ManifestContainer::new(vec![dummy_manifest])
-                .expect("single manifest should succeed"),
-        ),
-    );
+    let genesis_components = build_terminal_tx_components(vec![gam_tx]);
 
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(&mut state, &genesis_info, None, genesis_components)
@@ -1037,8 +992,13 @@ fn test_verify_empty_block_logs_root() {
 
     // Assemble genesis block (terminal but with no transactions)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     // Verify that empty blocks have zero logs root
     assert_eq!(
@@ -1095,8 +1055,13 @@ fn test_verify_state_root_changes_with_state() {
 
     // Execute genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis should execute");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis should execute");
 
     // Execute block 1 (will change slot in state, epoch 1)
     let block1_info = BlockInfo::new(1001000, 1, 1);
@@ -1142,8 +1107,13 @@ fn test_verify_block_through_write_tracking_stack() {
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
-    let genesis = execute_block(&mut state, &genesis_info, None, genesis_block_components())
-        .expect("Genesis assembly should succeed");
+    let genesis = execute_block(
+        &mut state,
+        &genesis_info,
+        None,
+        build_terminal_genesis_components(),
+    )
+    .expect("Genesis assembly should succeed");
 
     // Assemble block 1 (epoch 1 since genesis was terminal)
     let block1_info = BlockInfo::new(1001000, 1, 1);

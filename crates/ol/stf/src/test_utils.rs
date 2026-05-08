@@ -223,9 +223,9 @@ pub fn make_withdrawal_payload(dest_desc: Vec<u8>) -> Vec<u8> {
         .to_vec()
 }
 
-/// Builds terminal genesis components with an empty manifest container.
+/// Builds terminal genesis components with one empty manifest at L1 height 1.
 pub fn build_terminal_genesis_components() -> BlockComponents {
-    BlockComponents::new_manifests(vec![])
+    BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)])
 }
 
 /// Builds terminal block components with one empty manifest at `next_l1_height`.
@@ -233,11 +233,14 @@ pub fn build_terminal_block_components(next_l1_height: L1Height) -> BlockCompone
     BlockComponents::new_manifests(vec![make_empty_manifest(next_l1_height, 0)])
 }
 
-/// Builds terminal block components with transactions and an empty manifest container.
+/// Builds terminal genesis components with transactions and one empty manifest at L1 height 1.
 pub fn build_terminal_tx_components(txs: Vec<OLTransaction>) -> BlockComponents {
     BlockComponents::new(
         OLTxSegment::new(txs).expect("tx segment should be within limits"),
-        Some(OLL1ManifestContainer::new(vec![]).expect("empty manifest container should succeed")),
+        Some(
+            OLL1ManifestContainer::new(vec![make_empty_manifest(1, 0)])
+                .expect("single manifest should succeed"),
+        ),
     )
 }
 
