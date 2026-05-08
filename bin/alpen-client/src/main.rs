@@ -45,7 +45,7 @@ use alpen_reth_node::{
 };
 #[cfg(feature = "sequencer")]
 use bitcoind_async_client::{traits::Wallet as _, Auth, Client as BtcClient};
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use eyre::Context;
 use reth_chainspec::ChainSpec;
 use reth_cli_commands::{launcher::FnLauncher, node::NodeCommand};
@@ -835,6 +835,33 @@ fn main() {
 /// Our custom cli args extension that adds one flag to reth default CLI.
 #[derive(Debug, clap::Parser)]
 pub struct AdditionalConfig {
+    /// Set the minimum log level.
+    ///
+    /// -v      Errors
+    /// -vv     Warnings
+    /// -vvv    Info
+    /// -vvvv   Debug
+    /// -vvvvv  Traces (warning: very verbose!)
+    #[arg(
+        short,
+        long,
+        action = ArgAction::Count,
+        global = true,
+        verbatim_doc_comment,
+        help_heading = "Display"
+    )]
+    pub verbosity: u8,
+
+    /// Silence all log output.
+    #[arg(
+        long,
+        alias = "silent",
+        short = 'q',
+        global = true,
+        help_heading = "Display"
+    )]
+    pub quiet: bool,
+
     /// OTLP gRPC endpoint for the OpenTelemetry collector.
     ///
     /// When set, `strata-logging` builds an `SdkMeterProvider` and a
@@ -950,6 +977,24 @@ pub struct AdditionalConfig {
     pub sp1_proof_deadline_secs: Option<u64>,
 }
 
+impl AdditionalConfig {
+    /// Returns an EnvFilter-compatible directive for CLI verbosity flags.
+    fn verbosity_filter_directive(&self) -> Option<&'static str> {
+        if self.quiet {
+            return Some("off");
+        }
+
+        match self.verbosity {
+            0 => None,
+            1 => Some("error"),
+            2 => Some("warn"),
+            3 => Some("info"),
+            4 => Some("debug"),
+            _ => Some("trace"),
+        }
+    }
+}
+
 /// Run node with logging
 /// based on reth::cli::Cli::run
 fn run<L>(
@@ -980,6 +1025,12 @@ where
         let _g = rt.handle().enter();
 
         let metrics_enabled = command.ext.otlp_url.is_some();
+        let mut extra_filter_directives =
+            vec!["sp1_core_executor=warn", "jsonrpsee_server::server=warn"];
+        if let Some(verbosity_filter) = command.ext.verbosity_filter_directive() {
+            extra_filter_directives.push(verbosity_filter);
+        }
+
         init_logging_from_config(LoggingInitConfig {
             service_base_name: "alpen-client",
             service_label: command.ext.service_label.as_deref(),
@@ -989,7 +1040,7 @@ where
             json_format: None,
             default_log_prefix: "alpen-client",
             enable_metrics_layer: metrics_enabled,
-            extra_filter_directives: &["sp1_core_executor=warn", "jsonrpsee_server::server=warn"],
+            extra_filter_directives: &extra_filter_directives,
         });
     }
 
