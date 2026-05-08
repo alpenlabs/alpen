@@ -3,15 +3,11 @@
 //! block.
 
 use strata_acct_types::BitcoinAmount;
-use strata_asm_common::{AsmLogEntry, AsmManifest};
-use strata_asm_logs::DepositLog;
-use strata_codec::{VarVec, decode_buf_exact};
-use strata_identifiers::{
-    AccountSerial, Buf32, Buf64, OLBlockCommitment, SubjectId, SubjectIdBytes, WtxidsRoot,
-};
+use strata_asm_common::AsmManifest;
+use strata_codec::decode_buf_exact;
+use strata_identifiers::{AccountSerial, Buf64, OLBlockCommitment, SubjectId};
 use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState};
-use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_chain_types_new::{L1BlockId, OLBlock, OLBlockHeader, SignedOLBlockHeader};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_predicate::PredicateKey;
@@ -21,8 +17,9 @@ use crate::{
     assembly::{BlockComponents, CompletedBlock},
     execute_block_batch_preseal,
     test_utils::{
-        create_test_genesis_state, execute_block, get_test_snark_account_id, get_test_state_root,
-        test_l1_block_id,
+        TEST_SNARK_ACCOUNT_ID, execute_block, make_account_id, make_deposit_manifest_for_account,
+        make_deposit_manifest_with_destination_bytes, make_empty_manifest, make_genesis_state,
+        make_state_root,
     },
     verification::verify_epoch_preseal_with_diff,
 };
@@ -33,7 +30,7 @@ const SLOT_TIMESTAMP_STEP: u64 = 1_000;
 
 #[test]
 fn test_preseal_round_trip_with_deposit_manifest() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
     let snark_serial = seed_snark_account(&mut state);
 
     let genesis = run_genesis(&mut state);
@@ -41,7 +38,13 @@ fn test_preseal_round_trip_with_deposit_manifest() {
 
     let (mut epoch_blocks, last_pre_terminal_header) =
         build_non_terminal_blocks(&mut state, &genesis);
-    let terminal_manifest = deposit_to_account_manifest(state.last_l1_height() + 1, snark_serial);
+    let terminal_manifest = make_deposit_manifest_for_account(
+        state.last_l1_height() + 1,
+        1,
+        snark_serial,
+        SubjectId::from([42u8; 32]),
+        BitcoinAmount::from_sat(150_000_000),
+    );
     let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
     epoch_blocks.push(to_ol_block(&terminal));
 
@@ -50,14 +53,19 @@ fn test_preseal_round_trip_with_deposit_manifest() {
 
 #[test]
 fn test_preseal_round_trip_with_limbo_deposit_manifest() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     let genesis = run_genesis(&mut state);
     let pre_epoch_state = state.clone();
 
     let (mut epoch_blocks, last_pre_terminal_header) =
         build_non_terminal_blocks(&mut state, &genesis);
-    let terminal_manifest = malformed_deposit_manifest(state.last_l1_height() + 1);
+    let terminal_manifest = make_deposit_manifest_with_destination_bytes(
+        state.last_l1_height() + 1,
+        1,
+        Vec::new(),
+        BitcoinAmount::from_sat(75_000_000),
+    );
     let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
     epoch_blocks.push(to_ol_block(&terminal));
 
@@ -91,7 +99,9 @@ fn assert_preseal_round_trip(
         &preseal_recorded,
     );
 
-    let actual_root = verify_state.compute_state_root().unwrap();
+    let actual_root = verify_state
+        .compute_state_root()
+        .expect("verification state root should compute");
     result.unwrap_or_else(|e| {
         panic!("preseal mismatch: {e:?}. recorded = {preseal_recorded:?}, actual = {actual_root:?}")
     });
@@ -100,12 +110,12 @@ fn assert_preseal_round_trip(
 fn seed_snark_account(state: &mut MemoryStateBaseLayer) -> AccountSerial {
     state
         .create_new_account(
-            get_test_snark_account_id(),
+            make_account_id(TEST_SNARK_ACCOUNT_ID),
             NewAccountData::new(
                 BitcoinAmount::from_sat(0),
                 NewAccountTypeState::Snark {
                     update_vk: PredicateKey::always_accept(),
-                    initial_state_root: get_test_state_root(1),
+                    initial_state_root: make_state_root(1),
                 },
             ),
         )
@@ -117,7 +127,7 @@ fn run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
         state,
         &BlockInfo::new_genesis(GENESIS_TIMESTAMP),
         None,
-        BlockComponents::new_manifests(vec![empty_manifest(1)]),
+        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]),
     )
     .expect("genesis block")
 }
@@ -173,43 +183,6 @@ fn rebuild_da_blob(
     da.take_completed_epoch_da_blob()
         .expect("finalize DA")
         .expect("DA blob")
-}
-
-fn empty_manifest(height: u32) -> AsmManifest {
-    AsmManifest::new(
-        height,
-        L1BlockId::from(Buf32::zero()),
-        WtxidsRoot::from(Buf32::zero()),
-        vec![],
-    )
-    .expect("manifest")
-}
-
-fn deposit_to_account_manifest(height: u32, target_serial: AccountSerial) -> AsmManifest {
-    let dest = SubjectIdBytes::try_new(SubjectId::from([42u8; 32]).inner().to_vec()).unwrap();
-    let descriptor = DepositDescriptor::new(target_serial, dest).unwrap();
-    let log_entry =
-        AsmLogEntry::from_log(&DepositLog::new(descriptor.encode_to_varvec(), 150_000_000))
-            .unwrap();
-    AsmManifest::new(
-        height,
-        test_l1_block_id(1),
-        WtxidsRoot::from(Buf32::zero()),
-        vec![log_entry],
-    )
-    .unwrap()
-}
-
-fn malformed_deposit_manifest(height: u32) -> AsmManifest {
-    let bogus_destination = VarVec::from_vec(Vec::<u8>::new()).expect("varvec");
-    let log_entry = AsmLogEntry::from_log(&DepositLog::new(bogus_destination, 75_000_000)).unwrap();
-    AsmManifest::new(
-        height,
-        test_l1_block_id(1),
-        WtxidsRoot::from(Buf32::zero()),
-        vec![log_entry],
-    )
-    .unwrap()
 }
 
 fn to_ol_block(cb: &CompletedBlock) -> OLBlock {

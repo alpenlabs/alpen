@@ -480,7 +480,7 @@ mod tests {
     use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1, StateDiff};
 
     use super::*;
-    use crate::test_utils::create_test_genesis_state;
+    use crate::test_utils::make_genesis_state;
 
     #[test]
     fn test_verify_header_continuity_happy_path() {
@@ -676,7 +676,7 @@ mod tests {
 
     #[test]
     fn test_verify_epoch_with_diff_final_root_mismatch() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let terminal_info = BlockInfo::new(1_000_000, 1, state.cur_epoch());
         let epoch_info = EpochInfo::new(terminal_info, OLBlockCommitment::null());
         let diff = OLDaPayloadV1::new(StateDiff::default());

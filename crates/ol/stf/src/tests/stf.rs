@@ -36,7 +36,7 @@ fn setup_terminal_genesis_with_snark_account(
     initial_balance: u64,
 ) -> CompletedBlock {
     let snark_state =
-        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), get_test_state_root(1));
+        OLSnarkAccountState::new_fresh(PredicateKey::always_accept(), make_state_root(1));
     let new_acct_data = NewAccountData::new(
         BitcoinAmount::from_sat(initial_balance),
         NewAccountTypeState::Snark {
@@ -56,7 +56,7 @@ fn setup_terminal_genesis_with_snark_account(
 #[test]
 fn test_genesis_block_processing() {
     // Start from empty genesis state
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Verify initial state
     assert_eq!(state.cur_epoch(), 0);
@@ -68,11 +68,11 @@ fn test_genesis_block_processing() {
         .expect("Genesis block execution should succeed");
 
     // Verify genesis block header
-    assert_block_position(genesis_block.header(), 0, 0);
+    assert_header_position(genesis_block.header(), 0, 0);
     assert_eq!(genesis_block.header().timestamp(), 1000000);
 
     // State should be at epoch 1, slot 0 after processing terminal genesis
-    assert_state_updated(&mut state, 1, 0);
+    assert_state_position(&state, 1, 0);
 
     // Verify state root was computed
     let state_root = state
@@ -81,7 +81,7 @@ fn test_genesis_block_processing() {
     assert_eq!(genesis_block.header().state_root(), &state_root);
 
     // ADDITIONAL VERIFICATION: Verify the block passes verification
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
     assert_verification_succeeds(
         &mut verify_state,
         genesis_block.header(),
@@ -92,7 +92,7 @@ fn test_genesis_block_processing() {
 
 #[test]
 fn test_post_genesis_blocks() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Process genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -109,8 +109,8 @@ fn test_post_genesis_blocks() {
     )
     .expect("Block 1 should execute");
 
-    assert_block_position(block1.header(), 1, 1);
-    assert_state_updated(&mut state, 1, 1);
+    assert_header_position(block1.header(), 1, 1);
+    assert_state_position(&state, 1, 1);
 
     // Process block at slot 2 (still epoch 1)
     let block2_info = BlockInfo::new(1002000, 2, 1);
@@ -122,11 +122,11 @@ fn test_post_genesis_blocks() {
     )
     .expect("Block 2 should execute");
 
-    assert_block_position(block2.header(), 1, 2);
-    assert_state_updated(&mut state, 1, 2);
+    assert_header_position(block2.header(), 1, 2);
+    assert_state_position(&state, 1, 2);
 
     // ADDITIONAL VERIFICATION: Verify all blocks in the chain
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // Verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -150,10 +150,10 @@ fn test_post_genesis_blocks() {
 
 #[test]
 fn test_genesis_with_initial_transactions() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Create some test transactions for genesis
-    let target = test_account_id(1);
+    let target = make_account_id(1);
     let gam_tx = make_gam_tx(target);
 
     // Create genesis components with both transactions and manifest (to make it terminal)
@@ -177,7 +177,7 @@ fn test_genesis_with_initial_transactions() {
         .expect("Genesis with transactions should execute");
 
     // Verify block was created at correct position
-    assert_block_position(genesis.header(), 0, 0);
+    assert_header_position(genesis.header(), 0, 0);
 
     // Verify body contains the transaction
     assert_eq!(
@@ -191,13 +191,13 @@ fn test_genesis_with_initial_transactions() {
     );
 
     // ADDITIONAL VERIFICATION: Verify the block with transactions passes verification
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 }
 
 #[test]
 fn test_epoch_transition_from_genesis() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
     const SLOTS_PER_EPOCH: u64 = 10;
 
     // Build a chain through the first epoch transition
@@ -208,31 +208,31 @@ fn test_epoch_transition_from_genesis() {
     assert_eq!(headers.len(), 12);
 
     // Check genesis block (should be terminal)
-    assert_block_position(&headers[0], 0, 0);
+    assert_header_position(&headers[0], 0, 0);
     assert!(headers[0].is_terminal(), "Genesis should be terminal");
 
     // Check first block of epoch 1 (should not be terminal)
-    assert_block_position(&headers[1], 1, 1);
+    assert_header_position(&headers[1], 1, 1);
     assert!(!headers[1].is_terminal(), "Block 1 should not be terminal");
 
     // Check last block of epoch 1 (should be terminal)
-    assert_block_position(&headers[10], 1, 10);
+    assert_header_position(&headers[10], 1, 10);
     assert!(headers[10].is_terminal(), "Block 10 should be terminal");
 
     // Check first block of epoch 2
-    assert_block_position(&headers[11], 2, 11);
+    assert_header_position(&headers[11], 2, 11);
     assert!(
         !headers[11].is_terminal(),
         "Block 11 should not be terminal"
     );
 
     // Verify final state (block 11 is in epoch 2)
-    assert_state_updated(&mut state, 2, 11);
+    assert_state_position(&state, 2, 11);
 }
 
 #[test]
 fn test_empty_chain_building() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Build a chain of 5 empty blocks
     let headers =
@@ -252,12 +252,12 @@ fn test_empty_chain_building() {
 
     // Verify final state
     // Genesis (terminal) increments epoch to 1, so state should be at epoch 1
-    assert_state_updated(&mut state, 1, 4);
+    assert_state_position(&state, 1, 4);
 }
 
 #[test]
 fn test_state_persistence_across_blocks() {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Process genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -294,7 +294,7 @@ fn test_state_persistence_across_blocks() {
     assert_eq!(*block1.header().state_root(), block1_state_root);
 
     // ADDITIONAL VERIFICATION: Verify that the blocks can be verified
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // Verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -312,7 +312,7 @@ fn test_state_persistence_across_blocks() {
 fn test_process_chain_with_multiple_epochs() {
     // Test that we can process a chain from genesis through epoch 3
     // with 3 blocks per epoch (epochs 0, 1, 2, 3 = 12 blocks total)
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
     const BLOCKS_PER_EPOCH: u64 = 3;
     const _TARGET_EPOCH: u32 = 3;
     const TOTAL_BLOCKS: usize = 12; // 4 epochs * 3 blocks each
@@ -371,7 +371,7 @@ fn test_process_chain_with_multiple_epochs() {
         };
 
         // Verify block position
-        assert_block_position(block.header(), epoch as u64, slot);
+        assert_header_position(block.header(), epoch as u64, slot);
 
         // Verify terminal flag is set correctly
         assert_eq!(
@@ -388,9 +388,15 @@ fn test_process_chain_with_multiple_epochs() {
     }
 
     // Verify we reached epoch 4 (slots 10-11 are in epoch 4)
-    assert_eq!(headers.last().unwrap().epoch(), 4);
+    assert_eq!(
+        headers
+            .last()
+            .expect("chain should contain at least one header")
+            .epoch(),
+        4
+    );
     // Block 11 is not terminal, so state epoch should be 4
-    assert_state_updated(&mut state, 4, (TOTAL_BLOCKS - 1) as u64);
+    assert_state_position(&state, 4, (TOTAL_BLOCKS - 1) as u64);
 
     // Verify epoch boundaries are correct
     // Epoch 0: slot 0 only (genesis)
@@ -416,7 +422,7 @@ fn test_process_chain_with_multiple_epochs() {
     assert_eq!(headers[11].epoch(), 4);
 
     // Now verify the entire chain sequentially
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     for (i, block) in blocks.iter().enumerate() {
         let parent_header = if i == 0 {
@@ -452,7 +458,7 @@ fn test_process_chain_with_multiple_epochs() {
 
         // After terminal block, state epoch is incremented.
         let expected_state_epoch = block_epoch + (is_terminal as u64);
-        assert_state_updated(&mut verify_state, expected_state_epoch, expected_slot);
+        assert_state_position(&verify_state, expected_state_epoch, expected_slot);
 
         // Special checks for epoch transitions.
         if i > 0 && headers[i].epoch() != headers[i - 1].epoch() {
@@ -511,7 +517,7 @@ fn test_process_chain_with_multiple_epochs() {
 #[test]
 fn test_verify_valid_block_succeeds() {
     // This test verifies that a properly assembled block passes verification
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -519,7 +525,7 @@ fn test_verify_valid_block_succeeds() {
         .expect("Genesis block assembly should succeed");
 
     // Reset state for verification (verification should start from same initial state)
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // Verify the block - this should succeed
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -528,7 +534,7 @@ fn test_verify_valid_block_succeeds() {
 #[test]
 fn test_assemble_then_verify_roundtrip() {
     // This test verifies the full round-trip: assemble blocks then verify them
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -556,7 +562,7 @@ fn test_assemble_then_verify_roundtrip() {
     .expect("test: Block 2 assembly should succeed");
 
     // Now verify the entire chain
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // Verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -581,7 +587,7 @@ fn test_assemble_then_verify_roundtrip() {
 #[test]
 fn test_multi_block_chain_verification() {
     // Test verifying a longer chain across epoch boundaries
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
     const SLOTS_PER_EPOCH: u64 = 10;
 
     // Build a chain of blocks
@@ -639,7 +645,7 @@ fn test_multi_block_chain_verification() {
     }
 
     // Now verify the entire chain
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     for (i, block) in blocks.iter().enumerate() {
         let parent_header = if i == 0 {
@@ -658,16 +664,16 @@ fn test_multi_block_chain_verification() {
 
     // Verify final state matches
     // With genesis as terminal: slot 14 is in epoch 2
-    assert_state_updated(&mut verify_state, 2, 14);
+    assert_state_position(&verify_state, 2, 14);
 }
 
 #[test]
 fn test_verify_block_with_transactions() {
     // Test that blocks with transactions can be verified
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Create a transaction
-    let target = test_account_id(1);
+    let target = make_account_id(1);
     let gam_tx = make_gam_tx(target);
 
     // Assemble genesis with transaction and manifest (terminal)
@@ -691,7 +697,7 @@ fn test_verify_block_with_transactions() {
         .expect("Genesis with tx should assemble");
 
     // Verify the block
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 
     // Verify transaction was included
@@ -712,7 +718,7 @@ fn test_verify_block_with_transactions() {
 #[test]
 fn test_verify_rejects_wrong_parent_blkid() {
     // Test that verification fails when parent block ID doesn't match
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis and block 1
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -733,7 +739,7 @@ fn test_verify_rejects_wrong_parent_blkid() {
     let tampered_header = tamper_parent_blkid(block1.header(), wrong_parent_id);
 
     // Verification should fail
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // First verify genesis succeeds
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -751,7 +757,7 @@ fn test_verify_rejects_wrong_parent_blkid() {
 #[test]
 fn test_verify_rejects_epoch_skip() {
     // Test that verification fails when epoch increases by more than 1
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -772,7 +778,7 @@ fn test_verify_rejects_epoch_skip() {
     let tampered_header = tamper_epoch(block1.header(), 2);
 
     // Verification should fail
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // First verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -790,7 +796,7 @@ fn test_verify_rejects_epoch_skip() {
 #[test]
 fn test_verify_rejects_slot_skip() {
     // Test that verification fails when slot doesn't increment by exactly 1
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -811,7 +817,7 @@ fn test_verify_rejects_slot_skip() {
     let tampered_header = tamper_slot(block1.header(), 3);
 
     // Verification should fail
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // First verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -829,7 +835,7 @@ fn test_verify_rejects_slot_skip() {
 #[test]
 fn test_verify_rejects_slot_backwards() {
     // Test that verification fails when slot goes backwards
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis and block 1
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -859,7 +865,7 @@ fn test_verify_rejects_slot_backwards() {
     let tampered_header = tamper_slot(block2.header(), 1);
 
     // Verification should fail
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // Verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -886,7 +892,7 @@ fn test_verify_rejects_slot_backwards() {
 #[test]
 fn test_verify_rejects_nongenesis_without_parent() {
     // Test that non-genesis blocks must have a parent header
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Create a non-genesis block at slot 1
     let block1_info = BlockInfo::new(1001000, 1, 0);
@@ -910,7 +916,7 @@ fn test_verify_rejects_nongenesis_without_parent() {
     .expect("Block 1 assembly should succeed");
 
     // Try to verify block 1 without providing parent header
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     assert_verification_fails_with(
         &mut verify_state,
@@ -924,7 +930,7 @@ fn test_verify_rejects_nongenesis_without_parent() {
 #[test]
 fn test_verify_rejects_genesis_with_nonnull_parent() {
     // Test that genesis blocks must have null parent
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble a normal genesis block
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -941,7 +947,7 @@ fn test_verify_rejects_genesis_with_nonnull_parent() {
     let tampered_genesis = tamper_parent_blkid(genesis.header(), fake_parent_id);
 
     // Try to verify tampered genesis
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     assert_verification_fails_with(
         &mut verify_state,
@@ -958,7 +964,7 @@ fn test_verify_rejects_genesis_with_nonnull_parent() {
 #[test]
 fn test_verify_rejects_mismatched_state_root() {
     // Test that verification fails when state root doesn't match computed
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble a normal genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -970,7 +976,7 @@ fn test_verify_rejects_mismatched_state_root() {
     let tampered_header = tamper_state_root(genesis.header(), wrong_root);
 
     // Verification should fail because computed state root won't match header
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
@@ -983,10 +989,10 @@ fn test_verify_rejects_mismatched_state_root() {
 #[test]
 fn test_verify_rejects_mismatched_logs_root() {
     // Test that verification fails when logs root doesn't match computed
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Create a block with a transaction (which will generate logs)
-    let target = test_account_id(1);
+    let target = make_account_id(1);
     let gam_tx = make_gam_tx(target);
 
     // Create genesis with transaction and manifest (terminal)
@@ -1014,7 +1020,7 @@ fn test_verify_rejects_mismatched_logs_root() {
     let tampered_header = tamper_logs_root(genesis.header(), wrong_root);
 
     // Verification should fail because computed logs root won't match header
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
     assert_verification_fails_with(
         &mut verify_state,
         &tampered_header,
@@ -1027,7 +1033,7 @@ fn test_verify_rejects_mismatched_logs_root() {
 #[test]
 fn test_verify_empty_block_logs_root() {
     // Test that empty blocks should have zero logs root
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis block (terminal but with no transactions)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -1042,7 +1048,7 @@ fn test_verify_empty_block_logs_root() {
     );
 
     // Verify the block succeeds
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
 }
@@ -1051,10 +1057,10 @@ fn test_verify_empty_block_logs_root() {
 fn test_verify_rejects_mismatched_body_root() {
     // Test that verification fails when body root doesn't match body hash
     // Note: This test will only work when verify_block_structure is enabled
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble a block with a transaction
-    let target = test_account_id(1);
+    let target = make_account_id(1);
 
     let genesis_info = BlockInfo::new_genesis(1000000);
     let genesis = execute_block(
@@ -1085,7 +1091,7 @@ fn test_verify_rejects_mismatched_body_root() {
 #[test]
 fn test_verify_state_root_changes_with_state() {
     // Test that state root properly reflects state changes
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Execute genesis (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -1110,7 +1116,7 @@ fn test_verify_state_root_changes_with_state() {
     );
 
     // Now verify both blocks
-    let mut verify_state = create_test_genesis_state();
+    let mut verify_state = make_genesis_state();
 
     // Verify genesis
     assert_verification_succeeds(&mut verify_state, genesis.header(), None, genesis.body());
@@ -1132,7 +1138,7 @@ fn test_verify_state_root_changes_with_state() {
 fn test_verify_block_through_write_tracking_stack() {
     // This test mimics chain-worker-new's verification path:
     // IndexerState<WriteTrackingState<&OLState>> with verify_block
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
 
     // Assemble genesis block (terminal)
     let genesis_info = BlockInfo::new_genesis(1000000);
@@ -1151,7 +1157,7 @@ fn test_verify_block_through_write_tracking_stack() {
 
     // Now verify using the WriteTrackingState + IndexerState stack,
     // same composition as chain-worker-new.
-    let mut verify_base = create_test_genesis_state();
+    let mut verify_base = make_genesis_state();
 
     // Verify genesis through the stack and apply writes to advance state
     {
@@ -1186,7 +1192,7 @@ fn test_verify_block_through_write_tracking_stack() {
 fn test_verify_terminal_block_through_write_tracking_stack() {
     // Terminal blocks are important because verify_block calls compute_state_root twice
     // (pre-manifest and post-manifest), and the root changes between calls.
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
     const SLOTS_PER_EPOCH: u64 = 3;
 
     // Build chain: genesis (terminal) + slots 1,2,3 where slot 3 is terminal
@@ -1203,7 +1209,7 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
     );
 
     // Verify the entire chain through WriteTrackingState stack
-    let mut verify_base = create_test_genesis_state();
+    let mut verify_base = make_genesis_state();
 
     for (i, block) in blocks.iter().enumerate() {
         let parent_header = if i == 0 {
@@ -1238,7 +1244,11 @@ fn test_verify_terminal_block_through_write_tracking_stack() {
     assert_eq!(state.cur_epoch(), verify_base.cur_epoch());
     assert_eq!(state.cur_slot(), verify_base.cur_slot());
     assert_eq!(
-        state.compute_state_root().unwrap(),
-        verify_base.compute_state_root().unwrap()
+        state
+            .compute_state_root()
+            .expect("assembly state root should compute"),
+        verify_base
+            .compute_state_root()
+            .expect("verification state root should compute")
     );
 }
