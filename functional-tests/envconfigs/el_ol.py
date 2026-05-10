@@ -39,7 +39,6 @@ class EeOLEnv(flexitest.EnvConfig):
         admin_confirmation_depth: int | None = None,
         fund_test_cli_wallet: bool = False,
         ol_block_time_ms: int | None = None,
-        dev_native_noop_prover: bool = False,
         dev_track_finalized_epoch: bool = False,
         batch_sealing_block_count: int = 10,
     ):
@@ -51,7 +50,6 @@ class EeOLEnv(flexitest.EnvConfig):
         self.admin_confirmation_depth = admin_confirmation_depth
         self.fund_test_cli_wallet = fund_test_cli_wallet
         self.ol_block_time_ms = ol_block_time_ms
-        self.dev_native_noop_prover = dev_native_noop_prover
         self.dev_track_finalized_epoch = dev_track_finalized_epoch
         self.batch_sealing_block_count = batch_sealing_block_count
         self.epoch_seal_config = (
@@ -87,7 +85,6 @@ class EeOLEnv(flexitest.EnvConfig):
             self.pure_discovery,
             bitcoin_service=bitcoin,
             ol_endpoint=ol_endpoint,
-            dev_native_noop_prover=self.dev_native_noop_prover,
             dev_track_finalized_epoch=self.dev_track_finalized_epoch,
             batch_sealing_block_count=self.batch_sealing_block_count,
         )

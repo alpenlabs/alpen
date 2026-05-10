@@ -10,7 +10,7 @@ use zkaleido::{
 };
 use zkaleido_native_adapter::NativeHost;
 
-use crate::{process_ee_acct_update, process_ee_acct_update_noop};
+use crate::process_ee_acct_update;
 
 /// Host-side input for the EE account update proof.
 ///
@@ -87,12 +87,6 @@ impl EeAcctProgram {
     pub fn native_host(&self) -> NativeHost {
         let key = self.chunk_predicate_key.clone();
         NativeHost::new(move |zkvm| process_ee_acct_update(zkvm, &key))
-    }
-
-    /// No-op native host for dev/test runs that skips STF + chunk-proof
-    /// verification. See [`process_ee_acct_update_noop`] for trade-offs.
-    pub fn native_host_noop() -> NativeHost {
-        NativeHost::new(process_ee_acct_update_noop)
     }
 
     /// Executes the account proof program using the native host for testing.

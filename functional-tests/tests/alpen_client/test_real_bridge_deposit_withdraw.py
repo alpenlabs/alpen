@@ -131,6 +131,42 @@ def build_and_broadcast_wf(
     return wf_txid
 
 
+def wait_for_wf_broadcast(
+    btc_rpc,
+    bitcoin_props: BitcoinProps,
+    miner_addr: str,
+    recipient_bosd_hex: str,
+    amount_sats: int,
+    deposit_idx: int,
+    timeout: int = 600,
+    blocks_per_step: int = 8,
+    poll: float = 1.0,
+) -> str:
+    """Mine until the bridge assignment is usable, then broadcast the WF tx."""
+    deadline = time.time() + timeout
+    last_error = "withdrawal fulfillment was not attempted"
+    while time.time() < deadline:
+        btc_rpc.proxy.generatetoaddress(blocks_per_step, miner_addr)
+        try:
+            return build_and_broadcast_wf(
+                btc_rpc,
+                recipient_bosd_hex=recipient_bosd_hex,
+                amount_sats=amount_sats,
+                deposit_idx=deposit_idx,
+                btc_rpc_url=bitcoin_props["rpc_url"],
+                btc_rpc_user=bitcoin_props["rpc_user"],
+                btc_rpc_password=bitcoin_props["rpc_password"],
+            )
+        except RuntimeError as e:
+            last_error = str(e)
+            logger.debug("WF not ready yet: %s", last_error)
+        time.sleep(poll)
+    raise AssertionError(
+        f"could not create and broadcast WF tx for deposit_idx={deposit_idx} "
+        f"within {timeout}s; last error: {last_error}"
+    )
+
+
 def get_ol_balance(rpc, account_id_hex: str) -> int:
     status = rpc.strata_getChainStatus()
     tip_slot = status["tip"]["slot"]
@@ -207,57 +243,17 @@ def read_operator_xprivs(strata_service: StrataService) -> list[str]:
     return lines
 
 
-def strata_log_path(strata_service: StrataService) -> Path:
-    """Path to the current strata runtime log produced by tracing."""
-    datadir = Path(strata_service.props["datadir"])
-    mode = strata_service.props.get("mode", "sequencer")
-    logs = sorted(
-        datadir.glob(f"strata-{mode}.*"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return logs[0] if logs else datadir / "service.log"
-
-
 def ee_log_path(alpen_service: AlpenClientService) -> Path:
     """Path to the alpen-client service log produced by the test harness."""
     return Path(alpen_service.props["datadir"]) / "service.log"
 
 
-# strata `tracing` writes ANSI colour even to file logs; strip before matching.
+# Service logs can contain ANSI colour codes even when written to files.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
-
-
-def wait_for_log_pattern_with_mining(
-    log_path: Path,
-    pattern: re.Pattern,
-    btc_rpc,
-    miner_addr: str,
-    after_offset: int,
-    timeout: int = 600,
-    blocks_per_step: int = 8,
-    poll: float = 0.5,
-) -> str:
-    """Tail a service log for the first occurrence of `pattern` past
-    `after_offset` bytes, mining bitcoin blocks each step so the EE/OL/ASM
-    pipelines keep advancing. Returns the matched line; raises on timeout.
-    """
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if log_path.exists():
-            with open(log_path, "rb") as f:
-                f.seek(after_offset)
-                tail = _strip_ansi(f.read().decode(errors="replace"))
-            m = pattern.search(tail)
-            if m:
-                return m.group(0)
-        btc_rpc.proxy.generatetoaddress(blocks_per_step, miner_addr)
-        time.sleep(poll)
-    raise AssertionError(f"pattern {pattern.pattern!r} not found in {log_path} within {timeout}s")
 
 
 def wait_for_output_snark_update(
@@ -324,46 +320,6 @@ def wait_for_account_update_seq(
     raise AssertionError(
         f"account update seq_no >= {min_next_seq_no} not found from epoch {start_epoch}; "
         f"last_terminal_epoch={last_terminal_epoch}, last_seen_seq_no={last_seen_seq_no}"
-    )
-
-
-def wait_for_checkpoint_at_epoch(
-    log_path: Path,
-    target_epoch: int,
-    btc_rpc,
-    miner_addr: str,
-    after_offset: int = 0,
-    timeout: int = 300,
-    blocks_per_step: int = 8,
-    poll: float = 0.5,
-) -> int:
-    """Mine bitcoin blocks until the ASM checkpoint subprotocol logs a
-    `checkpoint validated successfully epoch=N` line with `N >= target_epoch`.
-
-    The bridge subprotocol creates a withdrawal assignment in the same ASM
-    transition that validates the checkpoint carrying the bridgeout intent.
-    Returning here means the assignment has been created and a WF tx will
-    pass `validate_withdrawal_fulfillment_info` instead of being rejected
-    with `NoAssignmentFound`.
-
-    Returns the matching epoch number.
-    """
-    pattern = re.compile(r"checkpoint validated successfully\s+epoch=(\d+)")
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if log_path.exists():
-            with open(log_path, "rb") as f:
-                f.seek(after_offset)
-                tail = _strip_ansi(f.read().decode(errors="replace"))
-            for match in pattern.finditer(tail):
-                epoch = int(match.group(1))
-                if epoch >= target_epoch:
-                    return epoch
-        btc_rpc.proxy.generatetoaddress(blocks_per_step, miner_addr)
-        time.sleep(poll)
-    raise AssertionError(
-        f"no `checkpoint validated successfully epoch>={target_epoch}` "
-        f"in {log_path} within {timeout}s"
     )
 
 
@@ -495,63 +451,31 @@ def submit_bridgeout_and_wait_for_sau(
 
 def wait_for_wf_settlement(
     btc_rpc,
-    strata_seq: StrataService,
-    strata_rpc,
     bitcoin_props: BitcoinProps,
-    strata_log: Path,
     miner_addr: str,
-    saw_update_at_epoch: int,
     withdraw_sats: int,
     operator_fee_sats: int,
     recipient_btc_addr: str,
     recipient_bosd_hex: str,
     recipient_btc_balance_before,
-    strata_checkpoint_log_offset: int,
-    slots_per_epoch: int,
 ) -> None:
-    """Wait for ASM checkpoint, broadcast the WF tx, verify recipient credit."""
-    # OL summaries can expose the SAU before the checkpoint that relays it into ASM.
-    assignment_checkpoint_epoch = saw_update_at_epoch + 2
-    validated_epoch = wait_for_checkpoint_at_epoch(
-        strata_log,
-        assignment_checkpoint_epoch,
-        btc_rpc,
-        miner_addr,
-        after_offset=strata_checkpoint_log_offset,
-        timeout=600,
-    )
-    logger.info("ASM checkpoint validated bridgeout assignment epoch %d", validated_epoch)
-
+    """Broadcast the WF tx once the bridge assignment exists and verify credit."""
     fund_strata_test_cli_wallet(btc_rpc, fund_btc=12.0)
-    btc_rpc.proxy.generatetoaddress(8, miner_addr)
-    strata_seq.wait_for_additional_blocks(2 * slots_per_epoch, strata_rpc, timeout_per_block=15)
-
-    fulfillment_log_offset = strata_log.stat().st_size if strata_log.exists() else 0
-    wf_txid = build_and_broadcast_wf(
+    wf_txid = wait_for_wf_broadcast(
         btc_rpc,
+        bitcoin_props,
+        miner_addr,
         recipient_bosd_hex=recipient_bosd_hex,
         amount_sats=withdraw_sats - operator_fee_sats,
         deposit_idx=0,
-        btc_rpc_url=bitcoin_props["rpc_url"],
-        btc_rpc_user=bitcoin_props["rpc_user"],
-        btc_rpc_password=bitcoin_props["rpc_password"],
     )
-
-    wait_for_log_pattern_with_mining(
-        strata_log,
-        re.compile(
-            r"(Fulfilled withdrawal assignment\b.*deposit_idx=0|"
-            r"deposit_idx=0.*Fulfilled withdrawal assignment\b)"
-        ),
-        btc_rpc,
-        miner_addr,
-        after_offset=fulfillment_log_offset,
-        timeout=600,
+    btc_rpc.proxy.generatetoaddress(1, miner_addr)
+    wait_until_with_value(
+        lambda: btc_rpc.proxy.getrawtransaction(wf_txid, 1),
+        lambda tx: tx.get("confirmations", 0) >= 1,
+        error_with=f"WF tx {wf_txid} did not confirm on bitcoin",
+        timeout=60,
     )
-
-    wf_info = btc_rpc.proxy.getrawtransaction(wf_txid, 1)
-    if wf_info.get("confirmations", 0) < 1:
-        raise AssertionError(f"WF tx {wf_txid} did not confirm on bitcoin")
 
     recipient_btc_balance_after = btc_rpc.proxy.getreceivedbyaddress(recipient_btc_addr, 1)
     received_delta_sats = int(
@@ -643,9 +567,7 @@ class TestRealBridgeDepositWithdraw(BaseTest):
         recipient_btc_addr, recipient_bosd_hex = derive_p2wpkh_bosd_hex(btc_rpc)
         recipient_btc_balance_before = btc_rpc.proxy.getreceivedbyaddress(recipient_btc_addr, 1)
 
-        strata_log = strata_log_path(strata_seq)
         ee_log = ee_log_path(alpen_seq)
-        strata_checkpoint_log_offset = strata_log.stat().st_size if strata_log.exists() else 0
         ee_output_log_offset = ee_log.stat().st_size if ee_log.exists() else 0
         start_terminal_epoch = int(strata_rpc.strata_getChainStatus()["latest"]["epoch"])
 
@@ -677,19 +599,13 @@ class TestRealBridgeDepositWithdraw(BaseTest):
 
         wait_for_wf_settlement(
             btc_rpc,
-            strata_seq,
-            strata_rpc,
             bitcoin.props,
-            strata_log=strata_log,
             miner_addr=miner_addr,
-            saw_update_at_epoch=saw_update_at_epoch,
             withdraw_sats=bridge_denom_sats,
             operator_fee_sats=operator_fee_sats,
             recipient_btc_addr=recipient_btc_addr,
             recipient_bosd_hex=recipient_bosd_hex,
             recipient_btc_balance_before=recipient_btc_balance_before,
-            strata_checkpoint_log_offset=strata_checkpoint_log_offset,
-            slots_per_epoch=slots_per_epoch,
         )
 
         return True

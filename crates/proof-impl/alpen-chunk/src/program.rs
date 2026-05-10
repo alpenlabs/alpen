@@ -8,7 +8,7 @@ use zkaleido::{
 };
 use zkaleido_native_adapter::NativeHost;
 
-use crate::{process_ee_chunk, process_ee_chunk_noop};
+use crate::process_ee_chunk;
 
 /// Host-side input for the EE chunk proof.
 #[derive(Debug)]
@@ -56,12 +56,6 @@ impl ZkVmProgram for EeChunkProgram {
 impl EeChunkProgram {
     pub fn native_host() -> NativeHost {
         NativeHost::new(process_ee_chunk)
-    }
-
-    /// No-op native host for dev/test runs that skips EVM-execution
-    /// verification. See [`process_ee_chunk_noop`] for the trade-offs.
-    pub fn native_host_noop() -> NativeHost {
-        NativeHost::new(process_ee_chunk_noop)
     }
 
     /// Executes the chunk proof program using the native host for testing.

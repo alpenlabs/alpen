@@ -692,26 +692,14 @@ fn main() {
                 // key is always-accept since native mode does not verify
                 // chunk receipts.
                 let (chunk_prover, acct_prover) = if ext.dev_native_prover {
-                    if ext.dev_native_noop_prover {
-                        info!(
-                            target: "alpen-client",
-                            "EE chunk + acct provers: native NO-OP host (dev/test only) - \
-                             skipping STF + EVM verification, only safe with always-accept \
-                             OL predicate"
-                        );
-                        let chunk = chunk_builder.native(EeChunkProgram::native_host_noop());
-                        let acct = acct_builder.native(EeAcctProgram::native_host_noop());
-                        (chunk, acct)
-                    } else {
-                        info!(
-                            target: "alpen-client",
-                            "EE chunk + acct provers: native host (dev/test only)"
-                        );
-                        let chunk = chunk_builder.native(EeChunkProgram::native_host());
-                        let acct_program = EeAcctProgram::new(PredicateKey::always_accept());
-                        let acct = acct_builder.native(acct_program.native_host());
-                        (chunk, acct)
-                    }
+                    info!(
+                        target: "alpen-client",
+                        "EE chunk + acct provers: native host (dev/test only)"
+                    );
+                    let chunk = chunk_builder.native(EeChunkProgram::native_host());
+                    let acct_program = EeAcctProgram::new(PredicateKey::always_accept());
+                    let acct = acct_builder.native(acct_program.native_host());
+                    (chunk, acct)
                 } else {
                     #[cfg(feature = "sp1")]
                     {
@@ -942,24 +930,11 @@ pub struct AdditionalConfig {
     #[arg(long, default_value_t = false)]
     pub dev_native_prover: bool,
 
-    /// Skip the chunk and acct STF verification entirely when running
-    /// the native prover. The host still reads inputs and commits the
-    /// canned public-output bytes downstream consumers expect, but does
-    /// NOT execute the EVM transition or the account update verifier.
-    /// This is the "go fast or go home" knob for fn-tests where the OL
-    /// account predicate is `always-accept` and proof correctness is
-    /// not under test. Requires `--dev-native-prover` to take effect;
-    /// must NEVER be used with the SP1 remote backend (would skip real
-    /// proof generation and submit a placeholder).
-    #[arg(long, default_value_t = false)]
-    pub dev_native_noop_prover: bool,
-
     /// Have the OL chain tracker advance against the latest completed OL
     /// epoch in the connected Strata node instead of the canonical
     /// `confirmed` epoch (CSM-based). Dev/test only. Useful when the CSM
-    /// checkpoint pipeline can't keep up with rapid SAU emission (e.g. with
-    /// `--dev-native-noop-prover`) and would otherwise stall the EE block
-    /// builder's inbox-message fetch.
+    /// checkpoint pipeline can't keep up with rapid SAU emission and would
+    /// otherwise stall the EE block builder's inbox-message fetch.
     #[arg(long, default_value_t = false)]
     pub dev_track_finalized_epoch: bool,
 

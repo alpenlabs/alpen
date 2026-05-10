@@ -33,24 +33,3 @@ pub fn process_ee_chunk(zkvm: &impl ZkVmEnvSerde) {
 
     zkvm.commit_buf(input.chunk_transition_ssz());
 }
-
-/// No-op variant of [`process_ee_chunk`] for native dev/test runs only.
-///
-/// Reads the same inputs as [`process_ee_chunk`] (so the host's input cursor
-/// advances correctly), but skips [`strata_ee_chunk_runtime::verify_input`]
-/// — which is the EVM-execution heavy lift. The caller is expected to
-/// trust the input bytes already produced by the alpen-client's local block
-/// builder. Output bytes are identical to the verifying path so downstream
-/// consumers (the acct prover, the OL update verifier under
-/// `PredicateKey::always_accept`) are unaffected.
-///
-/// Wired in `bin/alpen-client/src/main.rs` behind the
-/// `--dev-native-noop-prover` flag, which itself only takes effect when
-/// `--dev-native-prover` is also set.
-pub fn process_ee_chunk_noop(zkvm: &impl ZkVmEnvSerde) {
-    let _genesis: Genesis = zkvm.read_serde();
-    let buf = zkvm.read_buf();
-    let input: &ArchivedPrivateInput = rkyv::access::<ArchivedPrivateInput, RkyvError>(&buf)
-        .expect("failed to access rkyv archive");
-    zkvm.commit_buf(input.chunk_transition_ssz());
-}
