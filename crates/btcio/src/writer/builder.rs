@@ -94,6 +94,12 @@ pub enum EnvelopeError {
     #[error("Could not sign raw transaction: {0}")]
     SignRawTransaction(String),
 
+    #[error("envelope_pubkey is required for envelope transactions")]
+    MissingEnvelopePubkey,
+
+    #[error("failed to fetch envelope prerequisites: {0}")]
+    PrereqFetch(#[source] anyhow::Error),
+
     #[error("Error building taproot")]
     Taproot(#[from] TaprootBuilderError),
 
@@ -157,12 +163,10 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 ) -> Result<EnvelopeData, EnvelopeError> {
     let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
         .await
-        .map_err(EnvelopeError::Other)?;
-    let envelope_pubkey = ctx.envelope_pubkey.ok_or_else(|| {
-        EnvelopeError::Other(anyhow!(
-            "envelope_pubkey is required for envelope transactions"
-        ))
-    })?;
+        .map_err(EnvelopeError::PrereqFetch)?;
+    let envelope_pubkey = ctx
+        .envelope_pubkey
+        .ok_or(EnvelopeError::MissingEnvelopePubkey)?;
     let env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
@@ -184,7 +188,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
 ) -> Result<EnvelopeData, EnvelopeError> {
     let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
         .await
-        .map_err(EnvelopeError::Other)?;
+        .map_err(EnvelopeError::PrereqFetch)?;
     let keypair = generate_key_pair()?;
     let pubkey = XOnlyPublicKey::from_keypair(&keypair).0;
     let env_config = EnvelopeConfig::new(
@@ -218,6 +222,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
 }
 
 /// Fetches the shared prerequisites for building envelope transactions.
+// TODO(STR-3411): make OL node resilient against the Bitcoin node not being available.
 async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<(Network, Vec<ListUnspentItem>, u64)> {
@@ -242,7 +247,7 @@ pub fn create_envelope_transactions(
 ) -> Result<EnvelopeData, EnvelopeError> {
     let public_key = env_config
         .envelope_pubkey
-        .ok_or_else(|| anyhow!("envelope_pubkey is required for single-envelope transactions"))?;
+        .ok_or(EnvelopeError::MissingEnvelopePubkey)?;
 
     let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
         .add_envelopes(payload.data())?

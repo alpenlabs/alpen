@@ -491,6 +491,9 @@ mod tests {
         },
     };
 
+    const TEST_REQUIRED_SATS: u64 = 4096;
+    const TEST_AVAILABLE_SATS: u64 = 2658;
+
     fn minimal_envelope_data() -> EnvelopeData {
         let keypair =
             UntweakedKeypair::from_seckey_slice(SECP256K1, &[1u8; 32]).expect("valid key");
@@ -598,7 +601,10 @@ mod tests {
             _entry: &BundledPayloadEntry,
         ) -> Result<EnvelopeData, EnvelopeError> {
             if self.fail_create_not_enough_utxos {
-                return Err(EnvelopeError::NotEnoughUtxos(4096, 2658));
+                return Err(EnvelopeError::NotEnoughUtxos(
+                    TEST_REQUIRED_SATS,
+                    TEST_AVAILABLE_SATS,
+                ));
             }
             Ok(minimal_envelope_data())
         }
@@ -609,7 +615,10 @@ mod tests {
             _entry: &BundledPayloadEntry,
         ) -> Result<(Buf32, Buf32), EnvelopeError> {
             if self.fail_sign_not_enough_utxos {
-                return Err(EnvelopeError::NotEnoughUtxos(4096, 2658));
+                return Err(EnvelopeError::NotEnoughUtxos(
+                    TEST_REQUIRED_SATS,
+                    TEST_AVAILABLE_SATS,
+                ));
             }
             Ok((Buf32([1u8; 32]), Buf32([2u8; 32])))
         }
@@ -666,6 +675,7 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        // Unsigned entries use zero txids as sentinels because no txs have been built yet.
         assert_eq!(stored.commit_txid, Buf32::zero());
         assert_eq!(stored.reveal_txid, Buf32::zero());
         assert_eq!(state.curr_payloadidx, 0);
@@ -701,6 +711,7 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        // Unsigned entries use zero txids as sentinels because no txs have been built yet.
         assert_eq!(stored.commit_txid, Buf32::zero());
         assert_eq!(stored.reveal_txid, Buf32::zero());
         assert_eq!(state.curr_payloadidx, 0);
