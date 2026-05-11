@@ -8,7 +8,7 @@ use std::{
 
 use http::{
     HeaderValue, Request, StatusCode,
-    header::{AUTHORIZATION, CONTENT_TYPE},
+    header::{AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE},
 };
 use jsonrpsee::server::{HttpBody, HttpResponse};
 use tower::{Layer, Service};
@@ -21,7 +21,7 @@ pub(crate) struct AdminAuthLayer {
 
 impl AdminAuthLayer {
     /// Creates a new admin auth layer.
-    pub(crate) fn new(token: String) -> Self {
+    pub(crate) fn new(token: &str) -> Self {
         let expected_authorization = HeaderValue::from_str(&format!("Bearer {token}"))
             .expect("bearer token should be representable as a header value");
         Self {
@@ -86,6 +86,7 @@ fn unauthorized_response() -> HttpResponse {
     HttpResponse::builder()
         .status(StatusCode::UNAUTHORIZED)
         .header(CONTENT_TYPE, HeaderValue::from_static("text/plain"))
+        .header(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"))
         .body(HttpBody::from("Unauthorized\n"))
         .expect("static response should be valid")
 }
@@ -120,5 +121,16 @@ mod tests {
             &expected,
         ));
         assert!(!authorization_matches(None, &expected));
+    }
+
+    #[test]
+    fn unauthorized_response_sets_bearer_challenge() {
+        let response = unauthorized_response();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get(WWW_AUTHENTICATE).unwrap(),
+            HeaderValue::from_static("Bearer")
+        );
     }
 }

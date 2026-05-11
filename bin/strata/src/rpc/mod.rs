@@ -17,6 +17,7 @@ use provider::NodeRpcProvider;
 use strata_btcio::writer::EnvelopeHandle;
 #[cfg(feature = "debug-utils")]
 use strata_common::{BAIL_SENDER, KNOWN_BAIL_TAGS};
+use strata_config::SecretString;
 #[cfg(feature = "sequencer")]
 use strata_consensus_logic::FcmServiceHandle;
 use strata_identifiers::L1Height;
@@ -48,7 +49,7 @@ struct RpcDeps {
     rpc_port: u16,
     admin_rpc_host: String,
     admin_rpc_port: u16,
-    admin_rpc_bearer_token: Option<String>,
+    admin_rpc_bearer_token: Option<SecretString>,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
@@ -287,7 +288,7 @@ async fn spawn_admin_rpc(deps: RpcDeps) -> Result<()> {
         .admin_rpc_bearer_token
         .clone()
         .ok_or_else(|| anyhow!("client.admin_rpc_bearer_token must be set"))?;
-    let auth_layer = ServiceBuilder::new().layer(auth::AdminAuthLayer::new(token));
+    let auth_layer = ServiceBuilder::new().layer(auth::AdminAuthLayer::new(token.expose_secret()));
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(auth_layer)
         .build(&addr)

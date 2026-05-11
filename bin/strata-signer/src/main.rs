@@ -28,7 +28,11 @@ fn main() -> anyhow::Result<()> {
     // Load config from TOML file.
     let config_str = fs::read_to_string(&args.config)?;
     let config: SignerConfig = toml::from_str(&config_str)?;
-    if config.sequencer_admin_bearer_token.is_empty() {
+    if config
+        .sequencer_admin_bearer_token
+        .expose_secret()
+        .is_empty()
+    {
         anyhow::bail!("sequencer_admin_bearer_token must be set and non-empty");
     }
 
@@ -61,7 +65,7 @@ fn main() -> anyhow::Result<()> {
     // Set up RPC client.
     let ws_config = WsClientConfig {
         url: config.sequencer_admin_endpoint.clone(),
-        headers: admin_auth_headers(&config.sequencer_admin_bearer_token)?,
+        headers: admin_auth_headers(config.sequencer_admin_bearer_token.expose_secret())?,
     };
     let rpc = Arc::new(ManagedWsClient::new_with_default_pool(ws_config));
 

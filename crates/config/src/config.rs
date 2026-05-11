@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{fmt, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,30 @@ const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
 /// Default target OL block time in milliseconds.
 const DEFAULT_OL_BLOCK_TIME_MS: u64 = 5_000;
 
+/// Secret configuration value that redacts itself from debug output.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SecretString(String);
+
+impl SecretString {
+    /// Returns the underlying secret value.
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretString(***)")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -55,7 +79,7 @@ pub struct ClientConfig {
 
     /// Bearer token required by the admin rpc listener.
     #[serde(default)]
-    pub admin_rpc_bearer_token: Option<String>,
+    pub admin_rpc_bearer_token: Option<SecretString>,
 
     /// P2P port that the client will listen to.
     /// NOTE: This is not used at the moment since we don't actually have p2p.
@@ -622,7 +646,20 @@ mod test {
         let config: ClientConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.admin_rpc_host, "127.0.0.1");
         assert_eq!(config.admin_rpc_port, 8434);
-        assert_eq!(config.admin_rpc_bearer_token.as_deref(), Some("test-token"));
+        assert_eq!(
+            config
+                .admin_rpc_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("test-token")
+        );
+    }
+
+    #[test]
+    fn test_client_config_admin_rpc_token_debug_redacts_secret() {
+        let token = SecretString::from("test-token".to_string());
+
+        assert_eq!(format!("{token:?}"), "SecretString(***)");
     }
 
     #[test]

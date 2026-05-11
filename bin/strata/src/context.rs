@@ -145,8 +145,8 @@ fn validate_config(config: Config) -> Result<Config, InitError> {
         && config
             .client
             .admin_rpc_bearer_token
-            .as_deref()
-            .is_none_or(str::is_empty)
+            .as_ref()
+            .is_none_or(|token| token.expose_secret().is_empty())
     {
         return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
             override_str: "client.admin_rpc_bearer_token must be set and non-empty".to_string(),
@@ -612,7 +612,7 @@ mod tests {
     fn validate_config_rejects_same_public_and_admin_rpc_port_for_sequencer() {
         let mut config = fullnode_config();
         config.client.is_sequencer = true;
-        config.client.admin_rpc_bearer_token = Some("test-token".to_string());
+        config.client.admin_rpc_bearer_token = Some("test-token".to_string().into());
         config.sequencer = Some(SequencerConfig::default());
 
         let error = super::validate_config(config).unwrap_err();

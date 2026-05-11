@@ -3,7 +3,7 @@
 use std::{env, path::PathBuf};
 
 use argh::FromArgs;
-use strata_config::Config;
+use strata_config::{Config, SecretString};
 
 use crate::errors::*;
 
@@ -26,7 +26,7 @@ impl EnvArgs {
     /// Applies environment-only overrides directly to the parsed config.
     pub(crate) fn apply_to_config(&self, config: &mut Config) {
         if let Some(token) = &self.admin_rpc_token {
-            config.client.admin_rpc_bearer_token = Some(token.clone());
+            config.client.admin_rpc_bearer_token = Some(SecretString::from(token.clone()));
         }
     }
 }
@@ -192,7 +192,11 @@ mod tests {
 
         env_args.apply_to_config(&mut config);
         assert_eq!(
-            config.client.admin_rpc_bearer_token.as_deref(),
+            config
+                .client
+                .admin_rpc_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
             Some("test-token")
         );
     }
