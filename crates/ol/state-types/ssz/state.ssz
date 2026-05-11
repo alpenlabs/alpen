@@ -94,9 +94,9 @@ class EpochalState(Container):
     ### Manifests MMR
     ###
     ### Indices into this MMR are L1 block heights. At genesis the MMR is
-    ### prefilled with zero-hash leaves for heights 0..=genesis_l1_height,
-    ### so the first appended manifest (for genesis_l1_height + 1) lands at
-    ### the correct height-indexed position.
+    ### prefilled with dummy sentinel values of `[0xff, 32]`, so the first
+    ### real appended manifest (for genesis_l1_height + 1) lands at the
+    ### correct height-indexed position.
     #~# external_kind: container
     manifests_mmr: strata_acct_types.Mmr64
 
