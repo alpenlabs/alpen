@@ -1096,7 +1096,6 @@ dependencies = [
  "reth-network",
  "reth-network-api",
  "reth-node-builder",
- "reth-node-core",
  "reth-payload-builder",
  "reth-primitives",
  "reth-primitives-traits",
@@ -1116,6 +1115,7 @@ dependencies = [
  "strata-evm-ee",
  "strata-identifiers",
  "strata-l1-txfmt",
+ "strata-logging",
  "strata-ol-rpc-api",
  "strata-ol-rpc-types",
  "strata-paas",
@@ -7123,18 +7123,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd7399781913e5393588a8d8c6a2867bf85fb38eaf2502fdce465aad2dc6f034"
 dependencies = [
  "base64 0.22.1",
- "http-body-util",
- "hyper 1.9.0",
- "hyper-rustls 0.27.7",
- "hyper-util",
  "indexmap 2.13.0",
- "ipnet",
  "metrics",
  "metrics-util 0.19.1",
  "quanta",
  "thiserror 1.0.69",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -13888,7 +13881,6 @@ dependencies = [
  "format_serde_error",
  "http 1.4.0",
  "jsonrpsee",
- "metrics-exporter-prometheus",
  "proptest",
  "serde_json",
  "ssz",

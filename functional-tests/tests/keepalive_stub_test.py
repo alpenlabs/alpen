@@ -17,7 +17,7 @@ class KeepAliveEnvTest(BaseTest):
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env("{ENV}")
 
-    def run(self) -> bool:
+    def main(self, ctx) -> bool:  # type: ignore[override]
         print("\n" + "=" * 60)
         print("Keep-alive mode: Environment '{ENV}' is running")
         print("Press Ctrl+C to stop...")
