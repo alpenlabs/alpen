@@ -69,7 +69,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
     mut ol_status_rx: watch::Receiver<OLFinalizedStatus>,
     genesis_l1_height: L1Height,
 ) where
-    C: SequencerOLClient,
+    C: SequencerOLClient + Send + Sync,
     S: BatchStorage,
     ES: ExecBlockStorage,
     P: BatchProver,
@@ -133,7 +133,7 @@ pub async fn create_update_submitter_task<C, S, ES, P>(
 /// batches in storage starting from the next expected sequence number. For each
 /// batch in `ProofReady` state, it builds and submits an update.
 async fn process_ready_batches(
-    ol_client: &impl SequencerOLClient,
+    ol_client: &(impl SequencerOLClient + Send + Sync),
     batch_storage: &impl BatchStorage,
     exec_storage: &impl ExecBlockStorage,
     prover: &impl BatchProver,

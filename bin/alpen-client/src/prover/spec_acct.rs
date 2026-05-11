@@ -4,11 +4,17 @@
 //! `fetch_input` reads chunk receipts (from the shared paas
 //! `ReceiptStore`) and the prior batch's end-state, then assembles
 //! `ee_acct_runtime::PrivateInput` + `snark_acct_runtime::PrivateInput`.
-use std::{collections::HashMap, fmt, sync::Arc};
+//!
+//! `LedgerRefs` are derived from the batch's DA refs using the same
+//! canonical L1 header commitment and MMR-index mapping as the OL
+//! submitter — they must be byte-identical for the verifier-side claim
+//! reconstruction to match the prover-committed pub-params SSZ.
+
+use std::{fmt, sync::Arc};
 
 use alpen_ee_common::{
-    BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef, OLClientError,
-    SequencerOLClient, Storage,
+    build_ledger_refs_from_da, BatchId, BatchStatus, BatchStorage, ExecBlockStorage, L1DaBlockRef,
+    LedgerRefsError, SequencerOLClient, Storage,
 };
 use alpen_ee_database::EeNodeStorage;
 use async_trait::async_trait;
@@ -24,8 +30,7 @@ use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStor
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
-    AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, UpdateOutputs,
-    UpdateProofPubParams,
+    OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
 };
 
 use super::ChunkTask;
@@ -115,19 +120,6 @@ enum AcctProofInputError {
         batch_id: BatchId,
         status: &'static str,
     },
-
-    #[error("failed to get L1 header commitment (height {height}, {source})")]
-    GetL1HeaderCommitment {
-        height: L1Height,
-        #[source]
-        source: OLClientError,
-    },
-
-    #[error("missing L1 header commitment (height {height})")]
-    MissingL1HeaderCommitment { height: L1Height },
-
-    #[error("L1 height before MMR start offset (height {height}, offset {mmr_offset})")]
-    L1HeightBeforeMmrStart { height: L1Height, mmr_offset: u64 },
 }
 
 impl From<AcctProofInputError> for PaasError {
@@ -136,14 +128,9 @@ impl From<AcctProofInputError> for PaasError {
         match error {
             AcctProofInputError::ReadParentExecBlock { .. }
             | AcctProofInputError::ReadBestEeAccountState { .. } => PaasError::Storage(message),
-            AcctProofInputError::L1HeightBeforeMmrStart { .. } => {
-                PaasError::PermanentFailure(message)
-            }
             AcctProofInputError::NoEeAccountState
             | AcctProofInputError::EePreStateUnavailable { .. }
-            | AcctProofInputError::BatchMissingDaRefs { .. }
-            | AcctProofInputError::GetL1HeaderCommitment { .. }
-            | AcctProofInputError::MissingL1HeaderCommitment { .. } => {
+            | AcctProofInputError::BatchMissingDaRefs { .. } => {
                 PaasError::TransientFailure(message)
             }
         }
@@ -379,7 +366,16 @@ impl ProofSpec for AcctSpec {
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
         let ledger_refs =
-            build_ledger_refs(&da_refs, self.ol_client.as_ref(), self.genesis_l1_height).await?;
+            build_ledger_refs_from_da(&da_refs, self.ol_client.as_ref(), self.genesis_l1_height)
+                .await
+                .map_err(|e| match e {
+                    LedgerRefsError::FetchCommitment { .. } => PaasError::TransientFailure(
+                        format!("build ledger refs for batch {batch_id}: {e}"),
+                    ),
+                    LedgerRefsError::OffsetUnderflow { .. } => PaasError::PermanentFailure(
+                        format!("build ledger refs for batch {batch_id}: {e}"),
+                    ),
+                })?;
 
         let pub_params = UpdateProofPubParams::new(
             cur_state,
@@ -430,46 +426,6 @@ fn da_refs_from_status(batch_id: BatchId, status: BatchStatus) -> ProverResult<V
         }
         .into()),
     }
-}
-
-async fn build_ledger_refs(
-    da_refs: &[L1DaBlockRef],
-    ol_client: &(dyn SequencerOLClient + Send + Sync),
-    genesis_l1_height: L1Height,
-) -> ProverResult<LedgerRefs> {
-    let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
-    heights.sort_unstable();
-    heights.dedup();
-
-    let mut l1_header_commitments = HashMap::with_capacity(heights.len());
-    for height in heights {
-        let hash = ol_client
-            .get_l1_header_commitment(height)
-            .await
-            .map_err(|source| AcctProofInputError::GetL1HeaderCommitment { height, source })?;
-        l1_header_commitments.insert(height, hash);
-    }
-
-    let mmr_offset = genesis_l1_height as u64 + 1;
-    let mut l1_header_refs = da_refs
-        .iter()
-        .map(|da_ref| {
-            let height = da_ref.block.height();
-            let hash = l1_header_commitments
-                .get(&height)
-                .copied()
-                .ok_or_else(|| AcctProofInputError::MissingL1HeaderCommitment { height })?;
-            let mmr_idx = (height as u64).checked_sub(mmr_offset).ok_or_else(|| {
-                AcctProofInputError::L1HeightBeforeMmrStart { height, mmr_offset }
-            })?;
-
-            Ok(AccumulatorClaim::new(mmr_idx, *hash.as_ref()))
-        })
-        .collect::<ProverResult<Vec<_>>>()?;
-    l1_header_refs.sort_by_key(|claim| claim.idx());
-    l1_header_refs.dedup_by_key(|claim| claim.idx());
-
-    Ok(LedgerRefs::new(l1_header_refs))
 }
 
 /// Decodes a `ChunkInput`'s transition bytes. `PermanentFailure` on malformed.
