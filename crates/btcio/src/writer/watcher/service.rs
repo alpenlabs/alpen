@@ -3,7 +3,13 @@
 //! Drives the [`L1BundleStatus`] state machine for the current payload entry
 //! on each timer tick.
 
-use std::{collections::HashMap, future::Future, marker::PhantomData, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    marker::PhantomData,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use serde::Serialize;
@@ -17,6 +23,7 @@ use tracing::*;
 
 use crate::{
     broadcaster::L1BroadcastHandle,
+    rpc_error::{is_retryable_envelope_error, retryable_reason},
     status::{apply_status_updates, L1StatusUpdate},
     writer::{
         builder::{EnvelopeData, EnvelopeError},
@@ -35,39 +42,48 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         &self,
         idx: u64,
     ) -> impl Future<Output = anyhow::Result<Option<BundledPayloadEntry>>> + Send;
+
     fn put_payload_entry(
         &self,
         idx: u64,
         entry: BundledPayloadEntry,
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
+
     /// Returns `true` when the node is configured with an external signer
     /// (`CredRule::SchnorrKey`). When `false`, the watcher signs in-process.
     fn needs_external_signing(&self) -> bool;
+
     fn create_envelopes(
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
     ) -> impl Future<Output = Result<EnvelopeData, EnvelopeError>> + Send;
+
     fn sign_and_broadcast(
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
     ) -> impl Future<Output = Result<(Buf32, Buf32), EnvelopeError>> + Send;
+
     fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
     ) -> impl Future<Output = anyhow::Result<Buf32>> + Send;
+
     fn get_tx_status(
         &self,
         txid: Buf32,
     ) -> impl Future<Output = anyhow::Result<Option<L1TxEntry>>> + Send;
+
     fn report_status(
         &self,
         entry: &BundledPayloadEntry,
         status: &L1BundleStatus,
     ) -> impl Future<Output = ()> + Send;
+
+    fn report_rpc_error(&self, reason: String) -> impl Future<Output = ()> + Send;
 }
 
 pub(crate) struct WatcherContextImpl<R: Reader + Signer + Wallet + Send + Sync + 'static> {
@@ -153,6 +169,20 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
 
     async fn report_status(&self, entry: &BundledPayloadEntry, status: &L1BundleStatus) {
         update_l1_status(entry, status, &self.context.status_channel).await;
+    }
+
+    async fn report_rpc_error(&self, reason: String) {
+        let status_updates = [
+            L1StatusUpdate::RpcConnected(false),
+            L1StatusUpdate::RpcError(reason),
+            L1StatusUpdate::LastUpdate(
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            ),
+        ];
+        apply_status_updates(&status_updates, &self.context.status_channel).await;
     }
 }
 
@@ -281,8 +311,13 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
-                e => {
-                    e?;
+                Err(err) if is_retryable_envelope_error(&err) => {
+                    let reason = retryable_reason(&err);
+                    warn!(%reason, "retrying envelope creation after Bitcoin RPC error");
+                    self.ctx.report_rpc_error(reason).await;
+                }
+                Err(err) => {
+                    return Err(err.into());
                 }
             }
         } else {
@@ -305,8 +340,13 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
-                e => {
-                    e?;
+                Err(err) if is_retryable_envelope_error(&err) => {
+                    let reason = retryable_reason(&err);
+                    warn!(%reason, "retrying envelope signing after Bitcoin RPC error");
+                    self.ctx.report_rpc_error(reason).await;
+                }
+                Err(err) => {
+                    return Err(err.into());
                 }
             }
         }
@@ -466,6 +506,7 @@ mod tests {
         sync::{Arc, Mutex},
     };
 
+    use anyhow::anyhow;
     use bitcoin::{
         absolute::LockTime,
         blockdata::{opcodes, script::Builder as ScriptBuilder},
@@ -476,6 +517,7 @@ mod tests {
         transaction::Version,
         Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
     };
+    use bitcoind_async_client::error::ClientError;
     use strata_csm_types::L1Payload;
     use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry};
     use strata_l1_txfmt::TagData;
@@ -493,6 +535,31 @@ mod tests {
 
     const TEST_REQUIRED_SATS: u64 = 4096;
     const TEST_AVAILABLE_SATS: u64 = 2658;
+
+    #[derive(Clone, Copy)]
+    enum MockEnvelopeFailure {
+        NotEnoughUtxos,
+        PrereqFetch,
+        SignRawTransaction,
+        Other,
+    }
+
+    impl MockEnvelopeFailure {
+        fn into_error(self) -> EnvelopeError {
+            match self {
+                Self::NotEnoughUtxos => {
+                    EnvelopeError::NotEnoughUtxos(TEST_REQUIRED_SATS, TEST_AVAILABLE_SATS)
+                }
+                Self::PrereqFetch => EnvelopeError::PrereqFetch(anyhow::Error::from(
+                    ClientError::Connection("mock connection failure".to_string()),
+                )),
+                Self::SignRawTransaction => EnvelopeError::SignRawTransaction(
+                    ClientError::Connection("mock signing failure".to_string()),
+                ),
+                Self::Other => EnvelopeError::Other(anyhow!("mock storage failure")),
+            }
+        }
+    }
 
     fn minimal_envelope_data() -> EnvelopeData {
         let keypair =
@@ -547,8 +614,9 @@ mod tests {
         stored: Mutex<HashMap<u64, BundledPayloadEntry>>,
         broadcast_handle: Arc<L1BroadcastHandle>,
         external_signing: bool,
-        fail_create_not_enough_utxos: bool,
-        fail_sign_not_enough_utxos: bool,
+        create_failure: Option<MockEnvelopeFailure>,
+        sign_failure: Option<MockEnvelopeFailure>,
+        rpc_errors: Mutex<Vec<String>>,
     }
 
     impl MockWatcherContext {
@@ -557,23 +625,43 @@ mod tests {
                 stored: Mutex::new(HashMap::new()),
                 broadcast_handle: get_broadcast_handle(),
                 external_signing,
-                fail_create_not_enough_utxos: false,
-                fail_sign_not_enough_utxos: false,
+                create_failure: None,
+                sign_failure: None,
+                rpc_errors: Mutex::new(Vec::new()),
             }
         }
 
         fn with_create_not_enough_utxos(mut self) -> Self {
-            self.fail_create_not_enough_utxos = true;
+            self.create_failure = Some(MockEnvelopeFailure::NotEnoughUtxos);
             self
         }
 
         fn with_sign_not_enough_utxos(mut self) -> Self {
-            self.fail_sign_not_enough_utxos = true;
+            self.sign_failure = Some(MockEnvelopeFailure::NotEnoughUtxos);
+            self
+        }
+
+        fn with_create_prereq_fetch(mut self) -> Self {
+            self.create_failure = Some(MockEnvelopeFailure::PrereqFetch);
+            self
+        }
+
+        fn with_sign_raw_transaction_failure(mut self) -> Self {
+            self.sign_failure = Some(MockEnvelopeFailure::SignRawTransaction);
+            self
+        }
+
+        fn with_sign_other_failure(mut self) -> Self {
+            self.sign_failure = Some(MockEnvelopeFailure::Other);
             self
         }
 
         fn get_stored(&self, idx: u64) -> Option<BundledPayloadEntry> {
             self.stored.lock().unwrap().get(&idx).cloned()
+        }
+
+        fn rpc_error_count(&self) -> usize {
+            self.rpc_errors.lock().unwrap().len()
         }
     }
 
@@ -600,11 +688,8 @@ mod tests {
             _idx: u64,
             _entry: &BundledPayloadEntry,
         ) -> Result<EnvelopeData, EnvelopeError> {
-            if self.fail_create_not_enough_utxos {
-                return Err(EnvelopeError::NotEnoughUtxos(
-                    TEST_REQUIRED_SATS,
-                    TEST_AVAILABLE_SATS,
-                ));
+            if let Some(failure) = self.create_failure {
+                return Err(failure.into_error());
             }
             Ok(minimal_envelope_data())
         }
@@ -614,11 +699,8 @@ mod tests {
             _idx: u64,
             _entry: &BundledPayloadEntry,
         ) -> Result<(Buf32, Buf32), EnvelopeError> {
-            if self.fail_sign_not_enough_utxos {
-                return Err(EnvelopeError::NotEnoughUtxos(
-                    TEST_REQUIRED_SATS,
-                    TEST_AVAILABLE_SATS,
-                ));
+            if let Some(failure) = self.sign_failure {
+                return Err(failure.into_error());
             }
             Ok((Buf32([1u8; 32]), Buf32([2u8; 32])))
         }
@@ -639,6 +721,10 @@ mod tests {
         }
 
         async fn report_status(&self, _entry: &BundledPayloadEntry, _status: &L1BundleStatus) {}
+
+        async fn report_rpc_error(&self, reason: String) {
+            self.rpc_errors.lock().unwrap().push(reason);
+        }
     }
 
     fn test_unsigned_entry() -> BundledPayloadEntry {
@@ -716,6 +802,63 @@ mod tests {
         assert_eq!(stored.reveal_txid, Buf32::zero());
         assert_eq!(state.curr_payloadidx, 0);
         assert!(state.envelope_cache.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_schnorr_key_prereq_fetch_keeps_unsigned_for_retry() {
+        let ctx = MockWatcherContext::new(true).with_create_prereq_fetch();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        let response = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        assert_eq!(state.curr_payloadidx, 0);
+        assert!(state.envelope_cache.is_empty());
+        assert_eq!(state.ctx.rpc_error_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_unchecked_sign_raw_transaction_keeps_unsigned_for_retry() {
+        let ctx = MockWatcherContext::new(false).with_sign_raw_transaction_failure();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        let response = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert!(matches!(response, Response::Continue));
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        assert_eq!(state.curr_payloadidx, 0);
+        assert!(state.envelope_cache.is_empty());
+        assert_eq!(state.ctx.rpc_error_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_unchecked_other_error_exits_watcher() {
+        let ctx = MockWatcherContext::new(false).with_sign_other_failure();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry);
+
+        let mut state = WatcherState::new(ctx, 0);
+        let err = WatcherService::<MockWatcherContext>::process_input(&mut state, ())
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("mock storage failure"));
+        assert_eq!(
+            state.ctx.get_stored(0).unwrap().status,
+            L1BundleStatus::Unsigned
+        );
+        assert_eq!(state.ctx.rpc_error_count(), 0);
     }
 
     #[tokio::test]

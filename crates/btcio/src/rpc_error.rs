@@ -28,13 +28,6 @@ pub(crate) fn is_retryable_anyhow_error(err: &AnyhowError) -> bool {
 }
 
 /// Returns `true` when an envelope error represents a retryable Bitcoin RPC outage.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "STR-3411 wires this shared classifier into writers in follow-up commits"
-    )
-)]
 pub(crate) fn is_retryable_envelope_error(err: &EnvelopeError) -> bool {
     match err {
         EnvelopeError::PrereqFetch(err) | EnvelopeError::Other(err) => {
@@ -52,13 +45,6 @@ pub(crate) fn is_retryable_envelope_error(err: &EnvelopeError) -> bool {
 }
 
 /// Formats a retryable error reason for status and logs.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "STR-3411 wires this shared formatter into status reporting in follow-up commits"
-    )
-)]
 pub(crate) fn retryable_reason(err: impl fmt::Display) -> String {
     err.to_string()
 }
