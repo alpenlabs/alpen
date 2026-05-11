@@ -323,13 +323,6 @@ pub(crate) fn start_strata_services(
 ///
 /// Polls Bitcoin for new blocks and submits them to ASM for processing.
 fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::AsmWorkerHandle>) {
-    let expected_l1_anchor = nodectx
-        .storage()
-        .client_state()
-        .fetch_most_recent_state()
-        .expect("startup checks must verify client state storage before starting btcio reader")
-        .map(|_| nodectx.ol_params().last_l1_block);
-
     nodectx.executor().spawn_critical_async(
         "bitcoin_data_reader_task",
         bitcoin_data_reader_task(
@@ -337,7 +330,10 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             nodectx.storage().clone(),
             Arc::new(nodectx.config().btcio.reader.clone()),
             rollup_to_btcio_params(nodectx.params().rollup()),
-            ReaderValidation::new(nodectx.config().bitcoind.network, expected_l1_anchor),
+            ReaderValidation::new(
+                nodectx.config().bitcoind.network,
+                nodectx.ol_params().last_l1_block,
+            ),
             nodectx.status_channel().as_ref().clone(),
             Arc::new(AsmBlockSubmitter::new(asm_handle)),
         ),

@@ -41,8 +41,8 @@ pub(crate) struct ReaderContext<R: Reader> {
     /// Expected Bitcoin network.
     pub expected_network: Network,
 
-    /// Optional L1 anchor block to verify before ingesting reader data.
-    pub expected_l1_anchor: Option<L1BlockCommitment>,
+    /// L1 anchor block to verify before ingesting reader data.
+    pub expected_l1_anchor: L1BlockCommitment,
 
     /// Status transmitter
     pub status_channel: StatusChannel,
@@ -52,12 +52,12 @@ pub(crate) struct ReaderContext<R: Reader> {
 #[derive(Debug, Clone)]
 pub struct ReaderValidation {
     expected_network: Network,
-    expected_l1_anchor: Option<L1BlockCommitment>,
+    expected_l1_anchor: L1BlockCommitment,
 }
 
 impl ReaderValidation {
     /// Creates a validation config for reader startup.
-    pub fn new(expected_network: Network, expected_l1_anchor: Option<L1BlockCommitment>) -> Self {
+    pub fn new(expected_network: Network, expected_l1_anchor: L1BlockCommitment) -> Self {
         Self {
             expected_network,
             expected_l1_anchor,
@@ -199,18 +199,16 @@ async fn init_reader_state<R: Reader>(
         );
     }
 
-    if let Some(expected_l1_anchor) = ctx.expected_l1_anchor {
-        let actual_hash = client
-            .get_block_hash(expected_l1_anchor.height() as u64)
-            .await?;
-        let actual_block_id = actual_hash.to_l1_block_id();
-        if actual_block_id != *expected_l1_anchor.blkid() {
-            bail!(
-                "btcio: L1 anchor block hash mismatch at height {height}: expected {expected}, got {actual_block_id}",
-                height = expected_l1_anchor.height(),
-                expected = expected_l1_anchor.blkid(),
-            );
-        }
+    let actual_hash = client
+        .get_block_hash(ctx.expected_l1_anchor.height() as u64)
+        .await?;
+    let actual_block_id = actual_hash.to_l1_block_id();
+    if actual_block_id != *ctx.expected_l1_anchor.blkid() {
+        bail!(
+            "btcio: L1 anchor block hash mismatch at height {height}: expected {expected}, got {actual_block_id}",
+            height = ctx.expected_l1_anchor.height(),
+            expected = ctx.expected_l1_anchor.blkid(),
+        );
     }
 
     let chain_tip = chain_info.blocks as L1Height;
