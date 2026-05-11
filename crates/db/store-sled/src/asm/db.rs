@@ -44,8 +44,17 @@ impl AsmDatabase for AsmDBSled {
 
     fn get_latest_asm_state(&self) -> DbResult<Option<(L1BlockCommitment, AsmState)>> {
         // Relying on the lexicographical order of L1BlockCommitment.
-        match (self.asm_state_tree.last()?, self.asm_log_tree.last()?) {
+        let state = self.asm_state_tree.last()?;
+        let logs = self.asm_log_tree.last()?;
+
+        match (state, logs) {
+            (Some((state_block, state)), Some((logs_block, logs))) if state_block == logs_block => {
+                Ok(Some((state_block, AsmState::new(state, logs))))
+            }
             (Some((state_block, _)), Some((logs_block, _))) => {
+                // The state and log entries are written in one transaction, but this method reads
+                // the two trees separately. A concurrent append can commit between those reads, so
+                // fall back to the latest block that both trees had to contain when observed.
                 let latest_common_block = state_block.min(logs_block);
                 Ok(self
                     .get_asm_state(latest_common_block)?

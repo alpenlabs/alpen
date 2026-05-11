@@ -65,6 +65,7 @@ class AlpenClientFactory(flexitest.Factory):
         custom_chain: str = "dev",
         ol_endpoint: str | None = None,
         da_config: EeDaConfig | None = None,
+        dev_track_finalized_epoch: bool = False,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -119,6 +120,12 @@ class AlpenClientFactory(flexitest.Factory):
             # EE chunk + acct provers on the zkaleido NativeHost.
             "--dev-native-prover",
         ]
+        if dev_track_finalized_epoch:
+            # Advance the OL chain tracker on `finalized` epoch (FCM)
+            # instead of `confirmed` epoch (CSM/L1-checkpoint). Lets
+            # the EE block builder consume inbox messages without
+            # waiting on the L1 checkpoint round-trip.
+            cmd.append("--dev-track-finalized-epoch")
         # fmt: on
 
         # Discovery mode configuration:

@@ -654,6 +654,8 @@ async fn chain_status_returns_correct_values() {
     assert_eq!(status.confirmed().epoch(), 0);
     assert_eq!(status.finalized().epoch(), 0);
     assert_eq!(status.finalized().last_slot(), 20);
+    assert_eq!(status.latest().epoch(), 1);
+    assert_eq!(status.latest().last_slot(), 50);
 }
 
 // ── get_checkpoint_info ──

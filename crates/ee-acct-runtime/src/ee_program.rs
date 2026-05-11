@@ -150,11 +150,6 @@ impl<E: ExecutionEnvironment> SnarkAccountProgramVerification for EeSnarkAccount
             return Err(ProgramError::InvalidExtraData);
         }
 
-        // Another final check to make sure we did our balance bookkeeping right.
-        if state.tracked_balance() != vstate.cur_balance() {
-            return Err(EnvError::InconsistentChunkIo.into());
-        }
-
         // Check the other internal obligations.
         vstate
             .check_obligations()

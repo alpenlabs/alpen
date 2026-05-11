@@ -62,6 +62,9 @@ pub struct RpcOLChainStatus {
 
     /// Finalized epoch commitment.
     pub finalized: EpochCommitment,
+
+    /// Latest epoch terminal block processed by the OL fork-choice manager.
+    pub latest: EpochCommitment,
 }
 
 impl RpcOLChainStatus {
@@ -70,11 +73,13 @@ impl RpcOLChainStatus {
         tip: RpcOLBlockInfo,
         confirmed: EpochCommitment,
         finalized: EpochCommitment,
+        latest: EpochCommitment,
     ) -> Self {
         Self {
             tip,
             confirmed,
             finalized,
+            latest,
         }
     }
 
@@ -91,5 +96,10 @@ impl RpcOLChainStatus {
     /// Returns the finalized epoch commitment.
     pub fn finalized(&self) -> &EpochCommitment {
         &self.finalized
+    }
+
+    /// Returns the latest completed OL epoch.
+    pub fn latest(&self) -> &EpochCommitment {
+        &self.latest
     }
 }

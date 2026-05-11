@@ -38,6 +38,7 @@ pub struct OLTrackerBuilder<TStorage, TOLClient> {
     ol_client: Arc<TOLClient>,
     max_epochs_fetch: Option<u32>,
     poll_wait_ms: Option<u64>,
+    track_finalized_epoch: bool,
 }
 
 impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
@@ -55,6 +56,7 @@ impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
             ol_client,
             max_epochs_fetch: None,
             poll_wait_ms: None,
+            track_finalized_epoch: false,
         }
     }
 
@@ -67,6 +69,14 @@ impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
     /// Sets the polling wait time in milliseconds.
     pub fn with_poll_wait_ms(mut self, v: u64) -> Self {
         self.poll_wait_ms = Some(v);
+        self
+    }
+
+    /// Dev/test only. Advances the tracker on `finalized` epoch (FCM-
+    /// based) instead of `confirmed` epoch (CSM-based). See `OLTrackerCtx`
+    /// for the rationale.
+    pub fn with_track_finalized_epoch(mut self, v: bool) -> Self {
+        self.track_finalized_epoch = v;
         self
     }
 
@@ -90,6 +100,7 @@ impl<TStorage, TOLClient> OLTrackerBuilder<TStorage, TOLClient> {
             consensus_tx,
             max_epochs_fetch: self.max_epochs_fetch.unwrap_or(DEFAULT_MAX_EPOCHS_FETCH),
             poll_wait_ms: self.poll_wait_ms.unwrap_or(DEFAULT_POLL_WAIT_MS),
+            track_finalized_epoch: self.track_finalized_epoch,
         };
         let task = ol_tracker_task(self.state, ctx);
 

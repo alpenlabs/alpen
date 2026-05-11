@@ -7,7 +7,10 @@ use strata_identifiers::{Buf32, SubjectId, SubjectIdBytes, WtxidsRoot};
 use strata_ledger_types::*;
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
-use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
+use strata_ol_msg_types::{
+    DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
+    WithdrawalMsgData,
+};
 use strata_ol_state_types::OLSnarkAccountState;
 use strata_predicate::PredicateKey;
 
@@ -108,9 +111,11 @@ fn test_snark_account_deposit_and_withdrawal() {
 
     // Track the deposit message that was added to the inbox during genesis processing
     // This message was added when the deposit intent log was processed
-    let mut deposit_msg_data = Vec::new();
-    let subject_bytes: [u8; 32] = dest_subject.into();
-    deposit_msg_data.extend_from_slice(&subject_bytes);
+    let deposit_msg_body = strata_codec::encode_to_vec(&DepositMsgData::new(dest_subject))
+        .expect("Should encode deposit message");
+    let deposit_msg_data = OwnedMsg::new(DEPOSIT_MSG_TYPE_ID, deposit_msg_body)
+        .expect("Should create deposit message")
+        .to_vec();
     let deposit_msg_in_inbox = MessageEntry::new(
         BRIDGE_GATEWAY_ACCT_ID,
         0, // genesis epoch

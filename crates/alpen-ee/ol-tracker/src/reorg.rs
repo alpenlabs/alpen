@@ -324,6 +324,7 @@ mod tests {
                 tip: make_block_commitment(60, 106),
                 confirmed: make_epoch_commitment(5, 50, 105),
                 finalized: make_epoch_commitment(0, 0, 100),
+                latest: make_epoch_commitment(5, 50, 105),
             };
 
             mock_storage
@@ -376,6 +377,7 @@ mod tests {
                 consensus_tx,
                 max_epochs_fetch: 10,
                 poll_wait_ms: 100,
+                track_finalized_epoch: false,
             }
         }
 
@@ -423,6 +425,7 @@ mod tests {
                     tip: make_block_commitment(80, 110),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(5, 50, 105),
                 })
             });
 
@@ -497,6 +500,7 @@ mod tests {
                     tip: make_block_commitment(80, 118),
                     confirmed: make_epoch_commitment(4, 40, 114),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(4, 40, 114),
                 })
             });
 

@@ -11,10 +11,10 @@ use strata_asm_logs::{
 use strata_codec::encode_to_vec;
 use strata_identifiers::{EpochCommitment, L1Height};
 use strata_ledger_types::*;
-use strata_msg_fmt::Msg;
+use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_bridge_types::DepositDescriptor;
 use strata_ol_chain_types_new::OLL1ManifestContainer;
-use strata_ol_msg_types::DepositMsgData;
+use strata_ol_msg_types::{DEPOSIT_MSG_TYPE_ID, DepositMsgData};
 use tracing::{debug, info, trace, warn};
 
 use crate::{
@@ -197,9 +197,12 @@ fn process_deposit_log<S: IStateAccessorMut>(
         return Ok(());
     };
 
-    // Create the message payload containing the deposit message data.
+    // Create the message payload containing the typed deposit message.
     let deposit_msg = DepositMsgData::new(subject_id);
-    let deposit_data = encode_to_vec(&deposit_msg)?;
+    let deposit_body = encode_to_vec(&deposit_msg)?;
+    let deposit_data = OwnedMsg::new(DEPOSIT_MSG_TYPE_ID, deposit_body)
+        .expect("deposit message body must fit into msg-fmt envelope")
+        .to_vec();
     let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
 
     debug!(

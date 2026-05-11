@@ -107,7 +107,7 @@ impl ReceiptHook<AcctSpec> for AcctReceiptHook {
             other => {
                 return Err(ProverError::Storage(format!(
                     "acct hook expected ProofPending, found {other:?} for {batch_id}"
-                )))
+                )));
             }
         };
 

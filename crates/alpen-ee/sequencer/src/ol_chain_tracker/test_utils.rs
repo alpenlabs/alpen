@@ -43,6 +43,7 @@ pub(crate) fn make_chain_status(finalized: OLBlockCommitment) -> OLChainStatus {
         tip: finalized,
         confirmed: epoch,
         finalized: epoch,
+        latest: epoch,
     }
 }
 

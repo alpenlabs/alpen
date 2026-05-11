@@ -365,6 +365,7 @@ fn main() {
                 storage.clone(),
                 ol_client.clone(),
             )
+            .with_track_finalized_epoch(ext.dev_track_finalized_epoch)
             .build();
 
             let node_args = AlpenNodeArgs {
@@ -686,6 +687,8 @@ fn main() {
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
                     storage.clone(),
+                    ol_client.clone(),
+                    ext.genesis_l1_height,
                     genesis,
                 ))
                 .task_store(task_store)
@@ -939,6 +942,14 @@ pub struct AdditionalConfig {
     /// without the SP1 prover ELFs present on disk.
     #[arg(long, default_value_t = false)]
     pub dev_native_prover: bool,
+
+    /// Have the OL chain tracker advance against the latest completed OL
+    /// epoch in the connected Strata node instead of the canonical
+    /// `confirmed` epoch (CSM-based). Dev/test only. Useful when the CSM
+    /// checkpoint pipeline can't keep up with rapid SAU emission and would
+    /// otherwise stall the EE block builder's inbox-message fetch.
+    #[arg(long, default_value_t = false)]
+    pub dev_track_finalized_epoch: bool,
 
     /// End-to-end deadline (seconds) passed to the SP1 prover network on
     /// every chunk/acct proof request. Only used with the remote SP1
