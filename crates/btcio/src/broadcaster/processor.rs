@@ -205,7 +205,7 @@ where
                 Ok(L1TxStatus::Unpublished)
             }
             Err(err) => {
-                warn!(?err, "errored while broadcasting");
+                warn!(%err, "errored while broadcasting");
                 Err(err)
             }
         }

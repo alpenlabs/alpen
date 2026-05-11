@@ -47,7 +47,7 @@ impl EnvelopeHandle {
 
         // Send to bundler
         if let Err(e) = self.intent_tx.blocking_send(entry) {
-            warn!("Could not send intent entry to bundler: {:?}", e);
+            warn!(%e, %id, "could not send intent entry to bundler");
         }
         Ok(())
     }
@@ -87,7 +87,7 @@ impl EnvelopeHandle {
 
         // Send to bundler
         if let Err(e) = self.intent_tx.send(entry).await {
-            warn!("Could not send intent entry to bundler: {:?}", e);
+            warn!(%e, %id, "could not send intent entry to bundler");
         }
 
         Ok(Some(intent_idx))

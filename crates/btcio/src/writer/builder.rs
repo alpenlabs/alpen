@@ -94,6 +94,12 @@ pub enum EnvelopeError {
     #[error("Could not sign raw transaction: {0}")]
     SignRawTransaction(String),
 
+    #[error("envelope_pubkey is required for envelope transactions")]
+    MissingEnvelopePubkey,
+
+    #[error("failed to fetch envelope prerequisites: {0}")]
+    PrereqFetch(#[source] anyhow::Error),
+
     #[error("Error building taproot")]
     Taproot(#[from] TaprootBuilderError),
 
@@ -154,11 +160,13 @@ impl EnvelopeData {
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<EnvelopeData> {
-    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
+) -> Result<EnvelopeData, EnvelopeError> {
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
+        .await
+        .map_err(EnvelopeError::PrereqFetch)?;
     let envelope_pubkey = ctx
         .envelope_pubkey
-        .ok_or_else(|| anyhow::anyhow!("envelope_pubkey is required for envelope transactions"))?;
+        .ok_or(EnvelopeError::MissingEnvelopePubkey)?;
     let env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
@@ -168,7 +176,6 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         Some(envelope_pubkey),
     );
     create_envelope_transactions(&env_config, payload, utxos)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 /// Builds envelope transactions using a temporary keypair and signs both commit and reveal
@@ -178,8 +185,10 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<EnvelopeData> {
-    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
+) -> Result<EnvelopeData, EnvelopeError> {
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
+        .await
+        .map_err(EnvelopeError::PrereqFetch)?;
     let keypair = generate_key_pair()?;
     let pubkey = XOnlyPublicKey::from_keypair(&keypair).0;
     let env_config = EnvelopeConfig::new(
@@ -190,13 +199,13 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
         BITCOIN_DUST_LIMIT,
         Some(pubkey),
     );
-    let mut envelope = create_envelope_transactions(&env_config, payload, utxos)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let mut envelope = create_envelope_transactions(&env_config, payload, utxos)?;
 
     let signed_commit = ctx
         .client
         .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
-        .await?
+        .await
+        .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
         .tx;
     envelope.commit_tx = signed_commit;
 
@@ -213,6 +222,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
 }
 
 /// Fetches the shared prerequisites for building envelope transactions.
+// TODO(STR-3411): make OL node resilient against the Bitcoin node not being available.
 async fn fetch_envelope_prereqs<R: Reader + Signer + Wallet>(
     ctx: &WriterContext<R>,
 ) -> anyhow::Result<(Network, Vec<ListUnspentItem>, u64)> {
@@ -237,7 +247,7 @@ pub fn create_envelope_transactions(
 ) -> Result<EnvelopeData, EnvelopeError> {
     let public_key = env_config
         .envelope_pubkey
-        .ok_or_else(|| anyhow!("envelope_pubkey is required for single-envelope transactions"))?;
+        .ok_or(EnvelopeError::MissingEnvelopePubkey)?;
 
     let reveal_script = EnvelopeScriptBuilder::with_pubkey(&public_key.serialize())?
         .add_envelopes(payload.data())?

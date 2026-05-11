@@ -50,6 +50,8 @@ pub struct TestBitcoinClient {
     pub included_height: u64,
     /// Behavior for `send_raw_transaction`.
     pub send_raw_transaction_mode: SendRawTransactionMode,
+    /// Value returned by the mock wallet UTXO.
+    pub utxo_amount_sats: i64,
 }
 
 /// Configures how [`TestBitcoinClient`] responds to `send_raw_transaction`.
@@ -70,11 +72,17 @@ impl TestBitcoinClient {
             // Use arbitrary value, make configurable as necessary
             included_height: 100,
             send_raw_transaction_mode: SendRawTransactionMode::Success,
+            utxo_amount_sats: 10_000_000_000,
         }
     }
 
     pub fn with_send_raw_transaction_mode(mut self, mode: SendRawTransactionMode) -> Self {
         self.send_raw_transaction_mode = mode;
+        self
+    }
+
+    pub fn with_utxo_amount_sats(mut self, sats: i64) -> Self {
+        self.utxo_amount_sats = sats;
         self
     }
 }
@@ -356,7 +364,6 @@ impl Wallet for TestBitcoinClient {
         _include_unsafe: Option<bool>,
         _query_options: Option<ListUnspentQueryOptions>,
     ) -> ClientResult<ListUnspent> {
-        // plenty of sats
         Ok(ListUnspent(vec![ListUnspentItem {
             txid: Txid::from_slice(&[1; 32]).unwrap(),
             vout: 0,
@@ -366,7 +373,7 @@ impl Wallet for TestBitcoinClient {
             label: "test".to_string(),
             script_pubkey: ScriptBuf::from_hex("001478a93a5b649de9deabd9494ae9bc41f3c9c13837")
                 .unwrap(),
-            amount: SignedAmount::from_btc(100.0).unwrap(),
+            amount: SignedAmount::from_sat(self.utxo_amount_sats),
             confirmations: self.confs as u32,
             spendable: true,
             solvable: true,
@@ -582,8 +589,9 @@ pub(crate) mod test_context {
 
     use crate::{test_utils::TestBitcoinClient, writer::WriterContext, BtcioParams};
 
-    pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
-        let client = Arc::new(TestBitcoinClient::new(1));
+    pub(crate) fn get_writer_context_with_client(
+        client: Arc<TestBitcoinClient>,
+    ) -> Arc<WriterContext<TestBitcoinClient>> {
         let addr = "bcrt1q6u6qyya3sryhh42lahtnz2m7zuufe7dlt8j0j5"
             .parse::<Address<_>>()
             .unwrap()
@@ -610,5 +618,10 @@ pub(crate) mod test_context {
         let ctx = WriterContext::new(btcio_params, cfg, addr, client, status_channel)
             .with_envelope_pubkey(&pubkey.serialize());
         Arc::new(ctx)
+    }
+
+    pub(crate) fn get_writer_context() -> Arc<WriterContext<TestBitcoinClient>> {
+        let client = Arc::new(TestBitcoinClient::new(1));
+        get_writer_context_with_client(client)
     }
 }
