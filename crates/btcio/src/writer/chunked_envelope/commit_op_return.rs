@@ -14,7 +14,7 @@ use strata_l1_txfmt::MagicBytes;
 /// - 4 bytes: DA blob version
 // NOTE: scanners derive the reveal chunk count from the run of consecutive
 // P2TR outputs after the OP_RETURN. Sound only because change uses a
-// non-P2TR script (P2WPKH). To allow P2TR change, either encode the chunk
+// non-P2TR script (P2WPKH). To allow P2TR change, we have to either encode the chunk
 // count in the commit OP_RETURN payload (with a parser helper), or move the
 // OP_RETURN to sit just before change so it acts as the reveal-range
 // delimiter.

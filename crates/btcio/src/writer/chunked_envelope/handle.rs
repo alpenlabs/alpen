@@ -70,6 +70,16 @@ enum ChunkedEnvelopeWatcherError {
     /// A contiguous scan skipped a persisted row before the known tip.
     #[error("chunked envelope entry gap at index {missing_idx}")]
     EntryGap { missing_idx: u64 },
+
+    /// A commit tx disappeared after the envelope reached reveal tracking.
+    #[error(
+        "chunked envelope {envelope_idx} commit {commit_txid} missing from broadcast db in status {status:?}"
+    )]
+    CommitMissingAfterRevealTracking {
+        envelope_idx: u64,
+        commit_txid: Buf32,
+        status: ChunkedEnvelopeStatus,
+    },
 }
 
 /// Handle for submitting chunked envelope entries.
@@ -507,7 +517,7 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
     // metadata needed to continue the envelope lifecycle.
     ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
         .await?;
-    broadcast_handle
+    let commit_broadcast_idx = broadcast_handle
         .put_tx_entry(entry.commit_txid, commit_tx_entry.clone())
         .await?;
     debug!(
@@ -522,7 +532,7 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
         CommitPublishResult::Published => {
             commit_tx_entry.status = L1TxStatus::Published;
             broadcast_handle
-                .put_tx_entry(entry.commit_txid, commit_tx_entry)
+                .put_tx_entry_by_idx(commit_broadcast_idx, commit_tx_entry)
                 .await?;
             let commit = broadcast_handle
                 .get_tx_entry_by_id_async(entry.commit_txid)
@@ -543,7 +553,7 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
         CommitPublishResult::InvalidInputs => {
             commit_tx_entry.status = L1TxStatus::InvalidInputs;
             broadcast_handle
-                .put_tx_entry(entry.commit_txid, commit_tx_entry)
+                .put_tx_entry_by_idx(commit_broadcast_idx, commit_tx_entry)
                 .await?;
             entry.status = ChunkedEnvelopeStatus::NeedsResign;
             ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
@@ -803,10 +813,13 @@ async fn check_full_broadcast_status(
             status = ?entry.status,
             "commit tx missing from broadcast db after reveals were expected to be tracked"
         );
-        anyhow::bail!(
-            "chunked envelope {envelope_idx} commit {} missing from broadcast db in status {:?}",
-            entry.commit_txid,
-            entry.status
+        return Err(
+            ChunkedEnvelopeWatcherError::CommitMissingAfterRevealTracking {
+                envelope_idx,
+                commit_txid: entry.commit_txid,
+                status: entry.status.clone(),
+            }
+            .into(),
         );
     };
     if commit.status == L1TxStatus::InvalidInputs {
@@ -1390,10 +1403,14 @@ mod tests {
         let err = check_full_broadcast_status(0, &entry, &bcast)
             .await
             .unwrap_err();
-        assert!(
-            err.to_string().contains("commit"),
-            "missing tracked commit should be a hard recovery error"
-        );
+        assert!(matches!(
+            err.downcast_ref::<ChunkedEnvelopeWatcherError>(),
+            Some(ChunkedEnvelopeWatcherError::CommitMissingAfterRevealTracking {
+                envelope_idx: 0,
+                commit_txid,
+                status: ChunkedEnvelopeStatus::Unpublished,
+            }) if *commit_txid == entry.commit_txid
+        ));
     }
 
     #[tokio::test]

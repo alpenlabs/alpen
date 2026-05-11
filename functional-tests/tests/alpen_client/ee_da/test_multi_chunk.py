@@ -1,7 +1,6 @@
 """Verify DA handles large payloads requiring multiple chunks."""
 
 import logging
-import math
 import time
 
 import flexitest
@@ -32,12 +31,14 @@ class TestDaMultiChunkTest(BaseTest):
     DA blob is split across multiple chunks with correct reassembly.
     """
 
+    BATCH_SEALING_BLOCK_COUNT = 20
+
     def __init__(self, ctx: flexitest.InitContext):
         ctx.set_env(
             AlpenClientEnv(
                 fullnode_count=0,
                 enable_l1_da=True,
-                batch_sealing_block_count=10,
+                batch_sealing_block_count=self.BATCH_SEALING_BLOCK_COUNT,
             )
         )
 
@@ -54,16 +55,16 @@ class TestDaMultiChunkTest(BaseTest):
         # init code (PUSH32 value + PUSH32 key + SSTORE), so max ~700 slots per
         # contract. Using 650 slots leaves room below that limit.
         #
-        # A 10-block batch still collects enough storage writes to exceed one
-        # chunk while keeping the functional test runtime bounded.
+        # The dev payload builder currently admits one of these deployments per
+        # block. A 20-block batch keeps enough storage writes in one sealed
+        # batch to exceed the DA chunk payload limit.
         num_contracts = 24
         slots_per_contract = 650
         min_expected_chunks = 2
-        expected_contracts_per_block = 2
         confirmation_timeout = timeout_for_expected_blocks(
-            math.ceil(num_contracts / expected_contracts_per_block),
+            num_contracts,
             seconds_per_block=15.0,
-            slack_seconds=60,
+            slack_seconds=120,
         )
 
         total_slots = num_contracts * slots_per_contract
@@ -137,20 +138,27 @@ class TestDaMultiChunkTest(BaseTest):
                 f" ~{estimated_diff_kb:.0f} KB state diff"
             )
 
-        batch_sealing_block_count = 10
-        expected_batch_last_block = (
-            (max_contract_block - 1) // batch_sealing_block_count + 1
-        ) * batch_sealing_block_count
-        logger.info(f"Expecting contracts in batch ending at block {expected_batch_last_block}")
+        batch_sealing_block_count = self.BATCH_SEALING_BLOCK_COUNT
+        deployment_batch_end_blocks = sorted(
+            {
+                ((block - 1) // batch_sealing_block_count + 1) * batch_sealing_block_count
+                for block in blocks_used
+            }
+        )
+        logger.info(
+            "Expecting contract DA in batch ending block(s): %s",
+            deployment_batch_end_blocks,
+        )
 
         # Poll for the multi-chunk blob
         all_envelopes: list[DaEnvelope] = []
         multi_chunk_result: ReassembledBlob | None = None
+        observed_results: list[str] = []
         mine_address = btc_rpc.proxy.getnewaddress()
 
         for attempt in range(30):
             current_l2_block = sequencer.get_block_number()
-            blocks_needed = expected_batch_last_block + batch_sealing_block_count
+            blocks_needed = deployment_batch_end_blocks[0]
             if current_l2_block < blocks_needed:
                 # Large DA payloads slow post-batch block production on CI, so the
                 # generic 1s-per-block wait budget is too tight for this step.
@@ -195,12 +203,19 @@ class TestDaMultiChunkTest(BaseTest):
 
                 results = reassemble_and_validate_blobs(all_envelopes)
                 for result in results:
+                    observed_results.append(
+                        f"last_block_num={result.blob.last_block_num} "
+                        f"chunks={result.total_chunks} "
+                        f"size={result.total_size} "
+                        f"commit={result.commit_txid}"
+                    )
                     logger.debug(
                         f"  Reassembled blob: last_block_num={result.blob.last_block_num}, "
                         f"total_chunks={result.total_chunks}, total_size={result.total_size} bytes"
                     )
                     if (
-                        result.blob.last_block_num >= max_contract_block
+                        result.blob.last_block_num in deployment_batch_end_blocks
+                        and not result.blob.is_empty_batch()
                         and result.total_chunks >= min_expected_chunks
                     ):
                         multi_chunk_result = result
@@ -214,8 +229,9 @@ class TestDaMultiChunkTest(BaseTest):
         assert multi_chunk_result is not None, (
             f"Expected multi-chunk blob with at least {min_expected_chunks} chunks. "
             f"Contracts deployed in blocks up to {max_contract_block}. "
-            f"Expected batch ending at block {expected_batch_last_block}. "
-            f"Total envelopes collected: {len(all_envelopes)}"
+            f"Expected deployment batch ending block(s): {deployment_batch_end_blocks}. "
+            f"Total envelopes collected: {len(all_envelopes)}. "
+            f"Observed reassembled blobs: {observed_results[-12:]}"
         )
 
         logger.info("Multi-chunk blob validation:")

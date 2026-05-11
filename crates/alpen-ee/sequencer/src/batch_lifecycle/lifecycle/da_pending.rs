@@ -21,12 +21,12 @@ where
     S: BatchStorage,
 {
     loop {
-        let target_idx = state.da_pending().idx() + 1;
-        if target_idx > latest_batch.idx() {
+        let batch_idx = state.da_pending().idx() + 1;
+        if batch_idx > latest_batch.idx() {
             return Ok(());
         }
 
-        let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(target_idx).await? else {
+        let Some((batch, status)) = ctx.batch_storage.get_batch_by_idx(batch_idx).await? else {
             return Ok(());
         };
 
@@ -34,22 +34,18 @@ where
             BatchStatus::Sealed => {
                 let batch_id = batch.id();
                 if !ctx.blob_provider.are_state_diffs_ready(batch_id).await {
-                    warn!(
-                        batch_idx = target_idx,
-                        batch_id = ?batch_id,
-                        "State diffs not ready, waiting"
-                    );
+                    warn!(batch_idx, ?batch_id, "State diffs not ready, waiting");
                     return Ok(());
                 }
 
-                debug!(batch_idx = target_idx, batch_id = ?batch_id, "Posting DA");
+                debug!(batch_idx, ?batch_id, "Posting DA");
 
                 let envelope_idx = match ctx.da_provider.post_batch_da(batch_id).await {
                     Ok(envelope_idx) => envelope_idx,
                     Err(e) => {
                         warn!(
-                            batch_idx = target_idx,
-                            batch_id = ?batch_id,
+                            batch_idx,
+                            ?batch_id,
                             error = %e,
                             "failed to post batch DA; will retry next lifecycle tick"
                         );
@@ -61,14 +57,14 @@ where
                     .update_batch_status(batch_id, BatchStatus::DaPending { envelope_idx })
                     .await?;
 
-                state.advance_da_pending(target_idx, batch_id);
+                state.advance_da_pending(batch_idx, batch_id);
             }
             BatchStatus::DaPending { .. }
             | BatchStatus::DaComplete { .. }
             | BatchStatus::ProofPending { .. }
             | BatchStatus::ProofReady { .. }
             | BatchStatus::Genesis => {
-                state.advance_da_pending(target_idx, batch.id());
+                state.advance_da_pending(batch_idx, batch.id());
             }
         }
     }

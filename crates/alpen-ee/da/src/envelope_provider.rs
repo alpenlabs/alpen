@@ -23,10 +23,30 @@ use tracing::*;
 #[derive(Default)]
 struct BlockTxs {
     /// `Some` only on the L1 block where the commit finalized.
-    commit: Option<(Txid, Wtxid)>,
+    commit: Option<FinalizedTxRef>,
     /// Reveals finalized in this block, with the vout of the commit output
     /// they spend (used to canonicalize ordering before producing `txns`).
-    reveals: Vec<(u32, Txid, Wtxid)>,
+    reveals: Vec<FinalizedRevealTx>,
+}
+
+struct FinalizedTxRef {
+    txid: Txid,
+    wtxid: Wtxid,
+}
+
+impl FinalizedTxRef {
+    fn new(txid: Txid, wtxid: Wtxid) -> Self {
+        Self { txid, wtxid }
+    }
+
+    fn into_pair(self) -> (Txid, Wtxid) {
+        (self.txid, self.wtxid)
+    }
+}
+
+struct FinalizedRevealTx {
+    vout_index: u32,
+    tx: FinalizedTxRef,
 }
 
 /// Groups commit + reveal txs by L1 block for [`L1DaBlockRef`] construction.
@@ -158,10 +178,12 @@ impl ChunkedEnvelopeDaProvider {
         // Commit tx (carries the EE DA magic/version OP_RETURN).
         let (commit_block_hash, commit_block_height) =
             self.lookup_finalized(entry.commit_txid).await?;
+        let commit_tx =
+            FinalizedTxRef::new(entry.commit_txid.to_txid(), entry.commit_wtxid.to_wtxid());
         block_map
             .entry((commit_block_hash, commit_block_height))
             .or_default()
-            .commit = Some((entry.commit_txid.to_txid(), entry.commit_wtxid.to_wtxid()));
+            .commit = Some(commit_tx);
 
         // Reveal txs (carry chunk payloads in their tapscript witnesses).
         for reveal in &entry.reveals {
@@ -170,11 +192,10 @@ impl ChunkedEnvelopeDaProvider {
                 .entry((block_hash, block_height))
                 .or_default()
                 .reveals
-                .push((
-                    reveal.vout_index,
-                    reveal.txid.to_txid(),
-                    reveal.wtxid.to_wtxid(),
-                ));
+                .push(FinalizedRevealTx {
+                    vout_index: reveal.vout_index,
+                    tx: FinalizedTxRef::new(reveal.txid.to_txid(), reveal.wtxid.to_wtxid()),
+                });
         }
 
         // Collapse each block's accumulated commit + reveals into a flat
@@ -183,13 +204,13 @@ impl ChunkedEnvelopeDaProvider {
         let mut refs: Vec<L1DaBlockRef> = block_map
             .into_iter()
             .map(|((hash, height), mut txs)| {
-                txs.reveals.sort_by_key(|(vout, ..)| *vout);
+                txs.reveals.sort_by_key(|reveal| reveal.vout_index);
                 let mut txns: Vec<(Txid, Wtxid)> =
                     Vec::with_capacity(txs.commit.is_some() as usize + txs.reveals.len());
-                if let Some(c) = txs.commit {
-                    txns.push(c);
+                if let Some(commit) = txs.commit {
+                    txns.push(commit.into_pair());
                 }
-                txns.extend(txs.reveals.into_iter().map(|(_, t, w)| (t, w)));
+                txns.extend(txs.reveals.into_iter().map(|reveal| reveal.tx.into_pair()));
                 let commitment = L1BlockCommitment::new(height, L1BlockId::from(hash));
                 L1DaBlockRef::new(commitment, txns)
             })

@@ -26,21 +26,32 @@ impl L1BroadcastDBSled {
 impl L1BroadcastDatabase for L1BroadcastDBSled {
     fn put_tx_entry(&self, txid: Buf32, txentry: L1TxEntry) -> DbResult<Option<u64>> {
         let next = self.get_next_idx()?;
-        let nxt =
+        let idx =
             self.config
                 .with_retry((&self.tx_tree, &self.tx_id_tree), |(txtree, txidtree)| {
-                    let nxt = find_next_available_id(&txidtree, next)?;
-                    if txtree.get(&txid)?.is_none() {
+                    let idx = if txtree.get(&txid)?.is_none() {
+                        let nxt = find_next_available_id(&txidtree, next)?;
                         txidtree.insert(&nxt, &txid)?;
-                    }
+                        Some(nxt)
+                    } else {
+                        None
+                    };
                     txtree.insert(&txid, &txentry)?;
-                    Ok(nxt)
+                    Ok(idx)
                 })?;
-        Ok(Some(nxt))
+        Ok(idx)
     }
 
     fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> DbResult<()> {
         if let Some(txid) = self.tx_id_tree.get(&idx)? {
+            let existing = self.tx_tree.get(&txid)?.ok_or_else(|| {
+                DbError::Other(format!("Entry does not exist for txid at idx {idx:?}"))
+            })?;
+            if existing.tx_raw() != txentry.tx_raw() {
+                return Err(DbError::Other(format!(
+                    "tx entry at idx {idx:?} cannot be updated with a different transaction"
+                )));
+            }
             self.tx_tree.insert(&txid, &txentry)?;
             Ok(())
         } else {

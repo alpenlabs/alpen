@@ -28,14 +28,17 @@ pub fn test_add_tx_new_entry(db: &impl L1BroadcastDatabase) {
 }
 
 pub fn test_put_tx_existing_entry(db: &impl L1BroadcastDatabase) {
-    let (txid, txentry) = generate_l1_tx_entry();
+    let (txid, mut txentry) = generate_l1_tx_entry();
 
-    let _ = db.put_tx_entry(txid, txentry.clone()).unwrap();
+    let idx = db.put_tx_entry(txid, txentry.clone()).unwrap().unwrap();
 
     // Update the same txid
-    let result = db.put_tx_entry(txid, txentry);
+    txentry.status = L1TxStatus::Published;
+    let result = db.put_tx_entry(txid, txentry.clone());
 
-    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), None);
+    assert_eq!(db.get_next_tx_idx().unwrap(), idx + 1);
+    assert_eq!(db.get_tx_entry(idx).unwrap(), Some(txentry));
 }
 
 pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
@@ -60,6 +63,18 @@ pub fn test_update_tx_entry(db: &impl L1BroadcastDatabase) {
 
     let stored_entry = db.get_tx_entry(idx.unwrap()).unwrap();
     assert_eq!(stored_entry, Some(updated_txentry));
+}
+
+pub fn test_update_tx_entry_rejects_mismatched_tx(db: &impl L1BroadcastDatabase) {
+    let (txid, txentry) = generate_l1_tx_entry();
+    let txns = get_test_bitcoin_txs();
+    let other_txentry = L1TxEntry::from_tx(&txns[1]);
+
+    let idx = db.put_tx_entry(txid, txentry.clone()).unwrap().unwrap();
+    let result = db.put_tx_entry_by_idx(idx, other_txentry);
+
+    assert!(result.is_err());
+    assert_eq!(db.get_tx_entry(idx).unwrap(), Some(txentry));
 }
 
 pub fn test_get_txentry_by_idx(db: &impl L1BroadcastDatabase) {
@@ -236,6 +251,12 @@ macro_rules! l1_broadcast_db_tests {
         fn test_update_tx_entry() {
             let db = $setup_expr;
             $crate::l1_broadcast_tests::test_update_tx_entry(&db);
+        }
+
+        #[test]
+        fn test_update_tx_entry_rejects_mismatched_tx() {
+            let db = $setup_expr;
+            $crate::l1_broadcast_tests::test_update_tx_entry_rejects_mismatched_tx(&db);
         }
 
         #[test]

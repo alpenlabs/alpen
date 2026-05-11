@@ -14,6 +14,17 @@ from factories.bitcoin import BitcoinFactory
 # Default magic bytes for DA testing (must be 4 bytes)
 DEFAULT_DA_MAGIC_BYTES = b"ALPN"
 DA_WALLET_FUNDING_OUTPUTS = 25
+INITIAL_L1_MATURITY_BLOCKS = 101
+INITIAL_L1_MINE_CHUNK_SIZE = 10
+
+
+def _generate_blocks_in_chunks(btc_rpc, block_count: int, mining_address: str) -> None:
+    """Mine regtest blocks without relying on one long-running RPC call."""
+    remaining = block_count
+    while remaining > 0:
+        chunk = min(remaining, INITIAL_L1_MINE_CHUNK_SIZE)
+        btc_rpc.proxy.generatetoaddress(chunk, mining_address)
+        remaining -= chunk
 
 
 class AlpenClientEnv(flexitest.EnvConfig):
@@ -104,7 +115,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 btc_rpc = bitcoin.create_rpc()
                 btc_rpc.proxy.createwallet("testwallet")
                 mining_address = btc_rpc.proxy.getnewaddress()
-                btc_rpc.proxy.generatetoaddress(101, mining_address)
+                _generate_blocks_in_chunks(btc_rpc, INITIAL_L1_MATURITY_BLOCKS, mining_address)
 
                 # DA publishing can sign multiple commits before earlier
                 # change outputs become confirmed spendable. Split a matured
