@@ -560,7 +560,7 @@ impl ManifestMmrTracker {
     pub fn with_genesis_l1_height(genesis_l1_height: u32) -> Self {
         let prefill_count = genesis_l1_height as u64 + 1;
         let mmr = <Mmr64 as strata_merkle::Mmr<StrataHasher>>::new_repeated(
-            strata_ol_state_types::MMR_PREFILL_LEAF,
+            strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF,
             prefill_count,
         );
         Self {

@@ -6,22 +6,11 @@ use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
 
 use crate::{
-    OLAccountTypeState, OLSnarkAccountState, WriteBatch,
+    MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
     ssz_generated::ssz::state::{
         EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
     },
 };
-
-/// Sentinel leaf used to prefill the ASM manifests MMR for L1 heights at or
-/// before genesis.
-///
-/// The MMR is height-indexed; positions for blocks at heights
-/// `0..=genesis_l1_height` are filled with this constant so that the manifest
-/// for height `h` lands at MMR index `h`. The value is non-zero because the
-/// MMR encoding treats `[0; 32]` as "no peak present"; the specific bytes do
-/// not affect protocol semantics, since no proof verifies against a prefilled
-/// position.
-pub const MMR_PREFILL_LEAF: [u8; 32] = [0xffu8; 32];
 
 impl OLState {
     /// Creates initial OL state from genesis parameters.
@@ -40,7 +29,7 @@ impl OLState {
         // state and the DB-side ASM MMR agree on it.
         let prefill_count = params.last_l1_block.height() as u64 + 1;
         let manifests_mmr =
-            <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_PREFILL_LEAF, prefill_count);
+            <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let mut ledger = TsnlLedgerAccountsTable::new_empty();
