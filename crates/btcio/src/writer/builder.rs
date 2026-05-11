@@ -154,11 +154,15 @@ impl EnvelopeData {
 pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<EnvelopeData> {
-    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
-    let envelope_pubkey = ctx
-        .envelope_pubkey
-        .ok_or_else(|| anyhow::anyhow!("envelope_pubkey is required for envelope transactions"))?;
+) -> Result<EnvelopeData, EnvelopeError> {
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
+        .await
+        .map_err(EnvelopeError::Other)?;
+    let envelope_pubkey = ctx.envelope_pubkey.ok_or_else(|| {
+        EnvelopeError::Other(anyhow!(
+            "envelope_pubkey is required for envelope transactions"
+        ))
+    })?;
     let env_config = EnvelopeConfig::new(
         ctx.btcio_params.magic_bytes(),
         ctx.sequencer_address.clone(),
@@ -168,7 +172,6 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
         Some(envelope_pubkey),
     );
     create_envelope_transactions(&env_config, payload, utxos)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 /// Builds envelope transactions using a temporary keypair and signs both commit and reveal
@@ -178,8 +181,10 @@ pub(crate) async fn build_envelope_txs<R: Reader + Signer + Wallet>(
 pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
     payload: &L1Payload,
     ctx: &WriterContext<R>,
-) -> anyhow::Result<EnvelopeData> {
-    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx).await?;
+) -> Result<EnvelopeData, EnvelopeError> {
+    let (network, utxos, fee_rate) = fetch_envelope_prereqs(ctx)
+        .await
+        .map_err(EnvelopeError::Other)?;
     let keypair = generate_key_pair()?;
     let pubkey = XOnlyPublicKey::from_keypair(&keypair).0;
     let env_config = EnvelopeConfig::new(
@@ -190,13 +195,13 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
         BITCOIN_DUST_LIMIT,
         Some(pubkey),
     );
-    let mut envelope = create_envelope_transactions(&env_config, payload, utxos)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let mut envelope = create_envelope_transactions(&env_config, payload, utxos)?;
 
     let signed_commit = ctx
         .client
         .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
-        .await?
+        .await
+        .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
         .tx;
     envelope.commit_tx = signed_commit;
 

@@ -151,9 +151,18 @@ mod test {
 
     use super::*;
     use crate::{
-        test_utils::test_context::get_writer_context,
+        test_utils::{
+            test_context::{get_writer_context, get_writer_context_with_client},
+            TestBitcoinClient,
+        },
         writer::test_utils::{get_broadcast_handle, get_envelope_ops},
     };
+
+    fn unsigned_test_entry() -> BundledPayloadEntry {
+        let tag = TagData::new(1, 1, vec![]).unwrap();
+        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
+        BundledPayloadEntry::new_unsigned(payload)
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_create_payload_envelopes() {
@@ -162,9 +171,7 @@ mod test {
         let ctx = get_writer_context();
 
         // First insert an unsigned blob
-        let tag = TagData::new(1, 1, vec![]).unwrap();
-        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
-        let entry = BundledPayloadEntry::new_unsigned(payload);
+        let entry = unsigned_test_entry();
 
         assert_eq!(entry.status, L1BundleStatus::Unsigned);
         assert_eq!(entry.commit_txid, Buf32::zero());
@@ -191,9 +198,7 @@ mod test {
         let bcast_handle = get_broadcast_handle();
         let ctx = get_writer_context();
 
-        let tag = TagData::new(1, 1, vec![]).unwrap();
-        let payload = L1Payload::new(vec![vec![1; 150]; 1], tag);
-        let entry = BundledPayloadEntry::new_unsigned(payload);
+        let entry = unsigned_test_entry();
 
         iops.put_payload_entry_async(0, entry.clone())
             .await
@@ -218,5 +223,30 @@ mod test {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_create_payload_envelopes_preserves_not_enough_utxos() {
+        let client = Arc::new(TestBitcoinClient::new(1).with_utxo_amount_sats(1000));
+        let ctx = get_writer_context_with_client(client);
+        let entry = unsigned_test_entry();
+
+        let err = create_payload_envelopes(0, &entry, ctx).await.unwrap_err();
+
+        assert!(matches!(err, EnvelopeError::NotEnoughUtxos(_, 1000)));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sign_and_broadcast_payload_envelopes_preserves_not_enough_utxos() {
+        let client = Arc::new(TestBitcoinClient::new(1).with_utxo_amount_sats(1000));
+        let ctx = get_writer_context_with_client(client);
+        let bcast_handle = get_broadcast_handle();
+        let entry = unsigned_test_entry();
+
+        let err = sign_and_broadcast_payload_envelopes(0, &entry, ctx, &bcast_handle)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, EnvelopeError::NotEnoughUtxos(_, 1000)));
     }
 }
