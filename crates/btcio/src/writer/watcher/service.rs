@@ -279,7 +279,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     debug!(%sighash, "envelope built, awaiting signer");
                 }
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
-                    error!(%required, %available, "not enough utxos to create commit/reveal transaction");
+                    warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
                 e => {
                     e?;
@@ -303,7 +303,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     debug!(%cid, reveal_txid = %rid, "envelope signed and queued for broadcast");
                 }
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
-                    error!(%required, %available, "not enough utxos to create commit/reveal transaction");
+                    warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
                 }
                 e => {
                     e?;
@@ -491,6 +491,9 @@ mod tests {
         },
     };
 
+    const TEST_REQUIRED_SATS: u64 = 4096;
+    const TEST_AVAILABLE_SATS: u64 = 2658;
+
     fn minimal_envelope_data() -> EnvelopeData {
         let keypair =
             UntweakedKeypair::from_seckey_slice(SECP256K1, &[1u8; 32]).expect("valid key");
@@ -544,6 +547,8 @@ mod tests {
         stored: Mutex<HashMap<u64, BundledPayloadEntry>>,
         broadcast_handle: Arc<L1BroadcastHandle>,
         external_signing: bool,
+        fail_create_not_enough_utxos: bool,
+        fail_sign_not_enough_utxos: bool,
     }
 
     impl MockWatcherContext {
@@ -552,7 +557,19 @@ mod tests {
                 stored: Mutex::new(HashMap::new()),
                 broadcast_handle: get_broadcast_handle(),
                 external_signing,
+                fail_create_not_enough_utxos: false,
+                fail_sign_not_enough_utxos: false,
             }
+        }
+
+        fn with_create_not_enough_utxos(mut self) -> Self {
+            self.fail_create_not_enough_utxos = true;
+            self
+        }
+
+        fn with_sign_not_enough_utxos(mut self) -> Self {
+            self.fail_sign_not_enough_utxos = true;
+            self
         }
 
         fn get_stored(&self, idx: u64) -> Option<BundledPayloadEntry> {
@@ -583,6 +600,12 @@ mod tests {
             _idx: u64,
             _entry: &BundledPayloadEntry,
         ) -> Result<EnvelopeData, EnvelopeError> {
+            if self.fail_create_not_enough_utxos {
+                return Err(EnvelopeError::NotEnoughUtxos(
+                    TEST_REQUIRED_SATS,
+                    TEST_AVAILABLE_SATS,
+                ));
+            }
             Ok(minimal_envelope_data())
         }
 
@@ -591,6 +614,12 @@ mod tests {
             _idx: u64,
             _entry: &BundledPayloadEntry,
         ) -> Result<(Buf32, Buf32), EnvelopeError> {
+            if self.fail_sign_not_enough_utxos {
+                return Err(EnvelopeError::NotEnoughUtxos(
+                    TEST_REQUIRED_SATS,
+                    TEST_AVAILABLE_SATS,
+                ));
+            }
             Ok((Buf32([1u8; 32]), Buf32([2u8; 32])))
         }
 
@@ -636,6 +665,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_unchecked_not_enough_utxos_keeps_unsigned_for_retry() {
+        let ctx = MockWatcherContext::new(false).with_sign_not_enough_utxos();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        // Unsigned entries use zero txids as sentinels because no txs have been built yet.
+        assert_eq!(stored.commit_txid, Buf32::zero());
+        assert_eq!(stored.reveal_txid, Buf32::zero());
+        assert_eq!(state.curr_payloadidx, 0);
+        assert!(state.envelope_cache.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_schnorr_key_transitions_to_pending_reveal_sign() {
         let ctx = MockWatcherContext::new(true);
         let entry = test_unsigned_entry();
@@ -651,6 +698,24 @@ mod tests {
         );
         // Envelope is cached for the reveal sig step
         assert!(state.envelope_cache.contains_key(&0));
+    }
+
+    #[tokio::test]
+    async fn test_schnorr_key_not_enough_utxos_keeps_unsigned_for_retry() {
+        let ctx = MockWatcherContext::new(true).with_create_not_enough_utxos();
+        let entry = test_unsigned_entry();
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_unsigned_or_needs_resign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unsigned);
+        // Unsigned entries use zero txids as sentinels because no txs have been built yet.
+        assert_eq!(stored.commit_txid, Buf32::zero());
+        assert_eq!(stored.reveal_txid, Buf32::zero());
+        assert_eq!(state.curr_payloadidx, 0);
+        assert!(state.envelope_cache.is_empty());
     }
 
     #[tokio::test]
