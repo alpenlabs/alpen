@@ -141,11 +141,17 @@ impl OLBlockManager {
         tip: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_blocking(tip)?;
-        // TODO(STR-2105): determine how to get the canonical block. for now it is just the first
-        // one
+        for id in &blocks {
+            if matches!(
+                self.get_block_status_blocking(*id)?,
+                Some(BlockStatus::Valid)
+            ) {
+                return Ok(Some(OLBlockCommitment::new(tip, *id)));
+            }
+        }
         Ok(blocks
             .first()
-            .cloned()
+            .copied()
             .map(|id| OLBlockCommitment::new(tip, id)))
     }
 
@@ -155,11 +161,17 @@ impl OLBlockManager {
         tip: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_async(tip).await?;
-        // TODO(STR-2105): determine how to get the canonical block. for now, it is just the first
-        // one
+        for id in &blocks {
+            if matches!(
+                self.get_block_status_async(*id).await?,
+                Some(BlockStatus::Valid)
+            ) {
+                return Ok(Some(OLBlockCommitment::new(tip, *id)));
+            }
+        }
         Ok(blocks
             .first()
-            .cloned()
+            .copied()
             .map(|id| OLBlockCommitment::new(tip, id)))
     }
 }

@@ -24,7 +24,7 @@ use tracing::{debug, info, warn};
 
 use self::{
     receipt_hook::CheckpointReceiptHook,
-    spec::{CheckpointSpec, CheckpointTask},
+    spec::{CheckpointSpec, CheckpointTask, canonical_valid_epoch_commitment},
 };
 use crate::run_context::RunContext;
 
@@ -222,10 +222,7 @@ fn spawn_checkpoint_runner(
                 let epoch = next_epoch_to_prove;
 
                 // Resolve the full epoch commitment from the checkpoint DB.
-                let commitment = match storage
-                    .ol_checkpoint()
-                    .get_canonical_epoch_commitment_at_blocking(epoch)
-                {
+                let commitment = match canonical_valid_epoch_commitment(&storage, epoch) {
                     Ok(Some(c)) => c,
                     Ok(None) => {
                         debug!(%epoch, "epoch commitment not yet available, will retry");
@@ -252,10 +249,7 @@ fn spawn_checkpoint_runner(
                         // Re-check canonical commitment before advancing the
                         // cursor. If the epoch reorged while proving, keep the
                         // cursor at this epoch so we immediately reprove.
-                        let latest_commitment = match storage
-                            .ol_checkpoint()
-                            .get_canonical_epoch_commitment_at_blocking(epoch)
-                        {
+                        let latest_commitment = match canonical_valid_epoch_commitment(&storage, epoch) {
                             Ok(Some(c)) => c,
                             Ok(None) => {
                                 warn!(

@@ -8,6 +8,7 @@ use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize, io::Error as BorshIoError};
+use strata_db_types::traits::BlockStatus;
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_ol_checkpoint::compute_epoch_preseal_da_diff;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
@@ -85,9 +86,7 @@ fn fetch_input_blocking(
     debug!(%epoch_index, "fetching checkpoint proof input (blocking)");
 
     // Ensure this task still matches the canonical commitment for the epoch.
-    let canonical_commitment = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(epoch)?
+    let canonical_commitment = canonical_valid_epoch_commitment(&storage, epoch)?
         .ok_or(ProverError::EpochCommitmentNotFound(epoch_index))?;
     if canonical_commitment != task_commitment {
         return Err(ProverError::StaleTaskCommitment {
@@ -182,4 +181,25 @@ fn fetch_input_blocking(
         parent,
         da_state_diff_bytes,
     })
+}
+
+pub(crate) fn canonical_valid_epoch_commitment(
+    storage: &NodeStorage,
+    epoch: Epoch,
+) -> Result<Option<EpochCommitment>, ProverError> {
+    let commitments = storage
+        .ol_checkpoint()
+        .get_epoch_commitments_at_blocking(epoch)?;
+
+    for commitment in &commitments {
+        let block_id = *commitment.last_blkid();
+        if matches!(
+            storage.ol_block().get_block_status_blocking(block_id)?,
+            Some(BlockStatus::Valid)
+        ) {
+            return Ok(Some(*commitment));
+        }
+    }
+
+    Ok(commitments.first().copied())
 }
