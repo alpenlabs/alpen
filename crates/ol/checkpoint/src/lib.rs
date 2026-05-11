@@ -10,5 +10,5 @@ mod service;
 mod state;
 
 pub use builder::OLCheckpointBuilder;
-pub use context::{ProofNotify, ProverConfig};
+pub use context::{ProofNotify, ProverConfig, compute_epoch_preseal_da_diff};
 pub use handle::OLCheckpointWorkerHandle;

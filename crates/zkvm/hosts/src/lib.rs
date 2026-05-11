@@ -6,5 +6,7 @@
 //! its `ProofContext` / `ProofZkVm`) is gone — the integrated prover knows
 //! its host at build time, no runtime dispatch needed.
 
+pub mod native;
+
 #[cfg(feature = "sp1")]
 pub mod sp1;

@@ -95,7 +95,8 @@ impl EeAcctProgram {
         input: &<Self as ZkVmProgram>::Input,
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         let host = self.native_host();
-        <Self as ZkVmProgram>::execute(input, &host)
+        let execution = <Self as ZkVmProgram>::execute(input, &host)?;
+        Self::process_output::<NativeHost>(execution.public_values())
     }
 }
 

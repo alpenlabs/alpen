@@ -8,6 +8,7 @@ use strata_predicate::PredicateKey;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AcctPredicateOverride {
     AlwaysAccept,
+    NativeSchnorr,
     Sp1Groth16,
 }
 
@@ -18,7 +19,8 @@ impl fmt::Display for ParseAcctPredicateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "invalid account predicate type '{}', expected 'always-accept' or 'sp1-groth16'",
+            "invalid account predicate type '{}', expected 'always-accept', \
+             'native-schnorr', or 'sp1-groth16'",
             self.0
         )
     }
@@ -32,6 +34,7 @@ impl FromStr for AcctPredicateOverride {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "always-accept" => Ok(Self::AlwaysAccept),
+            "native-schnorr" => Ok(Self::NativeSchnorr),
             "sp1-groth16" => Ok(Self::Sp1Groth16),
             _ => Err(ParseAcctPredicateError(s.to_owned())),
         }
@@ -43,9 +46,14 @@ pub(crate) fn resolve_acct_predicate(
 ) -> anyhow::Result<PredicateKey> {
     match override_val {
         Some(AcctPredicateOverride::AlwaysAccept) => Ok(PredicateKey::always_accept()),
+        Some(AcctPredicateOverride::NativeSchnorr) => Ok(resolve_native_schnorr()),
         Some(AcctPredicateOverride::Sp1Groth16) => resolve_sp1_groth16(),
         None => Ok(resolve_default()),
     }
+}
+
+fn resolve_native_schnorr() -> PredicateKey {
+    strata_zkvm_hosts::native::alpen_acct_predicate_key()
 }
 
 fn resolve_sp1_groth16() -> anyhow::Result<PredicateKey> {
@@ -70,7 +78,7 @@ fn resolve_default() -> PredicateKey {
 
     #[cfg(not(feature = "sp1-builder"))]
     {
-        PredicateKey::always_accept()
+        resolve_native_schnorr()
     }
 }
 

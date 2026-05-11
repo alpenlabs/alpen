@@ -50,6 +50,11 @@ class BitcoinFactory(flexitest.Factory):
         datadir = ctx.make_service_dir(ServiceType.Bitcoin)
         p2p_port = self.next_port()
         rpc_port = self.next_port()
+        zmq_hashblock = self.next_port()
+        zmq_hashtx = self.next_port()
+        zmq_rawblock = self.next_port()
+        zmq_rawtx = self.next_port()
+        zmq_sequence = self.next_port()
         logfile = os.path.join(datadir, "service.log")
 
         cmd = [
@@ -59,12 +64,21 @@ class BitcoinFactory(flexitest.Factory):
             "-listen=0",
             f"-port={p2p_port}",
             "-printtoconsole",
+            "-server=1",
             "-fallbackfee=0.00001",
             "-minrelaytxfee=0",
+            "-blockmintxfee=0",
+            "-dustrelayfee=0",
+            "-acceptnonstdtxn=1",
             f"-datadir={datadir}",
             f"-rpcport={rpc_port}",
             f"-rpcuser={rpc_user}",
             f"-rpcpassword={rpc_password}",
+            f"-zmqpubhashblock=tcp://0.0.0.0:{zmq_hashblock}",
+            f"-zmqpubhashtx=tcp://0.0.0.0:{zmq_hashtx}",
+            f"-zmqpubrawblock=tcp://0.0.0.0:{zmq_rawblock}",
+            f"-zmqpubrawtx=tcp://0.0.0.0:{zmq_rawtx}",
+            f"-zmqpubsequence=tcp://0.0.0.0:{zmq_sequence}",
         ]
 
         rpc_url = f"http://{rpc_user}:{rpc_password}@localhost:{rpc_port}"
@@ -77,6 +91,11 @@ class BitcoinFactory(flexitest.Factory):
             "rpc_password": rpc_password,
             "datadir": datadir,
             "walletname": "testwallet",
+            "zmq_hashblock": zmq_hashblock,
+            "zmq_hashtx": zmq_hashtx,
+            "zmq_rawblock": zmq_rawblock,
+            "zmq_rawtx": zmq_rawtx,
+            "zmq_sequence": zmq_sequence,
         }
 
         svc = BitcoinService(props, cmd, stdout=logfile, name=ServiceType.Bitcoin)

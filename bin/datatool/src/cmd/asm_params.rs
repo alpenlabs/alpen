@@ -3,8 +3,8 @@
 use std::{fs, num::NonZero, str::FromStr};
 
 use bitcoin::{
-    bip32::Xpriv,
-    secp256k1::{PublicKey, SECP256K1},
+    bip32::{Xpriv, Xpub},
+    secp256k1::{Parity, PublicKey, XOnlyPublicKey, SECP256K1},
 };
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
@@ -18,7 +18,8 @@ use strata_crypto::{
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
-use strata_predicate::PredicateKey;
+use strata_predicate::{PredicateKey, PredicateTypeId};
+use strata_primitives::buf::Buf32;
 
 use crate::{
     args::{CmdContext, SubcAsmParams},
@@ -84,10 +85,13 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     // Convert xpriv keys to secp256k1 public keys.
-    let pubkeys: Vec<PublicKey> = opkeys
+    let mut pubkeys: Vec<PublicKey> = opkeys
         .iter()
         .map(|xpriv| xpriv.to_keypair(SECP256K1).public_key())
         .collect();
+    for key in cmd.op_pubkey {
+        pubkeys.push(parse_operator_pubkey(&key)?);
+    }
 
     // Build admin subprotocol params using the operator keys for all three admin roles.
     let admin_keys: Vec<CompressedPublicKey> = pubkeys
@@ -125,10 +129,18 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     // Build checkpoint config.
     let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
+    let sequencer_predicate = match cmd.seqkey.as_ref().map(|s| s.trim()) {
+        Some(seqkey) => {
+            let xpub = Xpub::from_str(seqkey)?;
+            let seq_pubkey = Buf32(xpub.to_x_only_pub().serialize());
+            PredicateKey::new(PredicateTypeId::Bip340Schnorr, seq_pubkey.0.to_vec())
+        }
+        None => PredicateKey::always_accept(),
+    };
     let genesis_l1_height = genesis_l1_view.blk.height();
 
     let checkpoint = CheckpointInitConfig {
-        sequencer_predicate: PredicateKey::always_accept(),
+        sequencer_predicate,
         checkpoint_predicate,
         genesis_l1_height,
         genesis_ol_blkid,
@@ -180,4 +192,16 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     Ok(())
+}
+
+fn parse_operator_pubkey(raw: &str) -> anyhow::Result<PublicKey> {
+    let raw = raw.trim();
+    if raw.len() == 64 {
+        let xonly = XOnlyPublicKey::from_str(raw)
+            .map_err(|e| anyhow::anyhow!("invalid x-only operator pubkey {raw}: {e}"))?;
+        return Ok(xonly.public_key(Parity::Even));
+    }
+
+    PublicKey::from_str(raw)
+        .map_err(|e| anyhow::anyhow!("invalid compressed operator pubkey {raw}: {e}"))
 }

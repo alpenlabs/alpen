@@ -144,6 +144,12 @@ class EpochSealingConfig:
 
 
 @dataclass
+class ProverConfig:
+    backend: str = field(default="native")
+    workers: int = field(default=1)
+
+
+@dataclass
 class StrataConfig:
     client: ClientConfig = field(default_factory=ClientConfig)
     bitcoind: BitcoindConfig = field(default_factory=BitcoindConfig)
@@ -152,6 +158,7 @@ class StrataConfig:
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    prover: ProverConfig = field(default_factory=ProverConfig)
 
     def as_toml_string(self) -> str:
         d = asdict(self)

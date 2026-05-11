@@ -43,6 +43,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_magic_bytes: bytes = DEFAULT_DA_MAGIC_BYTES,
         l1_reorg_safe_depth: int = 1,
         batch_sealing_block_count: int = 5,
+        custom_chain: str = "dev",
+        dev_track_finalized_epoch: bool = False,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
@@ -52,6 +54,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
         self.da_magic_bytes = da_magic_bytes
         self.l1_reorg_safe_depth = l1_reorg_safe_depth
         self.batch_sealing_block_count = batch_sealing_block_count
+        self.custom_chain = custom_chain
+        self.dev_track_finalized_epoch = dev_track_finalized_epoch
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
         if mesh_bootnodes and not enable_discovery:
@@ -70,6 +74,8 @@ class AlpenClientEnv(flexitest.EnvConfig):
             self.da_magic_bytes,
             self.l1_reorg_safe_depth,
             self.batch_sealing_block_count,
+            self.custom_chain,
+            self.dev_track_finalized_epoch,
         )
         return flexitest.LiveEnv(services)
 
@@ -84,9 +90,10 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_magic_bytes: bytes = b"0000",
         l1_reorg_safe_depth: int = 2,
         batch_sealing_block_count: int = 10,
+        custom_chain: str = "dev",
+        dev_track_finalized_epoch: bool = False,
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
-        dev_track_finalized_epoch: bool = False,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -133,6 +140,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             enable_discovery=enable_discovery,
             ol_endpoint=ol_endpoint,
             da_config=da_config,
+            custom_chain=custom_chain,
             dev_track_finalized_epoch=dev_track_finalized_epoch,
         )
         sequencer.wait_for_ready(timeout=60)
@@ -160,6 +168,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
+                custom_chain=custom_chain,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)

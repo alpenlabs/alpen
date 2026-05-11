@@ -23,6 +23,11 @@ class BitcoinProps(TypedDict):
     rpc_url: str
     datadir: str
     walletname: str
+    zmq_hashblock: int
+    zmq_hashtx: int
+    zmq_rawblock: int
+    zmq_rawtx: int
+    zmq_sequence: int
 
 
 class BitcoinService(RpcService):

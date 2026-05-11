@@ -10,6 +10,8 @@ use strata_predicate::PredicateKey;
 pub(crate) enum CheckpointPredicateOverride {
     /// Force `AlwaysAccept` regardless of compile-time features.
     AlwaysAccept,
+    /// Use the deterministic native Schnorr predicate.
+    NativeSchnorr,
     /// Use SP1 Groth16 (requires `sp1-builder` feature).
     Sp1Groth16,
 }
@@ -22,7 +24,8 @@ impl fmt::Display for ParseCheckpointPredicateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "invalid checkpoint predicate type '{}', expected 'always-accept' or 'sp1-groth16'",
+            "invalid checkpoint predicate type '{}', expected 'always-accept', \
+             'native-schnorr', or 'sp1-groth16'",
             self.0
         )
     }
@@ -36,6 +39,7 @@ impl FromStr for CheckpointPredicateOverride {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "always-accept" => Ok(Self::AlwaysAccept),
+            "native-schnorr" => Ok(Self::NativeSchnorr),
             "sp1-groth16" => Ok(Self::Sp1Groth16),
             _ => Err(ParseCheckpointPredicateError(s.to_owned())),
         }
@@ -52,9 +56,15 @@ pub(crate) fn resolve_checkpoint_predicate(
 ) -> anyhow::Result<PredicateKey> {
     match override_val {
         Some(CheckpointPredicateOverride::AlwaysAccept) => Ok(PredicateKey::always_accept()),
+        Some(CheckpointPredicateOverride::NativeSchnorr) => Ok(resolve_native_schnorr()),
         Some(CheckpointPredicateOverride::Sp1Groth16) => resolve_sp1_groth16(),
         None => Ok(resolve_default()),
     }
+}
+
+/// Resolves the deterministic native Schnorr predicate key.
+fn resolve_native_schnorr() -> PredicateKey {
+    strata_zkvm_hosts::native::checkpoint_predicate_key()
 }
 
 /// Resolves the SP1 Groth16 predicate key.
@@ -84,7 +94,7 @@ fn resolve_default() -> PredicateKey {
 
     #[cfg(not(feature = "sp1-builder"))]
     {
-        PredicateKey::always_accept()
+        resolve_native_schnorr()
     }
 }
 

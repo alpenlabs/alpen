@@ -26,6 +26,7 @@ strata-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
 strata-snark-acct-runtime.workspace = true
+strata-zkvm-hosts.workspace = true
 
 sp1-verifier = { workspace = true, optional = true }
 strata-sp1-guest-builder = { path = "../../provers/sp1", optional = true }

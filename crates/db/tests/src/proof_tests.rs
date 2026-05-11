@@ -46,7 +46,12 @@ fn generate_proof() -> (EpochCommitment, ProofReceiptWithMetadata) {
     let proof = Proof::default();
     let public_values = PublicValues::default();
     let receipt = ProofReceipt::new(proof, public_values);
-    let metadata = ProofMetadata::new(ZkVm::Native, ProgramId([0u8; 32]), "0.1".to_string());
+    let metadata = ProofMetadata::new(
+        ZkVm::Native,
+        ProgramId([0u8; 32]),
+        "0.1".to_string(),
+        zkaleido::ProofType::Core,
+    );
     let proof_receipt = ProofReceiptWithMetadata::new(receipt, metadata);
     (epoch, proof_receipt)
 }

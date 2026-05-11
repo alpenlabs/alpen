@@ -24,18 +24,15 @@ debug-utils = [
 ]
 prover = [
   "dep:borsh",
-  "dep:strata-ol-state-support-types",
-  "dep:strata-ol-stf",
   "dep:strata-paas",
   "dep:strata-predicate",
   "dep:strata-proofimpl-checkpoint",
+  "dep:strata-zkvm-hosts",
   "dep:zkaleido",
 ]
 sp1 = [
   "prover",
   "strata-paas/remote",
-  "dep:strata-zkvm-hosts",
-  "dep:zkaleido-sp1-host",
   "strata-zkvm-hosts/sp1",
 ]
 
@@ -74,9 +71,7 @@ strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
 strata-ol-state-provider = { workspace = true, optional = true }
-strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
-strata-ol-stf = { workspace = true, optional = true }
 strata-paas = { workspace = true, optional = true }
 strata-params.workspace = true
 strata-predicate = { workspace = true, optional = true }
@@ -109,9 +104,6 @@ tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 zkaleido = { workspace = true, optional = true }
-zkaleido-sp1-host = { workspace = true, features = [
-  "remote-prover",
-], optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

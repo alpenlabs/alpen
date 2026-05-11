@@ -7,13 +7,19 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+bincode.workspace = true
+k256.workspace = true
+serde.workspace = true
+strata-predicate.workspace = true
+zkaleido.workspace = true
+zkaleido-native-adapter.workspace = true
+
 # sp1
 strata-sp1-guest-builder = { path = "../../../provers/sp1", optional = true }
-zkaleido-sp1-host = { workspace = true, features = [
-  "remote-prover",
-], optional = true }
+tokio = { workspace = true, features = ["rt"], optional = true }
+zkaleido-sp1-host = { workspace = true, optional = true }
 
 [features]
 default = []
-sp1 = ["dep:zkaleido-sp1-host", "zkaleido-sp1-host/remote-prover"]
+sp1 = ["dep:tokio", "dep:zkaleido-sp1-host"]
 sp1-builder = ["sp1", "strata-sp1-guest-builder/sp1-dev"]

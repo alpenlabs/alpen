@@ -64,6 +64,8 @@ class StrataFactory(flexitest.Factory):
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
+        bridge_operator_pubkeys: list[str] | None = None,
+        alpen_chain_config: Path | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -80,6 +82,8 @@ class StrataFactory(flexitest.Factory):
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
             ol_block_time_ms: Optional sequencer OL block time override.
+            bridge_operator_pubkeys: Optional raw bridge operator public keys.
+            alpen_chain_config: Optional EVM genesis chain config used for Alpen account state.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -132,16 +136,33 @@ class StrataFactory(flexitest.Factory):
 
         # Generate rollup params via datatool (also produces keys used below).
         if use_unchecked_cred_rule:
-            params_data = generate_rollup_params_unchecked(datadir, bconfig, genesis_l1_height)
+            params_data = generate_rollup_params_unchecked(
+                datadir,
+                bconfig,
+                genesis_l1_height,
+                operator_pubkeys=bridge_operator_pubkeys,
+                chain_config=alpen_chain_config,
+            )
         else:
-            params_data = generate_rollup_params(datadir, bconfig, genesis_l1_height)
+            params_data = generate_rollup_params(
+                datadir,
+                bconfig,
+                genesis_l1_height,
+                operator_pubkeys=bridge_operator_pubkeys,
+                chain_config=alpen_chain_config,
+            )
 
         # Generate or write OL params.
         if ol_params is not None:
             ol_params_path = datadir / "ol-params.json"
             ol_params_path.write_text(ol_params.as_json_string())
         else:
-            ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+            ol_params_path = generate_ol_params(
+                datadir,
+                bconfig,
+                genesis_l1_height,
+                alpen_chain_config=alpen_chain_config,
+            )
 
         # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
         asm_params_path = generate_asm_params(
@@ -149,8 +170,10 @@ class StrataFactory(flexitest.Factory):
             bconfig,
             genesis_l1_height,
             params_data.operator_keys,
+            operator_pubkeys=bridge_operator_pubkeys,
             ol_params_path=ol_params_path,
             admin_confirmation_depth=admin_confirmation_depth,
+            sequencer_pubkey=params_data.sequencer_pubkey,
         )
 
         # Build command

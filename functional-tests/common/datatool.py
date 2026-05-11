@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -6,6 +7,15 @@ from pathlib import Path
 from common.config.config import BitcoindConfig
 
 DEFAULT_OL_BLOCK_TIME_MS = 5_000
+DEFAULT_NATIVE_PREDICATE = "native-schnorr"
+
+
+def checkpoint_predicate() -> str:
+    return os.environ.get("ALPEN_CHECKPOINT_PREDICATE", DEFAULT_NATIVE_PREDICATE)
+
+
+def alpen_predicate() -> str:
+    return os.environ.get("ALPEN_ALPEN_PREDICATE", DEFAULT_NATIVE_PREDICATE)
 
 
 def run_datatool(
@@ -79,6 +89,7 @@ class RollupParamsArtifacts:
     params_path: Path
     sequencer_key_path: Path | None
     operator_keys: list[str]
+    sequencer_pubkey: str | None = None
 
 
 def write_sequencer_runtime_config(
@@ -102,6 +113,8 @@ def generate_rollup_params_unchecked(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
+    operator_pubkeys: list[str] | None = None,
+    chain_config: Path | None = None,
     seq_fname: str = "sequencer_root_key",
 ) -> RollupParamsArtifacts:
     """Generates rollup params with ``CredRule::Unchecked``.
@@ -113,13 +126,15 @@ def generate_rollup_params_unchecked(
     """
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
-    operator_xprivs = get_operator_xprivs(datadir, "bridge-operator_keys")
+    operator_xprivs = (
+        [] if operator_pubkeys else get_operator_xprivs(datadir, "bridge-operator_keys")
+    )
     params_path = datadir / "rollup-params.json"
 
     args = [
         "genparams",
         "--checkpoint-predicate",
-        "always-accept",
+        checkpoint_predicate(),
         "--name",
         "ALPN",
         "--genesis-l1-height",
@@ -127,8 +142,12 @@ def generate_rollup_params_unchecked(
         "-o",
         str(params_path),
     ]
+    if chain_config is not None:
+        args.extend(["--chain-config", str(chain_config)])
     for opkey in operator_xprivs:
         args.extend(["--opkey", opkey])
+    for op_pubkey in operator_pubkeys or []:
+        args.extend(["--op-pubkey", op_pubkey])
 
     run_datatool(args, bconfig)
     return RollupParamsArtifacts(
@@ -142,20 +161,24 @@ def generate_rollup_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
+    operator_pubkeys: list[str] | None = None,
+    chain_config: Path | None = None,
     seq_fname="sequencer_root_key",
 ) -> RollupParamsArtifacts:
     # Generate sequencer keys
     sequencer_key_path = datadir / seq_fname
     ensure_priv_key(sequencer_key_path)
     sequencer_pubkey = generate_sequencer_pubkey(sequencer_key_path)
-    operator_xprivs = get_operator_xprivs(datadir, "bridge-operator_keys")
+    operator_xprivs = (
+        [] if operator_pubkeys else get_operator_xprivs(datadir, "bridge-operator_keys")
+    )
 
     params_path = datadir / "rollup-params.json"
 
     args = [
         "genparams",
         "--checkpoint-predicate",
-        "always-accept",
+        checkpoint_predicate(),
         "--name",
         "ALPN",
         "--genesis-l1-height",
@@ -165,11 +188,20 @@ def generate_rollup_params(
         "-o",
         str(params_path),
     ]
+    if chain_config is not None:
+        args.extend(["--chain-config", str(chain_config)])
     for opkey in operator_xprivs:
         args.extend(["--opkey", opkey])
+    for op_pubkey in operator_pubkeys or []:
+        args.extend(["--op-pubkey", op_pubkey])
 
     run_datatool(args, bconfig)
-    return RollupParamsArtifacts(params_path, sequencer_key_path, operator_xprivs)
+    return RollupParamsArtifacts(
+        params_path,
+        sequencer_key_path,
+        operator_xprivs,
+        sequencer_pubkey,
+    )
 
 
 def generate_sequencer_pubkey(sequencer_key_path: Path) -> str:
@@ -184,17 +216,22 @@ def generate_ol_params(
     datadir: Path,
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
+    alpen_chain_config: Path | None = None,
 ) -> Path:
     """Generates OL params via ``strata-datatool gen-ol-params``."""
     params_path = datadir / "ol-params.json"
 
     args = [
         "gen-ol-params",
+        "--alpen-predicate",
+        alpen_predicate(),
         "--genesis-l1-height",
         str(genesis_l1_height),
         "-o",
         str(params_path),
     ]
+    if alpen_chain_config is not None:
+        args.extend(["--alpen-chain-config", str(alpen_chain_config)])
 
     run_datatool(args, bconfig)
     return params_path
@@ -205,15 +242,17 @@ def generate_asm_params(
     bconfig: BitcoindConfig,
     genesis_l1_height: int,
     operator_xprivs: list[str],
+    operator_pubkeys: list[str] | None = None,
     ol_params_path: Path | None = None,
     admin_confirmation_depth: int | None = None,
+    sequencer_pubkey: str | None = None,
 ) -> Path:
     params_path = datadir / "asm-params.json"
 
     args = [
         "gen-asm-params",
         "--checkpoint-predicate",
-        "always-accept",
+        checkpoint_predicate(),
         "--name",
         "ALPN",
         "--genesis-l1-height",
@@ -223,10 +262,14 @@ def generate_asm_params(
     ]
     if ol_params_path is not None:
         args.extend(["--ol-params", str(ol_params_path)])
+    if sequencer_pubkey is not None:
+        args.extend(["--seqkey", sequencer_pubkey])
     if admin_confirmation_depth is not None:
         args.extend(["--confirmation-depth", str(admin_confirmation_depth)])
     for opkey in operator_xprivs:
         args.extend(["--opkey", opkey])
+    for op_pubkey in operator_pubkeys or []:
+        args.extend(["--op-pubkey", op_pubkey])
 
     run_datatool(args, bconfig)
     return params_path

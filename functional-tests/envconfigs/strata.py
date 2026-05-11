@@ -1,6 +1,7 @@
 """Environment configurations."""
 
 import subprocess
+from pathlib import Path
 from typing import cast
 
 import flexitest
@@ -29,6 +30,8 @@ class StrataEnvConfig(flexitest.EnvConfig):
         admin_confirmation_depth: int | None = None,
         strata_env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
+        bridge_operator_pubkeys: list[str] | None = None,
+        alpen_chain_config: Path | None = None,
     ):
         self.pre_generate_blocks = pre_generate_blocks
         self.genesis_accounts = genesis_accounts
@@ -37,6 +40,8 @@ class StrataEnvConfig(flexitest.EnvConfig):
         self.admin_confirmation_depth = admin_confirmation_depth
         self.strata_env = strata_env
         self.ol_block_time_ms = ol_block_time_ms
+        self.bridge_operator_pubkeys = bridge_operator_pubkeys
+        self.alpen_chain_config = alpen_chain_config
 
     def _fund_bdk_wallet(self, btc_rpc) -> None:
         """Pre-fund the strata-test-cli BDK wallet so it can build Bitcoin txs."""
@@ -109,6 +114,8 @@ class StrataEnvConfig(flexitest.EnvConfig):
             admin_confirmation_depth=self.admin_confirmation_depth,
             env=self.strata_env,
             ol_block_time_ms=self.ol_block_time_ms,
+            bridge_operator_pubkeys=self.bridge_operator_pubkeys,
+            alpen_chain_config=self.alpen_chain_config,
         )
         strata.wait_for_ready(timeout=30)
 

@@ -263,6 +263,8 @@ fn expected_backend_for_checkpoint_predicate(
     match checkpoint_predicate_type {
         // SP1 checkpoint predicates require SP1 proofs.
         PredicateTypeId::Sp1Groth16 => Ok(Some(ProverBackend::Sp1)),
+        // Native proofs are Schnorr signatures over checkpoint public values.
+        PredicateTypeId::Bip340Schnorr => Ok(Some(ProverBackend::Native)),
         // AlwaysAccept ignores witness bytes, so proofs are optional.
         PredicateTypeId::AlwaysAccept => Ok(None),
         // Other predicate types are currently unsupported for integrated checkpoint proving.
@@ -638,9 +640,10 @@ mod tests {
 
     #[cfg(feature = "prover")]
     #[test]
-    fn rejects_unsupported_predicate_for_integrated_prover() {
-        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
-            .unwrap_err();
-        assert!(matches!(err, InitError::InvalidProverConfig(_)));
+    fn accepts_matching_backend_for_schnorr_predicate() {
+        let result =
+            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
+                .unwrap();
+        assert_eq!(result, Some(ProverBackend::Native));
     }
 }

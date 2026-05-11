@@ -6,7 +6,7 @@ use alloy_genesis::Genesis;
 use alloy_primitives::B256;
 use bitcoin::{
     bip32::{Xpriv, Xpub},
-    secp256k1::SECP256K1,
+    secp256k1::{PublicKey, SECP256K1},
     Amount, XOnlyPublicKey,
 };
 use reth_chainspec::ChainSpec;
@@ -78,6 +78,11 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
         opkeys.push(Xpriv::from_str(&key)?);
     }
 
+    let mut operator_pubkeys = Vec::new();
+    for key in cmd.op_pubkey {
+        operator_pubkeys.push(parse_operator_pubkey(&key)?);
+    }
+
     // Parse the deposit size str.
     let deposit_sats = cmd
         .deposit_sats
@@ -111,6 +116,7 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
         epoch_slots: cmd.epoch_slots.unwrap_or(DEFAULT_EPOCH_SLOTS),
         seqkey,
         opkeys,
+        operator_pubkeys,
         checkpoint_predicate: rollup_vk,
         // TODO make a const
         deposit_sats,
@@ -166,6 +172,8 @@ struct ParamsConfig {
     seqkey: Option<Buf32>,
     /// Operators' master keys.
     opkeys: Vec<Xpriv>,
+    /// Operators' public keys.
+    operator_pubkeys: Vec<XOnlyPublicKey>,
     /// Verifier's key.
     checkpoint_predicate: PredicateKey,
     /// Amount of sats to deposit.
@@ -184,11 +192,12 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         .map(CredRule::SchnorrKey)
         .unwrap_or(CredRule::Unchecked);
 
-    let opkeys: Vec<XOnlyPublicKey> = config
+    let mut opkeys: Vec<XOnlyPublicKey> = config
         .opkeys
         .iter()
         .map(|o| o.to_keypair(SECP256K1).x_only_public_key().0)
         .collect();
+    opkeys.extend(config.operator_pubkeys);
 
     Ok(RollupParams {
         magic_bytes: config.magic,
@@ -215,6 +224,18 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
         max_deposits_in_block: 16,
         network: config.bitcoin_network,
     })
+}
+
+fn parse_operator_pubkey(raw: &str) -> anyhow::Result<XOnlyPublicKey> {
+    let raw = raw.trim();
+    if raw.len() == 64 {
+        return XOnlyPublicKey::from_str(raw)
+            .map_err(|e| anyhow::anyhow!("invalid x-only operator pubkey {raw}: {e}"));
+    }
+
+    let compressed = PublicKey::from_str(raw)
+        .map_err(|e| anyhow::anyhow!("invalid compressed operator pubkey {raw}: {e}"))?;
+    Ok(compressed.x_only_public_key().0)
 }
 
 pub(super) struct BlockInfo {

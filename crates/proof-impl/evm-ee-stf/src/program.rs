@@ -54,6 +54,7 @@ impl EvmEeProgram {
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         // Get the native host and delegate to the trait's execute method
         let host = Self::native_host();
-        <Self as ZkVmProgram>::execute(input, &host)
+        let execution = <Self as ZkVmProgram>::execute(input, &host)?;
+        Self::process_output::<NativeHost>(execution.public_values())
     }
 }

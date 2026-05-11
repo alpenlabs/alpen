@@ -16,9 +16,10 @@ use anyhow::{Context, Result};
 use strata_config::{ProverBackend, ProverConfig};
 use strata_identifiers::{Epoch, EpochCommitment};
 use strata_paas::{ProverBuilder, ProverHandle, ProverServiceBuilder, RetryConfig, TaskResult};
-use strata_proofimpl_checkpoint::program::CheckpointProgram;
+use strata_proofimpl_checkpoint::process_ol_stf;
 use strata_storage::CheckpointProofDbManager;
 use strata_tasks::TaskExecutor;
+use strata_zkvm_hosts::native::{DeterministicNativeHost, NativeProofKind};
 use tokio::{sync::watch, time};
 use tracing::{debug, info, warn};
 
@@ -36,6 +37,7 @@ const PROVER_RETRY_INTERVAL: Duration = Duration::from_secs(5);
 /// Default end-to-end deadline applied to the SP1 prover network when
 /// `ProverConfig::sp1_proof_deadline_secs` is not set. Chosen to comfortably
 /// cover checkpoint proofs while still failing fast on stuck requests.
+#[cfg(feature = "sp1")]
 const DEFAULT_SP1_DEADLINE_SECS: u64 = 4 * 60 * 60;
 
 /// Starts the integrated prover service.
@@ -76,23 +78,21 @@ pub(crate) fn start_prover_service(
 
     // Pick native vs. remote strategy at build time.
     let prover = match prover_config.backend {
-        ProverBackend::Native => ProverBuilder::new(spec)
-            .task_store(task_store)
-            .receipt_hook(hook)
-            .retry(RetryConfig::default())
-            .native(CheckpointProgram::native_host()),
+        ProverBackend::Native => {
+            let host = DeterministicNativeHost::new(process_ol_stf, NativeProofKind::Checkpoint);
+            ProverBuilder::new(spec)
+                .task_store(task_store)
+                .receipt_hook(hook)
+                .retry(RetryConfig::default())
+                .native(host)
+        }
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
-            use strata_zkvm_hosts::sp1::CHECKPOINT_HOST;
-            // prover-core's `.remote(host)` takes the host by value and
-            // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
-            // is Clone (only holds a SP1ProvingKey), so cloning from the
-            // shared static is fine.
-            let mut host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_HOST).clone();
+            use strata_zkvm_hosts::sp1::checkpoint_host_with_deadline;
             let deadline_secs = prover_config
                 .sp1_proof_deadline_secs
                 .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-            host = host.with_deadline(Duration::from_secs(deadline_secs));
+            let host = checkpoint_host_with_deadline(Duration::from_secs(deadline_secs));
             info!(deadline_secs, "sp1 prover deadline configured");
             ProverBuilder::new(spec)
                 .task_store(task_store)

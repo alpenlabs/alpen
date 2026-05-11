@@ -62,7 +62,8 @@ impl CheckpointProgram {
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         // Get the native host and delegate to the trait's execute method
         let host = Self::native_host();
-        <Self as ZkVmProgram>::execute(input, &host)
+        let execution = <Self as ZkVmProgram>::execute(input, &host)?;
+        Self::process_output::<NativeHost>(execution.public_values())
     }
 }
 
@@ -109,10 +110,7 @@ mod tests {
         let slot_delta_u16 =
             u16::try_from(slot_delta).expect("slot delta exceeds u16::MAX; epoch too long");
         let da_diff = StateDiff::new(
-            GlobalStateDiff::new(
-                DaCounter::new_changed(slot_delta_u16),
-                DaCounter::new_unchanged(),
-            ),
+            GlobalStateDiff::new(DaCounter::new_changed(slot_delta_u16)),
             LedgerDiff::default(),
         );
         let da_state_diff_bytes =
@@ -180,10 +178,7 @@ mod tests {
         let bad_delta = u16::try_from(slot_delta.saturating_sub(1))
             .expect("slot delta exceeds u16::MAX; epoch too long");
         let bad_da_diff = StateDiff::new(
-            GlobalStateDiff::new(
-                DaCounter::new_changed(bad_delta),
-                DaCounter::new_unchanged(),
-            ),
+            GlobalStateDiff::new(DaCounter::new_changed(bad_delta)),
             LedgerDiff::default(),
         );
         input.da_state_diff_bytes =

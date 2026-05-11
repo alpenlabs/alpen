@@ -3,6 +3,7 @@ Alpen-client test environment configurations.
 """
 
 import flexitest
+from pathlib import Path
 
 from common.config.config import EpochSealingConfig
 from common.config.constants import ServiceType
@@ -41,6 +42,9 @@ class EeOLEnv(flexitest.EnvConfig):
         ol_block_time_ms: int | None = None,
         dev_track_finalized_epoch: bool = False,
         batch_sealing_block_count: int = 10,
+        bridge_operator_pubkeys: list[str] | None = None,
+        custom_chain: str = "dev",
+        alpen_chain_config: Path | None = None,
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
@@ -52,6 +56,9 @@ class EeOLEnv(flexitest.EnvConfig):
         self.ol_block_time_ms = ol_block_time_ms
         self.dev_track_finalized_epoch = dev_track_finalized_epoch
         self.batch_sealing_block_count = batch_sealing_block_count
+        self.bridge_operator_pubkeys = bridge_operator_pubkeys
+        self.custom_chain = custom_chain
+        self.alpen_chain_config = alpen_chain_config
         self.epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
@@ -69,6 +76,8 @@ class EeOLEnv(flexitest.EnvConfig):
             fund_test_cli_wallet=self.fund_test_cli_wallet,
             admin_confirmation_depth=self.admin_confirmation_depth,
             ol_block_time_ms=self.ol_block_time_ms,
+            bridge_operator_pubkeys=self.bridge_operator_pubkeys,
+            alpen_chain_config=self.alpen_chain_config,
         )
         strata_services = strata_config._get_services(ectx)
 
@@ -87,6 +96,7 @@ class EeOLEnv(flexitest.EnvConfig):
             ol_endpoint=ol_endpoint,
             dev_track_finalized_epoch=self.dev_track_finalized_epoch,
             batch_sealing_block_count=self.batch_sealing_block_count,
+            custom_chain=self.custom_chain,
         )
 
         services = {**alpen_services, **strata_services}

@@ -150,6 +150,12 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
+        description = "add a bridge operator public key (x-only or compressed hex), appended after xpriv-derived keys"
+    )]
+    pub(crate) op_pubkey: Vec<String>,
+
+    #[argh(
+        option,
         description = "read bridge operator keys (master xpriv) by line from file",
         short = 'B'
     )]
@@ -179,7 +185,8 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "checkpoint predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+        description = "checkpoint predicate type: 'always-accept', 'native-schnorr', or \
+                       'sp1-groth16' (default: feature-gated)"
     )]
     pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
 
@@ -227,6 +234,12 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
+        description = "add a bridge operator public key (x-only or compressed hex)"
+    )]
+    pub(crate) op_pubkey: Vec<String>,
+
+    #[argh(
+        option,
         description = "read bridge operator keys (master xpriv) by line from file",
         short = 'B'
     )]
@@ -256,7 +269,14 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "checkpoint predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+        description = "sequencer xpub; when set, ASM checkpoint envelopes must use this pubkey"
+    )]
+    pub(crate) seqkey: Option<String>,
+
+    #[argh(
+        option,
+        description = "checkpoint predicate type: 'always-accept', 'native-schnorr', or \
+                       'sp1-groth16' (default: feature-gated)"
     )]
     pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
 
@@ -312,7 +332,8 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen snark account predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+        description = "alpen snark account predicate type: 'always-accept', \
+                       'native-schnorr', or 'sp1-groth16' (default: feature-gated)"
     )]
     pub(crate) alpen_predicate: Option<AcctPredicateOverride>,
 

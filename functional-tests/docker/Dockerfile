@@ -24,7 +24,7 @@ COPY provers provers
 COPY tests tests
 COPY benches benches
 
-RUN cargo build -F sequencer -F debug-utils -F test-mode \
+RUN cargo build -F sequencer -F strata/prover -F debug-utils -F test-mode \
     --bin strata --bin alpen-client --bin strata-datatool --bin strata-test-cli \
     && mkdir -p /out \
     && cp target/debug/strata target/debug/alpen-client \

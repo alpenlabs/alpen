@@ -77,11 +77,14 @@ mod sequencer_imports {
     pub(super) use strata_paas::{
         ProverBuilder, ProverServiceBuilder, ReceiptStore, RetryConfig, TaskStore,
     };
-    pub(super) use strata_proofimpl_alpen_acct::EeAcctProgram;
-    pub(super) use strata_proofimpl_alpen_chunk::EeChunkProgram;
+    pub(super) use strata_proofimpl_alpen_acct::process_ee_acct_update;
+    pub(super) use strata_proofimpl_alpen_chunk::process_ee_chunk;
     pub(super) use strata_tasks::TaskManager;
+    pub(super) use strata_zkvm_hosts::native::{DeterministicNativeHost, NativeProofKind};
     #[cfg(feature = "sp1")]
-    pub(super) use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST};
+    pub(super) use strata_zkvm_hosts::sp1::{
+        alpen_acct_host_with_deadline, alpen_chunk_host_with_deadline,
+    };
     pub(super) use tokio::{runtime::Handle, sync::oneshot};
     #[cfg(feature = "sp1")]
     pub(super) use zkaleido_sp1_host::SP1Host;
@@ -685,20 +688,26 @@ fn main() {
                 ))
                 .retry(RetryConfig::default());
 
-                // Dev/test escape hatch: use zkaleido NativeHost instead of
-                // the SP1 remote host. This skips real Groth16 proving and
-                // the need for compiled guest ELFs — only safe for
-                // functional tests. For native acct, the chunk predicate
-                // key is always-accept since native mode does not verify
-                // chunk receipts.
+                // Dev/test escape hatch: use deterministic native hosts
+                // instead of the SP1 remote host. This skips real Groth16
+                // proving and the need for compiled guest ELFs while still
+                // requiring Schnorr receipts in OL.
                 let (chunk_prover, acct_prover) = if ext.dev_native_prover {
                     info!(
                         target: "alpen-client",
                         "EE chunk + acct provers: native host (dev/test only)"
                     );
-                    let chunk = chunk_builder.native(EeChunkProgram::native_host());
-                    let acct_program = EeAcctProgram::new(PredicateKey::always_accept());
-                    let acct = acct_builder.native(acct_program.native_host());
+                    let chunk_host =
+                        DeterministicNativeHost::new(process_ee_chunk, NativeProofKind::AlpenChunk);
+                    let chunk_predicate = chunk_host.predicate_key();
+                    let chunk = chunk_builder.native(chunk_host);
+
+                    let acct_chunk_predicate = chunk_predicate.clone();
+                    let acct_host = DeterministicNativeHost::new(
+                        move |zkvm| process_ee_acct_update(zkvm, &acct_chunk_predicate),
+                        NativeProofKind::AlpenAcct,
+                    );
+                    let acct = acct_builder.native(acct_host);
                     (chunk, acct)
                 } else {
                     #[cfg(feature = "sp1")]
@@ -712,10 +721,8 @@ fn main() {
                             deadline_secs,
                             "sp1 EE prover deadline configured"
                         );
-                        let chunk_host: SP1Host =
-                            (**ALPEN_CHUNK_HOST).clone().with_deadline(deadline);
-                        let acct_host: SP1Host =
-                            (**ALPEN_ACCT_HOST).clone().with_deadline(deadline);
+                        let chunk_host: SP1Host = alpen_chunk_host_with_deadline(deadline);
+                        let acct_host: SP1Host = alpen_acct_host_with_deadline(deadline);
                         (
                             chunk_builder.remote(chunk_host),
                             acct_builder.remote(acct_host),
