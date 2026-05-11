@@ -160,6 +160,10 @@ services:
       - ${BTCIO_MEMPOOL_BASE_URL:-}
       - --btcio-mempool-tier
       - ${BTCIO_MEMPOOL_TIER:-fastest}
+      - --btcio-retry-count
+      - "${BTCIO_RETRY_COUNT:-3}"
+      - --btcio-retry-interval
+      - "${BTCIO_RETRY_INTERVAL:-1000}"
       - --color
       - never
     environment:

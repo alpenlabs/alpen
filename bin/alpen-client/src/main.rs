@@ -539,11 +539,17 @@ fn main() {
                     BtcClient::new(
                         btc_url.clone(),
                         Auth::UserPass(btc_user.clone(), btc_pass.clone()),
-                        None,
-                        None,
+                        Some(ext.btcio_retry_count),
+                        Some(ext.btcio_retry_interval),
                         None,
                     )
                     .map_err(|e| eyre::eyre!("creating Bitcoin RPC client: {e}"))?,
+                );
+                info!(
+                    target: "alpen-client",
+                    retry_count = ext.btcio_retry_count,
+                    retry_interval_ms = ext.btcio_retry_interval,
+                    "btcio Bitcoin RPC retry policy configured",
                 );
 
                 // Sequencer address from bitcoin wallet.
@@ -826,6 +832,18 @@ pub struct AdditionalConfig {
     #[cfg(feature = "sequencer")]
     #[arg(long, value_enum, default_value_t = BtcioMempoolTierArg::Fastest)]
     pub btcio_mempool_tier: BtcioMempoolTierArg,
+
+    /// Max number of retries for Bitcoin RPC requests.
+    /// Matches `BitcoindConfig.retry_count` in TOML config.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, default_value_t = default_btcio_retry_count())]
+    pub btcio_retry_count: u8,
+
+    /// Interval between Bitcoin RPC retries, in milliseconds.
+    /// Matches `BitcoindConfig.retry_interval` in TOML config.
+    #[cfg(feature = "sequencer")]
+    #[arg(long, default_value_t = default_btcio_retry_interval())]
+    pub btcio_retry_interval: u64,
 }
 
 /// Run node with logging
@@ -878,6 +896,26 @@ fn parse_buf32(s: &str) -> eyre::Result<Buf32> {
 fn parse_magic_bytes(s: &str) -> eyre::Result<MagicBytes> {
     s.parse::<MagicBytes>()
         .map_err(|e| eyre::eyre!("Failed to parse magic bytes: {e}"))
+}
+
+/// Default max retries for Bitcoin RPC requests.
+/// Matches `bitcoind-async-client`'s upstream default.
+#[cfg(feature = "sequencer")]
+const DEFAULT_BTCIO_RETRY_COUNT: u8 = 3;
+
+/// Default interval between Bitcoin RPC retries, in milliseconds.
+/// Matches `bitcoind-async-client`'s upstream default.
+#[cfg(feature = "sequencer")]
+const DEFAULT_BTCIO_RETRY_INTERVAL_MS: u64 = 1_000;
+
+#[cfg(feature = "sequencer")]
+const fn default_btcio_retry_count() -> u8 {
+    DEFAULT_BTCIO_RETRY_COUNT
+}
+
+#[cfg(feature = "sequencer")]
+const fn default_btcio_retry_interval() -> u64 {
+    DEFAULT_BTCIO_RETRY_INTERVAL_MS
 }
 
 /// CLI-selectable btcio fee policy variants. Mirrors [`FeePolicy`].
