@@ -13886,6 +13886,7 @@ dependencies = [
  "bitcoind-async-client",
  "borsh",
  "format_serde_error",
+ "http 1.4.0",
  "jsonrpsee",
  "metrics-exporter-prometheus",
  "proptest",
@@ -14558,6 +14559,7 @@ name = "strata-common"
 version = "0.3.0-alpha.1"
 dependencies = [
  "deadpool",
+ "http 1.4.0",
  "jsonrpsee",
  "serde",
  "tokio",
@@ -15796,18 +15798,12 @@ dependencies = [
 name = "strata-rpc-api"
 version = "0.3.0-alpha.1"
 dependencies = [
- "bitcoin",
  "jsonrpsee",
  "strata-checkpoint-types",
- "strata-common",
  "strata-csm-types",
- "strata-db-types",
  "strata-ol-bridge-types",
- "strata-ol-chain-types",
  "strata-primitives",
  "strata-rpc-types",
- "strata-sequencer",
- "zkaleido 0.1.0 (git+https://github.com/alpenlabs/zkaleido?tag=v0.1.0-alpha-rc25)",
 ]
 
 [[package]]
@@ -15917,6 +15913,7 @@ dependencies = [
  "anyhow",
  "argh",
  "bitcoin",
+ "http 1.4.0",
  "serde",
  "strata-common",
  "strata-crypto",

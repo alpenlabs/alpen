@@ -70,8 +70,9 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
         assert sequencer_key_path is not None
         signer = signer_factory.create_signer(
             sequencer_key_path,
-            sequencer.props["rpc_host"],
-            sequencer.props["rpc_port"],
+            sequencer.props["admin_rpc_host"],
+            sequencer.props["admin_rpc_port"],
+            sequencer.props["admin_rpc_token"],
         )
         signer.wait_for_ready(timeout=10)
 

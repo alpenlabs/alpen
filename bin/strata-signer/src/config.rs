@@ -1,10 +1,28 @@
 //! Configuration for the signer, loaded from a TOML file.
 
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use serde::Deserialize;
 
 use crate::constants::DEFAULT_POLL_INTERVAL_MS;
+
+/// Secret configuration value that redacts itself from debug output.
+#[derive(Clone, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct SecretString(String);
+
+impl SecretString {
+    /// Returns the underlying secret value.
+    pub(crate) fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretString(***)")
+    }
+}
 
 /// Top-level signer configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -13,7 +31,10 @@ pub(crate) struct SignerConfig {
     pub(crate) sequencer_key: PathBuf,
 
     /// WebSocket RPC URL of the sequencer node (e.g. ws://127.0.0.1:9944).
-    pub(crate) sequencer_endpoint: String,
+    pub(crate) sequencer_admin_endpoint: String,
+
+    /// Bearer token used to authenticate with the sequencer admin RPC.
+    pub(crate) sequencer_admin_bearer_token: SecretString,
 
     /// Duty poll interval in milliseconds.
     #[serde(default = "default_duty_poll_interval")]
@@ -50,4 +71,48 @@ pub(crate) struct LoggingConfig {
 
 fn default_duty_poll_interval() -> u64 {
     DEFAULT_POLL_INTERVAL_MS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signer_config_requires_admin_token() {
+        let config = r#"
+            sequencer_key = "/tmp/sequencer.key"
+            sequencer_admin_endpoint = "ws://127.0.0.1:8434"
+        "#;
+
+        assert!(toml::from_str::<SignerConfig>(config).is_err());
+    }
+
+    #[test]
+    fn test_signer_config_parses_admin_endpoint_and_token() {
+        let config = r#"
+            sequencer_key = "/tmp/sequencer.key"
+            sequencer_admin_endpoint = "ws://127.0.0.1:8434"
+            sequencer_admin_bearer_token = "test-token"
+        "#;
+
+        let config = toml::from_str::<SignerConfig>(config).unwrap();
+        assert_eq!(config.sequencer_admin_endpoint, "ws://127.0.0.1:8434");
+        assert_eq!(
+            config.sequencer_admin_bearer_token.expose_secret(),
+            "test-token"
+        );
+    }
+
+    #[test]
+    fn test_signer_config_admin_token_debug_redacts_secret() {
+        let config = r#"
+            sequencer_key = "/tmp/sequencer.key"
+            sequencer_admin_endpoint = "ws://127.0.0.1:8434"
+            sequencer_admin_bearer_token = "test-token"
+        "#;
+
+        let config = toml::from_str::<SignerConfig>(config).unwrap();
+        assert!(!format!("{config:?}").contains("test-token"));
+        assert!(format!("{config:?}").contains("SecretString(***)"));
+    }
 }

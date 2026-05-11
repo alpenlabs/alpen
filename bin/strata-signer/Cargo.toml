@@ -23,6 +23,7 @@ strata-tasks.workspace = true
 anyhow.workspace = true
 argh.workspace = true
 bitcoin.workspace = true
+http.workspace = true
 serde.workspace = true
 tokio.workspace = true
 toml.workspace = true
