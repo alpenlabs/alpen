@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::bail;
-use bitcoin::{Block, BlockHash};
+use bitcoin::{Block, BlockHash, Network};
 use bitcoind_async_client::traits::Reader;
 use strata_btc_types::BlockHashExt;
 use strata_config::btcio::ReaderConfig;
@@ -19,6 +19,7 @@ use tracing::*;
 use super::event::L1Event;
 use crate::{
     reader::{event::BlockData, handler::handle_bitcoin_event, state::ReaderState},
+    rpc_error::is_retryable_anyhow_error,
     status::{apply_status_updates, L1StatusUpdate},
     BtcioParams,
 };
@@ -37,8 +38,31 @@ pub(crate) struct ReaderContext<R: Reader> {
     /// Btcio params
     pub btcio_params: BtcioParams,
 
+    /// Expected Bitcoin network.
+    pub expected_network: Network,
+
+    /// Optional L1 anchor block to verify before ingesting reader data.
+    pub expected_l1_anchor: Option<L1BlockCommitment>,
+
     /// Status transmitter
     pub status_channel: StatusChannel,
+}
+
+/// Expected Bitcoin chain properties validated before reader ingestion starts.
+#[derive(Debug, Clone)]
+pub struct ReaderValidation {
+    expected_network: Network,
+    expected_l1_anchor: Option<L1BlockCommitment>,
+}
+
+impl ReaderValidation {
+    /// Creates a validation config for reader startup.
+    pub fn new(expected_network: Network, expected_l1_anchor: Option<L1BlockCommitment>) -> Self {
+        Self {
+            expected_network,
+            expected_l1_anchor,
+        }
+    }
 }
 
 /// The main task that initializes the reader state and starts reading from bitcoin.
@@ -47,6 +71,7 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
     storage: Arc<NodeStorage>,
     config: Arc<ReaderConfig>,
     btcio_params: BtcioParams,
+    validation: ReaderValidation,
     status_channel: StatusChannel,
     event_submitter: Arc<E>,
 ) -> anyhow::Result<()> {
@@ -58,6 +83,8 @@ pub async fn bitcoin_data_reader_task<E: BlockSubmitter>(
         storage,
         config,
         btcio_params,
+        expected_network: validation.expected_network,
+        expected_l1_anchor: validation.expected_l1_anchor,
         status_channel,
     };
     do_reader_task(ctx, target_next_block, event_submitter.as_ref()).await
@@ -86,22 +113,35 @@ async fn do_reader_task<R: Reader>(
     info!(%target_next_block, "started L1 reader task!");
 
     let poll_dur = Duration::from_millis(ctx.config.client_poll_dur_ms as u64);
-    let mut state = init_reader_state(&ctx, target_next_block).await?;
-    let best_blkid = state.best_block();
-    info!(%best_blkid, "initialized L1 reader state");
+    let mut state: Option<ReaderState> = None;
 
     loop {
         let mut status_updates: Vec<L1StatusUpdate> = Vec::new();
 
-        match poll_for_new_blocks(&ctx, &mut state, &mut status_updates).await {
-            Err(err) => {
-                handle_poll_error(&err, &mut status_updates);
-            }
-            Ok(events) => {
-                // handle events
-                for ev in events {
-                    handle_bitcoin_event(ev, &ctx, event_submitter).await?;
+        if let Some(reader_state) = state.as_mut() {
+            match poll_for_new_blocks(&ctx, reader_state, &mut status_updates).await {
+                Err(err) => {
+                    handle_poll_error(&err, &mut status_updates);
                 }
+                Ok(events) => {
+                    // handle events
+                    for ev in events {
+                        handle_bitcoin_event(ev, &ctx, event_submitter).await?;
+                    }
+                }
+            }
+        } else {
+            match init_reader_state(&ctx, target_next_block).await {
+                Ok(reader_state) => {
+                    let best_blkid = reader_state.best_block();
+                    info!(%best_blkid, "initialized L1 reader state");
+                    status_updates.push(L1StatusUpdate::RpcConnected(true));
+                    state = Some(reader_state);
+                }
+                Err(err) if is_retryable_anyhow_error(&err) => {
+                    handle_poll_error(&err, &mut status_updates);
+                }
+                Err(err) => return Err(err),
             }
         };
 
@@ -123,10 +163,12 @@ fn handle_poll_error(err: &anyhow::Error, status_updates: &mut Vec<L1StatusUpdat
     warn!(%err, "failed to poll Bitcoin client");
     status_updates.push(L1StatusUpdate::RpcError(err.to_string()));
 
+    if is_retryable_anyhow_error(err) {
+        status_updates.push(L1StatusUpdate::RpcConnected(false));
+        return;
+    }
+
     if let Some(reqwest_err) = err.downcast_ref::<reqwest::Error>() {
-        if reqwest_err.is_connect() {
-            status_updates.push(L1StatusUpdate::RpcConnected(false));
-        }
         if reqwest_err.is_builder() {
             panic!("btcio: couldn't build the L1 client");
         }
@@ -149,6 +191,28 @@ async fn init_reader_state<R: Reader>(
 
     // Do some math to figure out where our start and end are.
     let chain_info = client.get_blockchain_info().await?;
+    if chain_info.chain != ctx.expected_network {
+        bail!(
+            "btcio: bitcoind network mismatch: expected {}, got {}",
+            ctx.expected_network,
+            chain_info.chain
+        );
+    }
+
+    if let Some(expected_l1_anchor) = ctx.expected_l1_anchor {
+        let actual_hash = client
+            .get_block_hash(expected_l1_anchor.height() as u64)
+            .await?;
+        let actual_block_id = actual_hash.to_l1_block_id();
+        if actual_block_id != *expected_l1_anchor.blkid() {
+            bail!(
+                "btcio: L1 anchor block hash mismatch at height {height}: expected {expected}, got {actual_block_id}",
+                height = expected_l1_anchor.height(),
+                expected = expected_l1_anchor.blkid(),
+            );
+        }
+    }
+
     let chain_tip = chain_info.blocks as L1Height;
     let start_height = target_next_block
         .saturating_sub(lookback)
