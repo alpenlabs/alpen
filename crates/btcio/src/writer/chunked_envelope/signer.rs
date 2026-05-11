@@ -127,7 +127,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .client
             .sign_raw_transaction_with_wallet(&built.commit_tx, None)
             .await
-            .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
+            .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
         let commit_txid: Buf32 = signed_commit.compute_txid().to_buf32();
         let commit_wtxid: Buf32 = signed_commit.compute_wtxid().to_buf32();
