@@ -21,7 +21,8 @@ use strata_ee_acct_types::{
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage};
-use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WithdrawalMsgData};
+use strata_msg_fmt::{Msg as MsgTrait, OwnedMsg};
+use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, WithdrawalMsgData};
 
 use crate::{
     types::{EvmBlock, EvmHeader, EvmPartialState, EvmWriteBatch},
@@ -29,8 +30,11 @@ use crate::{
 };
 
 /// Address where withdrawal intent msgs are forwarded.
-//FIXME: should be set with real bridge gateway account
-const BRIDGE_GATEWAY_ACCOUNT: [u8; 32] = [1u8; 32];
+// TODO(STR-3358): de-duplicate with the default bridge gateway account in
+// `crates/alpen-ee/sequencer/src/block_builder/config.rs` once a shared home
+// for bridge account constants exists.
+const BRIDGE_GATEWAY_REF: u8 = 0x10;
+const BRIDGE_GATEWAY_ACCOUNT: AccountId = AccountId::special(BRIDGE_GATEWAY_REF);
 
 /// EVM Execution Environment for Alpen.
 ///
@@ -59,12 +63,13 @@ fn convert_withdrawal_intents_to_messages(
         )
         .expect("invalid withdrawal destination descriptor");
 
-        let msg_data = encode_to_vec(&withdrawal_msg).expect("encoding failed");
-        let bridge_gateway_account = AccountId::from(BRIDGE_GATEWAY_ACCOUNT);
+        let msg_body = encode_to_vec(&withdrawal_msg).expect("encoding failed");
+        let msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, msg_body).expect("create message");
+        let msg_data = msg.to_vec();
 
         // Create message to bridge gateway with withdrawal amount and encoded data
         let payload = MsgPayload::new(BitcoinAmount::from_sat(intent.amt), msg_data);
-        let message = OutputMessage::new(bridge_gateway_account, payload);
+        let message = OutputMessage::new(BRIDGE_GATEWAY_ACCOUNT, payload);
         outputs.add_message(message);
     }
 }
@@ -252,9 +257,53 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use strata_ee_acct_types::ExecBlock;
+    use strata_msg_fmt::{Msg, MsgRef};
+    use strata_ol_bridge_types::OperatorSelection;
+    use strata_ol_msg_types::OLMessageExt;
+    use strata_primitives::{bitcoin_bosd::Descriptor, buf::Buf32};
 
     use super::*;
     use crate::types::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState};
+
+    #[test]
+    fn withdrawal_messages_are_sent_to_bridge_gateway_with_msg_envelope() {
+        let mut destination_bytes = vec![0x03];
+        destination_bytes.extend_from_slice(&[0x22; 20]);
+        let destination =
+            Descriptor::from_bytes(&destination_bytes).expect("valid p2wpkh descriptor");
+        let withdrawal_sats = 1_000_000_000;
+
+        let intent = alpen_reth_primitives::WithdrawalIntent {
+            amt: withdrawal_sats,
+            selected_operator: OperatorSelection::any(),
+            withdrawal_txid: Buf32::new([0x44; 32]),
+            destination,
+        };
+
+        let mut outputs = ExecOutputs::new_empty();
+        convert_withdrawal_intents_to_messages(vec![intent], &mut outputs);
+
+        let [message] = outputs.output_messages() else {
+            panic!("expected exactly one withdrawal output message");
+        };
+        assert_eq!(message.dest(), AccountId::special(BRIDGE_GATEWAY_REF));
+        assert_eq!(
+            message.payload().value(),
+            BitcoinAmount::from_sat(withdrawal_sats)
+        );
+
+        let msg = MsgRef::try_from(message.payload().data()).expect("message envelope");
+        assert_eq!(msg.ty(), WITHDRAWAL_MSG_TYPE_ID);
+
+        let withdrawal = msg.try_as_withdrawal().expect("withdrawal payload");
+        assert_eq!(withdrawal.fees(), DEFAULT_OPERATOR_FEE);
+        assert_eq!(
+            withdrawal.selected_operator(),
+            OperatorSelection::any().raw()
+        );
+        assert_eq!(withdrawal.dest_desc(), destination_bytes.as_slice());
+    }
+
     /// Test with real witness data from the reference implementation.
     /// This is an integration test that validates the full execution flow with real block data.
     #[test]

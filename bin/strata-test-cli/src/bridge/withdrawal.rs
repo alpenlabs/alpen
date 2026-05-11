@@ -7,7 +7,7 @@
 use anyhow::Context;
 use bdk_wallet::{
     bitcoin::{consensus::serialize, Amount, FeeRate, ScriptBuf, Transaction},
-    TxOrdering,
+    KeychainKind, TxOrdering,
 };
 use strata_asm_proto_bridge_v1_txs::withdrawal_fulfillment::WithdrawalFulfillmentTxHeaderAux;
 use strata_l1_txfmt::ParseConfig;
@@ -75,6 +75,7 @@ fn create_withdrawal_fulfillment_inner(
         Some(&bitcoind_config.bitcoind_password),
     )?;
 
+    wallet.reveal_next_address(KeychainKind::External);
     sync_wallet(&mut wallet, &client)?;
 
     let fee_rate = FeeRate::from_sat_per_vb_unchecked(2);

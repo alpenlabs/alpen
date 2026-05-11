@@ -13,9 +13,9 @@ use common::{
     assert_verified_path_succeeds, build_update_operation, create_deposit_message,
     create_initial_state, simple_chunk,
 };
-use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
+use strata_acct_types::{AccountId, BitcoinAmount, Hash, MsgPayload, SubjectId};
 use strata_ee_acct_runtime::{EeVerificationInput, UpdateBuilder};
-use strata_ee_chain_types::ExecOutputs;
+use strata_ee_chain_types::{ExecOutputs, OutputMessage as ExecOutputMessage};
 use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
 
@@ -131,6 +131,46 @@ fn test_single_deposit_with_chunk() {
     apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
 
     // Verified path with chunk proof verification should succeed
+    assert_verified_chunks_succeed(&initial_state, &operation, &coinputs, &[chunk], &ee);
+}
+
+#[test]
+fn test_chunk_output_does_not_change_inner_tracked_balance() {
+    let (initial_state, snark_state) = create_initial_state();
+    let ee = SimpleExecutionEnvironment;
+
+    let dest = SubjectId::from([1u8; 32]);
+    let value = BitcoinAmount::from(1000u64);
+    let source = AccountId::from([2u8; 32]);
+    let message = create_deposit_message(dest, value, source, 1);
+
+    let predicate_key = PredicateKey::always_accept();
+    let vinput = EeVerificationInput::new(&ee, &predicate_key, &[], &[]);
+    let mut builder =
+        UpdateBuilder::new(1, snark_state, initial_state.clone(), vinput).expect("create builder");
+
+    builder.add_messages(vec![message]).expect("add message");
+
+    let deposit = match &builder.remaining_pending_inputs()[0] {
+        strata_ee_acct_types::PendingInputEntry::Deposit(d) => d.clone(),
+    };
+
+    let mut outputs = ExecOutputs::new_empty();
+    outputs.add_message(ExecOutputMessage::new(
+        AccountId::from([3u8; 32]),
+        MsgPayload::new(BitcoinAmount::from(400u64), vec![1, 2, 3]),
+    ));
+
+    let tip = Hash::new([0xDD; 32]);
+    let chunk = simple_chunk(builder.cur_tip_blkid(), tip, vec![deposit], outputs);
+
+    builder
+        .accept_chunk_transition(&chunk)
+        .expect("accept chunk");
+
+    let (operation, coinputs) = builder.build().expect("build");
+
+    apply_unconditionally(&initial_state, &operation).expect("unconditional path should succeed");
     assert_verified_chunks_succeed(&initial_state, &operation, &coinputs, &[chunk], &ee);
 }
 

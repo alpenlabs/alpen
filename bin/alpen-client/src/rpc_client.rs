@@ -110,6 +110,7 @@ impl OLClient for RpcOLClient {
                     tip: OLBlockCommitment::new(status.tip().slot(), status.tip().blkid()),
                     confirmed: *status.confirmed(),
                     finalized: *status.finalized(),
+                    latest: *status.latest(),
                 })
             },
         )
@@ -238,6 +239,14 @@ impl SequencerOLClient for RpcOLClient {
             .iter()
             .map(|claim| claim.idx())
             .collect();
+        let outputs = operation.outputs();
+        let output_transfer_count = outputs.transfers().len();
+        let output_message_count = outputs.messages().len();
+        let output_message_value_sats: u64 = outputs
+            .messages()
+            .iter()
+            .map(|message| message.payload().value().to_sat())
+            .sum();
         let extra_data_len = operation.extra_data().len();
 
         let rpc_update = RpcSnarkAccountUpdate::new(
@@ -266,6 +275,9 @@ impl SequencerOLClient for RpcOLClient {
             %inner_state,
             next_inbox_msg_idx,
             extra_data_len,
+            output_transfer_count,
+            output_message_count,
+            output_message_value_sats,
             l1_ref_count = l1_ref_heights.len(),
             ?l1_ref_heights,
             "submitted snark update to OL"

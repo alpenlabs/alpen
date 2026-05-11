@@ -28,14 +28,16 @@ pub trait OLClient: Sized + Send + Sync {
 /// Returns the current status of the OL chain.
 ///
 /// This is a checked version of [`OLClient::chain_status`] that validates
-/// the slot numbers of tip >= confirmed >= finalized.
+/// the slot numbers of tip >= latest terminal >= confirmed >= finalized.
 pub async fn chain_status_checked(client: &impl OLClient) -> Result<OLChainStatus, OLClientError> {
     let status = client.chain_status().await?;
     if status.finalized.last_slot() > status.confirmed.last_slot()
-        || status.confirmed.last_slot() > status.tip.slot()
+        || status.confirmed.last_slot() > status.latest.last_slot()
+        || status.latest.last_slot() > status.tip.slot()
     {
         return Err(OLClientError::InvalidChainStatusSlotOrder {
             tip: status.tip.slot(),
+            latest: status.latest.last_slot(),
             confirmed: status.confirmed.last_slot(),
             finalized: status.finalized.last_slot(),
         });
@@ -125,37 +127,39 @@ pub async fn get_inbox_messages_checked(
 #[derive(Debug, Error)]
 pub enum OLClientError {
     /// End slot is less than or equal to start slot.
-    #[error(
-        "invalid slot range: end_slot ({max_slot}) must be greater than start_slot ({min_slot})"
-    )]
+    #[error("invalid slot range (end_slot {max_slot} must be greater than start_slot {min_slot})")]
     InvalidSlotRange { min_slot: u64, max_slot: u64 },
 
     /// Received a different number of blocks than expected.
-    #[error("unexpected block count: expected {expected} blocks, got {actual}")]
+    #[error("unexpected block count (expected {expected} blocks, got {actual})")]
     UnexpectedBlockCount { expected: usize, actual: usize },
 
     /// Received a different number of operation lists than expected.
-    #[error("unexpected operation count: expected {expected} operation lists, got {actual}")]
+    #[error("unexpected operation count (expected {expected} operation lists, got {actual})")]
     UnexpectedOperationCount { expected: usize, actual: usize },
 
     /// Received a different number of operation lists than expected.
-    #[error("unexpected inbox message count: expected {expected} message lists, got {actual}")]
+    #[error("unexpected inbox message count (expected {expected} message lists, got {actual})")]
     UnexpectedInboxMessageCount { expected: usize, actual: usize },
 
-    /// Chain status slots are not in the correct order (tip >= confirmed >= finalized).
-    #[error("unexpected chain status slot order: {tip} >= {confirmed} >= {finalized}")]
+    /// Chain status slots are not in the correct order
+    /// (tip >= latest terminal >= confirmed >= finalized).
+    #[error(
+        "unexpected chain status slot order (tip {tip}, latest {latest}, confirmed {confirmed}, finalized {finalized})"
+    )]
     InvalidChainStatusSlotOrder {
         tip: u64,
+        latest: u64,
         confirmed: u64,
         finalized: u64,
     },
 
     /// Network-related error occurred.
-    #[error("network error: {0}")]
+    #[error("network failure ({0})")]
     Network(String),
 
     /// RPC call failed.
-    #[error("rpc error: {0}")]
+    #[error("rpc failure ({0})")]
     Rpc(String),
 
     /// Other unspecified error.

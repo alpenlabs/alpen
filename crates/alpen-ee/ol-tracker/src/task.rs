@@ -30,7 +30,14 @@ pub(crate) async fn ol_tracker_task<TStorage, TOLClient>(
         time::sleep(Duration::from_millis(ctx.poll_wait_ms)).await;
         use tracing::*;
 
-        match track_ol_state(&state, ctx.ol_client.as_ref(), ctx.max_epochs_fetch).await {
+        match track_ol_state(
+            &state,
+            ctx.ol_client.as_ref(),
+            ctx.max_epochs_fetch,
+            ctx.track_finalized_epoch,
+        )
+        .await
+        {
             Ok(TrackOLAction::Extend(epoch_operations, chain_status)) => {
                 debug!(?epoch_operations, ?chain_status, "Received track action");
                 if let Err(error) =
@@ -81,7 +88,7 @@ pub(crate) struct OLEpochOperations {
 pub(crate) enum TrackOLAction {
     /// Extend local view of the OL chain with new epochs.
     /// TODO: stream
-    Extend(Vec<OLEpochOperations>, OLChainStatus),
+    Extend(Vec<OLEpochOperations>, Box<OLChainStatus>),
     /// Local tip not present in OL chain, need to resolve local view.
     Reorg,
     /// Local tip is synced with OL chain, nothing to do.
@@ -92,29 +99,52 @@ pub(crate) async fn track_ol_state(
     state: &OLTrackerState,
     ol_client: &impl OLClient,
     max_epochs_fetch: u32,
+    track_finalized_epoch: bool,
 ) -> Result<TrackOLAction> {
     // can be changed to subscribe to ol changes, with timeout
     let ol_status = chain_status_checked(ol_client).await?;
 
-    let best_ol_confirmed = &ol_status.confirmed;
-    let best_ol_epoch = best_ol_confirmed.epoch();
+    // Pick the chain-tip signal to advance against. `confirmed` is the
+    // canonical (CSM-based, requires L1 checkpoint observation) signal.
+    //
+    // The dev/test path advances against the latest terminal OL epoch that
+    // Strata has processed locally. This lets the EE block builder consume OL
+    // inbox messages without waiting for the CSM/checkpoint-observation path,
+    // whose lag is not solved just by shortening regtest L1 block time when the
+    // native noop prover emits SAUs quickly.
+    let mut effective_ol_status = ol_status;
+    let best_ol_commitment = if track_finalized_epoch {
+        let latest = ol_status.latest;
+        effective_ol_status.confirmed = latest;
+        effective_ol_status.finalized = latest;
+        &effective_ol_status.confirmed
+    } else {
+        &effective_ol_status.confirmed
+    };
+    let best_ol_epoch = best_ol_commitment.epoch();
     let best_local_epoch = state.best_ol_epoch().epoch();
 
-    debug!(%best_local_epoch, %best_ol_epoch, "check best ol confirmed epoch");
+    debug!(
+        %best_local_epoch,
+        %best_ol_epoch,
+        latest_epoch = %ol_status.latest.epoch(),
+        track_finalized_epoch,
+        "check best ol epoch"
+    );
 
     if best_ol_epoch < best_local_epoch {
         warn!(
             "local view of chain is ahead of OL, should not typically happen; local: {}; ol: {}",
-            best_local_epoch, best_ol_confirmed
+            best_local_epoch, best_ol_commitment
         );
         return Ok(TrackOLAction::Noop);
     }
 
     if best_ol_epoch == best_local_epoch {
-        if best_ol_confirmed.last_blkid() != state.best_ol_epoch().last_blkid() {
+        if best_ol_commitment.last_blkid() != state.best_ol_epoch().last_blkid() {
             warn!(
                 epoch = %best_ol_epoch,
-                ol = %best_ol_confirmed.last_blkid(),
+                ol = %best_ol_commitment.last_blkid(),
                 local = %state.best_ol_epoch().last_blkid(),
                 "detect chain mismatch; trigger reorg"
             );
@@ -175,7 +205,10 @@ pub(crate) async fn track_ol_state(
         }
 
         // maybe stream all missing epochs ?
-        return Ok(TrackOLAction::Extend(epoch_operations, ol_status));
+        return Ok(TrackOLAction::Extend(
+            epoch_operations,
+            Box::new(effective_ol_status),
+        ));
     }
 
     unreachable!("There should not be a valid case that is not covered above")
@@ -311,10 +344,13 @@ mod tests {
                     tip: make_block_commitment(31, 104),
                     confirmed: make_epoch_commitment(3, 30, 103),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(3, 30, 103),
                 })
             });
 
-            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10, false)
+                .await
+                .unwrap();
 
             assert!(matches!(result, TrackOLAction::Noop));
         }
@@ -336,10 +372,13 @@ mod tests {
                     tip: make_block_commitment(31, 104),
                     confirmed: make_epoch_commitment(3, 30, 103),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(3, 30, 103),
                 })
             });
 
-            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10, false)
+                .await
+                .unwrap();
 
             assert!(matches!(result, TrackOLAction::Noop));
         }
@@ -361,10 +400,13 @@ mod tests {
                     tip: make_block_commitment(31, 200),
                     confirmed: make_epoch_commitment(3, 30, 199), // Same epoch, different block ID
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(3, 30, 199),
                 })
             });
 
-            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10, false)
+                .await
+                .unwrap();
 
             assert!(matches!(result, TrackOLAction::Reorg));
         }
@@ -390,12 +432,15 @@ mod tests {
                     tip: make_block_commitment(41, 105),
                     confirmed: make_epoch_commitment(4, 40, 104),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(4, 40, 104),
                 })
             });
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10, false)
+                .await
+                .unwrap();
 
             assert!(matches!(result, TrackOLAction::Reorg));
         }
@@ -420,12 +465,15 @@ mod tests {
                     tip: make_block_commitment(51, 106),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(5, 50, 105),
                 })
             });
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10, false)
+                .await
+                .unwrap();
 
             match result {
                 TrackOLAction::Extend(ops, _status) => {
@@ -433,6 +481,48 @@ mod tests {
                     assert_eq!(ops[0].epoch.epoch(), 3);
                     assert_eq!(ops[1].epoch.epoch(), 4);
                     assert_eq!(ops[2].epoch.epoch(), 5);
+                }
+                _ => panic!("Expected Extend action"),
+            }
+        }
+
+        #[tokio::test]
+        async fn test_dev_tracking_uses_latest_when_confirmed_stalls() {
+            // Scenario: Strata's local OL tip has completed epochs, but the
+            // CSM-gated confirmed/finalized epochs are still at genesis.
+            // Expected: dev tracking extends through the latest terminal epoch
+            // and returns an effective status that publishes that epoch.
+
+            let local_chain = create_epochs(&[100]);
+            let remote_chain = create_epochs(&[100, 101, 102, 103]);
+
+            let state = OLTrackerState::new(local_chain[0].clone(), local_chain[0].clone());
+
+            let mut mock_client = MockOLClient::new();
+
+            mock_client.expect_chain_status().times(1).returning(|| {
+                Ok(OLChainStatus {
+                    tip: make_block_commitment(31, 104),
+                    confirmed: make_epoch_commitment(0, 0, 100),
+                    finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(3, 30, 103),
+                })
+            });
+
+            setup_mock_client_with_chain(&mut mock_client, remote_chain);
+
+            let result = track_ol_state(&state, &mock_client, 10, true)
+                .await
+                .unwrap();
+
+            match result {
+                TrackOLAction::Extend(ops, status) => {
+                    assert_eq!(ops.len(), 3);
+                    assert_eq!(ops[0].epoch.epoch(), 1);
+                    assert_eq!(ops[1].epoch.epoch(), 2);
+                    assert_eq!(ops[2].epoch.epoch(), 3);
+                    assert_eq!(status.confirmed.epoch(), 3);
+                    assert_eq!(status.finalized.epoch(), 3);
                 }
                 _ => panic!("Expected Extend action"),
             }
@@ -460,12 +550,15 @@ mod tests {
                     tip: make_block_commitment(101, 111),
                     confirmed: make_epoch_commitment(10, 100, 110),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(10, 100, 110),
                 })
             });
 
             setup_mock_client_with_chain(&mut mock_client, remote_chain);
 
-            let result = track_ol_state(&state, &mock_client, 3).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 3, false)
+                .await
+                .unwrap();
 
             match result {
                 TrackOLAction::Extend(ops, _status) => {
@@ -500,6 +593,7 @@ mod tests {
                     tip: make_block_commitment(51, 106),
                     confirmed: make_epoch_commitment(5, 50, 105),
                     finalized: make_epoch_commitment(0, 0, 100),
+                    latest: make_epoch_commitment(5, 50, 105),
                 })
             });
 
@@ -537,7 +631,9 @@ mod tests {
                     ))
                 });
 
-            let result = track_ol_state(&state, &mock_client, 10).await.unwrap();
+            let result = track_ol_state(&state, &mock_client, 10, false)
+                .await
+                .unwrap();
 
             match result {
                 TrackOLAction::Extend(ops, _status) => {
@@ -564,7 +660,7 @@ mod tests {
                 .times(1)
                 .returning(|| Err(alpen_ee_common::OLClientError::network("network error")));
 
-            let result = track_ol_state(&state, &mock_client, 10).await;
+            let result = track_ol_state(&state, &mock_client, 10, false).await;
 
             assert!(result.is_err());
         }

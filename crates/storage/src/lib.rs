@@ -19,7 +19,7 @@ pub use managers::{
     l1::L1BlockManager,
     l2::L2BlockManager,
     mempool::MempoolDbManager,
-    mmr_index::{MmrIndexHandle, MmrIndexManager, MmrStateView},
+    mmr_index::{MmrAppendRequest, MmrIndexHandle, MmrIndexManager, MmrStateView},
     ol::OLBlockManager,
     ol_checkpoint::OLCheckpointManager,
     ol_state::OLStateManager,

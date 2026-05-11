@@ -11,6 +11,14 @@ pub(crate) struct OLTrackerCtx<TStorage, TOLClient> {
     pub consensus_tx: watch::Sender<ConsensusHeads>,
     pub max_epochs_fetch: u32,
     pub poll_wait_ms: u64,
+    /// Dev/test only. When true, the tracker advances on the OL's
+    /// `finalized` epoch (FCM-based, no L1 round-trip required) rather
+    /// than the canonical `confirmed` epoch (CSM-based, depends on
+    /// checkpoint observation on L1). Lets test environments where
+    /// the CSM checkpoint pipeline can't keep up with rapid SAU
+    /// emission (e.g. `--dev-native-noop-prover`) still consume
+    /// inbox messages without waiting for L1 confirmations.
+    pub track_finalized_epoch: bool,
 }
 
 impl<TStorage, TOLClient> OLTrackerCtx<TStorage, TOLClient> {

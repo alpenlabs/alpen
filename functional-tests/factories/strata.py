@@ -14,6 +14,7 @@ from common.config import (
     BitcoindConfig,
     ClientConfig,
     EpochSealingConfig,
+    LoggingConfig,
     OLParams,
     SequencerConfig,
     SequencerRuntimeConfig,
@@ -62,6 +63,7 @@ class StrataFactory(flexitest.Factory):
         use_unchecked_cred_rule: bool = False,
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
+        ol_block_time_ms: int | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -77,6 +79,7 @@ class StrataFactory(flexitest.Factory):
             use_unchecked_cred_rule: If True, generates params with CredRule::Unchecked.
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
+            ol_block_time_ms: Optional sequencer OL block time override.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
@@ -92,9 +95,13 @@ class StrataFactory(flexitest.Factory):
 
         # Create config
         client_config = ClientConfig(rpc_host=rpc_host, rpc_port=rpc_port)
+        # Leave log_dir/log_file_prefix unset so strata writes tracing to
+        # stdout/stderr; the harness captures both into service.log.
+        logging_config = LoggingConfig()
         config = StrataConfig(
             bitcoind=bconfig,
             client=client_config,
+            logging=logging_config,
         )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
@@ -102,8 +109,13 @@ class StrataFactory(flexitest.Factory):
 
         sequencer_config_path = datadir / "sequencer.toml"
         if is_sequencer:
+            seq_cfg = (
+                SequencerConfig(ol_block_time_ms=ol_block_time_ms)
+                if ol_block_time_ms is not None
+                else SequencerConfig()
+            )
             sequencer_runtime_config = SequencerRuntimeConfig(
-                sequencer=SequencerConfig(),
+                sequencer=seq_cfg,
                 epoch_sealing=epoch_sealing_config,
             )
             with open(sequencer_config_path, "w") as f:

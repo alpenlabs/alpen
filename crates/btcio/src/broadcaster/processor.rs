@@ -58,11 +58,12 @@ where
 {
     let result = match txentry.status {
         L1TxStatus::Unpublished => publish_tx(io, txentry).await.map(Some),
-        L1TxStatus::Published | L1TxStatus::Confirmed { .. } => {
-            resolve_broadcast_entry_status(io, txentry, txid, params)
-                .await
-                .map(Some)
-        }
+        L1TxStatus::Published => probe_published_entry(io, txentry, txid, params)
+            .await
+            .map(Some),
+        L1TxStatus::Confirmed { .. } => check_tx_confirmations(io, txentry, txid, params)
+            .await
+            .map(Some),
         L1TxStatus::Finalized { .. } => Ok(None),
         L1TxStatus::InvalidInputs => Ok(None),
     };
@@ -72,10 +73,10 @@ where
     result
 }
 
-/// Resolves a broadcast entry from a confirmation lookup, falling back to a
-/// re-publish probe when the lookup misses.
+/// Resolves a `Published` entry from a confirmation lookup, falling back to a
+/// re-publish probe only when the lookup actually misses.
 ///
-/// `gettransaction` returns three distinguishable shapes for a broadcast entry:
+/// `gettransaction` returns three distinguishable shapes for a Published entry:
 ///
 /// 1. `Some(info)` with `confirmations >= 1`: tx mined, derive Confirmed/Finalized.
 /// 2. `Some(info)` with `confirmations == 0`: tx alive in mempool. Hold at Published. Re-publishing
@@ -84,7 +85,7 @@ where
 ///    tx, or a genuinely dropped tx (mempool eviction, RBF). Re-publish to disambiguate: benign
 ///    mempool messages fold back to Published, `bad-txns-inputs-missingorspent` routes to
 ///    InvalidInputs so the watcher rebuilds the envelope.
-async fn resolve_broadcast_entry_status<C>(
+async fn probe_published_entry<C>(
     io: &C,
     txentry: &L1TxEntry,
     txid: &Txid,
@@ -98,6 +99,8 @@ where
     let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
     match txinfo_res? {
+        // `confirmation_status` returns `Published` for 0-conf, which is the
+        // correct sighting for an already-Published entry still in mempool.
         Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
         None => match publish_tx(io, txentry).await? {
             L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
@@ -110,7 +113,9 @@ where
 ///
 /// `confirmations <= 0` means the tx is visible to bitcoind but not anchored
 /// to the canonical chain (mempool-only, or on a side branch after reorg);
-/// returns [`L1TxStatus::Published`].
+/// returns [`L1TxStatus::Published`]. Callers that need different 0-conf
+/// semantics — e.g. regressing a `Confirmed` entry to `Unpublished` on
+/// reorg drop — must override the result themselves.
 fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1TxStatus {
     if info.confirmations <= 0 {
         return L1TxStatus::Published;
@@ -133,6 +138,42 @@ fn confirmation_status(info: &TxConfirmationInfo, reorg_safe_depth: i64) -> L1Tx
             block_height,
         }
     }
+}
+
+/// Resolves a `Confirmed` entry to its next confirmation-derived status. A
+/// confirmed tx that disappears or drops to 0 confirmations regresses to
+/// `Unpublished` so the broadcaster re-publishes (typical reorg recovery).
+///
+/// Callers in `Published` state must use `probe_published_entry` instead; that
+/// path holds 0-conf and not-found differently to avoid publish/revert
+/// oscillation and unnecessary re-broadcasts.
+async fn check_tx_confirmations<C>(
+    io: &C,
+    txentry: &L1TxEntry,
+    txid: &Txid,
+    params: &BtcioParams,
+) -> BroadcasterResult<L1TxStatus>
+where
+    C: BroadcasterIoContext,
+{
+    async {
+        let txinfo_res = io.get_transaction(txid).await;
+        debug!(?txinfo_res, "checked transaction status");
+        let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
+
+        match txinfo_res? {
+            Some(info) if info.confirmations == 0 => Ok(L1TxStatus::Unpublished),
+            Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+            None => Ok(L1TxStatus::Unpublished),
+        }
+    }
+    .instrument(debug_span!(
+        "check_tx_confirmations",
+        component = "btcio_broadcaster",
+        %txid,
+        current_status = ?txentry.status
+    ))
+    .await
 }
 
 /// Attempts to broadcast an unpublished entry and maps publication outcomes to statuses.
@@ -570,8 +611,8 @@ mod test {
                 let res = process_status(&io, &e, &txid, &btcio_params).await;
                 assert_eq!(
                     res,
-                    Some(L1TxStatus::Published),
-                    "Status should revert to published if confirmed tx is visible at 0 confirmations"
+                    Some(L1TxStatus::Unpublished),
+                    "Status should revert to unpublished if confirmed tx now has 0 confirmations"
                 );
 
                 let io = MockIoContext::default().with_tx_lookup(
@@ -632,6 +673,14 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_published_entry_dropped_from_mempool_advances_to_invalid_inputs() {
+        // A `Published` entry whose lookup says "not found" AND whose
+        // re-publish probe returns `InvalidInputs` (e.g. its inputs were
+        // spent or evicted) must transition to `InvalidInputs` so the
+        // watcher's `determine_payload_next_status` flips the bundle to
+        // `NeedsResign` and the envelope is rebuilt against fresh UTXOs.
+        // Without the publish-probe in `probe_published_entry`, the entry
+        // would stay `Published` forever and the watcher's
+        // `curr_payloadidx` would stall.
         let (e, txid) = entry_with_txid(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
 
@@ -668,6 +717,13 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_published_entry_at_zero_conf_does_not_republish() {
+        // A `Published` entry that `gettransaction` reports as 0-conf in the
+        // wallet is alive in mempool and waiting to be mined. Re-publishing
+        // every poll for the entire pre-confirmation window would only spam
+        // bitcoind and the broadcaster logs. The probe must hold at Published
+        // without calling `send_raw_transaction`. We poison the broadcast path
+        // so any re-publish would surface as `InvalidInputs`; the assertion
+        // proves the probe never went down that road.
         let (e, txid) = entry_with_txid(L1TxStatus::Published);
         let btcio_params = get_test_btcio_params();
 
@@ -686,7 +742,10 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_handle_confirmed_entry_missing_tx_probes_before_regressing() {
+    async fn test_handle_confirmed_entry_missing_tx_regresses_to_unpublished() {
+        // Confirmed entries that go missing on lookup should still regress to
+        // Unpublished so the broadcaster re-publishes (e.g. after a reorg
+        // dropped them from the wallet view).
         let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
         let btcio_params = get_test_btcio_params();
 
@@ -694,24 +753,8 @@ mod test {
         let res = process_status(&io, &e, &txid, &btcio_params).await;
         assert_eq!(
             res,
-            Some(L1TxStatus::Published),
-            "Confirmed entry that disappears should probe before changing status"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_confirmed_entry_missing_tx_with_invalid_inputs_marks_invalid_inputs() {
-        let (e, txid) = entry_with_txid(confirmed_status(1, 1, Buf32::zero()));
-        let btcio_params = get_test_btcio_params();
-
-        let io = MockIoContext::default()
-            .with_tx_lookup(txid, MockTxLookupResult::Missing)
-            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
-        let res = process_status(&io, &e, &txid, &btcio_params).await;
-        assert_eq!(
-            res,
-            Some(L1TxStatus::InvalidInputs),
-            "Confirmed entry with invalid inputs should trigger envelope rebuild"
+            Some(L1TxStatus::Unpublished),
+            "Confirmed entry that disappears should regress to Unpublished"
         );
     }
 

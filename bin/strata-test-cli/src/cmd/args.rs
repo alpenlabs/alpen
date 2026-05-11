@@ -1,8 +1,8 @@
 use argh::FromArgs;
 
 use super::{
-    build_snark_withdrawal::BuildSnarkWithdrawalArgs, convert_to_xonly_pk::ConvertToXonlyPkArgs,
-    create_deposit_tx::CreateDepositTxArgs,
+    build_snark_withdrawal::BuildSnarkWithdrawalArgs, compute_drt_output::ComputeDrtOutputArgs,
+    convert_to_xonly_pk::ConvertToXonlyPkArgs, create_deposit_tx::CreateDepositTxArgs,
     create_ee_predicate_update::CreateEePredicateUpdateArgs,
     create_mock_deposit::CreateMockDepositArgs,
     create_withdrawal_fulfillment::CreateWithdrawalFulfillmentArgs,
@@ -35,6 +35,9 @@ pub enum Commands {
 
     /// Queue an admin update that changes the EE account predicate key
     CreateEePredicateUpdate(CreateEePredicateUpdateArgs),
+
+    /// Compute the bridge_in P2TR address and SPS-50 OP_RETURN script for a DRT
+    ComputeDrtOutput(ComputeDrtOutputArgs),
 
     /// Build a snark account withdrawal transaction JSON
     BuildSnarkWithdrawal(BuildSnarkWithdrawalArgs),

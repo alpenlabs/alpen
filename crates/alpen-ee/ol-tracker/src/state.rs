@@ -294,6 +294,11 @@ mod tests {
                     FINALIZED_SLOT,
                     BLOCK_ID_BYTES[FINALIZED_EPOCH as usize],
                 ),
+                latest: make_epoch_commitment(
+                    CONFIRMED_EPOCH,
+                    CONFIRMED_SLOT,
+                    BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize],
+                ),
             };
 
             let result = build_tracker_state(best_state, &ol_status, &mock_storage)
@@ -329,6 +334,7 @@ mod tests {
                 tip: make_block_commitment(50, 105),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
+                latest: make_epoch_commitment(4, 40, 104),
             };
 
             // Confirmed epoch is missing
@@ -362,6 +368,7 @@ mod tests {
                 tip: make_block_commitment(50, 105),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
+                latest: make_epoch_commitment(4, 40, 104),
             };
 
             // First call for confirmed succeeds, second call for finalized returns None
@@ -396,6 +403,7 @@ mod tests {
                 tip: make_block_commitment(50, 105),
                 confirmed: make_epoch_commitment(4, 40, 104),
                 finalized: make_epoch_commitment(2, 20, 102),
+                latest: make_epoch_commitment(4, 40, 104),
             };
 
             let mut mock_storage = MockStorage::new();
@@ -446,6 +454,11 @@ mod tests {
                     FINALIZED_SLOT,
                     BLOCK_ID_BYTES[FINALIZED_EPOCH as usize],
                 ),
+                latest: make_epoch_commitment(
+                    CONFIRMED_EPOCH,
+                    CONFIRMED_SLOT,
+                    BLOCK_ID_BYTES[CONFIRMED_EPOCH as usize],
+                ),
             };
 
             let tracker_state = build_tracker_state(best_state, &ol_status, &mock_storage)
@@ -469,6 +482,7 @@ mod tests {
                 consensus_tx,
                 max_epochs_fetch: 10,
                 poll_wait_ms: 100,
+                track_finalized_epoch: false,
             };
 
             ctx.notify_consensus_update(tracker_state.get_consensus_heads());
