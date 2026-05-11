@@ -795,6 +795,8 @@ pub(crate) struct TestStorageFixture {
     inbox_message_claims: Vec<(AccountId, Vec<AccumulatorClaim>)>,
 }
 
+const GENESIS_L1_MANIFEST_HEIGHT: L1Height = 1;
+
 impl TestStorageFixture {
     /// Creates a new fixture from storage.
     pub(crate) fn new(storage: Arc<NodeStorage>) -> Self {
@@ -877,6 +879,16 @@ impl TestEnv {
     /// Returns parent commitment used by default assembly entrypoints.
     pub(crate) fn parent_commitment(&self) -> OLBlockCommitment {
         self.parent_commitment
+    }
+
+    /// Returns the current parent state's last processed L1 height.
+    pub(crate) async fn parent_last_l1_height(&self) -> L1Height {
+        self.ctx()
+            .fetch_state_for_tip(self.parent_commitment())
+            .await
+            .expect("fetch parent state")
+            .expect("parent state exists")
+            .last_l1_height()
     }
 
     /// Returns storage handle for storage-backed test setup helpers.
@@ -1109,6 +1121,14 @@ impl TestStorageFixtureBuilder {
         self
     }
 
+    /// Uses the slot-0 genesis parent and seeds `count` L1 manifests after it.
+    pub(crate) fn with_genesis_parent_and_l1_manifest_count(mut self, count: L1Height) -> Self {
+        self.parent_slot = Some(0);
+        self.l1_manifest_height_range =
+            Some(GENESIS_L1_MANIFEST_HEIGHT..=GENESIS_L1_MANIFEST_HEIGHT + count);
+        self
+    }
+
     /// Seeds L1 header refs for the provided L1 heights.
     pub(crate) fn with_l1_header_refs(
         mut self,
@@ -1246,9 +1266,9 @@ impl TestStorageFixtureBuilder {
                 // Slot 0 is genesis - create terminal block
                 let block_info = BlockInfo::new_genesis(1000000);
 
-                // Create genesis manifest at height 1 (when last_l1_height is 0)
+                // Create genesis manifest when last_l1_height is 0.
                 let genesis_manifest = AsmManifest::new(
-                    1,
+                    GENESIS_L1_MANIFEST_HEIGHT,
                     L1BlockId::from(Buf32::zero()),
                     WtxidsRoot::from(Buf32::zero()),
                     vec![],

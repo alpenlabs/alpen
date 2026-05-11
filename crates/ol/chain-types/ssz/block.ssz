@@ -5,7 +5,7 @@ import block_flags
 
 MAX_TXS_PER_BLOCK = 1 << 16
 MAX_LOGS_PER_BLOCK = 1 << 12
-MAX_SEALING_MANIFEST_COUNT = 144
+MAX_SEALING_MANIFEST_COUNT = 2048
 
 ### OL Block header without signature.
 ###
