@@ -144,6 +144,22 @@ services:
       - "${GENESIS_L1_HEIGHT:-0}"
       - --batch-sealing-block-count
       - "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      # btcio fee policy: bitcoind | fixed | mempool.
+      # Required extras: fixed -> BTCIO_FEE_RATE; mempool -> BTCIO_MEMPOOL_BASE_URL.
+      - --btcio-fee-policy
+      - ${BTCIO_FEE_POLICY:-bitcoind}
+      - --btcio-conf-target
+      - "${BTCIO_CONF_TARGET:-1}"
+      - --btcio-fee-rate
+      - "${BTCIO_FEE_RATE:-1}"
+      - --btcio-mempool-base-url
+      - ${BTCIO_MEMPOOL_BASE_URL:-}
+      - --btcio-mempool-tier
+      - ${BTCIO_MEMPOOL_TIER:-fastest}
+      - --btcio-retry-count
+      - "${BTCIO_RETRY_COUNT:-3}"
+      - --btcio-retry-interval
+      - "${BTCIO_RETRY_INTERVAL:-1000}"
       - --color
       - never
     environment:
