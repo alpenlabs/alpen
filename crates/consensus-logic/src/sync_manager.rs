@@ -297,7 +297,7 @@ pub fn spawn_asm_worker(
     // block manager).
     let mmr_handle = storage.mmr_index().get_handle(MmrId::Asm);
 
-    // Prefill the ASM manifest MMR with zero-hash leaves up to and including
+    // Prefill the ASM manifest MMR with dummy-hash leaves up to and including
     // the genesis L1 height, so that the manifest for height `h` lands at MMR
     // index `h`. This mirrors the in-memory OL state initialization.
     let genesis_l1_height = asm_params.anchor.block.height() as u64;

@@ -36,7 +36,7 @@ pub enum LedgerRefsError {
 /// Resolves each L1 height to its canonical L1 header commitment via
 /// `ol_client`, uses the raw L1 height as the MMR leaf index (the OL
 /// ASM-manifests MMR is height-indexed, prefilled at genesis with
-/// zero-hash leaves), then sorts and dedups by index (multiple DA txns
+/// dummy-hash leaves), then sorts and dedups by index (multiple DA txns
 /// may land in one L1 block).
 ///
 /// The `?Sized` relaxation on the `impl SequencerOLClient` bound is

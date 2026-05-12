@@ -51,20 +51,20 @@ impl EpochalState {
     /// block height and other fields.
     ///
     /// The MMR is height-indexed: the leaf for an L1 block at height `h` lives
-    /// at MMR index `h`. The MMR is prefilled with zero-hash entries up to
+    /// at MMR index `h`. The MMR is prefilled with dummy-hash entries up to
     /// `genesis_l1_height` at genesis, so callers must append manifests with
     /// strictly contiguous heights matching the next available MMR index.
     pub fn append_manifest(&mut self, height: L1Height, mf: AsmManifest) {
         debug_assert_eq!(
             self.manifests_mmr.num_entries(),
             height as u64,
-            "append_manifest: height must equal next MMR index"
+            "ol/state: L1 height must equal next MMR index"
         );
 
         let manifest_hash = <AsmManifest as TreeHash>::tree_hash_root(&mf);
 
         Mmr::<StrataHasher>::add_leaf(&mut self.manifests_mmr, manifest_hash.into_inner())
-            .expect("MMR capacity exceeded");
+            .expect("ol/state: MMR capacity exceeded");
         self.last_l1_block = L1BlockCommitment::new(height, *mf.blkid());
     }
 
