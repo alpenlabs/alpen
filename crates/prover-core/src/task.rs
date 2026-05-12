@@ -15,8 +15,12 @@ use serde::{Deserialize, Serialize};
 pub enum TaskStatus {
     /// Task registered but not yet picked up for proving.
     Pending,
-    /// Actively being proved.
-    Proving,
+    /// Actively being proved. Carries the retry counter so the count survives
+    /// the `TransientFailure → Proving → (crash)` transition: if the process
+    /// dies mid-attempt (OOM, SIGKILL, panic) the persisted record still
+    /// reflects how many retries the task has already burned, and `recover`
+    /// can bump it correctly instead of resetting to zero.
+    Proving { retry_count: u32 },
     /// Proof completed successfully, receipt available.
     Completed,
     /// Temporary failure; will be retried after backoff.
@@ -35,7 +39,7 @@ impl TaskStatus {
     }
 
     pub fn is_in_progress(&self) -> bool {
-        matches!(self, Self::Proving)
+        matches!(self, Self::Proving { .. })
     }
 
     /// True for any status that should be re-spawned on startup recovery:
@@ -43,7 +47,7 @@ impl TaskStatus {
     /// Transient failures are handled separately by the retry scanner via
     /// [`Self::is_retriable`].
     pub fn is_unfinished(&self) -> bool {
-        matches!(self, Self::Pending | Self::Proving)
+        matches!(self, Self::Pending | Self::Proving { .. })
     }
 }
 

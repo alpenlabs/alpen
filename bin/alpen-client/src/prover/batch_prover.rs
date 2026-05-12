@@ -100,7 +100,7 @@ impl BatchProver for PaasBatchProver {
                 Ok(ProofGenerationStatus::Failed { reason: error })
             }
             Ok(TaskStatus::Pending)
-            | Ok(TaskStatus::Proving)
+            | Ok(TaskStatus::Proving { .. })
             | Ok(TaskStatus::TransientFailure { .. }) => Ok(ProofGenerationStatus::Pending),
             Err(PaasError::TaskNotFound(_)) => Ok(ProofGenerationStatus::NotStarted),
             Err(e) => {

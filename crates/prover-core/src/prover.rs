@@ -246,7 +246,9 @@ impl<H: ProofSpec> Prover<H> {
         let span = info_span!("prove", task = %task);
 
         async {
-            let _ = self.task_store.update_status(&key, TaskStatus::Proving);
+            let _ = self
+                .task_store
+                .update_status(&key, TaskStatus::Proving { retry_count: 0 });
 
             // 1. Fetch input
             let input = match self.spec.fetch_input(&task).await {
