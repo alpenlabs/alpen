@@ -16959,6 +16959,7 @@ name = "strata-zkvm-hosts"
 version = "0.3.0-alpha.1"
 dependencies = [
  "strata-sp1-guest-builder",
+ "tokio",
  "zkaleido-sp1-host",
 ]
 
