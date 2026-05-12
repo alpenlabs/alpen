@@ -90,27 +90,35 @@ pub(crate) async fn resolve_fee_rate<R: Reader>(
     config: &WriterConfig,
 ) -> anyhow::Result<u64> {
     let fee_rate = match config.fee_policy() {
-        FeePolicy::BitcoinD { conf_target } => client
-            .estimate_smart_fee(*conf_target)
-            .await
-            .context("failed to estimate smart fee"),
+        // NOTE(STR-2545, STR-2433): fee estimation is currently being doubled since we don't fully
+        //                           support fee bumping ostensive mechanisms for making sure
+        //                           transactions confirm in a timely manner. This is a temporary
+        //                           measure until we implement more robust fee bumping strategies,
+        //                           at which point we can remove the doubling and rely on the fee
+        //                           policies to provide accurate fee rates.
+        // NOTE(STR-2018): ensure fee is at least 1 sat/vB to avoid zero fee transactions.
+        //                 This will be revised once we support sub 1 sat/vB fee rates.
+        FeePolicy::BitcoinD { conf_target } => {
+            let fee_estimate = client
+                .estimate_smart_fee(*conf_target)
+                .await
+                .context("failed to estimate smart fee")?;
+            u64::max(fee_estimate, 1) * 2
+        }
         FeePolicy::MempoolExplorer {
             policy,
             mempool_base_url,
             fallback_conf_target,
         } => {
-            resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy).await
+            let fee_estimate =
+                resolve_mempool_fee_rate(client, mempool_base_url, *fallback_conf_target, *policy)
+                    .await?;
+            u64::max(fee_estimate, 1) * 2
         }
-        FeePolicy::Fixed { fee_rate } => Ok(*fee_rate),
-    }?;
+        FeePolicy::Fixed { fee_rate } => *fee_rate,
+    };
 
-    // NOTE(STR-2545, STR-2433): fee estimation is currently being doubled since we don't fully
-    //                           support fee bumping ostensive mechanisms for making sure
-    //                           transactions confirm in a timely manner. This is a temporary
-    //                           measure until we implement more robust fee bumping strategies,
-    //                           at which point we can remove the doubling and rely on the fee
-    //                           policies to provide accurate fee rates.
-    Ok(fee_rate * 2)
+    Ok(fee_rate)
 }
 
 /// Resolves the fee rate using the mempool explorer recommended fees endpoint, falling back to
