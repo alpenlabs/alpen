@@ -83,17 +83,25 @@ pub(crate) fn start_prover_service(
             .native(CheckpointProgram::native_host()),
         #[cfg(feature = "sp1")]
         ProverBackend::Sp1 => {
-            use strata_zkvm_hosts::sp1::CHECKPOINT_HOST;
+            use strata_zkvm_hosts::sp1::checkpoint_host;
+            use zkaleido_sp1_host::SP1HostConfig;
             // prover-core's `.remote(host)` takes the host by value and
             // re-wraps it in its own Arc inside RemoteStrategy. SP1Host
             // is Clone (only holds a SP1ProvingKey), so cloning from the
-            // shared static is fine.
-            let mut host: zkaleido_sp1_host::SP1Host = (**CHECKPOINT_HOST).clone();
+            // shared static is fine. Host init is async (SP1 sets up the
+            // proving key + prover client over the network/local SDK), so
+            // we drive it on the runtime handle. The deadline is now part
+            // of `SP1HostConfig`, applied at init time rather than after.
             let deadline_secs = prover_config
                 .sp1_proof_deadline_secs
                 .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-            host = host.with_deadline(Duration::from_secs(deadline_secs));
+            let sp1_config = SP1HostConfig::default().with_deadline(Duration::from_secs(deadline_secs));
             info!(deadline_secs, "sp1 prover deadline configured");
+            let host_static = runctx
+                .task_manager
+                .handle()
+                .block_on(checkpoint_host(sp1_config));
+            let host: zkaleido_sp1_host::SP1Host = (**host_static).clone();
             ProverBuilder::new(spec)
                 .task_store(task_store)
                 .receipt_hook(hook)
