@@ -219,6 +219,16 @@ impl<H: ProofSpec> Prover<H> {
     /// (Pending or Proving). Before this change we only re-picked in-progress
     /// work, so a crash between `submit`'s db insert and the spawn would
     /// leave a task stuck in Pending forever.
+    ///
+    /// A task found in `Proving` is one whose previous attempt died
+    /// abnormally — the process was killed (OOM, SIGKILL, panic) before any
+    /// error path could run. In that case no `schedule_retry` ever happened,
+    /// so the retry counter would otherwise stay at its pre-attempt value
+    /// forever and the same crash-inducing task would re-run indefinitely.
+    /// To bound this, recovery treats the dead attempt as a synthetic
+    /// transient failure: bump the counter and either schedule a normal
+    /// retry or, if `max_retries` is exhausted, mark `PermanentFailure` and
+    /// skip the spawn.
     async fn recover(self: &Arc<Self>) {
         let unfinished = match self.task_store.list_unfinished() {
             Ok(v) => v,
@@ -233,12 +243,56 @@ impl<H: ProofSpec> Prover<H> {
         info!(count = unfinished.len(), "recovering unfinished tasks");
         for record in unfinished {
             let key = record.key().to_vec();
-            if let Some(task) = decode_task_key::<H>(&key) {
-                let prover = Arc::clone(self);
-                tokio::spawn(async move {
-                    prover.run_task(task, key).await;
-                });
+            let Some(task) = decode_task_key::<H>(&key) else {
+                continue;
+            };
+
+            if let TaskStatus::Proving { retry_count } = record.status() {
+                let new_count = retry_count + 1;
+                let should_retry = self
+                    .config
+                    .retry
+                    .as_ref()
+                    .is_some_and(|cfg| cfg.should_retry(new_count));
+
+                if !should_retry {
+                    warn!(
+                        %task,
+                        retry_count = new_count,
+                        "task died mid-Proving and retries exhausted; marking PermanentFailure"
+                    );
+                    let _ = self.task_store.update_status(
+                        &key,
+                        TaskStatus::PermanentFailure {
+                            error: format!(
+                                "process died mid-Proving; retries exhausted at {new_count}"
+                            ),
+                        },
+                    );
+                    self.notify(&key, &task);
+                    continue;
+                }
+
+                warn!(
+                    %task,
+                    retry_count = new_count,
+                    "task died mid-Proving; counting as transient failure"
+                );
+                let _ = self.task_store.update_status(
+                    &key,
+                    TaskStatus::TransientFailure {
+                        retry_count: new_count,
+                        error: "process died mid-Proving".to_string(),
+                    },
+                );
+                // Fall through to spawn — `run_task` will snapshot the bumped
+                // count from the now-TransientFailure record.
             }
+
+            let prover = Arc::clone(self);
+            tokio::spawn(async move {
+                prover.run_task(task, key).await;
+            });
         }
     }
 
