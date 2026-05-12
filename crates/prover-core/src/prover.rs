@@ -428,6 +428,7 @@ impl<H: ProofSpec> Prover<H> {
             if cfg.should_retry(new_count) {
                 warn!(
                     retry_count = new_count,
+                    error = %msg,
                     "transient failure, scheduling retry"
                 );
                 let _ = self.task_store.update_status(
