@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    build_ledger_refs_from_da, Batch, BatchProver, ExecBlockRecord, ExecBlockStorage,
-    L1DaBlockRef, ProofId, SequencerOLClient,
+    build_ledger_refs_from_da, Batch, BatchProver, ExecBlockRecord, ExecBlockStorage, L1DaBlockRef,
+    ProofId, SequencerOLClient,
 };
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
@@ -9,8 +9,8 @@ use strata_codec::encode_to_vec;
 use strata_ee_acct_types::UpdateExtraData;
 use strata_identifiers::L1Height;
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate,
-    UpdateOperationData, UpdateOutputs,
+    LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate, UpdateOperationData,
+    UpdateOutputs,
 };
 use tree_hash::{Sha256Hasher, TreeHash};
 
