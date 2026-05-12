@@ -20,7 +20,7 @@ use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
 use strata_ol_stf::test_utils::{build_empty_chain, create_test_genesis_state};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use tracing::info;
-use zkaleido::{PerformanceReport, ZkVmHostPerf, ZkVmProgramPerf};
+use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
 const SLOTS_PER_EPOCH: u64 = 9;
 const NUM_BLOCKS: usize = 10;
@@ -71,10 +71,12 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
     }
 }
 
-pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
-    info!("Generating performance report for Checkpoint");
+pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary) {
+    info!("Generating execution summary for Checkpoint");
     let input = prepare_checkpoint_input();
-    CheckpointProgram::perf_report(&input, host).unwrap()
+    let summary =
+        <CheckpointProgram as ZkVmProgram>::execute(&input, host).expect("checkpoint execution");
+    (CheckpointProgram::name(), summary)
 }
 
 #[cfg(test)]

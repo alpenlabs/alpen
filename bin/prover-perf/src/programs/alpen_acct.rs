@@ -21,7 +21,7 @@ use strata_proofimpl_alpen_chunk::EeChunkProgram;
 use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
 use tracing::info;
-use zkaleido::{PerformanceReport, ZkVmHostPerf, ZkVmProgramPerf};
+use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
 use super::alpen_chunk;
 
@@ -80,10 +80,12 @@ fn prepare_input() -> EeAcctProofInput {
     }
 }
 
-pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
-    info!("Generating performance report for Alpen Acct");
+pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary) {
+    info!("Generating execution summary for Alpen Acct");
     let input = prepare_input();
-    EeAcctProgram::perf_report(&input, host).unwrap()
+    let summary =
+        <EeAcctProgram as ZkVmProgram>::execute(&input, host).expect("alpen-acct execution");
+    (EeAcctProgram::name(), summary)
 }
 
 #[cfg(test)]

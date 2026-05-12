@@ -17,7 +17,8 @@ use anyhow::Result;
 use args::{parse_programs, EvalArgs};
 use format::{format_header, format_results};
 use github::{format_github_message, post_to_github_pr};
-use zkaleido::PerformanceReport;
+#[cfg(feature = "sp1")]
+use zkaleido::ExecutionSummary;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -34,12 +35,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     #[cfg(feature = "sp1")]
     {
-        let sp1_reports = programs::run_sp1_programs(&programs);
+        let sp1_reports: Vec<(String, ExecutionSummary)> =
+            programs::run_sp1_programs(&programs).await;
         results_text.push(format_results(&sp1_reports, "SP1".to_owned()));
-        if !sp1_reports.iter().all(|r| r.success) {
-            println!("Some SP1 programs failed. Please check the results below.");
-            process::exit(1);
-        }
     }
 
     // Print results
