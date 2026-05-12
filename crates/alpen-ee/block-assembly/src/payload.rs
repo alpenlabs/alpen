@@ -26,6 +26,7 @@ pub(crate) fn extract_deposits(
 }
 
 /// Builds the block payload.
+///
 /// All EE <-> EVM conversions should be contained inside here.
 pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
     account_state: &mut EeAccountState,
@@ -47,12 +48,22 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
         .build_payload(PayloadBuildAttributes::new(parent, timestamp_sec, deposits))
         .await?;
 
-    let new_blockhash = payload.blockhash();
-    debug!(?new_blockhash, "payload build complete");
+    let new_tip_blkid = payload.blockhash();
+    let new_tip_state_root = payload.state_root();
+    debug!(
+        ?new_tip_blkid,
+        ?new_tip_state_root,
+        "payload build complete"
+    );
 
-    let extra_data = UpdateExtraData::new(new_blockhash, processed_inputs, processed_fincls);
+    let update_extra_data = UpdateExtraData::new(
+        new_tip_blkid,
+        new_tip_state_root,
+        processed_inputs,
+        processed_fincls,
+    );
 
-    Ok((payload, extra_data))
+    Ok((payload, update_extra_data))
 }
 
 #[cfg(test)]

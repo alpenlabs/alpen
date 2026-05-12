@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use bitcoind_async_client::traits::{Broadcaster, Wallet};
+use bitcoind_async_client::traits::Broadcaster;
 use strata_service::{ServiceBuilder, TickingInput, TokioMpscInput};
 use strata_storage::BroadcastDbOps;
 use strata_tasks::TaskExecutor;
@@ -12,8 +12,11 @@ use tokio::sync::mpsc;
 
 use crate::{
     broadcaster::{
-        handle::L1BroadcastHandle, input::BroadcasterInputMessage, io::BroadcasterIo,
-        service::BroadcasterService, state::BroadcasterServiceState,
+        handle::L1BroadcastHandle,
+        input::BroadcasterInputMessage,
+        io::{BroadcasterIo, WalletTxLookup},
+        service::BroadcasterService,
+        state::BroadcasterServiceState,
     },
     BtcioParams,
 };
@@ -44,7 +47,7 @@ impl<T> Debug for BroadcasterBuilder<T> {
 
 impl<T> BroadcasterBuilder<T>
 where
-    T: Broadcaster + Wallet + Send + Sync + 'static,
+    T: Broadcaster + WalletTxLookup,
 {
     /// Creates a broadcaster builder with required dependencies.
     pub fn new(rpc_client: Arc<T>, ops: Arc<BroadcastDbOps>, config: BtcioParams) -> Self {

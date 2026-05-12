@@ -3,30 +3,37 @@
 //! Polls entries by sequential index and advances them through the status
 //! lifecycle: Unsigned → Unpublished → CommitPublished → Published → Confirmed → Finalized.
 //!
-//! The `CommitPublished` intermediate state ensures reveal txs are broadcast directly
-//! (all at once) when the commit tx is on-chain. For single-reveal entries, broadcast
-//! happens as soon as the commit is in the mempool. For multi-reveal entries, we wait
-//! for the commit to be confirmed in a block to avoid hitting Bitcoin Core's mempool
-//! descendant size limit (default 101 KB).
+//! The `CommitPublished` intermediate state means the commit tx is accepted by
+//! bitcoind or confirmed on L1, so successor envelopes may be signed. Reveal txs
+//! are handed to the broadcaster only when doing so is mempool-policy safe.
 
 use std::{collections::BTreeSet, future::Future, sync::Arc, time::Duration};
 
-use bitcoin::{consensus::encode::deserialize as btc_deserialize, Address, Transaction};
+use bitcoin::{consensus::encode::deserialize as btc_deserialize, key::Keypair, Address};
 use bitcoind_async_client::{
     error::ClientError,
     traits::{Broadcaster, Reader, Signer, Wallet},
     Client,
 };
 use strata_config::btcio::WriterConfig;
-use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxStatus};
+use strata_db_types::types::{
+    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxStatus, RevealTxMeta,
+};
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
 use thiserror::Error;
 use tokio::time::interval;
 use tracing::*;
 
-use super::{context::ChunkedWriterContext, signer::sign_chunked_envelope};
-use crate::{broadcaster::L1BroadcastHandle, writer::builder::EnvelopeError, BtcioParams};
+use super::{
+    context::ChunkedWriterContext,
+    signer::{sign_chunked_envelope, SignedChunkedEnvelope},
+};
+use crate::{
+    broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
+    writer::builder::EnvelopeError,
+    BtcioParams,
+};
 
 /// Maximum number of envelope rows to fetch per storage scan batch.
 ///
@@ -34,6 +41,17 @@ use crate::{broadcaster::L1BroadcastHandle, writer::builder::EnvelopeError, Btci
 /// validate that indices are contiguous without materializing an arbitrarily
 /// large range in a single call.
 const ENTRY_SCAN_BATCH_SIZE: usize = 1_024;
+
+/// Bitcoin Core v29's default `-limitdescendantsize`, in virtual bytes.
+///
+/// Source:
+/// <https://github.com/bitcoin/bitcoin/blob/master/src/policy/policy.h#L74>
+///
+/// The policy includes the unconfirmed parent and all descendants. We only
+/// enqueue a single reveal under an unconfirmed commit if the commit+reveal
+/// package stays below this limit; otherwise reveals wait for commit
+/// confirmation and then spend confirmed outputs independently.
+const DEFAULT_DESCENDANT_SIZE_LIMIT_VBYTES: usize = 101_000;
 
 /// Errors raised by chunked-envelope watcher recovery and polling.
 ///
@@ -52,6 +70,16 @@ enum ChunkedEnvelopeWatcherError {
     /// A contiguous scan skipped a persisted row before the known tip.
     #[error("chunked envelope entry gap at index {missing_idx}")]
     EntryGap { missing_idx: u64 },
+
+    /// A commit tx disappeared after the envelope reached reveal tracking.
+    #[error(
+        "chunked envelope {envelope_idx} commit {commit_txid} missing from broadcast db in status {status:?}"
+    )]
+    CommitMissingAfterRevealTracking {
+        envelope_idx: u64,
+        commit_txid: Buf32,
+        status: ChunkedEnvelopeStatus,
+    },
 }
 
 /// Handle for submitting chunked envelope entries.
@@ -101,6 +129,7 @@ pub fn create_chunked_envelope_task(
     config: Arc<WriterConfig>,
     btcio_params: BtcioParams,
     sequencer_address: Address,
+    sequencer_keypair: Keypair,
     ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
 ) -> anyhow::Result<(Arc<ChunkedEnvelopeHandle>, impl Future<Output = ()>)> {
@@ -111,6 +140,7 @@ pub fn create_chunked_envelope_task(
         btcio_params,
         config,
         sequencer_address,
+        sequencer_keypair,
         bitcoin_client,
     ));
 
@@ -230,15 +260,23 @@ fn format_tx_status(txid: Buf32, status: &L1TxStatus) -> String {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CommitPublishResult {
+    Published,
+    InvalidInputs,
+    Deferred(String),
+}
+
 /// Polls entries and drives them through signing, broadcast, and confirmation.
 ///
 /// The lifecycle is:
-/// 1. `Unsigned`/`NeedsResign` → sign commit+reveals, store commit in broadcast DB → `Unpublished`
-/// 2. `Unpublished` → wait for commit to be on-chain, then broadcast ALL reveals →
-///    `CommitPublished`
-/// 3. `CommitPublished` → wait for all reveals to be published → `Published`
-/// 4. `Published` → wait for confirmation → `Confirmed`
-/// 5. `Confirmed` → wait for finalization → `Finalized`
+/// 1. `Unsigned`/`NeedsResign` -> sign commit+reveals, store commit in broadcast DB ->
+///    `Unpublished`.
+/// 2. `Unpublished` -> wait for commit acceptance/rejection -> `CommitPublished` or `NeedsResign`.
+/// 3. `CommitPublished` -> enqueue reveals when mempool-policy safe and wait for publication ->
+///    `Published`.
+/// 4. `Published` -> wait for confirmation -> `Confirmed`
+/// 5. `Confirmed` -> wait for finalization -> `Finalized`
 async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     mut state: ChunkedEnvelopeWatcherState,
     ctx: Arc<ChunkedWriterContext<R>>,
@@ -257,13 +295,7 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
         let active_envelopes = state.active_envelopes.len();
         async {
             state.ingest_new_entries(ops.as_ref()).await?;
-            reconcile_active_entries(
-                &mut state,
-                ctx.client.as_ref(),
-                ops.as_ref(),
-                &broadcast_handle,
-            )
-            .await?;
+            reconcile_active_entries(&mut state, ops.as_ref(), &broadcast_handle).await?;
             advance_forward_frontier(&mut state, ctx.clone(), ops.as_ref(), &broadcast_handle).await
         }
         .instrument(info_span!(
@@ -278,16 +310,21 @@ async fn watcher_task<R: Reader + Signer + Wallet + Broadcaster>(
     }
 }
 
-/// Returns `true` once an entry has enough persisted transaction data for its successor.
+/// Returns `true` if this entry is in a state where successor entries can be
+/// signed independently of it.
 ///
-/// A successor only needs the predecessor's final reveal wtxid, so the entry
-/// becomes a valid predecessor as soon as it has been signed and is no longer
-/// in an unsigned/re-sign state.
+/// The watcher signs through one `forward_frontier`. This is not a global UTXO
+/// reservation mechanism; it only prevents this watcher from signing the next
+/// envelope before bitcoind has accepted or rejected the current commit tx.
+/// This is kept as a named predicate for readability.
 fn entry_unlocks_successor(entry: &ChunkedEnvelopeEntry) -> bool {
-    !matches!(
+    matches!(
         entry.status,
-        ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign
-    ) && !entry.reveals.is_empty()
+        ChunkedEnvelopeStatus::CommitPublished
+            | ChunkedEnvelopeStatus::Published
+            | ChunkedEnvelopeStatus::Confirmed
+            | ChunkedEnvelopeStatus::Finalized
+    )
 }
 
 /// Builds the canonical corruption error for a missing or skipped envelope row.
@@ -368,7 +405,6 @@ async fn load_entries_range_async(
 /// not allowed to outpace their predecessor dependency.
 async fn reconcile_active_entries(
     state: &mut ChunkedEnvelopeWatcherState,
-    client: &impl Broadcaster,
     ops: &ChunkedEnvelopeOps,
     broadcast_handle: &L1BroadcastHandle,
 ) -> anyhow::Result<()> {
@@ -388,7 +424,7 @@ async fn reconcile_active_entries(
                 continue;
             }
             ChunkedEnvelopeStatus::Unpublished => {
-                check_commit_and_broadcast_reveals(idx, &entry, broadcast_handle, client).await?
+                check_commit_and_enqueue_reveals(idx, &entry, broadcast_handle).await?
             }
             ChunkedEnvelopeStatus::CommitPublished
             | ChunkedEnvelopeStatus::Published
@@ -426,12 +462,125 @@ async fn reconcile_active_entries(
     Ok(())
 }
 
-/// Advances the signing frontier as far as predecessor linkage and UTXO
+async fn publish_commit_immediately<R: Broadcaster>(
+    client: &R,
+    commit_tx_entry: &L1TxEntry,
+) -> anyhow::Result<CommitPublishResult> {
+    let tx = commit_tx_entry.try_to_tx()?;
+    let txid = tx.compute_txid();
+    debug!(%txid, vsize = tx.vsize(), "broadcasting chunked envelope commit");
+
+    match client.send_raw_transaction(&tx).await {
+        Ok(_) => {
+            info!(%txid, "chunked envelope commit accepted by bitcoind");
+            Ok(CommitPublishResult::Published)
+        }
+        Err(ClientError::Server(-25, msg)) => {
+            // Bitcoind reuses -25 (RPC_VERIFY_ERROR) for both benign
+            // already-accepted reasons and genuine rejections such as
+            // `bad-txns-inputs-missingorspent`. Mapping the whole code to
+            // Published would unlock successor signing and enqueue reveal
+            // handling for a commit bitcoind never accepted.
+            if is_benign_minus25_message(&msg) {
+                info!(%txid, %msg, "chunked envelope commit already known or already in block");
+                Ok(CommitPublishResult::Published)
+            } else {
+                warn!(%txid, %msg, "commit broadcast rejected by mempool (-25); will resign");
+                Ok(CommitPublishResult::InvalidInputs)
+            }
+        }
+        Err(ClientError::Server(-27, _)) => {
+            info!(%txid, "chunked envelope commit already in chainstate");
+            Ok(CommitPublishResult::Published)
+        }
+        Err(e) if e.is_rpc_verify_error() || matches!(e, ClientError::Server(-22, _)) => {
+            warn!(%txid, ?e, "commit broadcast rejected by mempool; will resign");
+            Ok(CommitPublishResult::InvalidInputs)
+        }
+        Err(e @ ClientError::Status(500, _)) => Ok(CommitPublishResult::Deferred(e.to_string())),
+        Err(e) => Err(e.into()),
+    }
+}
+
+async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet + Broadcaster>(
+    envelope_idx: u64,
+    signed: SignedChunkedEnvelope,
+    ctx: &ChunkedWriterContext<R>,
+    ops: &ChunkedEnvelopeOps,
+    broadcast_handle: &L1BroadcastHandle,
+) -> anyhow::Result<ChunkedEnvelopeEntry> {
+    let mut entry = signed.entry;
+    let mut commit_tx_entry = signed.commit_tx_entry;
+
+    // Persist the signed envelope before commit publication. If the process
+    // stops after bitcoind accepts the commit, recovery still has the reveal
+    // metadata needed to continue the envelope lifecycle.
+    ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
+        .await?;
+    let commit_broadcast_idx = broadcast_handle
+        .put_tx_entry(entry.commit_txid, commit_tx_entry.clone())
+        .await?;
+    debug!(
+        envelope_idx,
+        commit_txid = %entry.commit_txid,
+        commit_wtxid = %entry.commit_wtxid,
+        reveal_count = entry.reveals.len(),
+        "persisted signed chunked envelope before commit broadcast"
+    );
+
+    match publish_commit_immediately(ctx.client.as_ref(), &commit_tx_entry).await? {
+        CommitPublishResult::Published => {
+            commit_tx_entry.status = L1TxStatus::Published;
+            broadcast_handle
+                .put_tx_entry_by_idx(commit_broadcast_idx, commit_tx_entry)
+                .await?;
+            let commit = broadcast_handle
+                .get_tx_entry_by_id_async(entry.commit_txid)
+                .await?
+                .expect("commit tx was just stored");
+            try_enqueue_reveals_if_policy_safe(envelope_idx, &entry, &commit, broadcast_handle)
+                .await?;
+            entry.status = ChunkedEnvelopeStatus::CommitPublished;
+            ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
+                .await?;
+            info!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                reveal_count = entry.reveals.len(),
+                "chunked envelope commit published"
+            );
+        }
+        CommitPublishResult::InvalidInputs => {
+            commit_tx_entry.status = L1TxStatus::InvalidInputs;
+            broadcast_handle
+                .put_tx_entry_by_idx(commit_broadcast_idx, commit_tx_entry)
+                .await?;
+            entry.status = ChunkedEnvelopeStatus::NeedsResign;
+            ops.put_chunked_envelope_entry_async(envelope_idx, entry.clone())
+                .await?;
+            warn!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                "chunked envelope commit has invalid inputs; entry needs resign"
+            );
+        }
+        CommitPublishResult::Deferred(reason) => {
+            // The broadcaster owns retrying the persisted commit tx. The
+            // frontier stays on this envelope until reconciliation sees the
+            // commit as Published or InvalidInputs.
+            warn!(envelope_idx, %reason, "commit broadcast deferred; frontier blocked");
+        }
+    }
+
+    Ok(entry)
+}
+
+/// Advances the signing frontier as far as commit publication and UTXO
 /// availability allow.
 ///
-/// The frontier moves independently from finalization tracking: once an entry
-/// is signed and has persisted reveal metadata, later entries may be signed
-/// even if older ones are still waiting for confirmations.
+/// The frontier moves independently from finalization tracking: once an entry's
+/// commit is accepted by bitcoind or known invalid, later entries may be signed
+/// even if older ones are still waiting for reveal broadcast or confirmations.
 async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
     state: &mut ChunkedEnvelopeWatcherState,
     ctx: Arc<ChunkedWriterContext<R>>,
@@ -453,19 +602,22 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             entry.status,
             ChunkedEnvelopeStatus::Unsigned | ChunkedEnvelopeStatus::NeedsResign
         ) {
-            state.forward_frontier += 1;
-            continue;
+            debug!(idx, status = ?entry.status, "signing frontier blocked");
+            break;
         }
 
         debug!(idx, status = ?entry.status, "entry needs signing");
-        let Some(prev_tail_wtxid) = resolve_prev_tail_wtxid(idx, ops).await? else {
-            break;
-        };
 
-        match sign_chunked_envelope(idx, &entry, prev_tail_wtxid, broadcast_handle, ctx.clone())
-            .await
-        {
-            Ok(updated) => {
+        match sign_chunked_envelope(idx, &entry, ctx.clone()).await {
+            Ok(signed) => {
+                let updated = persist_signed_envelope_and_publish_commit(
+                    idx,
+                    signed,
+                    ctx.as_ref(),
+                    ops,
+                    broadcast_handle,
+                )
+                .await?;
                 let signed_status = updated.status.clone();
                 let reveal_refs = format_reveal_refs(&updated);
                 debug!(
@@ -475,8 +627,6 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
                     ?signed_status,
                     "entry signed successfully"
                 );
-                ops.put_chunked_envelope_entry_async(idx, updated.clone())
-                    .await?;
                 state.active_envelopes.insert(idx);
 
                 if entry_unlocks_successor(&updated) {
@@ -485,7 +635,7 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
                 }
             }
             Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
-                error!(idx, %need, %have, "waiting for sufficient utxos");
+                warn!(idx, %need, %have, "waiting for sufficient utxos");
             }
             Err(e) => return Err(e.into()),
         }
@@ -496,50 +646,23 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
     Ok(())
 }
 
-/// Resolves the correct `prev_tail_wtxid` for the entry at index `curr`.
-///
-/// For index 0, returns [`Buf32::zero`] (first entry in chain). For all others,
-/// returns the predecessor's persisted tail wtxid once the predecessor has been
-/// signed. If the predecessor is still unsigned, the caller must wait.
-async fn resolve_prev_tail_wtxid(
-    curr: u64,
-    ops: &ChunkedEnvelopeOps,
-) -> anyhow::Result<Option<Buf32>> {
-    if curr == 0 {
-        return Ok(Some(Buf32::zero()));
-    }
-
-    let Some(prev_entry) = ops.get_chunked_envelope_entry_async(curr - 1).await? else {
-        return Err(invalid_gap_error(curr - 1).into());
-    };
-
-    if !entry_unlocks_successor(&prev_entry) {
-        return Ok(None);
-    }
-
-    Ok(Some(prev_entry.tail_wtxid()))
-}
-
-/// Checks commit tx status and broadcasts reveals once it is safe to do so.
+/// Checks commit tx status and enqueues reveals once it is safe to do so.
 ///
 /// Called when status is `Unpublished`. Returns:
-/// - `CommitPublished` if commit is on-chain and reveals are broadcast and stored in DB
-/// - `NeedsResign` if commit has invalid inputs or any reveal fails to broadcast
+/// - `CommitPublished` if commit is accepted by bitcoind or confirmed on L1
+/// - `NeedsResign` if commit has invalid inputs
 /// - `Unsigned` if commit is missing
 /// - `Unpublished` if commit is still waiting
 ///
-/// For single-reveal entries the reveal is broadcast as soon as the commit is
-/// published (in mempool) — one reveal's ~99 KB vsize fits within Bitcoin
-/// Core's default 101 KB descendant-size limit.
-///
-/// For multi-reveal entries we wait until the commit is **confirmed** (in a
-/// block) before broadcasting. Multiple large reveals would otherwise exceed
-/// the descendant-size limit and be rejected by the mempool.
-async fn check_commit_and_broadcast_reveals(
+/// A published commit unlocks successor signing immediately. Reveal enqueueing
+/// is separate: while the commit is unconfirmed, only a single reveal whose
+/// commit+reveal package is below Bitcoin Core's default descendant-size limit
+/// is enqueued. Other reveals wait until the commit confirms and then spend
+/// confirmed outputs independently.
+async fn check_commit_and_enqueue_reveals(
     envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
-    client: &impl Broadcaster,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
     let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
         warn!(
@@ -550,23 +673,74 @@ async fn check_commit_and_broadcast_reveals(
         return Ok(ChunkedEnvelopeStatus::Unsigned);
     };
 
-    // A single reveal fits within the default 101 KB mempool descendant-size
-    // limit, so it can be broadcast as soon as the commit is in the mempool.
-    // Multiple reveals would exceed that limit, so we wait for the commit to
-    // be confirmed in a block first.
-    let needs_commit_confirmed = entry.reveals.len() > 1;
-
-    let ready = match commit.status {
-        L1TxStatus::InvalidInputs => return Ok(ChunkedEnvelopeStatus::NeedsResign),
-        L1TxStatus::Unpublished => false,
-        L1TxStatus::Published => !needs_commit_confirmed,
-        L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => true,
-    };
-
-    if !ready {
-        return Ok(ChunkedEnvelopeStatus::Unpublished);
+    match commit.status {
+        L1TxStatus::InvalidInputs => {
+            warn!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                "chunked envelope commit has invalid inputs during status check"
+            );
+            return Ok(ChunkedEnvelopeStatus::NeedsResign);
+        }
+        L1TxStatus::Unpublished => {
+            debug!(
+                envelope_idx,
+                commit_txid = %entry.commit_txid,
+                "chunked envelope commit still unpublished"
+            );
+            return Ok(ChunkedEnvelopeStatus::Unpublished);
+        }
+        L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => {}
     }
 
+    debug!(
+        envelope_idx,
+        commit_txid = %entry.commit_txid,
+        commit_status = ?commit.status,
+        reveal_count = entry.reveals.len(),
+        "chunked envelope commit publication observed"
+    );
+    try_enqueue_reveals_if_policy_safe(envelope_idx, entry, &commit, bcast).await?;
+
+    Ok(ChunkedEnvelopeStatus::CommitPublished)
+}
+
+fn reveal_enqueue_is_policy_safe(
+    entry: &ChunkedEnvelopeEntry,
+    commit: &L1TxEntry,
+) -> anyhow::Result<bool> {
+    match commit.status {
+        L1TxStatus::InvalidInputs | L1TxStatus::Unpublished => Ok(false),
+        L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. } => Ok(true),
+        L1TxStatus::Published => {
+            let [reveal] = entry.reveals.as_slice() else {
+                return Ok(false);
+            };
+            let commit_tx = commit.try_to_tx()?;
+            let reveal_tx: bitcoin::Transaction = btc_deserialize(&reveal.tx_bytes)
+                .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
+            let package_vsize = commit_tx.vsize() + reveal_tx.vsize();
+            Ok(package_vsize < DEFAULT_DESCENDANT_SIZE_LIMIT_VBYTES)
+        }
+    }
+}
+
+async fn try_enqueue_reveals_if_policy_safe(
+    envelope_idx: u64,
+    entry: &ChunkedEnvelopeEntry,
+    commit: &L1TxEntry,
+    bcast: &L1BroadcastHandle,
+) -> anyhow::Result<bool> {
+    if !reveal_enqueue_is_policy_safe(entry, commit)? {
+        debug!(
+            envelope_idx,
+            commit_txid = %entry.commit_txid,
+            commit_status = ?commit.status,
+            reveal_count = entry.reveals.len(),
+            "reveal enqueue waiting for commit confirmation or smaller package"
+        );
+        return Ok(false);
+    }
     let reveal_refs = format_reveal_refs(entry);
     info!(
         envelope_idx,
@@ -574,51 +748,11 @@ async fn check_commit_and_broadcast_reveals(
         commit_status = ?commit.status,
         reveal_count = entry.reveals.len(),
         ?reveal_refs,
-        "commit on-chain, broadcasting all reveals"
+        "commit ready, enqueueing all reveals"
     );
 
-    // Deserialize all reveal transactions.
-    let mut reveal_txs = Vec::with_capacity(entry.reveals.len());
     for reveal in &entry.reveals {
-        let tx: Transaction = btc_deserialize(&reveal.tx_bytes)
-            .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
-        reveal_txs.push((reveal.txid, tx));
-    }
-
-    // Broadcast all reveals.
-    for (txid, tx) in &reveal_txs {
-        match client.send_raw_transaction(tx).await {
-            Ok(_) => {
-                debug!(
-                    envelope_idx,
-                    %txid,
-                    "reveal tx broadcast successfully"
-                );
-            }
-            Err(e)
-                if e.is_rpc_verify_error()
-                    || e.is_rpc_verify_rejected()
-                    || matches!(e, ClientError::Server(-22, _)) =>
-            {
-                warn!(
-                    envelope_idx,
-                    %txid,
-                    %e,
-                    "reveal tx has invalid inputs, will re-sign"
-                );
-                return Ok(ChunkedEnvelopeStatus::NeedsResign);
-            }
-            Err(e) => {
-                // Could be "already in mempool" which is fine, or a network error.
-                // We'll verify actual status on the next poll.
-                warn!(
-                    envelope_idx,
-                    %txid,
-                    %e,
-                    "broadcast returned error (may already be in mempool)"
-                );
-            }
-        }
+        ensure_reveal_tx_entry(envelope_idx, reveal, bcast).await?;
     }
 
     info!(
@@ -626,53 +760,95 @@ async fn check_commit_and_broadcast_reveals(
         commit_txid = %entry.commit_txid,
         reveal_count = entry.reveals.len(),
         ?reveal_refs,
-        "completed reveal broadcast attempt"
+        "enqueued reveal transactions for broadcaster retry tracking"
     );
 
-    // Store all reveals in broadcast DB for tracking.
-    for (txid, tx) in reveal_txs {
-        let mut tx_entry = L1TxEntry::from_tx(&tx);
-        tx_entry.status = L1TxStatus::Published;
-        bcast
-            .put_tx_entry(txid, tx_entry)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
-    }
-
-    Ok(ChunkedEnvelopeStatus::CommitPublished)
+    Ok(true)
 }
 
-/// Checks broadcast status of commit + all reveals (after reveals are in broadcast DB).
+/// Ensures a reveal transaction is present in the broadcaster DB for retry tracking.
+async fn ensure_reveal_tx_entry(
+    envelope_idx: u64,
+    reveal: &RevealTxMeta,
+    bcast: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    if bcast.get_tx_entry_by_id_async(reveal.txid).await?.is_some() {
+        debug!(
+            envelope_idx,
+            txid = %reveal.txid,
+            "reveal tx already tracked by broadcaster"
+        );
+        return Ok(());
+    }
+
+    let tx = btc_deserialize(&reveal.tx_bytes)
+        .map_err(|e| anyhow::anyhow!("failed to deserialize reveal tx: {}", e))?;
+    bcast
+        .put_tx_entry(reveal.txid, L1TxEntry::from_tx(&tx))
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
+
+    debug!(
+        envelope_idx,
+        txid = %reveal.txid,
+        "reveal tx enqueued in broadcaster"
+    );
+    Ok(())
+}
+
+/// Checks broadcast status of commit + reveals.
 ///
 /// Called when status is `CommitPublished`, `Published`, or `Confirmed`.
-/// The least-progressed transaction determines the overall envelope status.
+/// Missing reveals are enqueued only when policy-safe. Once all reveal txs are
+/// in the broadcast DB, the least-progressed tx determines the envelope status.
 async fn check_full_broadcast_status(
     envelope_idx: u64,
     entry: &ChunkedEnvelopeEntry,
     bcast: &L1BroadcastHandle,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
     let Some(commit) = bcast.get_tx_entry_by_id_async(entry.commit_txid).await? else {
-        warn!(
+        error!(
             envelope_idx,
             commit_txid = %entry.commit_txid,
-            "commit tx missing from broadcast db, will re-sign"
+            status = ?entry.status,
+            "commit tx missing from broadcast db after reveals were expected to be tracked"
         );
-        return Ok(ChunkedEnvelopeStatus::Unsigned);
+        return Err(
+            ChunkedEnvelopeWatcherError::CommitMissingAfterRevealTracking {
+                envelope_idx,
+                commit_txid: entry.commit_txid,
+                status: entry.status.clone(),
+            }
+            .into(),
+        );
     };
     if commit.status == L1TxStatus::InvalidInputs {
         return Ok(ChunkedEnvelopeStatus::NeedsResign);
     }
 
+    let can_enqueue_missing_reveals = reveal_enqueue_is_policy_safe(entry, &commit)?;
     let mut min_progress = commit.status.clone();
     let mut reveal_l1_statuses = Vec::with_capacity(entry.reveals.len());
     for reveal in &entry.reveals {
         let Some(rtx) = bcast.get_tx_entry_by_id_async(reveal.txid).await? else {
+            if !can_enqueue_missing_reveals {
+                debug!(
+                    envelope_idx,
+                    txid = %reveal.txid,
+                    commit_status = ?commit.status,
+                    "reveal tx not enqueued yet; waiting for commit confirmation or smaller package"
+                );
+                return Ok(ChunkedEnvelopeStatus::CommitPublished);
+            }
             warn!(
                 envelope_idx,
                 txid = %reveal.txid,
-                "reveal tx missing from broadcast db, will re-sign"
+                "reveal tx missing from broadcast db, restoring from persisted reveal bytes"
             );
-            return Ok(ChunkedEnvelopeStatus::Unsigned);
+            ensure_reveal_tx_entry(envelope_idx, reveal, bcast).await?;
+            min_progress = L1TxStatus::Unpublished;
+            reveal_l1_statuses.push(format_tx_status(reveal.txid, &min_progress));
+            continue;
         };
         if rtx.status == L1TxStatus::InvalidInputs {
             // This shouldn't happen if we waited for commit to be published first,
@@ -763,10 +939,7 @@ mod tests {
     use strata_primitives::buf::Buf32;
 
     use super::*;
-    use crate::{
-        test_utils::{SendRawTransactionMode, TestBitcoinClient},
-        writer::test_utils::{get_broadcast_handle, get_chunked_envelope_ops},
-    };
+    use crate::writer::test_utils::{get_broadcast_handle, get_chunked_envelope_ops};
 
     fn make_recovery_entry(
         status: ChunkedEnvelopeStatus,
@@ -776,6 +949,7 @@ mod tests {
         let mut entry = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![idx_tag; 50]],
             MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
+            1,
         );
         entry.status = status;
         if signed {
@@ -825,7 +999,7 @@ mod tests {
 
         let state = ChunkedEnvelopeWatcherState::recover(&ops).unwrap();
         assert_eq!(state.next_db_idx, 4);
-        assert_eq!(state.forward_frontier, 3);
+        assert_eq!(state.forward_frontier, 2);
         assert_eq!(state.active_envelopes, BTreeSet::from([1, 2, 3]));
     }
 
@@ -970,6 +1144,7 @@ mod tests {
         let mut entry = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0xAA; 100]; n],
             MagicBytes::new([0x01, 0x02, 0x03, 0x04]),
+            1,
         );
         entry.commit_txid = Buf32::from([0x11; 32]);
         entry.reveals = (0..n)
@@ -990,7 +1165,6 @@ mod tests {
     #[tokio::test]
     async fn test_check_commit_unpublished_stays_waiting() {
         let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1);
         let entry = make_entry_with_reveals(2);
 
         // Store commit with Unpublished status — reveals should NOT be broadcast.
@@ -1000,7 +1174,7 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
             .await
             .unwrap();
         assert_eq!(
@@ -1022,11 +1196,10 @@ mod tests {
     #[tokio::test]
     async fn test_check_commit_missing_returns_unsigned() {
         let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1);
         let entry = make_entry_with_reveals(2);
 
         // Don't store commit at all — should return Unsigned for re-signing.
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
             .await
             .unwrap();
         assert_eq!(
@@ -1039,7 +1212,6 @@ mod tests {
     #[tokio::test]
     async fn test_check_commit_invalid_inputs_returns_needs_resign() {
         let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1);
         let entry = make_entry_with_reveals(2);
 
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
@@ -1049,16 +1221,15 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
             .await
             .unwrap();
         assert_eq!(result, ChunkedEnvelopeStatus::NeedsResign);
     }
 
     #[tokio::test]
-    async fn test_check_commit_published_broadcasts_reveals() {
+    async fn test_check_commit_confirmed_enqueues_multi_reveals_as_unpublished() {
         let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1);
         let entry = make_entry_with_reveals(3);
 
         // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
@@ -1073,16 +1244,16 @@ mod tests {
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
             .await
             .unwrap();
         assert_eq!(
             result,
             ChunkedEnvelopeStatus::CommitPublished,
-            "should broadcast reveals and transition to CommitPublished"
+            "should enqueue reveals and transition to CommitPublished"
         );
 
-        // Verify all reveals were stored in broadcast DB with Published status.
+        // Reveals enter the broadcaster as Unpublished so its retry loop owns sendrawtransaction.
         for reveal in &entry.reveals {
             let rtx = bcast
                 .get_tx_entry_by_id_async(reveal.txid)
@@ -1091,106 +1262,60 @@ mod tests {
                 .expect("reveal should be in broadcast DB");
             assert_eq!(
                 rtx.status,
-                L1TxStatus::Published,
-                "reveal should be marked Published"
+                L1TxStatus::Unpublished,
+                "reveal should be queued for broadcaster retry"
             );
         }
     }
 
     #[tokio::test]
-    async fn test_check_commit_broadcast_missing_input_returns_needs_resign() {
+    async fn test_check_commit_published_enqueues_single_reveal_under_descendant_limit() {
         let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1)
-            .with_send_raw_transaction_mode(SendRawTransactionMode::MissingOrInvalidInput);
-        let entry = make_entry_with_reveals(2);
+        let entry = make_entry_with_reveals(1);
 
-        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Confirmed {
-            confirmations: 1,
-            block_hash: Buf32::from([0xBB; 32]),
-            block_height: 100,
-        };
+        commit_entry.status = L1TxStatus::Published;
         bcast
             .put_tx_entry(entry.commit_txid, commit_entry)
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
             .await
             .unwrap();
-        assert_eq!(
-            result,
-            ChunkedEnvelopeStatus::NeedsResign,
-            "missing/invalid input during reveal broadcast should trigger re-sign"
-        );
+        assert_eq!(result, ChunkedEnvelopeStatus::CommitPublished);
+
+        let rtx = bcast
+            .get_tx_entry_by_id_async(entry.reveals[0].txid)
+            .await
+            .unwrap()
+            .expect("single reveal should be queued under the descendant-size limit");
+        assert_eq!(rtx.status, L1TxStatus::Unpublished);
     }
 
     #[tokio::test]
-    async fn test_check_commit_broadcast_server_minus22_returns_needs_resign() {
+    async fn test_check_commit_published_waits_on_multi_reveal_confirmation() {
         let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1)
-            .with_send_raw_transaction_mode(SendRawTransactionMode::InvalidParameter);
         let entry = make_entry_with_reveals(2);
 
-        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Confirmed {
-            confirmations: 1,
-            block_hash: Buf32::from([0xBB; 32]),
-            block_height: 100,
-        };
+        commit_entry.status = L1TxStatus::Published;
         bcast
             .put_tx_entry(entry.commit_txid, commit_entry)
             .await
             .unwrap();
 
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
+        let result = check_commit_and_enqueue_reveals(0, &entry, &bcast)
             .await
             .unwrap();
-        assert_eq!(
-            result,
-            ChunkedEnvelopeStatus::NeedsResign,
-            "Server(-22, ..) during reveal broadcast should trigger re-sign"
-        );
-    }
+        assert_eq!(result, ChunkedEnvelopeStatus::CommitPublished);
 
-    #[tokio::test]
-    async fn test_check_commit_broadcast_generic_error_keeps_commit_published_state() {
-        let bcast = get_broadcast_handle();
-        let client = TestBitcoinClient::new(1)
-            .with_send_raw_transaction_mode(SendRawTransactionMode::GenericError);
-        let entry = make_entry_with_reveals(2);
-
-        // Store commit as Confirmed (required for multi-reveal entries to pass the gate).
-        let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Confirmed {
-            confirmations: 1,
-            block_hash: Buf32::from([0xBB; 32]),
-            block_height: 100,
-        };
-        bcast
-            .put_tx_entry(entry.commit_txid, commit_entry)
-            .await
-            .unwrap();
-
-        let result = check_commit_and_broadcast_reveals(0, &entry, &bcast, &client)
-            .await
-            .unwrap();
-        assert_eq!(
-            result,
-            ChunkedEnvelopeStatus::CommitPublished,
-            "generic reveal broadcast errors should still move to CommitPublished"
-        );
-
-        // Reveals are inserted for tracking even when RPC returned generic broadcast errors.
         for reveal in &entry.reveals {
-            let rtx = bcast
-                .get_tx_entry_by_id_async(reveal.txid)
-                .await
-                .unwrap()
-                .expect("reveal should be in broadcast DB");
-            assert_eq!(rtx.status, L1TxStatus::Published);
+            let rtx = bcast.get_tx_entry_by_id_async(reveal.txid).await.unwrap();
+            assert!(
+                rtx.is_none(),
+                "multi-reveal tx should wait until commit confirmation"
+            );
         }
     }
 
@@ -1271,28 +1396,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_full_status_commit_missing_returns_unsigned() {
+    async fn test_full_status_commit_missing_errors_without_resign() {
         let bcast = get_broadcast_handle();
         let entry = make_entry_with_reveals(2);
 
-        let result = check_full_broadcast_status(0, &entry, &bcast)
+        let err = check_full_broadcast_status(0, &entry, &bcast)
             .await
-            .unwrap();
-        assert_eq!(
-            result,
-            ChunkedEnvelopeStatus::Unsigned,
-            "missing commit should trigger re-sign"
-        );
+            .unwrap_err();
+        assert!(matches!(
+            err.downcast_ref::<ChunkedEnvelopeWatcherError>(),
+            Some(ChunkedEnvelopeWatcherError::CommitMissingAfterRevealTracking {
+                envelope_idx: 0,
+                commit_txid,
+                status: ChunkedEnvelopeStatus::Unpublished,
+            }) if *commit_txid == entry.commit_txid
+        ));
     }
 
     #[tokio::test]
-    async fn test_full_status_reveal_missing_returns_unsigned() {
+    async fn test_full_status_reveal_missing_requeues_without_resign() {
         let bcast = get_broadcast_handle();
         let entry = make_entry_with_reveals(2);
 
-        // Store commit.
+        // Store commit as confirmed so missing multi-reveals are policy-safe to restore.
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
-        commit_entry.status = L1TxStatus::Published;
+        commit_entry.status = L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: Buf32::from([0xBB; 32]),
+            block_height: 100,
+        };
         bcast
             .put_tx_entry(entry.commit_txid, commit_entry)
             .await
@@ -1309,9 +1441,16 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            ChunkedEnvelopeStatus::Unsigned,
-            "missing reveal should trigger re-sign"
+            ChunkedEnvelopeStatus::CommitPublished,
+            "missing reveal should be restored without rebuilding the commit"
         );
+
+        let restored = bcast
+            .get_tx_entry_by_id_async(entry.reveals[1].txid)
+            .await
+            .unwrap()
+            .expect("missing reveal should be restored in broadcast DB");
+        assert_eq!(restored.status, L1TxStatus::Unpublished);
     }
 
     #[tokio::test]
@@ -1377,72 +1516,5 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_resolve_prev_tail_wtxid_from_signed_predecessor() {
-        let ops = get_chunked_envelope_ops();
-
-        // Entry[0]: simulate signed state (reveals populated with known wtxid).
-        let mut e0 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x01; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        let real_tail = Buf32::from([0x42; 32]);
-        e0.reveals = vec![RevealTxMeta {
-            vout_index: 0,
-            txid: Buf32::from([0x11; 32]),
-            wtxid: real_tail,
-            tx_bytes: vec![0xDE, 0xAD],
-        }];
-        e0.status = ChunkedEnvelopeStatus::Unpublished;
-        ops.put_chunked_envelope_entry_async(0, e0).await.unwrap();
-
-        // Entry[1]: prev_tail_wtxid is zero at creation (deferred to signing).
-        let e1 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x02; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        ops.put_chunked_envelope_entry_async(1, e1).await.unwrap();
-
-        // resolve_prev_tail_wtxid should return entry[0]'s real tail_wtxid.
-        let resolved = resolve_prev_tail_wtxid(1, &ops).await.unwrap();
-        assert_eq!(resolved, Some(real_tail));
-
-        // Index 0 should return zero (first in chain).
-        let resolved_zero = resolve_prev_tail_wtxid(0, &ops).await.unwrap();
-        assert_eq!(resolved_zero, Some(Buf32::zero()));
-    }
-
-    #[tokio::test]
-    async fn test_resolve_prev_tail_wtxid_waits_for_unsigned_predecessor() {
-        let ops = get_chunked_envelope_ops();
-
-        let e0 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x01; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        ops.put_chunked_envelope_entry_async(0, e0).await.unwrap();
-
-        let e1 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x02; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        ops.put_chunked_envelope_entry_async(1, e1).await.unwrap();
-
-        let resolved = resolve_prev_tail_wtxid(1, &ops).await.unwrap();
-        assert_eq!(resolved, None);
-    }
-
-    #[tokio::test]
-    async fn test_resolve_prev_tail_wtxid_missing_predecessor_errors() {
-        let ops = get_chunked_envelope_ops();
-
-        let e1 = ChunkedEnvelopeEntry::new_unsigned(
-            vec![vec![0x02; 50]],
-            MagicBytes::new([0xAA, 0xBB, 0xCC, 0xDD]),
-        );
-        ops.put_chunked_envelope_entry_async(1, e1).await.unwrap();
-
-        let err = resolve_prev_tail_wtxid(1, &ops).await.unwrap_err();
-        assert!(err.to_string().contains("gap at index 0"));
-    }
+    // Cross-batch independence is exercised by functional tests.
 }

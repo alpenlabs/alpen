@@ -358,6 +358,7 @@ impl ProofSpec for AcctSpec {
                 ))
             })?;
         let new_tip_blkid = last_record.package().exec_blkid();
+        let new_tip_state_root = last_record.account_state().last_exec_state_root();
         let new_inbox_idx = last_record.next_inbox_msg_idx();
         let post_state_root = last_record.account_state().compute_state_root();
         let message_count = messages.len() as u64;
@@ -371,11 +372,13 @@ impl ProofSpec for AcctSpec {
         // The post-state root must match the actual state stored with the
         // batch's last block. The account proof guest reaches this state by
         // applying messages, verifying chunks, and removing consumed pending
-        // inputs from `pre_ee_state`.
+        // inputs from `pre_ee_state`; `UpdateExtraData` separately carries
+        // the execution state root needed by EE reconstruction.
         let cur_state = ProofState::new(pre_ee_state.compute_state_root(), pre_inbox_idx);
         let new_state = ProofState::new(post_state_root, new_inbox_idx);
 
-        let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs, 0);
+        let extra_data =
+            UpdateExtraData::new(new_tip_blkid, new_tip_state_root, processed_inputs, 0);
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
         let ledger_refs =

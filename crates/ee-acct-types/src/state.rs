@@ -10,12 +10,14 @@ use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, Pendin
 impl EeAccountState {
     pub fn new(
         last_exec_blkid: Hash,
+        last_exec_state_root: Hash,
         tracked_balance: BitcoinAmount,
         pending_inputs: Vec<PendingInputEntry>,
         pending_fincls: Vec<PendingFinclEntry>,
     ) -> Self {
         Self {
             last_exec_blkid: last_exec_blkid.0.into(),
+            last_exec_state_root: last_exec_state_root.0.into(),
             tracked_balance,
             pending_inputs: pending_inputs
                 .try_into()
@@ -30,12 +32,17 @@ impl EeAccountState {
         self,
     ) -> (
         Hash,
+        Hash,
         BitcoinAmount,
         Vec<PendingInputEntry>,
         Vec<PendingFinclEntry>,
     ) {
         (
             self.last_exec_blkid
+                .as_ref()
+                .try_into()
+                .expect("FixedBytes<32> should convert to [u8; 32]"),
+            self.last_exec_state_root
                 .as_ref()
                 .try_into()
                 .expect("FixedBytes<32> should convert to [u8; 32]"),
@@ -54,6 +61,17 @@ impl EeAccountState {
 
     pub fn set_last_exec_blkid(&mut self, blkid: Hash) {
         self.last_exec_blkid = blkid.0.into();
+    }
+
+    pub fn last_exec_state_root(&self) -> Hash {
+        self.last_exec_state_root
+            .as_ref()
+            .try_into()
+            .expect("FixedBytes<32> should convert to [u8; 32]")
+    }
+
+    pub fn set_last_exec_state_root(&mut self, root: Hash) {
+        self.last_exec_state_root = root.0.into();
     }
 
     pub fn tracked_balance(&self) -> BitcoinAmount {
@@ -115,7 +133,6 @@ impl EeAccountState {
 
 impl IInnerState for EeAccountState {
     fn compute_state_root(&self) -> Hash {
-        // Just call out to the SSZ tree hash fn and convert.
         <Self as TreeHash<Sha256Hasher>>::tree_hash_root(self).into()
     }
 }
@@ -204,11 +221,15 @@ mod tests {
     }
 
     mod ee_account_state {
+        use strata_identifiers::Hash;
+        use strata_snark_acct_runtime::IInnerState;
+
         use super::*;
 
         ssz_proptest!(
             EeAccountState,
             (
+                any::<[u8; 32]>(),
                 any::<[u8; 32]>(),
                 any::<u64>(),
                 prop::collection::vec(pending_input_entry_strategy(), 0..5),
@@ -220,18 +241,42 @@ mod tests {
                     0..5,
                 ),
             )
-                .prop_map(|(last_exec_blkid, balance, inputs, fincls)| {
-                    EeAccountState {
-                        last_exec_blkid: last_exec_blkid.into(),
-                        tracked_balance: BitcoinAmount::from_sat(balance),
-                        pending_inputs: inputs
-                            .try_into()
-                            .expect("pending inputs should not exceed capacity"),
-                        pending_fincls: fincls
-                            .try_into()
-                            .expect("pending fincls should not exceed capacity"),
-                    }
-                },)
+                .prop_map(
+                    |(last_exec_blkid, last_exec_state_root, balance, inputs, fincls)| {
+                        EeAccountState {
+                            last_exec_blkid: last_exec_blkid.into(),
+                            last_exec_state_root: last_exec_state_root.into(),
+                            tracked_balance: BitcoinAmount::from_sat(balance),
+                            pending_inputs: inputs
+                                .try_into()
+                                .expect("pending inputs should not exceed capacity"),
+                            pending_fincls: fincls
+                                .try_into()
+                                .expect("pending fincls should not exceed capacity"),
+                        }
+                    },
+                )
         );
+
+        #[test]
+        fn last_exec_state_root_changes_inner_commitment() {
+            let a = EeAccountState::new(
+                Hash::from([1u8; 32]),
+                Hash::from([2u8; 32]),
+                BitcoinAmount::from_sat(10),
+                Vec::new(),
+                Vec::new(),
+            );
+            let b = EeAccountState::new(
+                Hash::from([1u8; 32]),
+                Hash::from([3u8; 32]),
+                BitcoinAmount::from_sat(10),
+                Vec::new(),
+                Vec::new(),
+            );
+
+            assert_ne!(a.compute_state_root(), b.compute_state_root());
+            assert_ne!(a.last_exec_state_root(), b.last_exec_state_root());
+        }
     }
 }

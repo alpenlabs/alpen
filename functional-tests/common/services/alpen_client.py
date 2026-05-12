@@ -294,7 +294,7 @@ class AlpenClientService(RpcService):
         btc_rpc,
         mine_address: str,
         all_envelopes: list,
-        end_l1: int,
+        baseline_l1_height: int,
         min_last_block_num: int,
         phase_name: str,
         poll_attempts: int = 4,
@@ -304,32 +304,36 @@ class AlpenClientService(RpcService):
     ) -> tuple[object, int, int]:
         """Mine a bounded number of L1 blocks and wait for a later non-empty DA blob.
 
-        This helper is used by DA functional tests that need to keep scanning
-        Bitcoin blocks while preserving previously observed envelopes across
-        restarts or multiple posting phases.
+        Scans the L1 chain from `baseline_l1_height` to the current tip on
+        every poll. The DA scanner is idempotent and re-emits every
+        complete envelope visible in the range, so `all_envelopes` is
+        replaced (not appended to) each pass — this is what lets a commit
+        confirmed in an earlier window be paired with reveals confirmed
+        in a later window.
         """
         from tests.alpen_client.ee_da.helpers import scan_for_da_envelopes
 
         mined_blocks = 0
+        end_l1 = btc_rpc.proxy.getblockcount()
         for attempt in range(poll_attempts):
             time.sleep(pre_poll_sleep)
             btc_rpc.proxy.generatetoaddress(blocks_per_poll, mine_address)
             mined_blocks += blocks_per_poll
             time.sleep(post_mine_sleep)
 
-            prev_end = end_l1
             end_l1 = btc_rpc.proxy.getblockcount()
-            new_envs = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
-            if new_envs:
+            envs = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
+            all_envelopes.clear()
+            all_envelopes.extend(envs)
+            if envs:
                 logger.info(
-                    "%s attempt %s: found %s new DA envelope(s)",
+                    "%s attempt %s: %s envelope chunk(s) visible",
                     phase_name,
                     attempt + 1,
-                    len(new_envs),
+                    len(envs),
                 )
-                all_envelopes.extend(new_envs)
             else:
-                logger.debug("%s attempt %s: no new DA envelopes", phase_name, attempt + 1)
+                logger.debug("%s attempt %s: no envelopes yet", phase_name, attempt + 1)
 
             blob = self._find_non_empty_blob_after_block(all_envelopes, min_last_block_num)
             if blob is not None:
@@ -350,11 +354,13 @@ class AlpenClientService(RpcService):
     def advance_to_next_da_window(
         self,
         additional_blocks: int,
+        timeout_per_block: float = 15.0,
         timeout_slack: int = 20,
     ) -> None:
         """Wait long enough for the current batch to seal and DA posting to begin."""
         self.wait_for_additional_blocks(
             additional_blocks,
+            timeout_per_block=timeout_per_block,
             timeout_slack=timeout_slack,
         )
 

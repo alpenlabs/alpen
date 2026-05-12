@@ -600,7 +600,9 @@ pub(crate) fn calculate_commit_output_value(
 
 /// Generates a random keypair for envelope construction.
 ///
-/// Used by the chunked envelope path which creates per-reveal ephemeral keypairs.
+/// Used by the unchecked single-payload envelope path when no external
+/// reveal signer is configured. The normal signed single-payload path uses
+/// `envelope_pubkey` and attaches the external signer's signature later.
 pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
     let mut rand_bytes = [0; 32];
     OsRng.fill_bytes(&mut rand_bytes);
@@ -609,7 +611,8 @@ pub fn generate_key_pair() -> Result<UntweakedKeypair, anyhow::Error> {
 
 /// Signs and attaches a taproot script-spend witness to the reveal transaction.
 ///
-/// Used by the chunked envelope path which signs in-process with ephemeral keypairs.
+/// Used by in-process signing paths. The caller owns which keypair is valid
+/// for the reveal script.
 pub(crate) fn sign_reveal_transaction(
     reveal_tx: &mut Transaction,
     output_to_reveal: &TxOut,

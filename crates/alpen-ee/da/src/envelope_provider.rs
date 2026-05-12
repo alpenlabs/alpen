@@ -4,6 +4,7 @@ use std::{collections::HashMap, fmt, sync::Arc};
 
 use alpen_ee_common::{
     prepare_da_chunks, BatchDaProvider, BatchId, DaBlobSource, DaStatus, L1DaBlockRef,
+    DA_BLOB_VERSION,
 };
 use alpen_ee_database::BroadcastDbOps;
 use async_trait::async_trait;
@@ -17,8 +18,39 @@ use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
-/// Groups reveal txs by L1 block for [`L1DaBlockRef`] construction.
-type BlockMap = HashMap<(Buf32, L1Height), Vec<(Txid, Wtxid)>>;
+/// Per-block accumulator: commit (when present) plus reveals tagged with
+/// their commit-output vout for stable ordering.
+#[derive(Default)]
+struct BlockTxs {
+    /// `Some` only on the L1 block where the commit finalized.
+    commit: Option<FinalizedTxRef>,
+    /// Reveals finalized in this block, with the vout of the commit output
+    /// they spend (used to canonicalize ordering before producing `txns`).
+    reveals: Vec<FinalizedRevealTx>,
+}
+
+struct FinalizedTxRef {
+    txid: Txid,
+    wtxid: Wtxid,
+}
+
+impl FinalizedTxRef {
+    fn new(txid: Txid, wtxid: Wtxid) -> Self {
+        Self { txid, wtxid }
+    }
+
+    fn into_pair(self) -> (Txid, Wtxid) {
+        (self.txid, self.wtxid)
+    }
+}
+
+struct FinalizedRevealTx {
+    vout_index: u32,
+    tx: FinalizedTxRef,
+}
+
+/// Groups commit + reveal txs by L1 block for [`L1DaBlockRef`] construction.
+type BlockMap = HashMap<(Buf32, L1Height), BlockTxs>;
 
 /// [`BatchDaProvider`] that posts DA via chunked envelope inscription.
 pub struct ChunkedEnvelopeDaProvider {
@@ -59,7 +91,7 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
         let chunks = prepare_da_chunks(&blob)?;
         ensure!(!chunks.is_empty(), "prepare_da_chunks returned empty");
 
-        let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes);
+        let entry = ChunkedEnvelopeEntry::new_unsigned(chunks, self.magic_bytes, DA_BLOB_VERSION);
         let chunk_count = entry.chunk_data.len();
 
         let idx = self
@@ -103,6 +135,10 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
             debug!(status = %entry.status, "checking chunked envelope status");
 
             match entry.status {
+                // `DaStatus::Ready` also updates the persistent EE DA bytecode
+                // filter, which has no L1 reorg rollback path. Keep readiness
+                // gated on reorg-safe finality so later batches do not skip
+                // bytecode whose publishing tx could still be reorged out.
                 ChunkedEnvelopeStatus::Finalized => {
                     let block_refs = self.build_da_block_refs(&entry).await?;
                     let da_block_refs = block_refs
@@ -129,55 +165,52 @@ impl BatchDaProvider for ChunkedEnvelopeDaProvider {
 impl ChunkedEnvelopeDaProvider {
     /// Builds [`L1DaBlockRef`] entries from broadcast DB for a finalized envelope.
     ///
-    /// Collects reveal txs (which carry DA witness data), looks up each in the
-    /// broadcast DB to get its L1 block, then groups by block into
-    /// [`L1DaBlockRef`] entries. The commit tx is excluded because it only
-    /// creates the P2TR output and contains no DA data.
+    /// Collects the commit tx and all reveal txs and groups them by the L1
+    /// block where each reached reorg-safe finality. The commit's OP_RETURN
+    /// carries the EE DA magic/version marker; reveal tapscripts carry chunk
+    /// payloads.
     async fn build_da_block_refs(
         &self,
         entry: &ChunkedEnvelopeEntry,
     ) -> eyre::Result<Vec<L1DaBlockRef>> {
-        // Only collect reveal txs — the commit tx is just a P2TR output and
-        // carries no DA witness data. The EE prover needs reveal witnesses only.
-        let mut tx_pairs: Vec<(Buf32, Buf32)> = Vec::with_capacity(entry.reveals.len());
-        for reveal in &entry.reveals {
-            tx_pairs.push((reveal.txid, reveal.wtxid));
-        }
-
-        // Group by (block_hash, block_height) -> Vec<(Txid, Wtxid)>.
         let mut block_map: BlockMap = HashMap::new();
 
-        for (txid_buf, wtxid_buf) in &tx_pairs {
-            let Some(tx_entry) = self
-                .broadcast_ops
-                .get_tx_entry_by_id_async(*txid_buf)
-                .await?
-            else {
-                bail!("broadcast entry for txid {txid_buf} not found");
-            };
+        // Commit tx (carries the EE DA magic/version OP_RETURN).
+        let (commit_block_hash, commit_block_height) =
+            self.lookup_finalized(entry.commit_txid).await?;
+        let commit_tx =
+            FinalizedTxRef::new(entry.commit_txid.to_txid(), entry.commit_wtxid.to_wtxid());
+        block_map
+            .entry((commit_block_hash, commit_block_height))
+            .or_default()
+            .commit = Some(commit_tx);
 
-            let L1TxStatus::Finalized {
-                block_hash,
-                block_height,
-                ..
-            } = tx_entry.status
-            else {
-                bail!(
-                    "expected Finalized status for txid {txid_buf}, got {:?}",
-                    tx_entry.status
-                );
-            };
-
+        // Reveal txs (carry chunk payloads in their tapscript witnesses).
+        for reveal in &entry.reveals {
+            let (block_hash, block_height) = self.lookup_finalized(reveal.txid).await?;
             block_map
                 .entry((block_hash, block_height))
                 .or_default()
-                .push((txid_buf.to_txid(), wtxid_buf.to_wtxid()));
+                .reveals
+                .push(FinalizedRevealTx {
+                    vout_index: reveal.vout_index,
+                    tx: FinalizedTxRef::new(reveal.txid.to_txid(), reveal.wtxid.to_wtxid()),
+                });
         }
 
-        // Build sorted L1DaBlockRef list (ascending by block height).
+        // Collapse each block's accumulated commit + reveals into a flat
+        // ordered `txns` list. Within a block, the commit (if present) goes
+        // first; reveals follow in ascending vout order.
         let mut refs: Vec<L1DaBlockRef> = block_map
             .into_iter()
-            .map(|((hash, height), txns)| {
+            .map(|((hash, height), mut txs)| {
+                txs.reveals.sort_by_key(|reveal| reveal.vout_index);
+                let mut txns: Vec<(Txid, Wtxid)> =
+                    Vec::with_capacity(txs.commit.is_some() as usize + txs.reveals.len());
+                if let Some(commit) = txs.commit {
+                    txns.push(commit.into_pair());
+                }
+                txns.extend(txs.reveals.into_iter().map(|reveal| reveal.tx.into_pair()));
                 let commitment = L1BlockCommitment::new(height, L1BlockId::from(hash));
                 L1DaBlockRef::new(commitment, txns)
             })
@@ -185,6 +218,21 @@ impl ChunkedEnvelopeDaProvider {
         refs.sort_by_key(|r| r.block.height());
 
         Ok(refs)
+    }
+
+    /// Looks up a tx in the broadcast DB and returns the finalized L1 block.
+    async fn lookup_finalized(&self, txid: Buf32) -> eyre::Result<(Buf32, L1Height)> {
+        let Some(tx_entry) = self.broadcast_ops.get_tx_entry_by_id_async(txid).await? else {
+            bail!("broadcast entry for txid {txid} not found");
+        };
+        match tx_entry.status {
+            L1TxStatus::Finalized {
+                block_hash,
+                block_height,
+                ..
+            } => Ok((block_hash, block_height)),
+            other => bail!("expected Finalized status for txid {txid}, got {:?}", other),
+        }
     }
 }
 
@@ -254,14 +302,16 @@ mod tests {
         let mut entry = ChunkedEnvelopeEntry::new_unsigned(
             vec![vec![0xAA; 100]; heights.len().max(1)],
             MagicBytes::new([0x01, 0x02, 0x03, 0x04]),
+            DA_BLOB_VERSION,
         );
         entry.status = status;
         entry.commit_txid = Buf32::from([0x11; 32]);
+        entry.commit_wtxid = Buf32::from([0x12; 32]);
         entry.reveals = heights
             .iter()
             .enumerate()
             .map(|(i, _)| RevealTxMeta {
-                vout_index: i as u32,
+                vout_index: (i + 1) as u32,
                 txid: Buf32::from([(0x20 + i as u8); 32]),
                 wtxid: Buf32::from([(0x30 + i as u8); 32]),
                 tx_bytes: btc_serialize(&make_test_tx()),
@@ -342,8 +392,9 @@ mod tests {
         assert!(matches!(status, DaStatus::Pending));
     }
 
-    /// Ensures finalized reveal transactions are grouped into sorted
-    /// [`L1DaBlockRef`] values by their finalized L1 block height.
+    /// Ensures finalized commit + reveal transactions are grouped into sorted
+    /// [`L1DaBlockRef`] values by their finalized L1 block height. Each block
+    /// ref carries the commit (if it landed there) and the reveals.
     #[tokio::test]
     async fn test_check_da_status_finalized_returns_sorted_refs() {
         let (provider, chunked_ops, broadcast_ops) = make_provider();
@@ -351,6 +402,11 @@ mod tests {
 
         chunked_ops
             .put_chunked_envelope_entry_async(0, entry.clone())
+            .await
+            .unwrap();
+        // Commit landed at height 99 (before either reveal).
+        broadcast_ops
+            .put_tx_entry_async(entry.commit_txid, finalized_tx_entry(99))
             .await
             .unwrap();
         broadcast_ops
@@ -367,18 +423,27 @@ mod tests {
             panic!("expected finalized envelope to be ready");
         };
 
-        assert_eq!(refs.len(), 2);
-        assert_eq!(refs[0].block.height(), 100);
-        assert_eq!(refs[1].block.height(), 101);
+        assert_eq!(refs.len(), 3);
+        assert_eq!(refs[0].block.height(), 99);
+        assert_eq!(refs[1].block.height(), 100);
+        assert_eq!(refs[2].block.height(), 101);
+
+        // Block 99 holds only the commit tx.
         assert_eq!(
             refs[0].txns,
+            vec![(entry.commit_txid.to_txid(), entry.commit_wtxid.to_wtxid())]
+        );
+
+        // Blocks 100 and 101 each hold one reveal tx.
+        assert_eq!(
+            refs[1].txns,
             vec![(
                 entry.reveals[1].txid.to_txid(),
                 entry.reveals[1].wtxid.to_wtxid()
             )]
         );
         assert_eq!(
-            refs[1].txns,
+            refs[2].txns,
             vec![(
                 entry.reveals[0].txid.to_txid(),
                 entry.reveals[0].wtxid.to_wtxid()

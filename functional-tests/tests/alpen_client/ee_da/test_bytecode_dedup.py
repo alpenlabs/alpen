@@ -30,7 +30,7 @@ class TestDaBytecodeDeduplicationTest(BaseTest):
             AlpenClientEnv(
                 fullnode_count=0,
                 enable_l1_da=True,
-                batch_sealing_block_count=30,
+                batch_sealing_block_count=3,
             )
         )
 
@@ -58,22 +58,25 @@ class TestDaBytecodeDeduplicationTest(BaseTest):
 
         trigger_batch_sealing(sequencer, btc_rpc)
 
-        # Poll for Phase A DA blob
+        # Poll for Phase A DA blob — re-scan from baseline each pass so
+        # commits and reveals are paired even when they confirm in
+        # different L1 blocks; the scanner is idempotent.
         phase_a_blob = None
         phase_a_all_envs: list[DaEnvelope] = []
-        end_l1 = baseline_l1_height
 
         for attempt in range(20):
             time.sleep(5)
             btc_rpc.proxy.generatetoaddress(5, mine_address)
             time.sleep(3)
 
-            prev_end = end_l1
             end_l1 = btc_rpc.proxy.getblockcount()
-            new_envs = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
-            if new_envs:
-                logger.debug(f"  Phase A attempt {attempt + 1}: Found {len(new_envs)} envelope(s)")
-                phase_a_all_envs.extend(new_envs)
+            phase_a_all_envs = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
+            if phase_a_all_envs:
+                logger.debug(
+                    "  Phase A attempt %s: saw %s envelope chunk(s)",
+                    attempt + 1,
+                    len(phase_a_all_envs),
+                )
 
             blobs = reassemble_blobs_from_envelopes(phase_a_all_envs)
             for b in blobs:
@@ -115,7 +118,7 @@ class TestDaBytecodeDeduplicationTest(BaseTest):
 
         trigger_batch_sealing(sequencer, btc_rpc)
 
-        # Poll for Phase B DA blob
+        # Poll for Phase B DA blob — re-scan from baseline.
         phase_b_blob = None
         phase_b_all_envs: list[DaEnvelope] = []
 
@@ -124,12 +127,14 @@ class TestDaBytecodeDeduplicationTest(BaseTest):
             btc_rpc.proxy.generatetoaddress(5, mine_address)
             time.sleep(3)
 
-            prev_end = end_l1
             end_l1 = btc_rpc.proxy.getblockcount()
-            new_envs = scan_for_da_envelopes(btc_rpc, prev_end + 1, end_l1)
-            if new_envs:
-                logger.debug(f"  Phase B attempt {attempt + 1}: Found {len(new_envs)} envelope(s)")
-                phase_b_all_envs.extend(new_envs)
+            phase_b_all_envs = scan_for_da_envelopes(btc_rpc, baseline_l1_height, end_l1)
+            if phase_b_all_envs:
+                logger.debug(
+                    "  Phase B attempt %s: saw %s envelope chunk(s)",
+                    attempt + 1,
+                    len(phase_b_all_envs),
+                )
 
             blobs = reassemble_blobs_from_envelopes(phase_b_all_envs)
             for b in blobs:

@@ -24,6 +24,9 @@ class EeAccountState(Container):
     ### ID of the last execution block that we've processed
     last_exec_blkid: Bytes32
 
+    ### State root of the last execution block that we've processed
+    last_exec_state_root: Bytes32
+
     ### Tracked balance bridged into execution env, according to processed messages
     tracked_balance: strata_acct_types.BitcoinAmount
 

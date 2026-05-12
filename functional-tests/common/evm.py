@@ -14,10 +14,13 @@ from common.config.constants import DEV_CHAIN_ID, DEV_PRIVATE_KEY
 DEV_ACCOUNT_ADDRESS = Account.from_key(DEV_PRIVATE_KEY).address
 
 
-def send_eth_transfer(rpc, nonce: int, to_addr: str, value_wei: int) -> str:
+def send_eth_transfer(
+    rpc, nonce: int, to_addr: str, value_wei: int, gas_price: int | None = None
+) -> str:
     """Send a simple ETH transfer and return the tx hash."""
     dev = ManagedAccount.from_key(DEV_PRIVATE_KEY)
-    gas_price = int(rpc.eth_gasPrice(), 16)
+    if gas_price is None:
+        gas_price = int(rpc.eth_gasPrice(), 16)
     raw_tx = dev.sign_transfer(to=to_addr, value=value_wei, nonce=nonce, gas_price=gas_price)
     return rpc.eth_sendRawTransaction(raw_tx)
 

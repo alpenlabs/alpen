@@ -15,7 +15,8 @@ use ssz::Encode;
 use strata_acct_types::BitcoinAmount;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
-use strata_ee_acct_types::{EeAccountState, UpdateExtraData};
+use strata_ee_acct_types::{EeAccountState, ExecBlock, ExecHeader, UpdateExtraData};
+use strata_evm_ee::EvmExecutionEnvironment;
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_proofimpl_alpen_chunk::EeChunkProgram;
 use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
@@ -36,8 +37,26 @@ fn prepare_input() -> EeAcctProofInput {
     // 2. Pre-state: an empty EE account whose `last_exec_blkid` points to the chunk's parent block,
     //    so the chunk's parent → tip transition is valid against it.
     let parent_blkid = chunk_transition.parent_exec_blkid();
+
+    let parent_state_root = chunk_input
+        .private_input
+        .try_decode_prev_header::<EvmExecutionEnvironment>()
+        .expect("decode parent header")
+        .get_state_root();
+
+    let tip_state_root = chunk_input
+        .private_input
+        .raw_chunk()
+        .blocks()
+        .last()
+        .expect("chunk should contain at least one block")
+        .try_decode_block::<EvmExecutionEnvironment>()
+        .expect("decode tip block")
+        .get_header()
+        .get_state_root();
     let initial_state = EeAccountState::new(
         parent_blkid,
+        parent_state_root,
         BitcoinAmount::from_sat(0),
         Vec::new(),
         Vec::new(),
@@ -48,12 +67,13 @@ fn prepare_input() -> EeAcctProofInput {
     //    guest's `pre_finalize_state` arrives at when there are no messages.
     let mut post_state = initial_state.clone();
     post_state.set_last_exec_blkid(chunk_transition.tip_exec_blkid());
+    post_state.set_last_exec_state_root(tip_state_root);
     let post_root = post_state.compute_state_root();
 
     // 4. Build pubvals matching the post-state. The witness fixture is a vanilla Ethereum block —
     //    it doesn't touch the EE precompiles that emit subject deposits or output messages, so all
     //    the aggregate fields are empty.
-    let extra_data = UpdateExtraData::new(chunk_transition.tip_exec_blkid(), 0, 0);
+    let extra_data = UpdateExtraData::new(chunk_transition.tip_exec_blkid(), tip_state_root, 0, 0);
     let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
 
     let pub_params = UpdateProofPubParams::new(

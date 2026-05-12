@@ -13,7 +13,7 @@
 //! The lifecycle manager is built around a state machine that processes batches
 //! sequentially through their lifecycle. It uses:
 //!
-//! - [`BatchDaProvider`] trait for posting DA and checking confirmation status
+//! - [`BatchDaProvider`] trait for posting DA and checking DA readiness
 //! - [`BatchProver`] trait for requesting and checking proof generation
 //! - [`BatchStorage`] for persisting batch status updates
 //!

@@ -1,11 +1,9 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::anyhow;
-use bitcoin::{Transaction, Txid};
-use bitcoind_async_client::{
-    error::ClientError,
-    traits::{Broadcaster, Wallet},
-};
+use bitcoin::{BlockHash, Transaction, Txid};
+use bitcoind_async_client::{error::ClientError, traits::Broadcaster, Client};
+use serde::Deserialize;
 use strata_btc_types::BlockHashExt;
 use strata_db_types::types::L1TxEntry;
 use strata_primitives::{buf::Buf32, L1Height};
@@ -20,7 +18,7 @@ use super::error::{BroadcasterError, BroadcasterResult};
 /// `txn-already-known`, `txn-already-in-block-chain`. A space-separated check
 /// like `"already in mempool"` does not match any of these and would route
 /// every benign `-25` to `InvalidInputs`, causing spurious envelope rebuilds.
-fn is_benign_minus25_message(msg: &str) -> bool {
+pub(crate) fn is_benign_minus25_message(msg: &str) -> bool {
     msg.contains("already-in-mempool")
         || msg.contains("already-known")
         || msg.contains("already-in-block-chain")
@@ -59,10 +57,101 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
 
 /// Minimal transaction view needed by broadcaster confirmation logic.
 #[derive(Clone, Debug)]
-pub(crate) struct TxConfirmationInfo {
+pub struct TxConfirmationInfo {
     pub(crate) confirmations: i64,
     pub(crate) block_hash: Option<Buf32>,
     pub(crate) block_height: Option<L1Height>,
+}
+
+/// Minimal wallet `gettransaction` response used by the broadcaster.
+///
+/// Bitcoin Core may omit `details[].address` for OP_RETURN outputs. The broadcaster
+/// only needs confirmation metadata, so it intentionally avoids the full wallet model.
+#[derive(Clone, Debug, Deserialize)]
+struct WalletTxConfirmationResponse {
+    confirmations: i64,
+    #[serde(rename = "blockhash")]
+    block_hash: Option<BlockHash>,
+    #[serde(rename = "blockheight")]
+    block_height: Option<i64>,
+}
+
+impl TryFrom<WalletTxConfirmationResponse> for TxConfirmationInfo {
+    type Error = BroadcasterError;
+
+    fn try_from(value: WalletTxConfirmationResponse) -> Result<Self, Self::Error> {
+        let block_height = value
+            .block_height
+            .map(L1Height::try_from)
+            .transpose()
+            .map_err(|_| {
+                BroadcasterError::Rpc(anyhow!("Bitcoin RPC returned invalid blockheight"))
+            })?;
+
+        Ok(Self {
+            confirmations: value.confirmations,
+            block_hash: value.block_hash.map(|h| h.to_buf32()),
+            block_height,
+        })
+    }
+}
+
+pub trait WalletTxLookup: Send + Sync + 'static {
+    /// Fetches transaction confirmation data used for broadcaster state transitions.
+    fn get_transaction_confirmation<'a>(
+        &'a self,
+        txid: &'a Txid,
+    ) -> impl Future<Output = Result<Option<TxConfirmationInfo>, BroadcasterError>> + Send + 'a;
+}
+
+impl WalletTxLookup for Client {
+    async fn get_transaction_confirmation<'a>(
+        &'a self,
+        txid: &'a Txid,
+    ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
+        let params = [bitcoind_async_client::to_value(txid.to_string())
+            .map_err(|err| BroadcasterError::Rpc(anyhow!(err)))?];
+
+        match self
+            .call_raw::<WalletTxConfirmationResponse>("gettransaction", &params)
+            .await
+        {
+            Ok(info) => Ok(Some(info.try_into()?)),
+            Err(err) if err.is_tx_not_found() => {
+                debug!(%err, %txid, "get_transaction: tx not found");
+                Ok(None)
+            }
+            Err(err) => {
+                warn!(%err, %txid, "get_transaction failed");
+                Err(BroadcasterError::Rpc(anyhow!(err)))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_impls {
+    use bitcoind_async_client::traits::Wallet;
+
+    use super::*;
+    use crate::test_utils::TestBitcoinClient;
+
+    impl WalletTxLookup for TestBitcoinClient {
+        async fn get_transaction_confirmation<'a>(
+            &'a self,
+            txid: &'a Txid,
+        ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
+            match Wallet::get_transaction(self, txid).await {
+                Ok(info) => Ok(Some(TxConfirmationInfo {
+                    confirmations: info.confirmations,
+                    block_hash: info.block_hash.map(|h| h.to_buf32()),
+                    block_height: info.block_height,
+                })),
+                Err(err) if err.is_tx_not_found() => Ok(None),
+                Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
+            }
+        }
+    }
 }
 
 /// Broadcaster-level outcome of broadcasting a transaction.
@@ -96,7 +185,7 @@ impl<T> BroadcasterIo<T> {
 
 impl<T> BroadcasterIoContext for BroadcasterIo<T>
 where
-    T: Broadcaster + Wallet + Send + Sync + 'static,
+    T: Broadcaster + WalletTxLookup,
 {
     async fn get_next_tx_idx(&self) -> BroadcasterResult<u64> {
         Ok(self.ops.get_next_tx_idx_async().await?)
@@ -115,21 +204,7 @@ where
         &'a self,
         txid: &'a Txid,
     ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
-        match self.rpc_client.get_transaction(txid).await {
-            Ok(info) => Ok(Some(TxConfirmationInfo {
-                confirmations: info.confirmations,
-                block_hash: info.block_hash.map(|h| h.to_buf32()),
-                block_height: info.block_height,
-            })),
-            Err(err) if err.is_tx_not_found() => {
-                debug!(%err, %txid, "get_transaction: tx not found");
-                Ok(None)
-            }
-            Err(err) => {
-                warn!(%err, %txid, "get_transaction failed");
-                Err(BroadcasterError::Rpc(anyhow!(err)))
-            }
-        }
+        self.rpc_client.get_transaction_confirmation(txid).await
     }
 
     async fn send_raw_transaction<'a>(
@@ -158,6 +233,13 @@ where
                     warn!(%txid, %msg, "sendrawtransaction -25 with non-benign message (treated as InvalidInputs)");
                     Ok(PublishTxOutcome::InvalidInputs)
                 }
+            }
+            // Bitcoin Core returns RPC_VERIFY_ALREADY_IN_UTXO_SET (-27) when
+            // sendrawtransaction sees a tx already accepted into chainstate.
+            // Source: https://github.com/bitcoin/bitcoin/blob/master/src/rpc/protocol.h#L24
+            Err(ClientError::Server(-27, msg)) => {
+                info!(%txid, %msg, "sendrawtransaction reports tx already in chainstate (Published)");
+                Ok(PublishTxOutcome::Published)
             }
             Err(ClientError::Server(-22, msg)) => {
                 warn!(%txid, %msg, "sendrawtransaction returned -22 (treated as InvalidInputs)");
@@ -189,7 +271,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::is_benign_minus25_message;
+    use super::*;
 
     #[test]
     fn benign_minus25_strings_match() {
@@ -224,5 +306,28 @@ mod tests {
         // AlreadyInMempool.
         assert!(!is_benign_minus25_message("already in mempool"));
         assert!(!is_benign_minus25_message("already known"));
+    }
+
+    #[test]
+    fn parses_wallet_transaction_without_detail_address() {
+        let raw = r#"{
+            "confirmations": 1,
+            "blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "blockheight": 42,
+            "details": [
+                {
+                    "category": "send",
+                    "amount": 0.0,
+                    "vout": 0
+                }
+            ]
+        }"#;
+
+        let response: WalletTxConfirmationResponse = serde_json::from_str(raw).unwrap();
+        let info = TxConfirmationInfo::try_from(response).unwrap();
+
+        assert_eq!(info.confirmations, 1);
+        assert!(info.block_hash.is_some());
+        assert_eq!(info.block_height, Some(42));
     }
 }

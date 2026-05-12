@@ -8,6 +8,7 @@ fn make_entry(status: ChunkedEnvelopeStatus) -> ChunkedEnvelopeEntry {
     let mut entry = ChunkedEnvelopeEntry::new_unsigned(
         vec![vec![0xAA; 100]],
         MagicBytes::new([0xDE, 0xAD, 0xBE, 0xEF]),
+        1,
     );
     entry.status = status;
     entry

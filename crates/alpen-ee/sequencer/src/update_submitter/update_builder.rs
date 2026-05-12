@@ -5,7 +5,10 @@ use alpen_ee_common::{
 };
 use eyre::{eyre, OptionExt, Result};
 use futures::{future::try_join_all, FutureExt};
-use strata_acct_types::Hash;
+use strata_acct_types::{
+    tree_hash::{Sha256Hasher, TreeHash},
+    Hash,
+};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::UpdateExtraData;
 use strata_identifiers::L1Height;
@@ -13,7 +16,6 @@ use strata_snark_acct_types::{
     AccumulatorClaim, LedgerRefs, OutputMessage, OutputTransfer, ProofState, SnarkAccountUpdate,
     UpdateOperationData, UpdateOutputs,
 };
-use tree_hash::{Sha256Hasher, TreeHash};
 
 /// Build a [`SnarkAccountUpdate`] from a batch in ProofReady state.
 pub(super) async fn build_update_from_batch(
@@ -41,10 +43,8 @@ pub(super) async fn build_update_from_batch(
         .await?
         .ok_or_else(|| eyre!("missing proof: {}", proof_id))?;
 
-    // NOTE: Currently, sequence no = batch index - 1. This may change in the future.
     let seq_no = batch
-        .idx()
-        .checked_sub(1)
+        .update_seq_no()
         .ok_or_else(|| eyre!("cannot build update for genesis batch"))?;
 
     let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
@@ -95,16 +95,22 @@ fn build_update_operation(
     genesis_l1_height: L1Height,
 ) -> Result<UpdateOperationData> {
     // 1. Get info from final block
-    let (inner_state, new_tip_blkid, next_inbox_msg_idx) = {
+    let (inner_state, new_tip_blkid, new_tip_state_root, next_inbox_msg_idx) = {
         let last_block = blocks.last().ok_or_eyre("blocks cannot be empty")?;
         let inner_state: Hash =
             TreeHash::<Sha256Hasher>::tree_hash_root(last_block.account_state())
                 .0
                 .into();
         let new_tip_blkid = last_block.package().exec_blkid();
+        let new_tip_state_root = last_block.account_state().last_exec_state_root();
         let next_inbox_msg_idx = last_block.next_inbox_msg_idx();
 
-        (inner_state, new_tip_blkid, next_inbox_msg_idx)
+        (
+            inner_state,
+            new_tip_blkid,
+            new_tip_state_root,
+            next_inbox_msg_idx,
+        )
     };
 
     // 2. Process all blocks to accumulate messages and outputs
@@ -133,7 +139,12 @@ fn build_update_operation(
     }
 
     // 3. Build extra data
-    let extra_data = UpdateExtraData::new(new_tip_blkid, processed_inputs as u32, 0);
+    let extra_data = UpdateExtraData::new(
+        new_tip_blkid,
+        new_tip_state_root,
+        processed_inputs as u32,
+        0,
+    );
     let extra_data_buf = encode_to_vec(&extra_data)?;
 
     // 4. Build ledger refs from DA block references. The claim idx must be the MMR leaf index (not

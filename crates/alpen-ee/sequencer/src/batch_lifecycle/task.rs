@@ -17,7 +17,7 @@ use super::{
     state::BatchLifecycleState,
 };
 
-/// Polling interval for checking DA confirmations and proof status.
+/// Polling interval for checking DA readiness and proof status.
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Main batch lifecycle task.
@@ -79,7 +79,8 @@ where
         handle_reorg(state, &latest_batch, ctx.batch_storage.as_ref(), reorg).await?;
     }
 
-    // Try to advance each frontier (order doesn't matter, they're independent)
+    // Advance frontiers in lifecycle order so each stage can consume progress
+    // made by the previous stage during the same cycle.
     if let Err(e) = try_advance_da_pending(state, &latest_batch, ctx).await {
         error!(error = %e, "failed to advance da pending frontier");
     }

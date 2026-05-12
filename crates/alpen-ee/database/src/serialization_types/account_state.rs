@@ -24,9 +24,13 @@ impl DBAccountStateAtEpoch {
     }
 }
 
+// TODO(STR-3421): Migrate EE account-state persistence away from this Borsh
+// mirror and store the SSZ account-state type directly, including any needed
+// DB compatibility/versioning path for existing local data.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBEeAccountState {
     last_exec_blkid: Hash,
+    last_exec_state_root: Hash,
     tracked_balance: DBBitcoinAmount,
     pending_inputs: Vec<DBPendingInputEntry>,
     pending_fincls: Vec<DBPendingFinclEntry>,
@@ -34,9 +38,16 @@ pub(crate) struct DBEeAccountState {
 
 impl From<EeAccountState> for DBEeAccountState {
     fn from(value: EeAccountState) -> Self {
-        let (last_exec_blkid, tracked_balance, pending_inputs, pending_fincls) = value.into_parts();
+        let (
+            last_exec_blkid,
+            last_exec_state_root,
+            tracked_balance,
+            pending_inputs,
+            pending_fincls,
+        ) = value.into_parts();
         Self {
             last_exec_blkid,
+            last_exec_state_root,
             tracked_balance: tracked_balance.into(),
             pending_inputs: pending_inputs.into_iter().map(Into::into).collect(),
             pending_fincls: pending_fincls.into_iter().map(Into::into).collect(),
@@ -48,6 +59,7 @@ impl From<DBEeAccountState> for EeAccountState {
     fn from(value: DBEeAccountState) -> Self {
         Self::new(
             value.last_exec_blkid,
+            value.last_exec_state_root,
             value.tracked_balance.into(),
             value.pending_inputs.into_iter().map(Into::into).collect(),
             value.pending_fincls.into_iter().map(Into::into).collect(),

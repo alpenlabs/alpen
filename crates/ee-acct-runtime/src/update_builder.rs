@@ -37,6 +37,9 @@ pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
     /// Current chain tip, advanced as chunks are accepted.
     cur_tip_blkid: Hash,
 
+    /// Current execution state root.
+    cur_tip_state_root: Hash,
+
     /// Snapshot of pending inputs after message processing. Not mutated —
     /// used to validate chunks and let the consumer query remaining inputs.
     pending_inputs: Vec<PendingInputEntry>,
@@ -61,6 +64,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     ) -> BuilderResult<Self> {
         let pending_inputs = initial_state.pending_inputs().to_vec();
         let cur_tip_blkid = initial_state.last_exec_blkid();
+        let cur_tip_state_root = initial_state.last_exec_state_root();
 
         let program = EeSnarkAccountProgram::new();
 
@@ -77,6 +81,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             inner,
             seq_no,
             cur_tip_blkid,
+            cur_tip_state_root,
             pending_inputs,
             inputs_consumed: 0,
             fincls_processed: 0,
@@ -213,6 +218,13 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             .map_err(|_| BuilderError::OutputOverflow)?;
 
         // 4. Advance tip and consumed count.
+        //
+        // TODO(STR-1369): bind chunk verification to the tip execution state
+        // root and advance `cur_tip_state_root` here. `ChunkTransition`
+        // currently carries the parent/tip block ids plus IO, but not the
+        // verified post-state root, so `UpdateExtraData.new_tip_state_root`
+        // remains the initial account state's execution root for updates built
+        // through this chunk-aware path.
         self.cur_tip_blkid = transition.tip_exec_blkid();
         self.inputs_consumed += deposits.len();
 
@@ -236,6 +248,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     pub fn build(&mut self) -> BuilderResult<(UpdateOperationData, Vec<Vec<u8>>)> {
         let extra_data = UpdateExtraData::new(
             self.cur_tip_blkid,
+            self.cur_tip_state_root,
             self.inputs_consumed as u32,
             self.fincls_processed as u32,
         );
@@ -255,6 +268,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
     pub fn build_private_input(&mut self) -> BuilderResult<PrivateInput> {
         let extra_data = UpdateExtraData::new(
             self.cur_tip_blkid,
+            self.cur_tip_state_root,
             self.inputs_consumed as u32,
             self.fincls_processed as u32,
         );

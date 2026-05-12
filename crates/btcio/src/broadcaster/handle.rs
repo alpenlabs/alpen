@@ -97,6 +97,32 @@ impl L1BroadcastHandle {
         Ok(idx)
     }
 
+    /// Updates an existing entry and notifies the broadcaster service.
+    pub(crate) async fn put_tx_entry_by_idx(
+        &self,
+        idx: u64,
+        txentry: L1TxEntry,
+    ) -> BroadcasterResult<()> {
+        assert!(txentry.try_to_tx().is_ok(), "invalid tx entry {txentry:?}");
+
+        self.ops
+            .put_tx_entry_by_idx_async(idx, txentry.clone())
+            .await?;
+
+        if self
+            .sender
+            .send(BroadcasterInputMessage::NotifyNewEntry { idx, txentry })
+            .await
+            .is_err()
+        {
+            // Not really an error, it just means it's shutting down; we'll pick
+            // it up when we restart by scanning persisted entries.
+            warn!("L1 broadcaster service is unavailable");
+        }
+
+        Ok(())
+    }
+
     pub async fn get_tx_entry_by_id_async(&self, txid: Buf32) -> DbResult<Option<L1TxEntry>> {
         self.ops.get_tx_entry_by_id_async(txid).await
     }

@@ -62,6 +62,12 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
     ) -> ProgramResult<(), Self::Error> {
         // Update final execution head block.
         state.set_last_exec_blkid(*extra_data.new_tip_blkid());
+        // TODO(STR-1369): bind this root to the verified chunk output before
+        // treating it as a hard EE account commitment. `EeVerificationState`
+        // currently verifies only the tip block id; once `ChunkTransition`
+        // carries parent/tip state roots, track the verified root and reject
+        // mismatched `UpdateExtraData.new_tip_state_root`.
+        state.set_last_exec_state_root(*extra_data.new_tip_state_root());
 
         Ok(())
     }
