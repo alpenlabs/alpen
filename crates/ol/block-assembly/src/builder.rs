@@ -8,7 +8,7 @@ use std::{
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
 use strata_ol_state_provider::StateProvider;
-use strata_params::Params;
+use strata_predicate::PredicateKey;
 use strata_service::ServiceBuilder;
 use strata_storage::NodeStorage;
 use strata_tasks::TaskExecutor;
@@ -27,13 +27,13 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
-    params: Arc<Params>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     epoch_sealing_policy: E,
     state_provider: P,
     sequencer_config: SequencerConfig,
+    sequencer_predicate: PredicateKey,
     command_buffer_size: usize,
 }
 
@@ -44,22 +44,22 @@ where
     P: StateProvider,
 {
     pub fn new(
-        params: Arc<Params>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
         mempool_provider: M,
         epoch_sealing_policy: E,
         state_provider: P,
         sequencer_config: SequencerConfig,
+        sequencer_predicate: PredicateKey,
     ) -> Self {
         Self {
-            params,
             blockasm_config,
             storage,
             mempool_provider,
             epoch_sealing_policy,
             state_provider,
             sequencer_config,
+            sequencer_predicate,
             command_buffer_size: 64,
         }
     }
@@ -82,18 +82,16 @@ where
     <<P::State as IStateAccessorMut>::AccountStateMut as IAccountStateMut>::SnarkAccountStateMut:
             Clone,
     {
-        let genesis_l1_height = self.params.rollup().genesis_l1_view.height();
         let context = Arc::new(BlockAssemblyContext::new(
             self.storage,
             self.mempool_provider,
             self.state_provider,
-            genesis_l1_height,
         ));
 
         let state = BlockasmServiceState::new(
-            self.params,
             self.blockasm_config,
             self.sequencer_config,
+            self.sequencer_predicate,
             context,
             self.epoch_sealing_policy,
         );
@@ -124,10 +122,10 @@ where
     )]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlockasmBuilder")
-            .field("params", &"<Params>")
             .field("blockasm_config", &self.blockasm_config)
             .field("storage", &"<NodeStorage>")
             .field("sequencer_config", &self.sequencer_config)
+            .field("sequencer_predicate", &self.sequencer_predicate)
             .field("command_buffer_size", &self.command_buffer_size)
             .finish()
     }

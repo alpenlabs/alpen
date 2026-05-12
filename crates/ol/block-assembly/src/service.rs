@@ -2,14 +2,11 @@
 
 use std::{fmt::Display, marker::PhantomData};
 
-use ssz::Encode;
-use strata_crypto::hash::raw;
-use strata_identifiers::OLBlockId;
+use strata_identifiers::{Buf32, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
-use strata_ol_chain_types::verify_sequencer_signature;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, verify_sequencer_predicate_signature};
 use strata_ol_state_provider::StateProvider;
-use strata_params::RollupParams;
+use strata_predicate::PredicateKey;
 use strata_service::{AsyncService, Response, Service};
 use tracing::debug;
 
@@ -195,7 +192,7 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
 
     // Verify signature first (before removing from cache)
     if !check_completion_data(
-        state.rollup_params(),
+        state.sequencer_predicate(),
         template_ref.header(),
         &completion_data,
     ) {
@@ -214,16 +211,13 @@ fn complete_block_template<M: MempoolProvider, E: EpochSealingPolicy, S>(
 
 /// Check if completion data (signature) is valid.
 fn check_completion_data(
-    rollup_params: &RollupParams,
+    sequencer_predicate: &PredicateKey,
     header: &OLBlockHeader,
     completion: &BlockCompletionData,
 ) -> bool {
-    // Compute sighash from header (SSZ encoding)
-    let encoded = header.as_ssz_bytes();
-    let sighash = raw(&encoded);
+    let msg: Buf32 = header.compute_blkid().into();
 
-    // Verify sequencer signature
-    verify_sequencer_signature(rollup_params, &sighash, completion.signature())
+    verify_sequencer_predicate_signature(sequencer_predicate, &msg, completion.signature())
 }
 
 /// Service status for OL block assembly.
@@ -234,15 +228,14 @@ pub(crate) struct BlockasmServiceStatus;
 mod tests {
     use std::{sync::Arc, time::Instant};
 
-    use ssz::Encode;
     use strata_config::BlockAssemblyConfig;
-    use strata_crypto::{hash::raw, sign_schnorr_sig};
+    use strata_crypto::sign_schnorr_sig;
     use strata_identifiers::{Buf32, Buf64};
+    use strata_ol_chain_types_new::test_utils::schnorr_predicate;
     use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
-    use strata_params::CredRule;
+    use strata_predicate::PredicateKey;
     use strata_primitives::utils::get_test_schnorr_keys;
-    use strata_test_utils_l2::gen_params;
 
     use super::*;
     use crate::{
@@ -265,7 +258,7 @@ mod tests {
     >;
 
     async fn build_service_state_with_accounts(
-        use_schnorr_cred_rule: bool,
+        use_schnorr_predicate: bool,
         accounts: impl IntoIterator<Item = TestAccount>,
     ) -> (
         TestServiceState,
@@ -273,13 +266,11 @@ mod tests {
         TestEnv,
         Option<Buf32>,
     ) {
-        let mut params = gen_params();
-        let signing_key = if use_schnorr_cred_rule {
+        let (sequencer_predicate, signing_key) = if use_schnorr_predicate {
             let keypair = get_test_schnorr_keys()[0].clone();
-            params.rollup.cred_rule = CredRule::SchnorrKey(keypair.pk);
-            Some(keypair.sk)
+            (schnorr_predicate(&keypair.pk), Some(keypair.sk))
         } else {
-            None
+            (PredicateKey::always_accept(), None)
         };
 
         let (fixture, parent_commitment) = TestStorageFixtureBuilder::new()
@@ -291,9 +282,9 @@ mod tests {
         let mempool = env.mempool_arc();
 
         let state = BlockasmServiceState::new(
-            Arc::new(params),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
+            sequencer_predicate,
             env.ctx_arc(),
             env.epoch_sealing_policy().clone(),
         );
@@ -302,22 +293,22 @@ mod tests {
     }
 
     async fn build_service_state(
-        use_schnorr_cred_rule: bool,
+        use_schnorr_predicate: bool,
     ) -> (
         TestServiceState,
         Arc<MockMempoolProvider>,
         TestEnv,
         Option<Buf32>,
     ) {
-        build_service_state_with_accounts(use_schnorr_cred_rule, Vec::<TestAccount>::new()).await
+        build_service_state_with_accounts(use_schnorr_predicate, Vec::<TestAccount>::new()).await
     }
 
     fn valid_completion_data(
         template: &FullBlockTemplate,
         signing_key: Buf32,
     ) -> BlockCompletionData {
-        let sighash = raw(&template.header().as_ssz_bytes());
-        let signature = sign_schnorr_sig(&sighash, &signing_key);
+        let msg: Buf32 = template.header().compute_blkid().into();
+        let signature = sign_schnorr_sig(&msg, &signing_key);
         BlockCompletionData::from_signature(signature)
     }
 
@@ -600,6 +591,32 @@ mod tests {
             mempool.report_call_count(),
             1,
             "failed tx report should be attempted exactly once at service layer"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_always_accept_completes_with_garbage_signature() {
+        let (mut state, _mempool, env, _sk) = build_service_state(false).await;
+        let config = BlockGenerationConfig::new(env.parent_commitment());
+        let template = generate_block_template(&mut state, config)
+            .await
+            .expect("generation should succeed");
+        let template_id = template.get_blockid();
+
+        let completion_data = BlockCompletionData::from_signature(Buf64::zero());
+        let completed = complete_block_template(&mut state, template_id, completion_data)
+            .expect("AlwaysAccept should allow the always-present signature bytes");
+        assert_eq!(
+            completed.header().compute_blkid(),
+            template_id,
+            "completed block id should match template id"
+        );
+        assert!(
+            matches!(
+                state.state_mut().get_pending_block_template(template_id),
+                Err(BlockAssemblyError::UnknownTemplateId(id)) if id == template_id
+            ),
+            "template should be removed after successful completion"
         );
     }
 

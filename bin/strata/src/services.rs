@@ -168,6 +168,12 @@ mod sequencer_services {
             .sequencer
             .clone()
             .ok_or_else(|| anyhow!("Sequencer config required for block assembly"))?;
+        let sequencer_predicate = nodectx
+            .asm_params()
+            .checkpoint_config()
+            .ok_or_else(|| anyhow!("ASM checkpoint config required for block assembly"))?
+            .sequencer_predicate
+            .clone();
 
         let epoch_sealing_config = nodectx.config().epoch_sealing.clone().unwrap_or_default();
         let slots_per_epoch = match epoch_sealing_config {
@@ -180,13 +186,13 @@ mod sequencer_services {
 
         nodectx.task_manager().handle().block_on(async {
             BlockasmBuilder::new(
-                nodectx.params().clone(),
                 blockasm_config,
                 nodectx.storage().clone(),
                 mempool_provider,
                 epoch_sealing,
                 state_provider,
                 sequencer_config,
+                sequencer_predicate,
             )
             .launch(nodectx.executor())
             .await

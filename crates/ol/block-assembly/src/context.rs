@@ -116,7 +116,6 @@ pub struct BlockAssemblyContext<M, S> {
     storage: Arc<NodeStorage>,
     mempool_provider: M,
     state_provider: S,
-    _genesis_l1_height: L1Height,
 }
 
 impl<M, S> Debug for BlockAssemblyContext<M, S> {
@@ -129,17 +128,11 @@ impl<M, S> Debug for BlockAssemblyContext<M, S> {
 
 impl<M, S> BlockAssemblyContext<M, S> {
     /// Create a new block assembly context.
-    pub fn new(
-        storage: Arc<NodeStorage>,
-        mempool_provider: M,
-        state_provider: S,
-        genesis_l1_height: L1Height,
-    ) -> Self {
+    pub fn new(storage: Arc<NodeStorage>, mempool_provider: M, state_provider: S) -> Self {
         Self {
             storage,
             mempool_provider,
             state_provider,
-            _genesis_l1_height: genesis_l1_height,
         }
     }
 }
