@@ -10,11 +10,17 @@ use strata_acct_types::{
     AccountId, AccountSerial, AccumulatorClaim, BitcoinAmount, MessageEntry, MsgPayload, TxEffects,
 };
 use strata_identifiers::{
-    Epoch, Slot,
+    Buf32, Epoch, Slot,
     test_utils::{buf32_strategy, buf64_strategy, ol_block_id_strategy},
 };
+use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{block_flags::BlockFlags, ssz_generated::ssz::block::*, *};
+
+/// Creates a [`PredicateKey`] for a BIP-340 Schnorr sequencer pubkey.
+pub fn schnorr_predicate(pubkey: &Buf32) -> PredicateKey {
+    PredicateKey::new(PredicateTypeId::Bip340Schnorr, pubkey.as_slice().to_vec())
+}
 
 /// Strategy for generating random [`OLLog`] values.
 pub fn ol_log_strategy() -> impl Strategy<Value = OLLog> {
