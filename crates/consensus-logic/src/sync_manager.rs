@@ -14,6 +14,7 @@ use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_node_context::NodeContext;
+use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
@@ -342,9 +343,8 @@ fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result
         return Ok(());
     }
 
-    let sentinel = strata_identifiers::Hash::from(strata_ol_state_types::MMR_PREFILL_LEAF);
     for _ in current..target_count {
-        handle.append_leaf_blocking(sentinel)?;
+        handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
     }
     Ok(())
 }

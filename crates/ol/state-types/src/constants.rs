@@ -1,5 +1,7 @@
 //! Protocol constants.
 
+use strata_identifiers::Hash;
+
 /// Sentinel leaf value used to prefill the ASM manifests MMR for L1 heights at
 /// or before ASM genesis.
 ///
@@ -11,3 +13,6 @@
 /// position.
 // TODO(STR-3417): move to strata-identifiers
 pub const MMR_SENTINEL_DUMMY_LEAF: [u8; 32] = [0xffu8; 32];
+
+/// Just [`MMR_SENTINEL_DUMMY_LEAF`] as a [`Hash`].
+pub const MMR_SENTINEL_DUMMY_LEAF_HASH: Hash = Hash::new(MMR_SENTINEL_DUMMY_LEAF);

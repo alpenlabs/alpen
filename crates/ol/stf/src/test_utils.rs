@@ -20,7 +20,9 @@ use strata_merkle::{CompactMmr64, MerkleProof, Mmr};
 use strata_ol_chain_types_new::*;
 use strata_ol_params::OLParams;
 use strata_ol_state_support_types::MemoryStateBaseLayer;
-use strata_ol_state_types::{OLAccountState, OLSnarkAccountState, OLState};
+use strata_ol_state_types::{
+    MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
+};
 use strata_predicate::PredicateKey;
 
 /// Creates a genesis state layer using minimal empty parameters.
@@ -560,7 +562,7 @@ impl ManifestMmrTracker {
     pub fn with_genesis_l1_height(genesis_l1_height: u32) -> Self {
         let prefill_count = genesis_l1_height as u64 + 1;
         let mmr = <Mmr64 as strata_merkle::Mmr<StrataHasher>>::new_repeated(
-            strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF,
+            MMR_SENTINEL_DUMMY_LEAF,
             prefill_count,
         );
         Self {

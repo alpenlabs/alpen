@@ -45,7 +45,7 @@ use strata_ol_msg_types::{DEFAULT_OPERATOR_FEE, WITHDRAWAL_MSG_TYPE_ID, Withdraw
 use strata_ol_params::OLParams;
 use strata_ol_state_provider::{OLStateManagerProviderImpl, StateProvider};
 use strata_ol_state_support_types::{EpochDaAccumulator, MemoryStateBaseLayer};
-use strata_ol_state_types::OLState;
+use strata_ol_state_types::{MMR_SENTINEL_DUMMY_LEAF_HASH, OLState};
 use strata_ol_stf::{
     BRIDGE_GATEWAY_ACCT_ID, BRIDGE_GATEWAY_ACCT_SERIAL, BlockComponents, BlockContext, BlockInfo,
     construct_block as stf_construct_block,
@@ -1337,9 +1337,10 @@ fn prefill_db_asm_mmr_to_match_state(storage: &NodeStorage, state: &impl IStateA
     let mmr_handle = storage.mmr_index().as_ref().get_handle(MmrId::Asm);
     let state_prefill = state.asm_manifests_mmr().num_entries();
     let db_count = mmr_handle.get_num_leaves_blocking().unwrap();
-    let sentinel: Hash = strata_ol_state_types::MMR_PREFILL_LEAF.into();
     for _ in db_count..state_prefill {
-        mmr_handle.append_leaf_blocking(sentinel).unwrap();
+        mmr_handle
+            .append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)
+            .unwrap();
     }
 }
 

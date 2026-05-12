@@ -31,7 +31,7 @@ pub mod test_utils;
 
 // Re-export SSZ-generated types that are used publicly
 pub use batch_application::*;
-pub use constants::MMR_SENTINEL_DUMMY_LEAF;
+pub use constants::*;
 pub use serial_map::*;
 pub use ssz_generated::ssz::state::*;
 pub use write_batch::*;
