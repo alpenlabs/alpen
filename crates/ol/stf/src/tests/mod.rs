@@ -29,3 +29,6 @@ mod stf;
 
 #[cfg(test)]
 mod limbo;
+
+#[cfg(test)]
+mod da_preseal_correctness;
