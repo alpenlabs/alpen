@@ -335,6 +335,7 @@ impl<H: ProofSpec> Prover<H> {
             let input = match self.spec.fetch_input(&task).await {
                 Ok(input) => input,
                 Err(e) => {
+                    error!(%e, "fetch_input failed");
                     self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
