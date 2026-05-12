@@ -8,7 +8,7 @@ use bitcoin::{
 };
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
-    SubprotocolInstance,
+    ConfirmationDepths, SubprotocolInstance,
 };
 use strata_btc_types::BitcoinAmount;
 use strata_btc_verification::L1Anchor;
@@ -98,11 +98,23 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
 
     let threshold = ThresholdConfig::try_new(admin_keys, NonZero::new(1).expect("1 is non-zero"))?;
 
+    let depth = cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH);
+    let confirmation_depths = ConfirmationDepths {
+        strata_admin_multisig_update: depth,
+        strata_seq_manager_multisig_update: depth,
+        alpen_admin_multisig_update: depth,
+        operator_update: depth,
+        sequencer_update: depth,
+        ol_stf_vk_update: depth,
+        asm_stf_vk_update: depth,
+        ee_stf_vk_update: depth,
+    };
+
     let admin = AdministrationInitConfig::new(
         threshold.clone(),
         threshold.clone(),
         threshold,
-        cmd.confirmation_depth.unwrap_or(DEFAULT_CONFIRMATION_DEPTH),
+        confirmation_depths,
         cmd.max_seqno_gap.unwrap_or(DEFAULT_MAX_SEQNO_GAP),
     );
 
