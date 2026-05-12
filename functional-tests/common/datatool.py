@@ -78,6 +78,7 @@ def get_operator_xprivs(datadir, operator_fname) -> list[str]:
 class RollupParamsArtifacts:
     params_path: Path
     sequencer_key_path: Path | None
+    sequencer_pubkey: str | None
     operator_keys: list[str]
 
 
@@ -134,6 +135,7 @@ def generate_rollup_params_unchecked(
     return RollupParamsArtifacts(
         params_path=params_path,
         sequencer_key_path=sequencer_key_path,
+        sequencer_pubkey=None,
         operator_keys=operator_xprivs,
     )
 
@@ -169,7 +171,7 @@ def generate_rollup_params(
         args.extend(["--opkey", opkey])
 
     run_datatool(args, bconfig)
-    return RollupParamsArtifacts(params_path, sequencer_key_path, operator_xprivs)
+    return RollupParamsArtifacts(params_path, sequencer_key_path, sequencer_pubkey, operator_xprivs)
 
 
 def generate_sequencer_pubkey(sequencer_key_path: Path) -> str:
@@ -206,6 +208,7 @@ def generate_asm_params(
     genesis_l1_height: int,
     operator_xprivs: list[str],
     ol_params_path: Path | None = None,
+    sequencer_pubkey: str | None = None,
     admin_confirmation_depth: int | None = None,
 ) -> Path:
     params_path = datadir / "asm-params.json"
@@ -223,6 +226,8 @@ def generate_asm_params(
     ]
     if ol_params_path is not None:
         args.extend(["--ol-params", str(ol_params_path)])
+    if sequencer_pubkey is not None:
+        args.extend(["--seqkey", sequencer_pubkey])
     if admin_confirmation_depth is not None:
         args.extend(["--confirmation-depth", str(admin_confirmation_depth)])
     for opkey in operator_xprivs:
