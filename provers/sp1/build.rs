@@ -12,7 +12,10 @@ cfg_if! {
         use cargo_metadata::MetadataCommand;
         use sha2::{Digest, Sha256};
         use sp1_helper::{build_program_with_args, BuildArgs};
-        use sp1_sdk::{HashableKey, ProverClient, SP1VerifyingKey};
+        use sp1_sdk::{
+            blocking::{Prover, ProverClient},
+            HashableKey, ProvingKey, SP1VerifyingKey,
+        };
         use zkaleido_sp1_groth16_verifier::SP1Groth16Verifier;
     }
 }
@@ -89,7 +92,6 @@ use std::fs;
         methods_file_content.push_str(&format!(
             r#"
 pub static {program_name_upper}_ELF: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{full_path_str}.elf").expect("Cannot find ELF") }});
-pub static {program_name_upper}_PK: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{full_path_str}.pk").expect("Cannot find PK") }});
 pub static {program_name_upper}_VK: Lazy<Vec<u8>> = Lazy::new(||{{ fs::read("{full_path_str}.vk").expect("Cannot find VK") }});
 pub const {program_name_upper}_VK_HASH_U32: &[u32] = &{vk_hash_u32:?};
 pub const {program_name_upper}_VK_HASH_STR: &str = "{vk_hash_str}";
@@ -182,7 +184,7 @@ fn get_output_dir() -> PathBuf {
 
 /// Checks if the cache is valid by comparing the expected ID with the saved ID.
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
-fn is_cache_valid(expected_id: &[u8; 32], paths: &[PathBuf; 4]) -> bool {
+fn is_cache_valid(expected_id: &[u8; 32], paths: &[PathBuf; 3]) -> bool {
     // Check if any required files are missing
     if paths.iter().any(|path| !path.exists()) {
         return false;
@@ -201,7 +203,7 @@ fn is_cache_valid(expected_id: &[u8; 32], paths: &[PathBuf; 4]) -> bool {
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
 fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
     let cache_dir = format!("{}/cache", program);
-    let paths = ["elf", "id", "vk", "pk"]
+    let paths = ["elf", "id", "vk"]
         .map(|file| Path::new(&cache_dir).join(format!("{}.{}", program, file)));
 
     // Attempt to read the ELF file
@@ -210,18 +212,18 @@ fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
     let elf_hash: [u8; 32] = Sha256::digest(&elf).into();
 
     if !is_cache_valid(&elf_hash, &paths) {
-        // Cache is invalid, need to generate vk and pk
+        // Cache is invalid, need to generate the verifying key.
         let client = ProverClient::from_env();
-        let (pk, vk) = client.setup(&elf);
+        let pk = client
+            .setup(elf.clone().into())
+            .map_err(|e| format!("Failed to set up proving key: {e}"))?;
+        let vk = pk.verifying_key().clone();
 
         fs::write(&paths[1], elf_hash)
             .map_err(|e| format!("Failed to write ID file {}: {}", paths[1].display(), e))?;
 
         fs::write(&paths[2], serialize(&vk).expect("VK serialization failed"))
             .map_err(|e| format!("Failed to write VK file {}: {}", paths[2].display(), e))?;
-
-        fs::write(&paths[3], serialize(&pk).expect("PK serialization failed"))
-            .map_err(|e| format!("Failed to write PK file {}: {}", paths[3].display(), e))?;
 
         Ok(vk)
     } else {
@@ -314,8 +316,13 @@ fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String, [u8; 32]) {
 /// suitable for use as the condition in a `PredicateKey::Sp1Groth16`.
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
 fn compute_groth16_condition(program_id: &[u8; 32]) -> Vec<u8> {
-    let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, *program_id)
-        .expect("Failed to load SP1 Groth16 verifier");
+    let sp1_verifier = SP1Groth16Verifier::load(
+        &sp1_verifier::GROTH16_VK_BYTES,
+        *program_id,
+        *sp1_verifier::VK_ROOT_BYTES,
+        true,
+    )
+    .expect("Failed to load SP1 Groth16 verifier");
 
     sp1_verifier.vk.to_uncompressed_bytes()
 }
@@ -358,9 +365,9 @@ fn migrate_elf(program: &str) {
 
     // Source path: program/target/elf-compilation/.../release/{built_elf_name}
     let elf_subdir = if cfg!(feature = "docker-build") {
-        "docker/riscv32im-succinct-zkvm-elf"
+        "docker/riscv64im-succinct-zkvm-elf"
     } else {
-        "riscv32im-succinct-zkvm-elf"
+        "riscv64im-succinct-zkvm-elf"
     };
 
     let built_elf_path = program_path
