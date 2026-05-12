@@ -242,19 +242,46 @@ impl<H: ProofSpec> Prover<H> {
         }
     }
 
+    /// Read the persisted retry counter for a task.
+    ///
+    /// Used at the top of [`Self::run_task`] before status is overwritten to
+    /// `Proving`, and by [`Self::recover`] to compute the post-crash bump.
+    /// Returns 0 for `Pending` or absent records.
+    fn read_retry_count(&self, key: &[u8]) -> u32 {
+        self.task_store
+            .get(key)
+            .ok()
+            .flatten()
+            .map_or(0, |r| match r.status() {
+                TaskStatus::Proving { retry_count }
+                | TaskStatus::TransientFailure { retry_count, .. } => *retry_count,
+                _ => 0,
+            })
+    }
+
     async fn run_task(&self, task: H::Task, key: Vec<u8>) {
         let span = info_span!("prove", task = %task);
 
         async {
-            let _ = self
-                .task_store
-                .update_status(&key, TaskStatus::Proving { retry_count: 0 });
+            // Snapshot the retry counter from the persisted record BEFORE
+            // flipping status to `Proving`. `schedule_retry` cannot read it
+            // from the store after the overwrite below, and `recover` needs
+            // the count to survive a mid-Proving crash, so persist it inside
+            // the `Proving` status itself.
+            let prior_retry_count = self.read_retry_count(&key);
+
+            let _ = self.task_store.update_status(
+                &key,
+                TaskStatus::Proving {
+                    retry_count: prior_retry_count,
+                },
+            );
 
             // 1. Fetch input
             let input = match self.spec.fetch_input(&task).await {
                 Ok(input) => input,
                 Err(e) => {
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -280,7 +307,7 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(Ok(receipt)) => receipt,
                 Ok(Err(e)) => {
                     error!(%e, "prove failed");
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -301,7 +328,7 @@ impl<H: ProofSpec> Prover<H> {
             if let Some(store) = &self.receipt_store {
                 if let Err(e) = store.put(&key, &receipt) {
                     error!(%e, "receipt store put failed");
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -311,7 +338,7 @@ impl<H: ProofSpec> Prover<H> {
             if let Some(hook) = &self.receipt_hook {
                 if let Err(e) = hook.on_receipt(&task, &receipt).await {
                     error!(%e, "receipt hook failed");
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -326,9 +353,9 @@ impl<H: ProofSpec> Prover<H> {
         .await;
     }
 
-    fn handle_error(&self, key: &[u8], err: &ProverError) {
+    fn handle_error(&self, key: &[u8], err: &ProverError, prior_retry_count: u32) {
         if err.is_transient() {
-            self.schedule_retry(key, &err.to_string());
+            self.schedule_retry(key, &err.to_string(), prior_retry_count);
         } else {
             let _ = self.task_store.update_status(
                 key,
@@ -339,18 +366,8 @@ impl<H: ProofSpec> Prover<H> {
         }
     }
 
-    fn schedule_retry(&self, key: &[u8], msg: &str) {
-        let current_count = self
-            .task_store
-            .get(key)
-            .ok()
-            .flatten()
-            .and_then(|r| match r.status() {
-                TaskStatus::TransientFailure { retry_count, .. } => Some(*retry_count),
-                _ => None,
-            })
-            .unwrap_or(0);
-        let new_count = current_count + 1;
+    fn schedule_retry(&self, key: &[u8], msg: &str, prior_retry_count: u32) {
+        let new_count = prior_retry_count + 1;
 
         if let Some(ref cfg) = self.config.retry {
             if cfg.should_retry(new_count) {
