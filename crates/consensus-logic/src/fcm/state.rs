@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc, time};
 
 use anyhow::anyhow;
 use strata_ol_state_types::OLState;
-use strata_params::Params;
+use strata_predicate::PredicateKey;
 use strata_primitives::{EpochCommitment, L2BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::ServiceState;
 use tokio::time::sleep;
@@ -16,11 +16,11 @@ use crate::{
 
 /// Runtime container for the FCM service.
 ///
-/// `params` is immutable launch configuration.  The mutable fork-choice state
-/// lives in [`FcmInnerState`].
+/// `sequencer_predicate` is immutable launch configuration. The mutable
+/// fork-choice state lives in [`FcmInnerState`].
 pub(crate) struct FcmServiceState<C: FcmContext> {
     ctx: Arc<C>,
-    params: Arc<Params>,
+    sequencer_predicate: PredicateKey,
     inner_state: FcmInnerState,
 }
 
@@ -162,10 +162,14 @@ impl<C: FcmContext> FcmServiceState<C> {
 }
 
 impl<C: FcmContext> FcmServiceState<C> {
-    pub(crate) fn new(ctx: Arc<C>, params: Arc<Params>, inner_state: FcmInnerState) -> Self {
+    pub(crate) fn new(
+        ctx: Arc<C>,
+        sequencer_predicate: PredicateKey,
+        inner_state: FcmInnerState,
+    ) -> Self {
         Self {
             ctx,
-            params,
+            sequencer_predicate,
             inner_state,
         }
     }
@@ -174,8 +178,8 @@ impl<C: FcmContext> FcmServiceState<C> {
         self.ctx.as_ref()
     }
 
-    pub(crate) fn params(&self) -> &Params {
-        &self.params
+    pub(crate) fn sequencer_predicate(&self) -> &PredicateKey {
+        &self.sequencer_predicate
     }
 }
 
@@ -213,9 +217,10 @@ impl FcmInnerState {
     }
 }
 
-/// Creates the forkchoice manager state from a database and rollup params.
+/// Creates the forkchoice manager state from the FCM context and sequencer
+/// predicate.
 pub(crate) async fn init_fcm_service_state<C: FcmContext>(
-    params: Arc<Params>,
+    sequencer_predicate: PredicateKey,
     fcm_ctx: Arc<C>,
 ) -> anyhow::Result<FcmServiceState<C>> {
     // Load data about the last finalized block so we can use that to initialize
@@ -253,7 +258,11 @@ pub(crate) async fn init_fcm_service_state<C: FcmContext>(
     let fcm_inner = FcmInnerState::new(chain_tracker, cur_tip_block, ol_state);
 
     // Actually assemble the forkchoice manager state.
-    Ok(FcmServiceState::new(fcm_ctx, params, fcm_inner))
+    Ok(FcmServiceState::new(
+        fcm_ctx,
+        sequencer_predicate,
+        fcm_inner,
+    ))
 }
 
 /// Determines the starting chain tip.  For now, this is just the block with the

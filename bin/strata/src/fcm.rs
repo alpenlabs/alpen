@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use strata_chain_worker_new::ChainWorkerHandle;
 use strata_consensus_logic::{
@@ -140,6 +140,12 @@ pub(crate) fn start(
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
 ) -> Result<FcmServiceHandle> {
     let checkpoint_state_rx = nodectx.status_channel().subscribe_checkpoint_state();
+    let sequencer_predicate = nodectx
+        .asm_params()
+        .checkpoint_config()
+        .ok_or_else(|| anyhow!("ASM checkpoint config required for FCM"))?
+        .sequencer_predicate
+        .clone();
     let fcm_ctx = Arc::new(StrataFcmContext::new(
         nodectx.storage().clone(),
         chain_worker_handle,
@@ -148,7 +154,7 @@ pub(crate) fn start(
     ));
 
     nodectx.task_manager().handle().block_on(start_fcm_service(
-        nodectx.params().clone(),
+        sequencer_predicate,
         fcm_ctx,
         checkpoint_state_rx,
         nodectx.executor().clone(),
