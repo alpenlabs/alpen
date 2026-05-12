@@ -1,58 +1,49 @@
 use std::sync::Arc;
 
-use strata_chain_worker_new::ChainWorkerHandle;
-use strata_csm_worker::CsmWorkerStatus;
-use strata_node_context::NodeContext;
-use strata_params::Params;
-use strata_service::ServiceMonitor;
-use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
+use async_trait::async_trait;
+use strata_db_types::{traits::BlockStatus, DbResult};
+use strata_identifiers::{Epoch, Slot};
+use strata_ol_state_types::OLState;
+use strata_primitives::{epoch::EpochCommitment, OLBlockCommitment, OLBlockId};
+use strata_status::OLSyncStatus;
 
-#[derive(Clone)]
-#[expect(
-    missing_debug_implementations,
-    reason = "Not all attributes have debug impls"
-)]
-pub struct FcmContext {
-    params: Arc<Params>,
-    storage: Arc<NodeStorage>,
-    chain_worker: Arc<ChainWorkerHandle>,
-    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-    status_channel: Arc<StatusChannel>,
+use crate::unfinalized_tracker::UnfinalizedOLBlockSource;
+
+/// Chain execution operations required by FCM.
+#[async_trait]
+pub trait ChainController: Send + Sync {
+    async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()>;
+    async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()>;
+    async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()>;
 }
 
-impl FcmContext {
-    pub fn from_node_ctx(
-        nodectx: &NodeContext,
-        chain_worker: Arc<ChainWorkerHandle>,
-        csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-    ) -> Self {
-        Self {
-            params: nodectx.params().clone(),
-            storage: nodectx.storage().clone(),
-            status_channel: nodectx.status_channel().clone(),
-            chain_worker,
-            csm_monitor,
-        }
-    }
+/// CSM status access required by FCM.
+pub trait CsmStatusReader: Send + Sync {
+    fn last_finalized_epoch(&self) -> Option<EpochCommitment>;
+    fn last_confirmed_epoch(&self) -> Option<EpochCommitment>;
+}
 
-    pub(crate) fn params(&self) -> &Params {
-        &self.params
-    }
+/// Storage operations required by FCM.
+#[async_trait]
+pub trait FcmStorage: UnfinalizedOLBlockSource {
+    async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool>;
 
-    pub(crate) fn storage(&self) -> &NodeStorage {
-        &self.storage
-    }
+    async fn get_toplevel_ol_state(
+        &self,
+        commitment: OLBlockCommitment,
+    ) -> DbResult<Option<Arc<OLState>>>;
 
-    pub(crate) fn csm_monitor(&self) -> &ServiceMonitor<CsmWorkerStatus> {
-        &self.csm_monitor
-    }
+    async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>>;
 
-    pub(crate) fn status_channel(&self) -> &StatusChannel {
-        &self.status_channel
-    }
+    async fn get_canonical_epoch_commitment_at(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Option<EpochCommitment>>;
+}
 
-    pub(crate) fn chain_worker(&self) -> Arc<ChainWorkerHandle> {
-        self.chain_worker.clone()
-    }
+/// FCM's dependency context.
+pub trait FcmContext:
+    ChainController + CsmStatusReader + FcmStorage + Send + Sync + 'static
+{
+    fn publish_sync_status(&self, status: OLSyncStatus);
 }

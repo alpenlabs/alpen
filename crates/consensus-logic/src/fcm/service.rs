@@ -1,28 +1,35 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::anyhow;
 use serde::Serialize;
-use strata_db_types::{traits::BlockStatus, DbError};
+use strata_csm_types::CheckpointState;
+use strata_db_types::traits::BlockStatus;
 use strata_ol_chain_types_new::OLBlock;
-use strata_params::{CredRule, RollupParams};
+use strata_params::{CredRule, Params, RollupParams};
 use strata_primitives::{
     crypto::verify_schnorr_sig, Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment,
     OLBlockId,
 };
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
-use strata_status::{OLSyncStatus, OLSyncStatusUpdate};
-use strata_storage::OLBlockManager;
+use strata_status::OLSyncStatus;
 use strata_tasks::TaskExecutor;
-use tokio::sync::mpsc::{channel as mpsc_channel, Sender};
+use tokio::sync::{
+    mpsc::{channel as mpsc_channel, Sender},
+    watch,
+};
 use tracing::{debug, error, info, trace, warn};
 
+use super::state::init_fcm_service_state;
 use crate::{
     errors::Error,
-    fcm::{input::FcmEvent, state::FcmState},
-    init_fcm_service_state,
+    fcm::{
+        context::{FcmContext, FcmStorage},
+        input::FcmEvent,
+        state::FcmServiceState,
+    },
     message::ForkChoiceMessage,
     tip_update::{compute_tip_update, TipUpdate},
-    FcmContext, FcmInput,
+    FcmInput,
 };
 
 #[derive(Clone, Debug)]
@@ -45,19 +52,19 @@ impl FcmServiceHandle {
     }
 }
 
-pub async fn start_fcm_service(
-    fcm_ctx: FcmContext,
+pub async fn start_fcm_service<C: FcmContext>(
+    params: Arc<Params>,
+    fcm_ctx: Arc<C>,
+    checkpoint_state_rx: watch::Receiver<CheckpointState>,
     texec: Arc<TaskExecutor>,
 ) -> anyhow::Result<FcmServiceHandle> {
-    let clstate_rx = fcm_ctx.status_channel().subscribe_checkpoint_state();
-
     // initialize fcm state
-    let fcm_state = init_fcm_service_state(fcm_ctx).await?;
+    let fcm_state = init_fcm_service_state(params, fcm_ctx).await?;
 
     let (fcm_tx, fcm_rx) = mpsc_channel::<ForkChoiceMessage>(64);
-    let fcm_input = FcmInput::new(fcm_rx, clstate_rx);
+    let fcm_input = FcmInput::new(fcm_rx, checkpoint_state_rx);
 
-    let service_monitor = ServiceBuilder::<FcmService, FcmInput>::new()
+    let service_monitor = ServiceBuilder::<FcmService<C>, FcmInput>::new()
         .with_state(fcm_state)
         .with_input(fcm_input)
         .launch_async("fcm", texec.as_ref())
@@ -69,14 +76,20 @@ pub async fn start_fcm_service(
 }
 
 #[derive(Clone, Debug)]
-pub struct FcmService;
+pub(crate) struct FcmService<C: FcmContext>(PhantomData<C>);
+
+impl<C: FcmContext> Default for FcmService<C> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct FcmStatus;
 
-impl Service for FcmService {
+impl<C: FcmContext> Service for FcmService<C> {
     type Msg = FcmEvent;
-    type State = FcmState;
+    type State = FcmServiceState<C>;
     type Status = FcmStatus;
 
     fn get_status(_s: &Self::State) -> Self::Status {
@@ -84,7 +97,7 @@ impl Service for FcmService {
     }
 }
 
-impl AsyncService for FcmService {
+impl<C: FcmContext> AsyncService for FcmService<C> {
     async fn on_launch(_state: &mut Self::State) -> anyhow::Result<()> {
         Ok(())
     }
@@ -109,20 +122,19 @@ impl AsyncService for FcmService {
     }
 }
 
-async fn process_fc_message(
+async fn process_fc_message<C: FcmContext>(
     msg: &ForkChoiceMessage,
-    fcm_state: &mut FcmState,
+    fcm_state: &mut FcmServiceState<C>,
 ) -> anyhow::Result<()> {
-    let blk_db = fcm_state.ctx().storage().ol_block().clone();
-    let ckpt_db = fcm_state.ctx().storage().ol_checkpoint().clone();
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
             strata_common::check_bail_trigger(strata_common::BAIL_FCM_NEW_BLOCK);
 
-            let block_bundle = blk_db
-                .get_block_data_async(*blkid)
+            let block_bundle = fcm_state
+                .ctx()
+                .get_ol_block(*blkid)
                 .await?
-                .ok_or(Error::MissingL2Block(*blkid))?;
+                .ok_or(Error::MissingOLBlock(*blkid))?;
 
             let slot = block_bundle.header().slot();
             info!(%slot, %blkid, "processing new block");
@@ -154,22 +166,26 @@ async fn process_fc_message(
                 let cur_state = fcm_state.cur_ol_state();
                 // Get prev epoch summary
                 let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
-                let prev_epoch = ckpt_db
-                    .get_canonical_epoch_commitment_at_async(prev_epoch_num)
+                let prev_epoch = fcm_state
+                    .ctx()
+                    .get_canonical_epoch_commitment_at(prev_epoch_num)
                     .await?
                     .ok_or(anyhow!(
                         "expected epoch commitment for previous epoch {} not in db",
                         prev_epoch_num
                     ))?;
-                let csm_status = fcm_state.ctx().csm_monitor().get_current();
                 let finalized_epoch = *fcm_state.chain_tracker().finalized_epoch();
-                let confirmed_epoch = csm_status.last_confirmed_epoch.unwrap_or(finalized_epoch);
+                let confirmed_epoch = fcm_state
+                    .ctx()
+                    .last_confirmed_epoch()
+                    .unwrap_or(finalized_epoch);
 
                 let canonical_tip = fcm_state.cur_best_block();
-                let tip_block_data = blk_db
-                    .get_block_data_async(*canonical_tip.blkid())
+                let tip_block_data = fcm_state
+                    .ctx()
+                    .get_ol_block(*canonical_tip.blkid())
                     .await?
-                    .ok_or(Error::MissingL2Block(*canonical_tip.blkid()))?;
+                    .ok_or(Error::MissingOLBlock(*canonical_tip.blkid()))?;
                 let status = OLSyncStatus {
                     tip: canonical_tip,
                     tip_epoch: tip_block_data.header().epoch(),
@@ -181,12 +197,8 @@ async fn process_fc_message(
                     safe_l1: last_l1_blk,
                 };
 
-                let update = OLSyncStatusUpdate::new(status);
                 trace!(%blkid, "publishing new ol_state");
-                fcm_state
-                    .ctx()
-                    .status_channel()
-                    .update_ol_sync_status(update);
+                fcm_state.ctx().publish_sync_status(status);
 
                 BlockStatus::Valid
             } else {
@@ -195,16 +207,17 @@ async fn process_fc_message(
                 BlockStatus::Invalid
             };
 
-            blk_db.set_block_status_async(*blkid, status).await?;
+            fcm_state.ctx().set_block_status(*blkid, status).await?;
         }
     }
 
     Ok(())
 }
 
-async fn handle_new_state_update(fcm_state: &mut FcmState) -> anyhow::Result<()> {
-    let csm_status = fcm_state.ctx().csm_monitor().get_current();
-    let Some(new_fin_epoch) = csm_status.last_finalized_epoch else {
+async fn handle_new_state_update<C: FcmContext>(
+    fcm_state: &mut FcmServiceState<C>,
+) -> anyhow::Result<()> {
+    let Some(new_fin_epoch) = fcm_state.ctx().last_finalized_epoch() else {
         debug!("got new CSM state, but finalized epoch still unset, ignoring");
         return Ok(());
     };
@@ -231,17 +244,17 @@ async fn handle_new_state_update(fcm_state: &mut FcmState) -> anyhow::Result<()>
     Ok(())
 }
 
-async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow::Result<bool> {
-    let blk_db = fcm_state.ctx().storage().ol_block().clone();
+async fn handle_new_block<C: FcmContext>(
+    fcm_state: &mut FcmServiceState<C>,
+    bundle: &OLBlock,
+) -> anyhow::Result<bool> {
     let slot = bundle.header().slot();
     let blkid = &bundle.header().compute_blkid();
     info!(%blkid, %slot, "handling new block");
 
     // First, decide if the block seems correctly signed and we haven't
     // already marked it as invalid.
-    if let Err(err) =
-        check_ol_block_proposal_valid(blkid, bundle, fcm_state.ctx().params().rollup())
-    {
+    if let Err(err) = check_ol_block_proposal_valid(blkid, bundle, fcm_state.params().rollup()) {
         warn!(%err, "rejecting block");
         return Ok(false);
     }
@@ -250,7 +263,7 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
     // about it, at least until it gets reorged out by another block being
     // finalized.
     let bc = OLBlockCommitment::new(bundle.header().slot(), *blkid);
-    let exec_ok = match fcm_state.ctx().chain_worker().try_exec_block(bc).await {
+    let exec_ok = match fcm_state.ctx().try_exec_block(bc).await {
         Ok(()) => true,
         Err(err) => {
             // TODO(STR-2141): Need some way to distinguish an invalid block from a exec failure
@@ -260,12 +273,14 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
     };
 
     if exec_ok {
-        blk_db
-            .set_block_status_async(*blkid, BlockStatus::Valid)
+        fcm_state
+            .ctx()
+            .set_block_status(*blkid, BlockStatus::Valid)
             .await?;
     } else {
-        blk_db
-            .set_block_status_async(*blkid, BlockStatus::Invalid)
+        fcm_state
+            .ctx()
+            .set_block_status(*blkid, BlockStatus::Invalid)
             .await?;
         return Ok(false);
     }
@@ -290,7 +305,7 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
         .chain_tips_iter()
         .copied()
         .collect();
-    let best_block = pick_best_block_async(&cur_tip, &tips, blk_db.as_ref()).await?;
+    let best_block = pick_best_block_async(&cur_tip, &tips, fcm_state.ctx()).await?;
 
     // TODO make configurable
     let depth = 100;
@@ -346,8 +361,8 @@ async fn handle_new_block(fcm_state: &mut FcmState, bundle: &OLBlock) -> anyhow:
 ///        finalized in the EE.
 ///
 /// Return commitment to epoch that was finalized, if any.
-async fn handle_epoch_finalization(
-    fcm_state: &mut FcmState,
+async fn handle_epoch_finalization<C: FcmContext>(
+    fcm_state: &mut FcmServiceState<C>,
 ) -> anyhow::Result<Option<EpochCommitment>> {
     let Some((_idx, next_finalizable_epoch)) = fcm_state.find_latest_pending_finalizable_epoch()
     else {
@@ -393,16 +408,19 @@ pub fn check_ol_block_proposal_valid(
     Ok(())
 }
 
-async fn pick_best_block_async(
+async fn pick_best_block_async<S>(
     cur_tip: &OLBlockId,
     tips: &[OLBlockId],
-    ol_block_mgr: &OLBlockManager,
-) -> Result<OLBlockId, Error> {
+    storage: &S,
+) -> Result<OLBlockId, Error>
+where
+    S: FcmStorage + ?Sized,
+{
     let mut best_tip = *cur_tip;
-    let mut best_block = ol_block_mgr
-        .get_block_data_async(best_tip)
+    let mut best_block = storage
+        .get_ol_block(best_tip)
         .await?
-        .ok_or(Error::MissingL2Block(best_tip))?;
+        .ok_or(Error::MissingOLBlock(best_tip))?;
 
     // The implementation of this will only switch to a new tip if it's a higher
     // height than our current tip.  We'll make this more sophisticated in the
@@ -412,10 +430,10 @@ async fn pick_best_block_async(
             continue;
         }
 
-        let other_block = ol_block_mgr
-            .get_block_data_async(*other_tip)
+        let other_block = storage
+            .get_ol_block(*other_tip)
             .await?
-            .ok_or(Error::MissingL2Block(*other_tip))?;
+            .ok_or(Error::MissingOLBlock(*other_tip))?;
 
         let best_header = best_block.header();
         let other_header = other_block.header();
@@ -429,12 +447,11 @@ async fn pick_best_block_async(
     Ok(best_tip)
 }
 
-async fn apply_tip_update(
+async fn apply_tip_update<C: FcmContext>(
     update: TipUpdate,
-    fcm_state: &mut FcmState,
+    fcm_state: &mut FcmServiceState<C>,
     bundle: &OLBlock,
 ) -> anyhow::Result<()> {
-    let blk_db = fcm_state.ctx().storage().ol_state();
     match update {
         // Easy case.
         TipUpdate::ExtendTip(_cur, _new) => {
@@ -442,10 +459,11 @@ async fn apply_tip_update(
             // Update the tip block in the FCM state.
             let blk_cmmt =
                 OLBlockCommitment::new(bundle.header().slot(), bundle.header().compute_blkid());
-            let ol_state = blk_db
-                .get_toplevel_ol_state_async(blk_cmmt)
+            let ol_state = fcm_state
+                .ctx()
+                .get_toplevel_ol_state(blk_cmmt)
                 .await?
-                .ok_or(DbError::MissingStateInstance)?;
+                .ok_or(Error::MissingOLState(blk_cmmt))?;
 
             fcm_state.update_tip_block(blk_cmmt, ol_state).await?;
 
@@ -462,22 +480,54 @@ async fn apply_tip_update(
             // blocks we're applying.
             intermediate.push(new);
 
+            for blkid in intermediate {
+                advance_fcm_to_block(blkid, fcm_state).await?;
+            }
+
+            let final_tip = fcm_state.cur_best_block();
+            let expected_slot = fcm_state.get_block_slot(new).await?;
+            let expected_tip = OLBlockCommitment::new(expected_slot, new);
+            if final_tip != expected_tip {
+                return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
+            }
+
             Ok(())
         }
 
         TipUpdate::Reorg(reorg) => {
             // See if we need to roll back recent changes.
-            let pivot_blkid = reorg.pivot();
-            let pivot_slot = fcm_state.get_block_slot(*pivot_blkid).await?;
-            let pivot_block = OLBlockCommitment::new(pivot_slot, *pivot_blkid);
+            let pivot_blkid = *reorg.pivot();
+            let pivot_slot = fcm_state.get_block_slot(pivot_blkid).await?;
+            let pivot_block = OLBlockCommitment::new(pivot_slot, pivot_blkid);
+            let cur_best = fcm_state.cur_best_block();
+            let reverts_blocks = reorg.revert_iter().next().is_some();
 
             // We probably need to roll back to an earlier block and update our
             // in-memory state first.
-            if pivot_slot < fcm_state.cur_best_block().slot() {
+            if reverts_blocks {
+                if pivot_slot >= cur_best.slot() {
+                    return Err(Error::InvalidOLReorgPivot(pivot_block, cur_best).into());
+                }
+
                 debug!(%pivot_blkid, %pivot_slot, "rolling back ol_state");
                 revert_ol_state_to_block(&pivot_block, fcm_state).await?;
+            } else if pivot_blkid != *cur_best.blkid() {
+                return Err(Error::InvalidOLReorgEmptyDownPivot(cur_best, pivot_block).into());
+            }
+
+            for blkid in reorg.apply_iter().copied() {
+                advance_fcm_to_block(blkid, fcm_state).await?;
+            }
+
+            let final_tip = fcm_state.cur_best_block();
+            let expected_tip = if *reorg.new_tip() == pivot_blkid {
+                pivot_block
             } else {
-                warn!("got a reorg that didn't roll back to an earlier pivot");
+                let expected_slot = fcm_state.get_block_slot(*reorg.new_tip()).await?;
+                OLBlockCommitment::new(expected_slot, *reorg.new_tip())
+            };
+            if final_tip != expected_tip {
+                return Err(Error::OLApplyTipMismatch(expected_tip, final_tip).into());
             }
 
             // TODO any cleanup?
@@ -494,22 +544,54 @@ async fn apply_tip_update(
     }
 }
 
+/// Advances the in-memory OL state to an already-executed block.
+async fn advance_fcm_to_block<C: FcmContext>(
+    blkid: OLBlockId,
+    fcm_state: &mut FcmServiceState<C>,
+) -> anyhow::Result<()> {
+    let block = fcm_state
+        .ctx()
+        .get_ol_block(blkid)
+        .await?
+        .ok_or(Error::MissingOLBlock(blkid))?;
+
+    let block_commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+    let cur_best = fcm_state.cur_best_block();
+    let actual_parent = *block.header().parent_blkid();
+    if actual_parent != *cur_best.blkid() {
+        return Err(
+            Error::OLApplyBlockParentMismatch(block_commitment, cur_best, actual_parent).into(),
+        );
+    }
+
+    let ol_state = fcm_state
+        .ctx()
+        .get_toplevel_ol_state(block_commitment)
+        .await?
+        .ok_or(Error::MissingOLState(block_commitment))?;
+
+    fcm_state
+        .update_tip_block(block_commitment, ol_state)
+        .await?;
+
+    Ok(())
+}
+
 /// Safely reverts the in-memory ol_state to a particular block, then rolls
 /// back the writes on-disk.
-async fn revert_ol_state_to_block(
+async fn revert_ol_state_to_block<C: FcmContext>(
     block: &OLBlockCommitment,
-    fcm_state: &mut FcmState,
+    fcm_state: &mut FcmServiceState<C>,
 ) -> anyhow::Result<()> {
     // Fetch the old state from the database and store in memory.  This
     // is also how  we validate that we actually *can* revert to this
     // block.
-    let blkid = *block.blkid();
-    let db = fcm_state.ctx().storage().ol_state();
-    let new_state = db
-        .get_toplevel_ol_state_async(*block)
+    let new_state = fcm_state
+        .ctx()
+        .get_toplevel_ol_state(*block)
         .await?
-        .ok_or(Error::MissingBlockChainstate(blkid))?;
-    let _ = fcm_state.update_tip_block(*block, new_state).await;
+        .ok_or(Error::MissingOLState(*block))?;
+    fcm_state.update_tip_block(*block, new_state).await?;
 
     // FIXME(STR-2140): Rollback the writes on the database that we no longer need.
 
@@ -518,26 +600,753 @@ async fn revert_ol_state_to_block(
 
 #[cfg(test)]
 mod tests {
-    use strata_ol_chain_types_new::{
-        BlockFlags, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    use std::{
+        collections::{BTreeMap, HashMap},
+        sync::{Arc, Mutex},
     };
+
+    use async_trait::async_trait;
+    use strata_asm_common::AsmManifest;
+    use strata_db_types::{traits::BlockStatus, DbResult};
+    use strata_identifiers::{Epoch, Slot, WtxidsRoot};
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
+        SignedOLBlockHeader,
+    };
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
+    use strata_ol_state_types::OLState;
+    use strata_ol_stf::{
+        test_utils::{create_test_genesis_state, execute_block},
+        BlockComponents, BlockInfo, CompletedBlock,
+    };
+    use strata_params::Params;
     use strata_primitives::{
         crypto::sign_schnorr_sig,
+        l1::L1BlockId,
         utils::{get_test_schnorr_keys, SchnorrKeypair},
-        Buf64,
+        Buf64, OLBlockId,
     };
     use strata_test_utils_l2::gen_params;
 
     use super::*;
+    use crate::{
+        fcm::{
+            context::{ChainController, CsmStatusReader},
+            state::FcmInnerState,
+        },
+        tip_update::TipUpdate,
+        unfinalized_tracker::{UnfinalizedBlockTracker, UnfinalizedOLBlockSource},
+    };
+
+    #[derive(Default)]
+    struct StubFcmStorage {
+        inner: Mutex<StubFcmStorageInner>,
+    }
+
+    #[derive(Default)]
+    struct StubFcmStorageInner {
+        blocks: HashMap<OLBlockId, OLBlock>,
+        statuses: HashMap<OLBlockId, BlockStatus>,
+        blocks_by_slot: BTreeMap<Slot, Vec<OLBlockId>>,
+        canonical_blocks: HashMap<Slot, OLBlockCommitment>,
+        states: HashMap<OLBlockCommitment, Arc<OLState>>,
+        canonical_epochs: HashMap<Epoch, EpochCommitment>,
+    }
+
+    impl StubFcmStorage {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn put_ol_block(&self, block: OLBlock) -> OLBlockCommitment {
+            self.put_block_parts(block, None, None)
+        }
+
+        fn put_executed_block(
+            &self,
+            block: OLBlock,
+            state: OLState,
+            status: BlockStatus,
+        ) -> OLBlockCommitment {
+            self.put_block_parts(block, Some(state), Some(status))
+        }
+
+        fn put_block_parts(
+            &self,
+            block: OLBlock,
+            state: Option<OLState>,
+            status: Option<BlockStatus>,
+        ) -> OLBlockCommitment {
+            let blkid = block.header().compute_blkid();
+            let slot = block.header().slot();
+            let commitment = OLBlockCommitment::new(slot, blkid);
+            let mut inner = self.inner.lock().unwrap();
+
+            inner.blocks.insert(blkid, block);
+            let blocks_at_slot = inner.blocks_by_slot.entry(slot).or_default();
+            if !blocks_at_slot.contains(&blkid) {
+                blocks_at_slot.push(blkid);
+            }
+            inner.canonical_blocks.entry(slot).or_insert(commitment);
+            if let Some(state) = state {
+                inner.states.insert(commitment, Arc::new(state));
+            }
+            if let Some(status) = status {
+                inner.statuses.insert(blkid, status);
+            }
+
+            commitment
+        }
+
+        fn put_toplevel_ol_state(&self, block: OLBlockCommitment, state: OLState) {
+            let mut inner = self.inner.lock().unwrap();
+            assert!(
+                inner.blocks.contains_key(block.blkid()),
+                "cannot seed OL state without the corresponding OL block"
+            );
+            inner.states.insert(block, Arc::new(state));
+        }
+
+        fn put_canonical_epoch_commitment(&self, epoch: EpochCommitment) {
+            self.inner
+                .lock()
+                .unwrap()
+                .canonical_epochs
+                .insert(epoch.epoch(), epoch);
+        }
+    }
+
+    #[derive(Default)]
+    struct StubFcmContext {
+        storage: StubFcmStorage,
+        last_finalized_epoch: Option<EpochCommitment>,
+        last_confirmed_epoch: Option<EpochCommitment>,
+        executed_blocks: Mutex<Vec<OLBlockCommitment>>,
+        safe_tip_updates: Mutex<Vec<OLBlockCommitment>>,
+        finalized_epochs: Mutex<Vec<EpochCommitment>>,
+        published_statuses: Mutex<Vec<OLSyncStatus>>,
+    }
+
+    impl StubFcmContext {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn storage(&self) -> &StubFcmStorage {
+            &self.storage
+        }
+
+        fn with_last_finalized_epoch(mut self, epoch: Option<EpochCommitment>) -> Self {
+            self.last_finalized_epoch = epoch;
+            self
+        }
+
+        fn with_last_confirmed_epoch(mut self, epoch: Option<EpochCommitment>) -> Self {
+            self.last_confirmed_epoch = epoch;
+            self
+        }
+
+        fn executed_blocks(&self) -> Vec<OLBlockCommitment> {
+            self.executed_blocks.lock().unwrap().clone()
+        }
+
+        fn safe_tip_updates(&self) -> Vec<OLBlockCommitment> {
+            self.safe_tip_updates.lock().unwrap().clone()
+        }
+
+        fn finalized_epochs(&self) -> Vec<EpochCommitment> {
+            self.finalized_epochs.lock().unwrap().clone()
+        }
+
+        fn published_statuses(&self) -> Vec<OLSyncStatus> {
+            self.published_statuses.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl UnfinalizedOLBlockSource for StubFcmStorage {
+        async fn get_blocks_at_height(&self, slot: Slot) -> DbResult<Vec<OLBlockId>> {
+            Ok(self
+                .inner
+                .lock()
+                .unwrap()
+                .blocks_by_slot
+                .get(&slot)
+                .cloned()
+                .unwrap_or_default())
+        }
+
+        async fn get_block_status(&self, blkid: OLBlockId) -> DbResult<Option<BlockStatus>> {
+            Ok(self.inner.lock().unwrap().statuses.get(&blkid).copied())
+        }
+
+        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+            Ok(self.inner.lock().unwrap().blocks.get(&blkid).cloned())
+        }
+    }
+
+    #[async_trait]
+    impl FcmStorage for StubFcmStorage {
+        async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
+            let mut inner = self.inner.lock().unwrap();
+            let block_exists = inner.blocks.contains_key(&blkid);
+            if block_exists {
+                inner.statuses.insert(blkid, status);
+            }
+            Ok(block_exists)
+        }
+
+        async fn get_toplevel_ol_state(
+            &self,
+            commitment: OLBlockCommitment,
+        ) -> DbResult<Option<Arc<OLState>>> {
+            Ok(self.inner.lock().unwrap().states.get(&commitment).cloned())
+        }
+
+        async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>> {
+            Ok(self
+                .inner
+                .lock()
+                .unwrap()
+                .canonical_blocks
+                .get(&slot)
+                .copied())
+        }
+
+        async fn get_canonical_epoch_commitment_at(
+            &self,
+            epoch: Epoch,
+        ) -> DbResult<Option<EpochCommitment>> {
+            Ok(self
+                .inner
+                .lock()
+                .unwrap()
+                .canonical_epochs
+                .get(&epoch)
+                .copied())
+        }
+    }
+
+    #[async_trait]
+    impl ChainController for StubFcmContext {
+        async fn try_exec_block(&self, block: OLBlockCommitment) -> anyhow::Result<()> {
+            self.executed_blocks.lock().unwrap().push(block);
+            Ok(())
+        }
+
+        async fn update_safe_tip(&self, safe_tip: OLBlockCommitment) -> anyhow::Result<()> {
+            self.safe_tip_updates.lock().unwrap().push(safe_tip);
+            Ok(())
+        }
+
+        async fn finalize_epoch(&self, epoch: EpochCommitment) -> anyhow::Result<()> {
+            self.finalized_epochs.lock().unwrap().push(epoch);
+            Ok(())
+        }
+    }
+
+    impl CsmStatusReader for StubFcmContext {
+        fn last_finalized_epoch(&self) -> Option<EpochCommitment> {
+            self.last_finalized_epoch
+        }
+
+        fn last_confirmed_epoch(&self) -> Option<EpochCommitment> {
+            self.last_confirmed_epoch
+        }
+    }
+
+    #[async_trait]
+    impl UnfinalizedOLBlockSource for StubFcmContext {
+        async fn get_blocks_at_height(&self, slot: Slot) -> DbResult<Vec<OLBlockId>> {
+            self.storage.get_blocks_at_height(slot).await
+        }
+
+        async fn get_block_status(&self, blkid: OLBlockId) -> DbResult<Option<BlockStatus>> {
+            self.storage.get_block_status(blkid).await
+        }
+
+        async fn get_ol_block(&self, blkid: OLBlockId) -> DbResult<Option<OLBlock>> {
+            self.storage.get_ol_block(blkid).await
+        }
+    }
+
+    #[async_trait]
+    impl FcmStorage for StubFcmContext {
+        async fn set_block_status(&self, blkid: OLBlockId, status: BlockStatus) -> DbResult<bool> {
+            self.storage.set_block_status(blkid, status).await
+        }
+
+        async fn get_toplevel_ol_state(
+            &self,
+            commitment: OLBlockCommitment,
+        ) -> DbResult<Option<Arc<OLState>>> {
+            self.storage.get_toplevel_ol_state(commitment).await
+        }
+
+        async fn get_canonical_block_at(&self, slot: Slot) -> DbResult<Option<OLBlockCommitment>> {
+            self.storage.get_canonical_block_at(slot).await
+        }
+
+        async fn get_canonical_epoch_commitment_at(
+            &self,
+            epoch: Epoch,
+        ) -> DbResult<Option<EpochCommitment>> {
+            self.storage.get_canonical_epoch_commitment_at(epoch).await
+        }
+    }
+
+    impl FcmContext for StubFcmContext {
+        fn publish_sync_status(&self, status: OLSyncStatus) {
+            self.published_statuses.lock().unwrap().push(status);
+        }
+    }
+
+    #[derive(Clone)]
+    struct ExecutedBlock {
+        block: OLBlock,
+        state: OLState,
+    }
+
+    impl ExecutedBlock {
+        fn new(completed: CompletedBlock, state: &MemoryStateBaseLayer) -> Self {
+            let signed_header = SignedOLBlockHeader::new(completed.header().clone(), Buf64::zero());
+            Self {
+                block: OLBlock::new(signed_header, completed.body().clone()),
+                state: state.state().clone(),
+            }
+        }
+
+        fn blkid(&self) -> OLBlockId {
+            self.block.header().compute_blkid()
+        }
+
+        fn commitment(&self) -> OLBlockCommitment {
+            OLBlockCommitment::new(self.block.header().slot(), self.blkid())
+        }
+    }
+
+    struct FcmTestFixture {
+        ctx: Arc<StubFcmContext>,
+        params: Arc<Params>,
+    }
+
+    impl FcmTestFixture {
+        fn new(genesis: &ExecutedBlock, common_blocks: &[&ExecutedBlock]) -> Self {
+            let genesis_epoch = EpochCommitment::new(0, 0, genesis.blkid());
+            let ctx = StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch));
+
+            seed_executed_block(ctx.storage(), genesis, BlockStatus::Valid);
+            for block in common_blocks {
+                seed_executed_block(ctx.storage(), block, BlockStatus::Valid);
+            }
+            ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+            Self {
+                ctx: Arc::new(ctx),
+                params: make_params(CredRule::Unchecked),
+            }
+        }
+
+        fn fcm_state_at(
+            &self,
+            tracker: UnfinalizedBlockTracker,
+            cur_block: &ExecutedBlock,
+        ) -> FcmServiceState<StubFcmContext> {
+            let inner = FcmInnerState::new(
+                tracker,
+                cur_block.commitment(),
+                Arc::new(cur_block.state.clone()),
+            );
+            FcmServiceState::new(self.ctx.clone(), self.params.clone(), inner)
+        }
+    }
+
+    fn execute_test_genesis() -> (ExecutedBlock, MemoryStateBaseLayer) {
+        let mut genesis_state = create_test_genesis_state();
+        let genesis_manifest = AsmManifest::new(
+            1,
+            L1BlockId::from(Buf32::zero()),
+            WtxidsRoot::from(Buf32::zero()),
+            vec![],
+        )
+        .expect("valid genesis manifest");
+        let genesis_completed = execute_block(
+            &mut genesis_state,
+            &BlockInfo::new_genesis(1_000),
+            None,
+            BlockComponents::new_manifests(vec![genesis_manifest]),
+        )
+        .expect("genesis executes");
+        let genesis = ExecutedBlock::new(genesis_completed, &genesis_state);
+
+        (genesis, genesis_state)
+    }
+
+    fn execute_test_block(
+        state: &mut MemoryStateBaseLayer,
+        parent: &OLBlock,
+        timestamp: u64,
+        slot: u64,
+    ) -> ExecutedBlock {
+        let completed = execute_block(
+            state,
+            &BlockInfo::new(timestamp, slot, 1),
+            Some(parent.header()),
+            BlockComponents::new_empty(),
+        )
+        .expect("test block executes");
+
+        ExecutedBlock::new(completed, state)
+    }
+
+    fn empty_tracker(genesis: &ExecutedBlock) -> UnfinalizedBlockTracker {
+        let finalized_epoch = EpochCommitment::new(0, 0, genesis.blkid());
+        UnfinalizedBlockTracker::new_empty(finalized_epoch)
+    }
+
+    fn attach_test_block(tracker: &mut UnfinalizedBlockTracker, block: &ExecutedBlock) {
+        tracker
+            .attach_block(
+                block.block.header().slot(),
+                block.blkid(),
+                *block.block.header().parent_blkid(),
+            )
+            .expect("block attaches to test tracker");
+    }
+
+    fn tracker_with_blocks(
+        genesis: &ExecutedBlock,
+        blocks: &[&ExecutedBlock],
+    ) -> UnfinalizedBlockTracker {
+        let mut tracker = empty_tracker(genesis);
+        for block in blocks {
+            attach_test_block(&mut tracker, block);
+        }
+        tracker
+    }
+
+    fn expected_tip_update(
+        from: &ExecutedBlock,
+        to: &ExecutedBlock,
+        tracker: &UnfinalizedBlockTracker,
+    ) -> anyhow::Result<TipUpdate> {
+        Ok(
+            compute_tip_update(&from.blkid(), &to.blkid(), 100, tracker)?
+                .expect("test chain should produce a tip update"),
+        )
+    }
+
+    fn seed_executed_block(
+        storage: &StubFcmStorage,
+        executed: &ExecutedBlock,
+        status: BlockStatus,
+    ) {
+        storage.put_executed_block(executed.block.clone(), executed.state.clone(), status);
+    }
+
+    struct TestFork {
+        genesis: ExecutedBlock,
+        a1: ExecutedBlock,
+        a2: ExecutedBlock,
+        b1: ExecutedBlock,
+        b2: ExecutedBlock,
+        b3: ExecutedBlock,
+    }
+
+    impl TestFork {
+        fn new() -> Self {
+            let (genesis, genesis_state) = execute_test_genesis();
+
+            // Distinct branch timestamps make same-slot A/B blocks produce different block IDs.
+            let mut a_state = genesis_state.clone();
+            let a1 = execute_test_block(&mut a_state, &genesis.block, 1_100, 1);
+            let a2 = execute_test_block(&mut a_state, &a1.block, 1_200, 2);
+
+            let mut b_state = genesis_state;
+            let b1 = execute_test_block(&mut b_state, &genesis.block, 2_100, 1);
+            let b2 = execute_test_block(&mut b_state, &b1.block, 2_200, 2);
+            let b3 = execute_test_block(&mut b_state, &b2.block, 2_300, 3);
+
+            Self {
+                genesis,
+                a1,
+                a2,
+                b1,
+                b2,
+                b3,
+            }
+        }
+
+        fn fixture(&self) -> FcmTestFixture {
+            let common_blocks = [&self.a1, &self.a2, &self.b1, &self.b2];
+            FcmTestFixture::new(&self.genesis, &common_blocks)
+        }
+
+        fn tracker_without_b3(&self) -> UnfinalizedBlockTracker {
+            tracker_with_blocks(&self.genesis, &[&self.a1, &self.a2, &self.b1, &self.b2])
+        }
+
+        fn tracker_with_b3(&self) -> UnfinalizedBlockTracker {
+            let mut tracker = self.tracker_without_b3();
+            attach_test_block(&mut tracker, &self.b3);
+            tracker
+        }
+
+        fn tracker_with_a1_b1(&self) -> UnfinalizedBlockTracker {
+            tracker_with_blocks(&self.genesis, &[&self.a1, &self.b1])
+        }
+    }
+
+    /// Fixed linear chain used by LongExtend tests.
+    struct LinearChain {
+        genesis: ExecutedBlock,
+        x1: ExecutedBlock,
+        x2: ExecutedBlock,
+        x3: ExecutedBlock,
+        x4: ExecutedBlock,
+    }
+
+    impl LinearChain {
+        fn new() -> Self {
+            let (genesis, mut state) = execute_test_genesis();
+            let x1 = execute_test_block(&mut state, &genesis.block, 3_100, 1);
+            let x2 = execute_test_block(&mut state, &x1.block, 3_200, 2);
+            let x3 = execute_test_block(&mut state, &x2.block, 3_300, 3);
+            let x4 = execute_test_block(&mut state, &x3.block, 3_400, 4);
+
+            Self {
+                genesis,
+                x1,
+                x2,
+                x3,
+                x4,
+            }
+        }
+
+        fn fixture_without_x4(&self) -> FcmTestFixture {
+            let common_blocks = [&self.x1, &self.x2, &self.x3];
+            FcmTestFixture::new(&self.genesis, &common_blocks)
+        }
+
+        fn tracker_through_x3(&self) -> UnfinalizedBlockTracker {
+            tracker_with_blocks(&self.genesis, &[&self.x1, &self.x2, &self.x3])
+        }
+
+        fn tracker_through_x4(&self) -> UnfinalizedBlockTracker {
+            tracker_with_blocks(&self.genesis, &[&self.x1, &self.x2, &self.x3, &self.x4])
+        }
+    }
+
+    #[tokio::test]
+    async fn reorg_applies_up_branch_to_new_tip() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        seed_executed_block(fixture.ctx.storage(), &fork.b3, BlockStatus::Valid);
+        let tracker = fork.tracker_with_b3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &fork.a2);
+        let update = expected_tip_update(&fork.a2, &fork.b3, fcm_state.chain_tracker())?;
+
+        apply_tip_update(update, &mut fcm_state, &fork.b3.block).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), fork.b3.commitment());
+        assert_eq!(
+            fcm_state.cur_ol_state().global_state().get_cur_slot(),
+            fork.b3.state.global_state().get_cur_slot()
+        );
+        assert_eq!(
+            fixture.ctx.safe_tip_updates(),
+            vec![
+                fork.genesis.commitment(),
+                fork.b1.commitment(),
+                fork.b2.commitment(),
+                fork.b3.commitment()
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn single_block_reorg_applies_one_up_block() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        let tracker = fork.tracker_with_a1_b1();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &fork.a1);
+        let update = expected_tip_update(&fork.a1, &fork.b1, fcm_state.chain_tracker())?;
+
+        apply_tip_update(update, &mut fcm_state, &fork.b1.block).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), fork.b1.commitment());
+        assert_eq!(
+            fcm_state.cur_ol_state().global_state().get_cur_slot(),
+            fork.b1.state.global_state().get_cur_slot()
+        );
+        assert_eq!(
+            fixture.ctx.safe_tip_updates(),
+            vec![fork.genesis.commitment(), fork.b1.commitment()]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reorg_rejects_up_block_with_wrong_parent() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        let mut tracker = tracker_with_blocks(&fork.genesis, &[&fork.a1]);
+        tracker
+            .attach_block(
+                fork.a2.block.header().slot(),
+                fork.a2.blkid(),
+                fork.genesis.blkid(),
+            )
+            .expect("test setup should attach A2 with genesis as tracked parent");
+
+        let mut fcm_state = fixture.fcm_state_at(tracker, &fork.a1);
+        let update = expected_tip_update(&fork.a1, &fork.a2, fcm_state.chain_tracker())?;
+
+        let err = apply_tip_update(update, &mut fcm_state, &fork.a2.block)
+            .await
+            .expect_err("storage header parent must match current FCM tip");
+
+        assert!(matches!(
+            err.downcast_ref::<Error>(),
+            Some(Error::OLApplyBlockParentMismatch(block, expected_parent, got_parent))
+                if *block == fork.a2.commitment()
+                    && *expected_parent == fork.genesis.commitment()
+                    && *got_parent == fork.a1.blkid()
+        ));
+        assert_eq!(fcm_state.cur_best_block(), fork.genesis.commitment());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reorg_missing_up_state_errors_after_partial_apply() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        fixture.ctx.storage().put_ol_block(fork.b3.block.clone());
+        let tracker = fork.tracker_with_b3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &fork.a2);
+        let update = expected_tip_update(&fork.a2, &fork.b3, fcm_state.chain_tracker())?;
+
+        let err = apply_tip_update(update, &mut fcm_state, &fork.b3.block)
+            .await
+            .expect_err("missing B3 state should fail reorg apply");
+
+        assert!(matches!(
+            err.downcast_ref::<Error>(),
+            Some(Error::MissingOLState(commitment)) if *commitment == fork.b3.commitment()
+        ));
+        assert_eq!(
+            fcm_state.cur_best_block(),
+            fork.b2.commitment(),
+            "mid-loop failures bubble without compensating rollback"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_publishes_reorg_new_tip() -> anyhow::Result<()> {
+        let fork = TestFork::new();
+        let fixture = fork.fixture();
+        seed_executed_block(fixture.ctx.storage(), &fork.b3, BlockStatus::Valid);
+        let tracker = fork.tracker_without_b3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &fork.a2);
+
+        process_fc_message(
+            &ForkChoiceMessage::NewBlock(fork.b3.blkid()),
+            &mut fcm_state,
+        )
+        .await?;
+
+        let statuses = fixture.ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        let status = &statuses[0];
+        assert_eq!(status.tip, fork.b3.commitment());
+        assert_eq!(fcm_state.cur_best_block(), fork.b3.commitment());
+        assert_eq!(fixture.ctx.executed_blocks(), vec![fork.b3.commitment()]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn long_extend_applies_intermediate_blocks_to_new_tip() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Valid);
+        let tracker = chain.tracker_through_x4();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+        let update = expected_tip_update(&chain.x1, &chain.x4, fcm_state.chain_tracker())?;
+
+        assert!(matches!(update, TipUpdate::LongExtend(..)));
+
+        apply_tip_update(update, &mut fcm_state, &chain.x4.block).await?;
+
+        assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
+        assert_eq!(
+            fcm_state.cur_ol_state().global_state().get_cur_slot(),
+            chain.x4.state.global_state().get_cur_slot()
+        );
+        assert_eq!(
+            fixture.ctx.safe_tip_updates(),
+            vec![
+                chain.x2.commitment(),
+                chain.x3.commitment(),
+                chain.x4.commitment()
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_publishes_long_extend_new_tip() -> anyhow::Result<()> {
+        let chain = LinearChain::new();
+        let fixture = chain.fixture_without_x4();
+        seed_executed_block(fixture.ctx.storage(), &chain.x4, BlockStatus::Valid);
+        let tracker = chain.tracker_through_x3();
+        let mut fcm_state = fixture.fcm_state_at(tracker, &chain.x1);
+
+        process_fc_message(
+            &ForkChoiceMessage::NewBlock(chain.x4.blkid()),
+            &mut fcm_state,
+        )
+        .await?;
+
+        let statuses = fixture.ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        let status = &statuses[0];
+        assert_eq!(status.tip, chain.x4.commitment());
+        assert_eq!(fcm_state.cur_best_block(), chain.x4.commitment());
+        assert_eq!(fixture.ctx.executed_blocks(), vec![chain.x4.commitment()]);
+        assert_eq!(
+            fixture.ctx.safe_tip_updates(),
+            vec![
+                chain.x2.commitment(),
+                chain.x3.commitment(),
+                chain.x4.commitment()
+            ]
+        );
+
+        Ok(())
+    }
 
     fn make_keypair() -> SchnorrKeypair {
         get_test_schnorr_keys()[0].clone()
     }
 
     fn make_rollup_params(cred_rule: CredRule) -> RollupParams {
+        make_params(cred_rule).rollup().clone()
+    }
+
+    fn make_params(cred_rule: CredRule) -> Arc<Params> {
         let mut params = gen_params();
         params.rollup.cred_rule = cred_rule;
-        params.rollup
+        Arc::new(params)
     }
 
     fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
@@ -565,9 +1374,146 @@ mod tests {
         OLBlock::new(signed_header, body)
     }
 
+    fn make_storage_block(slot: Slot, parent: OLBlockId) -> OLBlock {
+        let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
+        let header = OLBlockHeader::new(
+            1_000 + slot,
+            BlockFlags::from(0),
+            slot,
+            0,
+            parent,
+            body.compute_hash_commitment(),
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    }
+
     fn sign_block(block: &OLBlock, signing_key: &Buf32) -> Buf64 {
         let msg: Buf32 = block.header().compute_blkid().into();
         sign_schnorr_sig(&msg, signing_key)
+    }
+
+    #[tokio::test]
+    async fn stub_storage_round_trips_blocks_and_statuses() {
+        let storage = StubFcmStorage::new();
+        let block = make_storage_block(1, OLBlockId::from(Buf32::zero()));
+        let blkid = block.header().compute_blkid();
+        let commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+
+        storage.put_ol_block(block.clone());
+
+        assert_eq!(storage.get_ol_block(blkid).await.unwrap(), Some(block));
+        assert_eq!(storage.get_blocks_at_height(1).await.unwrap(), vec![blkid]);
+        assert_eq!(
+            storage.get_canonical_block_at(1).await.unwrap(),
+            Some(commitment)
+        );
+        assert_eq!(storage.get_block_status(blkid).await.unwrap(), None);
+
+        assert!(storage
+            .set_block_status(blkid, BlockStatus::Valid)
+            .await
+            .unwrap());
+        assert_eq!(
+            storage.get_block_status(blkid).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+    }
+
+    #[tokio::test]
+    async fn stub_storage_round_trips_executed_blocks_and_epochs() {
+        let storage = StubFcmStorage::new();
+        let state = create_test_genesis_state().state().clone();
+        let block = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let blkid = block.header().compute_blkid();
+        let commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+        let epoch = EpochCommitment::new(0, commitment.slot(), blkid);
+
+        storage.put_executed_block(block, state, BlockStatus::Valid);
+        storage.put_canonical_epoch_commitment(epoch);
+
+        assert!(storage
+            .get_toplevel_ol_state(commitment)
+            .await
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            storage.get_block_status(blkid).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+        assert_eq!(
+            storage.get_canonical_epoch_commitment_at(0).await.unwrap(),
+            Some(epoch)
+        );
+    }
+
+    #[tokio::test]
+    async fn stub_storage_returns_missing_values_without_creating_statuses() {
+        let storage = StubFcmStorage::new();
+        let missing = OLBlockId::from(Buf32::zero());
+
+        assert_eq!(storage.get_ol_block(missing).await.unwrap(), None);
+        assert_eq!(storage.get_blocks_at_height(9).await.unwrap(), Vec::new());
+        assert_eq!(storage.get_canonical_block_at(9).await.unwrap(), None);
+        assert!(!storage
+            .set_block_status(missing, BlockStatus::Invalid)
+            .await
+            .unwrap());
+        assert_eq!(storage.get_block_status(missing).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn process_fc_message_uses_stub_context_and_publishes_status() {
+        let genesis = make_storage_block(0, OLBlockId::from(Buf32::zero()));
+        let genesis_blkid = genesis.header().compute_blkid();
+        let genesis_commitment = OLBlockCommitment::new(genesis.header().slot(), genesis_blkid);
+        let genesis_epoch = EpochCommitment::new(0, genesis_commitment.slot(), genesis_blkid);
+        let ctx = Arc::new(
+            StubFcmContext::new()
+                .with_last_finalized_epoch(Some(genesis_epoch))
+                .with_last_confirmed_epoch(Some(genesis_epoch)),
+        );
+
+        let block = make_storage_block(1, genesis_blkid);
+        let blkid = block.header().compute_blkid();
+        let block_commitment = OLBlockCommitment::new(block.header().slot(), blkid);
+
+        ctx.storage().put_executed_block(
+            genesis,
+            create_test_genesis_state().state().clone(),
+            BlockStatus::Valid,
+        );
+        ctx.storage().put_ol_block(block);
+        ctx.storage().put_toplevel_ol_state(
+            block_commitment,
+            create_test_genesis_state().state().clone(),
+        );
+        ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
+
+        let mut fcm_state = init_fcm_service_state(make_params(CredRule::Unchecked), ctx.clone())
+            .await
+            .expect("FCM state initializes from stub context");
+
+        process_fc_message(&ForkChoiceMessage::NewBlock(blkid), &mut fcm_state)
+            .await
+            .expect("new block processes through stub context");
+
+        assert_eq!(fcm_state.cur_best_block(), block_commitment);
+        assert_eq!(ctx.executed_blocks(), vec![block_commitment]);
+        assert_eq!(ctx.safe_tip_updates(), vec![block_commitment]);
+        assert_eq!(ctx.finalized_epochs(), Vec::new());
+        assert_eq!(
+            ctx.storage().get_block_status(blkid).await.unwrap(),
+            Some(BlockStatus::Valid)
+        );
+
+        let statuses = ctx.published_statuses();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].tip, block_commitment);
+        assert_eq!(statuses[0].prev_epoch, genesis_epoch);
+        assert_eq!(statuses[0].confirmed_epoch, genesis_epoch);
+        assert_eq!(statuses[0].finalized_epoch, genesis_epoch);
     }
 
     #[test]

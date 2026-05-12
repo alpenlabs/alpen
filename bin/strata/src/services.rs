@@ -6,7 +6,7 @@ use anyhow::Result;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
 use strata_chain_worker_new::start_chain_worker_service_from_ctx;
 use strata_consensus_logic::{
-    AsmBlockSubmitter, FcmContext, start_fcm_service,
+    AsmBlockSubmitter,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
 use strata_node_context::NodeContext;
@@ -15,6 +15,7 @@ use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
 
 use crate::{
     context::ensure_genesis,
+    fcm,
     helpers::rollup_to_btcio_params,
     run_context::{RunContext, ServiceHandles},
 };
@@ -289,13 +290,7 @@ pub(crate) fn start_strata_services(
     let sequencer_handles =
         sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;
 
-    let fcm_ctx =
-        FcmContext::from_node_ctx(&nodectx, chain_worker_handle.clone(), csm_monitor.clone());
-
-    let fcm_handle = nodectx
-        .task_manager()
-        .handle()
-        .block_on(start_fcm_service(fcm_ctx, nodectx.executor().clone()))?;
+    let fcm_handle = fcm::start(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
     let fcm_handle = Arc::new(fcm_handle);
 
     let service_handles_builder = ServiceHandles::builder(
