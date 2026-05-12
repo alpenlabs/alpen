@@ -41,25 +41,23 @@ pub enum LedgerRefsError {
 /// `ol_client`, maps it to its MMR leaf index using `genesis_l1_height + 1`
 /// as the offset, then sorts and dedups by index (multiple DA txns may
 /// land in one L1 block).
-pub async fn build_ledger_refs_from_da<C>(
+///
+/// The `?Sized` relaxation on the `impl SequencerOLClient` bound is
+/// required so that callers may pass a `&dyn SequencerOLClient`; the
+/// implicit `Sized` bound on `impl Trait` would otherwise reject it.
+pub async fn build_ledger_refs_from_da(
     da_refs: &[L1DaBlockRef],
-    ol_client: &C,
+    ol_client: &(impl SequencerOLClient + ?Sized),
     genesis_l1_height: L1Height,
-) -> Result<LedgerRefs, LedgerRefsError>
-where
-    C: SequencerOLClient + Send + Sync + ?Sized,
-{
+) -> Result<LedgerRefs, LedgerRefsError> {
     let l1_header_commitments = fetch_l1_header_commitments_by_height(da_refs, ol_client).await?;
     build_ledger_refs(da_refs, &l1_header_commitments, genesis_l1_height)
 }
 
-async fn fetch_l1_header_commitments_by_height<C>(
+async fn fetch_l1_header_commitments_by_height(
     da_refs: &[L1DaBlockRef],
-    ol_client: &C,
-) -> Result<HashMap<L1Height, Hash>, LedgerRefsError>
-where
-    C: SequencerOLClient + Send + Sync + ?Sized,
-{
+    ol_client: &(impl SequencerOLClient + ?Sized),
+) -> Result<HashMap<L1Height, Hash>, LedgerRefsError> {
     let mut heights: Vec<L1Height> = da_refs.iter().map(|da_ref| da_ref.block.height()).collect();
     heights.sort_unstable();
     heights.dedup();
