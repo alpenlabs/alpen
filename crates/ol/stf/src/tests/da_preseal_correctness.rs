@@ -1,12 +1,6 @@
-//! Asserts the preseal-root round trip via `execute_block_batch`: building
-//! the DA blob the way the checkpoint builder does and then applying it to
-//! the pre-epoch state must reproduce the preseal root recorded in the
-//! terminal block.
-//!
-//! Currently fails: `execute_block_batch` calls `verify_block`, which runs
-//! `process_block_manifests` through the same `DaAccumulatingState` used to
-//! build the blob, so manifest writes leak into the DA — but the recorded
-//! preseal root is taken before manifest processing.
+//! Applying a DA blob built via the checkpoint-builder path to the
+//! pre-epoch state must reproduce the preseal root recorded in the terminal
+//! block.
 
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
@@ -25,7 +19,7 @@ use strata_predicate::PredicateKey;
 use crate::{
     BlockInfo, EpochInfo,
     assembly::{BlockComponents, CompletedBlock},
-    execute_block_batch,
+    execute_block_batch_preseal,
     test_utils::{
         create_test_genesis_state, execute_block, get_test_snark_account_id, get_test_state_root,
         test_l1_block_id,
@@ -38,7 +32,7 @@ const GENESIS_TIMESTAMP: u64 = 1_000_000;
 const SLOT_TIMESTAMP_STEP: u64 = 1_000;
 
 #[test]
-fn test_preseal_root_matches_da_apply_with_deposit_in_terminal_manifest() {
+fn test_preseal_round_trip_with_deposit_manifest() {
     let mut state = create_test_genesis_state();
     let snark_serial = seed_snark_account(&mut state);
 
@@ -98,10 +92,8 @@ fn run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
     .expect("genesis block")
 }
 
-/// Builds slots 1..SLOTS_PER_EPOCH as empty blocks, then a terminal block
-/// at slot SLOTS_PER_EPOCH whose manifest carries a `DepositLog` targeting
-/// `snark_serial`. Returns the full epoch block sequence plus the terminal
-/// block (held separately so callers can read its preseal root).
+/// Builds the epoch as empty blocks plus a terminal block whose manifest
+/// carries a `DepositLog` targeting `snark_serial`.
 fn build_epoch(
     state: &mut MemoryStateBaseLayer,
     genesis: &CompletedBlock,
@@ -139,16 +131,16 @@ fn build_epoch(
     (blocks, terminal)
 }
 
-/// Mirrors the checkpoint builder: replays the epoch's blocks through
-/// `execute_block_batch` against a `DaAccumulatingState` over the pre-epoch
-/// state, then finalizes the captured writes into an encoded DA blob.
+/// Replays the epoch through a `DaAccumulatingState` over the pre-epoch
+/// state and finalizes the captured writes into an encoded DA blob.
 fn rebuild_da_blob(
     pre_epoch_state: &MemoryStateBaseLayer,
     blocks: &[OLBlock],
     prev_terminal_header: &OLBlockHeader,
 ) -> Vec<u8> {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    execute_block_batch(&mut da, blocks, prev_terminal_header).expect("execute_block_batch");
+    execute_block_batch_preseal(&mut da, blocks, prev_terminal_header)
+        .expect("execute_block_batch_preseal");
     da.take_completed_epoch_da_blob()
         .expect("finalize DA")
         .expect("DA blob")

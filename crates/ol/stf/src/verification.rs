@@ -137,9 +137,8 @@ impl<'b> BlockExecInput<'b> {
     }
 }
 
-/// Verifies a block by executing it the normal way.
-///
-/// This closely aligns with `execute_block_inputs`.
+/// Verifies a block end-to-end. Composes [`verify_block_preseal`] and
+/// [`apply_block_manifests`].
 #[tracing::instrument(
     skip_all,
     fields(
@@ -150,6 +149,28 @@ impl<'b> BlockExecInput<'b> {
     ),
 )]
 pub fn verify_block<S: IStateAccessorMut>(
+    state: &mut S,
+    header: &OLBlockHeader,
+    parent_header: Option<&OLBlockHeader>,
+    body: &OLBlockBody,
+) -> ExecResult<Vec<OLLog>> {
+    let preseal_logs = verify_block_preseal(state, header, parent_header, body)?;
+    apply_block_manifests(state, header, body, preseal_logs)
+}
+
+/// Runs the pre-manifest stages of block verification and the preseal
+/// state root check. Returns the tx-segment logs. Pair with
+/// [`apply_block_manifests`] for full verification.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        slot = header.slot(),
+        epoch = header.epoch(),
+        is_terminal = header.is_terminal(),
+        tx_count = body.tx_segment().map(|s| s.txs().len()).unwrap_or(0),
+    ),
+)]
+pub fn verify_block_preseal<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
@@ -185,33 +206,41 @@ pub fn verify_block<S: IStateAccessorMut>(
     // - if it not a terminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
-
-    if header.is_terminal() {
-        // For terminal blocks, check against the preseal state root
-        let expected_preseal = exp
-            .post_state_roots
+    let expected_root = if header.is_terminal() {
+        exp.post_state_roots
             .preseal_state_root()
-            .ok_or(ExecError::ChainIntegrity)?;
-        if &pre_manifest_state_root != expected_preseal {
-            return Err(ExecError::ChainIntegrity);
-        }
+            .ok_or(ExecError::ChainIntegrity)?
     } else {
-        // For non-terminal blocks, check against the header state root
-        if &pre_manifest_state_root != exp.post_state_roots.header_state_root() {
-            return Err(ExecError::ChainIntegrity);
-        }
+        exp.post_state_roots.header_state_root()
+    };
+    if &pre_manifest_state_root != expected_root {
+        return Err(ExecError::ChainIntegrity);
     }
+
+    Ok(output_buffer.into_logs())
+}
+
+/// Runs the manifest stage of block verification: manifest processing,
+/// post-manifest state root check, and logs root check over
+/// `preseal_logs` followed by any manifest-emitted logs. Returns the full
+/// log set.
+pub fn apply_block_manifests<S: IStateAccessorMut>(
+    state: &mut S,
+    header: &OLBlockHeader,
+    body: &OLBlockBody,
+    preseal_logs: Vec<OLLog>,
+) -> ExecResult<Vec<OLLog>> {
+    let exp = BlockExecExpectations::from_block_parts(header, body);
+    let block_info = BlockInfo::from_header(header);
+
+    let output_buffer = ExecOutputBuffer::new_empty();
+    output_buffer.emit_logs(preseal_logs)?;
+    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
 
     // 5. If it's the last block of an epoch, then call process_block_manifests,
     // then really check the header state root.
-    //
-    // Then we get the exec output one way or another.
     if let Some(manifest_container) = body.l1_update().map(|u| u.manifest_cont()) {
-        manifest_processing::process_block_manifests(
-            state,
-            manifest_container,
-            tx_ctx.basic_context(),
-        )?;
+        manifest_processing::process_block_manifests(state, manifest_container, &basic_ctx)?;
 
         // After processing manifests, check the actual final state root against the header.
         let final_state_root = state.compute_state_root()?;

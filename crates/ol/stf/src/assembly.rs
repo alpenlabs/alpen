@@ -14,7 +14,7 @@ use crate::{
     manifest_processing,
     output::ExecOutputBuffer,
     transaction_processing,
-    verification::{BlockExecInput, BlockPostStateCommitments},
+    verification::{BlockExecInput, BlockPostStateCommitments, verify_block_preseal},
     verify_block,
 };
 
@@ -394,11 +394,13 @@ pub fn execute_and_complete_block<S: IStateAccessorMut>(
     Ok(construct_output.completed_block)
 }
 
-/// Executes a batch of blocks sequentially, verifying each produced header
-/// matches the input block's header. Returns the OL logs collected over the batch.
+/// Executes a batch of blocks end-to-end, verifying each. Returns the
+/// concatenated OL logs.
 ///
-/// Generic over `S: IStateAccessor` so callers can pass `OLState` directly
-/// or wrap it (e.g. `DaAccumulatingState<OLState>`) to intercept mutations.
+/// Generic over `S` so callers may pass `OLState` directly or a wrapper
+/// (e.g. `DaAccumulatingState<OLState>`). Use
+/// [`execute_block_batch_preseal`] instead when building a DA blob for
+/// preseal-root verification.
 pub fn execute_block_batch<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
@@ -409,6 +411,29 @@ pub fn execute_block_batch<S: IStateAccessorMut>(
 
     for block in blocks {
         let logs = verify_block(state, block.header(), Some(&parent), block.body())?;
+        parent = block.header().clone();
+        batch_logs.push(logs);
+    }
+
+    Ok(batch_logs.concat())
+}
+
+/// Like [`execute_block_batch`] but skips manifest processing on every
+/// block. Returns the concatenated tx-segment logs.
+///
+/// Intended for DA-rebuild paths: wrapping `state` in `DaAccumulatingState`
+/// here produces a blob containing only tx writes, matching the preseal
+/// root recorded in each terminal block.
+pub fn execute_block_batch_preseal<S: IStateAccessorMut>(
+    state: &mut S,
+    blocks: &[OLBlock],
+    initial_parent: &OLBlockHeader,
+) -> ExecResult<Vec<OLLog>> {
+    let mut parent = initial_parent.clone();
+    let mut batch_logs = Vec::with_capacity(blocks.len());
+
+    for block in blocks {
+        let logs = verify_block_preseal(state, block.header(), Some(&parent), block.body())?;
         parent = block.header().clone();
         batch_logs.push(logs);
     }
