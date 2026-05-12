@@ -21,6 +21,7 @@ use bitcoin::{
 };
 use bitcoind_async_client::{
     corepc_types::model::ListUnspentItem,
+    error::ClientError,
     traits::{Reader, Signer, Wallet},
 };
 use rand::{rngs::OsRng, RngCore};
@@ -92,7 +93,7 @@ pub enum EnvelopeError {
     NotEnoughUtxos(u64, u64),
 
     #[error("Could not sign raw transaction: {0}")]
-    SignRawTransaction(String),
+    SignRawTransaction(#[source] ClientError),
 
     #[error("envelope_pubkey is required for envelope transactions")]
     MissingEnvelopePubkey,
@@ -205,7 +206,7 @@ pub(crate) async fn build_and_sign_envelope_txs<R: Reader + Signer + Wallet>(
         .client
         .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
         .await
-        .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
+        .map_err(EnvelopeError::SignRawTransaction)?
         .tx;
     envelope.commit_tx = signed_commit;
 

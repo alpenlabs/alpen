@@ -46,7 +46,7 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
     fn get_transaction<'a>(
         &'a self,
         txid: &'a Txid,
-    ) -> impl Future<Output = BroadcasterResult<Option<TxConfirmationInfo>>> + Send + 'a;
+    ) -> impl Future<Output = BroadcasterResult<TxLookupOutcome>> + Send + 'a;
 
     /// Attempts publication and classifies the outcome for retry/state logic.
     fn send_raw_transaction<'a>(
@@ -56,7 +56,7 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
 }
 
 /// Minimal transaction view needed by broadcaster confirmation logic.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TxConfirmationInfo {
     pub(crate) confirmations: i64,
     pub(crate) block_hash: Option<Buf32>,
@@ -101,14 +101,14 @@ pub trait WalletTxLookup: Send + Sync + 'static {
     fn get_transaction_confirmation<'a>(
         &'a self,
         txid: &'a Txid,
-    ) -> impl Future<Output = Result<Option<TxConfirmationInfo>, BroadcasterError>> + Send + 'a;
+    ) -> impl Future<Output = Result<TxLookupOutcome, BroadcasterError>> + Send + 'a;
 }
 
 impl WalletTxLookup for Client {
     async fn get_transaction_confirmation<'a>(
         &'a self,
         txid: &'a Txid,
-    ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
+    ) -> BroadcasterResult<TxLookupOutcome> {
         let params = [bitcoind_async_client::to_value(txid.to_string())
             .map_err(|err| BroadcasterError::Rpc(anyhow!(err)))?];
 
@@ -116,10 +116,16 @@ impl WalletTxLookup for Client {
             .call_raw::<WalletTxConfirmationResponse>("gettransaction", &params)
             .await
         {
-            Ok(info) => Ok(Some(info.try_into()?)),
+            Ok(info) => Ok(TxLookupOutcome::Found(info.try_into()?)),
             Err(err) if err.is_tx_not_found() => {
                 debug!(%err, %txid, "get_transaction: tx not found");
-                Ok(None)
+                Ok(TxLookupOutcome::Missing)
+            }
+            Err(err) if err.is_retriable() => {
+                warn!(%err, %txid, "get_transaction hit transient Bitcoin RPC error");
+                Ok(TxLookupOutcome::RetryLater {
+                    reason: err.to_string(),
+                })
             }
             Err(err) => {
                 warn!(%err, %txid, "get_transaction failed");
@@ -140,18 +146,34 @@ mod test_impls {
         async fn get_transaction_confirmation<'a>(
             &'a self,
             txid: &'a Txid,
-        ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
+        ) -> BroadcasterResult<TxLookupOutcome> {
             match Wallet::get_transaction(self, txid).await {
-                Ok(info) => Ok(Some(TxConfirmationInfo {
+                Ok(info) => Ok(TxLookupOutcome::Found(TxConfirmationInfo {
                     confirmations: info.confirmations,
                     block_hash: info.block_hash.map(|h| h.to_buf32()),
                     block_height: info.block_height,
                 })),
-                Err(err) if err.is_tx_not_found() => Ok(None),
+                Err(err) if err.is_tx_not_found() => Ok(TxLookupOutcome::Missing),
+                Err(err) if err.is_retriable() => Ok(TxLookupOutcome::RetryLater {
+                    reason: err.to_string(),
+                }),
                 Err(err) => Err(BroadcasterError::Rpc(anyhow!(err))),
             }
         }
     }
+}
+
+/// Broadcaster-level outcome of looking up a transaction in the wallet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TxLookupOutcome {
+    /// Transaction was found in the wallet.
+    Found(TxConfirmationInfo),
+
+    /// Transaction is not currently known to the wallet.
+    Missing,
+
+    /// Transient failure; call sites should retry in a later poll pass.
+    RetryLater { reason: String },
 }
 
 /// Broadcaster-level outcome of broadcasting a transaction.
@@ -200,10 +222,7 @@ where
         Ok(())
     }
 
-    async fn get_transaction<'a>(
-        &'a self,
-        txid: &'a Txid,
-    ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
+    async fn get_transaction<'a>(&'a self, txid: &'a Txid) -> BroadcasterResult<TxLookupOutcome> {
         self.rpc_client.get_transaction_confirmation(txid).await
     }
 
@@ -249,8 +268,8 @@ where
                 warn!(%txid, %err, "sendrawtransaction verify-rejected (treated as InvalidInputs)");
                 Ok(PublishTxOutcome::InvalidInputs)
             }
-            Err(err @ ClientError::Status(500, _)) => {
-                warn!(%txid, %err, "sendrawtransaction HTTP 500 (treated as RetryLater)");
+            Err(err) if err.is_retriable() => {
+                warn!(%txid, %err, "sendrawtransaction hit transient Bitcoin RPC error");
                 Ok(PublishTxOutcome::RetryLater {
                     reason: err.to_string(),
                 })

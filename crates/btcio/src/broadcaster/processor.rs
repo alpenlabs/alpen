@@ -4,7 +4,7 @@ use tracing::*;
 
 use super::{
     error::{BroadcasterError, BroadcasterResult},
-    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo},
+    io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome},
     state::{BroadcasterState, IndexedEntry},
 };
 use crate::BtcioParams;
@@ -101,11 +101,15 @@ where
     match txinfo_res? {
         // `confirmation_status` returns `Published` for 0-conf, which is the
         // correct sighting for an already-Published entry still in mempool.
-        Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
-        None => match publish_tx(io, txentry).await? {
+        TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+        TxLookupOutcome::Missing => match publish_tx(io, txentry).await? {
             L1TxStatus::InvalidInputs => Ok(L1TxStatus::InvalidInputs),
             _ => Ok(L1TxStatus::Published),
         },
+        TxLookupOutcome::RetryLater { reason } => {
+            warn!(%reason, "transaction lookup should be retried on next poll");
+            Ok(L1TxStatus::Published)
+        }
     }
 }
 
@@ -162,9 +166,13 @@ where
         let reorg_safe_depth: i64 = params.l1_reorg_safe_depth().into();
 
         match txinfo_res? {
-            Some(info) if info.confirmations == 0 => Ok(L1TxStatus::Unpublished),
-            Some(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
-            None => Ok(L1TxStatus::Unpublished),
+            TxLookupOutcome::Found(info) if info.confirmations == 0 => Ok(L1TxStatus::Unpublished),
+            TxLookupOutcome::Found(info) => Ok(confirmation_status(&info, reorg_safe_depth)),
+            TxLookupOutcome::Missing => Ok(L1TxStatus::Unpublished),
+            TxLookupOutcome::RetryLater { reason } => {
+                warn!(%reason, "transaction lookup should be retried on next poll");
+                Ok(txentry.status.clone())
+            }
         }
     }
     .instrument(debug_span!(
@@ -294,7 +302,9 @@ mod test {
 
     use super::*;
     use crate::{
-        broadcaster::io::{BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo},
+        broadcaster::io::{
+            BroadcasterIoContext, PublishTxOutcome, TxConfirmationInfo, TxLookupOutcome,
+        },
         test_utils::gen_l1_tx_entry_with_status,
     };
 
@@ -305,6 +315,7 @@ mod test {
     enum MockTxLookupResult {
         Missing,
         Found(TxConfirmationInfo),
+        RetryLater,
     }
 
     #[derive(Clone, Debug)]
@@ -351,7 +362,7 @@ mod test {
         async fn get_transaction<'a>(
             &'a self,
             txid: &'a Txid,
-        ) -> BroadcasterResult<Option<TxConfirmationInfo>> {
+        ) -> BroadcasterResult<TxLookupOutcome> {
             let result = self
                 .tx_lookup
                 .get(txid)
@@ -359,8 +370,11 @@ mod test {
                 .unwrap_or(MockTxLookupResult::Missing);
 
             match result {
-                MockTxLookupResult::Missing => Ok(None),
-                MockTxLookupResult::Found(info) => Ok(Some(info)),
+                MockTxLookupResult::Missing => Ok(TxLookupOutcome::Missing),
+                MockTxLookupResult::Found(info) => Ok(TxLookupOutcome::Found(info)),
+                MockTxLookupResult::RetryLater => Ok(TxLookupOutcome::RetryLater {
+                    reason: "mock retry".into(),
+                }),
             }
         }
 
@@ -742,6 +756,22 @@ mod test {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_published_entry_lookup_retry_later_holds_published() {
+        let (e, txid) = entry_with_txid(L1TxStatus::Published);
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default()
+            .with_tx_lookup(txid, MockTxLookupResult::RetryLater)
+            .with_broadcast_result(txid, MockBroadcastResult::InvalidInputs);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(L1TxStatus::Published),
+            "Published entry must hold on retryable get_transaction failure"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_handle_confirmed_entry_missing_tx_regresses_to_unpublished() {
         // Confirmed entries that go missing on lookup should still regress to
         // Unpublished so the broadcaster re-publishes (e.g. after a reorg
@@ -755,6 +785,21 @@ mod test {
             res,
             Some(L1TxStatus::Unpublished),
             "Confirmed entry that disappears should regress to Unpublished"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_confirmed_entry_lookup_retry_later_holds_confirmed() {
+        let current_status = confirmed_status(1, 1, Buf32::zero());
+        let (e, txid) = entry_with_txid(current_status.clone());
+        let btcio_params = get_test_btcio_params();
+
+        let io = MockIoContext::default().with_tx_lookup(txid, MockTxLookupResult::RetryLater);
+        let res = process_status(&io, &e, &txid, &btcio_params).await;
+        assert_eq!(
+            res,
+            Some(current_status),
+            "Confirmed entry must hold on retryable get_transaction failure"
         );
     }
 

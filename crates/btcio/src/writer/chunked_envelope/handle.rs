@@ -31,6 +31,7 @@ use super::{
 };
 use crate::{
     broadcaster::{is_benign_minus25_message, L1BroadcastHandle},
+    rpc_error::{is_retryable_envelope_error, retryable_reason},
     writer::builder::EnvelopeError,
     BtcioParams,
 };
@@ -637,6 +638,10 @@ async fn advance_forward_frontier<R: Reader + Signer + Wallet + Broadcaster>(
             Err(EnvelopeError::NotEnoughUtxos(need, have)) => {
                 warn!(idx, %need, %have, "waiting for sufficient utxos");
             }
+            Err(err) if is_retryable_envelope_error(&err) => {
+                let reason = retryable_reason(&err);
+                warn!(idx, %reason, "retrying chunked envelope signing after Bitcoin RPC error");
+            }
             Err(e) => return Err(e.into()),
         }
 
@@ -929,6 +934,8 @@ fn to_envelope_status(s: &L1TxStatus) -> ChunkedEnvelopeStatus {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use bitcoin::{
         absolute::LockTime, consensus::encode::serialize as btc_serialize, hashes::Hash,
         transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,

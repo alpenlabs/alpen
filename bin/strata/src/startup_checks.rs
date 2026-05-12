@@ -1,14 +1,16 @@
 use anyhow::{Context, Result, anyhow, bail};
 use async_trait::async_trait;
 use bitcoin::{BlockHash, Network};
-use bitcoind_async_client::{Client, corepc_types::model::GetBlockchainInfo, traits::Reader};
+use bitcoind_async_client::{
+    Client, corepc_types::model::GetBlockchainInfo, error::ClientError, traits::Reader,
+};
 use strata_btc_types::BlockHashExt;
 use strata_identifiers::{EpochCommitment, OLBlockCommitment};
 use strata_node_context::NodeContext;
 use strata_ol_chain_types_new::OLBlock;
 use strata_primitives::L1BlockCommitment;
 use strata_storage::NodeStorage;
-use tracing::info;
+use tracing::{info, warn};
 
 #[async_trait]
 pub(crate) trait StartupBitcoinClient {
@@ -29,14 +31,38 @@ impl StartupBitcoinClient for Client {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StartupBitcoinCheck {
+    Verified,
+    Deferred { reason: String },
+}
+
+fn is_retryable_startup_error(err: &anyhow::Error) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<ClientError>()
+            .is_some_and(ClientError::is_retriable)
+    })
+}
+
 pub(crate) async fn run_bitcoin_connectivity_and_network_checks(
     bitcoin_client: &impl StartupBitcoinClient,
     expected_network: Network,
-) -> Result<()> {
-    let chain_info = bitcoin_client
-        .get_blockchain_info_for_startup()
-        .await
-        .context("startup: could not connect to bitcoind via getblockchaininfo")?;
+) -> Result<StartupBitcoinCheck> {
+    let chain_info = match bitcoin_client.get_blockchain_info_for_startup().await {
+        Ok(chain_info) => chain_info,
+        Err(err) if is_retryable_startup_error(&err) => {
+            return Ok(StartupBitcoinCheck::Deferred {
+                reason: format!(
+                    "startup: could not connect to bitcoind via getblockchaininfo: {err}"
+                ),
+            });
+        }
+        Err(err) => {
+            return Err(err)
+                .context("startup: could not connect to bitcoind via getblockchaininfo");
+        }
+    };
 
     if chain_info.chain != expected_network {
         bail!(
@@ -46,22 +72,35 @@ pub(crate) async fn run_bitcoin_connectivity_and_network_checks(
         );
     }
 
-    Ok(())
+    Ok(StartupBitcoinCheck::Verified)
 }
 
 pub(crate) async fn verify_l1_anchor_block(
     bitcoin_client: &impl StartupBitcoinClient,
     expected_l1_block: L1BlockCommitment,
-) -> Result<()> {
-    let actual_hash = bitcoin_client
+) -> Result<StartupBitcoinCheck> {
+    let actual_hash = match bitcoin_client
         .get_block_hash_for_startup(expected_l1_block.height() as u64)
         .await
-        .with_context(|| {
-            format!(
-                "startup: failed to fetch L1 block hash from bitcoind at height {}",
-                expected_l1_block.height()
-            )
-        })?;
+    {
+        Ok(actual_hash) => actual_hash,
+        Err(err) if is_retryable_startup_error(&err) => {
+            return Ok(StartupBitcoinCheck::Deferred {
+                reason: format!(
+                    "startup: failed to fetch L1 block hash from bitcoind at height {}: {err}",
+                    expected_l1_block.height()
+                ),
+            });
+        }
+        Err(err) => {
+            return Err(err).with_context(|| {
+                format!(
+                    "startup: failed to fetch L1 block hash from bitcoind at height {}",
+                    expected_l1_block.height()
+                )
+            });
+        }
+    };
 
     let actual_block_id = actual_hash.to_l1_block_id();
     if actual_block_id != *expected_l1_block.blkid() {
@@ -72,7 +111,7 @@ pub(crate) async fn verify_l1_anchor_block(
         );
     }
 
-    Ok(())
+    Ok(StartupBitcoinCheck::Verified)
 }
 
 fn get_ol_genesis_block(storage: &NodeStorage) -> Result<Option<OLBlockCommitment>> {
@@ -227,12 +266,16 @@ fn verify_previous_epoch_summary_for_tip(storage: &NodeStorage, tip_block: &OLBl
 }
 
 pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
-    ctx.executor()
-        .handle()
-        .block_on(run_bitcoin_connectivity_and_network_checks(
-            ctx.bitcoin_client().as_ref(),
-            ctx.config().bitcoind.network,
-        ))?;
+    let bitcoin_network_check =
+        ctx.executor()
+            .handle()
+            .block_on(run_bitcoin_connectivity_and_network_checks(
+                ctx.bitcoin_client().as_ref(),
+                ctx.config().bitcoind.network,
+            ))?;
+    if let StartupBitcoinCheck::Deferred { reason } = bitcoin_network_check {
+        warn!(%reason, "startup: deferring Bitcoin RPC network check");
+    }
 
     let has_client_state = ctx
         .storage()
@@ -245,10 +288,13 @@ pub(crate) fn run_startup_checks(ctx: &NodeContext) -> Result<()> {
     validate_persisted_state_presence(has_client_state, has_ol_genesis)?;
 
     if has_client_state {
-        ctx.executor().handle().block_on(verify_l1_anchor_block(
+        let l1_anchor_check = ctx.executor().handle().block_on(verify_l1_anchor_block(
             ctx.bitcoin_client().as_ref(),
             ctx.ol_params().last_l1_block,
         ))?;
+        if let StartupBitcoinCheck::Deferred { reason } = l1_anchor_check {
+            warn!(%reason, "startup: deferring L1 anchor block check");
+        }
     }
 
     if let Some(genesis_commitment) = genesis_commitment {
@@ -307,38 +353,49 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    enum MockResult<T> {
+        Ok(T),
+        ClientError(ClientError),
+    }
+
+    impl<T: Clone> MockResult<T> {
+        fn to_result(&self) -> Result<T> {
+            match self {
+                Self::Ok(value) => Ok(value.clone()),
+                Self::ClientError(err) => Err(err.clone().into()),
+            }
+        }
+    }
+
     struct MockBitcoinClient {
-        blockchain_info_result: Option<Result<GetBlockchainInfo>>,
-        block_hash_result: Option<Result<BlockHash>>,
+        blockchain_info_result: Option<MockResult<GetBlockchainInfo>>,
+        block_hash_result: Option<MockResult<BlockHash>>,
     }
 
     #[async_trait]
     impl StartupBitcoinClient for MockBitcoinClient {
         async fn get_blockchain_info_for_startup(&self) -> Result<GetBlockchainInfo> {
-            match self.blockchain_info_result.as_ref().unwrap() {
-                Ok(info) => Ok(info.clone()),
-                Err(e) => Err(anyhow::anyhow!("{e}")),
-            }
+            self.blockchain_info_result.as_ref().unwrap().to_result()
         }
 
         async fn get_block_hash_for_startup(&self, _height: u64) -> Result<BlockHash> {
-            match self.block_hash_result.as_ref().unwrap() {
-                Ok(hash) => Ok(*hash),
-                Err(e) => Err(anyhow::anyhow!("{e}")),
-            }
+            self.block_hash_result.as_ref().unwrap().to_result()
         }
     }
 
     fn mock_client_ok(network: Network) -> MockBitcoinClient {
         MockBitcoinClient {
-            blockchain_info_result: Some(Ok(make_blockchain_info(network))),
+            blockchain_info_result: Some(MockResult::Ok(make_blockchain_info(network))),
             block_hash_result: None,
         }
     }
 
     fn mock_client_unreachable() -> MockBitcoinClient {
         MockBitcoinClient {
-            blockchain_info_result: Some(Err(anyhow::anyhow!("connection refused"))),
+            blockchain_info_result: Some(MockResult::ClientError(ClientError::Connection(
+                "connection refused".into(),
+            ))),
             block_hash_result: None,
         }
     }
@@ -346,14 +403,16 @@ mod tests {
     fn mock_client_with_block_hash(hash: BlockHash) -> MockBitcoinClient {
         MockBitcoinClient {
             blockchain_info_result: None,
-            block_hash_result: Some(Ok(hash)),
+            block_hash_result: Some(MockResult::Ok(hash)),
         }
     }
 
     fn mock_client_block_hash_unreachable() -> MockBitcoinClient {
         MockBitcoinClient {
             blockchain_info_result: None,
-            block_hash_result: Some(Err(anyhow::anyhow!("block not found"))),
+            block_hash_result: Some(MockResult::ClientError(ClientError::Connection(
+                "connection refused".into(),
+            ))),
         }
     }
 
@@ -363,12 +422,8 @@ mod tests {
 
         let result = run_bitcoin_connectivity_and_network_checks(&client, Network::Regtest).await;
 
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("could not connect to bitcoind"),
-            "unexpected error: {err}"
-        );
+        let check = result.expect("retryable connection failure should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
     }
 
     #[tokio::test]
@@ -388,7 +443,7 @@ mod tests {
 
         let result = run_bitcoin_connectivity_and_network_checks(&client, Network::Regtest).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), StartupBitcoinCheck::Verified);
     }
 
     fn make_l1_block_commitment(height: u32, hash: BlockHash) -> L1BlockCommitment {
@@ -404,7 +459,7 @@ mod tests {
 
         let result = verify_l1_anchor_block(&client, commitment).await;
 
-        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), StartupBitcoinCheck::Verified);
     }
 
     #[tokio::test]
@@ -432,12 +487,8 @@ mod tests {
 
         let result = verify_l1_anchor_block(&client, commitment).await;
 
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("failed to fetch L1 block hash"),
-            "unexpected error: {err}"
-        );
+        let check = result.expect("retryable connection failure should defer");
+        assert!(matches!(check, StartupBitcoinCheck::Deferred { .. }));
     }
 
     fn setup_storage_with_genesis() -> (NodeStorage, OLBlockCommitment) {

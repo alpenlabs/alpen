@@ -43,7 +43,7 @@ pub(crate) async fn create_payload_envelopes<R: Reader + Signer + Wallet>(
             .client
             .sign_raw_transaction_with_wallet(&envelope.commit_tx, None)
             .await
-            .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
+            .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
         envelope.commit_tx = signed_commit;
 

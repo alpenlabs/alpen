@@ -66,7 +66,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .client
             .network()
             .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?;
+            .map_err(|e| EnvelopeError::PrereqFetch(e.into()))?;
 
         // NOTE: passing `min_conf = 0` would also include unconfirmed UTXOs and mitigate the
         // lack-of-UTXO problem, but it complicates fee bumping (RBF/CPFP over chained unconfirmed
@@ -76,7 +76,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .client
             .list_unspent(None, None, None, None, None)
             .await
-            .map_err(|e| EnvelopeError::Other(e.into()))?
+            .map_err(|e| EnvelopeError::PrereqFetch(e.into()))?
             .0;
 
         let spendable_utxo_count = utxos
@@ -92,7 +92,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         let fee_rate = resolve_fee_rate(ctx.client.as_ref(), ctx.config.as_ref())
             .await
-            .map_err(EnvelopeError::Other)?;
+            .map_err(EnvelopeError::PrereqFetch)?;
 
         debug!(
             envelope_idx,
@@ -127,7 +127,7 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .client
             .sign_raw_transaction_with_wallet(&built.commit_tx, None)
             .await
-            .map_err(|e| EnvelopeError::SignRawTransaction(e.to_string()))?
+            .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
         let commit_txid: Buf32 = signed_commit.compute_txid().to_buf32();
         let commit_wtxid: Buf32 = signed_commit.compute_wtxid().to_buf32();

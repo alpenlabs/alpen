@@ -3,6 +3,7 @@
 pub mod broadcaster;
 pub mod params;
 pub mod reader;
+pub(crate) mod rpc_error;
 pub mod status;
 
 #[cfg(test)]
