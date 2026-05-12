@@ -24,6 +24,9 @@ impl DBAccountStateAtEpoch {
     }
 }
 
+// TODO(STR-3421): Migrate EE account-state persistence away from this Borsh
+// mirror and store the SSZ account-state type directly, including any needed
+// DB compatibility/versioning path for existing local data.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub(crate) struct DBEeAccountState {
     last_exec_blkid: Hash,
