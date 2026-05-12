@@ -173,6 +173,7 @@ mod tests {
     fn make_state() -> (SignerServiceState, mpsc::Receiver<DutyResolved>) {
         let rpc = Arc::new(ManagedWsClient::new_with_default_pool(WsClientConfig {
             url: "ws://127.0.0.1:1".to_string(),
+            headers: Default::default(),
         }));
         let sk: SequencerSk = Arc::new(ZeroizedBuf32::new([0u8; 32]));
         let executor = TaskManager::new(Handle::current()).create_executor();

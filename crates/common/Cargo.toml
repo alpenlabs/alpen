@@ -8,6 +8,7 @@ workspace = true
 
 [dependencies]
 deadpool.workspace = true
+http.workspace = true
 jsonrpsee = { workspace = true, features = ["client"] }
 serde.workspace = true
 tokio = { workspace = true, optional = true }

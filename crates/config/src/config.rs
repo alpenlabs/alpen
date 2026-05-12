@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{fmt, path::PathBuf, time::Duration};
 
 use bitcoin::Network;
 use serde::{Deserialize, Serialize};
@@ -7,6 +7,12 @@ use crate::btcio::BtcioConfig;
 
 /// Default value for `rpc_port` in [`ClientConfig`].
 const DEFAULT_RPC_PORT: u16 = 8542;
+
+/// Default value for `admin_rpc_host` in [`ClientConfig`].
+const DEFAULT_ADMIN_RPC_HOST: &str = "127.0.0.1";
+
+/// Default value for `admin_rpc_port` in [`ClientConfig`].
+const DEFAULT_ADMIN_RPC_PORT: u16 = 8544;
 
 /// Default value for `p2p_port` in [`ClientConfig`].
 const DEFAULT_P2P_PORT: u16 = 8543;
@@ -29,6 +35,30 @@ const DEFAULT_BLOCK_TEMPLATE_TTL_SECS: u64 = 60;
 /// Default target OL block time in milliseconds.
 const DEFAULT_OL_BLOCK_TIME_MS: u64 = 5_000;
 
+/// Secret configuration value that redacts itself from debug output.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SecretString(String);
+
+impl SecretString {
+    /// Returns the underlying secret value.
+    pub fn expose_secret(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for SecretString {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretString(***)")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(Default))]
 pub struct ClientConfig {
@@ -38,6 +68,18 @@ pub struct ClientConfig {
     /// Port that the client rpc will listen to.
     #[serde(default = "default_rpc_port")]
     pub rpc_port: u16,
+
+    /// Addr that the admin rpc will listen to.
+    #[serde(default = "default_admin_rpc_host")]
+    pub admin_rpc_host: String,
+
+    /// Port that the admin rpc will listen to.
+    #[serde(default = "default_admin_rpc_port")]
+    pub admin_rpc_port: u16,
+
+    /// Bearer token required by the admin rpc listener.
+    #[serde(default)]
+    pub admin_rpc_bearer_token: Option<SecretString>,
 
     /// P2P port that the client will listen to.
     /// NOTE: This is not used at the moment since we don't actually have p2p.
@@ -77,6 +119,14 @@ fn default_p2p_port() -> u16 {
 
 fn default_rpc_port() -> u16 {
     DEFAULT_RPC_PORT
+}
+
+fn default_admin_rpc_host() -> String {
+    DEFAULT_ADMIN_RPC_HOST.to_string()
+}
+
+fn default_admin_rpc_port() -> u16 {
+    DEFAULT_ADMIN_RPC_PORT
 }
 
 fn default_datadir() -> PathBuf {
@@ -360,10 +410,6 @@ pub struct LoggingConfig {
     /// Use JSON format for logs instead of compact format.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub json_format: Option<bool>,
-
-    /// Port for the Prometheus `/metrics` HTTP endpoint. Disabled if not set.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metrics_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -408,6 +454,9 @@ mod test {
             [client]
             rpc_host = "0.0.0.0"
             rpc_port = 8432
+            admin_rpc_host = "127.0.0.1"
+            admin_rpc_port = 8434
+            admin_rpc_bearer_token = "dev-only-change-me"
             l2_blocks_fetch_limit = 1_000
             sync_endpoint = "9.9.9.9:8432"
             datadir = "/path/to/data/directory"
@@ -505,6 +554,9 @@ mod test {
             [client]
             rpc_host = "0.0.0.0"
             rpc_port = 8432
+            admin_rpc_host = "127.0.0.1"
+            admin_rpc_port = 8434
+            admin_rpc_bearer_token = "dev-only-change-me"
             l2_blocks_fetch_limit = 1_000
             datadir = "/path/to/data/directory"
             sequencer_bitcoin_address = "some_addr"
@@ -560,6 +612,50 @@ mod test {
             config.prover.is_none(),
             "prover config should be absent when omitted"
         );
+    }
+
+    #[test]
+    fn test_client_config_admin_rpc_defaults() {
+        let toml_str = r#"
+            rpc_host = "0.0.0.0"
+            l2_blocks_fetch_limit = 1_000
+            db_retry_count = 5
+        "#;
+
+        let config: ClientConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.admin_rpc_host, DEFAULT_ADMIN_RPC_HOST);
+        assert_eq!(config.admin_rpc_port, DEFAULT_ADMIN_RPC_PORT);
+        assert_eq!(config.admin_rpc_bearer_token, None);
+    }
+
+    #[test]
+    fn test_client_config_admin_rpc_token_parses() {
+        let toml_str = r#"
+            rpc_host = "0.0.0.0"
+            admin_rpc_host = "127.0.0.1"
+            admin_rpc_port = 8434
+            admin_rpc_bearer_token = "test-token"
+            l2_blocks_fetch_limit = 1_000
+            db_retry_count = 5
+        "#;
+
+        let config: ClientConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.admin_rpc_host, "127.0.0.1");
+        assert_eq!(config.admin_rpc_port, 8434);
+        assert_eq!(
+            config
+                .admin_rpc_bearer_token
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("test-token")
+        );
+    }
+
+    #[test]
+    fn test_client_config_admin_rpc_token_debug_redacts_secret() {
+        let token = SecretString::from("test-token".to_string());
+
+        assert_eq!(format!("{token:?}"), "SecretString(***)");
     }
 
     #[test]

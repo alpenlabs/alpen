@@ -1,5 +1,6 @@
 sequencer_key = "/app/configs/sequencer.key"
-sequencer_endpoint = "ws://strata:8432"
+sequencer_admin_endpoint = "ws://strata:8434"
+sequencer_admin_bearer_token = "dev-only-change-me"
 duty_poll_interval = 1_000
 
 [logging]

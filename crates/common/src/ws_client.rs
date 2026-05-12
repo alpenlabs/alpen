@@ -4,6 +4,7 @@
 use core::{fmt, future};
 
 use deadpool::managed::{self, Manager, Object, Pool, RecycleError, RecycleResult};
+use http::HeaderMap;
 use jsonrpsee::{
     core::{
         client::{BatchResponse, ClientT, Error},
@@ -22,6 +23,9 @@ use jsonrpsee::{
 pub struct WsClientConfig {
     /// The URL of the WebSocket server.
     pub url: String,
+
+    /// Headers sent during the WebSocket handshake.
+    pub headers: HeaderMap,
 }
 
 /// Manager for creating and recycling WebSocket clients.
@@ -48,6 +52,7 @@ impl Manager for WsClientManager {
     /// Returns a [`WebsocketClient`]
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         let client = WsClientBuilder::default()
+            .set_headers(self.config.headers.clone())
             .build(self.config.url.clone())
             .await?;
 

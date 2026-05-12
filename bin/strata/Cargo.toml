@@ -89,8 +89,6 @@ strata-storage.workspace = true
 strata-tasks.workspace = true
 strata-zkvm-hosts = { workspace = true, optional = true }
 
-metrics-exporter-prometheus.workspace = true
-
 anyhow.workspace = true
 argh.workspace = true
 async-trait.workspace = true
@@ -98,6 +96,7 @@ bitcoin.workspace = true
 bitcoind-async-client.workspace = true
 borsh = { workspace = true, optional = true }
 format_serde_error.workspace = true
+http.workspace = true
 jsonrpsee = { workspace = true, features = ["server", "macros"] }
 serde_json.workspace = true
 thiserror.workspace = true

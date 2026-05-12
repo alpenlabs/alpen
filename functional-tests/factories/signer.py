@@ -28,8 +28,9 @@ class SignerFactory(flexitest.Factory):
     def create_signer(
         self,
         sequencer_key_path: Path,
-        rpc_host: str,
-        rpc_port: int,
+        admin_rpc_host: str,
+        admin_rpc_port: int,
+        admin_rpc_token: str,
         **kwargs,
     ) -> SignerService:
         """
@@ -37,20 +38,22 @@ class SignerFactory(flexitest.Factory):
 
         Args:
             sequencer_key_path: Path to the sequencer root key file (xprv).
-            rpc_host: Host of the strata node RPC server.
-            rpc_port: Port of the strata node RPC server.
+            admin_rpc_host: Host of the strata node admin RPC server.
+            admin_rpc_port: Port of the strata node admin RPC server.
+            admin_rpc_token: Bearer token for the admin RPC server.
         """
         ctx: flexitest.EnvContext = kwargs["ctx"]
 
         datadir = Path(ctx.make_service_dir(str(ServiceType.StrataSigner)))
         logfile = datadir / "service.log"
-        ws_url = f"ws://{rpc_host}:{rpc_port}"
+        ws_url = f"ws://{admin_rpc_host}:{admin_rpc_port}"
 
         # Write signer config TOML
         config_path = datadir / "signer-config.toml"
         config_path.write_text(
             f'sequencer_key = "{sequencer_key_path}"\n'
-            f'sequencer_endpoint = "{ws_url}"\n'
+            f'sequencer_admin_endpoint = "{ws_url}"\n'
+            f'sequencer_admin_bearer_token = "{admin_rpc_token}"\n'
             f"duty_poll_interval = {TEST_POLL_INTERVAL_MS}\n"
         )
 

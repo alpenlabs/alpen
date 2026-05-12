@@ -108,9 +108,7 @@ fn get_config(args: Args) -> Result<Config, InitError> {
     let mut config_toml = load_config_from_path(args.config.as_ref())?;
 
     let env_args = EnvArgs::from_env()?;
-    let mut override_strs = env_args.get_overrides();
-
-    override_strs.extend_from_slice(&args.get_all_overrides()?);
+    let override_strs = args.get_all_overrides()?;
 
     let overrides = override_strs
         .iter()
@@ -133,6 +131,7 @@ fn get_config(args: Args) -> Result<Config, InitError> {
         .map_err(InitError::TomlParse)?;
 
     populate_sequencer_runtime_config(&mut config, &args)?;
+    env_args.apply_to_config(&mut config);
 
     validate_config(config)
 }
@@ -140,6 +139,24 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 fn validate_config(config: Config) -> Result<Config, InitError> {
     if !config.client.is_sequencer && config.client.sync_endpoint.is_none() {
         return Err(InitError::MissingSyncEndpoint);
+    }
+
+    if config.client.is_sequencer
+        && config
+            .client
+            .admin_rpc_bearer_token
+            .as_ref()
+            .is_none_or(|token| token.expose_secret().is_empty())
+    {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.admin_rpc_bearer_token must be set and non-empty".to_string(),
+        }));
+    }
+
+    if config.client.is_sequencer && config.client.rpc_port == config.client.admin_rpc_port {
+        return Err(InitError::MalformedConfig(ConfigError::InvalidOverride {
+            override_str: "client.admin_rpc_port must differ from client.rpc_port".to_string(),
+        }));
     }
 
     if config.client.is_sequencer && config.sequencer.is_none() {
@@ -468,7 +485,7 @@ mod tests {
 
     #[cfg(feature = "prover")]
     use strata_config::ProverBackend;
-    use strata_config::SequencerConfig;
+    use strata_config::{Config, SequencerConfig};
     #[cfg(feature = "prover")]
     use strata_predicate::PredicateTypeId;
 
@@ -484,6 +501,50 @@ mod tests {
             .expect("system time after unix epoch")
             .as_nanos();
         temp_dir().join(format!("strata-context-tests-{nanos}"))
+    }
+
+    fn fullnode_config() -> Config {
+        toml::from_str(
+            r#"
+            [bitcoind]
+            rpc_url = "http://localhost:18332"
+            rpc_user = "alpen"
+            rpc_password = "alpen"
+            network = "regtest"
+
+            [client]
+            rpc_host = "0.0.0.0"
+            rpc_port = 8432
+            admin_rpc_host = "127.0.0.1"
+            admin_rpc_port = 8432
+            l2_blocks_fetch_limit = 1_000
+            datadir = "/path/to/data/directory"
+            sync_endpoint = "9.9.9.9:8432"
+            db_retry_count = 5
+
+            [sync]
+            l1_follow_distance = 6
+            client_checkpoint_interval = 10
+
+            [btcio.reader]
+            client_poll_dur_ms = 200
+
+            [btcio.writer]
+            write_poll_dur_ms = 200
+            fee_policy = "mempool"
+            mempool_base_url = "https://mempool.space/signet"
+            reveal_amount = 100
+            bundle_interval_ms = 1_000
+
+            [btcio.broadcaster]
+            poll_interval_ms = 1_000
+
+            [exec.reth]
+            rpc_url = "http://localhost:8551"
+            secret = "jwt.hex"
+            "#,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -528,6 +589,34 @@ mod tests {
         })
         .unwrap_err();
         assert!(matches!(error, InitError::InvalidOlBlockTimeMs(0)));
+    }
+
+    #[test]
+    fn validate_config_allows_fullnode_without_admin_token() {
+        let config = fullnode_config();
+
+        super::validate_config(config).unwrap();
+    }
+
+    #[test]
+    fn validate_config_rejects_sequencer_without_admin_token() {
+        let mut config = fullnode_config();
+        config.client.is_sequencer = true;
+        config.sequencer = Some(SequencerConfig::default());
+
+        let error = super::validate_config(config).unwrap_err();
+        assert!(matches!(error, InitError::MalformedConfig(_)));
+    }
+
+    #[test]
+    fn validate_config_rejects_same_public_and_admin_rpc_port_for_sequencer() {
+        let mut config = fullnode_config();
+        config.client.is_sequencer = true;
+        config.client.admin_rpc_bearer_token = Some("test-token".to_string().into());
+        config.sequencer = Some(SequencerConfig::default());
+
+        let error = super::validate_config(config).unwrap_err();
+        assert!(matches!(error, InitError::MalformedConfig(_)));
     }
 
     #[cfg(feature = "prover")]

@@ -26,6 +26,7 @@ class TestCheckpointCreated(StrataNodeTest):
         strata = self.get_service(ServiceType.Strata)
 
         strata_rpc = strata.wait_for_rpc_ready(timeout=20)
+        strata_admin_rpc = strata.create_admin_rpc()
         btc_rpc = bitcoin.create_rpc()
         addr = btc_rpc.proxy.getnewaddress()
 
@@ -41,7 +42,7 @@ class TestCheckpointCreated(StrataNodeTest):
         )
 
         # Wait for a checkpoint duty for epoch >= 1.
-        duty = wait_for_checkpoint_duty(strata_rpc, timeout=60, step=0.5, min_epoch=1)
+        duty = wait_for_checkpoint_duty(strata_admin_rpc, timeout=60, step=0.5, min_epoch=1)
         epoch = parse_checkpoint_epoch(duty)
         assert epoch >= 1, f"expected checkpoint duty for epoch >= 1, got {epoch}"
         logger.info("Checkpoint created for epoch %d", epoch)
