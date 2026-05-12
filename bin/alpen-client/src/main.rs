@@ -81,10 +81,10 @@ mod sequencer_imports {
     pub(super) use strata_proofimpl_alpen_chunk::EeChunkProgram;
     pub(super) use strata_tasks::TaskManager;
     #[cfg(feature = "sp1")]
-    pub(super) use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST};
+    pub(super) use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host};
     pub(super) use tokio::{runtime::Handle, sync::oneshot};
     #[cfg(feature = "sp1")]
-    pub(super) use zkaleido_sp1_host::SP1Host;
+    pub(super) use zkaleido_sp1_host::{SP1Host, SP1HostConfig};
 
     pub(super) use crate::{
         header_summary::RethHeaderSummaryProvider,
@@ -722,10 +722,10 @@ fn main() {
                             deadline_secs,
                             "sp1 EE prover deadline configured"
                         );
+                        let sp1_config = SP1HostConfig::default().with_deadline(deadline);
                         let chunk_host: SP1Host =
-                            (**ALPEN_CHUNK_HOST).clone().with_deadline(deadline);
-                        let acct_host: SP1Host =
-                            (**ALPEN_ACCT_HOST).clone().with_deadline(deadline);
+                            (**alpen_chunk_host(sp1_config.clone()).await).clone();
+                        let acct_host: SP1Host = (**alpen_acct_host(sp1_config).await).clone();
                         (
                             chunk_builder.remote(chunk_host),
                             acct_builder.remote(acct_host),
