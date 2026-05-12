@@ -1170,6 +1170,7 @@ dependencies = [
  "bincode",
  "bitcoin",
  "eyre",
+ "futures",
  "mockall",
  "reth-ethereum-engine-primitives",
  "reth-ethereum-primitives",
