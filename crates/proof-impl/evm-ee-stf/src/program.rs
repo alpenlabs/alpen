@@ -45,7 +45,7 @@ impl ZkVmProgram for EvmEeProgram {
 
 impl EvmEeProgram {
     pub fn native_host() -> NativeHost {
-        NativeHost::new(process_block_transaction_outer)
+        NativeHost::new_with_random_key(process_block_transaction_outer)
     }
 
     // Add this new convenience method
@@ -54,6 +54,7 @@ impl EvmEeProgram {
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         // Get the native host and delegate to the trait's execute method
         let host = Self::native_host();
-        <Self as ZkVmProgram>::execute(input, &host)
+        let summary = <Self as ZkVmProgram>::execute(input, &host)?;
+        <Self as ZkVmProgram>::process_output::<NativeHost>(summary.public_values())
     }
 }

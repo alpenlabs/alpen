@@ -107,9 +107,7 @@ tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 zkaleido = { workspace = true, optional = true }
-zkaleido-sp1-host = { workspace = true, features = [
-  "remote-prover",
-], optional = true }
+zkaleido-sp1-host = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

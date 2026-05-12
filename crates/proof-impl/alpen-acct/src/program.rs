@@ -86,7 +86,7 @@ impl ZkVmProgram for EeAcctProgram {
 impl EeAcctProgram {
     pub fn native_host(&self) -> NativeHost {
         let key = self.chunk_predicate_key.clone();
-        NativeHost::new(move |zkvm| process_ee_acct_update(zkvm, &key))
+        NativeHost::new_with_random_key(move |zkvm| process_ee_acct_update(zkvm, &key))
     }
 
     /// Executes the account proof program using the native host for testing.
@@ -95,7 +95,8 @@ impl EeAcctProgram {
         input: &<Self as ZkVmProgram>::Input,
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         let host = self.native_host();
-        <Self as ZkVmProgram>::execute(input, &host)
+        let summary = <Self as ZkVmProgram>::execute(input, &host)?;
+        <Self as ZkVmProgram>::process_output::<NativeHost>(summary.public_values())
     }
 }
 
