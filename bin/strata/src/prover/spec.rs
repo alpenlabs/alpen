@@ -8,9 +8,9 @@ use std::{fmt, sync::Arc};
 
 use async_trait::async_trait;
 use borsh::{BorshDeserialize, BorshSerialize, io::Error as BorshIoError};
+use strata_db_types::traits::BlockStatus;
 use strata_identifiers::{Epoch, EpochCommitment};
-use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_ol_stf::execute_block_batch;
+use strata_ol_checkpoint::compute_epoch_preseal_da_diff;
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use strata_storage::NodeStorage;
@@ -86,9 +86,7 @@ fn fetch_input_blocking(
     debug!(%epoch_index, "fetching checkpoint proof input (blocking)");
 
     // Ensure this task still matches the canonical commitment for the epoch.
-    let canonical_commitment = storage
-        .ol_checkpoint()
-        .get_canonical_epoch_commitment_at_blocking(epoch)?
+    let canonical_commitment = canonical_valid_epoch_commitment(&storage, epoch)?
         .ok_or(ProverError::EpochCommitmentNotFound(epoch_index))?;
     if canonical_commitment != task_commitment {
         return Err(ProverError::StaleTaskCommitment {
@@ -167,23 +165,8 @@ fn fetch_input_blocking(
 
     blocks.reverse();
 
-    // Compute DA state diff bytes by replaying the epoch blocks through a
-    // [`DaAccumulatingState`] wrapper. This intercepts state mutations to
-    // build the same DA diff that the guest program will verify. Computing
-    // it here (rather than reading a checkpoint entry) ensures the diff
-    // is available before the checkpoint entry is written.
-    let da_state_diff_bytes = {
-        let mut da_state =
-            DaAccumulatingState::new(MemoryStateBaseLayer::new((*start_state).clone()));
-        execute_block_batch(&mut da_state, &blocks, &parent)
-            .map_err(|e| ProverError::DaComputation(e.to_string()))?;
-        da_state
-            .take_completed_epoch_da_blob()
-            .map_err(|e| ProverError::DaComputation(e.to_string()))?
-            .ok_or_else(|| {
-                ProverError::DaComputation("no DA blob produced after epoch replay".to_string())
-            })?
-    };
+    let da_state_diff_bytes = compute_epoch_preseal_da_diff(&start_state, &blocks, &parent)
+        .map_err(|e| ProverError::DaComputation(e.to_string()))?;
 
     debug!(
         %epoch_index,
@@ -198,4 +181,25 @@ fn fetch_input_blocking(
         parent,
         da_state_diff_bytes,
     })
+}
+
+pub(crate) fn canonical_valid_epoch_commitment(
+    storage: &NodeStorage,
+    epoch: Epoch,
+) -> Result<Option<EpochCommitment>, ProverError> {
+    let commitments = storage
+        .ol_checkpoint()
+        .get_epoch_commitments_at_blocking(epoch)?;
+
+    for commitment in &commitments {
+        let block_id = *commitment.last_blkid();
+        if matches!(
+            storage.ol_block().get_block_status_blocking(block_id)?,
+            Some(BlockStatus::Valid)
+        ) {
+            return Ok(Some(*commitment));
+        }
+    }
+
+    Ok(commitments.first().copied())
 }
