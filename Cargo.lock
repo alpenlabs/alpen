@@ -16840,6 +16840,7 @@ dependencies = [
  "bdk_bitcoind_rpc",
  "bdk_wallet",
  "hex",
+ "k256",
  "musig2",
  "secp256k1 0.29.1",
  "serde_json",
