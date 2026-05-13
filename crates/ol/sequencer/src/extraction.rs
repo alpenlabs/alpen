@@ -55,8 +55,8 @@ async fn get_earliest_unsigned_checkpoint(
         return Ok(None);
     };
 
-    let Some(commitment) = ckptdb
-        .get_canonical_epoch_commitment_at_async(unsigned_epoch)
+    let Some(commitment) = node_storage
+        .find_valid_epoch_commitment_at_async(unsigned_epoch)
         .await?
     else {
         return Ok(None);

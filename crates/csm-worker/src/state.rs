@@ -138,8 +138,7 @@ fn load_observed_checkpoints_from_db(
 
     let mut observed = VecDeque::new();
     for epoch in start_epoch..=last_checkpoint_epoch {
-        let Some(commitment) = ol_checkpoint.get_canonical_epoch_commitment_at_blocking(epoch)?
-        else {
+        let Some(commitment) = storage.find_valid_epoch_commitment_at_blocking(epoch)? else {
             continue;
         };
         let Some(observation) = ol_checkpoint.get_checkpoint_l1_ref_blocking(commitment)? else {

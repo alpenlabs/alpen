@@ -136,8 +136,9 @@ impl OLSequencerRpcServer for OLSeqRpcServer {
         // sequencer predicate. The checkpoint payload is submitted without an
         // explicit signature.
         let db = self.storage.ol_checkpoint();
-        let Some(commitment) = db
-            .get_canonical_epoch_commitment_at_async(epoch)
+        let Some(commitment) = self
+            .storage
+            .find_valid_epoch_commitment_at_async(epoch)
             .await
             .map_err(db_error)?
         else {

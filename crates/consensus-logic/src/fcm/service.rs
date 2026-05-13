@@ -114,7 +114,6 @@ async fn process_fc_message(
     fcm_state: &mut FcmState,
 ) -> anyhow::Result<()> {
     let blk_db = fcm_state.ctx().storage().ol_block().clone();
-    let ckpt_db = fcm_state.ctx().storage().ol_checkpoint().clone();
     match msg {
         ForkChoiceMessage::NewBlock(blkid) => {
             strata_common::check_bail_trigger(strata_common::BAIL_FCM_NEW_BLOCK);
@@ -154,8 +153,10 @@ async fn process_fc_message(
                 let cur_state = fcm_state.cur_ol_state();
                 // Get prev epoch summary
                 let prev_epoch_num = cur_state.epoch_state().cur_epoch().saturating_sub(1);
-                let prev_epoch = ckpt_db
-                    .get_canonical_epoch_commitment_at_async(prev_epoch_num)
+                let prev_epoch = fcm_state
+                    .ctx()
+                    .storage()
+                    .find_valid_epoch_commitment_at_async(prev_epoch_num)
                     .await?
                     .ok_or(anyhow!(
                         "expected epoch commitment for previous epoch {} not in db",

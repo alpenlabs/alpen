@@ -29,8 +29,12 @@ pub use managers::{
 };
 pub use ops::l1tx_broadcast::BroadcastDbOps;
 use strata_db_store_sled::SledBackend;
-use strata_db_types::traits::DatabaseBackend;
 pub use strata_db_types::MmrId;
+use strata_db_types::{
+    traits::{BlockStatus, DatabaseBackend},
+    DbResult,
+};
+use strata_identifiers::{Epoch, EpochCommitment};
 
 /// A consolidation of database managers.
 // TODO move this to its own module
@@ -167,6 +171,59 @@ impl NodeStorage {
     pub fn l1_writer(&self) -> &Arc<L1WriterManager> {
         &self.l1_writer_manager
     }
+
+    /// Finds the valid epoch commitment for an epoch.
+    ///
+    /// Epoch commitment storage can contain fork candidates. This lookup
+    /// resolves each candidate's terminal block status and returns the first
+    /// valid one.
+    pub async fn find_valid_epoch_commitment_at_async(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Option<EpochCommitment>> {
+        let commitments = self
+            .ol_checkpoint()
+            .get_epoch_commitments_at_async(epoch)
+            .await?;
+
+        for commitment in commitments {
+            let block_id = *commitment.last_blkid();
+            if matches!(
+                self.ol_block().get_block_status_async(block_id).await?,
+                Some(BlockStatus::Valid)
+            ) {
+                return Ok(Some(commitment));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Finds the valid epoch commitment for an epoch.
+    ///
+    /// Epoch commitment storage can contain fork candidates. This lookup
+    /// resolves each candidate's terminal block status and returns the first
+    /// valid one.
+    pub fn find_valid_epoch_commitment_at_blocking(
+        &self,
+        epoch: Epoch,
+    ) -> DbResult<Option<EpochCommitment>> {
+        let commitments = self
+            .ol_checkpoint()
+            .get_epoch_commitments_at_blocking(epoch)?;
+
+        for commitment in commitments {
+            let block_id = *commitment.last_blkid();
+            if matches!(
+                self.ol_block().get_block_status_blocking(block_id)?,
+                Some(BlockStatus::Valid)
+            ) {
+                return Ok(Some(commitment));
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 /// Given a raw database, creates storage managers and returns a [`NodeStorage`]
@@ -238,4 +295,121 @@ pub fn create_node_storage(
         prover_task_manager,
         l1_writer_manager,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_checkpoint_types::EpochSummary;
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_db_types::traits::BlockStatus;
+    use strata_identifiers::{
+        Buf32, Buf64, L1BlockCommitment, L1BlockId, OLBlockCommitment, OLBlockId,
+    };
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlock, OLBlockBody, OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
+    };
+    use threadpool::ThreadPool;
+
+    use super::*;
+
+    fn setup_storage() -> NodeStorage {
+        let db = get_test_sled_backend();
+        create_node_storage(db, ThreadPool::new(1)).expect("create node storage")
+    }
+
+    fn make_block(slot: u64, epoch: Epoch, seed: u8) -> OLBlock {
+        let tx_segment = OLTxSegment::new(Vec::new()).expect("empty tx segment is valid");
+        let body = OLBlockBody::new_common(tx_segment);
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1_000_000 + slot,
+            flags,
+            slot,
+            epoch,
+            OLBlockId::from(Buf32::from([seed; 32])),
+            body.compute_hash_commitment(),
+            Buf32::from([seed.saturating_add(1); 32]),
+            Buf32::from([seed.saturating_add(2); 32]),
+        );
+
+        OLBlock::new(SignedOLBlockHeader::new(header, Buf64::zero()), body)
+    }
+
+    fn insert_summary(storage: &NodeStorage, block: &OLBlock) -> EpochCommitment {
+        let commitment = block.header().compute_block_commitment();
+        let prev_terminal = OLBlockCommitment::new(0, OLBlockId::from(Buf32::zero()));
+        let new_l1 = L1BlockCommitment::new(1, L1BlockId::from(Buf32::from([3; 32])));
+        let summary = EpochSummary::new(
+            block.header().epoch(),
+            commitment,
+            prev_terminal,
+            new_l1,
+            Buf32::from([4; 32]),
+        );
+        let epoch_commitment = summary.get_epoch_commitment();
+
+        storage
+            .ol_checkpoint()
+            .insert_epoch_summary_blocking(summary)
+            .expect("insert summary");
+
+        epoch_commitment
+    }
+
+    #[test]
+    fn find_valid_epoch_commitment_returns_valid_candidate() {
+        let storage = setup_storage();
+        let epoch = 1;
+        let invalid_block = make_block(10, epoch, 1);
+        let valid_block = make_block(11, epoch, 2);
+
+        storage
+            .ol_block()
+            .put_block_data_blocking(invalid_block.clone())
+            .expect("put invalid block");
+        storage
+            .ol_block()
+            .put_block_data_blocking(valid_block.clone())
+            .expect("put valid block");
+        let _invalid_commitment = insert_summary(&storage, &invalid_block);
+        let valid_commitment = insert_summary(&storage, &valid_block);
+
+        storage
+            .ol_block()
+            .set_block_status_blocking(invalid_block.header().compute_blkid(), BlockStatus::Invalid)
+            .expect("mark invalid");
+        storage
+            .ol_block()
+            .set_block_status_blocking(valid_block.header().compute_blkid(), BlockStatus::Valid)
+            .expect("mark valid");
+
+        let found = storage
+            .find_valid_epoch_commitment_at_blocking(epoch)
+            .expect("find commitment")
+            .expect("valid commitment");
+        assert_eq!(found, valid_commitment);
+    }
+
+    #[test]
+    fn find_valid_epoch_commitment_returns_none_without_valid_candidate() {
+        let storage = setup_storage();
+        let epoch = 1;
+        let block = make_block(10, epoch, 1);
+
+        storage
+            .ol_block()
+            .put_block_data_blocking(block.clone())
+            .expect("put block");
+        insert_summary(&storage, &block);
+        storage
+            .ol_block()
+            .set_block_status_blocking(block.header().compute_blkid(), BlockStatus::Invalid)
+            .expect("mark invalid");
+
+        let found = storage
+            .find_valid_epoch_commitment_at_blocking(epoch)
+            .expect("find commitment");
+        assert_eq!(found, None);
+    }
 }

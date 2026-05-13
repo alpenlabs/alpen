@@ -224,8 +224,7 @@ impl CheckpointWorkerContext for CheckpointWorkerContextImpl {
         index: Epoch,
     ) -> anyhow::Result<Option<EpochCommitment>> {
         self.storage
-            .ol_checkpoint()
-            .get_canonical_epoch_commitment_at_blocking(index)
+            .find_valid_epoch_commitment_at_blocking(index)
             .map_err(Into::into)
     }
 

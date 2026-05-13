@@ -11,7 +11,6 @@ use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{
     DbError, DbResult, MmrId,
     ol_state_index::{AccountUpdateRecord, InboxMessageRecord},
-    traits::BlockStatus,
 };
 use strata_identifiers::{AccountId, Epoch, L1Height, OLBlockId, OLTxId};
 use strata_ol_chain_types_new::{OLBlock, OLTransaction};
@@ -71,26 +70,9 @@ impl OLRpcProvider for NodeRpcProvider {
         &self,
         epoch: Epoch,
     ) -> DbResult<Option<EpochCommitment>> {
-        let commitments = self
-            .storage
-            .ol_checkpoint()
-            .get_epoch_commitments_at_async(epoch)
-            .await?;
-
-        for commitment in &commitments {
-            let block_id = *commitment.last_blkid();
-            if matches!(
-                self.storage
-                    .ol_block()
-                    .get_block_status_async(block_id)
-                    .await?,
-                Some(BlockStatus::Valid)
-            ) {
-                return Ok(Some(*commitment));
-            }
-        }
-
-        Ok(commitments.first().copied())
+        self.storage
+            .find_valid_epoch_commitment_at_async(epoch)
+            .await
     }
 
     async fn get_epoch_summary(

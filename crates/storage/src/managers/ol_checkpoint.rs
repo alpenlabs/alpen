@@ -72,7 +72,8 @@ impl OLCheckpointManager {
 
     /// Gets the canonical commitment for an epoch index, if any.
     ///
-    /// Returns the first commitment for the epoch, which is treated as canonical.
+    /// Returns the first stored commitment for the epoch. This manager only
+    /// owns checkpoint data and does not resolve OL block validity.
     pub async fn get_canonical_epoch_commitment_at_async(
         &self,
         epoch: Epoch,
@@ -83,7 +84,8 @@ impl OLCheckpointManager {
 
     /// Gets the canonical commitment for an epoch index, if any.
     ///
-    /// Returns the first commitment for the epoch, which is treated as canonical.
+    /// Returns the first stored commitment for the epoch. This manager only
+    /// owns checkpoint data and does not resolve OL block validity.
     pub fn get_canonical_epoch_commitment_at_blocking(
         &self,
         epoch: Epoch,

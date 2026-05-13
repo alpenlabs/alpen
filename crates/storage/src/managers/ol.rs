@@ -141,6 +141,8 @@ impl OLBlockManager {
         tip: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_blocking(tip)?;
+        // TODO(STR-2105): use fork-choice data to break ties if multiple
+        // valid blocks exist at the same slot.
         for id in &blocks {
             if matches!(
                 self.get_block_status_blocking(*id)?,
@@ -161,6 +163,8 @@ impl OLBlockManager {
         tip: Slot,
     ) -> DbResult<Option<OLBlockCommitment>> {
         let blocks = self.get_blocks_at_height_async(tip).await?;
+        // TODO(STR-2105): use fork-choice data to break ties if multiple
+        // valid blocks exist at the same slot.
         for id in &blocks {
             if matches!(
                 self.get_block_status_async(*id).await?,
