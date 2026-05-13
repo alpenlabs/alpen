@@ -265,6 +265,9 @@ fn expected_backend_for_checkpoint_predicate(
         PredicateTypeId::Sp1Groth16 => Ok(Some(ProverBackend::Sp1)),
         // AlwaysAccept ignores witness bytes, so proofs are optional.
         PredicateTypeId::AlwaysAccept => Ok(None),
+        // Bip340Schnorr is verified by the native host's deterministic signing key
+        // (functional-test setup); no external prover backend is required.
+        PredicateTypeId::Bip340Schnorr => Ok(None),
         // Other predicate types are currently unsupported for integrated checkpoint proving.
         _ => Err(InitError::InvalidProverConfig(format!(
             "unsupported checkpoint predicate for integrated prover: {checkpoint_predicate_type}"
@@ -638,8 +641,17 @@ mod tests {
 
     #[cfg(feature = "prover")]
     #[test]
+    fn allows_any_backend_for_bip340_schnorr_predicate() {
+        let result =
+            super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
+                .unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[cfg(feature = "prover")]
+    #[test]
     fn rejects_unsupported_predicate_for_integrated_prover() {
-        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::Bip340Schnorr)
+        let err = super::expected_backend_for_checkpoint_predicate(PredicateTypeId::NeverAccept)
             .unwrap_err();
         assert!(matches!(err, InitError::InvalidProverConfig(_)));
     }
