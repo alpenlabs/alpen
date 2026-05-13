@@ -111,21 +111,7 @@ where
 
     rollback_to_fork_point(state, ctx.storage.as_ref(), &fork_state, &ol_status).await?;
 
-    // Rollback can resolve `finalized` to the genesis epoch when no real
-    // finalized epoch is available locally. Publishing that as a current
-    // status would tell downstream consumers (e.g. the sequencer's OL chain
-    // tracker) that the OL rewound to slot 0, which they treat as a deep
-    // reorg and shut down. Skip the publish in that case; consumers will
-    // observe the next real status when one becomes available.
-    let new_status = state.get_ol_status();
-    if new_status.ol_block.slot() == 0 {
-        debug!(
-            ?new_status,
-            "reorg: skipping ol_status publish; rebuilt finalized is at genesis"
-        );
-    } else {
-        ctx.notify_ol_status_update(new_status);
-    }
+    ctx.notify_ol_status_update(state.get_ol_status());
     ctx.notify_consensus_update(state.get_consensus_heads());
 
     info!("reorg: reorg complete");
