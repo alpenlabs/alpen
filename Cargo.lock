@@ -1064,6 +1064,7 @@ dependencies = [
 name = "alpen-client"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
  "alloy-rlp",

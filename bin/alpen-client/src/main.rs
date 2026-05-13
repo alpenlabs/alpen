@@ -95,7 +95,7 @@ mod sequencer_imports {
         payload_builder::AlpenRethPayloadEngine,
         prover::{
             AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, EeBatchProofDbManager,
-            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver, RangeWitnessFn,
+            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
         },
     };
 }
@@ -624,25 +624,6 @@ fn main() {
                 let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
                 let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
 
-                // Chunk-spanning witness extractor.
-                //
-                // Suboptimal: the extractor re-executes every block in the
-                // chunk at proof time just to discover the read set and
-                // build the sparse pre-state. Ideally the witness should
-                // be pre-computed and persisted when the chunk is sealed
-                // (e.g. via a dedicated exex or as part of the chunk
-                // builder), so `fetch_input` only reads it back. That
-                // requires the chunk builder (not yet implemented) to
-                // trigger witness assembly. Until then, on-demand
-                // extraction is the pragmatic path.
-                //
-                // The closure erases the generic reth provider type so
-                // `ChunkSpec` stays non-generic.
-                let range_witness_fn: Arc<RangeWitnessFn> = {
-                    let extractor = range_witness_extractor.clone();
-                    Arc::new(move |start, end| extractor.extract_range_witness(start, end))
-                };
-
                 let genesis = {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
                     ext.custom_chain.genesis().config.clone().into_rsp()
@@ -652,7 +633,6 @@ fn main() {
                     batch_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
-                    range_witness_fn,
                 ))
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())

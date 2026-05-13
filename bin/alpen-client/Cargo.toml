@@ -30,6 +30,7 @@ name = "alpen-client"
 path = "src/main.rs"
 
 [dependencies]
+alloy-consensus.workspace = true
 alloy-rlp.workspace = true
 alpen-chainspec.workspace = true
 alpen-ee-common.workspace = true
