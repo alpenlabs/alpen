@@ -27,7 +27,8 @@ use crate::{
 /// Processes the manifests from a block, which is part of the epoch sealing
 /// processing.
 ///
-/// This does NOT check the preseal root.
+/// NOTE: Manifest processing is not expected to emit OL logs.
+/// This also does NOT check the preseal root.
 #[tracing::instrument(
     skip_all,
     fields(

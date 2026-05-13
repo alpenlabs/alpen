@@ -8,7 +8,8 @@ use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog, OLTxSegment,
+    MAX_LOGS_PER_BLOCK, OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog,
+    OLTxSegment,
 };
 use strata_ol_da::DaScheme;
 
@@ -137,9 +138,8 @@ impl<'b> BlockExecInput<'b> {
     }
 }
 
-/// Verifies a block by executing it the normal way.
-///
-/// This closely aligns with `execute_block_inputs`.
+/// Verifies a block end-to-end. Composes [`verify_block_preseal`] and
+/// [`apply_block_manifests`].
 #[tracing::instrument(
     skip_all,
     fields(
@@ -150,6 +150,46 @@ impl<'b> BlockExecInput<'b> {
     ),
 )]
 pub fn verify_block<S: IStateAccessorMut>(
+    state: &mut S,
+    header: &OLBlockHeader,
+    parent_header: Option<&OLBlockHeader>,
+    body: &OLBlockBody,
+) -> ExecResult<Vec<OLLog>> {
+    let exp = BlockExecExpectations::from_block_parts(header, body);
+
+    let mut logs = verify_block_preseal(state, header, parent_header, body)?;
+    logs.extend(apply_block_manifests(state, header, body)?);
+
+    // Verify logs size.
+    let max = MAX_LOGS_PER_BLOCK as usize;
+    if logs.len() > max {
+        return Err(ExecError::LogsOverflow {
+            count: logs.len(),
+            max,
+        });
+    }
+
+    // Verify logs root.
+    if compute_logs_root(&logs) != exp.logs_root {
+        return Err(ExecError::ChainIntegrity);
+    }
+
+    Ok(logs)
+}
+
+/// Runs the pre-manifest stages of block verification and the preseal
+/// state root check. Returns the tx-segment logs. Pair with
+/// [`apply_block_manifests`] for full verification.
+#[tracing::instrument(
+    skip_all,
+    fields(
+        slot = header.slot(),
+        epoch = header.epoch(),
+        is_terminal = header.is_terminal(),
+        tx_count = body.tx_segment().map(|s| s.txs().len()).unwrap_or(0),
+    ),
+)]
+pub fn verify_block_preseal<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
@@ -185,33 +225,37 @@ pub fn verify_block<S: IStateAccessorMut>(
     // - if it not a terminal, then check against the header state root
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
-
-    if header.is_terminal() {
-        // For terminal blocks, check against the preseal state root
-        let expected_preseal = exp
-            .post_state_roots
+    let expected_root = if header.is_terminal() {
+        exp.post_state_roots
             .preseal_state_root()
-            .ok_or(ExecError::ChainIntegrity)?;
-        if &pre_manifest_state_root != expected_preseal {
-            return Err(ExecError::ChainIntegrity);
-        }
+            .ok_or(ExecError::ChainIntegrity)?
     } else {
-        // For non-terminal blocks, check against the header state root
-        if &pre_manifest_state_root != exp.post_state_roots.header_state_root() {
-            return Err(ExecError::ChainIntegrity);
-        }
+        exp.post_state_roots.header_state_root()
+    };
+    if &pre_manifest_state_root != expected_root {
+        return Err(ExecError::ChainIntegrity);
     }
+
+    Ok(output_buffer.into_logs())
+}
+
+/// Runs manifest processing and the post-manifest state root check.
+/// Returns the manifest-emitted logs.
+pub fn apply_block_manifests<S: IStateAccessorMut>(
+    state: &mut S,
+    header: &OLBlockHeader,
+    body: &OLBlockBody,
+) -> ExecResult<Vec<OLLog>> {
+    let exp = BlockExecExpectations::from_block_parts(header, body);
+    let block_info = BlockInfo::from_header(header);
+
+    let output_buffer = ExecOutputBuffer::new_empty();
+    let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
 
     // 5. If it's the last block of an epoch, then call process_block_manifests,
     // then really check the header state root.
-    //
-    // Then we get the exec output one way or another.
     if let Some(manifest_container) = body.l1_update().map(|u| u.manifest_cont()) {
-        manifest_processing::process_block_manifests(
-            state,
-            manifest_container,
-            tx_ctx.basic_context(),
-        )?;
+        manifest_processing::process_block_manifests(state, manifest_container, &basic_ctx)?;
 
         // After processing manifests, check the actual final state root against the header.
         let final_state_root = state.compute_state_root()?;
@@ -220,18 +264,7 @@ pub fn verify_block<S: IStateAccessorMut>(
         }
     }
 
-    // Defense-in-depth: replay execution already enforces emit-time bounds, and
-    // this explicit boundary check preserves a verifier-side invariant backstop.
-    output_buffer.verify_logs_within_block_limit()?;
-
-    // 6. Check the logs root.
-    let logs = output_buffer.into_logs();
-    let computed_logs_root = compute_logs_root(&logs);
-    if computed_logs_root != exp.logs_root {
-        return Err(ExecError::ChainIntegrity);
-    }
-
-    Ok(logs)
+    Ok(output_buffer.into_logs())
 }
 
 /// Checks that headers are properly continuous and that their fields are

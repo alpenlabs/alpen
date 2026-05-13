@@ -11,7 +11,7 @@ use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
-use strata_ol_stf::execute_block_batch;
+use strata_ol_stf::execute_block_batch_preseal;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -379,7 +379,7 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
 
     let mut da_state = DaAccumulatingState::new(ol_state);
 
-    let logs = execute_block_batch(&mut da_state, &epoch_blocks, &prev_terminal_header)
+    let logs = execute_block_batch_preseal(&mut da_state, &epoch_blocks, &prev_terminal_header)
         .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
 
     let terminal_header = epoch_blocks.ensured_last().header().clone();
