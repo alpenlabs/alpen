@@ -775,7 +775,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .await
             .map_err(db_error)?;
 
-        Ok(manifest.map(|m| HexBytes32::from(m.compute_hash())))
+        Ok(manifest.map(|m| HexBytes32::from(*m.compute_hash().as_ref())))
     }
 
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId> {

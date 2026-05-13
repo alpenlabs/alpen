@@ -178,7 +178,7 @@ impl CheckpointTestHarness {
             AsmHistoryAccumulatorState::new(self.genesis_l1_height as u64);
 
         for leaf in &leaves {
-            asm_accumulator_state.add_manifest_leaf(*leaf).unwrap();
+            asm_accumulator_state.add_manifest_leaf((*leaf).into()).unwrap();
 
             let proof1 = Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(
                 &mut manifest_mmr,
@@ -192,7 +192,7 @@ impl CheckpointTestHarness {
         let manifest_hashes = leaves
             .iter()
             .zip(proof_list)
-            .map(|(leaf, proof)| VerifiableManifestHash::new(*leaf, proof))
+            .map(|(leaf, proof)| VerifiableManifestHash::new((*leaf).into(), proof))
             .collect();
 
         let data = AuxData::new(manifest_hashes, vec![]);
@@ -237,7 +237,11 @@ impl CheckpointTestHarness {
         let state_diff_hash = hash::raw(&state_diff).into();
         let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();
 
-        let manifest_hashes = self.gen_manifest_leaves(&new_tip);
+        let manifest_hashes: Vec<_> = self
+            .gen_manifest_leaves(&new_tip)
+            .into_iter()
+            .map(Into::into)
+            .collect();
         let asm_manifests_hash = compute_asm_manifests_hash_from_leaves(&manifest_hashes);
 
         let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
@@ -291,7 +295,10 @@ impl CheckpointTestHarness {
         let state_diff_hash = hash::raw(&state_diff).into();
         let ol_logs_hash = hash::raw(&ol_logs.as_ssz_bytes()).into();
 
-        let asm_manifests_hash = compute_asm_manifests_hash_from_leaves(manifest_hashes);
+        let manifest_hashes_converted: Vec<_> =
+            manifest_hashes.iter().copied().map(Into::into).collect();
+        let asm_manifests_hash =
+            compute_asm_manifests_hash_from_leaves(&manifest_hashes_converted);
 
         let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
         let claim = CheckpointClaim::new(
