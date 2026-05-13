@@ -1,12 +1,7 @@
-use std::sync::Arc;
-
-use alpen_ee_common::{
-    BlockNumHash, ConsensusHeads, ExecBlockRecord, ExecBlockStorage, StorageError,
-};
+use alpen_ee_common::{BlockNumHash, ConsensusHeads, ExecBlockStorage, StorageError};
 use strata_acct_types::Hash;
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot, watch};
-use tracing::error;
+use tokio::sync::watch;
 
 use crate::state::{ExecChainState, ExecChainStateError};
 
@@ -27,125 +22,10 @@ pub(crate) enum ChainTrackerError {
     ExecChainState(#[from] ExecChainStateError),
 }
 
-/// Queries for reading chain tracker state.
-pub(crate) enum Query {
-    GetBestBlock(oneshot::Sender<ExecBlockRecord>),
-    IsCanonical(Hash, oneshot::Sender<bool>),
-    GetFinalizedBlocknum(oneshot::Sender<u64>),
-}
-
-/// Channel receivers for the execution chain tracker task, split by priority.
-pub(crate) struct TaskChannels {
-    /// Highest priority: new block notifications
-    pub new_block_rx: mpsc::Receiver<Hash>,
-    /// Medium priority: OL consensus updates
-    pub ol_update_rx: mpsc::Receiver<ConsensusHeads>,
-    /// Lowest priority: queries
-    pub query_rx: mpsc::Receiver<Query>,
-}
-
-/// Channel senders for the execution chain tracker task.
-#[derive(Debug, Clone)]
-pub(crate) struct TaskSenders {
-    pub new_block_tx: mpsc::Sender<Hash>,
-    pub ol_update_tx: mpsc::Sender<ConsensusHeads>,
-    pub query_tx: mpsc::Sender<Query>,
-}
-
-/// Create a new set of task channels.
-pub(crate) fn create_task_channels(buffer: usize) -> (TaskSenders, TaskChannels) {
-    let (new_block_tx, new_block_rx) = mpsc::channel(buffer);
-    let (ol_update_tx, ol_update_rx) = mpsc::channel(buffer);
-    let (query_tx, query_rx) = mpsc::channel(buffer);
-
-    (
-        TaskSenders {
-            new_block_tx,
-            ol_update_tx,
-            query_tx,
-        },
-        TaskChannels {
-            new_block_rx,
-            ol_update_rx,
-            query_rx,
-        },
-    )
-}
-
-/// Main task loop for the execution chain tracker.
-///
-/// Processes incoming messages to update chain state, handle new blocks, and respond to queries.
-/// The task exits if the preconf head channel is closed, as this is considered a fatal error.
-///
-/// Message priority (highest to lowest): `NewBlock` -> `OLConsensusUpdate` -> `Query`
-pub(crate) async fn exec_chain_tracker_task<TStorage: ExecBlockStorage>(
-    channels: TaskChannels,
-    mut state: ExecChainState,
-    preconf_head_tx: watch::Sender<BlockNumHash>,
-    storage: Arc<TStorage>,
-) {
-    let TaskChannels {
-        mut new_block_rx,
-        mut ol_update_rx,
-        mut query_rx,
-    } = channels;
-
-    loop {
-        // biased ensures priority ordering: NewBlock > OLConsensusUpdate > Query
-        tokio::select! {
-            biased;
-
-            Some(hash) = new_block_rx.recv() => {
-                match handle_new_block(&mut state, hash, storage.as_ref(), &preconf_head_tx).await {
-                    Err(ChainTrackerError::PreconfChannelClosed) => {
-                        error!("preconf head channel closed, exiting task");
-                        return;
-                    }
-                    Err(err) => {
-                        error!(?err, "failed to handle new block");
-                    }
-                    Ok(()) => {}
-                }
-            }
-            Some(status) = ol_update_rx.recv() => {
-                match handle_ol_update(&mut state, status, storage.as_ref(), &preconf_head_tx).await {
-                    Err(ChainTrackerError::PreconfChannelClosed) => {
-                        error!("preconf head channel closed, exiting task");
-                        return;
-                    }
-                    Err(err) => {
-                        error!(?err, "failed to handle OLConsensUpdate");
-                    }
-                    Ok(()) => {}
-                }
-            }
-            Some(query) = query_rx.recv() => {
-                handle_query(&mut state, query).await;
-            }
-            else => break, // All channels closed
-        }
-    }
-}
-
-/// Handles state queries from external callers.
-async fn handle_query(state: &mut ExecChainState, query: Query) {
-    match query {
-        Query::GetBestBlock(tx) => {
-            let _ = tx.send(state.get_best_block().clone());
-        }
-        Query::IsCanonical(hash, tx) => {
-            let _ = tx.send(state.is_canonical(&hash));
-        }
-        Query::GetFinalizedBlocknum(tx) => {
-            let _ = tx.send(state.finalized_blocknum());
-        }
-    }
-}
-
 /// Handles a new block notification by fetching it from storage and appending to chain state.
 ///
 /// Sends a preconf head update if the best tip changes.
-async fn handle_new_block<TStorage: ExecBlockStorage>(
+pub(crate) async fn handle_new_block<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     hash: Hash,
     storage: &TStorage,
@@ -172,7 +52,7 @@ async fn handle_new_block<TStorage: ExecBlockStorage>(
 /// Handles an OL consensus update.
 ///
 /// Updates finalized state if a tracked unfinalized block becomes finalized.
-async fn handle_ol_update<TStorage: ExecBlockStorage>(
+pub(crate) async fn handle_ol_update<TStorage: ExecBlockStorage>(
     state: &mut ExecChainState,
     status: ConsensusHeads,
     storage: &TStorage,

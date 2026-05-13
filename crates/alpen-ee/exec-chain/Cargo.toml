@@ -10,7 +10,10 @@ workspace = true
 alpen-ee-common.workspace = true
 strata-acct-types.workspace = true
 
+anyhow.workspace = true
 eyre.workspace = true
+serde.workspace = true
+strata-service.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

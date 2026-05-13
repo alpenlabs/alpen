@@ -82,10 +82,4 @@ impl OLTrackerError {
     }
 }
 
-impl From<eyre::Error> for OLTrackerError {
-    fn from(e: eyre::Error) -> Self {
-        OLTrackerError::Other(e.to_string())
-    }
-}
-
 pub(crate) type Result<T> = result::Result<T, OLTrackerError>;
