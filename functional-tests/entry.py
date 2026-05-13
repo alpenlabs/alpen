@@ -282,12 +282,16 @@ def main(argv: list[str]) -> int:
             pre_generate_blocks=110,
             epoch_sealing=EpochSealingConfig(slots_per_epoch=4),
         ),
-        # OL isolated: strata + bitcoin, no EE, with a genesis snark account
+        # OL isolated: strata + bitcoin, no EE, with a genesis snark account.
+        # Predicate is the alpen-acct program's deterministic test Schnorr pubkey
+        # (derived from SK = [0x02; 32] inside strata_proofimpl_alpen_acct). No
+        # proofs are submitted against this account in this env, so the specific
+        # pubkey value doesn't matter — only that it's a well-formed predicate.
         "ol_isolated": StrataEnvConfig(
             pre_generate_blocks=110,
             genesis_accounts={
                 "00" * 31 + "42": GenesisAccountData(
-                    predicate="AlwaysAccept",
+                    predicate="Bip340Schnorr:4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
                     inner_state="00" * 32,
                     balance=0,
                 )

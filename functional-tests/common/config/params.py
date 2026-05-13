@@ -124,7 +124,9 @@ class RollupParams:
     target_l2_batch_size: int = field(default=64)
     deposit_amount: int = field(default=100000)
     recovery_delay: int = field(default=1008)
-    checkpoint_predicate: str = field(default="AlwaysAccept")
+    checkpoint_predicate: str = field(
+        default="Bip340Schnorr:1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
+    )
     dispatch_assignment_dur: int = field(default=144)
     proof_publish_mode: ProofPublishMode = field(default_factory=ProofPublishModeTimeout)
     max_deposits_in_block: int = field(default=10)
@@ -143,7 +145,9 @@ class RollupParams:
 class GenesisAccountData:
     """Genesis snark account data. Maps to Rust GenesisSnarkAccountData."""
 
-    predicate: str = "AlwaysAccept"
+    predicate: str = (
+        "Bip340Schnorr:4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
+    )
     inner_state: str = field(default_factory=lambda: hex_bytes_repeated(0))
     balance: int = 0
 
