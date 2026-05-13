@@ -442,12 +442,13 @@ pub fn execute_block_batch_preseal<S: IStateAccessorMut>(
     state: &mut S,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
+    bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     let mut parent = initial_parent.clone();
     let mut batch_logs = Vec::with_capacity(blocks.len());
 
     for block in blocks {
-        let logs = verify_block_preseal(state, block.header(), Some(&parent), block.body())?;
+        let logs = verify_block_preseal(state, block.header(), Some(&parent), block.body(), bridge_params)?;
         parent = block.header().clone();
         batch_logs.push(logs);
     }

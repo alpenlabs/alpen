@@ -68,6 +68,8 @@ class AlpenClientFactory(flexitest.Factory):
         ol_submit_token: str | None = None,
         da_config: EeDaConfig | None = None,
         dev_track_latest_epoch: bool = False,
+        bridge_denomination: int = 100_000_000,
+        max_withdrawal_amount: int | None = 1_000_000_000,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -154,6 +156,11 @@ class AlpenClientFactory(flexitest.Factory):
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
 
+        # Withdrawal denomination and cap (bridge params)
+        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
+        if max_withdrawal_amount is not None:
+            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
+
         # DA pipeline configuration
         if da_config is not None:
             # fmt: off
@@ -217,6 +224,8 @@ class AlpenClientFactory(flexitest.Factory):
         datadir_override: str | None = None,
         sequencer_http: str | None = None,
         ol_endpoint: str | None = None,
+        bridge_denomination: int = 100_000_000,
+        max_withdrawal_amount: int | None = 1_000_000_000,
         **kwargs,
     ) -> AlpenClientService:
         """
@@ -304,6 +313,11 @@ class AlpenClientFactory(flexitest.Factory):
         else:
             # Disable all discovery - peers connect via admin_addPeer or --trusted-peers
             cmd.append("-d")
+
+        # Withdrawal denomination and cap (bridge params)
+        cmd.extend(["--bridge-denomination", str(bridge_denomination)])
+        if max_withdrawal_amount is not None:
+            cmd.extend(["--max-withdrawal-amount", str(max_withdrawal_amount)])
 
         http_url = f"http://127.0.0.1:{http_port}"
 

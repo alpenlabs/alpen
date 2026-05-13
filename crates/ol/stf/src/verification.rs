@@ -160,7 +160,7 @@ pub fn verify_block<S: IStateAccessorMut>(
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
 
-    let mut logs = verify_block_preseal(state, header, parent_header, body)?;
+    let mut logs = verify_block_preseal(state, header, parent_header, body, bridge_params)?;
     logs.extend(apply_block_manifests(state, header, body)?);
 
     // Verify logs size.
@@ -197,6 +197,7 @@ pub fn verify_block_preseal<S: IStateAccessorMut>(
     header: &OLBlockHeader,
     parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
+    bridge_params: BridgeParams,
 ) -> ExecResult<Vec<OLLog>> {
     // 0. Do preliminary sanity checks.
     verify_header_continuity(header, parent_header)?;
