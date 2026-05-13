@@ -353,9 +353,8 @@ where
 
 /// Fetches ASM manifests for a terminal block using `BlockAssemblyAnchorContext`.
 ///
-/// Terminal blocks need to include all L1 blocks processed since the last terminal block.
-/// This function fetches manifests from `parent_state.last_l1_height() + 1` up to the latest
-/// available L1 block.
+/// Terminal blocks include up to [`MAX_SEALING_MANIFEST_COUNT`] L1 blocks processed since the
+/// last terminal block.
 async fn fetch_asm_manifests_for_terminal_block<
     C: BlockAssemblyAnchorContext,
     S: IStateAccessor,
@@ -364,10 +363,14 @@ async fn fetch_asm_manifests_for_terminal_block<
     parent_state: &S,
 ) -> BlockAssemblyResult<Option<OLL1ManifestContainer>> {
     let last_l1_height = parent_state.last_l1_height();
-    let start_height = last_l1_height + 1;
+    let start_height = last_l1_height
+        .checked_add(1)
+        .ok_or_else(|| BlockAssemblyError::Other("l1 height overflow".to_string()))?;
 
     // Fetch manifests using BlockAssemblyAnchorContext trait
-    let manifests = ctx.fetch_asm_manifests_from(start_height).await?;
+    let manifests = ctx
+        .fetch_asm_manifests_from(start_height, MAX_SEALING_MANIFEST_COUNT as u32)
+        .await?;
 
     let total_logs: usize = manifests.iter().map(|m| m.logs().len()).sum();
     debug!(
@@ -828,14 +831,16 @@ mod tests {
 
     use strata_acct_types::*;
     use strata_asm_proto_checkpoint_types::MAX_OL_LOGS_PER_CHECKPOINT;
-    use strata_identifiers::{Buf32, L1Height, OLBlockId};
-    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, OLLog};
+    use strata_identifiers::{Buf32, L1BlockId, L1Height, OLBlockId};
+    use strata_ol_chain_types_new::{MAX_LOGS_PER_BLOCK, MAX_SEALING_MANIFEST_COUNT, OLLog};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
     use crate::test_utils::*;
 
     type OlWriteBatch = WriteBatch<<MemoryStateBaseLayer as IStateAccessor>::AccountState>;
+
+    const SEALING_MANIFEST_CAP: L1Height = MAX_SEALING_MANIFEST_COUNT as L1Height;
 
     async fn build_process_tx_env(account_id: AccountId) -> TestEnv {
         let env_builder = TestStorageFixtureBuilder::new()
@@ -1561,6 +1566,129 @@ mod tests {
         check_block_slot_epoch(&block_template, 10, 1);
         // After genesis processes manifest 1, only manifests 2 and 3 remain
         check_terminal_block_with_manifests(&block_template, &[2, 3]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_block_below_max_sealing_manifests() {
+        let manifest_count = SEALING_MANIFEST_CAP - 1;
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(manifest_count);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let parent_l1_height = env.parent_last_l1_height().await;
+        let output = env
+            .construct_empty_block()
+            .await
+            .expect("terminal block generation should succeed");
+
+        let expected_heights: Vec<L1Height> =
+            ((parent_l1_height + 1)..=(parent_l1_height + manifest_count)).collect();
+        check_terminal_block_with_manifests(&output.template, &expected_heights);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_block_caps_at_max_sealing_manifests() {
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP + 1);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let parent_l1_height = env.parent_last_l1_height().await;
+        let output = env
+            .construct_empty_block()
+            .await
+            .expect("terminal block generation should succeed");
+
+        let expected_heights: Vec<L1Height> =
+            ((parent_l1_height + 1)..=(parent_l1_height + SEALING_MANIFEST_CAP)).collect();
+        check_terminal_block_with_manifests(&output.template, &expected_heights);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_block_at_exact_max_boundary() {
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let parent_l1_height = env.parent_last_l1_height().await;
+        let output = env
+            .construct_empty_block()
+            .await
+            .expect("terminal block generation should succeed");
+
+        let expected_heights: Vec<L1Height> =
+            ((parent_l1_height + 1)..=(parent_l1_height + SEALING_MANIFEST_CAP)).collect();
+        check_terminal_block_with_manifests(&output.template, &expected_heights);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_consecutive_terminal_blocks_drain_backlog() {
+        let rollover_count: L1Height = 2;
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP + rollover_count);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let first_parent_l1_height = env.parent_last_l1_height().await;
+        let first_output = env
+            .construct_empty_block()
+            .await
+            .expect("first terminal block generation should succeed");
+        let first_expected_heights: Vec<L1Height> = ((first_parent_l1_height + 1)
+            ..=(first_parent_l1_height + SEALING_MANIFEST_CAP))
+            .collect();
+        check_terminal_block_with_manifests(&first_output.template, &first_expected_heights);
+        env.persist(&first_output).await;
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 20).await;
+        let second_parent_l1_height = env.parent_last_l1_height().await;
+        let second_output = env
+            .construct_empty_block()
+            .await
+            .expect("second terminal block generation should succeed");
+        let second_expected_heights: Vec<L1Height> =
+            ((second_parent_l1_height + 1)..=(second_parent_l1_height + rollover_count)).collect();
+        check_terminal_block_with_manifests(&second_output.template, &second_expected_heights);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_terminal_fetch_stops_at_cap() {
+        let env_builder = TestStorageFixtureBuilder::new()
+            .with_genesis_parent_and_l1_manifest_count(SEALING_MANIFEST_CAP + 1);
+        let (fixture, parent_commitment) = env_builder.build_fixture().await;
+        let mut env = TestEnv::from_fixture(fixture, parent_commitment);
+        let parent_l1_height = env.parent_last_l1_height().await;
+        let first_height_past_cap = parent_l1_height + SEALING_MANIFEST_CAP + 1;
+
+        let missing_manifest_blkid = L1BlockId::from(Buf32::from([0xCD; 32]));
+        env.storage()
+            .l1()
+            .revert_canonical_chain_async(first_height_past_cap - 1)
+            .await
+            .expect("revert L1 canonical chain to cap boundary");
+        env.storage()
+            .l1()
+            .extend_canonical_chain_async(&missing_manifest_blkid, first_height_past_cap)
+            .await
+            .expect("insert missing-manifest canonical entry past cap");
+        // ASM tip still points at the original height's blkid; the fetch path only reads its
+        // height.
+
+        let _current_commitment = build_blocks_to_slot(&mut env, 10).await;
+        let output = env
+            .construct_empty_block()
+            .await
+            .expect("terminal block generation should not read past cap");
+
+        let expected_heights: Vec<L1Height> =
+            ((parent_l1_height + 1)..=(parent_l1_height + SEALING_MANIFEST_CAP)).collect();
+        check_terminal_block_with_manifests(&output.template, &expected_heights);
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -71,10 +71,11 @@ pub trait BlockAssemblyAnchorContext: Send + Sync + 'static {
         tip: OLBlockCommitment,
     ) -> BlockAssemblyResult<Option<Arc<Self::State>>>;
 
-    /// Fetch ASM manifests from `start_height` to latest (ascending).
+    /// Fetch ASM manifests from `start_height`, returning at most `max_count` in ascending order.
     async fn fetch_asm_manifests_from(
         &self,
         start_height: L1Height,
+        max_count: u32,
     ) -> BlockAssemblyResult<Vec<AsmManifest>>;
 }
 
@@ -177,8 +178,13 @@ where
     async fn fetch_asm_manifests_from(
         &self,
         start_height: L1Height,
+        max_count: u32,
     ) -> BlockAssemblyResult<Vec<AsmManifest>> {
-        let end_height = match self
+        if max_count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let asm_tip_height = match self
             .storage
             .asm()
             .fetch_most_recent_state()
@@ -187,6 +193,7 @@ where
             Some((commitment, _)) => commitment.height(),
             None => return Ok(Vec::new()),
         };
+        let end_height = asm_tip_height.min(start_height.saturating_add(max_count - 1));
 
         if start_height > end_height {
             return Ok(Vec::new());
