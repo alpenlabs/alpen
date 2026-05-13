@@ -219,6 +219,16 @@ impl<H: ProofSpec> Prover<H> {
     /// (Pending or Proving). Before this change we only re-picked in-progress
     /// work, so a crash between `submit`'s db insert and the spawn would
     /// leave a task stuck in Pending forever.
+    ///
+    /// A task found in `Proving` is one whose previous attempt died
+    /// abnormally — the process was killed (OOM, SIGKILL, panic) before any
+    /// error path could run. In that case no `schedule_retry` ever happened,
+    /// so the retry counter would otherwise stay at its pre-attempt value
+    /// forever and the same crash-inducing task would re-run indefinitely.
+    /// To bound this, recovery treats the dead attempt as a synthetic
+    /// transient failure: bump the counter and either schedule a normal
+    /// retry or, if `max_retries` is exhausted, mark `PermanentFailure` and
+    /// skip the spawn.
     async fn recover(self: &Arc<Self>) {
         let unfinished = match self.task_store.list_unfinished() {
             Ok(v) => v,
@@ -233,26 +243,100 @@ impl<H: ProofSpec> Prover<H> {
         info!(count = unfinished.len(), "recovering unfinished tasks");
         for record in unfinished {
             let key = record.key().to_vec();
-            if let Some(task) = decode_task_key::<H>(&key) {
-                let prover = Arc::clone(self);
-                tokio::spawn(async move {
-                    prover.run_task(task, key).await;
-                });
+            let Some(task) = decode_task_key::<H>(&key) else {
+                continue;
+            };
+
+            if let TaskStatus::Proving { retry_count } = record.status() {
+                let new_count = retry_count + 1;
+                let should_retry = self
+                    .config
+                    .retry
+                    .as_ref()
+                    .is_some_and(|cfg| cfg.should_retry(new_count));
+
+                if !should_retry {
+                    warn!(
+                        %task,
+                        retry_count = new_count,
+                        "task died mid-Proving and retries exhausted; marking PermanentFailure"
+                    );
+                    let _ = self.task_store.update_status(
+                        &key,
+                        TaskStatus::PermanentFailure {
+                            error: format!(
+                                "process died mid-Proving; retries exhausted at {new_count}"
+                            ),
+                        },
+                    );
+                    self.notify(&key, &task);
+                    continue;
+                }
+
+                warn!(
+                    %task,
+                    retry_count = new_count,
+                    "task died mid-Proving; counting as transient failure"
+                );
+                let _ = self.task_store.update_status(
+                    &key,
+                    TaskStatus::TransientFailure {
+                        retry_count: new_count,
+                        error: "process died mid-Proving".to_string(),
+                    },
+                );
+                // Fall through to spawn — `run_task` will snapshot the bumped
+                // count from the now-TransientFailure record.
             }
+
+            let prover = Arc::clone(self);
+            tokio::spawn(async move {
+                prover.run_task(task, key).await;
+            });
         }
+    }
+
+    /// Read the persisted retry counter for a task.
+    ///
+    /// Used at the top of [`Self::run_task`] before status is overwritten to
+    /// `Proving`, and by [`Self::recover`] to compute the post-crash bump.
+    /// Returns 0 for `Pending` or absent records.
+    fn read_retry_count(&self, key: &[u8]) -> u32 {
+        self.task_store
+            .get(key)
+            .ok()
+            .flatten()
+            .map_or(0, |r| match r.status() {
+                TaskStatus::Proving { retry_count }
+                | TaskStatus::TransientFailure { retry_count, .. } => *retry_count,
+                _ => 0,
+            })
     }
 
     async fn run_task(&self, task: H::Task, key: Vec<u8>) {
         let span = info_span!("prove", task = %task);
 
         async {
-            let _ = self.task_store.update_status(&key, TaskStatus::Proving);
+            // Snapshot the retry counter from the persisted record BEFORE
+            // flipping status to `Proving`. `schedule_retry` cannot read it
+            // from the store after the overwrite below, and `recover` needs
+            // the count to survive a mid-Proving crash, so persist it inside
+            // the `Proving` status itself.
+            let prior_retry_count = self.read_retry_count(&key);
+
+            let _ = self.task_store.update_status(
+                &key,
+                TaskStatus::Proving {
+                    retry_count: prior_retry_count,
+                },
+            );
 
             // 1. Fetch input
             let input = match self.spec.fetch_input(&task).await {
                 Ok(input) => input,
                 Err(e) => {
-                    self.handle_error(&key, &e);
+                    error!(%e, "fetch_input failed");
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -278,7 +362,7 @@ impl<H: ProofSpec> Prover<H> {
                 Ok(Ok(receipt)) => receipt,
                 Ok(Err(e)) => {
                     error!(%e, "prove failed");
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -299,7 +383,7 @@ impl<H: ProofSpec> Prover<H> {
             if let Some(store) = &self.receipt_store {
                 if let Err(e) = store.put(&key, &receipt) {
                     error!(%e, "receipt store put failed");
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -309,7 +393,7 @@ impl<H: ProofSpec> Prover<H> {
             if let Some(hook) = &self.receipt_hook {
                 if let Err(e) = hook.on_receipt(&task, &receipt).await {
                     error!(%e, "receipt hook failed");
-                    self.handle_error(&key, &e);
+                    self.handle_error(&key, &e, prior_retry_count);
                     self.notify(&key, &task);
                     return;
                 }
@@ -324,9 +408,9 @@ impl<H: ProofSpec> Prover<H> {
         .await;
     }
 
-    fn handle_error(&self, key: &[u8], err: &ProverError) {
+    fn handle_error(&self, key: &[u8], err: &ProverError, prior_retry_count: u32) {
         if err.is_transient() {
-            self.schedule_retry(key, &err.to_string());
+            self.schedule_retry(key, &err.to_string(), prior_retry_count);
         } else {
             let _ = self.task_store.update_status(
                 key,
@@ -337,23 +421,14 @@ impl<H: ProofSpec> Prover<H> {
         }
     }
 
-    fn schedule_retry(&self, key: &[u8], msg: &str) {
-        let current_count = self
-            .task_store
-            .get(key)
-            .ok()
-            .flatten()
-            .and_then(|r| match r.status() {
-                TaskStatus::TransientFailure { retry_count, .. } => Some(*retry_count),
-                _ => None,
-            })
-            .unwrap_or(0);
-        let new_count = current_count + 1;
+    fn schedule_retry(&self, key: &[u8], msg: &str, prior_retry_count: u32) {
+        let new_count = prior_retry_count + 1;
 
         if let Some(ref cfg) = self.config.retry {
             if cfg.should_retry(new_count) {
                 warn!(
                     retry_count = new_count,
+                    error = %msg,
                     "transient failure, scheduling retry"
                 );
                 let _ = self.task_store.update_status(
