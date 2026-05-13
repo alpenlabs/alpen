@@ -27,6 +27,7 @@ mod sequencer_services {
     use anyhow::{Result, anyhow};
     use strata_btcio::{
         broadcaster::{BroadcasterBuilder, L1BroadcastHandle},
+        fee_bumper::service::{FeeBumperContext, fee_bumper_task},
         writer::{BundlerBuilder, EnvelopeHandle, WatcherBuilder, WriterContext},
     };
     use strata_config::EpochSealingConfig;
@@ -147,6 +148,18 @@ mod sequencer_services {
             )
             .launch(executor)
             .await?;
+
+            if config.fee_bumping.is_enabled() {
+                executor.spawn_critical_async(
+                    "btcio_fee_bumper",
+                    fee_bumper_task(
+                        nodectx.bitcoin_client().clone(),
+                        (*config).clone(),
+                        broadcast_handle.clone(),
+                        FeeBumperContext::default(),
+                    ),
+                );
+            }
 
             Ok((envelope_handle, watcher_handle))
         })

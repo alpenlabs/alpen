@@ -978,13 +978,14 @@ mod test {
 
         assert_eq!(config.fee_bumping.policy, FeeBumpPolicy::Disabled);
         assert_eq!(config.fee_bumping.min_age_blocks.get(), 2);
+        assert_eq!(config.fee_bumping.target_inclusion_blocks.get(), 1);
         assert_eq!(config.fee_bumping.max_attempts.get(), 5);
         assert_eq!(config.fee_bumping.min_fee_rate_delta_sat_vb.get(), 1);
     }
 
     #[test]
-    fn test_writer_config_rejects_rbf_until_runtime_is_wired() {
-        let error = toml::from_str::<WriterConfig>(
+    fn test_writer_config_accepts_rbf_fee_bumping() {
+        let config = toml::from_str::<WriterConfig>(
             r#"
             write_poll_dur_ms = 200
             fee_policy = "bitcoind"
@@ -994,18 +995,17 @@ mod test {
             [fee_bumping]
             policy = "rbf"
             min_age_blocks = 2
+            target_inclusion_blocks = 1
             max_attempts = 5
             multiplier_bps = 12_500
             min_fee_rate_delta_sat_vb = 1
             max_fee_rate_sat_vb = 1_000
             "#,
         )
-        .expect_err("writer config should reject unsupported RBF fee bumping");
+        .expect("writer config should accept RBF fee bumping");
 
-        assert!(
-            error.to_string().contains("not supported"),
-            "unexpected error: {error}"
-        );
+        assert_eq!(config.fee_bumping.policy, FeeBumpPolicy::Rbf);
+        assert_eq!(config.fee_bumping.target_inclusion_blocks.get(), 1);
     }
 
     #[test]

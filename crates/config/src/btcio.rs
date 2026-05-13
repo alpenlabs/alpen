@@ -1,4 +1,4 @@
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU16, NonZeroU32, NonZeroU64};
 
 use serde::{de::Error as DeError, Deserialize, Serialize};
 
@@ -55,7 +55,7 @@ pub enum FeeBumpPolicy {
     #[default]
     Disabled,
 
-    /// Reserved for opt-in replace-by-fee once the runtime replacement service is wired.
+    /// Enables opt-in replace-by-fee for writer-published transactions.
     Rbf,
 }
 
@@ -67,6 +67,9 @@ pub struct FeeBumpingConfig {
 
     /// Number of L1 blocks a published transaction may remain unconfirmed before it is stale.
     pub min_age_blocks: NonZeroU32,
+
+    /// Confirmation target used when estimating the replacement fee rate.
+    pub target_inclusion_blocks: NonZeroU16,
 
     /// Maximum number of broadcast attempts for one replacement chain.
     pub max_attempts: NonZeroU32,
@@ -87,12 +90,6 @@ pub struct FeeBumpingConfig {
 impl FeeBumpingConfig {
     /// Validates the fee bumping configuration.
     pub fn validate(&self) -> Result<(), String> {
-        if matches!(self.policy, FeeBumpPolicy::Rbf) {
-            return Err(
-                "fee_bumping.policy = \"rbf\" is not supported until the fee-bumper runtime is wired"
-                    .to_string(),
-            );
-        }
         if self.multiplier_bps < 10_000 {
             return Err(
                 "fee_bumping.multiplier_bps must be at least 10_000 so bumps do not lower fees"
@@ -114,6 +111,8 @@ struct FeeBumpingConfigUnchecked {
     policy: FeeBumpPolicy,
     #[serde(default = "default_fee_bumping_min_age_blocks")]
     min_age_blocks: NonZeroU32,
+    #[serde(default = "default_fee_bumping_target_inclusion_blocks")]
+    target_inclusion_blocks: NonZeroU16,
     #[serde(default = "default_fee_bumping_max_attempts")]
     max_attempts: NonZeroU32,
     #[serde(default = "default_fee_bumping_multiplier_bps")]
@@ -133,6 +132,7 @@ impl<'de> Deserialize<'de> for FeeBumpingConfig {
         let config = Self {
             policy: unchecked.policy,
             min_age_blocks: unchecked.min_age_blocks,
+            target_inclusion_blocks: unchecked.target_inclusion_blocks,
             max_attempts: unchecked.max_attempts,
             multiplier_bps: unchecked.multiplier_bps,
             min_fee_rate_delta_sat_vb: unchecked.min_fee_rate_delta_sat_vb,
@@ -258,6 +258,7 @@ impl Default for FeeBumpingConfig {
         Self {
             policy: FeeBumpPolicy::Disabled,
             min_age_blocks: default_fee_bumping_min_age_blocks(),
+            target_inclusion_blocks: default_fee_bumping_target_inclusion_blocks(),
             max_attempts: default_fee_bumping_max_attempts(),
             multiplier_bps: default_fee_bumping_multiplier_bps(),
             min_fee_rate_delta_sat_vb: default_fee_bumping_min_fee_rate_delta_sat_vb(),
@@ -285,6 +286,13 @@ const fn nonzero_u32(value: u32) -> NonZeroU32 {
     }
 }
 
+const fn nonzero_u16(value: u16) -> NonZeroU16 {
+    match NonZeroU16::new(value) {
+        Some(value) => value,
+        None => panic!("default value must be non-zero"),
+    }
+}
+
 const fn nonzero_u64(value: u64) -> NonZeroU64 {
     match NonZeroU64::new(value) {
         Some(value) => value,
@@ -294,6 +302,10 @@ const fn nonzero_u64(value: u64) -> NonZeroU64 {
 
 const fn default_fee_bumping_min_age_blocks() -> NonZeroU32 {
     nonzero_u32(2)
+}
+
+const fn default_fee_bumping_target_inclusion_blocks() -> NonZeroU16 {
+    nonzero_u16(1)
 }
 
 const fn default_fee_bumping_max_attempts() -> NonZeroU32 {
