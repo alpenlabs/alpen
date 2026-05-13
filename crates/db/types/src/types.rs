@@ -12,7 +12,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::{BatchInfo, Checkpoint, CheckpointSidecar};
 use strata_csm_types::{CheckpointL1Ref, L1Payload, PayloadIntent};
-use strata_identifiers::{Buf32, Buf64, OLTxId};
+use strata_identifiers::{Buf32, Buf64, OLTxId, RBuf32};
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_chainstate_types::Chainstate;
 use strata_primitives::L1Height;
@@ -20,6 +20,12 @@ use zkaleido::Proof;
 
 /// Taproot script-spend sighash for the reveal transaction.
 pub type Sighash = Buf32;
+
+/// Bitcoin transaction ID displayed in Bitcoin byte order.
+pub type L1TxId = RBuf32;
+
+/// Bitcoin witness transaction ID displayed in Bitcoin byte order.
+pub type L1WtxId = RBuf32;
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
@@ -62,8 +68,8 @@ pub enum IntentStatus {
 #[derive(Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
 pub struct BundledPayloadEntry {
     pub payload: L1Payload,
-    pub commit_txid: Buf32,
-    pub reveal_txid: Buf32,
+    pub commit_txid: L1TxId,
+    pub reveal_txid: L1TxId,
     pub status: L1BundleStatus,
     /// Schnorr signature provided by the external signer for envelope reveal tx.
     ///
@@ -74,8 +80,8 @@ pub struct BundledPayloadEntry {
 impl BundledPayloadEntry {
     pub fn new(
         payload: L1Payload,
-        commit_txid: Buf32,
-        reveal_txid: Buf32,
+        commit_txid: L1TxId,
+        reveal_txid: L1TxId,
         status: L1BundleStatus,
     ) -> Self {
         Self {
@@ -93,65 +99,34 @@ impl BundledPayloadEntry {
     ///   Because it is better to defer gathering utxos as late as possible to prevent being spent
     ///   by others. Those will be created and signed in a single step.
     pub fn new_unsigned(payload: L1Payload) -> Self {
-        let cid = Buf32::zero();
-        let rid = Buf32::zero();
+        let cid = L1TxId::zero();
+        let rid = L1TxId::zero();
         Self::new(payload, cid, rid, L1BundleStatus::Unsigned)
     }
 }
 
-// Custom debug implementation to print commit_txid and reveal_txid in little endian
+// Custom debug implementation to print commit_txid and reveal_txid in Bitcoin order.
 impl fmt::Debug for BundledPayloadEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let commit_txid_le = {
-            let mut bytes = self.commit_txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-        let reveal_txid_le = {
-            let mut bytes = self.reveal_txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
+        let commit_txid = format!("{:?}", self.commit_txid);
+        let reveal_txid = format!("{:?}", self.reveal_txid);
 
         f.debug_struct("BundledPayloadEntry")
             .field("payload", &self.payload)
-            .field("commit_txid", &commit_txid_le)
-            .field("reveal_txid", &reveal_txid_le)
+            .field("commit_txid", &commit_txid)
+            .field("reveal_txid", &reveal_txid)
             .field("status", &self.status)
             .finish()
     }
 }
 
-// Custom display implementation to print commit_txid and reveal_txid in little endian
+// Custom display implementation to print commit_txid and reveal_txid in Bitcoin order.
 impl fmt::Display for BundledPayloadEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let commit_txid_le = {
-            let mut bytes = self.commit_txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-        let reveal_txid_le = {
-            let mut bytes = self.reveal_txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-
         write!(
             f,
-            "BundledPayloadEntry {{ payload: {:?}, commit_txid: {}, reveal_txid: {}, status: {:?} }}",
-            self.payload, commit_txid_le, reveal_txid_le, self.status
+            "BundledPayloadEntry {{ payload: {:?}, commit_txid: {:?}, reveal_txid: {:?}, status: {:?} }}",
+            self.payload, self.commit_txid, self.reveal_txid, self.status
         )
     }
 }
@@ -451,9 +426,9 @@ pub struct ChunkedEnvelopeEntry {
     /// DA blob version carried in the commit OP_RETURN.
     pub da_blob_version: u32,
     /// Commit transaction ID. Zero if unsigned.
-    pub commit_txid: Buf32,
+    pub commit_txid: L1TxId,
     /// Witness transaction ID of the commit. Zero if unsigned.
-    pub commit_wtxid: Buf32,
+    pub commit_wtxid: L1WtxId,
     /// Per-reveal metadata, ordered by output index. Empty if unsigned.
     pub reveals: Vec<RevealTxMeta>,
     /// Lifecycle status.
@@ -474,8 +449,8 @@ impl ChunkedEnvelopeEntry {
             chunk_data,
             magic_bytes,
             da_blob_version,
-            commit_txid: Buf32::zero(),
-            commit_wtxid: Buf32::zero(),
+            commit_txid: L1TxId::zero(),
+            commit_wtxid: L1WtxId::zero(),
             reveals: Vec::new(),
             status: ChunkedEnvelopeStatus::Unsigned,
         }
@@ -486,7 +461,7 @@ impl fmt::Display for ChunkedEnvelopeEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "ChunkedEnvelopeEntry(status={}, chunk_count={}, commit_txid={}, reveals=[",
+            "ChunkedEnvelopeEntry(status={}, chunk_count={}, commit_txid={:?}, reveals=[",
             self.status,
             self.chunk_data.len(),
             self.commit_txid
@@ -509,9 +484,9 @@ pub struct RevealTxMeta {
     /// Output index in the commit tx that this reveal spends.
     pub vout_index: u32,
     /// Reveal transaction ID.
-    pub txid: Buf32,
+    pub txid: L1TxId,
     /// Reveal witness transaction ID.
-    pub wtxid: Buf32,
+    pub wtxid: L1WtxId,
     /// Raw signed reveal transaction bytes (consensus-encoded).
     /// Stored here until the commit is published, then added to broadcast DB.
     pub tx_bytes: Vec<u8>,
@@ -519,7 +494,7 @@ pub struct RevealTxMeta {
 
 impl fmt::Display for RevealTxMeta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.txid, self.wtxid)
+        write!(f, "{:?}/{:?}", self.txid, self.wtxid)
     }
 }
 
@@ -577,6 +552,7 @@ mod tests {
     };
     use serde_json;
     use strata_identifiers::test_utils::{buf32_strategy, l1_block_commitment_strategy};
+    use strata_l1_txfmt::TagData;
 
     use super::*;
 
@@ -625,27 +601,73 @@ mod tests {
         assert_eq!(status.to_string(), "confirmed@42/000000..000000 (12 confs)");
     }
 
+    fn bytes_from_start(start: u8) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        for (idx, byte) in bytes.iter_mut().enumerate() {
+            *byte = start.wrapping_add(idx as u8);
+        }
+        bytes
+    }
+
+    fn reversed_hex(bytes: [u8; 32]) -> String {
+        bytes
+            .into_iter()
+            .rev()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    #[test]
+    fn bundled_payload_entry_formats_full_reversed_txids() {
+        let commit_bytes = bytes_from_start(0x10);
+        let reveal_bytes = bytes_from_start(0x40);
+        let payload = L1Payload::new(vec![vec![1, 2, 3]], TagData::new(1, 1, vec![]).unwrap());
+        let entry = BundledPayloadEntry::new(
+            payload,
+            L1TxId::from(commit_bytes),
+            L1TxId::from(reveal_bytes),
+            L1BundleStatus::Unpublished,
+        );
+
+        let display = entry.to_string();
+        let debug = format!("{entry:?}");
+        let expected_commit = reversed_hex(commit_bytes);
+        let expected_reveal = reversed_hex(reveal_bytes);
+
+        assert!(display.contains(&expected_commit));
+        assert!(display.contains(&expected_reveal));
+        assert!(!display.contains(".."));
+        assert!(debug.contains(&expected_commit));
+        assert!(debug.contains(&expected_reveal));
+        assert!(!debug.contains(".."));
+    }
+
     #[test]
     fn display_chunked_envelope_entry_includes_commit_and_reveals() {
+        let commit_bytes = bytes_from_start(0x01);
+        let commit_witness_bytes = bytes_from_start(0x21);
+        let reveal_bytes = bytes_from_start(0x41);
+        let reveal_witness_bytes = bytes_from_start(0x61);
         let entry = ChunkedEnvelopeEntry {
             chunk_data: vec![vec![1], vec![2]],
             magic_bytes: MagicBytes::new([0; 4]),
             da_blob_version: 1,
-            commit_txid: Buf32::from([1; 32]),
-            commit_wtxid: Buf32::from([4; 32]),
+            commit_txid: L1TxId::from(commit_bytes),
+            commit_wtxid: L1WtxId::from(commit_witness_bytes),
             reveals: vec![RevealTxMeta {
                 vout_index: 0,
-                txid: Buf32::from([2; 32]),
-                wtxid: Buf32::from([3; 32]),
+                txid: L1TxId::from(reveal_bytes),
+                wtxid: L1WtxId::from(reveal_witness_bytes),
                 tx_bytes: Vec::new(),
             }],
             status: ChunkedEnvelopeStatus::Published,
         };
 
-        assert_eq!(
-            entry.to_string(),
-            "ChunkedEnvelopeEntry(status=published, chunk_count=2, commit_txid=010101..010101, reveals=[020202..020202/030303..030303])"
-        );
+        let display = entry.to_string();
+        assert!(display.contains(&reversed_hex(commit_bytes)));
+        assert!(display.contains(&reversed_hex(reveal_bytes)));
+        assert!(display.contains(&reversed_hex(reveal_witness_bytes)));
+        assert!(!display.contains(".."));
     }
 
     #[test]

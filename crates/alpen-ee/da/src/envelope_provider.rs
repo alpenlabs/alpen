@@ -12,7 +12,9 @@ use bitcoin::{Txid, Wtxid};
 use eyre::{bail, ensure};
 use strata_btc_types::Buf32BitcoinExt;
 use strata_btcio::writer::chunked_envelope::ChunkedEnvelopeHandle;
-use strata_db_types::types::{ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxStatus};
+use strata_db_types::types::{
+    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxId, L1TxStatus, L1WtxId,
+};
 use strata_identifiers::{L1BlockCommitment, L1BlockId, L1Height};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::buf::Buf32;
@@ -51,6 +53,18 @@ struct FinalizedRevealTx {
 
 /// Groups commit + reveal txs by L1 block for [`L1DaBlockRef`] construction.
 type BlockMap = HashMap<(Buf32, L1Height), BlockTxs>;
+
+fn to_raw_buf32(txid: L1TxId) -> Buf32 {
+    Buf32(txid.0)
+}
+
+fn txid_to_bitcoin(txid: L1TxId) -> Txid {
+    to_raw_buf32(txid).to_txid()
+}
+
+fn wtxid_to_bitcoin(wtxid: L1WtxId) -> Wtxid {
+    Buf32(wtxid.0).to_wtxid()
+}
 
 /// [`BatchDaProvider`] that posts DA via chunked envelope inscription.
 pub struct ChunkedEnvelopeDaProvider {
@@ -178,8 +192,10 @@ impl ChunkedEnvelopeDaProvider {
         // Commit tx (carries the EE DA magic/version OP_RETURN).
         let (commit_block_hash, commit_block_height) =
             self.lookup_finalized(entry.commit_txid).await?;
-        let commit_tx =
-            FinalizedTxRef::new(entry.commit_txid.to_txid(), entry.commit_wtxid.to_wtxid());
+        let commit_tx = FinalizedTxRef::new(
+            txid_to_bitcoin(entry.commit_txid),
+            wtxid_to_bitcoin(entry.commit_wtxid),
+        );
         block_map
             .entry((commit_block_hash, commit_block_height))
             .or_default()
@@ -194,7 +210,10 @@ impl ChunkedEnvelopeDaProvider {
                 .reveals
                 .push(FinalizedRevealTx {
                     vout_index: reveal.vout_index,
-                    tx: FinalizedTxRef::new(reveal.txid.to_txid(), reveal.wtxid.to_wtxid()),
+                    tx: FinalizedTxRef::new(
+                        txid_to_bitcoin(reveal.txid),
+                        wtxid_to_bitcoin(reveal.wtxid),
+                    ),
                 });
         }
 
@@ -221,9 +240,13 @@ impl ChunkedEnvelopeDaProvider {
     }
 
     /// Looks up a tx in the broadcast DB and returns the finalized L1 block.
-    async fn lookup_finalized(&self, txid: Buf32) -> eyre::Result<(Buf32, L1Height)> {
-        let Some(tx_entry) = self.broadcast_ops.get_tx_entry_by_id_async(txid).await? else {
-            bail!("broadcast entry for txid {txid} not found");
+    async fn lookup_finalized(&self, txid: L1TxId) -> eyre::Result<(Buf32, L1Height)> {
+        let Some(tx_entry) = self
+            .broadcast_ops
+            .get_tx_entry_by_id_async(to_raw_buf32(txid))
+            .await?
+        else {
+            bail!("broadcast entry for txid {txid:?} not found");
         };
         match tx_entry.status {
             L1TxStatus::Finalized {
@@ -231,7 +254,10 @@ impl ChunkedEnvelopeDaProvider {
                 block_height,
                 ..
             } => Ok((block_hash, block_height)),
-            other => bail!("expected Finalized status for txid {txid}, got {:?}", other),
+            other => bail!(
+                "expected Finalized status for txid {txid:?}, got {:?}",
+                other
+            ),
         }
     }
 }
@@ -305,15 +331,15 @@ mod tests {
             DA_BLOB_VERSION,
         );
         entry.status = status;
-        entry.commit_txid = Buf32::from([0x11; 32]);
-        entry.commit_wtxid = Buf32::from([0x12; 32]);
+        entry.commit_txid = L1TxId::from([0x11; 32]);
+        entry.commit_wtxid = L1WtxId::from([0x12; 32]);
         entry.reveals = heights
             .iter()
             .enumerate()
             .map(|(i, _)| RevealTxMeta {
                 vout_index: (i + 1) as u32,
-                txid: Buf32::from([(0x20 + i as u8); 32]),
-                wtxid: Buf32::from([(0x30 + i as u8); 32]),
+                txid: L1TxId::from([(0x20 + i as u8); 32]),
+                wtxid: L1WtxId::from([(0x30 + i as u8); 32]),
                 tx_bytes: btc_serialize(&make_test_tx()),
             })
             .collect();
@@ -406,15 +432,15 @@ mod tests {
             .unwrap();
         // Commit landed at height 99 (before either reveal).
         broadcast_ops
-            .put_tx_entry_async(entry.commit_txid, finalized_tx_entry(99))
+            .put_tx_entry_async(to_raw_buf32(entry.commit_txid), finalized_tx_entry(99))
             .await
             .unwrap();
         broadcast_ops
-            .put_tx_entry_async(entry.reveals[0].txid, finalized_tx_entry(101))
+            .put_tx_entry_async(to_raw_buf32(entry.reveals[0].txid), finalized_tx_entry(101))
             .await
             .unwrap();
         broadcast_ops
-            .put_tx_entry_async(entry.reveals[1].txid, finalized_tx_entry(100))
+            .put_tx_entry_async(to_raw_buf32(entry.reveals[1].txid), finalized_tx_entry(100))
             .await
             .unwrap();
 
@@ -431,22 +457,25 @@ mod tests {
         // Block 99 holds only the commit tx.
         assert_eq!(
             refs[0].txns,
-            vec![(entry.commit_txid.to_txid(), entry.commit_wtxid.to_wtxid())]
+            vec![(
+                txid_to_bitcoin(entry.commit_txid),
+                wtxid_to_bitcoin(entry.commit_wtxid)
+            )]
         );
 
         // Blocks 100 and 101 each hold one reveal tx.
         assert_eq!(
             refs[1].txns,
             vec![(
-                entry.reveals[1].txid.to_txid(),
-                entry.reveals[1].wtxid.to_wtxid()
+                txid_to_bitcoin(entry.reveals[1].txid),
+                wtxid_to_bitcoin(entry.reveals[1].wtxid)
             )]
         );
         assert_eq!(
             refs[2].txns,
             vec![(
-                entry.reveals[0].txid.to_txid(),
-                entry.reveals[0].wtxid.to_wtxid()
+                txid_to_bitcoin(entry.reveals[0].txid),
+                wtxid_to_bitcoin(entry.reveals[0].wtxid)
             )]
         );
     }

@@ -1,8 +1,7 @@
 use serde::Serialize;
 use strata_crypto::hash;
 use strata_csm_types::L1Payload;
-use strata_db_types::types::L1BundleStatus;
-use strata_primitives::buf::Buf32;
+use strata_db_types::types::{L1BundleStatus, L1TxId};
 
 use super::{helpers::porcelain_field, traits::Formattable};
 
@@ -42,9 +41,9 @@ pub(crate) struct WriterPayloadInfo {
     pub(crate) status: L1BundleStatus,
     pub(crate) payload: L1Payload,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) commit_txid: Option<Buf32>,
+    pub(crate) commit_txid: Option<L1TxId>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) reveal_txid: Option<Buf32>,
+    pub(crate) reveal_txid: Option<L1TxId>,
 }
 
 impl Formattable for WriterPayloadInfo {

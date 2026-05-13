@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::TxidExt;
-use strata_db_types::types::{BundledPayloadEntry, L1TxEntry};
+use strata_db_types::types::{BundledPayloadEntry, L1TxEntry, L1TxId};
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
@@ -14,6 +14,14 @@ use super::{
     context::WriterContext,
 };
 use crate::broadcaster::L1BroadcastHandle;
+
+fn to_l1_txid(txid: bitcoin::Txid) -> L1TxId {
+    L1TxId::from(txid.to_buf32().0)
+}
+
+fn to_raw_buf32(txid: L1TxId) -> Buf32 {
+    Buf32(txid.0)
+}
 
 /// Builds envelope transactions for a payload entry.
 ///
@@ -64,7 +72,7 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
     payloadentry: &BundledPayloadEntry,
     ctx: Arc<WriterContext<R>>,
     broadcast_handle: &L1BroadcastHandle,
-) -> Result<(Buf32, Buf32), EnvelopeError> {
+) -> Result<(L1TxId, L1TxId), EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_envelope_unchecked",
         component = "btcio_writer_signer",
@@ -74,19 +82,19 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
     async {
         let envelope = build_and_sign_envelope_txs(&payloadentry.payload, ctx.as_ref()).await?;
 
-        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         broadcast_handle
-            .put_tx_entry(cid, L1TxEntry::from_tx(&envelope.commit_tx))
+            .put_tx_entry(to_raw_buf32(cid), L1TxEntry::from_tx(&envelope.commit_tx))
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
-        let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+        let rid = to_l1_txid(envelope.reveal_tx.compute_txid());
         broadcast_handle
-            .put_tx_entry(rid, L1TxEntry::from_tx(&envelope.reveal_tx))
+            .put_tx_entry(to_raw_buf32(rid), L1TxEntry::from_tx(&envelope.reveal_tx))
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
-        info!(%cid, reveal_txid = %rid, "envelope signed and stored for broadcast");
+        info!(?cid, reveal_txid = ?rid, "envelope signed and stored for broadcast");
         Ok((cid, rid))
     }
     .instrument(span)
@@ -103,7 +111,7 @@ pub(crate) async fn complete_reveal_and_broadcast(
     envelope: &EnvelopeData,
     signature: &[u8; 64],
     broadcast_handle: &L1BroadcastHandle,
-) -> Result<Buf32, EnvelopeError> {
+) -> Result<L1TxId, EnvelopeError> {
     let span = debug_span!(
         "btcio_payload_reveal",
         component = "btcio_writer_signer",
@@ -122,19 +130,19 @@ pub(crate) async fn complete_reveal_and_broadcast(
         )
         .map_err(EnvelopeError::Other)?;
 
-        let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
+        let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         broadcast_handle
-            .put_tx_entry(cid, L1TxEntry::from_tx(&envelope.commit_tx))
+            .put_tx_entry(to_raw_buf32(cid), L1TxEntry::from_tx(&envelope.commit_tx))
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
-        let rid: Buf32 = reveal_tx.compute_txid().to_buf32();
+        let rid = to_l1_txid(reveal_tx.compute_txid());
         broadcast_handle
-            .put_tx_entry(rid, L1TxEntry::from_tx(&reveal_tx))
+            .put_tx_entry(to_raw_buf32(rid), L1TxEntry::from_tx(&reveal_tx))
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
 
-        info!(%cid, reveal_txid = %rid, "commit and reveal stored for broadcast");
+        info!(?cid, reveal_txid = ?rid, "commit and reveal stored for broadcast");
         Ok(rid)
     }
     .instrument(span)
@@ -174,8 +182,8 @@ mod test {
         let entry = unsigned_test_entry();
 
         assert_eq!(entry.status, L1BundleStatus::Unsigned);
-        assert_eq!(entry.commit_txid, Buf32::zero());
-        assert_eq!(entry.reveal_txid, Buf32::zero());
+        assert_eq!(entry.commit_txid, L1TxId::zero());
+        assert_eq!(entry.reveal_txid, L1TxId::zero());
 
         iops.put_payload_entry_async(0, entry.clone())
             .await
@@ -209,17 +217,17 @@ mod test {
             .unwrap();
 
         // Both txids should be non-zero
-        assert_ne!(cid, Buf32::zero());
-        assert_ne!(rid, Buf32::zero());
+        assert_ne!(cid, L1TxId::zero());
+        assert_ne!(rid, L1TxId::zero());
 
         // Both commit and reveal should be stored in broadcaster DB immediately
         assert!(bcast_handle
-            .get_tx_entry_by_id_async(cid)
+            .get_tx_entry_by_id_async(to_raw_buf32(cid))
             .await
             .unwrap()
             .is_some());
         assert!(bcast_handle
-            .get_tx_entry_by_id_async(rid)
+            .get_tx_entry_by_id_async(to_raw_buf32(rid))
             .await
             .unwrap()
             .is_some());
