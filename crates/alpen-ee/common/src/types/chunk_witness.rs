@@ -13,6 +13,7 @@
 //! encoding) so they round-trip into alloy types at read time.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use strata_acct_types::Hash;
 
 /// Persisted pre-computed witness for one chunk.
 ///
@@ -61,3 +62,19 @@ impl ChunkWitnessRecord {
         self.blocks_rlp.len()
     }
 }
+
+/// Sync callback that extracts a chunk witness for the block range
+/// `(prev_block, last_block]`.
+///
+/// Defined as a sync closure (matching today's `RangeWitnessFn` pattern in
+/// the alpen-client prover) so callers control whether to wrap it in
+/// `tokio::task::spawn_blocking`. Implementations are expected to be
+/// CPU-heavy: re-executing the chunk's blocks, computing multiproofs.
+///
+/// The producer (batch builder) holds an `Arc<ChunkWitnessExtractFn>` and
+/// invokes it at chunk-seal time. The closure is constructed at
+/// alpen-client startup from the reth `ProviderFactory` + `EvmConfig` and
+/// wraps `alpen_reth_witness::RangeWitnessExtractor` plus the alloy-types
+/// → `ChunkWitnessRecord` conversion.
+pub type ChunkWitnessExtractFn =
+    dyn Fn(Hash, Hash) -> eyre::Result<ChunkWitnessRecord> + Send + Sync;

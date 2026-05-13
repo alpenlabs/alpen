@@ -2,7 +2,9 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
+use alpen_ee_common::{
+    BatchId, BatchStorage, BlockNumHash, ChunkWitnessExtractFn, ChunkWitnessStore, ExecBlockStorage,
+};
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::watch;
 
@@ -18,7 +20,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage,
+    BS: BatchStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     /// Genesis block hash, used as the starting point for the first batch.
@@ -31,12 +33,23 @@ where
     pub sealing_policy: S,
     /// Storage for exec blocks.
     pub block_storage: Arc<ES>,
-    /// Storage for batches.
+    /// Storage for batches + chunk witnesses (single concrete type
+    /// implements both today, but the bounds keep the two concerns
+    /// distinct).
     pub batch_storage: Arc<BS>,
     /// Handle to query canonical chain status.
     pub exec_chain: ExecChainHandle,
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
     pub latest_batch_tx: watch::Sender<BatchId>,
+    /// Optional chunk-witness extractor invoked at chunk-seal time. When
+    /// present, `seal_batch` produces a [`ChunkWitnessRecord`] via this
+    /// callback and persists it via the `ChunkWitnessStore` bound on
+    /// `batch_storage`. When absent (tests, configurations without a
+    /// reth provider), chunks seal with no witness pre-computed and
+    /// `ChunkSpec::fetch_input` falls back to its today behavior.
+    ///
+    /// [`ChunkWitnessRecord`]: alpen_ee_common::ChunkWitnessRecord
+    pub chunk_witness_extractor: Option<Arc<ChunkWitnessExtractFn>>,
     /// Marker for the policy type.
     pub _policy: PhantomData<P>,
 }
@@ -46,7 +59,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage,
+    BS: BatchStorage + ChunkWitnessStore,
     ES: ExecBlockStorage + Send + Sync,
 {
     pub(crate) fn canonical_reader(&self) -> impl CanonicalChainReader {

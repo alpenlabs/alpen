@@ -77,6 +77,7 @@ use tracing::{error, info};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
+    pub(super) use alpen_ee_common::{ChunkWitnessExtractFn, ChunkWitnessRecord};
     pub(super) use alpen_ee_da::{ChunkedEnvelopeDaProvider, StateDiffBlobProvider};
     pub(super) use alpen_reth_witness::RangeWitnessExtractor;
     pub(super) use strata_paas::{
@@ -459,6 +460,37 @@ fn main() {
                     FixedBlockCountSealing::new(ext.batch_sealing_block_count);
                 let block_data_provider = Arc::new(BlockCountDataProvider);
 
+                // Build the chunk-spanning witness extractor once, used both
+                // by the batch builder (at chunk-seal time, persisted as a
+                // `ChunkWitnessRecord`) and by the chunk prover's
+                // `ChunkSpec::fetch_input` fallback path (on a witness-record
+                // miss, e.g. for chunks sealed before this code rolled out).
+                let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
+                    node.provider.clone(),
+                    node.evm_config.clone(),
+                ));
+
+                // `ChunkWitnessExtractFn` is the production-time hook: takes
+                // chunk endpoints, returns the persisted `ChunkWitnessRecord`.
+                // Reth's alloy `Header` / `Block` are RLP-encoded here so the
+                // record stays Borsh-friendly for sled.
+                let chunk_witness_extract_fn: Arc<ChunkWitnessExtractFn> = {
+                    let extractor = range_witness_extractor.clone();
+                    Arc::new(move |prev, last| {
+                        let prev_b256 = alloy_primitives::B256::from(prev.0);
+                        let last_b256 = alloy_primitives::B256::from(last.0);
+                        let data = extractor.extract_range_witness(prev_b256, last_b256)?;
+                        let prev_header_rlp = alloy_rlp::encode(&data.prev_header);
+                        let blocks_rlp: Vec<Vec<u8>> =
+                            data.blocks.iter().map(alloy_rlp::encode).collect();
+                        Ok(ChunkWitnessRecord::new(
+                            data.raw_partial_pre_state,
+                            prev_header_rlp,
+                            blocks_rlp,
+                        ))
+                    })
+                };
+
                 let (batch_builder_handle, batch_builder_task) = create_batch_builder(
                     latest_batch.id(),
                     BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum()),
@@ -469,6 +501,7 @@ fn main() {
                     storage.clone(),
                     storage.clone(),
                     exec_chain_handle.clone(),
+                    Some(chunk_witness_extract_fn),
                 );
 
                 // --- DA pipeline ---
@@ -606,10 +639,7 @@ fn main() {
                 // The closure erases the generic reth provider type so
                 // `ChunkSpec` stays non-generic.
                 let range_witness_fn: Arc<RangeWitnessFn> = {
-                    let extractor = Arc::new(RangeWitnessExtractor::new(
-                        node.provider.clone(),
-                        node.evm_config.clone(),
-                    ));
+                    let extractor = range_witness_extractor.clone();
                     Arc::new(move |start, end| extractor.extract_range_witness(start, end))
                 };
 

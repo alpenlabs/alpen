@@ -1,11 +1,14 @@
 //! Batch builder task implementation.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ExecBlockStorage};
+use alpen_ee_common::{
+    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkId, ChunkWitnessExtractFn,
+    ChunkWitnessStore, ExecBlockStorage,
+};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
-use tokio::time;
+use tokio::{task, time};
 use tracing::{debug, error, warn};
 
 use super::{
@@ -67,9 +70,17 @@ async fn get_block_range(
 /// Seal the current batch.
 ///
 /// Returns the sealed batch ID, or `None` if accumulator was empty.
+///
+/// When `chunk_witness_extractor` is provided, also pre-computes the
+/// chunk's witness record (today's `RangeWitnessExtractor` work, moved
+/// from proof-time to chunk-seal time per the EE prover redesign) and
+/// persists it via [`ChunkWitnessStore`]. State is at-tip when this
+/// runs, so the historical-provider depth `extract_range_witness` walks
+/// is bounded by chunk size, not chain age.
 async fn seal_batch<P: BatchPolicy>(
     state: &mut BatchBuilderState<P>,
-    batch_storage: &impl BatchStorage,
+    batch_storage: &(impl BatchStorage + ChunkWitnessStore),
+    chunk_witness_extractor: Option<&Arc<ChunkWitnessExtractFn>>,
 ) -> Result<Option<BatchId>> {
     if state.accumulator().is_empty() {
         return Ok(None);
@@ -122,9 +133,49 @@ async fn seal_batch<P: BatchPolicy>(
         .set_batch_chunks(batch_id, vec![chunk_id])
         .await?;
 
+    if let Some(extractor) = chunk_witness_extractor {
+        // Pre-compute and persist the chunk witness while we're at-tip.
+        // Failure here is non-fatal — the chunk is already sealed, and
+        // `ChunkSpec::fetch_input` will fall back to on-demand extraction
+        // (today's behavior) on a witness-record miss. We log so an
+        // operator notices.
+        if let Err(e) =
+            extract_and_store_chunk_witness(chunk_id, extractor, batch_storage).await
+        {
+            warn!(
+                ?chunk_id,
+                error = %e,
+                "chunk witness extraction failed at seal time; falling back to on-demand at proof time"
+            );
+        }
+    }
+
     state.advance_batch(last_block);
 
     Ok(Some(batch_id))
+}
+
+/// Run the witness extractor for a chunk and persist the result.
+///
+/// CPU-heavy work happens inside `tokio::task::spawn_blocking` so the
+/// batch builder's async loop isn't blocked.
+async fn extract_and_store_chunk_witness(
+    chunk_id: ChunkId,
+    extractor: &Arc<ChunkWitnessExtractFn>,
+    store: &impl ChunkWitnessStore,
+) -> Result<()> {
+    let prev_block = chunk_id.prev_block();
+    let last_block = chunk_id.last_block();
+    let extractor = Arc::clone(extractor);
+
+    let witness = task::spawn_blocking(move || (extractor)(prev_block, last_block))
+        .await
+        .map_err(|e| eyre!("chunk witness extraction join: {e}"))?
+        .map_err(|e| eyre!("chunk witness extraction: {e}"))?;
+
+    store.put_chunk_witness(chunk_id, witness).await?;
+    debug!(?chunk_id, "persisted chunk witness");
+    Ok(())
 }
 
 /// Main batch builder task.
@@ -142,7 +193,7 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage,
+    BS: BatchStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     let mut pending_poll_interval = time::interval(PENDING_BLOCK_POLL_INTERVAL);
@@ -185,7 +236,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage,
+    BS: BatchStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     // Check and handle reorgs first
@@ -256,7 +307,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage,
+    BS: BatchStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     let mut processed = 0;
@@ -286,7 +337,13 @@ where
                 .sealing_policy
                 .would_exceed(state.accumulator(), &block_data)
         {
-            if let Some(batch_id) = seal_batch(state, ctx.batch_storage.as_ref()).await? {
+            if let Some(batch_id) = seal_batch(
+                state,
+                ctx.batch_storage.as_ref(),
+                ctx.chunk_witness_extractor.as_ref(),
+            )
+            .await?
+            {
                 // Notify watchers of new batch
                 let _ = ctx.latest_batch_tx.send(batch_id);
             }

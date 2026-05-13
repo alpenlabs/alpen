@@ -36,7 +36,7 @@ pub use types::{
     batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
-    chunk_witness::ChunkWitnessRecord,
+    chunk_witness::{ChunkWitnessExtractFn, ChunkWitnessRecord},
     consensus_heads::ConsensusHeads,
     da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION},
     ee_account_state::EeAccountStateAtEpoch,

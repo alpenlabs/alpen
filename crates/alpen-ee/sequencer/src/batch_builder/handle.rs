@@ -2,7 +2,9 @@
 
 use std::{future::Future, marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
+use alpen_ee_common::{
+    BatchId, BatchStorage, BlockNumHash, ChunkWitnessExtractFn, ChunkWitnessStore, ExecBlockStorage,
+};
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::watch;
 
@@ -50,12 +52,13 @@ pub fn create_batch_builder<P, D, S, BS, ES>(
     block_storage: Arc<ES>,
     batch_storage: Arc<BS>,
     exec_chain: ExecChainHandle,
+    chunk_witness_extractor: Option<Arc<ChunkWitnessExtractFn>>,
 ) -> (BatchBuilderHandle, impl Future<Output = ()>)
 where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage,
+    BS: BatchStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     let (latest_batch_tx, latest_batch_rx) = watch::channel(initial_batch_id);
@@ -69,6 +72,7 @@ where
         batch_storage,
         exec_chain,
         latest_batch_tx,
+        chunk_witness_extractor,
         _policy: PhantomData,
     };
 
