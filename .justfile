@@ -61,7 +61,7 @@ sec: ensure-cargo-audit
 # Generate reports and profiling data for proofs
 [group('prover')]
 prover-eval: prover-clean
-    cd {{prover_perf_eval_dir}} && RUST_LOG=info ZKVM_MOCK=1 ZKVM_PROFILING=1 cargo run --release -- --programs {{prover_programs}}
+    cd {{prover_perf_eval_dir}} && RUST_LOG=info SP1_PROVER=light ZKVM_MOCK=1 ZKVM_PROFILING=1 cargo run --release -- --programs {{prover_programs}}
 
 # Cleans up proofs and profiling data generated
 [group('prover')]
