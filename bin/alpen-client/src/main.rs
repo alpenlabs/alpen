@@ -36,6 +36,7 @@ use alpen_ee_sequencer::{
     block_builder_task, build_ol_chain_tracker, init_ol_chain_tracker_state, BlockBuilderConfig,
 };
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
+use alpen_reth_evm::evm::AlpenEvmFactory;
 #[cfg(feature = "sequencer")]
 use alpen_reth_exex::{AccessedStateGenerator, StateDiffGenerator};
 use alpen_reth_node::{
@@ -60,6 +61,7 @@ use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
+use strata_bridge_params::BridgeParams;
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
@@ -355,8 +357,13 @@ fn main() {
             .await
             .map_err(|e| eyre::eyre!("failed to start ol tracker service: {e}"))?;
 
+            let evm_factory = AlpenEvmFactory::from_bridge_params(
+                &BridgeParams::new(ext.bridge_denomination, ext.max_withdrawal_amount)
+                    .expect("invalid withdrawal params"),
+            );
             let node_args = AlpenNodeArgs {
                 sequencer_http: ext.sequencer_http.clone(),
+                evm_factory,
             };
 
             let consensus_watcher = ol_tracker.consensus_watcher();
@@ -702,10 +709,15 @@ fn main() {
                     ext.custom_chain.genesis().config.clone().into_rsp()
                 };
 
+                let bridge_params =
+                    BridgeParams::new(ext.bridge_denomination, ext.max_withdrawal_amount)
+                        .expect("invalid withdrawal params");
+
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
                     batch_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
+                    bridge_params,
                 ))
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
@@ -718,6 +730,7 @@ fn main() {
                     storage.clone(),
                     ol_client.clone(),
                     genesis,
+                    bridge_params,
                 ))
                 .task_store(task_store)
                 .receipt_hook(AcctReceiptHook::new(
@@ -990,6 +1003,14 @@ pub struct AdditionalConfig {
     /// Lower values seal batches more frequently (useful for testing).
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
+
+    /// Bridge denomination in satoshis. Defaults to 100_000_000 (1 BTC).
+    #[arg(long, default_value = "100000000")]
+    pub bridge_denomination: u64,
+
+    /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
+    #[arg(long)]
+    pub max_withdrawal_amount: Option<u64>,
 
     /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
     /// instead of the SP1 remote host.
