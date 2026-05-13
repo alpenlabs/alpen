@@ -17,7 +17,7 @@ mod service_executor;
 mod services;
 
 #[cfg(feature = "sequencer")]
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::{NonZeroU16, NonZeroU32, NonZeroU64};
 #[cfg(feature = "sequencer")]
 use std::{env, process, sync::Arc, time::Duration};
 
@@ -70,7 +70,9 @@ use strata_acct_types::AccountId;
 use strata_bridge_params::{BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_SATS};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
-    broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
+    broadcaster::BroadcasterBuilder,
+    fee_bumper::service::{fee_bumper_task, FeeBumperContext},
+    writer::chunked_envelope::create_chunked_envelope_task,
     BtcioParams,
 };
 use strata_common::healthz::{start_health_check_server, HealthCheckState};
@@ -699,6 +701,7 @@ fn main() {
                 let sequencer_keypair = sequencer_keypair.ok_or_else(|| {
                     eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
                 })?;
+                let fee_bumper_sequencer_keypair = sequencer_keypair;
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
                     btc_client.clone(),
                     writer_config,
@@ -732,6 +735,28 @@ fn main() {
                 // Spawn btcio tasks.
                 node.task_executor
                     .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
+                if writer_config.fee_bumping.is_enabled() {
+                    let fee_bumper_client = btc_client.clone();
+                    let fee_bumper_config = (*writer_config).clone();
+                    let fee_bumper_broadcast_handle = broadcast_handle.clone();
+                    let fee_bumper_context = FeeBumperContext {
+                        chunked_ops: Some(envelope_ops.clone()),
+                        sequencer_keypair: Some(fee_bumper_sequencer_keypair),
+                    };
+                    node.task_executor
+                        .spawn_critical("btcio_fee_bumper", async move {
+                            if let Err(error) = fee_bumper_task(
+                                fee_bumper_client,
+                                fee_bumper_config,
+                                fee_bumper_broadcast_handle,
+                                fee_bumper_context,
+                            )
+                            .await
+                            {
+                                error!(target: "alpen-client", %error, "btcio fee bumper stopped");
+                            }
+                        });
+                }
 
                 info!(target: "alpen-client", "btcio DA pipeline started");
 
@@ -1094,6 +1119,10 @@ pub struct AdditionalConfig {
     #[arg(long, default_value = "2")]
     pub btcio_fee_bumping_min_age_blocks: u32,
 
+    /// Confirmation target used for BTCIO replacement fee estimates.
+    #[arg(long, default_value = "1")]
+    pub btcio_fee_bumping_target_inclusion_blocks: u16,
+
     /// Maximum broadcast attempts for one BTCIO fee-bump node.
     #[arg(long, default_value = "5")]
     pub btcio_fee_bumping_max_attempts: u32,
@@ -1205,6 +1234,12 @@ impl AdditionalConfig {
             min_age_blocks: NonZeroU32::new(self.btcio_fee_bumping_min_age_blocks).ok_or_else(
                 || eyre!("BTCIO fee bumping minimum age blocks must be greater than zero"),
             )?,
+            target_inclusion_blocks: NonZeroU16::new(
+                self.btcio_fee_bumping_target_inclusion_blocks,
+            )
+            .ok_or_else(|| {
+                eyre!("BTCIO fee bumping target inclusion blocks must be greater than zero")
+            })?,
             max_attempts: NonZeroU32::new(self.btcio_fee_bumping_max_attempts).ok_or_else(
                 || eyre!("BTCIO fee bumping maximum attempts must be greater than zero"),
             )?,

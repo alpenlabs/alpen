@@ -3,11 +3,14 @@ use std::io::Error;
 use borsh::BorshDeserialize;
 #[cfg(test)]
 use borsh::BorshSerialize;
-use strata_db_types::types::{L1TxEntry, L1TxStatus};
+use strata_db_types::types::{L1TxEntry, L1TxStatus, TxNodeId, TxNodeRecord};
 use strata_primitives::buf::Buf32;
 use typed_sled::codec::{CodecError, ValueCodec};
 
-use crate::{define_table_with_integer_key, define_table_without_codec, impl_borsh_key_codec};
+use crate::{
+    define_table_with_integer_key, define_table_without_codec, impl_borsh_key_codec,
+    impl_cbor_value_codec,
+};
 
 define_table_with_integer_key!(
     /// A table to store mapping of idx to L1 txid
@@ -19,7 +22,14 @@ define_table_without_codec!(
     (BcastL1TxSchema) Buf32 => L1TxEntry
 );
 
+define_table_without_codec!(
+    /// A table to store logical L1 transaction replacement chains
+    (BcastL1TxNodeSchema) TxNodeId => TxNodeRecord
+);
+
 impl_borsh_key_codec!(BcastL1TxSchema, Buf32);
+impl_borsh_key_codec!(BcastL1TxNodeSchema, TxNodeId);
+impl_cbor_value_codec!(BcastL1TxNodeSchema, TxNodeRecord);
 
 impl ValueCodec<BcastL1TxSchema> for L1TxEntry {
     type Decoded = Self;
@@ -63,7 +73,9 @@ fn decode_legacy_l1_tx_entry(data: &[u8]) -> Result<L1TxEntry, Error> {
 
 #[cfg(test)]
 mod tests {
-    use strata_db_types::types::L1TxRbfInfo;
+    use strata_db_types::types::{
+        L1TxId, L1TxRbfInfo, L1WtxId, TxAttempt, TxAttemptStatus, TxNodeKind, TxNodeRecord,
+    };
 
     use super::*;
 
@@ -102,5 +114,32 @@ mod tests {
                 .unwrap();
 
         assert_eq!(decoded, entry);
+    }
+
+    #[test]
+    fn bcast_l1_tx_node_schema_cbor_roundtrip() {
+        let kind = TxNodeKind::SingleEnvelopeCommit { payload_idx: 42 };
+        let attempt = TxAttempt {
+            attempt_no: 0,
+            raw_tx: vec![1, 2, 3],
+            txid: L1TxId::from([1; 32]),
+            wtxid: L1WtxId::from([2; 32]),
+            fee_rate_sat_vb: 7,
+            fee_sats: 700,
+            created_at_unix_secs: 123,
+            first_published_l1_height: None,
+            status: TxAttemptStatus::Active,
+            replaced_by: None,
+        };
+        let record = TxNodeRecord::new(kind, attempt);
+
+        let bytes =
+            <TxNodeRecord as ValueCodec<BcastL1TxNodeSchema>>::encode_value(&record).unwrap();
+        let decoded = <TxNodeRecord as ValueCodec<BcastL1TxNodeSchema>>::decode_value(
+            sled::IVec::from(bytes),
+        )
+        .unwrap();
+
+        assert_eq!(decoded, record);
     }
 }

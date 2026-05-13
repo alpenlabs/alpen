@@ -2,7 +2,7 @@ use std::{str, sync::Arc};
 
 use hex::encode_to_slice;
 use strata_db_types::{
-    types::{L1TxEntry, L1TxStatus},
+    types::{L1TxEntry, L1TxId, L1TxStatus, TxNodeId, TxNodeRecord},
     DbResult,
 };
 use strata_primitives::buf::Buf32;
@@ -101,6 +101,15 @@ impl L1BroadcastHandle {
         self.ops.get_tx_entry_by_id_async(txid).await
     }
 
+    pub async fn update_tx_entry_by_id_async(
+        &self,
+        txid: Buf32,
+        txentry: L1TxEntry,
+    ) -> DbResult<()> {
+        let _ = self.ops.put_tx_entry_async(txid, txentry).await?;
+        Ok(())
+    }
+
     pub async fn get_active_tx_entry_by_id_async(
         &self,
         mut txid: Buf32,
@@ -129,5 +138,17 @@ impl L1BroadcastHandle {
     pub async fn put_tx_entry_by_idx(&self, idx: u64, txentry: L1TxEntry) -> BroadcasterResult<()> {
         self.ops.put_tx_entry_by_idx_async(idx, txentry).await?;
         Ok(())
+    }
+
+    pub async fn put_tx_node(&self, node: TxNodeRecord) -> DbResult<()> {
+        self.ops.put_tx_node_async(node.node_id, node).await
+    }
+
+    pub async fn get_tx_node(&self, node_id: TxNodeId) -> DbResult<Option<TxNodeRecord>> {
+        self.ops.get_tx_node_async(node_id).await
+    }
+
+    pub async fn get_all_tx_nodes(&self) -> DbResult<Vec<TxNodeRecord>> {
+        self.ops.get_all_tx_nodes_async().await
     }
 }

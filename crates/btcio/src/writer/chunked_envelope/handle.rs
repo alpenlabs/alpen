@@ -10,7 +10,8 @@
 use std::{collections::BTreeSet, future::Future, sync::Arc, time::Duration};
 
 use bitcoin::{
-    consensus::encode::deserialize as btc_deserialize, key::Keypair, Address, FeeRate, Transaction,
+    consensus::encode::deserialize as btc_deserialize, key::Keypair, Address, Amount, FeeRate,
+    Transaction,
 };
 use bitcoind_async_client::{
     error::ClientError,
@@ -20,6 +21,7 @@ use bitcoind_async_client::{
 use strata_config::btcio::WriterConfig;
 use strata_db_types::types::{
     ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxId, L1TxStatus, RevealTxMeta,
+    TxAttempt, TxNodeId, TxNodeKind, TxNodeRecord,
 };
 use strata_primitives::buf::Buf32;
 use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
@@ -537,6 +539,13 @@ async fn persist_signed_envelope_and_publish_commit<R: Reader + Signer + Wallet 
     let commit_broadcast_idx = broadcast_handle
         .put_tx_entry(to_raw_buf32(entry.commit_txid), commit_tx_entry.clone())
         .await?;
+    put_chunked_commit_tx_node_if_enabled(
+        envelope_idx,
+        &commit_tx_entry,
+        broadcast_handle,
+        ctx.config.fee_bumping.is_enabled(),
+    )
+    .await?;
     debug!(
         envelope_idx,
         commit_txid = ?entry.commit_txid,
@@ -692,8 +701,8 @@ async fn check_commit_and_enqueue_reveals(
     bcast: &L1BroadcastHandle,
     fee_bumping_enabled: bool,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
-    let Some(commit) = bcast
-        .get_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
+    let Some((active_commit_txid, commit)) = bcast
+        .get_active_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
         .await?
     else {
         warn!(
@@ -728,7 +737,7 @@ async fn check_commit_and_enqueue_reveals(
 
     debug!(
         envelope_idx,
-        commit_txid = ?entry.commit_txid,
+        commit_txid = ?active_commit_txid,
         commit_status = ?commit.status,
         reveal_count = entry.reveals.len(),
         "chunked envelope commit publication observed"
@@ -852,6 +861,16 @@ async fn ensure_reveal_tx_entry(
             .put_tx_entry(to_raw_buf32(reveal.txid), tx_entry)
             .await
             .map_err(|e| anyhow::anyhow!("failed to store reveal tx: {}", e))?;
+        put_chunked_reveal_tx_node_if_enabled(
+            envelope_idx,
+            reveal,
+            &tx,
+            fee_rate,
+            Amount::from_sat(fee_sats),
+            bcast,
+            fee_bumping_enabled,
+        )
+        .await?;
 
         debug!(
             envelope_idx,
@@ -860,6 +879,76 @@ async fn ensure_reveal_tx_entry(
         );
     }
 
+    Ok(())
+}
+
+async fn put_chunked_commit_tx_node_if_enabled(
+    envelope_idx: u64,
+    commit_tx_entry: &L1TxEntry,
+    bcast: &L1BroadcastHandle,
+    fee_bumping_enabled: bool,
+) -> anyhow::Result<()> {
+    if !fee_bumping_enabled {
+        return Ok(());
+    }
+
+    let tx = commit_tx_entry.try_to_tx()?;
+    let Some(rbf) = commit_tx_entry.rbf else {
+        return Ok(());
+    };
+    let fee_rate = FeeRate::from_sat_per_vb(rbf.fee_rate_sat_vb)
+        .ok_or_else(|| anyhow::anyhow!("invalid commit fee rate {}", rbf.fee_rate_sat_vb))?;
+    let fee_sats = Amount::from_sat(rbf.fee_rate_sat_vb.saturating_mul(tx.vsize() as u64));
+    put_tx_node_if_missing(
+        TxNodeKind::ChunkedEnvelopeCommit { envelope_idx },
+        &tx,
+        fee_rate,
+        fee_sats,
+        bcast,
+    )
+    .await
+}
+
+async fn put_chunked_reveal_tx_node_if_enabled(
+    envelope_idx: u64,
+    reveal: &RevealTxMeta,
+    tx: &Transaction,
+    fee_rate: FeeRate,
+    fee_sats: Amount,
+    bcast: &L1BroadcastHandle,
+    fee_bumping_enabled: bool,
+) -> anyhow::Result<()> {
+    if !fee_bumping_enabled {
+        return Ok(());
+    }
+
+    put_tx_node_if_missing(
+        TxNodeKind::ChunkedEnvelopeReveal {
+            envelope_idx,
+            reveal_idx: reveal.vout_index.saturating_sub(1),
+        },
+        tx,
+        fee_rate,
+        fee_sats,
+        bcast,
+    )
+    .await
+}
+
+async fn put_tx_node_if_missing(
+    kind: TxNodeKind,
+    tx: &Transaction,
+    fee_rate: FeeRate,
+    fee_sats: Amount,
+    bcast: &L1BroadcastHandle,
+) -> anyhow::Result<()> {
+    let node_id = TxNodeId::from_kind(&kind);
+    if bcast.get_tx_node(node_id).await?.is_some() {
+        return Ok(());
+    }
+
+    let record = TxNodeRecord::new(kind, TxAttempt::active(tx, fee_rate, fee_sats, 0));
+    bcast.put_tx_node(record).await?;
     Ok(())
 }
 
@@ -874,8 +963,8 @@ async fn check_full_broadcast_status(
     bcast: &L1BroadcastHandle,
     fee_bumping_enabled: bool,
 ) -> anyhow::Result<ChunkedEnvelopeStatus> {
-    let Some(commit) = bcast
-        .get_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
+    let Some((active_commit_txid, commit)) = bcast
+        .get_active_tx_entry_by_id_async(to_raw_buf32(entry.commit_txid))
         .await?
     else {
         error!(
@@ -901,8 +990,8 @@ async fn check_full_broadcast_status(
     let mut min_progress = commit.status.clone();
     let mut reveal_l1_statuses = Vec::with_capacity(entry.reveals.len());
     for reveal in &entry.reveals {
-        let Some(rtx) = bcast
-            .get_tx_entry_by_id_async(to_raw_buf32(reveal.txid))
+        let Some((active_reveal_txid, rtx)) = bcast
+            .get_active_tx_entry_by_id_async(to_raw_buf32(reveal.txid))
             .await?
         else {
             if !can_enqueue_missing_reveals {
@@ -935,7 +1024,10 @@ async fn check_full_broadcast_status(
             );
             return Ok(ChunkedEnvelopeStatus::NeedsResign);
         }
-        reveal_l1_statuses.push(format_tx_status(reveal.txid, &rtx.status));
+        reveal_l1_statuses.push(format_tx_status(
+            L1TxId::from(active_reveal_txid.0),
+            &rtx.status,
+        ));
         if is_less_progressed(&rtx.status, &min_progress) {
             min_progress = rtx.status;
         }
@@ -946,7 +1038,7 @@ async fn check_full_broadcast_status(
         envelope_status,
         ChunkedEnvelopeStatus::Confirmed | ChunkedEnvelopeStatus::Finalized
     ) {
-        let commit_l1_status = format_tx_status(entry.commit_txid, &commit.status);
+        let commit_l1_status = format_tx_status(L1TxId::from(active_commit_txid.0), &commit.status);
         info!(
             envelope_idx,
             commit_txid = ?entry.commit_txid,

@@ -1,12 +1,16 @@
 #![expect(deprecated, reason = "legacy old code is retained for compatibility")] // I have no idea how to make clippy be happy with precise expects in this module
 //! Module for database local types
 
-use std::fmt;
+use std::{
+    fmt,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use arbitrary::Arbitrary;
 use bitcoin::{
     consensus::{self, deserialize, serialize},
-    FeeRate, Transaction,
+    hashes::{sha256, Hash},
+    Amount, FeeRate, Transaction,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -24,6 +28,206 @@ pub type L1TxId = RBuf32;
 
 /// Bitcoin witness transaction ID displayed in Bitcoin byte order.
 pub type L1WtxId = RBuf32;
+
+/// Bitcoin block hash displayed in Bitcoin byte order.
+pub type L1BlockHash = RBuf32;
+
+/// Deterministic identifier for one logical writer transaction replacement chain.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    Deserialize,
+)]
+pub struct TxNodeId(pub Buf32);
+
+impl TxNodeId {
+    /// Derives a stable id from the logical transaction kind.
+    pub fn from_kind(kind: &TxNodeKind) -> Self {
+        const DOMAIN: &[u8] = b"alpen.btcio.tx-node.v1";
+
+        let mut bytes = Vec::with_capacity(DOMAIN.len() + 64);
+        bytes.extend_from_slice(DOMAIN);
+        bytes.extend_from_slice(
+            &borsh::to_vec(kind).expect("tx-node kind serialization cannot fail"),
+        );
+
+        Self(Buf32(sha256::Hash::hash(&bytes).to_byte_array()))
+    }
+}
+
+/// Logical BTCIO writer transaction kind.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub enum TxNodeKind {
+    /// Commit transaction for a single-envelope payload row.
+    SingleEnvelopeCommit { payload_idx: u64 },
+    /// Reveal transaction for a single-envelope payload row.
+    SingleEnvelopeReveal { payload_idx: u64 },
+    /// Commit transaction for a chunked-envelope row.
+    ChunkedEnvelopeCommit { envelope_idx: u64 },
+    /// One reveal transaction for a chunked-envelope row.
+    ChunkedEnvelopeReveal { envelope_idx: u64, reveal_idx: u32 },
+}
+
+/// Replacement-attempt lifecycle within a logical transaction node.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
+pub enum TxAttemptStatus {
+    /// The attempt is the currently broadcastable transaction.
+    Active,
+    /// The attempt has been superseded by another txid.
+    Replaced,
+    /// The attempt was abandoned before becoming active.
+    Discarded,
+    /// The attempt is waiting for an external reveal signature.
+    PendingSignature,
+}
+
+/// One concrete transaction attempt in a logical replacement chain.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct TxAttempt {
+    pub attempt_no: u32,
+    pub raw_tx: Vec<u8>,
+    pub txid: L1TxId,
+    pub wtxid: L1WtxId,
+    pub fee_rate_sat_vb: u64,
+    pub fee_sats: u64,
+    pub created_at_unix_secs: u64,
+    pub first_published_l1_height: Option<L1Height>,
+    pub status: TxAttemptStatus,
+    pub replaced_by: Option<L1TxId>,
+}
+
+impl TxAttempt {
+    /// Creates an active attempt for a transaction.
+    pub fn active(tx: &Transaction, fee_rate: FeeRate, fee_sats: Amount, attempt_no: u32) -> Self {
+        Self::new(tx, fee_rate, fee_sats, attempt_no, TxAttemptStatus::Active)
+    }
+
+    /// Creates an attempt for a transaction with the provided status.
+    pub fn new(
+        tx: &Transaction,
+        fee_rate: FeeRate,
+        fee_sats: Amount,
+        attempt_no: u32,
+        status: TxAttemptStatus,
+    ) -> Self {
+        Self {
+            attempt_no,
+            raw_tx: serialize(tx),
+            txid: L1TxId::from(tx.compute_txid().to_byte_array()),
+            wtxid: L1WtxId::from(tx.compute_wtxid().to_byte_array()),
+            fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
+            fee_sats: fee_sats.to_sat(),
+            created_at_unix_secs: unix_secs_now(),
+            first_published_l1_height: None,
+            status,
+            replaced_by: None,
+        }
+    }
+
+    /// Deserializes the raw transaction for this attempt.
+    pub fn try_to_tx(&self) -> Result<Transaction, consensus::encode::Error> {
+        deserialize(&self.raw_tx)
+    }
+}
+
+/// Persistent replacement-chain record for one logical writer transaction.
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+pub struct TxNodeRecord {
+    pub node_id: TxNodeId,
+    pub kind: TxNodeKind,
+    pub active_txid: L1TxId,
+    pub attempts: Vec<TxAttempt>,
+    pub terminal_error: Option<TerminalError>,
+}
+
+impl TxNodeRecord {
+    /// Creates a replacement-chain record from its first active attempt.
+    pub fn new(kind: TxNodeKind, first_attempt: TxAttempt) -> Self {
+        let node_id = TxNodeId::from_kind(&kind);
+        let active_txid = first_attempt.txid;
+        Self {
+            node_id,
+            kind,
+            active_txid,
+            attempts: vec![first_attempt],
+            terminal_error: None,
+        }
+    }
+
+    /// Returns the active attempt.
+    pub fn active_attempt(&self) -> Option<&TxAttempt> {
+        self.attempts
+            .iter()
+            .find(|attempt| attempt.txid == self.active_txid)
+    }
+
+    /// Returns the mutable active attempt.
+    pub fn active_attempt_mut(&mut self) -> Option<&mut TxAttempt> {
+        let active_txid = self.active_txid;
+        self.attempts
+            .iter_mut()
+            .find(|attempt| attempt.txid == active_txid)
+    }
+
+    /// Returns the pending externally-signed replacement attempt, if any.
+    pub fn pending_signature_attempt(&self) -> Option<&TxAttempt> {
+        self.attempts
+            .iter()
+            .rev()
+            .find(|attempt| attempt.status == TxAttemptStatus::PendingSignature)
+    }
+
+    /// Appends a replacement attempt and marks the previous active attempt as replaced.
+    pub fn append_replacement(&mut self, mut replacement: TxAttempt) {
+        let previous_active = self.active_txid;
+        if let Some(active) = self.active_attempt_mut() {
+            active.status = TxAttemptStatus::Replaced;
+            active.replaced_by = Some(replacement.txid);
+        }
+        replacement.status = TxAttemptStatus::Active;
+        self.active_txid = replacement.txid;
+        self.attempts.push(replacement);
+
+        debug_assert_ne!(self.active_txid, previous_active);
+    }
+
+    /// Marks the replacement chain permanently terminal.
+    pub fn set_terminal_error(&mut self, error: TerminalError) {
+        self.terminal_error = Some(error);
+    }
+}
+
+/// Terminal reason that prevents further fee bumping for a logical transaction.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize,
+)]
+pub enum TerminalError {
+    MaxAttemptsReached,
+    AboveMaxFeeRate,
+    Bip125FeeRuleUnsatisfiable,
+    WalletInsufficient,
+    ReplacementWouldDustOutput,
+    UnsupportedRbfKind,
+    SignerTimeout,
+}
+
+fn unix_secs_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time is after Unix epoch")
+        .as_secs()
+}
 
 /// Represents an intent to publish to some DA, which will be bundled for efficiency.
 #[derive(Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary)]
@@ -273,7 +477,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Confirmed {
         confirmations: u64,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
         block_height: L1Height,
     },
 
@@ -282,7 +486,7 @@ pub enum L1TxStatus {
     /// `block_hash` and `block_height` identify the L1 block the transaction was included in.
     Finalized {
         confirmations: u64,
-        block_hash: Buf32,
+        block_hash: L1BlockHash,
         block_height: L1Height,
     },
 
@@ -605,7 +809,7 @@ mod tests {
             (
                 L1TxStatus::Confirmed {
                     confirmations: 10,
-                    block_hash: Buf32::zero(),
+                    block_hash: L1BlockHash::zero(),
                     block_height: 42,
                 },
                 r#"{"status":"Confirmed","confirmations":10,"block_hash":"0000000000000000000000000000000000000000000000000000000000000000","block_height":42}"#,
@@ -639,7 +843,7 @@ mod tests {
     fn display_l1txstatus_uses_log_friendly_format() {
         let status = L1TxStatus::Confirmed {
             confirmations: 12,
-            block_hash: Buf32::zero(),
+            block_hash: L1BlockHash::zero(),
             block_height: 42,
         };
 

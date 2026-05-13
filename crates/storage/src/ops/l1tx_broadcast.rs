@@ -1,4 +1,7 @@
-use strata_db_types::{traits::*, types::L1TxEntry};
+use strata_db_types::{
+    traits::*,
+    types::{L1TxEntry, TxNodeId, TxNodeRecord},
+};
 use strata_primitives::buf::Buf32;
 
 use crate::{exec::*, instrumentation::components};
@@ -12,5 +15,8 @@ inst_ops_simple! {
         put_tx_entry(id: Buf32, entry: L1TxEntry) => Option<u64>;
         put_tx_entry_by_idx(idx: u64, entry: L1TxEntry) => ();
         get_last_tx_entry() => Option<L1TxEntry>;
+        put_tx_node(node_id: TxNodeId, record: TxNodeRecord) => ();
+        get_tx_node(node_id: TxNodeId) => Option<TxNodeRecord>;
+        get_all_tx_nodes() => Vec<TxNodeRecord>;
     }
 }

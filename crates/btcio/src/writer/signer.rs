@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
-use bitcoin::Transaction;
+use bitcoin::{Amount, FeeRate, Transaction};
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::TxidExt;
-use strata_db_types::types::{BundledPayloadEntry, L1TxEntry, L1TxId};
+use strata_db_types::types::{
+    BundledPayloadEntry, L1TxEntry, L1TxId, TxAttempt, TxNodeId, TxNodeKind, TxNodeRecord,
+};
 use strata_primitives::buf::Buf32;
 use tracing::*;
 
@@ -91,6 +93,15 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
             )
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
+        put_tx_node_if_enabled(
+            broadcast_handle,
+            TxNodeKind::SingleEnvelopeCommit { payload_idx },
+            &envelope.commit_tx,
+            envelope.fee_rate_sat_vb,
+            envelope.commit_fee_sats,
+            &envelope,
+        )
+        .await?;
 
         let rid = to_l1_txid(envelope.reveal_tx.compute_txid());
         broadcast_handle
@@ -100,6 +111,15 @@ pub(crate) async fn sign_and_broadcast_payload_envelopes<R: Reader + Signer + Wa
             )
             .await
             .map_err(|e| EnvelopeError::Other(e.into()))?;
+        put_tx_node_if_enabled(
+            broadcast_handle,
+            TxNodeKind::SingleEnvelopeReveal { payload_idx },
+            &envelope.reveal_tx,
+            envelope.fee_rate_sat_vb,
+            envelope.reveal_fee_sats,
+            &envelope,
+        )
+        .await?;
 
         info!(?cid, reveal_txid = ?rid, "envelope signed and stored for broadcast");
         Ok((cid, rid))
@@ -139,9 +159,27 @@ pub(crate) async fn complete_reveal_and_broadcast(
 
         let cid = to_l1_txid(envelope.commit_tx.compute_txid());
         put_tx_entry_if_missing(broadcast_handle, cid, &envelope.commit_tx, envelope).await?;
+        put_tx_node_if_enabled(
+            broadcast_handle,
+            TxNodeKind::SingleEnvelopeCommit { payload_idx },
+            &envelope.commit_tx,
+            envelope.fee_rate_sat_vb,
+            envelope.commit_fee_sats,
+            envelope,
+        )
+        .await?;
 
         let rid = to_l1_txid(reveal_tx.compute_txid());
         put_tx_entry_if_missing(broadcast_handle, rid, &reveal_tx, envelope).await?;
+        put_tx_node_if_enabled(
+            broadcast_handle,
+            TxNodeKind::SingleEnvelopeReveal { payload_idx },
+            &reveal_tx,
+            envelope.fee_rate_sat_vb,
+            envelope.reveal_fee_sats,
+            envelope,
+        )
+        .await?;
 
         info!(?cid, reveal_txid = ?rid, "commit and reveal stored for broadcast");
         Ok(rid)
@@ -175,6 +213,37 @@ async fn put_tx_entry_if_missing(
 
     broadcast_handle
         .put_tx_entry(to_raw_buf32(txid), tx_entry_from_envelope(tx, envelope))
+        .await
+        .map_err(|e| EnvelopeError::Other(e.into()))?;
+    Ok(())
+}
+
+async fn put_tx_node_if_enabled(
+    broadcast_handle: &L1BroadcastHandle,
+    kind: TxNodeKind,
+    tx: &Transaction,
+    fee_rate: FeeRate,
+    fee_sats: Amount,
+    envelope: &EnvelopeData,
+) -> Result<(), EnvelopeError> {
+    if !envelope.fee_bumping_enabled() {
+        return Ok(());
+    }
+
+    let node_id = TxNodeId::from_kind(&kind);
+    if broadcast_handle
+        .get_tx_node(node_id)
+        .await
+        .map_err(|e| EnvelopeError::Other(e.into()))?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    let attempt = TxAttempt::active(tx, fee_rate, fee_sats, 0);
+    let record = TxNodeRecord::new(kind, attempt);
+    broadcast_handle
+        .put_tx_node(record)
         .await
         .map_err(|e| EnvelopeError::Other(e.into()))?;
     Ok(())
