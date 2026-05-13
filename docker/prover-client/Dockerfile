@@ -17,6 +17,7 @@ RUN apt-get update && apt-get -y upgrade && apt-get install -y \
     build-essential \
     curl \
     libclang-dev \
+    protobuf-compiler \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY . .
