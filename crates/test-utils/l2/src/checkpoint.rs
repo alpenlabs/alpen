@@ -178,7 +178,9 @@ impl CheckpointTestHarness {
             AsmHistoryAccumulatorState::new(self.genesis_l1_height as u64);
 
         for leaf in &leaves {
-            asm_accumulator_state.add_manifest_leaf((*leaf).into()).unwrap();
+            asm_accumulator_state
+                .add_manifest_leaf((*leaf).into())
+                .unwrap();
 
             let proof1 = Mmr::<Sha256Hasher>::add_leaf_updating_proof_list(
                 &mut manifest_mmr,
@@ -297,8 +299,7 @@ impl CheckpointTestHarness {
 
         let manifest_hashes_converted: Vec<_> =
             manifest_hashes.iter().copied().map(Into::into).collect();
-        let asm_manifests_hash =
-            compute_asm_manifests_hash_from_leaves(&manifest_hashes_converted);
+        let asm_manifests_hash = compute_asm_manifests_hash_from_leaves(&manifest_hashes_converted);
 
         let l2_range = L2BlockRange::new(self.verified_tip.l2_commitment, new_tip.l2_commitment);
         let claim = CheckpointClaim::new(
