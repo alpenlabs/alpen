@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use rsp_primitives::genesis::Genesis;
 use ssz::{Decode, Encode as _};
 use strata_acct_types::Hash;
+use strata_bridge_params::BridgeParams;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_runtime::{ChunkInput, EePrivateInput};
 use strata_ee_acct_types::UpdateExtraData;
@@ -150,6 +151,7 @@ pub(crate) struct AcctSpec {
     storage: Arc<EeNodeStorage>,
     ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
     genesis: Genesis,
+    bridge_params: BridgeParams,
 }
 
 impl AcctSpec {
@@ -159,6 +161,7 @@ impl AcctSpec {
         storage: Arc<EeNodeStorage>,
         ol_client: Arc<dyn SequencerOLClient + Send + Sync>,
         genesis: Genesis,
+        bridge_params: BridgeParams,
     ) -> Self {
         Self {
             chunk_receipts,
@@ -166,6 +169,7 @@ impl AcctSpec {
             storage,
             ol_client,
             genesis,
+            bridge_params,
         }
     }
 }
@@ -396,6 +400,7 @@ impl ProofSpec for AcctSpec {
             genesis: self.genesis.clone(),
             ee_private_input,
             update_private_input,
+            bridge_params: self.bridge_params,
         })
     }
 }
