@@ -16,6 +16,7 @@ from common.config import (
     EpochSealingConfig,
     LoggingConfig,
     OLParams,
+    ProverConfig,
     SequencerConfig,
     SequencerRuntimeConfig,
     ServiceType,
@@ -107,10 +108,14 @@ class StrataFactory(flexitest.Factory):
         # Leave log_dir/log_file_prefix unset so strata writes tracing to
         # stdout/stderr; the harness captures both into service.log.
         logging_config = LoggingConfig()
+        # Enable the integrated native prover so the strata sequencer produces
+        # real BIP-340 Schnorr witnesses for checkpoint payloads against the
+        # Bip340Schnorr checkpoint predicate baked into rollup params.
         config = StrataConfig(
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
+            prover=ProverConfig(backend="native"),
         )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
