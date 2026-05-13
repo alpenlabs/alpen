@@ -23,8 +23,8 @@ use crate::{
     util::parse_abbr_amt,
 };
 
-/// The default deposit amount in sats (10 BTC).
-const DEFAULT_DEPOSIT_SATS: u64 = 1_000_000_000;
+/// The default deposit amount in sats (1 BTC).
+const DEFAULT_DEPOSIT_SATS: u64 = 100_000_000;
 
 /// The default assignment duration in blocks.
 const DEFAULT_ASSIGNMENT_DURATION: u16 = 64;
