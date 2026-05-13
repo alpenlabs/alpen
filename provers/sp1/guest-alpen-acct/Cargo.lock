@@ -5352,6 +5352,7 @@ dependencies = [
 name = "strata-proofimpl-alpen-acct"
 version = "0.1.0"
 dependencies = [
+ "k256",
  "reth-chainspec",
  "rkyv",
  "rsp-primitives",

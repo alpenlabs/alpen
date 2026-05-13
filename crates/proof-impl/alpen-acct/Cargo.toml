@@ -10,6 +10,7 @@ strata-predicate.workspace = true
 strata-snark-acct-runtime.workspace = true
 strata-snark-acct-types.workspace = true
 
+k256.workspace = true
 reth-chainspec.workspace = true
 rkyv.workspace = true
 rsp-primitives.workspace = true

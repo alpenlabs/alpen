@@ -1,11 +1,17 @@
+use k256::schnorr::SigningKey;
 use ssz::{Decode, Encode};
 use strata_asm_proto_checkpoint_types::CheckpointClaim;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
 use strata_ol_state_types::OLState;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use zkaleido::{PublicValues, ZkVmError, ZkVmInputResult, ZkVmProgram, ZkVmResult};
 use zkaleido_native_adapter::NativeHost;
 
 use crate::statements::process_ol_stf;
+
+fn test_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[0x01u8; 32]).expect("valid test signing key")
+}
 
 #[derive(Debug)]
 pub struct CheckpointProverInput {
@@ -53,7 +59,14 @@ impl ZkVmProgram for CheckpointProgram {
 
 impl CheckpointProgram {
     pub fn native_host() -> NativeHost {
-        NativeHost::new_with_random_key(process_ol_stf)
+        NativeHost::new(test_signing_key(), process_ol_stf)
+    }
+
+    /// Predicate key matching the signing key the native host uses, for wiring into
+    /// functional-test params so the resulting witness verifies under `Bip340Schnorr`.
+    pub fn test_predicate_key() -> PredicateKey {
+        let pk = test_signing_key().verifying_key().to_bytes().to_vec();
+        PredicateKey::new(PredicateTypeId::Bip340Schnorr, pk)
     }
 
     /// Executes the checkpoint program using the native host for testing.

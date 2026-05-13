@@ -2423,6 +2423,7 @@ dependencies = [
 name = "strata-proofimpl-checkpoint"
 version = "0.1.0"
 dependencies = [
+ "k256",
  "ssz",
  "ssz_primitives",
  "strata-asm-manifest-types",
@@ -2434,6 +2435,7 @@ dependencies = [
  "strata-ol-state-support-types",
  "strata-ol-state-types",
  "strata-ol-stf",
+ "strata-predicate",
  "zkaleido",
  "zkaleido-native-adapter",
 ]
