@@ -570,6 +570,20 @@ pub trait MmrIndexDatabase: Send + Sync + 'static {
     /// Returns optional preimage bytes for a namespace and leaf position.
     fn get_preimage(&self, mmr_id: RawMmrId, pos: LeafPos) -> DbResult<Option<Vec<u8>>>;
 
+    /// Returns optional preimage bytes for a namespace and leaf range.
+    ///
+    /// The returned vector has one slot per leaf in `[start, end_exclusive)`.
+    /// Missing preimages are returned as `None`.
+    ///
+    /// Empty ranges return an empty vector. Backends must reject reversed
+    /// ranges with [`crate::DbError::MmrInvalidRange`].
+    fn get_preimage_range(
+        &self,
+        mmr_id: RawMmrId,
+        start: LeafPos,
+        end_exclusive: LeafPos,
+    ) -> DbResult<Vec<Option<Vec<u8>>>>;
+
     /// Returns the current leaf count for a namespace.
     ///
     /// Implementations should return `0` when the namespace has no leaves.

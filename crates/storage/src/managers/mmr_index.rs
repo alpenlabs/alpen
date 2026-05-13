@@ -429,6 +429,37 @@ impl MmrIndexHandle {
             .ok_or(DbError::MmrPayloadNotFound(LeafPos::new(index)))
     }
 
+    /// Reads raw preimage bytes for `[start, end_exclusive)`.
+    pub fn get_range_blocking(&self, start: u64, end_exclusive: u64) -> DbResult<Vec<Vec<u8>>> {
+        let len = end_exclusive
+            .checked_sub(start)
+            .ok_or(DbError::MmrInvalidRange {
+                start,
+                end: end_exclusive,
+            })?;
+
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+
+        let capacity = usize::try_from(len).map_err(|_| DbError::MmrInvalidRange {
+            start,
+            end: end_exclusive,
+        })?;
+
+        let preimages = self.ops.get_preimage_range_blocking(
+            self.mmr_id_bytes(),
+            LeafPos::new(start),
+            LeafPos::new(end_exclusive),
+        )?;
+        let mut out = Vec::with_capacity(capacity);
+        for (offset, preimage) in preimages.into_iter().enumerate() {
+            let idx = start + offset as u64;
+            out.push(preimage.ok_or(DbError::MmrPayloadNotFound(LeafPos::new(idx)))?);
+        }
+        Ok(out)
+    }
+
     /// Reads raw preimage bytes by leaf index.
     pub async fn get(&self, index: u64) -> DbResult<Vec<u8>> {
         let this = self.clone();
@@ -439,6 +470,14 @@ impl MmrIndexHandle {
         })
         .await
         .map_err(|_| DbError::WorkerFailedStrangely)?
+    }
+
+    /// Reads raw preimage bytes for `[start, end_exclusive)`.
+    pub async fn get_range(&self, start: u64, end_exclusive: u64) -> DbResult<Vec<Vec<u8>>> {
+        let this = self.clone();
+        spawn_blocking(move || this.get_range_blocking(start, end_exclusive))
+            .await
+            .map_err(|_| DbError::WorkerFailedStrangely)?
     }
 
     /// Generates contiguous proofs with leaf-hash validation from one prefetch snapshot.
@@ -599,5 +638,97 @@ impl MmrIndexHandle {
 
     pub fn mmr_id(&self) -> &MmrId {
         &self.mmr_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_store_sled::test_utils::get_test_sled_backend;
+
+    use super::*;
+
+    fn setup_handle() -> MmrIndexHandle {
+        let pool = ThreadPool::new(1);
+        let backend = get_test_sled_backend();
+        let manager = MmrIndexManager::new(pool, backend.mmr_index_db());
+        manager.get_handle(MmrId::Asm)
+    }
+
+    #[test]
+    fn get_range_blocking_returns_contiguous_preimages() {
+        let handle = setup_handle();
+        let payloads = [vec![0x11], vec![0x22], vec![0x33]];
+
+        for payload in payloads.iter().cloned() {
+            handle.append_blocking(payload).expect("append preimage");
+        }
+
+        assert_eq!(
+            handle.get_range_blocking(0, 3).expect("get full range"),
+            payloads
+        );
+        assert_eq!(
+            handle.get_range_blocking(1, 2).expect("get single range"),
+            vec![payloads[1].clone()]
+        );
+    }
+
+    #[tokio::test]
+    async fn get_range_returns_contiguous_preimages() {
+        let handle = setup_handle();
+        let payloads = [vec![0xaa], vec![0xbb]];
+
+        for payload in payloads.iter().cloned() {
+            handle.append_blocking(payload).expect("append preimage");
+        }
+
+        assert_eq!(
+            handle.get_range(0, 2).await.expect("get async range"),
+            payloads
+        );
+    }
+
+    #[test]
+    fn get_range_blocking_empty_range_returns_empty_vec() {
+        let handle = setup_handle();
+
+        assert_eq!(
+            handle
+                .get_range_blocking(7, 7)
+                .expect("empty range should succeed"),
+            Vec::<Vec<u8>>::new()
+        );
+    }
+
+    #[test]
+    fn get_range_blocking_missing_preimage_errors() {
+        let handle = setup_handle();
+        handle
+            .append_blocking(vec![0x11])
+            .expect("append preimage at 0");
+        handle
+            .append_leaf_blocking(Hash::from([0x22; 32]))
+            .expect("append leaf without preimage at 1");
+        handle
+            .append_blocking(vec![0x33])
+            .expect("append preimage at 2");
+
+        let err = handle
+            .get_range_blocking(0, 3)
+            .expect_err("missing preimage should fail");
+        assert!(matches!(
+            err,
+            DbError::MmrPayloadNotFound(pos) if pos == LeafPos::new(1)
+        ));
+    }
+
+    #[test]
+    fn get_range_blocking_invalid_bounds_errors() {
+        let handle = setup_handle();
+
+        let err = handle
+            .get_range_blocking(4, 2)
+            .expect_err("invalid range should fail");
+        assert!(matches!(err, DbError::MmrInvalidRange { start: 4, end: 2 }));
     }
 }
