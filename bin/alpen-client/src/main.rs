@@ -164,6 +164,14 @@ fn main() {
 
             // --- CONFIGS ---
 
+            // Resolve withdrawal cap: --no-withdrawal-cap → None,
+            // --max-withdrawal-amount X → Some(X), neither → default 10 BTC.
+            let resolved_max_withdrawal = if ext.no_withdrawal_cap {
+                None
+            } else {
+                Some(ext.max_withdrawal_amount.unwrap_or(1_000_000_000))
+            };
+
             let datadir = builder.config().datadir().data_dir().to_path_buf();
 
             // TODO: read config, params from file
@@ -358,7 +366,7 @@ fn main() {
             .map_err(|e| eyre::eyre!("failed to start ol tracker service: {e}"))?;
 
             let evm_factory = AlpenEvmFactory::from_bridge_params(
-                &BridgeParams::new(ext.bridge_denomination, ext.max_withdrawal_amount)
+                &BridgeParams::new(ext.bridge_denomination, resolved_max_withdrawal)
                     .expect("invalid withdrawal params"),
             );
             let node_args = AlpenNodeArgs {
@@ -710,7 +718,7 @@ fn main() {
                 };
 
                 let bridge_params =
-                    BridgeParams::new(ext.bridge_denomination, ext.max_withdrawal_amount)
+                    BridgeParams::new(ext.bridge_denomination, resolved_max_withdrawal)
                         .expect("invalid withdrawal params");
 
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
@@ -1011,6 +1019,10 @@ pub struct AdditionalConfig {
     /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
     #[arg(long)]
     pub max_withdrawal_amount: Option<u64>,
+
+    /// Disable the withdrawal cap entirely.
+    #[arg(long)]
+    pub no_withdrawal_cap: bool,
 
     /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
     /// instead of the SP1 remote host.
