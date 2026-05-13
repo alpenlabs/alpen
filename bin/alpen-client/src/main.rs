@@ -682,6 +682,29 @@ fn main() {
                     ext.custom_chain.genesis().config.clone().into_rsp()
                 };
 
+                // Optional cap on concurrent in-flight prove tasks per prover.
+                // Each task holds witness state in memory (heavy for the chunk
+                // path's reth range-witness extraction); without a cap, tasks
+                // can pile up when SP1 network proofs lag behind submission
+                // and the process OOMs on resource-constrained hosts.
+                //
+                // Unset by default — behavior matches main. Operators on
+                // small machines (laptops, CI runners) can opt in by setting
+                // `ALPEN_MAX_CONCURRENT_PROVES=N`; the cap then applies to
+                // both the chunk and acct provers independently.
+                let max_concurrent_proves: Option<usize> =
+                    std::env::var("ALPEN_MAX_CONCURRENT_PROVES")
+                        .ok()
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .filter(|&n| n > 0);
+                if let Some(n) = max_concurrent_proves {
+                    info!(
+                        target: "alpen-client",
+                        max_concurrent_proves = n,
+                        "EE provers: in-flight cap enabled via ALPEN_MAX_CONCURRENT_PROVES"
+                    );
+                }
+
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
                     batch_storage_dyn.clone(),
                     storage.clone(),
@@ -691,7 +714,8 @@ fn main() {
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
                 .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
-                .retry(RetryConfig::default());
+                .retry(RetryConfig::default())
+                .max_concurrent_proves(max_concurrent_proves);
 
                 let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
@@ -706,7 +730,8 @@ fn main() {
                     batch_storage_dyn.clone(),
                     batch_proofs.clone(),
                 ))
-                .retry(RetryConfig::default());
+                .retry(RetryConfig::default())
+                .max_concurrent_proves(max_concurrent_proves);
 
                 // Dev/test escape hatch: use zkaleido NativeHost instead of
                 // the SP1 remote host. This skips real Groth16 proving and

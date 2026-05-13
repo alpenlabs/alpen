@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct ProverConfig {
     pub retry: Option<RetryConfig>,
+    /// Upper bound on tasks that may be inside `run_task` concurrently. `None`
+    /// means unbounded. Bounds the in-memory witness/proof footprint when the
+    /// proving backend (remote network or native) lags behind task submission.
+    pub max_concurrent_proves: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

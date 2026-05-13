@@ -12,7 +12,10 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use tokio::{sync::oneshot, task::spawn_blocking};
+use tokio::{
+    sync::{oneshot, Semaphore},
+    task::spawn_blocking,
+};
 use tracing::{error, info, info_span, warn, Instrument};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
@@ -48,6 +51,9 @@ pub struct Prover<H: ProofSpec> {
     watchers: Arc<Mutex<WatcherMap<H::Task>>>,
     /// Whether we've run recovery on startup.
     recovered: AtomicBool,
+    /// Limits how many tasks may be inside `run_task` concurrently. `None`
+    /// preserves the prior unbounded behavior.
+    prove_concurrency: Option<Arc<Semaphore>>,
 }
 
 impl<H: ProofSpec> fmt::Debug for Prover<H> {
@@ -207,6 +213,10 @@ impl<H: ProofSpec> Prover<H> {
         for record in retriable {
             let key = record.key().to_vec();
             if let Some(task) = decode_task_key::<H>(&key) {
+                // Claim the task atomically before spawning so a follow-up
+                // tick won't see it as retriable and double-spawn while the
+                // first spawn is still waiting on a concurrency permit.
+                let _ = self.task_store.update_status(&key, TaskStatus::Proving);
                 let prover = Arc::clone(self);
                 tokio::spawn(async move {
                     prover.run_task(task, key).await;
@@ -246,7 +256,27 @@ impl<H: ProofSpec> Prover<H> {
         let span = info_span!("prove", task = %task);
 
         async {
+            // Mark Proving FIRST so subsequent PaaS ticks don't re-spawn this
+            // logical task while it's waiting on the concurrency permit.
+            // Without this, every retriable task gets spawned on every tick
+            // and tokio tasks accumulate unbounded even with the semaphore.
             let _ = self.task_store.update_status(&key, TaskStatus::Proving);
+
+            // Bound how many tasks are inside the heavy work below concurrently.
+            // The permit covers input fetch (witness building, often the
+            // heaviest step) through prove and receipt storage. Released on
+            // scope exit.
+            let _permit = match self.prove_concurrency.as_ref() {
+                Some(sem) => match Arc::clone(sem).acquire_owned().await {
+                    Ok(p) => Some(p),
+                    Err(_) => {
+                        // Semaphore closed — treat as transient and bail.
+                        warn!("prove concurrency semaphore closed; dropping task");
+                        return;
+                    }
+                },
+                None => None,
+            };
 
             // 1. Fetch input
             let input = match self.spec.fetch_input(&task).await {
@@ -440,6 +470,7 @@ pub struct ProverBuilder<H: ProofSpec> {
     receipt_store: Option<Arc<dyn ReceiptStore>>,
     receipt_hook: Option<Arc<dyn ReceiptHook<H>>>,
     retry: Option<RetryConfig>,
+    max_concurrent_proves: Option<usize>,
 }
 
 impl<H: ProofSpec> ProverBuilder<H> {
@@ -450,7 +481,19 @@ impl<H: ProofSpec> ProverBuilder<H> {
             receipt_store: None,
             receipt_hook: None,
             retry: None,
+            max_concurrent_proves: None,
         }
+    }
+
+    /// Cap how many tasks may be inside `run_task` concurrently. When the
+    /// proving backend lags (slow remote network, slow native CPU), unbounded
+    /// in-flight tasks accumulate witness state in memory and can OOM the
+    /// process. Setting this bounds that footprint at the cost of throughput.
+    ///
+    /// `None` disables the cap (default).
+    pub fn max_concurrent_proves(mut self, n: Option<usize>) -> Self {
+        self.max_concurrent_proves = n;
+        self
     }
 
     pub fn task_store(mut self, store: impl TaskStore + 'static) -> Self {
@@ -501,10 +544,16 @@ impl<H: ProofSpec> ProverBuilder<H> {
     }
 
     fn build(self, strategy: Arc<dyn ProveStrategy<H>>) -> Prover<H> {
+        let prove_concurrency = self
+            .max_concurrent_proves
+            .map(|n| Arc::new(Semaphore::new(n)));
         Prover {
             spec: Arc::new(self.spec),
             strategy,
-            config: ProverConfig { retry: self.retry },
+            config: ProverConfig {
+                retry: self.retry,
+                max_concurrent_proves: self.max_concurrent_proves,
+            },
             task_store: self
                 .task_store
                 .unwrap_or_else(|| Arc::new(InMemoryTaskStore::new())),
@@ -512,6 +561,7 @@ impl<H: ProofSpec> ProverBuilder<H> {
             receipt_hook: self.receipt_hook,
             watchers: Arc::new(Mutex::new(HashMap::new())),
             recovered: AtomicBool::new(false),
+            prove_concurrency,
         }
     }
 }
