@@ -179,7 +179,7 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "checkpoint predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+        description = "checkpoint predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
     )]
     pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
 
@@ -256,7 +256,7 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "checkpoint predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+        description = "checkpoint predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
     )]
     pub(crate) checkpoint_predicate: Option<CheckpointPredicateOverride>,
 
@@ -312,7 +312,7 @@ pub(crate) struct SubcOlParams {
 
     #[argh(
         option,
-        description = "alpen snark account predicate type: 'always-accept' or 'sp1-groth16' (default: feature-gated)"
+        description = "alpen snark account predicate type: 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test' (default: feature-gated)"
     )]
     pub(crate) alpen_predicate: Option<AcctPredicateOverride>,
 

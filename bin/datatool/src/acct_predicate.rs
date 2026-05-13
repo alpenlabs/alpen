@@ -3,12 +3,16 @@
 use std::{error, fmt, str::FromStr};
 
 use strata_predicate::PredicateKey;
+use strata_proofimpl_alpen_acct::EeAcctProgram;
 
 /// CLI override for the account predicate type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AcctPredicateOverride {
     AlwaysAccept,
     Sp1Groth16,
+    /// Use BIP-340 Schnorr bound to the alpen-acct program's deterministic
+    /// test signing key (functional tests).
+    Bip340SchnorrTest,
 }
 
 #[derive(Debug)]
@@ -18,7 +22,7 @@ impl fmt::Display for ParseAcctPredicateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "invalid account predicate type '{}', expected 'always-accept' or 'sp1-groth16'",
+            "invalid account predicate type '{}', expected 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test'",
             self.0
         )
     }
@@ -33,6 +37,7 @@ impl FromStr for AcctPredicateOverride {
         match s {
             "always-accept" => Ok(Self::AlwaysAccept),
             "sp1-groth16" => Ok(Self::Sp1Groth16),
+            "bip340-schnorr-test" => Ok(Self::Bip340SchnorrTest),
             _ => Err(ParseAcctPredicateError(s.to_owned())),
         }
     }
@@ -44,6 +49,7 @@ pub(crate) fn resolve_acct_predicate(
     match override_val {
         Some(AcctPredicateOverride::AlwaysAccept) => Ok(PredicateKey::always_accept()),
         Some(AcctPredicateOverride::Sp1Groth16) => resolve_sp1_groth16(),
+        Some(AcctPredicateOverride::Bip340SchnorrTest) => Ok(EeAcctProgram::test_predicate_key()),
         None => Ok(resolve_default()),
     }
 }
