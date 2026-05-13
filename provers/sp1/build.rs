@@ -203,8 +203,8 @@ fn is_cache_valid(expected_id: &[u8; 32], paths: &[PathBuf; 3]) -> bool {
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
 fn ensure_cache_validity(program: &str) -> Result<SP1VerifyingKey, String> {
     let cache_dir = format!("{}/cache", program);
-    let paths = ["elf", "id", "vk"]
-        .map(|file| Path::new(&cache_dir).join(format!("{}.{}", program, file)));
+    let paths =
+        ["elf", "id", "vk"].map(|file| Path::new(&cache_dir).join(format!("{}.{}", program, file)));
 
     // Attempt to read the ELF file
     let elf = fs::read(&paths[0])

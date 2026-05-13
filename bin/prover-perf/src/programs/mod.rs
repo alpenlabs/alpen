@@ -38,15 +38,11 @@ pub async fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<(String, Executi
     for program in programs {
         let cfg = SP1HostConfig::default();
         let report = match program {
-            GuestProgram::AlpenAcct => {
-                alpen_acct::gen_perf_report(&**alpen_acct_host(cfg).await)
-            }
+            GuestProgram::AlpenAcct => alpen_acct::gen_perf_report(&**alpen_acct_host(cfg).await),
             GuestProgram::AlpenChunk => {
                 alpen_chunk::gen_perf_report(&**alpen_chunk_host(cfg).await)
             }
-            GuestProgram::Checkpoint => {
-                checkpoint::gen_perf_report(&**checkpoint_host(cfg).await)
-            }
+            GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**checkpoint_host(cfg).await),
         };
         reports.push(report);
     }

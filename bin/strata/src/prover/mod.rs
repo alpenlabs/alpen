@@ -95,7 +95,8 @@ pub(crate) fn start_prover_service(
             let deadline_secs = prover_config
                 .sp1_proof_deadline_secs
                 .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-            let sp1_config = SP1HostConfig::default().with_deadline(Duration::from_secs(deadline_secs));
+            let sp1_config =
+                SP1HostConfig::default().with_deadline(Duration::from_secs(deadline_secs));
             info!(deadline_secs, "sp1 prover deadline configured");
             let host_static = runctx
                 .task_manager
