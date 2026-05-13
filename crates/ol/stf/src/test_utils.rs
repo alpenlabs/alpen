@@ -82,7 +82,7 @@ use strata_ol_msg_types::{
     DEFAULT_OPERATOR_FEE, DEPOSIT_MSG_TYPE_ID, DepositMsgData, WITHDRAWAL_MSG_TYPE_ID,
     WithdrawalMsgData,
 };
-use strata_ol_params::OLParams;
+use strata_ol_params::{BridgeParams, OLParams};
 use strata_ol_state_support_types::MemoryStateBaseLayer;
 use strata_ol_state_types::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountState, OLSnarkAccountState, OLState,
@@ -116,6 +116,29 @@ pub const TEST_NONEXISTENT_ID: u32 = 999;
 /// Builds a state root with predictable bytes.
 pub fn make_state_root(variant: u8) -> Hash {
     Hash::from([variant; 32])
+}
+
+/// Execute a block with the given block info and return the completed block.
+pub fn execute_block(
+    state: &mut MemoryStateBaseLayer,
+    block_info: &BlockInfo,
+    parent_header: Option<&OLBlockHeader>,
+    components: BlockComponents,
+) -> ExecResult<CompletedBlock> {
+    let block_context = BlockContext::new(block_info, parent_header);
+    execute_and_complete_block(state, block_context, components, BridgeParams::default())
+}
+
+/// Execute a block and return the construct output which includes both the completed block and
+/// execution outputs. This is useful for tests that need to inspect the logs.
+pub fn execute_block_with_outputs(
+    state: &mut MemoryStateBaseLayer,
+    block_info: &BlockInfo,
+    parent_header: Option<&OLBlockHeader>,
+    components: BlockComponents,
+) -> ExecResult<ConstructBlockOutput> {
+    let block_context = BlockContext::new(block_info, parent_header);
+    construct_block(state, block_context, components, BridgeParams::default())
 }
 
 /// Builds proof bytes with predictable contents.
@@ -545,7 +568,13 @@ pub fn assert_verification_succeeds<S: IStateAccessorMut>(
     parent_header: Option<OLBlockHeader>,
     body: &strata_ol_chain_types_new::OLBlockBody,
 ) {
-    let result = verify_block(state, header, parent_header.as_ref(), body);
+    let result = verify_block(
+        state,
+        header,
+        parent_header.as_ref(),
+        body,
+        BridgeParams::default(),
+    );
     assert!(
         result.is_ok(),
         "Block verification failed when it should have succeeded: {:?}",
@@ -561,7 +590,13 @@ pub fn assert_verification_fails_with(
     body: &strata_ol_chain_types_new::OLBlockBody,
     error_matcher: impl Fn(&ExecError) -> bool,
 ) {
-    let result = verify_block(state, header, parent_header.as_ref(), body);
+    let result = verify_block(
+        state,
+        header,
+        parent_header.as_ref(),
+        body,
+        BridgeParams::default(),
+    );
     assert!(
         result.is_err(),
         "Block verification succeeded when it should have failed"

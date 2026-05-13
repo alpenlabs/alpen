@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use strata_bridge_params::BridgeParams;
 use strata_config::SequencerConfig;
 use strata_identifiers::{Buf32, OLBlockCommitment, OLBlockId};
 use strata_ol_mempool::{MempoolTxInvalidReason, OLMempoolError};
@@ -40,6 +41,7 @@ async fn test_missing_parent_fails() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect_err("missing parent state should fail");
@@ -68,6 +70,7 @@ async fn test_state_provider_failure_propagates() {
         &sequencer_config,
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect_err("state provider error should fail");
@@ -91,6 +94,7 @@ async fn test_get_transactions_failure_propagates() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect_err("mempool get failure should fail");
@@ -130,6 +134,7 @@ async fn test_generation_stage_does_not_report_invalid_txs() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("inner assembly should not call report_invalid_transactions");
@@ -162,6 +167,7 @@ async fn test_no_report_when_all_txs_valid() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("valid tx block assembly should succeed");
@@ -201,6 +207,7 @@ async fn test_exact_failed_txs_payload() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("assembly should succeed with invalid tx filtered");
@@ -249,6 +256,7 @@ async fn test_mixed_failures_keep_order_and_reason() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("assembly should succeed with failed tx filtering");
@@ -291,6 +299,7 @@ async fn test_max_txs_returns_only_fetched_failures() {
         &sequencer_config,
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("assembly should succeed with limited tx fetch");
@@ -327,6 +336,7 @@ async fn test_exec_failure_maps_to_failed() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("assembly should succeed with failed execution filtered");
@@ -360,6 +370,7 @@ async fn test_duplicate_txid_one_fails() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("assembly should succeed");
@@ -396,6 +407,7 @@ async fn test_duplicate_txid_both_fail() {
         env.sequencer_config(),
         config,
         AccumulatedDaData::new_empty(),
+        BridgeParams::default(),
     )
     .await
     .expect("assembly should succeed with both txs filtered");

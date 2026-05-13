@@ -9,6 +9,7 @@
 //! even though both must live in [`ChainWorkerServiceState`] due to the current
 //! service framework design.
 
+use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
 use strata_identifiers::OLBlockCommitment;
@@ -243,8 +244,12 @@ impl ChainWorkerServiceState {
         let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
 
         // Execute and extract outputs
-        let (write_batch, indexer_writes) =
-            Self::run_stf_verification(&parent_state, block, parent_header)?;
+        let (write_batch, indexer_writes) = Self::run_stf_verification(
+            &parent_state,
+            block,
+            parent_header,
+            self.ctx.bridge_params(),
+        )?;
 
         // Apply write batch to parent state to get new state
         let mut new_state = parent_state;
@@ -282,6 +287,7 @@ impl ChainWorkerServiceState {
         parent_state: &MemoryStateBaseLayer,
         block: &OLBlock,
         parent_header: Option<&OLBlockHeader>,
+        bridge_params: BridgeParams,
     ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
         // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
         let tracking_state = WriteTrackingState::new_empty(parent_state);
@@ -292,6 +298,7 @@ impl ChainWorkerServiceState {
             block.header(),
             parent_header,
             block.body(),
+            bridge_params,
         )?;
 
         // Extract outputs

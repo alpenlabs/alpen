@@ -7,6 +7,7 @@ use std::{
 
 use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_ledger_types::{IAccountStateMut, IStateAccessor, IStateAccessorMut};
+use strata_ol_params::OLParams;
 use strata_ol_state_provider::StateProvider;
 use strata_predicate::PredicateKey;
 use strata_service::ServiceBuilder;
@@ -27,6 +28,7 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
+    ol_params: Arc<OLParams>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     storage: Arc<NodeStorage>,
     mempool_provider: M,
@@ -43,7 +45,12 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "params can be removed once RollupParams is phased out"
+    )]
     pub fn new(
+        ol_params: Arc<OLParams>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         storage: Arc<NodeStorage>,
         mempool_provider: M,
@@ -53,6 +60,7 @@ where
         sequencer_predicate: PredicateKey,
     ) -> Self {
         Self {
+            ol_params,
             blockasm_config,
             storage,
             mempool_provider,
@@ -89,6 +97,7 @@ where
         ));
 
         let state = BlockasmServiceState::new(
+            self.ol_params,
             self.blockasm_config,
             self.sequencer_config,
             self.sequencer_predicate,

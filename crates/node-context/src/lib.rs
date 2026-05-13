@@ -109,6 +109,7 @@ impl NodeContext {
                 params: self.params,
                 blockasm_config: self.blockasm_config,
                 asm_params: self.asm_params,
+                ol_params: self.ol_params,
                 config: self.config,
                 storage: self.storage,
                 status_channel: self.status_channel,
@@ -127,6 +128,7 @@ pub struct CommonContext {
     params: Arc<Params>,
     blockasm_config: Option<Arc<BlockAssemblyConfig>>,
     asm_params: Arc<AsmParams>,
+    ol_params: Arc<OLParams>,
     config: Config,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
@@ -147,6 +149,10 @@ impl CommonContext {
 
     pub fn asm_params(&self) -> &Arc<AsmParams> {
         &self.asm_params
+    }
+
+    pub fn ol_params(&self) -> &Arc<OLParams> {
+        &self.ol_params
     }
 
     pub fn config(&self) -> &Config {
