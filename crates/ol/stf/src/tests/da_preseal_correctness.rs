@@ -5,22 +5,17 @@
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::AsmManifest;
 use strata_codec::decode_buf_exact;
-use strata_identifiers::{AccountSerial, Buf64, OLBlockCommitment, SubjectId};
-use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData, NewAccountTypeState};
+use strata_identifiers::{Buf64, OLBlockCommitment, SubjectId};
+use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, SignedOLBlockHeader};
 use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
-use strata_predicate::PredicateKey;
 
 use crate::{
     BlockInfo, EpochInfo,
     assembly::{BlockComponents, CompletedBlock},
     execute_block_batch_preseal,
-    test_utils::{
-        TEST_SNARK_ACCOUNT_ID, execute_block, make_account_id, make_deposit_manifest_for_account,
-        make_deposit_manifest_with_destination_bytes, make_empty_manifest, make_genesis_state,
-        make_state_root,
-    },
+    test_utils::*,
     verification::verify_epoch_preseal_with_diff,
 };
 
@@ -30,10 +25,16 @@ const SLOT_TIMESTAMP_STEP: u64 = 1_000;
 
 #[test]
 fn test_preseal_round_trip_with_deposit_manifest() {
-    let mut state = make_genesis_state();
-    let snark_serial = seed_snark_account(&mut state);
-
-    let genesis = run_genesis(&mut state);
+    let fixture_builder = OLStfFixture::builder();
+    let snark_acct_serial = fixture_builder.next_account_serial();
+    let fixture = fixture_builder
+        .with_genesis_snark_account(make_account_id(TEST_SNARK_ACCOUNT_ID), |acct| {
+            acct.with_state_root(make_state_root(1))
+        })
+        .with_genesis_manifest(make_empty_manifest(1, 0))
+        .execute_genesis();
+    let mut state = fixture.state().clone();
+    let genesis = fixture.last_completed_block().clone();
     let pre_epoch_state = state.clone();
 
     let (mut epoch_blocks, last_pre_terminal_header) =
@@ -41,7 +42,7 @@ fn test_preseal_round_trip_with_deposit_manifest() {
     let terminal_manifest = make_deposit_manifest_for_account(
         state.last_l1_height() + 1,
         1,
-        snark_serial,
+        snark_acct_serial,
         SubjectId::from([42u8; 32]),
         BitcoinAmount::from_sat(150_000_000),
     );
@@ -53,9 +54,11 @@ fn test_preseal_round_trip_with_deposit_manifest() {
 
 #[test]
 fn test_preseal_round_trip_with_limbo_deposit_manifest() {
-    let mut state = make_genesis_state();
-
-    let genesis = run_genesis(&mut state);
+    let fixture = OLStfFixture::builder()
+        .with_genesis_manifest(make_empty_manifest(1, 0))
+        .execute_genesis();
+    let mut state = fixture.state().clone();
+    let genesis = fixture.last_completed_block().clone();
     let pre_epoch_state = state.clone();
 
     let (mut epoch_blocks, last_pre_terminal_header) =
@@ -105,31 +108,6 @@ fn assert_preseal_round_trip(
     result.unwrap_or_else(|e| {
         panic!("preseal mismatch: {e:?}. recorded = {preseal_recorded:?}, actual = {actual_root:?}")
     });
-}
-
-fn seed_snark_account(state: &mut MemoryStateBaseLayer) -> AccountSerial {
-    state
-        .create_new_account(
-            make_account_id(TEST_SNARK_ACCOUNT_ID),
-            NewAccountData::new(
-                BitcoinAmount::from_sat(0),
-                NewAccountTypeState::Snark {
-                    update_vk: PredicateKey::always_accept(),
-                    initial_state_root: make_state_root(1),
-                },
-            ),
-        )
-        .expect("create snark account")
-}
-
-fn run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
-    execute_block(
-        state,
-        &BlockInfo::new_genesis(GENESIS_TIMESTAMP),
-        None,
-        BlockComponents::new_manifests(vec![make_empty_manifest(1, 0)]),
-    )
-    .expect("genesis block")
 }
 
 fn build_non_terminal_blocks(
