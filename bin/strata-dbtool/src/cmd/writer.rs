@@ -1,7 +1,9 @@
 use argh::FromArgs;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
-use strata_db_types::traits::{DatabaseBackend, L1WriterDatabase};
-use strata_primitives::buf::Buf32;
+use strata_db_types::{
+    traits::{DatabaseBackend, L1WriterDatabase},
+    types::L1TxId,
+};
 
 use super::checkpoint::{get_checkpoint_at_epoch, get_checkpoint_epoch_range};
 use crate::{
@@ -106,12 +108,12 @@ pub(crate) fn get_writer_payload(
             index: args.index,
             status: payload_entry.status.clone(),
             payload: payload_entry.payload.clone(),
-            commit_txid: if payload_entry.commit_txid == Buf32::zero() {
+            commit_txid: if payload_entry.commit_txid == L1TxId::zero() {
                 None
             } else {
                 Some(payload_entry.commit_txid)
             },
-            reveal_txid: if payload_entry.reveal_txid == Buf32::zero() {
+            reveal_txid: if payload_entry.reveal_txid == L1TxId::zero() {
                 None
             } else {
                 Some(payload_entry.reveal_txid)
