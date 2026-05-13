@@ -1,3 +1,4 @@
+use alpen_ee_common::ChunkWitnessRecord;
 use strata_acct_types::Hash;
 use strata_db_store_sled::{
     define_table_with_default_codec, define_table_without_codec, /* impl_bincode_key_codec, */
@@ -72,6 +73,13 @@ define_table_with_default_codec!(
 define_table_with_default_codec!(
     /// Batch-Chunk association
     (BatchChunksSchema) DBBatchId => Vec<DBChunkId>
+);
+
+define_table_with_default_codec!(
+    /// Pre-computed chunk witness, written at chunk-seal time by the
+    /// batch builder and read by `ChunkSpec::fetch_input`. See
+    /// `experimental/evgeniy/ee-prover-fetch-input-redesign.md` (phase 1).
+    (ChunkWitnessSchema) DBChunkId => ChunkWitnessRecord
 );
 
 // Prover storage schemas.

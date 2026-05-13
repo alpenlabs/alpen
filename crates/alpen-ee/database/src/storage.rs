@@ -1,8 +1,9 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStatus, EeAccountStateAtEpoch,
-    ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
+    Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStatus, ChunkWitnessRecord,
+    ChunkWitnessStore, EeAccountStateAtEpoch, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage,
+    OLBlockOrEpoch, Storage, StorageError,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
@@ -342,6 +343,37 @@ impl BatchStorage for EeNodeStorage {
     ) -> Result<Option<Vec<ChunkId>>, StorageError> {
         self.ops
             .get_batch_chunks_async(batch_id)
+            .await
+            .map_err(Into::into)
+    }
+}
+
+#[async_trait]
+impl ChunkWitnessStore for EeNodeStorage {
+    async fn put_chunk_witness(
+        &self,
+        chunk_id: ChunkId,
+        witness: ChunkWitnessRecord,
+    ) -> Result<(), StorageError> {
+        self.ops
+            .put_chunk_witness_async(chunk_id, witness)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn get_chunk_witness(
+        &self,
+        chunk_id: ChunkId,
+    ) -> Result<Option<ChunkWitnessRecord>, StorageError> {
+        self.ops
+            .get_chunk_witness_async(chunk_id)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn del_chunk_witness(&self, chunk_id: ChunkId) -> Result<(), StorageError> {
+        self.ops
+            .del_chunk_witness_async(chunk_id)
             .await
             .map_err(Into::into)
     }

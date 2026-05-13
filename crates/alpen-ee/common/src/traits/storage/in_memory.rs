@@ -7,7 +7,10 @@ use std::{
 
 use async_trait::async_trait;
 
-use crate::{Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStatus, StorageError};
+use crate::{
+    Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStatus, ChunkWitnessRecord,
+    ChunkWitnessStore, StorageError,
+};
 
 /// In-memory storage for batches and chunks.
 #[derive(Debug, Default)]
@@ -17,6 +20,7 @@ pub struct InMemoryStorage {
     pub chunks: RwLock<BTreeMap<u64, (Chunk, ChunkStatus)>>,
     pub chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
     pub batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
+    pub chunk_witnesses: RwLock<HashMap<ChunkId, ChunkWitnessRecord>>,
 }
 
 impl InMemoryStorage {
@@ -242,6 +246,33 @@ impl BatchStorage for InMemoryStorage {
     ) -> Result<Option<Vec<ChunkId>>, StorageError> {
         let batch_chunks = self.batch_chunks.read().unwrap();
         Ok(batch_chunks.get(&batch_id).cloned())
+    }
+}
+
+#[async_trait]
+impl ChunkWitnessStore for InMemoryStorage {
+    async fn put_chunk_witness(
+        &self,
+        chunk_id: ChunkId,
+        witness: ChunkWitnessRecord,
+    ) -> Result<(), StorageError> {
+        self.chunk_witnesses
+            .write()
+            .unwrap()
+            .insert(chunk_id, witness);
+        Ok(())
+    }
+
+    async fn get_chunk_witness(
+        &self,
+        chunk_id: ChunkId,
+    ) -> Result<Option<ChunkWitnessRecord>, StorageError> {
+        Ok(self.chunk_witnesses.read().unwrap().get(&chunk_id).cloned())
+    }
+
+    async fn del_chunk_witness(&self, chunk_id: ChunkId) -> Result<(), StorageError> {
+        self.chunk_witnesses.write().unwrap().remove(&chunk_id);
+        Ok(())
     }
 }
 

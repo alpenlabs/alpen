@@ -17,8 +17,8 @@ pub use traits::{
     prover::{BatchProver, ProofGenerationStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
-        require_latest_batch, BatchStorage, ExecBlockStorage, OLBlockOrEpoch, Storage,
-        StorageError,
+        require_latest_batch, BatchStorage, ChunkWitnessStore, ExecBlockStorage, OLBlockOrEpoch,
+        Storage, StorageError,
     },
 };
 #[cfg(feature = "test-utils")]
@@ -28,13 +28,15 @@ pub use traits::{
     prover::MockBatchProver,
     storage::{
         batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
-        InMemoryStorage, MockBatchStorage, MockExecBlockStorage, MockStorage,
+        InMemoryStorage, MockBatchStorage, MockChunkWitnessStore, MockExecBlockStorage,
+        MockStorage,
     },
 };
 pub use types::{
     batch::{Batch, BatchId, BatchStatus, L1DaBlockRef},
     blocknumhash::BlockNumHash,
     chunk::{Chunk, ChunkId, ChunkStatus},
+    chunk_witness::ChunkWitnessRecord,
     consensus_heads::ConsensusHeads,
     da::{prepare_da_chunks, reassemble_da_blob, DaBlob, EvmHeaderSummary, DA_BLOB_VERSION},
     ee_account_state::EeAccountStateAtEpoch,
