@@ -14,7 +14,7 @@ use std::{
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use serde::Serialize;
 use strata_btc_types::{Buf32BitcoinExt, TxidExt};
-use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxStatus};
+use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxId, L1TxStatus};
 use strata_primitives::buf::Buf32;
 use strata_service::{AsyncService, Response, Service, ServiceState};
 use strata_status::StatusChannel;
@@ -34,6 +34,14 @@ use crate::{
         },
     },
 };
+
+fn to_l1_txid(txid: bitcoin::Txid) -> L1TxId {
+    L1TxId::from(txid.to_buf32().0)
+}
+
+fn to_raw_buf32(txid: L1TxId) -> Buf32 {
+    Buf32(txid.0)
+}
 
 /// Abstracts the external dependencies of the watcher so that `process_input` can be
 /// tested without a real Bitcoin node, database, or broadcast infrastructure.
@@ -63,18 +71,16 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-    ) -> impl Future<Output = Result<(Buf32, Buf32), EnvelopeError>> + Send;
-
+    ) -> impl Future<Output = Result<(L1TxId, L1TxId), EnvelopeError>> + Send;
     fn complete_reveal_and_broadcast(
         &self,
         idx: u64,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
-    ) -> impl Future<Output = anyhow::Result<Buf32>> + Send;
-
+    ) -> impl Future<Output = anyhow::Result<L1TxId>> + Send;
     fn get_tx_status(
         &self,
-        txid: Buf32,
+        txid: L1TxId,
     ) -> impl Future<Output = anyhow::Result<Option<L1TxEntry>>> + Send;
 
     fn report_status(
@@ -139,7 +145,7 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
         &self,
         idx: u64,
         entry: &BundledPayloadEntry,
-    ) -> Result<(Buf32, Buf32), EnvelopeError> {
+    ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
         sign_and_broadcast_payload_envelopes(
             idx,
             entry,
@@ -154,15 +160,15 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
         idx: u64,
         envelope: &EnvelopeData,
         sig: &[u8; 64],
-    ) -> anyhow::Result<Buf32> {
+    ) -> anyhow::Result<L1TxId> {
         complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
             .await
             .map_err(Into::into)
     }
 
-    async fn get_tx_status(&self, txid: Buf32) -> anyhow::Result<Option<L1TxEntry>> {
+    async fn get_tx_status(&self, txid: L1TxId) -> anyhow::Result<Option<L1TxEntry>> {
         self.broadcast_handle
-            .get_tx_entry_by_id_async(txid)
+            .get_tx_entry_by_id_async(Buf32(txid.0))
             .await
             .map_err(Into::into)
     }
@@ -291,8 +297,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                 .await
             {
                 Ok(envelope) => {
-                    let cid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
-                    let rid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+                    let cid = to_l1_txid(envelope.commit_tx.compute_txid());
+                    let rid = to_l1_txid(envelope.reveal_tx.compute_txid());
                     let sighash = envelope.sighash;
 
                     let mut updated_entry = payloadentry.clone();
@@ -335,7 +341,7 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                         .put_payload_entry(self.curr_payloadidx, updated_entry)
                         .await?;
 
-                    debug!(%cid, reveal_txid = %rid, "envelope signed and queued for broadcast");
+                    debug!(?cid, reveal_txid = ?rid, "envelope signed and queued for broadcast");
                 }
                 Err(EnvelopeError::NotEnoughUtxos(required, available)) => {
                     warn!(%required, %available, "waiting for sufficient utxos to create commit/reveal transaction");
@@ -419,8 +425,8 @@ impl<C: WatcherServiceContext> WatcherState<C> {
                     debug!(
                         component = "btcio_writer",
                         payload_idx = self.curr_payloadidx,
-                        commit_txid = %payloadentry.commit_txid,
-                        reveal_txid = %payloadentry.reveal_txid,
+                        commit_txid = ?payloadentry.commit_txid,
+                        reveal_txid = ?payloadentry.reveal_txid,
                         payload_status = ?new_status,
                         commit_l1_status = ?ctx.status,
                         reveal_l1_status = ?rtx.status,
@@ -467,7 +473,7 @@ async fn update_l1_status(
         || *new_status == L1BundleStatus::Finalized
     {
         let status_updates = [
-            L1StatusUpdate::LastPublishedTxid(payloadentry.reveal_txid.to_txid()),
+            L1StatusUpdate::LastPublishedTxid(to_raw_buf32(payloadentry.reveal_txid).to_txid()),
             L1StatusUpdate::IncrementPublishedRevealCount,
         ];
         apply_status_updates(&status_updates, status_channel).await;
@@ -519,7 +525,7 @@ mod tests {
     };
     use bitcoind_async_client::error::ClientError;
     use strata_csm_types::L1Payload;
-    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry};
+    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxId};
     use strata_l1_txfmt::TagData;
     use strata_primitives::buf::{Buf32, Buf64};
 
@@ -698,11 +704,11 @@ mod tests {
             &self,
             _idx: u64,
             _entry: &BundledPayloadEntry,
-        ) -> Result<(Buf32, Buf32), EnvelopeError> {
+        ) -> Result<(L1TxId, L1TxId), EnvelopeError> {
             if let Some(failure) = self.sign_failure {
                 return Err(failure.into_error());
             }
-            Ok((Buf32([1u8; 32]), Buf32([2u8; 32])))
+            Ok((L1TxId::from([1u8; 32]), L1TxId::from([2u8; 32])))
         }
 
         async fn complete_reveal_and_broadcast(
@@ -710,13 +716,13 @@ mod tests {
             idx: u64,
             envelope: &EnvelopeData,
             sig: &[u8; 64],
-        ) -> anyhow::Result<Buf32> {
+        ) -> anyhow::Result<L1TxId> {
             complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
                 .await
                 .map_err(Into::into)
         }
 
-        async fn get_tx_status(&self, _txid: Buf32) -> anyhow::Result<Option<L1TxEntry>> {
+        async fn get_tx_status(&self, _txid: L1TxId) -> anyhow::Result<Option<L1TxEntry>> {
             Ok(None)
         }
 
@@ -744,8 +750,8 @@ mod tests {
 
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unpublished);
-        assert_eq!(stored.commit_txid, Buf32([1u8; 32]));
-        assert_eq!(stored.reveal_txid, Buf32([2u8; 32]));
+        assert_eq!(stored.commit_txid, L1TxId::from([1u8; 32]));
+        assert_eq!(stored.reveal_txid, L1TxId::from([2u8; 32]));
         // No cache entry — ephemeral path does not use the envelope cache
         assert!(state.envelope_cache.is_empty());
     }
@@ -762,8 +768,8 @@ mod tests {
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unsigned);
         // Unsigned entries use zero txids as sentinels because no txs have been built yet.
-        assert_eq!(stored.commit_txid, Buf32::zero());
-        assert_eq!(stored.reveal_txid, Buf32::zero());
+        assert_eq!(stored.commit_txid, L1TxId::zero());
+        assert_eq!(stored.reveal_txid, L1TxId::zero());
         assert_eq!(state.curr_payloadidx, 0);
         assert!(state.envelope_cache.is_empty());
     }
@@ -798,8 +804,8 @@ mod tests {
         let stored = state.ctx.get_stored(0).unwrap();
         assert_eq!(stored.status, L1BundleStatus::Unsigned);
         // Unsigned entries use zero txids as sentinels because no txs have been built yet.
-        assert_eq!(stored.commit_txid, Buf32::zero());
-        assert_eq!(stored.reveal_txid, Buf32::zero());
+        assert_eq!(stored.commit_txid, L1TxId::zero());
+        assert_eq!(stored.reveal_txid, L1TxId::zero());
         assert_eq!(state.curr_payloadidx, 0);
         assert!(state.envelope_cache.is_empty());
     }

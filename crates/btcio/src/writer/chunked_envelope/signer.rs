@@ -14,9 +14,8 @@ use bitcoin::consensus::encode::serialize as btc_serialize;
 use bitcoind_async_client::traits::{Reader, Signer, Wallet};
 use strata_btc_types::{TxidExt, WtxidExt};
 use strata_db_types::types::{
-    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, RevealTxMeta,
+    ChunkedEnvelopeEntry, ChunkedEnvelopeStatus, L1TxEntry, L1TxId, L1WtxId, RevealTxMeta,
 };
-use strata_primitives::buf::Buf32;
 use tracing::*;
 
 use super::{builder::build_chunked_envelope_txs, context::ChunkedWriterContext};
@@ -28,8 +27,16 @@ use crate::writer::{
 fn format_reveal_refs(reveals: &[RevealTxMeta]) -> Vec<String> {
     reveals
         .iter()
-        .map(|reveal| format!("{}/{}", reveal.txid, reveal.wtxid))
+        .map(|reveal| format!("{:?}/{:?}", reveal.txid, reveal.wtxid))
         .collect()
+}
+
+fn to_l1_txid(txid: bitcoin::Txid) -> L1TxId {
+    L1TxId::from(txid.to_buf32().0)
+}
+
+fn to_l1_wtxid(wtxid: bitcoin::Wtxid) -> L1WtxId {
+    L1WtxId::from(wtxid.to_buf32().0)
 }
 
 /// Signed chunked-envelope metadata ready for lifecycle persistence.
@@ -129,15 +136,15 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
             .await
             .map_err(EnvelopeError::SignRawTransaction)?
             .tx;
-        let commit_txid: Buf32 = signed_commit.compute_txid().to_buf32();
-        let commit_wtxid: Buf32 = signed_commit.compute_wtxid().to_buf32();
+        let commit_txid = to_l1_txid(signed_commit.compute_txid());
+        let commit_wtxid = to_l1_wtxid(signed_commit.compute_wtxid());
 
         // Store reveal metadata and raw bytes locally. They'll be added to broadcast
         // DB by the watcher after commit is published.
         let mut reveals = Vec::with_capacity(built.reveal_txs.len());
         for (i, reveal_tx) in built.reveal_txs.iter().enumerate() {
-            let txid: Buf32 = reveal_tx.compute_txid().to_buf32();
-            let wtxid: Buf32 = reveal_tx.compute_wtxid().to_buf32();
+            let txid = to_l1_txid(reveal_tx.compute_txid());
+            let wtxid = to_l1_wtxid(reveal_tx.compute_wtxid());
             let tx_bytes = btc_serialize(reveal_tx);
 
             // vout_index is i+1 because vout 0 is the commit OP_RETURN.
@@ -151,8 +158,8 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
 
         let reveal_refs = format_reveal_refs(&reveals);
         debug!(
-            %commit_txid,
-            %commit_wtxid,
+            ?commit_txid,
+            ?commit_wtxid,
             reveal_count = reveals.len(),
             ?reveal_refs,
             "signed chunked envelope, ready for persistence"
@@ -170,4 +177,48 @@ pub(crate) async fn sign_chunked_envelope<R: Reader + Signer + Wallet>(
     }
     .instrument(sign_chunked_envelope_span)
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_db_types::types::RevealTxMeta;
+
+    use super::*;
+
+    fn bytes_from_start(start: u8) -> [u8; 32] {
+        let mut bytes = [0u8; 32];
+        for (idx, byte) in bytes.iter_mut().enumerate() {
+            *byte = start.wrapping_add(idx as u8);
+        }
+        bytes
+    }
+
+    fn reversed_hex(bytes: [u8; 32]) -> String {
+        bytes
+            .into_iter()
+            .rev()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    #[test]
+    fn format_reveal_refs_uses_full_reversed_hex() {
+        let txid_bytes = bytes_from_start(0x10);
+        let wtxid_bytes = bytes_from_start(0x40);
+        let reveals = vec![RevealTxMeta {
+            vout_index: 1,
+            txid: L1TxId::from(txid_bytes),
+            wtxid: L1WtxId::from(wtxid_bytes),
+            tx_bytes: Vec::new(),
+        }];
+
+        assert_eq!(
+            format_reveal_refs(&reveals),
+            vec![format!(
+                "{}/{}",
+                reversed_hex(txid_bytes),
+                reversed_hex(wtxid_bytes)
+            )]
+        );
+    }
 }
