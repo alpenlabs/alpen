@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    slice,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, slice, sync::Arc};
 
 use async_trait::async_trait;
 use proptest::prelude::*;
@@ -483,26 +479,6 @@ fn inbox_fetch_expect_success(
         assert_eq!(start_idx, expected_start_idx);
         assert_eq!(end_idx_exclusive, expected_end_idx_exclusive);
         Ok(messages_to_return.clone())
-    }
-}
-
-/// Each entry in `expected` is `(start, end_exclusive, messages_to_return)`,
-/// asserted in call order.
-fn inbox_fetch_expect_sequence(
-    expected_account_id: AccountId,
-    expected: Vec<(u64, u64, Vec<MessageEntry>)>,
-) -> impl Fn(AccountId, u64, u64) -> DbResult<Vec<MessageEntry>> + Send + Sync + 'static {
-    let calls = Mutex::new(0usize);
-    move |queried_account_id, start_idx, end_idx_exclusive| {
-        let mut idx = calls.lock().unwrap();
-        let (exp_start, exp_end, msgs) = expected
-            .get(*idx)
-            .unwrap_or_else(|| panic!("unexpected extra inbox fetch call #{}", *idx));
-        assert_eq!(queried_account_id, expected_account_id);
-        assert_eq!(start_idx, *exp_start, "call #{}: start mismatch", *idx);
-        assert_eq!(end_idx_exclusive, *exp_end, "call #{}: end mismatch", *idx);
-        *idx += 1;
-        Ok(msgs.clone())
     }
 }
 
@@ -2260,13 +2236,15 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
             prev_next_inbox_msg_idx,
         )
         .with_account_update_records(account_id, epoch, records)
-        .with_inbox_fetch_fn(inbox_fetch_expect_sequence(
+        .with_inbox_fetch_fn(inbox_fetch_expect_success(
             account_id,
-            vec![
-                (2, 4, msgs_1.clone()),
-                (4, 4, Vec::new()),
-                (4, 7, msgs_3.clone()),
-            ],
+            2,
+            7,
+            msgs_1
+                .iter()
+                .chain(msgs_3.iter())
+                .cloned()
+                .collect::<Vec<_>>(),
         ));
     let rpc = make_rpc(provider);
 
@@ -2279,10 +2257,12 @@ async fn epoch_summary_multi_record_slices_messages_per_update() {
 
     assert_eq!(updates[0].seq_no, 10);
     assert_eq!(updates[0].messages.len(), 2);
+    assert_eq!(rpc_messages_to_entries(&updates[0].messages), msgs_1);
     assert_eq!(updates[1].seq_no, 11);
     assert!(updates[1].messages.is_empty());
     assert_eq!(updates[2].seq_no, 12);
     assert_eq!(updates[2].messages.len(), 3);
+    assert_eq!(rpc_messages_to_entries(&updates[2].messages), msgs_3);
 }
 
 #[tokio::test]
