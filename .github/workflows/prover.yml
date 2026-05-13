@@ -69,10 +69,8 @@ jobs:
         env:
           # Pin to a release that matches the workspace's
           # sp1-{helper,sdk,verifier} dependencies. Bump in lockstep when
-          # upgrading. Latest sp1up installs v6+ whose target/toolchain combo
-          # (riscv64im + 32-bit C compiler) doesn't match what our guest deps'
-          # build scripts expect.
-          SP1_VERSION: "v5.2.1"
+          # upgrading.
+          SP1_VERSION: "v6.1.0"
         run: |
           # `-c` installs the RISC-V C++ toolchain so secp256k1-sys (and
           # other C-bound crates) cross-compile for the guest target.
