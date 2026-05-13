@@ -310,10 +310,11 @@ fn get_mock_elf_contents_and_vk_hash() -> ([u32; 8], String, [u8; 32]) {
     )
 }
 
-/// Computes the full Groth16 verifying key condition bytes for the given
-/// BN254 program ID. These bytes are the serialized `Groth16VerifyingKey`
-/// that merges the SP1 circuit VK with the program-specific ID,
-/// suitable for use as the condition in a `PredicateKey::Sp1Groth16`.
+/// Computes the Groth16 verifying key condition bytes for the given BN254
+/// program ID. The output is a borsh-serialized [`SP1Groth16Verifier`] that
+/// the runtime `Sp1Groth16` predicate verifier in `strata-predicate` decodes
+/// via `borsh::from_slice`. The verifier object embeds the SP1 circuit VK
+/// merged with the program-specific ID and the VK root.
 #[cfg(all(feature = "sp1-dev", not(debug_assertions)))]
 fn compute_groth16_condition(program_id: &[u8; 32]) -> Vec<u8> {
     let sp1_verifier = SP1Groth16Verifier::load(
@@ -324,7 +325,7 @@ fn compute_groth16_condition(program_id: &[u8; 32]) -> Vec<u8> {
     )
     .expect("Failed to load SP1 Groth16 verifier");
 
-    sp1_verifier.vk.to_uncompressed_bytes()
+    borsh::to_vec(&sp1_verifier).expect("failed to borsh-serialize SP1Groth16Verifier")
 }
 
 /// Returns empty condition bytes in debug/mock builds.
