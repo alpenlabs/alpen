@@ -50,6 +50,9 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+
       # Installs mold (modern ld), a drop-in replacement for lld.
       # Under the hood, the following action symlinks mold binary onto lld,
       # so everything is linked faster (hopefully).

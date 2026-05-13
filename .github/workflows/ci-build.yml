@@ -101,6 +101,9 @@ jobs:
           key: sp1-artifacts-builder
           cache-on-failure: true
 
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+
       - name: Install SP1 toolchain
         run: |
           curl -fsSL --proto '=https' --tlsv1.2 https://sp1.succinct.xyz | bash

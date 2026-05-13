@@ -82,6 +82,9 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+
       - name: Run tests with coverage
         run: |
           cargo llvm-cov --workspace --locked nextest --profile ci --lcov --output-path lcov.unit.info --no-cfg-coverage --no-cfg-coverage-nightly
@@ -128,6 +131,9 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
         with:
           cache-on-failure: true
+
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
       - name: Run doctests
         run: cargo test --doc --workspace --all-features

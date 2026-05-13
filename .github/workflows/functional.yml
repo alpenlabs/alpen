@@ -111,6 +111,9 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+
       - name: Build Cargo project
         env:
           RUSTFLAGS: "-Cinstrument-coverage"
