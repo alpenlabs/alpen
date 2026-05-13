@@ -1,12 +1,11 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::anyhow;
-use bitcoin::{BlockHash, Transaction, Txid};
+use bitcoin::{hashes::Hash, BlockHash, Transaction, Txid};
 use bitcoind_async_client::{error::ClientError, traits::Broadcaster, Client};
 use serde::Deserialize;
-use strata_btc_types::BlockHashExt;
-use strata_db_types::types::L1TxEntry;
-use strata_primitives::{buf::Buf32, L1Height};
+use strata_db_types::types::{L1BlockHash, L1TxEntry};
+use strata_primitives::L1Height;
 use strata_storage::BroadcastDbOps;
 use tracing::{debug, info, warn};
 
@@ -59,7 +58,7 @@ pub(crate) trait BroadcasterIoContext: Send + Sync + 'static {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TxConfirmationInfo {
     pub(crate) confirmations: i64,
-    pub(crate) block_hash: Option<Buf32>,
+    pub(crate) block_hash: Option<L1BlockHash>,
     pub(crate) block_height: Option<L1Height>,
 }
 
@@ -90,7 +89,9 @@ impl TryFrom<WalletTxConfirmationResponse> for TxConfirmationInfo {
 
         Ok(Self {
             confirmations: value.confirmations,
-            block_hash: value.block_hash.map(|h| h.to_buf32()),
+            block_hash: value
+                .block_hash
+                .map(|h| L1BlockHash::from(*h.as_raw_hash().as_byte_array())),
             block_height,
         })
     }
@@ -150,7 +151,9 @@ mod test_impls {
             match Wallet::get_transaction(self, txid).await {
                 Ok(info) => Ok(TxLookupOutcome::Found(TxConfirmationInfo {
                     confirmations: info.confirmations,
-                    block_hash: info.block_hash.map(|h| h.to_buf32()),
+                    block_hash: info
+                        .block_hash
+                        .map(|h| L1BlockHash::from(*h.as_raw_hash().as_byte_array())),
                     block_height: info.block_height,
                 })),
                 Err(err) if err.is_tx_not_found() => Ok(TxLookupOutcome::Missing),

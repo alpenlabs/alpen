@@ -113,6 +113,22 @@ impl TxAttempt {
         Self::new(tx, fee_rate, fee_sats, attempt_no, TxAttemptStatus::Active)
     }
 
+    /// Creates an attempt that is waiting for an external reveal signature.
+    pub fn pending_signature(
+        tx: &Transaction,
+        fee_rate: FeeRate,
+        fee_sats: Amount,
+        attempt_no: u32,
+    ) -> Self {
+        Self::new(
+            tx,
+            fee_rate,
+            fee_sats,
+            attempt_no,
+            TxAttemptStatus::PendingSignature,
+        )
+    }
+
     /// Creates an attempt for a transaction with the provided status.
     pub fn new(
         tx: &Transaction,
@@ -139,6 +155,14 @@ impl TxAttempt {
     pub fn try_to_tx(&self) -> Result<Transaction, consensus::encode::Error> {
         deserialize(&self.raw_tx)
     }
+
+    fn refresh_tx(&mut self, tx: &Transaction, fee_rate: FeeRate, fee_sats: Amount) {
+        self.raw_tx = serialize(tx);
+        self.txid = L1TxId::from(tx.compute_txid().to_byte_array());
+        self.wtxid = L1WtxId::from(tx.compute_wtxid().to_byte_array());
+        self.fee_rate_sat_vb = fee_rate.to_sat_per_vb_ceil();
+        self.fee_sats = fee_sats.to_sat();
+    }
 }
 
 /// Persistent replacement-chain record for one logical writer transaction.
@@ -163,6 +187,14 @@ impl TxNodeRecord {
             attempts: vec![first_attempt],
             terminal_error: None,
         }
+    }
+
+    /// Replaces the chain with a fresh initial attempt for the same logical node.
+    pub fn replace_initial_attempt(&mut self, mut attempt: TxAttempt) {
+        attempt.attempt_no = 0;
+        self.active_txid = attempt.txid;
+        self.attempts = vec![attempt];
+        self.terminal_error = None;
     }
 
     /// Returns the active attempt.
@@ -200,6 +232,59 @@ impl TxNodeRecord {
         self.attempts.push(replacement);
 
         debug_assert_ne!(self.active_txid, previous_active);
+    }
+
+    /// Appends a replacement attempt that still needs an external signature.
+    pub fn append_pending_signature_replacement(&mut self, mut replacement: TxAttempt) {
+        replacement.status = TxAttemptStatus::PendingSignature;
+        self.attempts
+            .retain(|attempt| attempt.status != TxAttemptStatus::PendingSignature);
+        self.attempts.push(replacement);
+    }
+
+    /// Activates the current pending-signature attempt after the final witness is attached.
+    pub fn activate_pending_signature(
+        &mut self,
+        signed_tx: &Transaction,
+        fee_rate: FeeRate,
+        fee_sats: Amount,
+    ) -> bool {
+        let Some(pending_idx) = self
+            .attempts
+            .iter()
+            .position(|attempt| attempt.status == TxAttemptStatus::PendingSignature)
+        else {
+            return false;
+        };
+
+        let previous_active_txid = self.active_txid;
+        self.attempts[pending_idx].refresh_tx(signed_tx, fee_rate, fee_sats);
+        let active_txid = self.attempts[pending_idx].txid;
+
+        if let Some(active_idx) = self
+            .attempts
+            .iter()
+            .position(|attempt| attempt.txid == previous_active_txid)
+        {
+            self.attempts[active_idx].status = TxAttemptStatus::Replaced;
+            self.attempts[active_idx].replaced_by = Some(active_txid);
+        }
+
+        self.attempts[pending_idx].status = TxAttemptStatus::Active;
+        self.active_txid = active_txid;
+        true
+    }
+
+    /// Discards any unsigned pending-signature replacement attempts.
+    pub fn discard_pending_signature_replacement(&mut self) -> bool {
+        let mut discarded = false;
+        for attempt in &mut self.attempts {
+            if attempt.status == TxAttemptStatus::PendingSignature {
+                attempt.status = TxAttemptStatus::Discarded;
+                discarded = true;
+            }
+        }
+        discarded
     }
 
     /// Marks the replacement chain permanently terminal.
@@ -791,6 +876,10 @@ impl fmt::Display for ChunkedEnvelopeStatus {
 
 #[cfg(test)]
 mod tests {
+    use bitcoin::{
+        absolute::LockTime, transaction::Version, OutPoint, ScriptBuf, Sequence, TxIn, TxOut,
+        Witness,
+    };
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -800,6 +889,23 @@ mod tests {
     use strata_l1_txfmt::TagData;
 
     use super::*;
+
+    fn tx_with_output(value: u64) -> Transaction {
+        Transaction {
+            version: Version(2),
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::new(),
+            }],
+        }
+    }
 
     #[test]
     fn check_serde_of_l1txstatus() {
@@ -889,6 +995,102 @@ mod tests {
         assert!(debug.contains(&expected_commit));
         assert!(debug.contains(&expected_reveal));
         assert!(!debug.contains(".."));
+    }
+
+    #[test]
+    fn pending_signature_replacement_keeps_previous_attempt_active() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let initial_txid = initial.txid;
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeReveal { payload_idx: 7 }, initial);
+        let replacement =
+            TxAttempt::pending_signature(&tx_with_output(900), fee_rate, Amount::from_sat(200), 1);
+        let replacement_txid = replacement.txid;
+
+        record.append_pending_signature_replacement(replacement);
+
+        assert_eq!(record.active_txid, initial_txid);
+        assert_eq!(
+            record.active_attempt().map(|attempt| attempt.status),
+            Some(TxAttemptStatus::Active)
+        );
+        assert_eq!(
+            record
+                .pending_signature_attempt()
+                .map(|attempt| attempt.txid),
+            Some(replacement_txid)
+        );
+        assert_eq!(record.attempts[0].replaced_by, None);
+    }
+
+    #[test]
+    fn pending_signature_attempt_becomes_active_after_signature() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeReveal { payload_idx: 7 }, initial);
+        let unsigned = tx_with_output(900);
+        let replacement =
+            TxAttempt::pending_signature(&unsigned, fee_rate, Amount::from_sat(200), 1);
+        record.append_pending_signature_replacement(replacement);
+
+        let mut signed = unsigned;
+        signed.input[0].witness.push([1u8; 64]);
+        let activated = record.activate_pending_signature(
+            &signed,
+            FeeRate::from_sat_per_vb(3).expect("valid fee rate"),
+            Amount::from_sat(300),
+        );
+
+        let active = record.active_attempt().expect("active attempt");
+        assert!(activated);
+        assert_eq!(active.status, TxAttemptStatus::Active);
+        assert_eq!(active.fee_rate_sat_vb, 3);
+        assert_eq!(active.fee_sats, 300);
+        assert_eq!(
+            active.wtxid,
+            L1WtxId::from(signed.compute_wtxid().to_byte_array())
+        );
+        assert_eq!(record.attempts[0].status, TxAttemptStatus::Replaced);
+        assert_eq!(record.attempts[0].replaced_by, Some(active.txid));
+    }
+
+    #[test]
+    fn pending_signature_attempt_can_be_discarded() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let initial_txid = initial.txid;
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeReveal { payload_idx: 7 }, initial);
+        let replacement =
+            TxAttempt::pending_signature(&tx_with_output(900), fee_rate, Amount::from_sat(200), 1);
+        record.append_pending_signature_replacement(replacement);
+
+        assert!(record.discard_pending_signature_replacement());
+
+        assert_eq!(record.active_txid, initial_txid);
+        assert_eq!(record.pending_signature_attempt(), None);
+        assert_eq!(record.attempts[1].status, TxAttemptStatus::Discarded);
+    }
+
+    #[test]
+    fn replace_initial_attempt_clears_terminal_errors() {
+        let fee_rate = FeeRate::from_sat_per_vb(2).expect("valid fee rate");
+        let initial = TxAttempt::active(&tx_with_output(1_000), fee_rate, Amount::from_sat(100), 0);
+        let mut record =
+            TxNodeRecord::new(TxNodeKind::SingleEnvelopeCommit { payload_idx: 7 }, initial);
+        record.set_terminal_error(TerminalError::WalletInsufficient);
+
+        let fresh = TxAttempt::active(&tx_with_output(900), fee_rate, Amount::from_sat(120), 3);
+        let fresh_txid = fresh.txid;
+        record.replace_initial_attempt(fresh);
+
+        assert_eq!(record.active_txid, fresh_txid);
+        assert_eq!(record.terminal_error, None);
+        assert_eq!(record.attempts.len(), 1);
+        assert_eq!(record.attempts[0].attempt_no, 0);
+        assert_eq!(record.attempts[0].status, TxAttemptStatus::Active);
     }
 
     #[test]

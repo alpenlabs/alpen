@@ -943,11 +943,17 @@ async fn put_tx_node_if_missing(
     bcast: &L1BroadcastHandle,
 ) -> anyhow::Result<()> {
     let node_id = TxNodeId::from_kind(&kind);
-    if bcast.get_tx_node(node_id).await?.is_some() {
+    let attempt = TxAttempt::active(tx, fee_rate, fee_sats, 0);
+    if let Some(mut record) = bcast.get_tx_node(node_id).await? {
+        if record.active_txid == attempt.txid {
+            return Ok(());
+        }
+        record.replace_initial_attempt(attempt);
+        bcast.put_tx_node(record).await?;
         return Ok(());
     }
 
-    let record = TxNodeRecord::new(kind, TxAttempt::active(tx, fee_rate, fee_sats, 0));
+    let record = TxNodeRecord::new(kind, attempt);
     bcast.put_tx_node(record).await?;
     Ok(())
 }
@@ -1103,9 +1109,8 @@ mod tests {
         transaction::Version, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
         Witness,
     };
-    use strata_db_types::types::{L1TxId, L1WtxId, RevealTxMeta};
+    use strata_db_types::types::{L1BlockHash, L1TxId, L1WtxId, RevealTxMeta};
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::buf::Buf32;
 
     use super::*;
     use crate::{
@@ -1233,12 +1238,12 @@ mod tests {
             L1TxStatus::Published,
             L1TxStatus::Confirmed {
                 confirmations: 1,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             },
             L1TxStatus::Finalized {
                 confirmations: 6,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             },
         ];
@@ -1267,7 +1272,7 @@ mod tests {
         assert_eq!(
             to_envelope_status(&L1TxStatus::Confirmed {
                 confirmations: 3,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             }),
             ChunkedEnvelopeStatus::Confirmed,
@@ -1275,7 +1280,7 @@ mod tests {
         assert_eq!(
             to_envelope_status(&L1TxStatus::Finalized {
                 confirmations: 6,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             }),
             ChunkedEnvelopeStatus::Finalized,
@@ -1294,7 +1299,7 @@ mod tests {
         assert_eq!(
             to_envelope_status(&L1TxStatus::Finalized {
                 confirmations: 6,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             }),
             ChunkedEnvelopeStatus::Finalized,
@@ -1305,7 +1310,7 @@ mod tests {
             &L1TxStatus::Published,
             &L1TxStatus::Confirmed {
                 confirmations: 3,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             },
         ));
@@ -1454,7 +1459,7 @@ mod tests {
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
         commit_entry.status = L1TxStatus::Confirmed {
             confirmations: 1,
-            block_hash: Buf32::from([0xBB; 32]),
+            block_hash: L1BlockHash::from([0xBB; 32]),
             block_height: 100,
         };
         bcast
@@ -1547,7 +1552,7 @@ mod tests {
 
         let finalized = L1TxStatus::Finalized {
             confirmations: 6,
-            block_hash: Buf32::from([0xAA; 32]),
+            block_hash: L1BlockHash::from([0xAA; 32]),
             block_height: 100,
         };
 
@@ -1582,7 +1587,7 @@ mod tests {
 
         let confirmed = L1TxStatus::Confirmed {
             confirmations: 3,
-            block_hash: Buf32::from([0xBB; 32]),
+            block_hash: L1BlockHash::from([0xBB; 32]),
             block_height: 100,
         };
 
@@ -1655,7 +1660,7 @@ mod tests {
         let mut commit_entry = L1TxEntry::from_tx(&make_test_tx());
         commit_entry.status = L1TxStatus::Confirmed {
             confirmations: 1,
-            block_hash: Buf32::from([0xBB; 32]),
+            block_hash: L1BlockHash::from([0xBB; 32]),
             block_height: 100,
         };
         bcast

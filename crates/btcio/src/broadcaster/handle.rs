@@ -80,7 +80,7 @@ impl L1BroadcastHandle {
                 txid = %txid_le,
                 "tx entry was persisted but storage returned no entry index"
             );
-            return Err(BroadcasterError::MissingEntryIndex(txid));
+            return Err(BroadcasterError::MissingEntryIndex(L1TxId::from(txid.0)));
         };
 
         if self
