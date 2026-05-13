@@ -4,15 +4,14 @@
 //! Pure computation — no network calls.
 
 use anyhow::Context;
-use k256::schnorr::{SigningKey, signature::Signer};
+use k256::schnorr::{signature::Signer, Signature, SigningKey};
 use ssz::Encode;
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, MessageEntry, MsgPayload};
 use strata_msg_fmt::{Msg, OwnedMsg};
 use strata_ol_msg_types::{WithdrawalMsgData, WITHDRAWAL_MSG_TYPE_ID};
 use strata_ol_stf::BRIDGE_GATEWAY_ACCT_ID;
 use strata_snark_acct_types::{
-    LedgerRefs, OutputMessage, ProofState, UpdateOperationData, UpdateOutputs,
-    UpdateProofPubParams,
+    LedgerRefs, OutputMessage, ProofState, UpdateOperationData, UpdateOutputs, UpdateProofPubParams,
 };
 
 /// Deterministic BIP-340 signing key whose verifying key matches the
@@ -121,7 +120,7 @@ fn sign_claim_ssz(
 fn bip340_test_sign(msg: &[u8]) -> [u8; 64] {
     let sk = SigningKey::from_bytes(&ALPEN_ACCT_TEST_SK_BYTES)
         .expect("hard-coded alpen-acct test signing key bytes must be valid");
-    let sig: k256::schnorr::Signature = sk.sign(msg);
+    let sig: Signature = sk.sign(msg);
     sig.to_bytes()
 }
 
@@ -285,7 +284,7 @@ mod tests {
     /// the alpen-acct test predicate using the same claim the OL reconstructs.
     #[test]
     fn test_build_snark_withdrawal_proof_verifies_under_test_predicate() {
-        use k256::schnorr::{Signature, VerifyingKey, signature::Verifier};
+        use k256::schnorr::{signature::Verifier, Signature, VerifyingKey};
 
         let mut target_bytes = [0u8; 32];
         target_bytes[31] = 0x42;
@@ -319,9 +318,10 @@ mod tests {
         let proof_hex = json["payload"]["update_proof"].as_str().unwrap();
         let proof_bytes = hex::decode(proof_hex).unwrap();
         let signature = Signature::try_from(proof_bytes.as_slice()).unwrap();
-        let vk = VerifyingKey::from_bytes(&hex::decode(
-            "4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766",
-        ).unwrap())
+        let vk = VerifyingKey::from_bytes(
+            &hex::decode("4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766")
+                .unwrap(),
+        )
         .unwrap();
 
         vk.verify(&claim_ssz, &signature)
