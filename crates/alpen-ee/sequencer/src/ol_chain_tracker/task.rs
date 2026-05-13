@@ -33,6 +33,10 @@ pub(crate) async fn ol_chain_tracker_task<
     client: Arc<TClient>,
     storage: Arc<TStorage>,
 ) {
+    // The tracker state is initialized from storage. Treat the watch value at
+    // subscription time as the baseline and only process subsequent updates.
+    chainstatus_rx.borrow_and_update();
+
     loop {
         select! {
             chainstatus_changed = chainstatus_rx.changed() => {
@@ -134,6 +138,17 @@ async fn track_ol_state(
 
     if remote_finalized_ol_block == best_ol_block {
         // nothing to do
+        return Ok(TrackAction::Extend(vec![]));
+    }
+    if remote_finalized_ol_block.slot() == 0 && best_ol_block.slot() > 0 {
+        // Remote at genesis while local has advanced is the OL tracker
+        // republishing its rolled-back state during reorg recovery; not a
+        // chain reorg. Hold local state until a real status arrives.
+        warn!(
+            local = ?best_ol_block,
+            remote = ?remote_finalized_ol_block,
+            "remote finalized at genesis while local advanced; treating as no-op"
+        );
         return Ok(TrackAction::Extend(vec![]));
     }
     if remote_finalized_ol_block.slot() <= best_ol_block.slot() {
@@ -240,6 +255,39 @@ mod tests {
             match result {
                 TrackAction::Extend(blocks) => assert!(blocks.is_empty()),
                 TrackAction::Reorg(_) => panic!("expected Extend, got Reorg"),
+            }
+        }
+
+        #[tokio::test]
+        async fn returns_noop_when_remote_at_genesis_and_local_advanced() {
+            // Scenario: publisher republishes its post-rollback state where
+            // finalized resolved to genesis (slot 0); local tracker has
+            // already advanced past genesis. This should be a no-op, not a
+            // deep-reorg panic — the publisher will republish a real status
+            // shortly.
+            //
+            // Local:  [...] -> [slot=15] (finalized)
+            // Remote: [slot=0]           (publisher rolled back to genesis)
+            //
+            // Expected: Extend(vec![]) - hold local state
+
+            let local_block = make_block(15);
+            let remote_block = make_block(0);
+
+            let state = OLChainTrackerState::new_empty(local_block, 0);
+            let ol_status = make_finalized_status(remote_block);
+
+            let mock_client = MockSequencerOLClient::new();
+
+            let result = track_ol_state(&state, ol_status, &mock_client)
+                .await
+                .unwrap();
+
+            match result {
+                TrackAction::Extend(blocks) => assert!(blocks.is_empty()),
+                TrackAction::Reorg(_) => {
+                    panic!("expected no-op Extend for remote-at-genesis case, got Reorg")
+                }
             }
         }
 
