@@ -161,9 +161,7 @@ pub enum L1BundleStatus {
 
 /// This is the entry that gets saved to the database corresponding to a bitcoin transaction that
 /// the broadcaster will publish and watches for until finalization
-#[derive(
-    Debug, Clone, PartialEq, BorshSerialize, BorshDeserialize, Arbitrary, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Arbitrary, Serialize, Deserialize)]
 pub struct L1TxEntry {
     /// Raw serialized transaction. This is basically `consensus::serialize()` of [`Transaction`]
     tx_raw: Vec<u8>,
@@ -195,6 +193,15 @@ impl L1TxEntry {
                 fee_rate_sat_vb: fee_rate.to_sat_per_vb_ceil(),
                 bump_count: 0,
             }),
+        }
+    }
+
+    /// Creates an entry from persisted raw transaction bytes and metadata.
+    pub fn from_raw_parts(tx_raw: Vec<u8>, status: L1TxStatus, rbf: Option<L1TxRbfInfo>) -> Self {
+        Self {
+            tx_raw,
+            status,
+            rbf,
         }
     }
 
