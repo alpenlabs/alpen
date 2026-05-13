@@ -5,7 +5,7 @@
 use strata_acct_types::BitcoinAmount;
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
-use strata_codec::decode_buf_exact;
+use strata_codec::{VarVec, decode_buf_exact};
 use strata_identifiers::{
     AccountSerial, Buf32, Buf64, OLBlockCommitment, SubjectId, SubjectIdBytes, WtxidsRoot,
 };
@@ -38,22 +38,52 @@ fn test_preseal_round_trip_with_deposit_manifest() {
 
     let genesis = run_genesis(&mut state);
     let pre_epoch_state = state.clone();
-    let (epoch_blocks, terminal) = build_epoch(&mut state, &genesis, snark_serial);
 
+    let (mut epoch_blocks, last_pre_terminal_header) =
+        build_non_terminal_blocks(&mut state, &genesis);
+    let terminal_manifest = deposit_to_account_manifest(state.last_l1_height() + 1, snark_serial);
+    let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
+    epoch_blocks.push(to_ol_block(&terminal));
+
+    assert_preseal_round_trip(&pre_epoch_state, &genesis, &epoch_blocks, &terminal);
+}
+
+#[test]
+fn test_preseal_round_trip_with_limbo_deposit_manifest() {
+    let mut state = create_test_genesis_state();
+
+    let genesis = run_genesis(&mut state);
+    let pre_epoch_state = state.clone();
+
+    let (mut epoch_blocks, last_pre_terminal_header) =
+        build_non_terminal_blocks(&mut state, &genesis);
+    let terminal_manifest = malformed_deposit_manifest(state.last_l1_height() + 1);
+    let terminal = execute_terminal(&mut state, &last_pre_terminal_header, terminal_manifest);
+    epoch_blocks.push(to_ol_block(&terminal));
+
+    assert_preseal_round_trip(&pre_epoch_state, &genesis, &epoch_blocks, &terminal);
+}
+
+fn assert_preseal_round_trip(
+    pre_epoch_state: &MemoryStateBaseLayer,
+    genesis: &CompletedBlock,
+    epoch_blocks: &[OLBlock],
+    terminal: &CompletedBlock,
+) {
     let preseal_recorded = *terminal
         .body()
         .l1_update()
         .expect("terminal must have l1_update")
         .preseal_state_root();
 
-    let da_blob = rebuild_da_blob(&pre_epoch_state, &epoch_blocks, genesis.header());
+    let da_blob = rebuild_da_blob(pre_epoch_state, epoch_blocks, genesis.header());
     let payload: OLDaPayloadV1 = decode_buf_exact(&da_blob).expect("decode DA payload");
 
     let epoch_info = EpochInfo::new(
         BlockInfo::from_header(terminal.header()),
         OLBlockCommitment::new(genesis.header().slot(), genesis.header().compute_blkid()),
     );
-    let mut verify_state = pre_epoch_state;
+    let mut verify_state = pre_epoch_state.clone();
     let result = verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
         &mut verify_state,
         &epoch_info,
@@ -92,13 +122,10 @@ fn run_genesis(state: &mut MemoryStateBaseLayer) -> CompletedBlock {
     .expect("genesis block")
 }
 
-/// Builds the epoch as empty blocks plus a terminal block whose manifest
-/// carries a `DepositLog` targeting `snark_serial`.
-fn build_epoch(
+fn build_non_terminal_blocks(
     state: &mut MemoryStateBaseLayer,
     genesis: &CompletedBlock,
-    snark_serial: AccountSerial,
-) -> (Vec<OLBlock>, CompletedBlock) {
+) -> (Vec<OLBlock>, OLBlockHeader) {
     let mut prev_header = genesis.header().clone();
     let mut blocks = Vec::with_capacity(SLOTS_PER_EPOCH as usize);
 
@@ -114,25 +141,27 @@ fn build_epoch(
         prev_header = cb.header().clone();
     }
 
-    let terminal_l1_height = state.last_l1_height() + 1;
-    let terminal = execute_block(
+    (blocks, prev_header)
+}
+
+fn execute_terminal(
+    state: &mut MemoryStateBaseLayer,
+    parent_header: &OLBlockHeader,
+    manifest: AsmManifest,
+) -> CompletedBlock {
+    execute_block(
         state,
         &BlockInfo::new(
             GENESIS_TIMESTAMP + SLOTS_PER_EPOCH * SLOT_TIMESTAMP_STEP,
             SLOTS_PER_EPOCH,
             1,
         ),
-        Some(&prev_header),
-        BlockComponents::new_manifests(vec![deposit_manifest(terminal_l1_height, snark_serial)]),
+        Some(parent_header),
+        BlockComponents::new_manifests(vec![manifest]),
     )
-    .expect("terminal block");
-    blocks.push(to_ol_block(&terminal));
-
-    (blocks, terminal)
+    .expect("terminal block")
 }
 
-/// Replays the epoch through a `DaAccumulatingState` over the pre-epoch
-/// state and finalizes the captured writes into an encoded DA blob.
 fn rebuild_da_blob(
     pre_epoch_state: &MemoryStateBaseLayer,
     blocks: &[OLBlock],
@@ -156,12 +185,24 @@ fn empty_manifest(height: u32) -> AsmManifest {
     .expect("manifest")
 }
 
-fn deposit_manifest(height: u32, target_serial: AccountSerial) -> AsmManifest {
+fn deposit_to_account_manifest(height: u32, target_serial: AccountSerial) -> AsmManifest {
     let dest = SubjectIdBytes::try_new(SubjectId::from([42u8; 32]).inner().to_vec()).unwrap();
     let descriptor = DepositDescriptor::new(target_serial, dest).unwrap();
     let log_entry =
         AsmLogEntry::from_log(&DepositLog::new(descriptor.encode_to_varvec(), 150_000_000))
             .unwrap();
+    AsmManifest::new(
+        height,
+        test_l1_block_id(1),
+        WtxidsRoot::from(Buf32::zero()),
+        vec![log_entry],
+    )
+    .unwrap()
+}
+
+fn malformed_deposit_manifest(height: u32) -> AsmManifest {
+    let bogus_destination = VarVec::from_vec(Vec::<u8>::new()).expect("varvec");
+    let log_entry = AsmLogEntry::from_log(&DepositLog::new(bogus_destination, 75_000_000)).unwrap();
     AsmManifest::new(
         height,
         test_l1_block_id(1),
