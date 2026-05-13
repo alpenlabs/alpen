@@ -1,6 +1,4 @@
-use revm::primitives::{address, Address, U256};
-
-use crate::utils::{u256_from, WEI_PER_BTC};
+use revm::primitives::{address, Address};
 
 /// The address for the Bridgeout precompile contract.
 pub const BRIDGEOUT_PRECOMPILE_ADDRESS: Address =
@@ -15,9 +13,6 @@ pub const SCHNORR_PRECOMPILE_ADDRESS: Address =
 
 /// Custom PrecompileId for the Schnorr precompile contract.
 pub const SCHNORR_PRECOMPILE_PRECOMPILE_ID: &str = "alpen-schnorr-precompile";
-
-/// The fixed withdrawal denomination in wei (1 BTC equivalent).
-pub const FIXED_WITHDRAWAL_WEI: U256 = u256_from(WEI_PER_BTC);
 
 /// The address to send transaction basefee to instead of burning.
 pub const BASEFEE_ADDRESS: Address = address!("5400000000000000000000000000000000000010");
