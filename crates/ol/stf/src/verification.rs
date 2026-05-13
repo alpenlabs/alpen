@@ -8,7 +8,8 @@ use strata_identifiers::Buf32;
 use strata_ledger_types::*;
 use strata_merkle::{BinaryMerkleTree, Sha256Hasher};
 use strata_ol_chain_types_new::{
-    OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog, OLTxSegment,
+    MAX_LOGS_PER_BLOCK, OLBlock, OLBlockBody, OLBlockHeader, OLL1ManifestContainer, OLLog,
+    OLTxSegment,
 };
 use strata_ol_da::DaScheme;
 
@@ -154,8 +155,26 @@ pub fn verify_block<S: IStateAccessorMut>(
     parent_header: Option<&OLBlockHeader>,
     body: &OLBlockBody,
 ) -> ExecResult<Vec<OLLog>> {
-    let preseal_logs = verify_block_preseal(state, header, parent_header, body)?;
-    apply_block_manifests(state, header, body, preseal_logs)
+    let exp = BlockExecExpectations::from_block_parts(header, body);
+
+    let mut logs = verify_block_preseal(state, header, parent_header, body)?;
+    logs.extend(apply_block_manifests(state, header, body)?);
+
+    // Verify logs size.
+    let max = MAX_LOGS_PER_BLOCK as usize;
+    if logs.len() > max {
+        return Err(ExecError::LogsOverflow {
+            count: logs.len(),
+            max,
+        });
+    }
+
+    // Verify logs root.
+    if compute_logs_root(&logs) != exp.logs_root {
+        return Err(ExecError::ChainIntegrity);
+    }
+
+    Ok(logs)
 }
 
 /// Runs the pre-manifest stages of block verification and the preseal
@@ -220,21 +239,17 @@ pub fn verify_block_preseal<S: IStateAccessorMut>(
     Ok(output_buffer.into_logs())
 }
 
-/// Runs the manifest stage of block verification: manifest processing,
-/// post-manifest state root check, and logs root check over
-/// `preseal_logs` followed by any manifest-emitted logs. Returns the full
-/// log set.
+/// Runs manifest processing and the post-manifest state root check.
+/// Returns the manifest-emitted logs.
 pub fn apply_block_manifests<S: IStateAccessorMut>(
     state: &mut S,
     header: &OLBlockHeader,
     body: &OLBlockBody,
-    preseal_logs: Vec<OLLog>,
 ) -> ExecResult<Vec<OLLog>> {
     let exp = BlockExecExpectations::from_block_parts(header, body);
     let block_info = BlockInfo::from_header(header);
 
     let output_buffer = ExecOutputBuffer::new_empty();
-    output_buffer.emit_logs(preseal_logs)?;
     let basic_ctx = BasicExecContext::new(block_info, &output_buffer);
 
     // 5. If it's the last block of an epoch, then call process_block_manifests,
@@ -249,18 +264,7 @@ pub fn apply_block_manifests<S: IStateAccessorMut>(
         }
     }
 
-    // Defense-in-depth: replay execution already enforces emit-time bounds, and
-    // this explicit boundary check preserves a verifier-side invariant backstop.
-    output_buffer.verify_logs_within_block_limit()?;
-
-    // 6. Check the logs root.
-    let logs = output_buffer.into_logs();
-    let computed_logs_root = compute_logs_root(&logs);
-    if computed_logs_root != exp.logs_root {
-        return Err(ExecError::ChainIntegrity);
-    }
-
-    Ok(logs)
+    Ok(output_buffer.into_logs())
 }
 
 /// Checks that headers are properly continuous and that their fields are
