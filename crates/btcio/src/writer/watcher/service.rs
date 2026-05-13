@@ -29,8 +29,8 @@ use crate::{
         builder::{EnvelopeData, EnvelopeError},
         context::WriterContext,
         signer::{
-            complete_reveal_and_broadcast, create_payload_envelopes,
-            sign_and_broadcast_payload_envelopes,
+            complete_pending_reveal_replacement, complete_reveal_and_broadcast,
+            create_payload_envelopes, sign_and_broadcast_payload_envelopes,
         },
     },
 };
@@ -78,6 +78,13 @@ pub(crate) trait WatcherServiceContext: Send + Sync + 'static {
         envelope: &EnvelopeData,
         sig: &[u8; 64],
     ) -> impl Future<Output = anyhow::Result<L1TxId>> + Send;
+
+    fn complete_pending_reveal_replacement(
+        &self,
+        idx: u64,
+        sig: &[u8; 64],
+    ) -> impl Future<Output = anyhow::Result<Option<L1TxId>>> + Send;
+
     fn get_tx_status(
         &self,
         txid: L1TxId,
@@ -162,6 +169,16 @@ impl<R: Reader + Signer + Wallet + Send + Sync + 'static> WatcherServiceContext
         sig: &[u8; 64],
     ) -> anyhow::Result<L1TxId> {
         complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn complete_pending_reveal_replacement(
+        &self,
+        idx: u64,
+        sig: &[u8; 64],
+    ) -> anyhow::Result<Option<L1TxId>> {
+        complete_pending_reveal_replacement(idx, sig, &self.broadcast_handle)
             .await
             .map_err(Into::into)
     }
@@ -370,12 +387,39 @@ impl<C: WatcherServiceContext> WatcherState<C> {
         payloadentry: BundledPayloadEntry,
     ) -> anyhow::Result<()> {
         let Some(sig) = &payloadentry.payload_signature else {
+            if self
+                .advance_if_pending_reveal_already_confirmed(&payloadentry)
+                .await?
+            {
+                return Ok(());
+            }
             trace!("waiting for signer to provide reveal signature");
             return Ok(());
         };
         let envelope = match self.envelope_cache.remove(&self.curr_payloadidx) {
             Some(envelope) => envelope,
             None => {
+                if let Some(rid) = self
+                    .ctx
+                    .complete_pending_reveal_replacement(self.curr_payloadidx, sig.as_ref())
+                    .await?
+                {
+                    let mut updated_entry = payloadentry.clone();
+                    updated_entry.reveal_txid = rid;
+                    updated_entry.status = L1BundleStatus::Unpublished;
+                    self.ctx
+                        .put_payload_entry(self.curr_payloadidx, updated_entry)
+                        .await?;
+                    debug!(reveal_txid = ?rid, "pending reveal replacement signed and stored for broadcast");
+                    return Ok(());
+                }
+                if self
+                    .advance_if_pending_reveal_already_confirmed(&payloadentry)
+                    .await?
+                {
+                    return Ok(());
+                }
+
                 warn!(
                     payload_idx = %self.curr_payloadidx,
                     commit_txid = ?payloadentry.commit_txid,
@@ -408,6 +452,51 @@ impl<C: WatcherServiceContext> WatcherState<C> {
             }
         }
         Ok(())
+    }
+
+    async fn advance_if_pending_reveal_already_confirmed(
+        &mut self,
+        payloadentry: &BundledPayloadEntry,
+    ) -> anyhow::Result<bool> {
+        let Some((commit_txid, commit_tx)) =
+            self.ctx.get_tx_status(payloadentry.commit_txid).await?
+        else {
+            return Ok(false);
+        };
+        let Some((reveal_txid, reveal_tx)) =
+            self.ctx.get_tx_status(payloadentry.reveal_txid).await?
+        else {
+            return Ok(false);
+        };
+        if !matches!(
+            reveal_tx.status,
+            L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
+        ) {
+            return Ok(false);
+        }
+
+        let new_status = determine_payload_next_status(&commit_tx.status, &reveal_tx.status);
+        let mut updated_entry = payloadentry.clone();
+        updated_entry.commit_txid = commit_txid;
+        updated_entry.reveal_txid = reveal_txid;
+        updated_entry.payload_signature = None;
+        updated_entry.status = new_status.clone();
+        self.ctx.report_status(&updated_entry, &new_status).await;
+        self.ctx
+            .put_payload_entry(self.curr_payloadidx, updated_entry)
+            .await?;
+
+        if new_status == L1BundleStatus::Finalized {
+            self.curr_payloadidx += 1;
+        }
+
+        debug!(
+            payload_idx = self.curr_payloadidx,
+            ?reveal_txid,
+            ?new_status,
+            "pending reveal replacement discarded because original reveal already advanced"
+        );
+        Ok(true)
     }
 
     /// Checks broadcast tx statuses and advances the payload state machine.
@@ -535,16 +624,20 @@ mod tests {
     };
     use bitcoind_async_client::error::ClientError;
     use strata_csm_types::L1Payload;
-    use strata_db_types::types::{BundledPayloadEntry, L1BundleStatus, L1TxEntry, L1TxId};
+    use strata_db_types::types::{
+        BundledPayloadEntry, L1BlockHash, L1BundleStatus, L1TxEntry, L1TxId, TxAttemptStatus,
+        TxNodeId, TxNodeKind,
+    };
     use strata_l1_txfmt::TagData;
     use strata_primitives::buf::{Buf32, Buf64};
 
     use super::*;
     use crate::{
         broadcaster::L1BroadcastHandle,
+        fee_bumper::replacement::build_pending_single_reveal_replacement,
         writer::{
             builder::{EnvelopeData, EnvelopeError},
-            signer::complete_reveal_and_broadcast,
+            signer::{complete_pending_reveal_replacement, complete_reveal_and_broadcast},
             test_utils::get_broadcast_handle,
         },
     };
@@ -733,6 +826,16 @@ mod tests {
             sig: &[u8; 64],
         ) -> anyhow::Result<L1TxId> {
             complete_reveal_and_broadcast(idx, envelope, sig, &self.broadcast_handle)
+                .await
+                .map_err(Into::into)
+        }
+
+        async fn complete_pending_reveal_replacement(
+            &self,
+            idx: u64,
+            sig: &[u8; 64],
+        ) -> anyhow::Result<Option<L1TxId>> {
+            complete_pending_reveal_replacement(idx, sig, &self.broadcast_handle)
                 .await
                 .map_err(Into::into)
         }
@@ -950,8 +1053,8 @@ mod tests {
         let bcast_handle = ctx.broadcast_handle.clone();
 
         let envelope = minimal_envelope_data();
-        let commit_txid: Buf32 = envelope.commit_tx.compute_txid().to_buf32();
-        let reveal_txid: Buf32 = envelope.reveal_tx.compute_txid().to_buf32();
+        let commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
+        let reveal_txid = to_l1_txid(envelope.reveal_tx.compute_txid());
 
         // Set up entry already in PendingRevealTxSign with a signature present
         let mut entry = test_unsigned_entry();
@@ -970,12 +1073,12 @@ mod tests {
         assert!(!state.envelope_cache.contains_key(&0));
         // Both txs stored in broadcaster DB
         assert!(bcast_handle
-            .get_tx_entry_by_id_async(commit_txid)
+            .get_tx_entry_by_id_async(to_raw_buf32(commit_txid))
             .await
             .unwrap()
             .is_some());
         assert!(bcast_handle
-            .get_tx_entry_by_id_async(reveal_txid)
+            .get_tx_entry_by_id_async(to_raw_buf32(reveal_txid))
             .await
             .unwrap()
             .is_some());
@@ -1003,5 +1106,160 @@ mod tests {
         assert_eq!(stored.payload_signature, None);
         assert_eq!(stored.commit_txid, L1TxId::from(commit_txid.0));
         assert_eq!(stored.reveal_txid, L1TxId::from(reveal_txid.0));
+    }
+
+    #[tokio::test]
+    async fn test_pending_reveal_cache_miss_completes_pending_replacement_node() {
+        let envelope = minimal_envelope_data();
+        let ctx = MockWatcherContext::new(true);
+        let bcast_handle = ctx.broadcast_handle.clone();
+        let original_signature = [1u8; 64];
+        let original_reveal_txid =
+            complete_reveal_and_broadcast(0, &envelope, &original_signature, &bcast_handle)
+                .await
+                .unwrap();
+        let original_reveal_entry = bcast_handle
+            .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
+            .await
+            .unwrap()
+            .expect("original reveal entry exists");
+        let original_reveal_tx = original_reveal_entry.try_to_tx().unwrap();
+        let reveal_node_id =
+            TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeReveal { payload_idx: 0 });
+        let mut reveal_record = bcast_handle
+            .get_tx_node(reveal_node_id)
+            .await
+            .unwrap()
+            .expect("reveal tx-node exists");
+        let (pending_reveal, sighash) = build_pending_single_reveal_replacement(
+            &original_reveal_tx,
+            &envelope.commit_tx.output[0],
+            FeeRate::from_sat_per_vb(2).unwrap(),
+            1,
+        )
+        .unwrap();
+        let pending_reveal_txid = pending_reveal.txid;
+        reveal_record.append_pending_signature_replacement(pending_reveal);
+        bcast_handle.put_tx_node(reveal_record).await.unwrap();
+
+        let mut entry = test_unsigned_entry();
+        entry.commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
+        entry.reveal_txid = pending_reveal_txid;
+        entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
+        entry.payload_signature = Some(Buf64([2u8; 64]));
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_pending_reveal_tx_sign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Unpublished);
+        assert_eq!(stored.reveal_txid, pending_reveal_txid);
+        assert!(bcast_handle
+            .get_tx_entry_by_id_async(to_raw_buf32(pending_reveal_txid))
+            .await
+            .unwrap()
+            .is_some());
+        assert!(matches!(
+            bcast_handle
+                .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
+                .await
+                .unwrap()
+                .expect("original reveal entry exists")
+                .status,
+            L1TxStatus::Replaced { .. }
+        ));
+
+        let reveal_record = bcast_handle
+            .get_tx_node(reveal_node_id)
+            .await
+            .unwrap()
+            .expect("reveal tx-node exists");
+        assert_eq!(
+            reveal_record.active_attempt().map(|attempt| attempt.status),
+            Some(TxAttemptStatus::Active)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_pending_reveal_signature_keeps_confirmed_original() {
+        let envelope = minimal_envelope_data();
+        let ctx = MockWatcherContext::new(true);
+        let bcast_handle = ctx.broadcast_handle.clone();
+        let original_signature = [1u8; 64];
+        let original_reveal_txid =
+            complete_reveal_and_broadcast(0, &envelope, &original_signature, &bcast_handle)
+                .await
+                .unwrap();
+        let mut original_reveal_entry = bcast_handle
+            .get_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid))
+            .await
+            .unwrap()
+            .expect("original reveal entry exists");
+        let original_reveal_tx = original_reveal_entry.try_to_tx().unwrap();
+        let reveal_node_id =
+            TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeReveal { payload_idx: 0 });
+        let mut reveal_record = bcast_handle
+            .get_tx_node(reveal_node_id)
+            .await
+            .unwrap()
+            .expect("reveal tx-node exists");
+        let (pending_reveal, sighash) = build_pending_single_reveal_replacement(
+            &original_reveal_tx,
+            &envelope.commit_tx.output[0],
+            FeeRate::from_sat_per_vb(2).unwrap(),
+            1,
+        )
+        .unwrap();
+        let pending_reveal_txid = pending_reveal.txid;
+        reveal_record.append_pending_signature_replacement(pending_reveal);
+        bcast_handle.put_tx_node(reveal_record).await.unwrap();
+
+        original_reveal_entry.status = L1TxStatus::Confirmed {
+            confirmations: 1,
+            block_hash: L1BlockHash::zero(),
+            block_height: 100,
+        };
+        bcast_handle
+            .update_tx_entry_by_id_async(to_raw_buf32(original_reveal_txid), original_reveal_entry)
+            .await
+            .unwrap();
+
+        let mut entry = test_unsigned_entry();
+        entry.commit_txid = to_l1_txid(envelope.commit_tx.compute_txid());
+        entry.reveal_txid = original_reveal_txid;
+        entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
+        entry.payload_signature = Some(Buf64([2u8; 64]));
+        ctx.stored.lock().unwrap().insert(0, entry.clone());
+
+        let mut state = WatcherState::new(ctx, 0);
+        state.handle_pending_reveal_tx_sign(entry).await.unwrap();
+
+        let stored = state.ctx.get_stored(0).unwrap();
+        assert_eq!(stored.status, L1BundleStatus::Confirmed);
+        assert_eq!(stored.reveal_txid, original_reveal_txid);
+        assert!(bcast_handle
+            .get_tx_entry_by_id_async(to_raw_buf32(pending_reveal_txid))
+            .await
+            .unwrap()
+            .is_none());
+
+        let reveal_record = bcast_handle
+            .get_tx_node(reveal_node_id)
+            .await
+            .unwrap()
+            .expect("reveal tx-node exists");
+        assert_eq!(
+            reveal_record.active_attempt().map(|attempt| attempt.status),
+            Some(TxAttemptStatus::Active)
+        );
+        assert_eq!(
+            reveal_record
+                .attempts
+                .iter()
+                .find(|attempt| attempt.txid == pending_reveal_txid)
+                .map(|attempt| attempt.status),
+            Some(TxAttemptStatus::Discarded)
+        );
     }
 }

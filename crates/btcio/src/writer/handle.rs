@@ -132,8 +132,7 @@ pub(crate) fn get_next_payloadidx_to_watch(insc_ops: &EnvelopeDataOps) -> anyhow
 
 #[cfg(test)]
 mod test {
-    use strata_db_types::types::{BundledPayloadEntry, L1TxStatus};
-    use strata_primitives::buf::Buf32;
+    use strata_db_types::types::{BundledPayloadEntry, L1BlockHash, L1TxStatus};
     use strata_test_utils::ArbitraryGenerator;
 
     use super::*;
@@ -187,7 +186,7 @@ mod test {
         // When both are Finalized
         let fin = L1TxStatus::Finalized {
             confirmations: 5,
-            block_hash: Buf32::zero(),
+            block_hash: L1BlockHash::zero(),
             block_height: 100,
         };
         let (commit_status, reveal_status) = (fin.clone(), fin);
@@ -197,7 +196,7 @@ mod test {
         // When both are Confirmed
         let conf = L1TxStatus::Confirmed {
             confirmations: 5,
-            block_hash: Buf32::zero(),
+            block_hash: L1BlockHash::zero(),
             block_height: 100,
         };
         let (commit_status, reveal_status) = (conf.clone(), conf.clone());

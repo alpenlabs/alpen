@@ -666,7 +666,7 @@ fn main() {
                 let fee_bumper_sequencer_keypair = sequencer_keypair;
                 let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
                     btc_client.clone(),
-                    writer_config,
+                    writer_config.clone(),
                     btcio_params,
                     sequencer_address.clone(),
                     sequencer_keypair,
@@ -704,6 +704,7 @@ fn main() {
                     let fee_bumper_context = FeeBumperContext {
                         chunked_ops: Some(envelope_ops.clone()),
                         sequencer_keypair: Some(fee_bumper_sequencer_keypair),
+                        ..FeeBumperContext::default()
                     };
                     node.task_executor
                         .spawn_critical("btcio_fee_bumper", async move {

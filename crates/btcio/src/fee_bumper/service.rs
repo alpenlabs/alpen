@@ -7,23 +7,24 @@ use bitcoin::{
     consensus::{deserialize, serialize},
     hashes::Hash,
     key::Keypair,
-    FeeRate, Transaction,
+    Amount, FeeRate, Transaction,
 };
 use bitcoind_async_client::traits::{Reader, Signer};
 use strata_config::btcio::{FeeBumpPolicy, WriterConfig};
 use strata_db_types::types::{
-    ChunkedEnvelopeEntry, L1TxEntry, L1TxId, L1TxStatus, L1WtxId, RevealTxMeta, TerminalError,
-    TxNodeId, TxNodeKind, TxNodeRecord,
+    ChunkedEnvelopeEntry, L1BundleStatus, L1TxEntry, L1TxId, L1TxStatus, L1WtxId, RevealTxMeta,
+    TerminalError, TxAttemptStatus, TxNodeId, TxNodeKind, TxNodeRecord,
 };
 use strata_primitives::{buf::Buf32, L1Height};
-use strata_storage::ops::chunked_envelope::ChunkedEnvelopeOps;
+use strata_storage::ops::{chunked_envelope::ChunkedEnvelopeOps, writer::EnvelopeDataOps};
 use tokio::time::interval;
 use tracing::*;
 
 use super::{
     policy::{evaluate_fee_bump, fee_rate_from_sat_vb, FeeBumpDecision},
     replacement::{
-        build_chunked_reveal_replacement, build_wallet_commit_replacement,
+        build_chunked_reveal_replacement, build_pending_single_reveal_replacement,
+        build_wallet_commit_replacement, rebuild_pending_reveal_for_replaced_commit,
         rebuild_reveal_for_replaced_commit, ReplacementError,
     },
 };
@@ -38,8 +39,12 @@ use crate::broadcaster::L1BroadcastHandle;
 pub struct FeeBumperContext {
     /// Chunked-envelope storage used by Alpen EE DA reveal replacements.
     pub chunked_ops: Option<Arc<ChunkedEnvelopeOps>>,
+    /// Single-envelope payload storage used by checkpoint reveal replacements.
+    pub envelope_ops: Option<Arc<EnvelopeDataOps>>,
     /// Sequencer keypair used to re-sign Alpen EE DA reveal replacements.
     pub sequencer_keypair: Option<Keypair>,
+    /// Whether single-envelope reveals can be re-signed by an external signer.
+    pub external_single_envelope_signing: bool,
 }
 
 /// Runs the BTCIO fee-bumper loop until the task is cancelled.
@@ -133,6 +138,13 @@ where
         .get_tx_entry_by_id_async(active_txid)
         .await?
     else {
+        if matches!(
+            record.active_attempt().map(|attempt| attempt.status),
+            Some(TxAttemptStatus::PendingSignature)
+        ) {
+            trace!(node_id = ?record.node_id, active_txid = ?record.active_txid, "tx-node is waiting for external signature");
+            return Ok(());
+        }
         warn!(node_id = ?record.node_id, active_txid = ?record.active_txid, "active tx-node entry missing from broadcast db");
         return Ok(());
     };
@@ -167,9 +179,10 @@ where
             mark_terminal(broadcast_handle, record, error).await?;
             Ok(())
         }
-        FeeBumpDecision::Replace(request) => {
-            if matches!(record.kind, TxNodeKind::ChunkedEnvelopeReveal { .. }) {
-                return replace_chunked_reveal(
+        FeeBumpDecision::Replace(request) => match record.kind.clone() {
+            TxNodeKind::SingleEnvelopeCommit { .. } => {
+                replace_single_envelope_commit_before_reveal_publish(
+                    client,
                     writer_config,
                     broadcast_handle,
                     context,
@@ -177,82 +190,435 @@ where
                     request.target_fee_rate,
                     request.attempt_no,
                 )
-                .await;
+                .await
             }
-
-            if !commit_replacement_allowed(&record, broadcast_handle).await? {
-                debug!(node_id = ?record.node_id, kind = ?record.kind, "commit replacement skipped after dependent reveal activity");
-                return Ok(());
+            TxNodeKind::SingleEnvelopeReveal { .. } => {
+                replace_single_envelope_reveal(
+                    writer_config,
+                    broadcast_handle,
+                    context,
+                    record,
+                    request.target_fee_rate,
+                    request.attempt_no,
+                )
+                .await
             }
-
-            let replacement = match build_wallet_commit_replacement(
-                client,
-                &record.kind,
-                record.active_txid,
-                request.target_fee_rate_sat_vb,
-                request.attempt_no,
-            )
-            .await
-            {
-                Ok(replacement) => replacement,
-                Err(error @ ReplacementError::UnsupportedKind(_)) => {
-                    mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
-                    return Ok(());
-                }
-                Err(error) => {
-                    warn!(node_id = ?record.node_id, kind = ?record.kind, %error, "failed to build RBF replacement");
-                    mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
-                    return Ok(());
-                }
-            };
-
-            let active_entry_after_build = broadcast_handle
-                .get_tx_entry_by_id_async(active_txid)
-                .await?
-                .unwrap_or(active_entry);
-            if matches!(
-                active_entry_after_build.status,
-                L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
-            ) {
-                debug!(node_id = ?record.node_id, "original transaction confirmed before replacement was persisted");
-                return Ok(());
+            TxNodeKind::ChunkedEnvelopeCommit { .. } => {
+                replace_wallet_commit(
+                    client,
+                    broadcast_handle,
+                    context,
+                    record,
+                    request.target_fee_rate,
+                    request.attempt_no,
+                )
+                .await
             }
-
-            let replacement_tx = replacement.try_to_tx()?;
-            if matches!(record.kind, TxNodeKind::ChunkedEnvelopeCommit { .. }) {
-                if let Err(error) =
-                    update_chunked_commit_replacement_metadata(context, &record, &replacement_tx)
-                        .await
-                {
-                    warn!(node_id = ?record.node_id, %error, "failed to update chunked commit replacement metadata");
-                    mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind)
-                        .await?;
-                    return Ok(());
-                }
+            TxNodeKind::ChunkedEnvelopeReveal { .. } => {
+                replace_chunked_reveal(
+                    writer_config,
+                    broadcast_handle,
+                    context,
+                    record,
+                    request.target_fee_rate,
+                    request.attempt_no,
+                )
+                .await
             }
-            let replacement_txid = to_raw_buf32(replacement.txid);
-            let replacement_entry = L1TxEntry::from_tx_with_fee_rate(
-                &replacement_tx,
-                FeeRate::from_sat_per_vb(request.target_fee_rate_sat_vb)
-                    .expect("target fee rate was validated by replacement builder"),
-            );
-            broadcast_handle
-                .put_tx_entry(replacement_txid, replacement_entry)
-                .await?;
+        },
+    }
+}
 
-            let mut replaced_entry = active_entry_after_build;
-            replaced_entry.status = L1TxStatus::Replaced {
-                by: replacement_txid,
-            };
-            broadcast_handle
-                .update_tx_entry_by_id_async(active_txid, replaced_entry)
-                .await?;
+async fn replace_wallet_commit<C>(
+    client: &C,
+    broadcast_handle: &L1BroadcastHandle,
+    context: &FeeBumperContext,
+    mut record: TxNodeRecord,
+    target_fee_rate: FeeRate,
+    attempt_no: u32,
+) -> anyhow::Result<()>
+where
+    C: Signer,
+{
+    if !commit_replacement_allowed(&record, broadcast_handle).await? {
+        debug!(node_id = ?record.node_id, kind = ?record.kind, "commit replacement skipped after dependent reveal activity");
+        return Ok(());
+    }
 
-            record.append_replacement(replacement);
-            broadcast_handle.put_tx_node(record).await?;
-            Ok(())
+    let active_txid = to_raw_buf32(record.active_txid);
+    let Some(active_entry) = broadcast_handle
+        .get_tx_entry_by_id_async(active_txid)
+        .await?
+    else {
+        return Ok(());
+    };
+    let replacement = match build_wallet_commit_replacement(
+        client,
+        &record.kind,
+        record.active_txid,
+        target_fee_rate,
+        attempt_no,
+    )
+    .await
+    {
+        Ok(replacement) => replacement,
+        Err(error @ ReplacementError::UnsupportedKind(_)) => {
+            mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
+            return Ok(());
+        }
+        Err(error) => {
+            warn!(node_id = ?record.node_id, kind = ?record.kind, %error, "failed to build RBF replacement");
+            mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
+            return Ok(());
+        }
+    };
+
+    let active_entry_after_build = broadcast_handle
+        .get_tx_entry_by_id_async(active_txid)
+        .await?
+        .unwrap_or(active_entry);
+    if matches!(
+        active_entry_after_build.status,
+        L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
+    ) {
+        debug!(node_id = ?record.node_id, "original transaction confirmed before replacement was persisted");
+        return Ok(());
+    }
+
+    let replacement_tx = replacement.try_to_tx()?;
+    if matches!(record.kind, TxNodeKind::ChunkedEnvelopeCommit { .. }) {
+        if let Err(error) =
+            update_chunked_commit_replacement_metadata(context, &record, &replacement_tx).await
+        {
+            warn!(node_id = ?record.node_id, %error, "failed to update chunked commit replacement metadata");
+            mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+            return Ok(());
         }
     }
+    let replacement_txid = replacement.txid;
+    let replacement_txid_raw = to_raw_buf32(replacement_txid);
+    let replacement_entry = L1TxEntry::from_tx_with_fee_rate(&replacement_tx, target_fee_rate);
+    broadcast_handle
+        .put_tx_entry(replacement_txid_raw, replacement_entry)
+        .await?;
+
+    let mut replaced_entry = active_entry_after_build;
+    replaced_entry.status = L1TxStatus::Replaced {
+        by: replacement_txid,
+    };
+    broadcast_handle
+        .update_tx_entry_by_id_async(active_txid, replaced_entry)
+        .await?;
+
+    record.append_replacement(replacement);
+    broadcast_handle.put_tx_node(record).await?;
+    Ok(())
+}
+
+async fn replace_single_envelope_reveal(
+    writer_config: &WriterConfig,
+    broadcast_handle: &L1BroadcastHandle,
+    context: &FeeBumperContext,
+    mut record: TxNodeRecord,
+    target_fee_rate: FeeRate,
+    attempt_no: u32,
+) -> anyhow::Result<()> {
+    let payload_idx = match &record.kind {
+        TxNodeKind::SingleEnvelopeReveal { payload_idx } => *payload_idx,
+        _ => return Ok(()),
+    };
+    let Some(envelope_ops) = context.envelope_ops.as_ref() else {
+        mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+        return Ok(());
+    };
+    if !context.external_single_envelope_signing {
+        mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+        return Ok(());
+    }
+
+    let Some(mut payload_entry) = envelope_ops
+        .get_payload_entry_by_idx_async(payload_idx)
+        .await?
+    else {
+        warn!(
+            payload_idx,
+            "payload entry missing for single-envelope reveal replacement"
+        );
+        return Ok(());
+    };
+    let Some((_, commit_entry)) = broadcast_handle
+        .get_active_tx_entry_by_id_async(to_raw_buf32(payload_entry.commit_txid))
+        .await?
+    else {
+        debug!(
+            payload_idx,
+            "commit entry missing for single-envelope reveal replacement"
+        );
+        return Ok(());
+    };
+    let commit_tx = commit_entry.try_to_tx()?;
+    let Some(commit_output) = commit_tx.output.first() else {
+        mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+        return Ok(());
+    };
+
+    let active_txid = to_raw_buf32(record.active_txid);
+    let Some(active_entry) = broadcast_handle
+        .get_tx_entry_by_id_async(active_txid)
+        .await?
+    else {
+        return Ok(());
+    };
+    let active_reveal_tx = active_entry.try_to_tx()?;
+    let (replacement, sighash) = match build_pending_single_reveal_replacement(
+        &active_reveal_tx,
+        commit_output,
+        target_fee_rate,
+        attempt_no,
+    ) {
+        Ok(replacement) => replacement,
+        Err(error) => {
+            mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
+            return Ok(());
+        }
+    };
+
+    let active_entry_after_build = broadcast_handle
+        .get_tx_entry_by_id_async(active_txid)
+        .await?
+        .unwrap_or(active_entry);
+    if matches!(
+        active_entry_after_build.status,
+        L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
+    ) {
+        debug!(
+            payload_idx,
+            "original reveal confirmed before replacement was persisted"
+        );
+        return Ok(());
+    }
+
+    payload_entry.payload_signature = None;
+    payload_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
+    envelope_ops
+        .put_payload_entry_async(payload_idx, payload_entry)
+        .await?;
+
+    record.append_pending_signature_replacement(replacement);
+    broadcast_handle.put_tx_node(record).await?;
+
+    debug!(
+        payload_idx,
+        target_fee_rate_sat_vb = target_fee_rate.to_sat_per_vb_ceil(),
+        max_fee_rate_sat_vb = writer_config.fee_bumping.max_fee_rate_sat_vb.get(),
+        "single-envelope reveal replacement awaiting external signature"
+    );
+    Ok(())
+}
+
+async fn replace_single_envelope_commit_before_reveal_publish<C>(
+    client: &C,
+    writer_config: &WriterConfig,
+    broadcast_handle: &L1BroadcastHandle,
+    context: &FeeBumperContext,
+    mut record: TxNodeRecord,
+    target_fee_rate: FeeRate,
+    attempt_no: u32,
+) -> anyhow::Result<()>
+where
+    C: Signer,
+{
+    let payload_idx = match &record.kind {
+        TxNodeKind::SingleEnvelopeCommit { payload_idx } => *payload_idx,
+        _ => return Ok(()),
+    };
+    let Some(envelope_ops) = context.envelope_ops.as_ref() else {
+        mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+        return Ok(());
+    };
+    if !context.external_single_envelope_signing {
+        mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+        return Ok(());
+    }
+
+    let Some(mut payload_entry) = envelope_ops
+        .get_payload_entry_by_idx_async(payload_idx)
+        .await?
+    else {
+        warn!(
+            payload_idx,
+            "payload entry missing for single-envelope commit replacement"
+        );
+        return Ok(());
+    };
+    let reveal_node_id = TxNodeId::from_kind(&TxNodeKind::SingleEnvelopeReveal { payload_idx });
+    let Some(mut reveal_record) = broadcast_handle.get_tx_node(reveal_node_id).await? else {
+        debug!(
+            payload_idx,
+            "single-envelope commit replacement skipped because reveal node is missing"
+        );
+        return Ok(());
+    };
+    let reveal_active_txid = to_raw_buf32(reveal_record.active_txid);
+    let Some(reveal_entry) = broadcast_handle
+        .get_tx_entry_by_id_async(reveal_active_txid)
+        .await?
+    else {
+        debug!(
+            payload_idx,
+            "single-envelope commit replacement skipped because reveal entry is missing"
+        );
+        return Ok(());
+    };
+    if matches!(
+        reveal_entry.status,
+        L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
+    ) {
+        debug!(
+            payload_idx,
+            "single-envelope commit replacement skipped after reveal publication"
+        );
+        return Ok(());
+    }
+
+    let active_commit_txid = to_raw_buf32(record.active_txid);
+    let Some(active_commit_entry) = broadcast_handle
+        .get_tx_entry_by_id_async(active_commit_txid)
+        .await?
+    else {
+        return Ok(());
+    };
+    let replacement_commit = match build_wallet_commit_replacement(
+        client,
+        &TxNodeKind::SingleEnvelopeCommit { payload_idx },
+        record.active_txid,
+        target_fee_rate,
+        attempt_no,
+    )
+    .await
+    {
+        Ok(replacement) => replacement,
+        Err(error) => {
+            mark_terminal(broadcast_handle, record, error.terminal_error()).await?;
+            return Ok(());
+        }
+    };
+
+    let active_commit_entry_after_build = broadcast_handle
+        .get_tx_entry_by_id_async(active_commit_txid)
+        .await?
+        .unwrap_or(active_commit_entry);
+    if matches!(
+        active_commit_entry_after_build.status,
+        L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
+    ) {
+        debug!(
+            payload_idx,
+            "original commit confirmed before replacement was persisted"
+        );
+        return Ok(());
+    }
+    let reveal_entry_after_build = broadcast_handle
+        .get_tx_entry_by_id_async(reveal_active_txid)
+        .await?
+        .unwrap_or(reveal_entry);
+    if matches!(
+        reveal_entry_after_build.status,
+        L1TxStatus::Published | L1TxStatus::Confirmed { .. } | L1TxStatus::Finalized { .. }
+    ) {
+        debug!(
+            payload_idx,
+            "reveal published before commit replacement was persisted"
+        );
+        return Ok(());
+    }
+
+    let replacement_commit_tx = replacement_commit.try_to_tx()?;
+    let Some(replacement_commit_output) = replacement_commit_tx.output.first() else {
+        mark_terminal(broadcast_handle, record, TerminalError::UnsupportedRbfKind).await?;
+        return Ok(());
+    };
+    let old_reveal_tx = reveal_entry_after_build.try_to_tx()?;
+    let Some(active_reveal_attempt) = reveal_record.active_attempt() else {
+        mark_terminal(
+            broadcast_handle,
+            reveal_record,
+            TerminalError::UnsupportedRbfKind,
+        )
+        .await?;
+        return Ok(());
+    };
+    let Some(reveal_fee_rate) = fee_rate_from_sat_vb(active_reveal_attempt.fee_rate_sat_vb) else {
+        mark_terminal(
+            broadcast_handle,
+            reveal_record,
+            TerminalError::UnsupportedRbfKind,
+        )
+        .await?;
+        return Ok(());
+    };
+    let reveal_fee = Amount::from_sat(active_reveal_attempt.fee_sats);
+    let reveal_attempt_no = reveal_record.attempts.len() as u32;
+    let (pending_reveal, sighash) = match rebuild_pending_reveal_for_replaced_commit(
+        &old_reveal_tx,
+        replacement_commit_tx.compute_txid(),
+        replacement_commit_output,
+        reveal_fee_rate,
+        reveal_fee,
+        reveal_attempt_no,
+    ) {
+        Ok(replacement) => replacement,
+        Err(error) => {
+            mark_terminal(broadcast_handle, reveal_record, error.terminal_error()).await?;
+            return Ok(());
+        }
+    };
+
+    let replacement_commit_txid = replacement_commit.txid;
+    let replacement_reveal_txid = pending_reveal.txid;
+    let replacement_commit_txid_raw = to_raw_buf32(replacement_commit_txid);
+    let replacement_commit_entry =
+        L1TxEntry::from_tx_with_fee_rate(&replacement_commit_tx, target_fee_rate);
+    broadcast_handle
+        .put_tx_entry(replacement_commit_txid_raw, replacement_commit_entry)
+        .await?;
+
+    let mut replaced_commit_entry = active_commit_entry_after_build;
+    replaced_commit_entry.status = L1TxStatus::Replaced {
+        by: replacement_commit_txid,
+    };
+    broadcast_handle
+        .update_tx_entry_by_id_async(active_commit_txid, replaced_commit_entry)
+        .await?;
+
+    let mut replaced_reveal_entry = reveal_entry_after_build;
+    replaced_reveal_entry.status = L1TxStatus::Replaced {
+        by: replacement_reveal_txid,
+    };
+    broadcast_handle
+        .update_tx_entry_by_id_async(reveal_active_txid, replaced_reveal_entry)
+        .await?;
+
+    payload_entry.commit_txid = replacement_commit.txid;
+    payload_entry.reveal_txid = pending_reveal.txid;
+    payload_entry.payload_signature = None;
+    payload_entry.status = L1BundleStatus::PendingRevealTxSign(sighash);
+    envelope_ops
+        .put_payload_entry_async(payload_idx, payload_entry)
+        .await?;
+
+    record.append_replacement(replacement_commit);
+    reveal_record.append_pending_signature_replacement(pending_reveal);
+    broadcast_handle.put_tx_node(record).await?;
+    broadcast_handle.put_tx_node(reveal_record).await?;
+
+    debug!(
+        payload_idx,
+        target_fee_rate_sat_vb = target_fee_rate.to_sat_per_vb_ceil(),
+        max_fee_rate_sat_vb = writer_config.fee_bumping.max_fee_rate_sat_vb.get(),
+        "single-envelope commit replacement persisted and reveal moved back to external signing"
+    );
+    Ok(())
 }
 
 async fn replace_chunked_reveal(

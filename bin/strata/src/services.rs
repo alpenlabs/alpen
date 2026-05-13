@@ -150,13 +150,18 @@ mod sequencer_services {
             .await?;
 
             if config.fee_bumping.is_enabled() {
+                let fee_bumper_context = FeeBumperContext {
+                    envelope_ops: Some(writer_ops.clone()),
+                    external_single_envelope_signing: ctx.envelope_pubkey.is_some(),
+                    ..FeeBumperContext::default()
+                };
                 executor.spawn_critical_async(
                     "btcio_fee_bumper",
                     fee_bumper_task(
                         nodectx.bitcoin_client().clone(),
                         (*config).clone(),
                         broadcast_handle.clone(),
-                        FeeBumperContext::default(),
+                        fee_bumper_context,
                     ),
                 );
             }

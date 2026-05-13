@@ -135,9 +135,11 @@ mod test {
     use std::sync::Arc;
 
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_db_types::{traits::DatabaseBackend, types::L1TxStatus};
+    use strata_db_types::{
+        traits::DatabaseBackend,
+        types::{L1BlockHash, L1TxStatus},
+    };
     use strata_l1_txfmt::MagicBytes;
-    use strata_primitives::buf::Buf32;
     use strata_storage::{ops::l1tx_broadcast::Context, BroadcastDbOps};
 
     use super::*;
@@ -174,12 +176,12 @@ mod test {
             gen_l1_tx_entry_with_status(L1TxStatus::Unpublished),
             gen_l1_tx_entry_with_status(L1TxStatus::Confirmed {
                 confirmations: 1,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             }),
             gen_l1_tx_entry_with_status(L1TxStatus::Finalized {
                 confirmations: 1,
-                block_hash: Buf32::zero(),
+                block_hash: L1BlockHash::zero(),
                 block_height: 100,
             }),
             gen_l1_tx_entry_with_status(L1TxStatus::Published),
