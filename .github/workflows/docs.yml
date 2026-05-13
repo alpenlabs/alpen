@@ -43,9 +43,17 @@ jobs:
         run: |
           rustup toolchain install "$RUST_NIGHTLY" --profile minimal
           rustup default "$RUST_NIGHTLY"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
         with:
           cache-on-failure: true
+
+      - name: Install SP1 core runner override
+        uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
+
       - name: Check docs leaving the dependencies out
         env:
           RUSTDOCFLAGS: --show-type-layout --enable-index-page -Zunstable-options -A rustdoc::private-doc-tests -D warnings

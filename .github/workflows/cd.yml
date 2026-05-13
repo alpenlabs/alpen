@@ -72,6 +72,9 @@ jobs:
           export PATH=~/.sp1/bin:$PATH
           cargo prove --version
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
       - name: Build and push Docker image
         id: build-and-push
         # build and push the Docker image for every program

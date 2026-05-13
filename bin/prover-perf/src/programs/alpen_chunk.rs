@@ -17,7 +17,7 @@ use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader, EvmPartialState};
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
 use tracing::info;
-use zkaleido::{PerformanceReport, ZkVmHostPerf, ZkVmProgramPerf};
+use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
 #[derive(Deserialize)]
 struct WitnessData {
@@ -96,10 +96,12 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
     }
 }
 
-pub(crate) fn gen_perf_report(host: &impl ZkVmHostPerf) -> PerformanceReport {
-    info!("Generating performance report for Alpen Chunk");
+pub(crate) fn gen_perf_report(host: &impl ZkVmHost) -> (String, ExecutionSummary) {
+    info!("Generating execution summary for Alpen Chunk");
     let input = prepare_input();
-    EeChunkProgram::perf_report(&input, host).unwrap()
+    let summary =
+        <EeChunkProgram as ZkVmProgram>::execute(&input, host).expect("alpen-chunk execution");
+    (EeChunkProgram::name(), summary)
 }
 
 #[cfg(test)]

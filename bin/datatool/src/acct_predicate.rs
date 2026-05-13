@@ -84,8 +84,13 @@ fn build_sp1_predicate() -> PredicateKey {
     let vk_buf32: Buf32 = GUEST_ALPEN_ACCT_VK_HASH_STR
         .parse()
         .expect("invalid sp1 alpen-acct verifier key hash");
-    let sp1_verifier = SP1Groth16Verifier::load(&sp1_verifier::GROTH16_VK_BYTES, vk_buf32.0)
-        .expect("Failed to load SP1 Groth16 verifier");
+    let sp1_verifier = SP1Groth16Verifier::load(
+        &sp1_verifier::GROTH16_VK_BYTES,
+        vk_buf32.0,
+        *sp1_verifier::VK_ROOT_BYTES,
+        true,
+    )
+    .expect("Failed to load SP1 Groth16 verifier");
     let condition_bytes = sp1_verifier.vk.to_uncompressed_bytes();
     PredicateKey::new(PredicateTypeId::Sp1Groth16, condition_bytes)
 }

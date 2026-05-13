@@ -4,7 +4,8 @@ mod alpen_acct;
 mod alpen_chunk;
 mod checkpoint;
 
-use crate::PerformanceReport;
+#[cfg(feature = "sp1")]
+use zkaleido::ExecutionSummary;
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -27,18 +28,23 @@ impl FromStr for GuestProgram {
     }
 }
 
-/// Runs SP1 programs to generate reports.
-///
-/// Generates [`PerformanceReport`] for each invocation.
+/// Runs SP1 programs and pairs each program's name with its
+/// [`ExecutionSummary`] (cycles, gas, public values).
 #[cfg(feature = "sp1")]
-pub fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<PerformanceReport> {
-    use strata_zkvm_hosts::sp1::{ALPEN_ACCT_HOST, ALPEN_CHUNK_HOST, CHECKPOINT_HOST};
-    programs
-        .iter()
-        .map(|program| match program {
-            GuestProgram::AlpenAcct => alpen_acct::gen_perf_report(&**ALPEN_ACCT_HOST),
-            GuestProgram::AlpenChunk => alpen_chunk::gen_perf_report(&**ALPEN_CHUNK_HOST),
-            GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**CHECKPOINT_HOST),
-        })
-        .collect()
+pub async fn run_sp1_programs(programs: &[GuestProgram]) -> Vec<(String, ExecutionSummary)> {
+    use strata_zkvm_hosts::sp1::{alpen_acct_host, alpen_chunk_host, checkpoint_host};
+    use zkaleido_sp1_host::SP1HostConfig;
+    let mut reports = Vec::with_capacity(programs.len());
+    for program in programs {
+        let cfg = SP1HostConfig::default();
+        let report = match program {
+            GuestProgram::AlpenAcct => alpen_acct::gen_perf_report(&**alpen_acct_host(cfg).await),
+            GuestProgram::AlpenChunk => {
+                alpen_chunk::gen_perf_report(&**alpen_chunk_host(cfg).await)
+            }
+            GuestProgram::Checkpoint => checkpoint::gen_perf_report(&**checkpoint_host(cfg).await),
+        };
+        reports.push(report);
+    }
+    reports
 }

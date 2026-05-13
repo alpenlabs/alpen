@@ -78,6 +78,9 @@ jobs:
           export PATH=~/.sp1/bin:$PATH
           cargo prove --version
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
       - name: Build strata-datatool
         run: |
           cargo build --bin strata-datatool -F "sp1-builder" --release

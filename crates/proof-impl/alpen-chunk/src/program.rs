@@ -55,7 +55,7 @@ impl ZkVmProgram for EeChunkProgram {
 
 impl EeChunkProgram {
     pub fn native_host() -> NativeHost {
-        NativeHost::new(process_ee_chunk)
+        NativeHost::new_with_random_key(process_ee_chunk)
     }
 
     /// Executes the chunk proof program using the native host for testing.
@@ -63,7 +63,8 @@ impl EeChunkProgram {
         input: &<Self as ZkVmProgram>::Input,
     ) -> ZkVmResult<<Self as ZkVmProgram>::Output> {
         let host = Self::native_host();
-        <Self as ZkVmProgram>::execute(input, &host)
+        let summary = <Self as ZkVmProgram>::execute(input, &host)?;
+        <Self as ZkVmProgram>::process_output::<NativeHost>(summary.public_values())
     }
 }
 

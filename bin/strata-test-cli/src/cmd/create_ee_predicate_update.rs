@@ -22,12 +22,8 @@ use bdk_wallet::{
 };
 use serde_json::{json, Value};
 use ssz::Encode as _;
-use strata_asm_params::Role;
 use strata_asm_proto_admin_txs::{
-    actions::{
-        updates::predicate::{PredicateUpdate, ProofType},
-        MultisigAction, UpdateAction,
-    },
+    actions::{updates::EeStfVkUpdate, MultisigAction, UpdateAction},
     parser::SignedPayload,
     test_utils::create_signature_set,
 };
@@ -207,8 +203,8 @@ fn build_admin_commit_reveal_pair(
 }
 
 fn build_ee_update_action(key: PredicateKey) -> MultisigAction {
-    let update = PredicateUpdate::new(key, ProofType::EeStf);
-    MultisigAction::Update(UpdateAction::from(update))
+    let update = EeStfVkUpdate::new(key);
+    MultisigAction::Update(UpdateAction::EeStfVk(update))
 }
 
 fn create_signed_payload(
@@ -216,13 +212,7 @@ fn create_signed_payload(
     seq_no: u64,
     admin_secret_key: &SecretKey,
 ) -> SignedPayload {
-    let signatures = create_signature_set(
-        slice::from_ref(admin_secret_key),
-        &[0],
-        &action,
-        Role::AlpenAdministrator,
-        seq_no,
-    );
+    let signatures = create_signature_set(slice::from_ref(admin_secret_key), &[0], &action, seq_no);
     SignedPayload::new(seq_no, action, signatures)
 }
 

@@ -1,0 +1,30 @@
+# Pre-installs sp1-core-executor-runner-binary so sp1-core-executor-runner's
+# build script skips its nested cargo build and embeds the helper via
+# SP1_CORE_RUNNER_OVERRIDE_BINARY. Avoids a CI-only failure where the build
+# script writes SP1_CORE_RUNNER_BINARY into the project target dir but the file
+# is missing after Swatinem/rust-cache restores partial state (notably under
+# cargo-llvm-cov which redirects CARGO_TARGET_DIR). Keep `version` aligned with
+# the workspace `sp1-sdk` dependency.
+name: Install SP1 core runner override
+description: Pre-install sp1-core-executor-runner-binary and export SP1_CORE_RUNNER_OVERRIDE_BINARY.
+inputs:
+  version:
+    description: sp1-core-executor-runner-binary crate version (must match workspace sp1-sdk).
+    required: false
+    default: "6.1.0"
+runs:
+  using: composite
+  steps:
+    - name: Pre-build SP1 core runner binary
+      shell: bash
+      env:
+        SP1_RUNNER_VERSION: ${{ inputs.version }}
+      # The value written to GITHUB_ENV is a fixed path under $RUNNER_TEMP
+      # (runner-controlled) — no user/attacker-controlled data flows through.
+      run: | # zizmor: ignore[github-env]
+        cargo install sp1-core-executor-runner-binary \
+          --version "$SP1_RUNNER_VERSION" \
+          --root "$RUNNER_TEMP/sp1-core-runner" \
+          --target-dir "$RUNNER_TEMP/sp1-core-runner-target" \
+          --force
+        echo "SP1_CORE_RUNNER_OVERRIDE_BINARY=$RUNNER_TEMP/sp1-core-runner/bin/sp1-core-executor-runner-binary" >> "$GITHUB_ENV"
