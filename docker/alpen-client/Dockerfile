@@ -11,7 +11,7 @@ ENV CARGO_HOME=/usr/local/cargo \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      build-essential ca-certificates clang libclang-dev pkg-config libssl-dev protobuf-compiler && \
+      build-essential ca-certificates clang libclang-dev pkg-config libssl-dev protobuf-compiler libprotobuf-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install cargo-chef once (cached layer)
