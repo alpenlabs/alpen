@@ -315,6 +315,20 @@ impl OLCheckpointManager {
         self.ops.get_checkpoint_l1_ref_blocking(epoch)
     }
 
+    /// Gets the highest epoch commitment that has an L1 ref.
+    pub async fn get_last_checkpoint_l1_ref_epoch_async(
+        &self,
+    ) -> DbResult<Option<EpochCommitment>> {
+        self.ops.get_last_checkpoint_l1_ref_epoch_async().await
+    }
+
+    /// Gets the highest epoch commitment that has an L1 ref.
+    pub fn get_last_checkpoint_l1_ref_epoch_blocking(
+        &self,
+    ) -> DbResult<Option<EpochCommitment>> {
+        self.ops.get_last_checkpoint_l1_ref_epoch_blocking()
+    }
+
     /// Deletes an OL checkpoint L1 ref by epoch commitment.
     pub async fn del_checkpoint_l1_ref_async(&self, epoch: EpochCommitment) -> DbResult<bool> {
         self.ops.del_checkpoint_l1_ref_async(epoch).await

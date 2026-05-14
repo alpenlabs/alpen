@@ -376,6 +376,9 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Get an OL checkpoint L1 ref by epoch commitment.
     fn get_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<Option<CheckpointL1Ref>>;
 
+    /// Get the highest epoch commitment that has an L1 ref.
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> DbResult<Option<EpochCommitment>>;
+
     /// Delete an OL checkpoint L1 ref by epoch commitment.
     ///
     /// Returns true if it existed and was deleted.

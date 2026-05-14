@@ -347,6 +347,21 @@ impl OLCheckpointDatabase for OLCheckpointDBSled {
         Ok(self.l1_ref_tree.get(&epoch)?)
     }
 
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> DbResult<Option<EpochCommitment>> {
+        // Scan to avoid maintaining an additional epoch index table; not on a
+        // hot write path.
+        let mut max_commitment: Option<EpochCommitment> = None;
+        for item in self.l1_ref_tree.iter() {
+            let (commitment, _l1_ref) = item?;
+            max_commitment = Some(match max_commitment {
+                None => commitment,
+                Some(current) if commitment.epoch() > current.epoch() => commitment,
+                Some(current) => current,
+            });
+        }
+        Ok(max_commitment)
+    }
+
     fn del_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<bool> {
         self.config.with_retry((&self.l1_ref_tree,), |(lot,)| {
             if !lot.contains_key(&epoch)? {

@@ -736,6 +736,43 @@ pub fn test_l1_observed_payload_separate_from_sequencer_payload(db: &impl OLChec
     assert_eq!(from_l1, sequencer_payload);
 }
 
+pub fn test_get_last_checkpoint_l1_ref_epoch_empty(db: &impl OLCheckpointDatabase) {
+    assert!(db
+        .get_last_checkpoint_l1_ref_epoch()
+        .expect("get last l1 ref epoch")
+        .is_none());
+}
+
+pub fn test_get_last_checkpoint_l1_ref_epoch_ignores_sequencer_table(
+    db: &impl OLCheckpointDatabase,
+) {
+    // A sequencer payload alone must not register as an L1 observation.
+    let sequencer_payload = payload_for_epoch(3);
+    let sequencer_key = checkpoint_epoch_commitment(&sequencer_payload);
+    db.put_checkpoint_payload_entry(sequencer_key, sequencer_payload)
+        .expect("put sequencer payload");
+    assert!(db
+        .get_last_checkpoint_l1_ref_epoch()
+        .expect("get last l1 ref epoch")
+        .is_none());
+
+    let observed_1 = payload_for_epoch(1);
+    let key_1 = checkpoint_epoch_commitment(&observed_1);
+    db.put_checkpoint_l1_observation(key_1, observed_1, l1_ref_entry(10))
+        .expect("put observation 1");
+
+    let observed_2 = payload_for_epoch(2);
+    let key_2 = checkpoint_epoch_commitment(&observed_2);
+    db.put_checkpoint_l1_observation(key_2, observed_2, l1_ref_entry(20))
+        .expect("put observation 2");
+
+    let last = db
+        .get_last_checkpoint_l1_ref_epoch()
+        .expect("get last l1 ref epoch")
+        .expect("should have l1 refs");
+    assert_eq!(last, key_2);
+}
+
 #[macro_export]
 macro_rules! ol_checkpoint_db_tests {
     ($setup_expr:expr) => {
@@ -877,6 +914,18 @@ macro_rules! ol_checkpoint_db_tests {
         fn test_l1_observed_payload_separate_from_sequencer_payload() {
             let db = $setup_expr;
             $crate::ol_checkpoint_tests::test_l1_observed_payload_separate_from_sequencer_payload(&db);
+        }
+
+        #[test]
+        fn test_get_last_checkpoint_l1_ref_epoch_empty() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_get_last_checkpoint_l1_ref_epoch_empty(&db);
+        }
+
+        #[test]
+        fn test_get_last_checkpoint_l1_ref_epoch_ignores_sequencer_table() {
+            let db = $setup_expr;
+            $crate::ol_checkpoint_tests::test_get_last_checkpoint_l1_ref_epoch_ignores_sequencer_table(&db);
         }
 
         #[test]

@@ -120,12 +120,11 @@ fn load_observed_checkpoints_from_db(
     current_l1_tip: L1Height,
 ) -> anyhow::Result<VecDeque<(EpochCommitment, CheckpointL1Ref)>> {
     let ol_checkpoint = storage.ol_checkpoint();
-    let Some(last_payload_commitment) =
-        ol_checkpoint.get_last_checkpoint_payload_epoch_blocking()?
+    let Some(last_l1_ref_commitment) = ol_checkpoint.get_last_checkpoint_l1_ref_epoch_blocking()?
     else {
         return Ok(VecDeque::new());
     };
-    let last_checkpoint_epoch = last_payload_commitment.epoch();
+    let last_checkpoint_epoch = last_l1_ref_commitment.epoch();
 
     let mut observed = VecDeque::new();
     for epoch in start_epoch..=last_checkpoint_epoch {
@@ -262,11 +261,9 @@ mod tests {
             .insert_epoch_summary_blocking(summary_1)
             .expect("insert epoch 1 summary");
         ol_checkpoint
-            .put_checkpoint_payload_entry_blocking(commitment_1, payload_1)
-            .expect("insert epoch 1 payload");
-        ol_checkpoint
-            .put_checkpoint_l1_ref_blocking(
+            .put_checkpoint_l1_observation_blocking(
                 commitment_1,
+                payload_1,
                 CheckpointL1Ref::new(
                     L1BlockCommitment::new(17, L1BlockId::default()),
                     Buf32::from([1; 32]),
@@ -289,11 +286,9 @@ mod tests {
             .insert_epoch_summary_blocking(summary_2)
             .expect("insert epoch 2 summary");
         ol_checkpoint
-            .put_checkpoint_payload_entry_blocking(commitment_2, payload_2)
-            .expect("insert epoch 2 payload");
-        ol_checkpoint
-            .put_checkpoint_l1_ref_blocking(
+            .put_checkpoint_l1_observation_blocking(
                 commitment_2,
+                payload_2,
                 CheckpointL1Ref::new(
                     L1BlockCommitment::new(19, L1BlockId::default()),
                     Buf32::from([3; 32]),
