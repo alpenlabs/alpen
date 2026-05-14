@@ -372,7 +372,9 @@ impl OLCheckpointManager {
         &self,
         epoch: EpochCommitment,
     ) -> DbResult<Option<CheckpointPayload>> {
-        self.ops.get_checkpoint_l1_observed_payload_async(epoch).await
+        self.ops
+            .get_checkpoint_l1_observed_payload_async(epoch)
+            .await
     }
 
     /// Retrieves the L1-observed checkpoint payload by epoch commitment.
@@ -388,7 +390,9 @@ impl OLCheckpointManager {
         &self,
         epoch: EpochCommitment,
     ) -> DbResult<bool> {
-        self.ops.del_checkpoint_l1_observed_payload_async(epoch).await
+        self.ops
+            .del_checkpoint_l1_observed_payload_async(epoch)
+            .await
     }
 
     /// Deletes the L1-observed checkpoint payload by epoch commitment.

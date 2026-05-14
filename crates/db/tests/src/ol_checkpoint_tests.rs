@@ -713,9 +713,7 @@ pub fn test_put_checkpoint_l1_observation_rejects_mismatched_commitment(
         .is_err());
 }
 
-pub fn test_l1_observed_payload_separate_from_sequencer_payload(
-    db: &impl OLCheckpointDatabase,
-) {
+pub fn test_l1_observed_payload_separate_from_sequencer_payload(db: &impl OLCheckpointDatabase) {
     let sequencer_payload = payload_for_epoch(11);
     let key = checkpoint_epoch_commitment(&sequencer_payload);
 
