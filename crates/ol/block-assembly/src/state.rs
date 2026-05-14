@@ -11,7 +11,7 @@ use strata_config::{BlockAssemblyConfig, SequencerConfig};
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ledger_types::{IAccountStateMut, IStateAccessorMut};
 use strata_ol_state_provider::StateProvider;
-use strata_params::{Params, RollupParams};
+use strata_predicate::PredicateKey;
 use strata_service::ServiceState;
 use tracing::warn;
 
@@ -196,9 +196,9 @@ impl BlockAssemblyState {
 
 /// Combined state for the service (context + mutable state).
 pub(crate) struct BlockasmServiceState<M: MempoolProvider, E: EpochSealingPolicy, S> {
-    params: Arc<Params>,
     blockasm_config: Arc<BlockAssemblyConfig>,
     sequencer_config: SequencerConfig,
+    sequencer_predicate: PredicateKey,
     ctx: Arc<BlockAssemblyContext<M, S>>,
     epoch_sealing_policy: E,
     state: BlockAssemblyState,
@@ -209,9 +209,9 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceStat
     #[expect(clippy::absolute_paths, reason = "qualified Result avoids ambiguity")]
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlockasmServiceState")
-            .field("params", &"<Params>")
             .field("blockasm_config", &self.blockasm_config)
             .field("sequencer_config", &self.sequencer_config)
+            .field("sequencer_predicate", &self.sequencer_predicate)
             .field("ctx", &"<BlockAssemblyContext>")
             .field("state", &self.state)
             .finish()
@@ -221,17 +221,17 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> Debug for BlockasmServiceStat
 impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S> {
     /// Create new block assembly service state.
     pub(crate) fn new(
-        params: Arc<Params>,
         blockasm_config: Arc<BlockAssemblyConfig>,
         sequencer_config: SequencerConfig,
+        sequencer_predicate: PredicateKey,
         ctx: Arc<BlockAssemblyContext<M, S>>,
         epoch_sealing_policy: E,
     ) -> Self {
         let ttl = Duration::from_secs(sequencer_config.block_template_ttl_secs);
         Self {
-            params,
             blockasm_config,
             sequencer_config,
+            sequencer_predicate,
             ctx,
             epoch_sealing_policy,
             state: BlockAssemblyState::new(ttl),
@@ -239,12 +239,12 @@ impl<M: MempoolProvider, E: EpochSealingPolicy, S> BlockasmServiceState<M, E, S>
         }
     }
 
-    pub(crate) fn rollup_params(&self) -> &RollupParams {
-        &self.params.rollup
-    }
-
     pub(crate) fn sequencer_config(&self) -> &SequencerConfig {
         &self.sequencer_config
+    }
+
+    pub(crate) fn sequencer_predicate(&self) -> &PredicateKey {
+        &self.sequencer_predicate
     }
 
     pub(crate) fn context(&self) -> &BlockAssemblyContext<M, S> {
@@ -325,7 +325,7 @@ mod tests {
     use strata_ol_chain_types_new::{OLBlock, OLLog, SignedOLBlockHeader};
     use strata_ol_state_provider::OLStateManagerProviderImpl;
     use strata_ol_state_support_types::EpochDaAccumulator;
-    use strata_test_utils_l2::gen_params;
+    use strata_predicate::PredicateKey;
 
     use super::*;
     use crate::{
@@ -361,9 +361,9 @@ mod tests {
         let env = TestEnv::from_fixture(fixture, parent_commitment);
 
         let state = BlockasmServiceState::new(
-            Arc::new(gen_params()),
             Arc::new(BlockAssemblyConfig::new(TEST_BLOCK_TEMPLATE_TTL)),
             env.sequencer_config().clone(),
+            PredicateKey::always_accept(),
             env.ctx_arc(),
             env.epoch_sealing_policy().clone(),
         );

@@ -150,6 +150,7 @@ class StrataFactory(flexitest.Factory):
             genesis_l1_height,
             params_data.operator_keys,
             ol_params_path=ol_params_path,
+            sequencer_pubkey=params_data.sequencer_pubkey,
             admin_confirmation_depth=admin_confirmation_depth,
         )
 

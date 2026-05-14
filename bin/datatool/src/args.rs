@@ -220,6 +220,13 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
+        description = "sequencer pubkey (default unchecked)",
+        short = 's'
+    )]
+    pub(crate) seqkey: Option<String>,
+
+    #[argh(
+        option,
         description = "add a bridge operator key (master xpriv)",
         short = 'b'
     )]

@@ -4,12 +4,11 @@ use anyhow::anyhow;
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_db_types::traits::BlockStatus;
-use strata_ol_chain_types_new::OLBlock;
-use strata_params::{CredRule, Params, RollupParams};
-use strata_primitives::{
-    crypto::verify_schnorr_sig, Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment,
-    OLBlockId,
+use strata_ol_chain_types_new::{
+    sequencer_predicate_requires_signature, verify_sequencer_predicate_signature, OLBlock,
 };
+use strata_predicate::PredicateKey;
+use strata_primitives::{Buf32, EpochCommitment, L1BlockCommitment, OLBlockCommitment, OLBlockId};
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 use strata_status::OLSyncStatus;
 use strata_tasks::TaskExecutor;
@@ -53,13 +52,13 @@ impl FcmServiceHandle {
 }
 
 pub async fn start_fcm_service<C: FcmContext>(
-    params: Arc<Params>,
+    sequencer_predicate: PredicateKey,
     fcm_ctx: Arc<C>,
     checkpoint_state_rx: watch::Receiver<CheckpointState>,
     texec: Arc<TaskExecutor>,
 ) -> anyhow::Result<FcmServiceHandle> {
     // initialize fcm state
-    let fcm_state = init_fcm_service_state(params, fcm_ctx).await?;
+    let fcm_state = init_fcm_service_state(sequencer_predicate, fcm_ctx).await?;
 
     let (fcm_tx, fcm_rx) = mpsc_channel::<ForkChoiceMessage>(64);
     let fcm_input = FcmInput::new(fcm_rx, checkpoint_state_rx);
@@ -254,7 +253,8 @@ async fn handle_new_block<C: FcmContext>(
 
     // First, decide if the block seems correctly signed and we haven't
     // already marked it as invalid.
-    if let Err(err) = check_ol_block_proposal_valid(blkid, bundle, fcm_state.params().rollup()) {
+    if let Err(err) = check_ol_block_proposal_valid(blkid, bundle, fcm_state.sequencer_predicate())
+    {
         warn!(%err, "rejecting block");
         return Ok(false);
     }
@@ -385,23 +385,18 @@ async fn handle_epoch_finalization<C: FcmContext>(
 pub fn check_ol_block_proposal_valid(
     blkid: &OLBlockId,
     block: &OLBlock,
-    params: &RollupParams,
+    sequencer_predicate: &PredicateKey,
 ) -> Result<(), Error> {
     if block.header().slot() == 0 {
         return Err(Error::UnexpectedGenesisBlock(*blkid));
     }
     let sig = match block.signed_header().signature() {
         Some(sig) => sig,
-        None => match &params.cred_rule {
-            CredRule::Unchecked => return Ok(()),
-            CredRule::SchnorrKey(_) => return Err(Error::MissingBlockSignature(*blkid)),
-        },
+        None if !sequencer_predicate_requires_signature(sequencer_predicate) => return Ok(()),
+        None => return Err(Error::MissingBlockSignature(*blkid)),
     };
     let msg: Buf32 = block.header().compute_blkid().into();
-    let is_valid = match &params.cred_rule {
-        CredRule::Unchecked => true,
-        CredRule::SchnorrKey(pubkey) => verify_schnorr_sig(sig, &msg, pubkey),
-    };
+    let is_valid = verify_sequencer_predicate_signature(sequencer_predicate, &msg, sig);
     if !is_valid {
         return Err(Error::InvalidBlockSignature(*blkid));
     }
@@ -610,8 +605,8 @@ mod tests {
     use strata_db_types::{traits::BlockStatus, DbResult};
     use strata_identifiers::{Epoch, Slot, WtxidsRoot};
     use strata_ol_chain_types_new::{
-        BlockFlags, OLBlock, OLBlockBody, OLBlockCredential, OLBlockHeader, OLTxSegment,
-        SignedOLBlockHeader,
+        test_utils::schnorr_predicate, BlockFlags, OLBlock, OLBlockBody, OLBlockCredential,
+        OLBlockHeader, OLTxSegment, SignedOLBlockHeader,
     };
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLState;
@@ -619,14 +614,13 @@ mod tests {
         test_utils::{create_test_genesis_state, execute_block},
         BlockComponents, BlockInfo, CompletedBlock,
     };
-    use strata_params::Params;
+    use strata_predicate::PredicateKey;
     use strata_primitives::{
         crypto::sign_schnorr_sig,
         l1::L1BlockId,
         utils::{get_test_schnorr_keys, SchnorrKeypair},
         Buf64, OLBlockId,
     };
-    use strata_test_utils_l2::gen_params;
 
     use super::*;
     use crate::{
@@ -927,7 +921,6 @@ mod tests {
 
     struct FcmTestFixture {
         ctx: Arc<StubFcmContext>,
-        params: Arc<Params>,
     }
 
     impl FcmTestFixture {
@@ -943,10 +936,7 @@ mod tests {
             }
             ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
-            Self {
-                ctx: Arc::new(ctx),
-                params: make_params(CredRule::Unchecked),
-            }
+            Self { ctx: Arc::new(ctx) }
         }
 
         fn fcm_state_at(
@@ -959,7 +949,7 @@ mod tests {
                 cur_block.commitment(),
                 Arc::new(cur_block.state.clone()),
             );
-            FcmServiceState::new(self.ctx.clone(), self.params.clone(), inner)
+            FcmServiceState::new(self.ctx.clone(), PredicateKey::always_accept(), inner)
         }
     }
 
@@ -1339,16 +1329,6 @@ mod tests {
         get_test_schnorr_keys()[0].clone()
     }
 
-    fn make_rollup_params(cred_rule: CredRule) -> RollupParams {
-        make_params(cred_rule).rollup().clone()
-    }
-
-    fn make_params(cred_rule: CredRule) -> Arc<Params> {
-        let mut params = gen_params();
-        params.rollup.cred_rule = cred_rule;
-        Arc::new(params)
-    }
-
     fn make_block(slot: u64, signature: Option<Buf64>) -> OLBlock {
         let body = OLBlockBody::new_common(OLTxSegment::new(vec![]).expect("empty tx segment"));
         let header = OLBlockHeader::new(
@@ -1491,7 +1471,7 @@ mod tests {
         );
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
-        let mut fcm_state = init_fcm_service_state(make_params(CredRule::Unchecked), ctx.clone())
+        let mut fcm_state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone())
             .await
             .expect("FCM state initializes from stub context");
 
@@ -1517,12 +1497,12 @@ mod tests {
     }
 
     #[test]
-    fn accepts_unsigned_block_when_unchecked() {
-        let params = make_rollup_params(CredRule::Unchecked);
+    fn accepts_unsigned_block_when_always_accept() {
+        let predicate = PredicateKey::always_accept();
         let block = make_block(1, None);
         let blkid = block.header().compute_blkid();
 
-        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+        let result = check_ol_block_proposal_valid(&blkid, &block, &predicate);
 
         assert!(result.is_ok());
     }
@@ -1530,11 +1510,11 @@ mod tests {
     #[test]
     fn rejects_unsigned_block_when_checked() {
         let keypair = make_keypair();
-        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let predicate = schnorr_predicate(&keypair.pk);
         let block = make_block(1, None);
         let blkid = block.header().compute_blkid();
 
-        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+        let err = check_ol_block_proposal_valid(&blkid, &block, &predicate)
             .expect_err("missing signature should be rejected");
 
         assert!(matches!(err, Error::MissingBlockSignature(_)));
@@ -1543,23 +1523,23 @@ mod tests {
     #[test]
     fn rejects_invalid_signature() {
         let keypair = make_keypair();
-        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let predicate = schnorr_predicate(&keypair.pk);
         let block = make_block(1, Some(Buf64::zero()));
         let blkid = block.header().compute_blkid();
 
-        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+        let err = check_ol_block_proposal_valid(&blkid, &block, &predicate)
             .expect_err("invalid signature should be rejected");
 
         assert!(matches!(err, Error::InvalidBlockSignature(_)));
     }
 
     #[test]
-    fn accepts_garbage_signature_when_unchecked() {
-        let params = make_rollup_params(CredRule::Unchecked);
+    fn accepts_garbage_signature_when_always_accept() {
+        let predicate = PredicateKey::always_accept();
         let block = make_block(1, Some(Buf64::zero()));
         let blkid = block.header().compute_blkid();
 
-        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+        let result = check_ol_block_proposal_valid(&blkid, &block, &predicate);
 
         assert!(result.is_ok());
     }
@@ -1567,13 +1547,13 @@ mod tests {
     #[test]
     fn accepts_valid_signature() {
         let keypair = make_keypair();
-        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let predicate = schnorr_predicate(&keypair.pk);
         let block = make_block(1, Some(Buf64::zero()));
         let signature = sign_block(&block, &keypair.sk);
         let block = make_block(1, Some(signature));
         let blkid = block.header().compute_blkid();
 
-        let result = check_ol_block_proposal_valid(&blkid, &block, &params);
+        let result = check_ol_block_proposal_valid(&blkid, &block, &predicate);
 
         assert!(result.is_ok());
     }
@@ -1581,11 +1561,11 @@ mod tests {
     #[test]
     fn rejects_genesis_block_proposal() {
         let keypair = make_keypair();
-        let params = make_rollup_params(CredRule::SchnorrKey(keypair.pk));
+        let predicate = schnorr_predicate(&keypair.pk);
         let block = make_block(0, None);
         let blkid = block.header().compute_blkid();
 
-        let err = check_ol_block_proposal_valid(&blkid, &block, &params)
+        let err = check_ol_block_proposal_valid(&blkid, &block, &predicate)
             .expect_err("slot-0 proposals should be rejected");
 
         assert!(matches!(err, Error::UnexpectedGenesisBlock(_)));

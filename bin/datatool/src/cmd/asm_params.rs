@@ -3,7 +3,7 @@
 use std::{fs, num::NonZero, str::FromStr};
 
 use bitcoin::{
-    bip32::Xpriv,
+    bip32::{Xpriv, Xpub},
     secp256k1::{PublicKey, SECP256K1},
 };
 use strata_asm_params::{
@@ -18,7 +18,7 @@ use strata_crypto::{
 use strata_l1_txfmt::MagicBytes;
 use strata_ol_genesis::build_genesis_artifacts;
 use strata_ol_params::OLParams;
-use strata_predicate::PredicateKey;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 
 use crate::{
     args::{CmdContext, SubcAsmParams},
@@ -136,11 +136,12 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     let genesis_ol_blkid = *genesis_artifacts.commitment.blkid();
 
     // Build checkpoint config.
+    let sequencer_predicate = resolve_sequencer_predicate(cmd.seqkey.as_deref())?;
     let checkpoint_predicate = resolve_checkpoint_predicate(cmd.checkpoint_predicate)?;
     let genesis_l1_height = genesis_l1_view.blk.height();
 
     let checkpoint = CheckpointInitConfig {
-        sequencer_predicate: PredicateKey::always_accept(),
+        sequencer_predicate,
         checkpoint_predicate,
         genesis_l1_height,
         genesis_ol_blkid,
@@ -192,4 +193,43 @@ pub(super) fn exec(cmd: SubcAsmParams, ctx: &mut CmdContext) -> anyhow::Result<(
     }
 
     Ok(())
+}
+
+fn resolve_sequencer_predicate(seqkey: Option<&str>) -> anyhow::Result<PredicateKey> {
+    let Some(seqkey) = seqkey.map(str::trim) else {
+        return Ok(PredicateKey::always_accept());
+    };
+
+    let xpub = Xpub::from_str(seqkey)?;
+    Ok(PredicateKey::new(
+        PredicateTypeId::Bip340Schnorr,
+        xpub.to_x_only_pub().serialize().to_vec(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use bitcoin::bip32::Xpub;
+
+    use super::*;
+
+    const TEST_SEQUENCER_XPUB: &str = "tpubDASVk1m5cxpmUbwVEZEQb8maDVx9kDxBhSLCqsKHJJmZ8htSegpHx7G3RFudZCdDLtNKTosQiBLbbFsVA45MemurWenzn16Y1ft7NkQekcD";
+
+    #[test]
+    fn sequencer_predicate_defaults_to_always_accept() {
+        let predicate = resolve_sequencer_predicate(None).expect("default should resolve");
+
+        assert_eq!(predicate.id(), PredicateTypeId::AlwaysAccept.as_u8());
+    }
+
+    #[test]
+    fn sequencer_predicate_uses_bip340_schnorr_pubkey() {
+        let predicate =
+            resolve_sequencer_predicate(Some(TEST_SEQUENCER_XPUB)).expect("xpub should parse");
+        let xpub = Xpub::from_str(TEST_SEQUENCER_XPUB).expect("xpub should parse");
+        let expected_pubkey = xpub.to_x_only_pub().serialize();
+
+        assert_eq!(predicate.id(), PredicateTypeId::Bip340Schnorr.as_u8());
+        assert_eq!(predicate.condition(), expected_pubkey.as_slice());
+    }
 }
