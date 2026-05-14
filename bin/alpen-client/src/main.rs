@@ -481,7 +481,7 @@ fn main() {
                 // miss, e.g. for chunks sealed before this code rolled out).
                 let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
                     node.provider.clone(),
-                    node.evm_config.clone(),
+                    storage.clone(),
                 ));
 
                 // `ChunkWitnessExtractFn` is the production-time hook: takes
