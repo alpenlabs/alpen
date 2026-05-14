@@ -323,9 +323,7 @@ impl OLCheckpointManager {
     }
 
     /// Gets the highest epoch commitment that has an L1 ref.
-    pub fn get_last_checkpoint_l1_ref_epoch_blocking(
-        &self,
-    ) -> DbResult<Option<EpochCommitment>> {
+    pub fn get_last_checkpoint_l1_ref_epoch_blocking(&self) -> DbResult<Option<EpochCommitment>> {
         self.ops.get_last_checkpoint_l1_ref_epoch_blocking()
     }
 

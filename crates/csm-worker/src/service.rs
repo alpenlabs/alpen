@@ -32,9 +32,9 @@ impl<C: CsmWorkerContext + 'static> Service for CsmWorkerService<C> {
     fn get_status(state: &Self::State) -> Self::Status {
         CsmWorkerStatus {
             cur_block: state.last_asm_block,
-            last_processed_epoch: state.last_processed_epoch.map(|e| e as u64),
-            last_confirmed_epoch: state.confirmed_epoch,
-            last_finalized_epoch: state.finalized_epoch,
+            last_processed_epoch: state.staged.last_processed_epoch.map(|e| e as u64),
+            last_confirmed_epoch: state.staged.confirmed_epoch,
+            last_finalized_epoch: state.staged.finalized_epoch,
         }
     }
 }
@@ -52,8 +52,8 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         trace!("CSM is processing ASM logs.");
 
-        let prev_confirmed_epoch = state.confirmed_epoch;
-        let prev_finalized_epoch = state.finalized_epoch;
+        let prev_confirmed_epoch = state.staged.confirmed_epoch;
+        let prev_finalized_epoch = state.staged.finalized_epoch;
 
         // Process `asm_block` (and any blocks the status channel skipped over).
         // On failure nothing is persisted and the cursor stays pinned at the
@@ -66,12 +66,13 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
         // Advance finalized epoch from the observation queue based on L1 depth.
         let current_l1_tip = asm_block.height();
         let finality_depth = state.ctx.l1_reorg_safe_depth().max(1);
-        while let Some((commitment, observation)) = state.observed_checkpoints.front() {
+        while let Some((commitment, observation)) = state.staged.observed_checkpoints.front() {
             if state
+                .staged
                 .finalized_epoch
                 .is_some_and(|current| commitment.epoch() <= current.epoch())
             {
-                state.observed_checkpoints.pop_front();
+                state.staged.observed_checkpoints.pop_front();
                 continue;
             }
 
@@ -80,12 +81,13 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
                 .saturating_add(1);
             if confirmations >= finality_depth {
                 let epoch = *commitment;
-                state.observed_checkpoints.pop_front();
+                state.staged.observed_checkpoints.pop_front();
                 if state
+                    .staged
                     .finalized_epoch
                     .is_none_or(|current| epoch.epoch() > current.epoch())
                 {
-                    state.finalized_epoch = Some(epoch);
+                    state.staged.finalized_epoch = Some(epoch);
                 }
             } else {
                 break;
@@ -94,12 +96,12 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
         // even if client-state object itself did not change (tip-only L1 movement).
-        if state.confirmed_epoch != prev_confirmed_epoch
-            || state.finalized_epoch != prev_finalized_epoch
+        if state.staged.confirmed_epoch != prev_confirmed_epoch
+            || state.staged.finalized_epoch != prev_finalized_epoch
         {
             state
                 .ctx
-                .publish_client_state(state.cur_state.as_ref().clone(), asm_block);
+                .publish_client_state(state.staged.cur_state.as_ref().clone(), asm_block);
         }
 
         Ok(Response::Continue)

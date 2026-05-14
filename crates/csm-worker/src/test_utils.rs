@@ -8,9 +8,9 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
+    L1Height,
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
-    L1Height,
 };
 use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
@@ -38,6 +38,9 @@ pub(crate) struct StubCtx {
     /// Height at which `get_canonical_l1_block` should fail, simulating a gap
     /// block that can't be resolved.
     canonical_fail_height: Option<L1Height>,
+    /// When set, `put_client_state_update` fails, simulating a commit failure
+    /// after a block's logs were processed.
+    fail_client_state_update: bool,
 }
 
 impl StubCtx {
@@ -55,6 +58,7 @@ impl StubCtx {
             l1_fetch: L1Fetch::Unset,
             canonical_asm_states: HashMap::new(),
             canonical_fail_height: None,
+            fail_client_state_update: false,
         }
     }
 
@@ -81,6 +85,13 @@ impl StubCtx {
         self.canonical_fail_height = Some(height);
         self
     }
+
+    /// Makes `put_client_state_update` fail, simulating a commit failure after
+    /// a block's logs were processed.
+    pub(crate) fn with_commit_failure(mut self) -> Self {
+        self.fail_client_state_update = true;
+        self
+    }
 }
 
 impl CsmWorkerContext for StubCtx {
@@ -89,6 +100,9 @@ impl CsmWorkerContext for StubCtx {
         block: &L1BlockCommitment,
         output: ClientUpdateOutput,
     ) -> anyhow::Result<()> {
+        if self.fail_client_state_update {
+            return Err(anyhow::anyhow!("simulated client state update failure"));
+        }
         self.storage
             .client_state()
             .put_update_blocking(block, output)?;

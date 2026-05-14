@@ -77,7 +77,7 @@ fn process_checkpoint_tip_log<C: CsmWorkerContext>(
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
     apply_checkpoint_to_client_state(state, synthetic_checkpoint, epoch);
 
-    state.last_processed_epoch = Some(epoch);
+    state.staged.last_processed_epoch = Some(epoch);
     Ok(())
 }
 
@@ -89,7 +89,7 @@ fn apply_checkpoint_to_client_state<C: CsmWorkerContext>(
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
 ) {
-    let cur_state = state.cur_state.as_ref();
+    let cur_state = state.staged.cur_state.as_ref();
 
     // Determine if this checkpoint should be the last finalized or just recent.
 
@@ -117,7 +117,7 @@ fn apply_checkpoint_to_client_state<C: CsmWorkerContext>(
         }
     };
 
-    state.cur_state = Arc::new(ClientState::new(last_finalized, recent));
+    state.staged.cur_state = Arc::new(ClientState::new(last_finalized, recent));
 }
 
 /// Persists the client state for `asm_block` and advances the in-memory `last_asm_block`.
@@ -127,7 +127,7 @@ fn commit_block<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     asm_block: L1BlockCommitment,
 ) -> anyhow::Result<()> {
-    let next_state = state.cur_state.as_ref().clone();
+    let next_state = state.staged.cur_state.as_ref().clone();
     state.ctx.put_client_state_update(
         &asm_block,
         ClientUpdateOutput::new(next_state.clone(), vec![]),
@@ -139,22 +139,25 @@ fn commit_block<C: CsmWorkerContext>(
 }
 
 /// Processes every log of a single ASM block and commits it as one unit.
+///
+/// All staged state is snapshotted up front and restored on any failure
+/// including a `commit_block` failure.
 fn process_block<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     asm_block: L1BlockCommitment,
     logs: &[AsmLogEntry],
 ) -> anyhow::Result<()> {
-    let cur_state_snapshot = state.cur_state.clone();
+    let staged_snapshot = state.staged.clone();
 
     for log in logs {
         if let Err(e) = process_log(state, log, &asm_block) {
-            state.cur_state = cur_state_snapshot;
+            state.staged = staged_snapshot;
             return Err(e).with_context(|| format!("processing ASM log for block {asm_block}"));
         }
     }
 
     if let Err(e) = commit_block(state, asm_block) {
-        state.cur_state = cur_state_snapshot;
+        state.staged = staged_snapshot;
         return Err(e).with_context(|| format!("committing CSM block {asm_block}"));
     }
 
@@ -260,22 +263,26 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
 
     // Update cached confirmed epoch monotonically.
     if state
+        .staged
         .confirmed_epoch
         .is_none_or(|current| commitment.epoch() > current.epoch())
     {
-        state.confirmed_epoch = Some(commitment);
+        state.staged.confirmed_epoch = Some(commitment);
     }
 
     // Queue only non-finalized candidates and avoid duplicates.
     if state
+        .staged
         .finalized_epoch
         .is_none_or(|current| commitment.epoch() > current.epoch())
         && !state
+            .staged
             .observed_checkpoints
             .iter()
             .any(|(epoch, _)| *epoch == commitment)
     {
         state
+            .staged
             .observed_checkpoints
             .push_back((commitment, observation));
     }
@@ -491,7 +498,7 @@ mod tests {
         );
 
         // State should not be updated
-        assert_eq!(state.last_processed_epoch, None);
+        assert_eq!(state.staged.last_processed_epoch, None);
     }
 
     #[test]
@@ -506,7 +513,7 @@ mod tests {
         assert!(result.is_ok(), "process_log should handle typeless logs");
 
         // State should not be updated
-        assert_eq!(state.last_processed_epoch, None);
+        assert_eq!(state.staged.last_processed_epoch, None);
     }
 
     /// Synthesizes a CheckpointTipUpdate log for `epoch`. We use a placeholder
@@ -605,6 +612,56 @@ mod tests {
         assert_eq!(
             before_block, after_block,
             "persisted cursor must not move when a block's log failed"
+        );
+    }
+
+    /// A `commit_block` failure must roll back all staged state, not just
+    /// `cur_state`.
+    #[test]
+    fn commit_failure_rolls_back_staged_state() {
+        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_commit_failure());
+        let last = L1BlockCommitment::new(100, block_id_at(100));
+        state.last_asm_block = Some(last);
+
+        // Seed staged cursors with a known baseline so we can detect any
+        // partial advancement that survives the failed commit.
+        let baseline_epoch = EpochCommitment::from_terminal(
+            7,
+            OLBlockCommitment::new(70, OLBlockId::from(Buf32::from([7; 32]))),
+        );
+        state.staged.last_processed_epoch = Some(7);
+        state.staged.confirmed_epoch = Some(baseline_epoch);
+        state.staged.finalized_epoch = Some(baseline_epoch);
+        let baseline = state.staged.clone();
+
+        let next = L1BlockCommitment::new(101, block_id_at(101));
+        let err = process_asm_block(&mut state, next, &[create_non_checkpoint_log_type()])
+            .expect_err("commit failure should propagate");
+        assert!(
+            err.to_string().contains("committing CSM block"),
+            "unexpected error: {err}"
+        );
+
+        // Commit cursor pinned at the last committed block.
+        assert_eq!(state.last_asm_block, Some(last));
+        // Every staged field restored to the pre-block baseline.
+        assert_eq!(
+            state.staged.last_processed_epoch,
+            baseline.last_processed_epoch
+        );
+        assert_eq!(state.staged.confirmed_epoch, baseline.confirmed_epoch);
+        assert_eq!(state.staged.finalized_epoch, baseline.finalized_epoch);
+        assert_eq!(
+            state.staged.observed_checkpoints,
+            baseline.observed_checkpoints
+        );
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&next)
+                .expect("query client state")
+                .is_none(),
+            "uncommitted block must not be persisted"
         );
     }
 

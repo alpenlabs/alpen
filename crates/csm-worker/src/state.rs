@@ -23,11 +23,25 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
     /// External services and configuration.
     pub(crate) ctx: C,
 
+    /// Last ASM block committed. Advanced only by a successful commit; never
+    /// rolled back.
+    pub(crate) last_asm_block: Option<L1BlockCommitment>,
+
+    /// State staged while processing the current ASM block's logs; committed as
+    /// a unit by `commit_block` or rolled back on any failure.
+    pub(crate) staged: StagedState,
+}
+
+/// In-memory state that is provisionally mutated while processing an ASM
+/// block's logs.
+///
+/// An ASM block is processed and committed as a unit: every field here is
+/// snapshotted before processing the block's logs and restored on any failure,
+/// so a retry replays from the last committed baseline.
+#[derive(Clone)]
+pub(crate) struct StagedState {
     /// Current client state.
     pub(crate) cur_state: Arc<ClientState>,
-
-    /// Last ASM update we processed.
-    pub(crate) last_asm_block: Option<L1BlockCommitment>,
 
     /// Last epoch we processed a checkpoint for.
     pub(crate) last_processed_epoch: Option<Epoch>,
@@ -95,12 +109,14 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         Ok(Self {
             ctx,
-            cur_state: Arc::new(cur_state),
             last_asm_block: Some(cur_block),
-            last_processed_epoch: None,
-            confirmed_epoch,
-            finalized_epoch,
-            observed_checkpoints,
+            staged: StagedState {
+                cur_state: Arc::new(cur_state),
+                last_processed_epoch: None,
+                confirmed_epoch,
+                finalized_epoch,
+                observed_checkpoints,
+            },
         })
     }
 
@@ -305,11 +321,15 @@ mod tests {
         );
         let state = CsmWorkerState::new(params, storage, ctx).expect("state init");
 
-        assert_eq!(state.confirmed_epoch, Some(commitment_2));
-        assert_eq!(state.finalized_epoch, Some(commitment_1));
-        assert_eq!(state.observed_checkpoints.len(), 1);
+        assert_eq!(state.staged.confirmed_epoch, Some(commitment_2));
+        assert_eq!(state.staged.finalized_epoch, Some(commitment_1));
+        assert_eq!(state.staged.observed_checkpoints.len(), 1);
         assert_eq!(
-            state.observed_checkpoints.front().map(|(epoch, _)| *epoch),
+            state
+                .staged
+                .observed_checkpoints
+                .front()
+                .map(|(epoch, _)| *epoch),
             Some(commitment_2)
         );
     }
