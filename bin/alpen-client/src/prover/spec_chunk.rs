@@ -98,13 +98,12 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// Chunk proof specification.
 ///
 /// Two data sources per chunk:
-/// - **`ChunkWitnessStore`** — pre-computed chunk-spanning sparse pre-state +
-///   per-block raw block bytes, written at chunk-seal time by the batch
-///   builder. Read here in `fetch_input` as the primary source. A missing
-///   record is a hard failure — there is no on-demand re-extraction
+/// - **`ChunkWitnessStore`** — pre-computed chunk-spanning sparse pre-state + per-block raw block
+///   bytes, written at chunk-seal time by the batch builder. Read here in `fetch_input` as the
+///   primary source. A missing record is a hard failure — there is no on-demand re-extraction
 ///   fallback. See `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
-/// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative
-///   `ExecInputs` / `ExecOutputs`.
+/// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
+///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
@@ -150,10 +149,9 @@ impl ProofSpec for ChunkSpec {
             )));
         }
 
-        // 2. Read the pre-computed chunk witness. The batch builder writes
-        //    this at chunk-seal time when state is at-tip; a missing record
-        //    means seal-time extraction failed (operator will see a `warn!`
-        //    from the batch builder) or the record was wiped. Either way,
+        // 2. Read the pre-computed chunk witness. The batch builder writes this at chunk-seal time
+        //    when state is at-tip; a missing record means seal-time extraction failed (operator
+        //    will see a `warn!` from the batch builder) or the record was wiped. Either way,
         //    there's no useful retry — fail permanently with a clear error.
         let witness = self
             .storage
@@ -179,9 +177,7 @@ impl ProofSpec for ChunkSpec {
         // builder did via `ChunkWitnessRecord::new` in main.rs.)
         let prev_header: alloy_consensus::Header =
             alloy_rlp::decode_exact(&witness.prev_header_rlp[..]).map_err(|e| {
-                PaasError::PermanentFailure(format!(
-                    "decode prev_header_rlp for {chunk_id:?}: {e}"
-                ))
+                PaasError::PermanentFailure(format!("decode prev_header_rlp for {chunk_id:?}: {e}"))
             })?;
         let alloy_blocks: Vec<Block> = witness
             .blocks_rlp

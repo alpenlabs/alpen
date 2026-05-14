@@ -6,7 +6,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-
 use strata_acct_types::Hash;
 
 use crate::{
@@ -298,14 +297,16 @@ impl AccessedStateStore for InMemoryStorage {
         &self,
         block_id: Hash,
     ) -> Result<Option<AccessedStateRecord>, StorageError> {
-        Ok(self.block_accessed_state.read().unwrap().get(&block_id).cloned())
+        Ok(self
+            .block_accessed_state
+            .read()
+            .unwrap()
+            .get(&block_id)
+            .cloned())
     }
 
     async fn del_block_accessed_state(&self, block_id: Hash) -> Result<(), StorageError> {
-        self.block_accessed_state
-            .write()
-            .unwrap()
-            .remove(&block_id);
+        self.block_accessed_state.write().unwrap().remove(&block_id);
         Ok(())
     }
 

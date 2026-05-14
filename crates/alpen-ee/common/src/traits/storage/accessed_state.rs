@@ -17,11 +17,10 @@ use crate::{AccessedStateRecord, StorageError};
 /// Two lifecycles share the trait because both feeds are written by the
 /// same exex and read by the same consumer:
 ///
-/// - **Per-block records** are tied to chain canonicality. On reorg, the
-///   exex deletes records for the orphaned block hashes.
-/// - **Bytecodes** are content-addressed by code hash. Once written they
-///   are never deleted — same contract referenced by many chunks shares
-///   one stored copy.
+/// - **Per-block records** are tied to chain canonicality. On reorg, the exex deletes records for
+///   the orphaned block hashes.
+/// - **Bytecodes** are content-addressed by code hash. Once written they are never deleted — same
+///   contract referenced by many chunks shares one stored copy.
 #[cfg_attr(feature = "test-utils", mockall::automock)]
 #[async_trait]
 pub trait AccessedStateStore: Send + Sync {

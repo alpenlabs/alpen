@@ -138,11 +138,8 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
     // the chunk-builder to skip per-block re-execution at chunk-seal time.
 
     /// Store the accessed-state record for `block_id`. Overwrites if present.
-    fn put_block_accessed_state(
-        &self,
-        block_id: Hash,
-        record: AccessedStateRecord,
-    ) -> DbResult<()>;
+    fn put_block_accessed_state(&self, block_id: Hash, record: AccessedStateRecord)
+        -> DbResult<()>;
 
     /// Fetch the accessed-state record for `block_id`, if one exists.
     fn get_block_accessed_state(&self, block_id: Hash) -> DbResult<Option<AccessedStateRecord>>;

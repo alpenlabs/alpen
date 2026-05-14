@@ -4,8 +4,9 @@
 //! ([`crates/alpen-ee/sequencer/src/batch_builder/task.rs::seal_batch`]).
 //! Consumer: `ChunkSpec::fetch_input` in the chunk prover.
 //!
-//! Replaces the on-demand `RangeWitnessExtractor` invocation that today
-//! runs at proof-request time and OOMs as historical depth grows. See
+//! Sealing-time pre-computation replaces the on-demand
+//! `RangeWitnessExtractor` invocation that previously ran at proof-request
+//! time and OOMed as historical depth grew. See
 //! `experimental/evgeniy/ee-prover-fetch-input-redesign.md` for design.
 
 use async_trait::async_trait;

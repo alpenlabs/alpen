@@ -113,16 +113,20 @@ where
 
             // Heavy lifting (re-execution + state-provider traversal) runs
             // off the async runtime.
-            let record_result = task::spawn_blocking(move || {
-                build_accessed_state(provider, evm_config, block_num)
-            })
-            .await
-            .map_err(|e| eyre::eyre!("accessed-state join: {e}"))?;
+            let record_result =
+                task::spawn_blocking(move || build_accessed_state(provider, evm_config, block_num))
+                    .await
+                    .map_err(|e| eyre::eyre!("accessed-state join: {e}"))?;
 
             let (record, bytecodes) = match record_result {
                 Ok(v) => v,
                 Err(err) => {
-                    error!(?err, ?block_hash, block_num, "accessed-state extraction failed");
+                    error!(
+                        ?err,
+                        ?block_hash,
+                        block_num,
+                        "accessed-state extraction failed"
+                    );
                     continue;
                 }
             };
@@ -141,7 +145,12 @@ where
                 .put_block_accessed_state(hash_from_b256(block_hash), record)
                 .await
             {
-                error!(?err, ?block_hash, block_num, "failed to persist accessed-state record");
+                error!(
+                    ?err,
+                    ?block_hash,
+                    block_num,
+                    "failed to persist accessed-state record"
+                );
                 continue;
             }
 
@@ -165,12 +174,21 @@ where
                 .del_block_accessed_state(hash_from_b256(block_hash))
                 .await
             {
-                warn!(?err, ?block_hash, "failed to delete reorged accessed-state record");
+                warn!(
+                    ?err,
+                    ?block_hash,
+                    "failed to delete reorged accessed-state record"
+                );
             }
         }
         Ok(())
     }
 }
+
+/// `(code_hash, raw_bytecode)` pair returned alongside each block's
+/// accessed-state record so the caller can persist bytecodes into the
+/// content-addressed bytecode tree.
+type BytecodeEntry = (Hash, Vec<u8>);
 
 /// CPU-heavy half of `commit`, hoisted out so it can run inside
 /// [`tokio::task::spawn_blocking`]. Reads the parent state via reth
@@ -180,7 +198,7 @@ fn build_accessed_state<P, E>(
     provider: P,
     evm_config: E,
     block_num: u64,
-) -> eyre::Result<(AccessedStateRecord, Vec<(Hash, Vec<u8>)>)>
+) -> eyre::Result<(AccessedStateRecord, Vec<BytecodeEntry>)>
 where
     P: StateProviderFactory + BlockReader<Block = Block>,
     E: ConfigureEvm<Primitives = EthPrimitives> + Clone,
@@ -205,10 +223,8 @@ where
         .accessed_accounts()
         .iter()
         .map(|(addr, slots)| {
-            let mut storage_slots: Vec<[u8; 32]> = slots
-                .iter()
-                .map(|slot| slot.to_be_bytes::<32>())
-                .collect();
+            let mut storage_slots: Vec<[u8; 32]> =
+                slots.iter().map(|slot| slot.to_be_bytes::<32>()).collect();
             storage_slots.sort();
             AccessedAccount {
                 address: addr.into_array(),
@@ -235,7 +251,7 @@ where
         ancestor_block_numbers,
     };
 
-    let bytecodes: Vec<(Hash, Vec<u8>)> = accessed
+    let bytecodes: Vec<BytecodeEntry> = accessed
         .accessed_contracts()
         .iter()
         .map(|(hash, code)| (hash_from_b256(*hash), code.bytes().to_vec()))

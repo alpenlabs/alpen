@@ -474,11 +474,12 @@ fn main() {
                     FixedBlockCountSealing::new(ext.batch_sealing_block_count);
                 let block_data_provider = Arc::new(BlockCountDataProvider);
 
-                // Build the chunk-spanning witness extractor once, used both
-                // by the batch builder (at chunk-seal time, persisted as a
-                // `ChunkWitnessRecord`) and by the chunk prover's
-                // `ChunkSpec::fetch_input` fallback path (on a witness-record
-                // miss, e.g. for chunks sealed before this code rolled out).
+                // Chunk-spanning witness extractor. Single producer of
+                // `ChunkWitnessRecord`: the batch builder calls it once per
+                // chunk at seal time via `chunk_witness_extract_fn`. The
+                // chunk prover's `ChunkSpec::fetch_input` reads the
+                // persisted record from sled and has no extractor path of
+                // its own — a missing record is a hard `PermanentFailure`.
                 let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
                     node.provider.clone(),
                     storage.clone(),

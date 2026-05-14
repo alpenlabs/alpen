@@ -135,17 +135,15 @@ async fn seal_batch<P: BatchPolicy>(
 
     if let Some(extractor) = chunk_witness_extractor {
         // Pre-compute and persist the chunk witness while we're at-tip.
-        // Failure here is non-fatal — the chunk is already sealed, and
-        // `ChunkSpec::fetch_input` will fall back to on-demand extraction
-        // (today's behavior) on a witness-record miss. We log so an
-        // operator notices.
-        if let Err(e) =
-            extract_and_store_chunk_witness(chunk_id, extractor, batch_storage).await
-        {
+        // The chunk is already sealed at this point, so the failure path
+        // doesn't undo the seal — but the chunk will be unprovable: the
+        // prover's `ChunkSpec::fetch_input` returns `PermanentFailure` on
+        // a missing witness record. Log so an operator notices.
+        if let Err(e) = extract_and_store_chunk_witness(chunk_id, extractor, batch_storage).await {
             warn!(
                 ?chunk_id,
                 error = %e,
-                "chunk witness extraction failed at seal time; falling back to on-demand at proof time"
+                "chunk witness extraction failed at seal time; chunk will be unprovable until manually re-extracted or wiped"
             );
         }
     }

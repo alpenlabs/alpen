@@ -17,8 +17,8 @@ pub use traits::{
     prover::{BatchProver, ProofGenerationStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
-        require_latest_batch, AccessedStateStore, BatchStorage, ChunkWitnessStore, ExecBlockStorage,
-        OLBlockOrEpoch, Storage, StorageError,
+        require_latest_batch, AccessedStateStore, BatchStorage, ChunkWitnessStore,
+        ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
     },
 };
 #[cfg(feature = "test-utils")]

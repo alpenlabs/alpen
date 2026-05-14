@@ -6,9 +6,7 @@
 //! and runs the two pre/post multiproofs. No block re-execution happens
 //! here — that work happens once per produced block inside the exex.
 
-use std::collections::HashSet;
-
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use alloy_consensus::Header;
 use alloy_primitives::{
@@ -204,7 +202,10 @@ where
             for code_hash_bytes in &record.bytecode_hashes {
                 let code_hash_storage_key = Hash::from(*code_hash_bytes);
                 let code = handle
-                    .block_on(self.accessed_state_store.get_bytecode(code_hash_storage_key))
+                    .block_on(
+                        self.accessed_state_store
+                            .get_bytecode(code_hash_storage_key),
+                    )
                     .map_err(|e| eyre!("get_bytecode({code_hash_storage_key:?}): {e}"))?
                     .ok_or_else(|| {
                         eyre!(
