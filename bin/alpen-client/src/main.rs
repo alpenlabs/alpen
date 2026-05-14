@@ -37,7 +37,7 @@ use alpen_ee_sequencer::{
 };
 use alpen_ee_sequencer::{init_batch_builder_state, init_lifecycle_state};
 #[cfg(feature = "sequencer")]
-use alpen_reth_exex::StateDiffGenerator;
+use alpen_reth_exex::{AccessedStateGenerator, StateDiffGenerator};
 use alpen_reth_node::{
     args::AlpenNodeArgs, AlpenEthereumNode, AlpenGossipProtocolHandler, AlpenGossipState,
 };
@@ -367,6 +367,20 @@ fn main() {
                     |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
                 });
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
+
+                // Per-block accessed-state capture (phase 2 of the EE
+                // prover redesign). Re-executes each committed block with
+                // a `CacheDBProvider` to record the read set + bytecodes,
+                // which the chunk-builder consumes at chunk-seal time to
+                // skip its own re-execution loop. See
+                // `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
+                node_builder = node_builder.install_exex("accessed_state", {
+                    let accessed_state_store = storage.clone();
+                    |ctx| async {
+                        Ok(AccessedStateGenerator::new(ctx, accessed_state_store).start())
+                    }
+                });
+                info!(target: "alpen-client", "installed AccessedStateGenerator exex");
             }
 
             node_builder = node_builder.extend_rpc_modules({
