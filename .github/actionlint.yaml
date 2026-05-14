@@ -1,0 +1,4 @@
+# Custom GitHub-hosted larger runners not in actionlint's built-in label list.
+self-hosted-runner:
+  labels:
+    - ubuntu-latest-m
