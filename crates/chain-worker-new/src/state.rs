@@ -244,7 +244,7 @@ impl ChainWorkerServiceState {
         let parent_state = MemoryStateBaseLayer::new(parent_state_raw);
 
         // Execute and extract outputs
-        let (write_batch, indexer_writes) = Self::run_stf_verification(
+        let (write_batch, indexer_writes) = run_stf_verification(
             &parent_state,
             block,
             parent_header,
@@ -269,43 +269,6 @@ impl ChainWorkerServiceState {
             OLBlockExecutionOutput::new(computed_state_root, write_batch, indexer_writes),
             new_state,
         ))
-    }
-
-    /// Runs the STF verification on a block.
-    ///
-    /// This is a pure function that builds the state stack and executes the STF.
-    #[instrument(
-        skip_all,
-        fields(
-            slot = block.header().slot(),
-            epoch = block.header().epoch(),
-            is_terminal = block.header().is_terminal(),
-        ),
-        err,
-    )]
-    fn run_stf_verification(
-        parent_state: &MemoryStateBaseLayer,
-        block: &OLBlock,
-        parent_header: Option<&OLBlockHeader>,
-        bridge_params: BridgeParams,
-    ) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
-        // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
-        let tracking_state = WriteTrackingState::new_empty(parent_state);
-        let mut indexer_state = IndexerState::new(tracking_state);
-
-        verify_block(
-            &mut indexer_state,
-            block.header(),
-            parent_header,
-            block.body(),
-            bridge_params,
-        )?;
-
-        // Extract outputs
-        let (tracking_state, indexer_writes) = indexer_state.into_parts();
-        let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
-
-        Ok((write_batch, indexer_writes))
     }
 
     /// Persists the execution output and state to storage.
@@ -386,6 +349,43 @@ impl ServiceState for ChainWorkerServiceState {
     fn name(&self) -> &str {
         "chain_worker_new"
     }
+}
+
+/// Runs the STF verification on a block.
+///
+/// This is a pure function that builds the state stack and executes the STF.
+#[instrument(
+    skip_all,
+    fields(
+        slot = block.header().slot(),
+        epoch = block.header().epoch(),
+        is_terminal = block.header().is_terminal(),
+    ),
+    err,
+)]
+fn run_stf_verification(
+    parent_state: &MemoryStateBaseLayer,
+    block: &OLBlock,
+    parent_header: Option<&OLBlockHeader>,
+    bridge_params: BridgeParams,
+) -> WorkerResult<(WriteBatch<OLAccountState>, IndexerWrites)> {
+    // Build the state stack: IndexerState<WriteTrackingState<&MemoryStateBaseLayer>>
+    let tracking_state = WriteTrackingState::new_empty(parent_state);
+    let mut indexer_state = IndexerState::new(tracking_state);
+
+    verify_block(
+        &mut indexer_state,
+        block.header(),
+        parent_header,
+        block.body(),
+        bridge_params,
+    )?;
+
+    // Extract outputs
+    let (tracking_state, indexer_writes) = indexer_state.into_parts();
+    let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
+
+    Ok((write_batch, indexer_writes))
 }
 
 /// Builds the [`EpochSummary`] for a completed epoch from the terminal block,

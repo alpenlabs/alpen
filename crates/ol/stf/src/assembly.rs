@@ -448,7 +448,13 @@ pub fn execute_block_batch_preseal<S: IStateAccessorMut>(
     let mut batch_logs = Vec::with_capacity(blocks.len());
 
     for block in blocks {
-        let logs = verify_block_preseal(state, block.header(), Some(&parent), block.body(), bridge_params)?;
+        let logs = verify_block_preseal(
+            state,
+            block.header(),
+            Some(&parent),
+            block.body(),
+            bridge_params,
+        )?;
         parent = block.header().clone();
         batch_logs.push(logs);
     }

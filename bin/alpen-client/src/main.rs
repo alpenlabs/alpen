@@ -61,7 +61,7 @@ use reth_network::{protocol::IntoRlpxSubProtocol, NetworkProtocols};
 use reth_node_builder::{NodeBuilder, WithLaunchContext};
 use reth_provider::CanonStateSubscriptions;
 use strata_acct_types::AccountId;
-use strata_bridge_params::BridgeParams;
+use strata_bridge_params::{BridgeParams, DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_SATS};
 #[cfg(feature = "sequencer")]
 use strata_btcio::{
     broadcaster::BroadcasterBuilder, writer::chunked_envelope::create_chunked_envelope_task,
@@ -164,12 +164,11 @@ fn main() {
 
             // --- CONFIGS ---
 
-            // Resolve withdrawal cap: --no-withdrawal-cap → None,
-            // --max-withdrawal-amount X → Some(X), neither → default 10 BTC.
-            let resolved_max_withdrawal = if ext.no_withdrawal_cap {
-                None
-            } else {
-                Some(ext.max_withdrawal_amount.unwrap_or(1_000_000_000))
+            // Resolve withdrawal cap: 0 → no cap, omitted → default 10 BTC.
+            let resolved_max_withdrawal = match ext.max_withdrawal_amount {
+                Some(0) => None,
+                Some(v) => Some(v),
+                None => Some(DEFAULT_MAX_WITHDRAWAL_SATS),
             };
 
             let datadir = builder.config().datadir().data_dir().to_path_buf();
@@ -1012,17 +1011,18 @@ pub struct AdditionalConfig {
     #[arg(long, default_value = "100")]
     pub batch_sealing_block_count: u64,
 
-    /// Bridge denomination in satoshis. Defaults to 100_000_000 (1 BTC).
-    #[arg(long, default_value = "100000000")]
+    /// Bridge denomination in satoshis (1 BTC default).
+    #[arg(long, default_value_t = DEFAULT_DENOMINATION_SATS)]
     pub bridge_denomination: u64,
 
-    /// Maximum withdrawal amount in satoshis. Defaults to 1_000_000_000 (10 BTC).
+    /// Maximum withdrawal amount in satoshis.
+    ///
+    /// When omitted, defaults to 1_000_000_000 (10 BTC) at runtime.
+    /// Pass 0 to disable the cap entirely. Kept as `Option` (no
+    /// `default_value`) so we can distinguish "not set" (→ safe default)
+    /// from an explicit value.
     #[arg(long)]
     pub max_withdrawal_amount: Option<u64>,
-
-    /// Disable the withdrawal cap entirely.
-    #[arg(long)]
-    pub no_withdrawal_cap: bool,
 
     /// Use the zkaleido `NativeHost` for the EE chunk + acct provers
     /// instead of the SP1 remote host.

@@ -21,10 +21,7 @@ use terrors::OneOf;
 #[cfg(feature = "test-mode")]
 use crate::{constants::SEED_LEN, seed::Seed};
 use crate::{
-    constants::{
-        DEFAULT_BRIDGE_ALPEN_ADDRESS, DEFAULT_BRIDGE_FEE, DEFAULT_DENOMINATION_SATS,
-        DEFAULT_FINALITY_DEPTH,
-    },
+    constants::*,
     signet::{backend::SignetBackend, EsploraClient},
 };
 

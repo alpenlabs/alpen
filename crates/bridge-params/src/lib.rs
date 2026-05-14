@@ -59,11 +59,17 @@ impl BridgeParams {
     }
 }
 
+/// Default bridge denomination: 1 BTC in satoshis.
+pub const DEFAULT_DENOMINATION_SATS: u64 = 100_000_000;
+
+/// Default maximum withdrawal amount: 10 BTC in satoshis.
+pub const DEFAULT_MAX_WITHDRAWAL_SATS: u64 = 1_000_000_000;
+
 impl Default for BridgeParams {
     fn default() -> Self {
         Self {
-            denomination: 100_000_000,                  // 1 BTC
-            max_withdrawal_amount: Some(1_000_000_000), // 10 BTC
+            denomination: DEFAULT_DENOMINATION_SATS,
+            max_withdrawal_amount: Some(DEFAULT_MAX_WITHDRAWAL_SATS),
         }
     }
 }

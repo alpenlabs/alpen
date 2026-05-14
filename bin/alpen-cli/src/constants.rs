@@ -10,8 +10,7 @@ pub const DEFAULT_FINALITY_DEPTH: u32 = 6;
 
 pub const RECOVERY_DESC_CLEANUP_DELAY: u32 = 100;
 
-/// Default denomination in satoshis (1 BTC).
-pub const DEFAULT_DENOMINATION_SATS: u64 = 100_000_000;
+pub use strata_bridge_params::{DEFAULT_DENOMINATION_SATS, DEFAULT_MAX_WITHDRAWAL_SATS};
 
 /// Fee to cover the mining fees for creating the deposit transaction from the deposit request
 /// transaction. This includes the cost for the bridge to spend the deposit request output into the
