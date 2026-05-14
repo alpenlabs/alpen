@@ -6,6 +6,7 @@ use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
+    L1Height,
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
@@ -50,4 +51,7 @@ pub trait CsmWorkerContext: Send + Sync {
 
     /// Fetches the auxiliary data ASM consumed when processing `block`.
     fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData>;
+
+    /// Resolves the canonical L1 block commitment at `height`.
+    fn get_canonical_l1_block(&self, height: L1Height) -> anyhow::Result<L1BlockCommitment>;
 }

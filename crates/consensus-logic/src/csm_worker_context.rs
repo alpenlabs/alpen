@@ -15,6 +15,7 @@ use strata_params::Params;
 use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
+    L1Height,
 };
 use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
@@ -112,5 +113,14 @@ impl CsmWorkerContext for CsmWorkerCtx {
             .asm()
             .get_aux_data(*block)?
             .ok_or_else(|| anyhow::anyhow!("missing ASM aux data for {block}"))
+    }
+
+    fn get_canonical_l1_block(&self, height: L1Height) -> anyhow::Result<L1BlockCommitment> {
+        let blkid = self
+            .storage
+            .l1()
+            .get_canonical_blockid_at_height(height)?
+            .ok_or_else(|| anyhow::anyhow!("missing canonical L1 block at height {height}"))?;
+        Ok(L1BlockCommitment::new(height, blkid))
     }
 }

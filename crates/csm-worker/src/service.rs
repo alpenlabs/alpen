@@ -7,9 +7,7 @@ use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
 use crate::{
-    context::CsmWorkerContext,
-    processor::{commit_block, process_log},
-    state::CsmWorkerState,
+    context::CsmWorkerContext, processor::process_asm_block, state::CsmWorkerState,
     status::CsmWorkerStatus,
 };
 
@@ -57,28 +55,12 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
         let prev_confirmed_epoch = state.confirmed_epoch;
         let prev_finalized_epoch = state.finalized_epoch;
 
-        // Snapshot the in-memory client state so a mid-block failure can roll
-        // back any partial update and leave the block to be re-processed.
-        let cur_state_snapshot = state.cur_state.clone();
-
-        // Process checkpoint logs from ASM status. Persist updates only if this succeeds.
-        let mut block_ok = true;
-        for log in asm_status.logs() {
-            if let Err(e) = process_log(state, log, &asm_block) {
-                error!(%asm_block, err = %e, "Failed to process ASM log");
-                block_ok = false;
-                break;
-            }
-        }
-
-        if block_ok {
-            if let Err(e) = commit_block(state, asm_block) {
-                error!(%asm_block, err = %e, "Failed to commit CSM block");
-                state.cur_state = cur_state_snapshot;
-            }
-        } else {
-            // Roll back the partially-applied in-memory state.
-            state.cur_state = cur_state_snapshot;
+        // Process `asm_block` (and any blocks the status channel skipped over).
+        // On failure nothing is persisted and the cursor stays pinned at the
+        // last contiguous block, so a restart re-processes from there instead
+        // of silently jumping past the failed block.
+        if let Err(e) = process_asm_block(state, asm_block, asm_status.logs()) {
+            error!(%asm_block, err = %e, "Failed to process ASM block");
         }
 
         // Advance finalized epoch from the observation queue based on L1 depth.

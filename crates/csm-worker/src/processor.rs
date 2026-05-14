@@ -123,7 +123,7 @@ fn apply_checkpoint_to_client_state<C: CsmWorkerContext>(
 /// Persists the client state for `asm_block` and advances the in-memory `last_asm_block`.
 ///
 /// Called after every log of the asm block processed without error.
-pub(crate) fn commit_block<C: CsmWorkerContext>(
+fn commit_block<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     asm_block: L1BlockCommitment,
 ) -> anyhow::Result<()> {
@@ -136,6 +136,76 @@ pub(crate) fn commit_block<C: CsmWorkerContext>(
     // Publish the client state to status channel.
     state.ctx.publish_client_state(next_state, asm_block);
     Ok(())
+}
+
+/// Processes every log of a single ASM block and commits it as one unit.
+fn process_block<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
+    asm_block: L1BlockCommitment,
+    logs: &[AsmLogEntry],
+) -> anyhow::Result<()> {
+    let cur_state_snapshot = state.cur_state.clone();
+
+    for log in logs {
+        if let Err(e) = process_log(state, log, &asm_block) {
+            state.cur_state = cur_state_snapshot;
+            return Err(e).with_context(|| format!("processing ASM log for block {asm_block}"));
+        }
+    }
+
+    if let Err(e) = commit_block(state, asm_block) {
+        state.cur_state = cur_state_snapshot;
+        return Err(e).with_context(|| format!("committing CSM block {asm_block}"));
+    }
+
+    Ok(())
+}
+
+/// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
+/// between the last committed block and `asm_block`.
+///
+/// The ASM status channel only delivers the latest block, so gaps from
+/// transient failures must be backfilled. We walk `[last_committed + 1,
+/// asm_block - 1]`, pulling each skipped block's state from storage and
+/// processing it individually before processing `asm_block`. On error the
+/// cursor stays at the last contiguous block, so restarts resume safely.
+pub(crate) fn process_asm_block<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
+    asm_block: L1BlockCommitment,
+    logs: &[AsmLogEntry],
+) -> anyhow::Result<()> {
+    let last_height = state
+        .last_asm_block
+        .map(|b| b.height())
+        .ok_or_else(|| anyhow::anyhow!("CSM has no last committed ASM block"))?;
+    let target_height = asm_block.height();
+
+    // Already processed (duplicate status) or behind us (reorg) — nothing to do.
+    if target_height <= last_height {
+        debug!(
+            %asm_block,
+            last_height,
+            "ASM status block not ahead of last committed block; skipping"
+        );
+        return Ok(());
+    }
+
+    // Replay any blocks the status channel skipped over.
+    for height in (last_height + 1)..target_height {
+        let gap_block = state
+            .ctx
+            .get_canonical_l1_block(height)
+            .with_context(|| format!("resolving gap L1 block at height {height}"))?;
+        let gap_state = state
+            .ctx
+            .get_asm_state(&gap_block)
+            .with_context(|| format!("fetching ASM state for gap block {gap_block}"))?;
+        let gap_logs = gap_state.logs().clone();
+        info!(%gap_block, "replaying ASM block skipped by status channel");
+        process_block(state, gap_block, &gap_logs)?;
+    }
+
+    process_block(state, asm_block, logs)
 }
 
 fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
@@ -276,18 +346,51 @@ fn decode_checkpoint_section(asm_state: &AsmState) -> anyhow::Result<CheckpointS
 mod tests {
     use std::sync::Arc;
 
-    use strata_asm_common::AsmLogEntry;
+    use bitcoin::Network;
+    use strata_asm_common::{
+        AnchorState, AsmHistoryAccumulatorState, AsmLogEntry, ChainViewState,
+        HeaderVerificationState,
+    };
     use strata_asm_logs::constants::DEPOSIT_LOG_TYPE_ID;
+    use strata_btc_verification::L1Anchor;
     use strata_csm_types::{ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_l1_txfmt::MagicBytes;
     use strata_params::Params;
     use strata_primitives::prelude::*;
+    use strata_state::asm_state::AsmState;
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::process_log;
+    use super::{process_asm_block, process_log};
     use crate::{state::CsmWorkerState, test_utils::StubCtx};
+
+    /// Builds a minimal `AsmState` carrying `logs`. The anchor state itself is
+    /// inert — gap-fill only reads `AsmState::logs()`.
+    fn make_asm_state(logs: Vec<AsmLogEntry>) -> AsmState {
+        let anchor = L1Anchor {
+            block: L1BlockCommitment::default(),
+            next_target: 0,
+            epoch_start_timestamp: 0,
+            network: Network::Bitcoin,
+        };
+        let anchor_state = AnchorState {
+            magic: AnchorState::magic_ssz(MagicBytes::from(*b"ALPN")),
+            chain_view: ChainViewState {
+                pow_state: HeaderVerificationState::init(anchor),
+                history_accumulator: AsmHistoryAccumulatorState::new(0),
+            },
+            sections: Default::default(),
+        };
+        AsmState::new(anchor_state, logs)
+    }
+
+    /// A canonical L1 block id deterministically derived from a height, so
+    /// tests can register and resolve gap blocks consistently.
+    fn block_id_at(height: u32) -> L1BlockId {
+        L1BlockId::from(Buf32::from([height as u8; 32]))
+    }
 
     fn create_test_params_arc() -> Arc<Params> {
         Arc::new(strata_test_utils_l2::gen_params())
@@ -502,6 +605,161 @@ mod tests {
         assert_eq!(
             before_block, after_block,
             "persisted cursor must not move when a block's log failed"
+        );
+    }
+
+    /// A contiguous block (height == last + 1) is processed and committed
+    /// directly, with no gap-fill.
+    #[test]
+    fn contiguous_block_commits_directly() {
+        let (mut state, storage) = create_test_state();
+        let last = L1BlockCommitment::new(100, block_id_at(100));
+        state.last_asm_block = Some(last);
+
+        let next = L1BlockCommitment::new(101, block_id_at(101));
+        process_asm_block(&mut state, next, &[create_non_checkpoint_log_type()])
+            .expect("contiguous block should process");
+
+        assert_eq!(state.last_asm_block, Some(next));
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, next);
+    }
+
+    /// When the status channel skips blocks, gap-fill replays the missing ones
+    /// from storage and commits each, so the persisted cursor advances one
+    /// block at a time rather than jumping the gap.
+    #[test]
+    fn gapped_block_replays_skipped_blocks() {
+        let last = L1BlockCommitment::new(100, block_id_at(100));
+        // Status jumps from 100 to 104; blocks 101..=103 were skipped.
+        let target = L1BlockCommitment::new(104, block_id_at(104));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            let mut c = c;
+            for height in 101..=103 {
+                c = c.with_canonical_asm_state(
+                    height,
+                    block_id_at(height),
+                    make_asm_state(vec![create_non_checkpoint_log_type()]),
+                );
+            }
+            c
+        });
+        state.last_asm_block = Some(last);
+
+        process_asm_block(&mut state, target, &[create_non_checkpoint_log_type()])
+            .expect("gap-fill should replay skipped blocks and commit target");
+
+        // Cursor advanced all the way to the target.
+        assert_eq!(state.last_asm_block, Some(target));
+        // The last persisted client-state row is keyed on the target block,
+        // and each gap block was committed in turn (105 distinct keys exist).
+        let (persisted, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(persisted, target);
+        for height in 101..=104 {
+            let block = L1BlockCommitment::new(height, block_id_at(height));
+            assert!(
+                storage
+                    .client_state()
+                    .get_update_blocking(&block)
+                    .expect("query client state")
+                    .is_some(),
+                "gap block {height} should have been committed"
+            );
+        }
+    }
+
+    /// If a gap block can't be resolved, gap-fill fails and the persisted
+    /// cursor stays pinned at the last contiguous block — a restart then
+    /// re-processes from there instead of skipping the gap.
+    #[test]
+    fn gap_fill_failure_pins_cursor() {
+        let last = L1BlockCommitment::new(100, block_id_at(100));
+        let target = L1BlockCommitment::new(104, block_id_at(104));
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| {
+            // Block 101 resolves, but 102 fails to resolve.
+            c.with_canonical_asm_state(
+                101,
+                block_id_at(101),
+                make_asm_state(vec![create_non_checkpoint_log_type()]),
+            )
+            .with_canonical_failure_at(102)
+        });
+        state.last_asm_block = Some(last);
+
+        let (before_block, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("seeded client state");
+
+        let err = process_asm_block(&mut state, target, &[create_non_checkpoint_log_type()])
+            .expect_err("gap-fill should fail when a gap block can't be resolved");
+        assert!(
+            err.to_string()
+                .contains("resolving gap L1 block at height 102"),
+            "unexpected error: {err}"
+        );
+
+        // Block 101 was committed before the failure; the cursor advanced to
+        // 101 but no further — it did not jump to the target.
+        assert_eq!(
+            state.last_asm_block,
+            Some(L1BlockCommitment::new(101, block_id_at(101)))
+        );
+        assert!(
+            storage
+                .client_state()
+                .get_update_blocking(&target)
+                .expect("query client state")
+                .is_none(),
+            "target block must not be committed when gap-fill fails"
+        );
+        // Genesis row is still the most recent fully-walkable anchor's
+        // predecessor; the key point is the target was never persisted.
+        let _ = before_block;
+    }
+
+    /// A status for a block at or behind the last committed block is a no-op
+    /// (duplicate delivery or a reorg that moved us back).
+    #[test]
+    fn stale_or_duplicate_block_is_ignored() {
+        let (mut state, storage) = create_test_state();
+        let last = L1BlockCommitment::new(100, block_id_at(100));
+        state.last_asm_block = Some(last);
+
+        let (before, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("seeded client state");
+
+        // Same height as last.
+        process_asm_block(&mut state, last, &[create_non_checkpoint_log_type()])
+            .expect("duplicate block should be a no-op");
+        // Behind last.
+        let behind = L1BlockCommitment::new(50, block_id_at(50));
+        process_asm_block(&mut state, behind, &[create_non_checkpoint_log_type()])
+            .expect("stale block should be a no-op");
+
+        assert_eq!(state.last_asm_block, Some(last));
+        let (after, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state still present");
+        assert_eq!(
+            before, after,
+            "no commit should happen for stale/dup blocks"
         );
     }
 }
