@@ -14,5 +14,5 @@ use strata_identifiers::Hash;
 // TODO(STR-3417): move to strata-identifiers
 pub const MMR_SENTINEL_DUMMY_LEAF: [u8; 32] = [0xffu8; 32];
 
-/// Just [`MMR_SENTINEL_DUMMY_LEAF`] as a [`Hash`].
+/// Just [`MMR_SENTINEL_DUMMY_LEAF`] as a [`tyalias@Hash`].
 pub const MMR_SENTINEL_DUMMY_LEAF_HASH: Hash = Hash::new(MMR_SENTINEL_DUMMY_LEAF);
