@@ -26,7 +26,7 @@ jobs:
 
   collect-test-metrics:
     name: Collect test metrics
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m
     if: always()
     needs: [functional-tests]
     permissions:
@@ -71,7 +71,7 @@ jobs:
 
   publish-coverage:
     name: Publish coverage reports
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-m
     if: always()
     needs: [unit-tests, functional-tests]
     timeout-minutes: 10
