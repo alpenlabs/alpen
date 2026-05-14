@@ -1627,7 +1627,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1638,7 +1638,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2804,7 +2804,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -2822,7 +2822,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "regex",
@@ -3581,7 +3581,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4612,7 +4612,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4925,7 +4925,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6056,7 +6056,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -7532,7 +7532,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7698,7 +7698,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 3.4.0",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9093,7 +9093,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls 0.23.31",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -9130,7 +9130,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.3",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -12564,7 +12564,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -13873,7 +13873,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -15411,9 +15411,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bitcoin",
+ "rand 0.8.5",
  "serde",
  "strata-asm-common",
  "strata-asm-logs",
+ "strata-asm-params",
+ "strata-asm-proto-checkpoint",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-checkpoint-types",
  "strata-asm-proto-txs-test-utils",
@@ -15425,13 +15428,16 @@ dependencies = [
  "strata-csm-types",
  "strata-db-store-sled",
  "strata-identifiers",
+ "strata-l1-envelope-fmt",
  "strata-l1-txfmt",
  "strata-params",
  "strata-primitives",
  "strata-service",
+ "strata-state",
  "strata-status",
  "strata-storage",
  "strata-test-utils",
+ "strata-test-utils-checkpoint",
  "strata-test-utils-l2",
  "threadpool",
  "tracing",
@@ -16905,6 +16911,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "strata-test-utils-arb"
+version = "0.1.0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
+dependencies = [
+ "arbitrary",
+ "rand_core 0.6.4",
+]
+
+[[package]]
 name = "strata-test-utils-btc"
 version = "0.1.0"
 source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
@@ -16939,6 +16954,26 @@ dependencies = [
  "musig2",
  "strata-crypto",
  "tokio",
+]
+
+[[package]]
+name = "strata-test-utils-checkpoint"
+version = "0.3.0-alpha.1"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.7#7b271f196f7fefad92c52fb98f1b9bd5b7680495"
+dependencies = [
+ "borsh",
+ "k256",
+ "rand 0.8.5",
+ "ssz",
+ "strata-asm-common",
+ "strata-asm-proto-checkpoint-txs",
+ "strata-asm-proto-checkpoint-types",
+ "strata-crypto",
+ "strata-identifiers",
+ "strata-merkle",
+ "strata-predicate",
+ "strata-test-utils-arb",
+ "strata-test-utils-btc",
 ]
 
 [[package]]
@@ -17253,7 +17288,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -18612,7 +18647,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

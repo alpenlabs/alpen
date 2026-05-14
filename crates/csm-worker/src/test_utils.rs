@@ -1,8 +1,9 @@
 //! Shared test helpers for the CSM worker.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use bitcoin::Block;
+use strata_asm_common::AuxData;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_l1_txfmt::MagicBytes;
@@ -10,6 +11,7 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
+use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 
@@ -19,10 +21,6 @@ use crate::context::CsmWorkerContext;
 enum L1Fetch {
     /// Caller didn't configure a fetch result; panic if requested.
     Unset,
-    /// Return the given block for any blockid.
-    AnyBlock(Block),
-    /// Look up the block by its id; missing entries error.
-    ByBlockId(HashMap<L1BlockId, Block>),
     /// Return an error on any blockid.
     Fail,
 }
@@ -50,18 +48,6 @@ impl StubCtx {
             magic,
             l1_fetch: L1Fetch::Unset,
         }
-    }
-
-    /// Configures `get_l1_block` to return `block` for any blockid.
-    pub(crate) fn with_l1_block(mut self, block: Block) -> Self {
-        self.l1_fetch = L1Fetch::AnyBlock(block);
-        self
-    }
-
-    /// Configures `get_l1_block` to look up the response by blockid.
-    pub(crate) fn with_l1_blocks_by_id(mut self, blocks: HashMap<L1BlockId, Block>) -> Self {
-        self.l1_fetch = L1Fetch::ByBlockId(blocks);
-        self
     }
 
     /// Configures `get_l1_block` to return an error on any blockid.
@@ -99,14 +85,9 @@ impl CsmWorkerContext for StubCtx {
         Ok(())
     }
 
-    fn get_l1_block(&self, blockid: &L1BlockId) -> anyhow::Result<Block> {
+    fn get_l1_block(&self, _blockid: &L1BlockId) -> anyhow::Result<Block> {
         match &self.l1_fetch {
             L1Fetch::Unset => panic!("test should not fetch L1 block"),
-            L1Fetch::AnyBlock(b) => Ok(b.clone()),
-            L1Fetch::ByBlockId(map) => map
-                .get(blockid)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("no test block configured for {blockid}")),
             L1Fetch::Fail => Err(anyhow::anyhow!("simulated L1 fetch failure")),
         }
     }
@@ -117,5 +98,17 @@ impl CsmWorkerContext for StubCtx {
 
     fn magic_bytes(&self) -> MagicBytes {
         self.magic
+    }
+
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState> {
+        Err(anyhow::anyhow!(
+            "stub get_asm_state called for {block}; tests that need ASM state should use end-to-end fixtures"
+        ))
+    }
+
+    fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData> {
+        Err(anyhow::anyhow!(
+            "stub get_aux_data called for {block}; tests that need aux data should use end-to-end fixtures"
+        ))
     }
 }

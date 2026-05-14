@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use bitcoin::Block;
 use bitcoind_async_client::{client::Client, traits::Reader};
+use strata_asm_common::AuxData;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
@@ -15,6 +16,7 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
+use strata_state::asm_state::AsmState;
 use strata_status::StatusChannel;
 use strata_storage::NodeStorage;
 use tokio::runtime::Handle;
@@ -96,5 +98,19 @@ impl CsmWorkerContext for CsmWorkerCtx {
 
     fn magic_bytes(&self) -> MagicBytes {
         self.params.rollup.magic_bytes
+    }
+
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState> {
+        self.storage
+            .asm()
+            .get_state(*block)?
+            .ok_or_else(|| anyhow::anyhow!("missing ASM state for {block}"))
+    }
+
+    fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData> {
+        self.storage
+            .asm()
+            .get_aux_data(*block)?
+            .ok_or_else(|| anyhow::anyhow!("missing ASM aux data for {block}"))
     }
 }

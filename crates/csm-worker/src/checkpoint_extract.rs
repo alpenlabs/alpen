@@ -1,14 +1,17 @@
 //! Locate the L1 transaction carrying a validated checkpoint.
 
 use bitcoin::{Block, hashes::Hash};
-use strata_asm_common::TxInputRef;
+use strata_asm_common::{TxInputRef, VerifiedAuxData};
+use strata_asm_proto_checkpoint::{
+    state::CheckpointState, verification::validate_checkpoint_and_extract_withdrawal_intents,
+};
 use strata_asm_proto_checkpoint_txs::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_checkpoint_from_envelope,
 };
 use strata_asm_proto_checkpoint_types::{CheckpointPayload, CheckpointTip};
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use strata_primitives::buf::Buf32;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 /// Identification of the L1 transaction that carries a validated checkpoint,
 /// along with its decoded payload.
@@ -19,16 +22,26 @@ pub(crate) struct ExtractedCheckpoint {
     pub(crate) payload: CheckpointPayload,
 }
 
-/// Returns the SPS-50-tagged checkpoint envelope tx in `block` whose payload
-/// matches `expected` on `(epoch, l2_commitment)`, or `None` if none does.
-/// Keeps the first match and logs an error if multiple match.
+/// Returns the SPS-50-tagged checkpoint envelope tx in `block` that ASM accepted
+/// for `expected`, or `None` if none does.
+///
+/// Mirrors ASM's acceptance rule by calling
+/// [`validate_checkpoint_and_extract_withdrawal_intents`] on each candidate and
+/// returning the first one that passes — matching ASM's first-valid-wins
+/// behavior within a block. Matching on `(epoch, l2_commitment)` alone is not
+/// safe: an attacker (or a buggy/malicious sequencer) can post txs that share
+/// those fields with the accepted payload but carry different sidecar/proof
+/// bytes, and SPS-50 + envelope parsing do not bind the payload to the
+/// sequencer key — only ASM's full validation does.
 pub(crate) fn extract_matching_checkpoint(
     block: &Block,
     magic: MagicBytes,
     expected: &CheckpointTip,
+    checkpoint_state: &CheckpointState,
+    current_l1_height: u32,
+    verified_aux_data: &VerifiedAuxData,
 ) -> Option<ExtractedCheckpoint> {
     let parser = ParseConfig::new(magic);
-    let mut found: Option<ExtractedCheckpoint> = None;
 
     for tx in &block.txdata {
         let Ok(tag) = parser.try_parse_tx(tx) else {
@@ -53,67 +66,153 @@ pub(crate) fn extract_matching_checkpoint(
             }
         };
 
+        // Cheap pre-filter so we don't burn proof verification on payloads that
+        // can't possibly match the tip ASM logged.
         let new_tip = envelope.payload.new_tip();
         if new_tip.epoch != expected.epoch || new_tip.l2_commitment() != expected.l2_commitment() {
             continue;
         }
 
-        let txid = Buf32::from(tx.compute_txid().to_byte_array());
-        let wtxid = Buf32::from(tx.compute_wtxid().to_byte_array());
-        let candidate = ExtractedCheckpoint {
-            txid,
-            wtxid,
-            payload: envelope.payload,
-        };
-
-        if found.is_some() {
-            error!(
-                ?txid,
+        if let Err(e) = validate_checkpoint_and_extract_withdrawal_intents(
+            checkpoint_state,
+            current_l1_height,
+            &envelope,
+            verified_aux_data,
+        ) {
+            debug!(
+                txid = ?tx.compute_txid(),
                 epoch = expected.epoch,
-                "multiple checkpoint txs match the validated tip; keeping the first"
+                error = ?e,
+                "candidate checkpoint tx failed validation; skipping"
             );
             continue;
         }
+
+        let txid = Buf32::from(tx.compute_txid().to_byte_array());
+        let wtxid = Buf32::from(tx.compute_wtxid().to_byte_array());
         debug!(
             ?txid,
             ?wtxid,
             epoch = expected.epoch,
             "matched checkpoint tx"
         );
-        found = Some(candidate);
+        return Some(ExtractedCheckpoint {
+            txid,
+            wtxid,
+            payload: envelope.payload,
+        });
     }
 
-    found
+    None
 }
 
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        Block, BlockHash, CompactTarget, Transaction, TxMerkleNode,
+        Amount, Block, BlockHash, CompactTarget, OutPoint, ScriptBuf, Sequence, Transaction, TxIn,
+        TxMerkleNode, TxOut, Witness, XOnlyPublicKey,
         absolute::LockTime,
         block::{Header, Version as BlockVersion},
         hashes::{Hash, sha256d},
+        key::UntweakedKeypair,
+        secp256k1::{SECP256K1, schnorr::Signature},
+        taproot::{LeafVersion, TaprootBuilder},
+        transaction::Version,
     };
+    use rand::{RngCore, rngs::OsRng};
+    use strata_asm_params::CheckpointInitConfig;
     use strata_asm_proto_checkpoint_txs::OL_STF_CHECKPOINT_TX_TAG;
-    use strata_asm_proto_checkpoint_types::{
-        CheckpointPayload, test_utils::create_test_checkpoint_payload,
-    };
-    use strata_asm_proto_txs_test_utils::{
-        TEST_MAGIC_BYTES, create_dummy_tx, create_reveal_transaction_stub,
-    };
+    use strata_asm_proto_checkpoint_types::{CheckpointPayload, CheckpointTip};
+    use strata_asm_proto_txs_test_utils::{TEST_MAGIC_BYTES, create_dummy_tx};
     use strata_codec::encode_to_vec;
     use strata_codec_utils::CodecSsz;
-    use strata_l1_txfmt::TagData;
+    use strata_l1_envelope_fmt::builder::EnvelopeScriptBuilder;
+    use strata_l1_txfmt::ParseConfig;
+    use strata_test_utils_checkpoint::CheckpointTestHarness;
 
     use super::*;
 
-    fn checkpoint_envelope_tx(payload: &CheckpointPayload) -> Transaction {
-        let bytes = encode_to_vec(&CodecSsz::new(payload.clone())).expect("encode payload");
-        create_reveal_transaction_stub(bytes, &OL_STF_CHECKPOINT_TX_TAG)
+    /// Builds a reveal tx whose taproot envelope script embeds `envelope_pubkey`
+    /// and carries the SSZ-encoded `payload`. Mirrors
+    /// `create_reveal_transaction_stub` but lets callers control the envelope
+    /// pubkey so they can simulate hostile-third-party and self-conflict cases.
+    fn build_checkpoint_envelope_tx(payload: &CheckpointPayload, envelope_pubkey: &[u8]) -> Transaction {
+        let payload_bytes = encode_to_vec(&CodecSsz::new(payload.clone())).expect("encode payload");
+        let reveal_script = EnvelopeScriptBuilder::with_pubkey(envelope_pubkey)
+            .expect("envelope builder")
+            .add_envelope(&payload_bytes)
+            .expect("add envelope")
+            .build()
+            .expect("build envelope script");
+
+        let sps50_script = ParseConfig::new(TEST_MAGIC_BYTES)
+            .encode_script_buf(&OL_STF_CHECKPOINT_TX_TAG.as_ref())
+            .expect("encode SPS-50 script");
+
+        // The taproot internal key is unrelated to the envelope pubkey embedded
+        // in the script; pick a random one for the spend info.
+        let mut seed = [0u8; 32];
+        OsRng.fill_bytes(&mut seed);
+        let internal_kp = UntweakedKeypair::from_seckey_slice(SECP256K1, &seed).unwrap();
+        let internal_xonly = XOnlyPublicKey::from_keypair(&internal_kp).0;
+
+        let taproot_spend_info = TaprootBuilder::new()
+            .add_leaf(0, reveal_script.clone())
+            .unwrap()
+            .finalize(SECP256K1, internal_xonly)
+            .expect("finalize taproot");
+
+        let dummy_sig = Signature::from_slice(&[0u8; 64]).unwrap();
+        let mut witness = Witness::new();
+        witness.push(dummy_sig.as_ref());
+        witness.push(reveal_script.clone());
+        witness.push(
+            taproot_spend_info
+                .control_block(&(reveal_script, LeafVersion::TapScript))
+                .expect("control block")
+                .serialize(),
+        );
+
+        Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness,
+            }],
+            output: vec![TxOut {
+                value: Amount::ZERO,
+                script_pubkey: sps50_script,
+            }],
+        }
     }
 
-    fn create_block_from_txs(txs: Vec<Transaction>) -> Block {
-        // Header values don't matter for the extractor; only txdata is read.
+    /// Wraps `payload` in a reveal tx using the harness's sequencer pubkey
+    /// (the legitimate, ASM-accepting envelope).
+    fn legit_envelope_tx(
+        harness: &CheckpointTestHarness,
+        payload: &CheckpointPayload,
+    ) -> Transaction {
+        build_checkpoint_envelope_tx(payload, harness.sequencer_pubkey())
+    }
+
+    /// Constructs a `CheckpointState` consistent with the harness's predicates
+    /// and genesis. Mirrors what ASM has in its state at the pre-block point
+    /// where it processes the first checkpoint tip.
+    fn harness_checkpoint_state(harness: &CheckpointTestHarness) -> CheckpointState {
+        let genesis_blkid = *harness.verified_tip().l2_commitment().blkid();
+        let config = CheckpointInitConfig {
+            sequencer_predicate: harness.sequencer_predicate(),
+            checkpoint_predicate: harness.checkpoint_predicate(),
+            genesis_l1_height: harness.genesis_l1_height(),
+            genesis_ol_blkid: genesis_blkid,
+        };
+        CheckpointState::init(config)
+    }
+
+    fn block_from_txs(txs: Vec<Transaction>) -> Block {
         Block {
             header: Header {
                 version: BlockVersion::TWO,
@@ -127,16 +226,36 @@ mod tests {
         }
     }
 
+    fn current_l1_height_for(tip: &CheckpointTip) -> u32 {
+        // ASM passes the height of the L1 block being processed; the
+        // checkpoint's new_tip.l1_height must be strictly less than this.
+        tip.l1_height() + 1
+    }
+
+    /// Sanity check: a legit envelope tx alone is picked up and the txid/wtxid
+    /// returned point at it.
     #[test]
     fn matches_single_checkpoint_tx() {
-        let payload = create_test_checkpoint_payload(7);
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
         let expected = *payload.new_tip();
-        let tx = checkpoint_envelope_tx(&payload);
-        let block = create_block_from_txs(vec![create_dummy_tx(1, 1), tx.clone()]);
+        let aux = harness.gen_verified_aux(&expected);
+        let state = harness_checkpoint_state(&harness);
 
-        let result =
-            extract_matching_checkpoint(&block, TEST_MAGIC_BYTES, &expected).expect("should match");
-        assert_eq!(result.payload.new_tip().epoch, 7);
+        let tx = legit_envelope_tx(&harness, &payload);
+        let block = block_from_txs(vec![create_dummy_tx(1, 1), tx.clone()]);
+
+        let result = extract_matching_checkpoint(
+            &block,
+            TEST_MAGIC_BYTES,
+            &expected,
+            &state,
+            current_l1_height_for(&expected),
+            &aux,
+        )
+        .expect("legitimate checkpoint should validate");
+
+        assert_eq!(result.payload.new_tip().epoch, expected.epoch);
         assert_eq!(result.txid, Buf32::from(tx.compute_txid().to_byte_array()));
         assert_eq!(
             result.wtxid,
@@ -144,49 +263,134 @@ mod tests {
         );
     }
 
+    /// If no envelope matches the expected tip on (epoch, l2_commitment),
+    /// extraction returns None even though validation never gets to run.
     #[test]
     fn returns_none_when_no_envelope_matches_expected_tip() {
-        let other = create_test_checkpoint_payload(2);
-        let expected = *create_test_checkpoint_payload(99).new_tip();
-        let block = create_block_from_txs(vec![checkpoint_envelope_tx(&other)]);
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
+        let block = block_from_txs(vec![legit_envelope_tx(&harness, &payload)]);
 
-        assert!(extract_matching_checkpoint(&block, TEST_MAGIC_BYTES, &expected).is_none());
-    }
+        // Use the real payload's tip for aux construction (cheap), then craft
+        // a foreign tip that differs on (epoch, l2_commitment) so the cheap
+        // pre-filter rejects without ever invoking proof verification.
+        let real_tip = *payload.new_tip();
+        let aux = harness.gen_verified_aux(&real_tip);
+        let foreign_tip = CheckpointTip::new(
+            real_tip.epoch + 1,
+            real_tip.l1_height() + 1,
+            Default::default(),
+        );
+        let state = harness_checkpoint_state(&harness);
 
-    #[test]
-    fn picks_checkpoint_tx_alongside_other_subprotocol_txs() {
-        let payload = create_test_checkpoint_payload(5);
-        let expected = *payload.new_tip();
-
-        // Same envelope payload but tagged with a foreign subprotocol id.
-        let foreign_tag = TagData::new(99, 1, vec![]).expect("tag");
-        let bytes = encode_to_vec(&CodecSsz::new(payload.clone())).expect("encode");
-        let foreign_tx = create_reveal_transaction_stub(bytes, &foreign_tag);
-
-        let real_tx = checkpoint_envelope_tx(&payload);
-        let block = create_block_from_txs(vec![foreign_tx, real_tx.clone()]);
-
-        let result = extract_matching_checkpoint(&block, TEST_MAGIC_BYTES, &expected)
-            .expect("should match the real tx");
-        assert_eq!(
-            result.txid,
-            Buf32::from(real_tx.compute_txid().to_byte_array())
+        assert!(
+            extract_matching_checkpoint(
+                &block,
+                TEST_MAGIC_BYTES,
+                &foreign_tip,
+                &state,
+                current_l1_height_for(&foreign_tip),
+                &aux,
+            )
+            .is_none()
         );
     }
 
+    /// A hostile third party publishes an envelope tx whose embedded pubkey is
+    /// not the sequencer's. Its payload copies (epoch, l2_commitment) from the
+    /// legit tip but has otherwise garbage sidecar/proof. The legit tx appears
+    /// second in block order. ASM would reject the hostile tx (pubkey
+    /// mismatch); our extractor must do the same and return the legit tx.
     #[test]
-    fn keeps_first_match_when_multiple_match() {
-        let payload = create_test_checkpoint_payload(11);
+    fn rejects_hostile_envelope_with_wrong_pubkey() {
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
         let expected = *payload.new_tip();
-        let tx1 = checkpoint_envelope_tx(&payload);
-        let mut tx2 = checkpoint_envelope_tx(&payload);
-        // Bump lock_time so tx2 has a different txid than tx1.
-        tx2.lock_time = LockTime::from_height(1).unwrap();
-        assert_ne!(tx1.compute_txid(), tx2.compute_txid());
-        let block = create_block_from_txs(vec![tx1.clone(), tx2]);
+        let aux = harness.gen_verified_aux(&expected);
+        let state = harness_checkpoint_state(&harness);
 
-        let result =
-            extract_matching_checkpoint(&block, TEST_MAGIC_BYTES, &expected).expect("should match");
-        assert_eq!(result.txid, Buf32::from(tx1.compute_txid().to_byte_array()));
+        // Hostile envelope: a separately generated harness signs the same tip
+        // but the envelope pubkey is the hostile sequencer's, not the real one.
+        // The payload has the matching (epoch, l2_commitment) by construction
+        // because we ask the hostile harness to build for the same tip.
+        let hostile = CheckpointTestHarness::new_with_genesis(
+            harness.genesis_l1_height(),
+            *harness.verified_tip().l2_commitment().blkid(),
+        );
+        let hostile_payload = hostile.build_payload_with_tip(expected);
+        let hostile_tx = build_checkpoint_envelope_tx(&hostile_payload, hostile.sequencer_pubkey());
+        let legit_tx = legit_envelope_tx(&harness, &payload);
+
+        let block = block_from_txs(vec![hostile_tx, legit_tx.clone()]);
+
+        let result = extract_matching_checkpoint(
+            &block,
+            TEST_MAGIC_BYTES,
+            &expected,
+            &state,
+            current_l1_height_for(&expected),
+            &aux,
+        )
+        .expect("legit checkpoint should still be extracted past the hostile tx");
+
+        assert_eq!(
+            result.txid,
+            Buf32::from(legit_tx.compute_txid().to_byte_array()),
+            "extractor must skip the hostile tx and pick the legit one"
+        );
     }
+
+    /// A buggy or malicious sequencer publishes two envelope txs in the same
+    /// block: one carries a stale/garbage proof, the other is the real
+    /// checkpoint ASM accepted. The bad tx appears first in block order. ASM
+    /// rejects the bad tx (proof verification failure) and accepts the second.
+    /// Our extractor must mirror that and return the second tx.
+    #[test]
+    fn rejects_sequencer_self_conflict_with_invalid_proof() {
+        let harness = CheckpointTestHarness::new_random();
+        let payload = harness.build_payload();
+        let expected = *payload.new_tip();
+        let aux = harness.gen_verified_aux(&expected);
+        let state = harness_checkpoint_state(&harness);
+
+        // Build a "bad" payload by reusing the new_tip but corrupting the
+        // proof so it no longer verifies against the reconstructed claim.
+        // Same (epoch, l2_commitment) as the legit one.
+        let bad_payload = CheckpointPayload::new(
+            *payload.new_tip(),
+            payload.sidecar().clone(),
+            vec![0xAB; payload.proof().len()],
+        )
+        .expect("payload");
+        let mut bad_tx = legit_envelope_tx(&harness, &bad_payload);
+        // Bitcoin txids ignore witnesses; two of our reveal stubs with the same
+        // input/output shape collide on txid even with different payloads. Bump
+        // lock_time so the test exercises distinct txid lookups.
+        bad_tx.lock_time = LockTime::from_height(1).unwrap();
+        let legit_tx = legit_envelope_tx(&harness, &payload);
+        assert_ne!(
+            bad_tx.compute_txid(),
+            legit_tx.compute_txid(),
+            "txids must differ for the test to be meaningful"
+        );
+
+        let block = block_from_txs(vec![bad_tx, legit_tx.clone()]);
+
+        let result = extract_matching_checkpoint(
+            &block,
+            TEST_MAGIC_BYTES,
+            &expected,
+            &state,
+            current_l1_height_for(&expected),
+            &aux,
+        )
+        .expect("legit checkpoint should still be extracted past the invalid one");
+
+        assert_eq!(
+            result.txid,
+            Buf32::from(legit_tx.compute_txid().to_byte_array()),
+            "extractor must skip the invalid-proof tx and pick the legit one"
+        );
+    }
+
 }

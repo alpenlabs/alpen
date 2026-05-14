@@ -1,6 +1,7 @@
 //! External operations the CSM worker performs during state transitions.
 
 use bitcoin::Block;
+use strata_asm_common::AuxData;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_l1_txfmt::MagicBytes;
@@ -8,6 +9,7 @@ use strata_primitives::{
     epoch::EpochCommitment,
     l1::{L1BlockCommitment, L1BlockId},
 };
+use strata_state::asm_state::AsmState;
 
 /// Operations the worker delegates to the outside world: persistence, status
 /// publishing, and L1 fetch.
@@ -42,4 +44,10 @@ pub trait CsmWorkerContext: Send + Sync {
 
     /// SPS-50 magic bytes used to identify protocol transactions.
     fn magic_bytes(&self) -> MagicBytes;
+
+    /// Fetches the ASM state recorded at `block`.
+    fn get_asm_state(&self, block: &L1BlockCommitment) -> anyhow::Result<AsmState>;
+
+    /// Fetches the auxiliary data ASM consumed when processing `block`.
+    fn get_aux_data(&self, block: &L1BlockCommitment) -> anyhow::Result<AuxData>;
 }

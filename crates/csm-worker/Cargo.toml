@@ -9,9 +9,11 @@ workspace = true
 [dependencies]
 strata-asm-common.workspace = true
 strata-asm-logs.workspace = true
+strata-asm-proto-checkpoint.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-asm-worker.workspace = true
+strata-state.workspace = true
 strata-checkpoint-types.workspace = true
 strata-common.workspace = true
 strata-csm-types.workspace = true
@@ -33,11 +35,15 @@ strata-db-store-sled = { workspace = true, features = ["test_utils"] }
 strata-asm-proto-checkpoint-types = { workspace = true, features = [
   "test-utils",
 ] }
+strata-asm-params.workspace = true
 strata-asm-proto-txs-test-utils.workspace = true
 strata-codec.workspace = true
 strata-codec-utils.workspace = true
+strata-l1-envelope-fmt.workspace = true
 strata-status.workspace = true
+strata-test-utils-checkpoint.workspace = true
 strata-test-utils-l2.workspace = true
+rand.workspace = true
 threadpool.workspace = true
 
 [features]
