@@ -491,10 +491,10 @@ fn main() {
                 // record stays Borsh-friendly for sled.
                 let chunk_witness_extract_fn: Arc<ChunkWitnessExtractFn> = {
                     let extractor = range_witness_extractor.clone();
-                    Arc::new(move |prev, last| {
-                        let prev_b256 = alloy_primitives::B256::from(prev.0);
-                        let last_b256 = alloy_primitives::B256::from(last.0);
-                        let data = extractor.extract_range_witness(prev_b256, last_b256)?;
+                    Arc::new(move |first_block, last_block| {
+                        let first_b256 = alloy_primitives::B256::from(first_block.0);
+                        let last_b256 = alloy_primitives::B256::from(last_block.0);
+                        let data = extractor.extract_range_witness(first_b256, last_b256)?;
                         let prev_header_rlp = alloy_rlp::encode(&data.prev_header);
                         let blocks_rlp: Vec<Vec<u8>> =
                             data.blocks.iter().map(alloy_rlp::encode).collect();

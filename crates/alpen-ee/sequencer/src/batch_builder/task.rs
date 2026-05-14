@@ -128,6 +128,15 @@ async fn seal_batch<P: BatchPolicy>(
         inner_blocks,
     );
     let chunk_id = chunk.id();
+    // The chunk's first block (inner_blocks[0] if non-empty, else
+    // last_block). The extractor needs this — NOT `chunk_id.prev_block`,
+    // which is the last block of the *previous* chunk and lives in reth
+    // as a block, not as the chunk's range start.
+    let first_block_hash = chunk
+        .blocks_iter()
+        .next()
+        .expect("chunk has at least last_block");
+    let last_block_hash = chunk.last_block();
     batch_storage.save_next_chunk(chunk).await?;
     batch_storage
         .set_batch_chunks(batch_id, vec![chunk_id])
@@ -139,7 +148,15 @@ async fn seal_batch<P: BatchPolicy>(
         // doesn't undo the seal — but the chunk will be unprovable: the
         // prover's `ChunkSpec::fetch_input` returns `PermanentFailure` on
         // a missing witness record. Log so an operator notices.
-        if let Err(e) = extract_and_store_chunk_witness(chunk_id, extractor, batch_storage).await {
+        if let Err(e) = extract_and_store_chunk_witness(
+            chunk_id,
+            first_block_hash,
+            last_block_hash,
+            extractor,
+            batch_storage,
+        )
+        .await
+        {
             warn!(
                 ?chunk_id,
                 error = %e,
@@ -159,14 +176,14 @@ async fn seal_batch<P: BatchPolicy>(
 /// batch builder's async loop isn't blocked.
 async fn extract_and_store_chunk_witness(
     chunk_id: ChunkId,
+    first_block: Hash,
+    last_block: Hash,
     extractor: &Arc<ChunkWitnessExtractFn>,
     store: &impl ChunkWitnessStore,
 ) -> Result<()> {
-    let prev_block = chunk_id.prev_block();
-    let last_block = chunk_id.last_block();
     let extractor = Arc::clone(extractor);
 
-    let witness = task::spawn_blocking(move || (extractor)(prev_block, last_block))
+    let witness = task::spawn_blocking(move || (extractor)(first_block, last_block))
         .await
         .map_err(|e| eyre!("chunk witness extraction join: {e}"))?
         .map_err(|e| eyre!("chunk witness extraction: {e}"))?;

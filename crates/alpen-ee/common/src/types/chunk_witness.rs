@@ -64,17 +64,18 @@ impl ChunkWitnessRecord {
 }
 
 /// Sync callback that extracts a chunk witness for the block range
-/// `(prev_block, last_block]`.
+/// `[first_block ..= last_block]` (both inclusive — these are the FIRST
+/// and LAST blocks IN the chunk, NOT the chunk's `prev_block` ancestor).
 ///
-/// Defined as a sync closure (matching today's `RangeWitnessFn` pattern in
-/// the alpen-client prover) so callers control whether to wrap it in
-/// `tokio::task::spawn_blocking`. Implementations are expected to be
-/// CPU-heavy: re-executing the chunk's blocks, computing multiproofs.
+/// Defined as a sync closure (matching the historical `RangeWitnessFn`
+/// pattern in the alpen-client prover) so callers control whether to wrap
+/// it in `tokio::task::spawn_blocking`. Implementations may be CPU-heavy
+/// (multiproofs over the chunk's union of accessed state).
 ///
 /// The producer (batch builder) holds an `Arc<ChunkWitnessExtractFn>` and
 /// invokes it at chunk-seal time. The closure is constructed at
-/// alpen-client startup from the reth `ProviderFactory` + `EvmConfig` and
-/// wraps `alpen_reth_witness::RangeWitnessExtractor` plus the alloy-types
-/// → `ChunkWitnessRecord` conversion.
+/// alpen-client startup from the reth `ProviderFactory` and the
+/// `AccessedStateStore` and wraps `alpen_reth_witness::RangeWitnessExtractor`
+/// plus the alloy-types → `ChunkWitnessRecord` conversion.
 pub type ChunkWitnessExtractFn =
     dyn Fn(Hash, Hash) -> eyre::Result<ChunkWitnessRecord> + Send + Sync;
