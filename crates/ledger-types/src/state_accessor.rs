@@ -46,6 +46,10 @@ pub trait IStateAccessor {
     fn total_ledger_balance(&self) -> BitcoinAmount;
 
     /// Gets the ASM manifests MMR for ledger reference verification.
+    ///
+    /// Indices into this MMR are L1 block heights. The MMR is prefilled at
+    /// genesis with zero-hash leaves for heights `0..=genesis_l1_height`, so
+    /// callers can use raw L1 heights as MMR leaf indices everywhere.
     fn asm_manifests_mmr(&self) -> &Mmr64;
 
     // ===== Account methods =====
@@ -129,30 +133,4 @@ pub trait IStateAccessorMut: IStateAccessor {
         id: AccountId,
         new_acct_data: NewAccountData,
     ) -> StateResult<AccountSerial>;
-}
-
-/// Resolves the first L1 block height represented by the ASM manifests MMR.
-///
-/// This is derived from canonical state as:
-/// `mmr_start_height = last_l1_height + 1 - manifests_mmr_entries`.
-///
-/// For an empty MMR, this reduces to `last_l1_height + 1`.
-pub fn asm_manifests_mmr_start_height(state: &impl IStateAccessor) -> Option<L1Height> {
-    let last_l1_height_u64 = state.last_l1_height() as u64;
-    let num_entries = state.asm_manifests_mmr().num_entries();
-    let start_height_u64 = last_l1_height_u64
-        .checked_add(1)?
-        .checked_sub(num_entries)?;
-    start_height_u64.try_into().ok()
-}
-
-/// Resolves an L1 block height into the corresponding ASM manifests MMR leaf index.
-///
-/// Returns `None` when the height is before the MMR start height.
-pub fn asm_manifest_mmr_index_for_height(
-    state: &impl IStateAccessor,
-    height: L1Height,
-) -> Option<u64> {
-    let start_height_u64 = asm_manifests_mmr_start_height(state)? as u64;
-    (height as u64).checked_sub(start_height_u64)
 }

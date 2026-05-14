@@ -15,13 +15,15 @@ MAX_EXTRA_DATA_BYTES = 1024
 
 ### Describes references to entries in accumulators available in the ledger.
 class LedgerRefs(Container):
+    ### Claims against the ASM manifests MMR. Each claim's `idx` is the L1
+    ### block height of the manifest being referenced.
     #~# external_kind: container
-    l1_header_refs: List[strata_acct_types.AccumulatorClaim, MAX_TYPE_LEDGER_REFS]
+    asm_manifest_refs: List[strata_acct_types.AccumulatorClaim, MAX_TYPE_LEDGER_REFS]
 
 class LedgerRefProofs(Container):
     ### Proofs for each entry in LedgerRefs.
     #~# external_kind: container
-    l1_headers_proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_LEDGER_REFS]
+    asm_manifest_proofs: List[strata_acct_types.RawMerkleProof, MAX_TYPE_LEDGER_REFS]
 
 ### Represents the state update that will eventually go into DA on OL.
 class UpdateStateData(Container):

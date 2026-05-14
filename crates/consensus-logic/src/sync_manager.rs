@@ -14,12 +14,13 @@ use strata_chain_worker::ChainWorkerHandle;
 use strata_csm_worker::{CsmWorkerService, CsmWorkerState, CsmWorkerStatus};
 use strata_eectl::{builder::ExecWorkerBuilder, engine::ExecEngineCtl, handle::ExecCtlHandle};
 use strata_node_context::NodeContext;
+use strata_ol_state_types::MMR_SENTINEL_DUMMY_LEAF_HASH;
 use strata_params::{Params, RollupParams};
 use strata_primitives::prelude::L1BlockCommitment;
 use strata_service::{ServiceBuilder, ServiceMonitor, SyncAsyncInput};
 use strata_state::asm_state::AsmState as StorageAsmState;
 use strata_status::StatusChannel;
-use strata_storage::{MmrId, NodeStorage};
+use strata_storage::{MmrId, MmrIndexHandle, NodeStorage};
 use strata_tasks::TaskExecutor;
 use tokio::{runtime::Handle, sync::mpsc};
 
@@ -294,12 +295,20 @@ pub fn spawn_asm_worker(
     // This feels weird to pass both L1BlockManager and Bitcoin client, but ASM consumes raw bitcoin
     // blocks while following canonical chain (and "canonicity" of l1 chain is imposed by the l1
     // block manager).
+    let mmr_handle = storage.mmr_index().get_handle(MmrId::Asm);
+
+    // Prefill the ASM manifest MMR with dummy-hash leaves up to and including
+    // the genesis L1 height, so that the manifest for height `h` lands at MMR
+    // index `h`. This mirrors the in-memory OL state initialization.
+    let genesis_l1_height = asm_params.anchor.block.height() as u64;
+    prefill_asm_mmr(&mmr_handle, genesis_l1_height + 1)?;
+
     let context = AsmWorkerCtx::new(
         handle.clone(),
         bitcoin_client,
         storage.l1().clone(),
         storage.asm().clone(),
-        storage.mmr_index().get_handle(MmrId::Asm),
+        mmr_handle,
     );
 
     // Construct the ASM spec based on the enabled feature.
@@ -320,4 +329,22 @@ pub fn spawn_asm_worker(
 
 fn storage_to_worker_state(state: StorageAsmState) -> WorkerAsmState {
     WorkerAsmState::new(state.state().clone(), state.logs().clone())
+}
+
+/// Prefills the ASM manifest MMR with sentinel leaves until it has at least
+/// `target_count` entries.
+///
+/// This is idempotent: a no-op when the MMR already has at least
+/// `target_count` entries. It is used to align DB-side MMR leaf indices with
+/// L1 block heights, mirroring the in-memory OL state initialization.
+fn prefill_asm_mmr(handle: &MmrIndexHandle, target_count: u64) -> anyhow::Result<()> {
+    let current = handle.get_num_leaves_blocking()?;
+    if current >= target_count {
+        return Ok(());
+    }
+
+    for _ in current..target_count {
+        handle.append_leaf_blocking(MMR_SENTINEL_DUMMY_LEAF_HASH)?;
+    }
+    Ok(())
 }

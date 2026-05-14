@@ -778,8 +778,9 @@ mod tests {
         let state = create_test_base_layer();
         let mut indexer = IndexerState::new(state);
 
-        // Create a test manifest
-        let height = L1Height::from(100u32);
+        // Create a test manifest. The base layer is built from a default
+        // genesis (L1 height 0), so the next valid contiguous height is 1.
+        let height = L1Height::from(1u32);
         let l1_blkid = L1BlockId::from(Buf32::from([1u8; 32]));
         let wtxids_root = WtxidsRoot::from(Buf32::from([2u8; 32]));
         let manifest =

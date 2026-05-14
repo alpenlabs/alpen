@@ -73,10 +73,13 @@ impl SequencerOLClient for OLClientKind {
         }
     }
 
-    async fn get_l1_header_commitment(&self, l1_height: L1Height) -> Result<Hash, OLClientError> {
+    async fn get_asm_manifest_commitment(
+        &self,
+        l1_height: L1Height,
+    ) -> Result<Hash, OLClientError> {
         match self {
-            Self::Rpc(client) => client.get_l1_header_commitment(l1_height).await,
-            Self::Dummy(client) => client.get_l1_header_commitment(l1_height).await,
+            Self::Rpc(client) => client.get_asm_manifest_commitment(l1_height).await,
+            Self::Dummy(client) => client.get_asm_manifest_commitment(l1_height).await,
         }
     }
 

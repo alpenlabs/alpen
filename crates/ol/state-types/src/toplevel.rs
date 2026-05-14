@@ -1,12 +1,12 @@
 //! Toplevel state.
 
-use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS};
+use strata_acct_types::{AccountId, AccountSerial, Mmr64, SYSTEM_RESERVED_ACCTS, StrataHasher};
 use strata_ledger_types::{NewAccountData, StateError, StateResult};
-use strata_merkle::CompactMmr64;
+use strata_merkle::Mmr;
 use strata_ol_params::OLParams;
 
 use crate::{
-    OLAccountTypeState, OLSnarkAccountState, WriteBatch,
+    MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
     ssz_generated::ssz::state::{
         EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
     },
@@ -16,7 +16,20 @@ impl OLState {
     /// Creates initial OL state from genesis parameters.
     pub fn from_genesis_params(params: &OLParams) -> StateResult<Self> {
         let checkpointed_epoch = params.checkpointed_epoch();
-        let manifests_mmr = Mmr64::from_generic(&CompactMmr64::new(64));
+
+        // Prefill the manifests MMR with a sentinel leaf for every L1 block up
+        // to and including `genesis_l1_height`, so that subsequent appends for
+        // height `h` land at MMR index `h` (i.e., MMR indices == L1 heights).
+        //
+        // The leaf value is `[0xff; 32]` rather than `[0; 32]` because the
+        // underlying MMR encoding treats a zero hash as "no peak present", so a
+        // literal zero leaf would not increment the entry counter. The exact
+        // sentinel value does not matter for correctness — no real proof
+        // references an L1 block at or before genesis — as long as the OL
+        // state and the DB-side ASM MMR agree on it.
+        let prefill_count = params.last_l1_block.height() as u64 + 1;
+        let manifests_mmr =
+            <Mmr64 as Mmr<StrataHasher>>::new_repeated(MMR_SENTINEL_DUMMY_LEAF, prefill_count);
 
         let mut next_serial = AccountSerial::new(SYSTEM_RESERVED_ACCTS);
         let mut ledger = TsnlLedgerAccountsTable::new_empty();
@@ -45,14 +58,12 @@ impl OLState {
         let total_ledger_funds = ledger.calculate_total_funds();
 
         let global = GlobalState::new(params.header.slot, next_serial);
-        let manifests_mmr_offset = params.last_l1_block.height() as u64 + 1;
         let epoch = EpochalState::new(
             total_ledger_funds,
             params.header.epoch,
             params.last_l1_block,
             checkpointed_epoch,
             manifests_mmr,
-            manifests_mmr_offset,
         );
 
         Ok(Self {

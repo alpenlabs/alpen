@@ -46,7 +46,9 @@ class TestL1Connected(StrataNodeTest):
         genesis_l1_height = chain_info["blocks"]
         logger.info(f"Genesis L1 height: {genesis_l1_height}")
 
-        commitment = strata.wait_for_l1_commitment_at(genesis_l1_height, rpc=rpc, timeout=60)
+        commitment = strata.wait_for_asm_manifest_commitment_at(
+            genesis_l1_height, rpc=rpc, timeout=60
+        )
 
         logger.info(f"L1 header commitment at {genesis_l1_height}: {commitment}")
         return True

@@ -19,7 +19,7 @@ pub enum BlockAssemblyError {
 
     /// L1 header claim hash does not match MMR entry.
     #[error("L1 header hash mismatch at index {idx} (expected {expected}, got {actual})")]
-    L1HeaderHashMismatch {
+    AsmManifestHashMismatch {
         idx: u64,
         expected: Hash,
         actual: Hash,

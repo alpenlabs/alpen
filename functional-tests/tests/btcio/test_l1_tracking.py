@@ -16,7 +16,7 @@ class TestL1Tracking(StrataNodeTest):
     """Verify strata's L1 reader picks up newly mined Bitcoin blocks.
 
     Mines additional Bitcoin blocks after strata is running and verifies
-    that strata_getL1HeaderCommitment returns data for the new heights.
+    that strata_getAsmManifestCommitment returns data for the new heights.
 
     Uses a standalone env to avoid interference from other tests that
     may restart the sequencer.
@@ -41,7 +41,7 @@ class TestL1Tracking(StrataNodeTest):
         logger.info(f"Bitcoin tip before mining: {pre_tip}")
 
         # Wait for strata to have caught up to pre_tip
-        strata.wait_for_l1_commitment_at(pre_tip, rpc=rpc, timeout=120)
+        strata.wait_for_asm_manifest_commitment_at(pre_tip, rpc=rpc, timeout=120)
 
         # Mine additional blocks one at a time.  Mining in a single batch can
         # trigger a race in the L1 reader / ASM pipeline where the ASM is
@@ -56,14 +56,14 @@ class TestL1Tracking(StrataNodeTest):
             raise AssertionError(f"Expected tip {pre_tip + self.EXTRA_BLOCKS}, got {post_tip}")
 
         # Wait for strata to pick up the new blocks
-        commitment = strata.wait_for_l1_commitment_at(post_tip, rpc=rpc, timeout=120)
-        logger.info(f"L1 header commitment at new tip {post_tip}: {commitment}")
+        commitment = strata.wait_for_asm_manifest_commitment_at(post_tip, rpc=rpc, timeout=120)
+        logger.info(f"ASM manifest commitment at new tip {post_tip}: {commitment}")
 
         # Verify intermediate heights also have commitments.
         # The tip is already confirmed, so intermediate heights should be
         # available immediately — use a short timeout.
         for h in range(pre_tip + 1, post_tip + 1):
-            strata.wait_for_l1_commitment_at(h, rpc=rpc, timeout=5)
+            strata.wait_for_asm_manifest_commitment_at(h, rpc=rpc, timeout=5)
 
         logger.info(
             "Strata tracked all %d new L1 blocks (%d -> %d)",

@@ -113,10 +113,10 @@ impl From<UpdateOperationData> for UpdateInputData {
 }
 
 impl LedgerRefs {
-    pub fn new(l1_header_refs: Vec<AccumulatorClaim>) -> Self {
+    pub fn new(asm_manifest_refs: Vec<AccumulatorClaim>) -> Self {
         Self {
             // FIXME does this panic?
-            l1_header_refs: l1_header_refs
+            asm_manifest_refs: asm_manifest_refs
                 .try_into()
                 .expect("ledger refs must fit within SSZ max length"),
         }
@@ -126,23 +126,25 @@ impl LedgerRefs {
         Self::new(Vec::new())
     }
 
-    pub fn l1_header_refs(&self) -> &[AccumulatorClaim] {
-        self.l1_header_refs.as_ref()
+    /// Claims against the ASM manifests MMR. Each claim's `idx` is the L1
+    /// block height of the referenced manifest.
+    pub fn asm_manifest_refs(&self) -> &[AccumulatorClaim] {
+        self.asm_manifest_refs.as_ref()
     }
 }
 
 impl LedgerRefProofs {
-    pub fn new(l1_headers_proofs: Vec<RawMerkleProof>) -> Self {
+    pub fn new(asm_manifest_proofs: Vec<RawMerkleProof>) -> Self {
         Self {
             // FIXME does this panic?
-            l1_headers_proofs: l1_headers_proofs
+            asm_manifest_proofs: asm_manifest_proofs
                 .try_into()
                 .expect("ledger ref proofs must fit within SSZ max length"),
         }
     }
 
-    pub fn l1_headers_proofs(&self) -> &[RawMerkleProof] {
-        self.l1_headers_proofs.as_ref()
+    pub fn asm_manifest_proofs(&self) -> &[RawMerkleProof] {
+        self.asm_manifest_proofs.as_ref()
     }
 }
 

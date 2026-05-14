@@ -5,7 +5,7 @@
 
 use ssz::{Decode, Encode};
 use ssz_primitives::FixedBytes;
-use strata_asm_manifest_types::compute_asm_manifests_hash;
+use strata_asm_manifest_types::{AsmManifestRangeHash, compute_asm_manifests_hash};
 use strata_asm_proto_checkpoint_types::{CheckpointClaim, L2BlockRange, TerminalHeaderComplement};
 use strata_crypto::hash;
 use strata_ledger_types::IStateAccessor;
@@ -235,7 +235,7 @@ fn execute_block_batch(
     state: &mut MemoryStateBaseLayer,
     blocks: &[OLBlock],
     initial_parent: &OLBlockHeader,
-) -> (Vec<OLLog>, FixedBytes<32>, OLBlockHeader) {
+) -> (Vec<OLLog>, AsmManifestRangeHash, OLBlockHeader) {
     // Exactly one block per epoch must carry an L1 update (the terminal block).
     // The manifest hash is computed by overwriting a single `Option` in the loop
     // below, so multiple L1 updates would silently drop earlier hashes and zero
@@ -251,7 +251,7 @@ fn execute_block_batch(
     );
 
     let mut parent = initial_parent.clone();
-    let mut asm_manifests_hash: Option<FixedBytes<32>> = None;
+    let mut asm_manifests_hash: Option<AsmManifestRangeHash> = None;
     let mut logs = Vec::new();
 
     // Process each block in the batch sequentially, applying state transitions
