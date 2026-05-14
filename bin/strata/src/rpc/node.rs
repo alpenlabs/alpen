@@ -1,6 +1,7 @@
 //! OL RPC server implementation for a strata node.
 use std::{
     collections::{HashMap, HashSet},
+    ops::Range,
     sync::Arc,
 };
 
@@ -50,6 +51,47 @@ pub(crate) struct OLRpcServer<P: OLRpcProvider> {
 struct AccountRecords {
     updates_by_block: HashMap<OLBlockCommitment, Vec<UpdateInputData>>,
     inbox: Vec<InboxMessageRecord>,
+}
+
+fn local_inbox_message_range(
+    account_id: AccountId,
+    start_idx: u64,
+    end_idx_exclusive: u64,
+    fetched_start_idx: u64,
+) -> RpcResult<Range<usize>> {
+    let local_start = start_idx.checked_sub(fetched_start_idx).ok_or_else(|| {
+        internal_error(format!(
+            "account {account_id} inbox range [{start_idx}, {end_idx_exclusive}) \
+                 starts before fetched range start {fetched_start_idx}"
+        ))
+    })?;
+    let local_end = end_idx_exclusive
+        .checked_sub(fetched_start_idx)
+        .ok_or_else(|| {
+            internal_error(format!(
+                "account {account_id} inbox range [{start_idx}, {end_idx_exclusive}) \
+                 ends before fetched range start {fetched_start_idx}"
+            ))
+        })?;
+    if local_end < local_start {
+        return Err(internal_error(format!(
+            "account {account_id} inbox range has reversed bounds: \
+             [{start_idx}, {end_idx_exclusive})"
+        )));
+    }
+
+    let local_start = usize::try_from(local_start).map_err(|_| {
+        internal_error(format!(
+            "account {account_id} inbox range start offset {local_start} does not fit in usize"
+        ))
+    })?;
+    let local_end = usize::try_from(local_end).map_err(|_| {
+        internal_error(format!(
+            "account {account_id} inbox range end offset {local_end} does not fit in usize"
+        ))
+    })?;
+
+    Ok(local_start..local_end)
 }
 
 impl<P: OLRpcProvider> OLRpcServer<P> {
@@ -334,9 +376,9 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
             };
 
             for p in pending {
-                let local_start = (p.cursor_start - min_start) as usize;
-                let local_end = (p.cursor_end - min_start) as usize;
-                let messages = messages_in_range[local_start..local_end].to_vec();
+                let message_range =
+                    local_inbox_message_range(account_id, p.cursor_start, p.cursor_end, min_start)?;
+                let messages = messages_in_range[message_range].to_vec();
                 updates_by_block
                     .entry(p.block_commitment)
                     .or_default()
@@ -512,8 +554,20 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     .map_or(0, |s| s.next_inbox_msg_idx())
             };
 
-            let mut out = Vec::with_capacity(records.len());
+            struct Pending {
+                seq_no: u64,
+                final_state_root: Hash,
+                extra_data: Vec<u8>,
+                cursor_start: u64,
+                cursor_end: u64,
+            }
+
+            let mut pending = Vec::with_capacity(records.len());
             for r in &records {
+                let cursor_start = cursor;
+                let cursor_end = r.next_inbox_idx();
+                cursor = cursor_end;
+
                 let meta = r.update_meta().ok_or_else(|| {
                     internal_error(format!(
                         "record for account {account_id} epoch {epoch} missing update_meta \
@@ -530,21 +584,43 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
                     })?
                     .to_vec();
 
+                pending.push(Pending {
+                    seq_no: r.seq_no(),
+                    final_state_root: meta.final_state_root(),
+                    extra_data,
+                    cursor_start,
+                    cursor_end,
+                });
+            }
+
+            let min_start = pending.iter().map(|p| p.cursor_start).min().unwrap_or(0);
+            let max_end = pending.iter().map(|p| p.cursor_end).max().unwrap_or(0);
+            let messages_in_range = if skip_fetch || max_end <= min_start {
+                Vec::new()
+            } else {
+                self.provider
+                    .get_account_inbox_messages(account_id, min_start, max_end)
+                    .await
+                    .map_err(db_error)?
+            };
+
+            let mut out = Vec::with_capacity(pending.len());
+            for p in pending {
                 let messages = if skip_fetch {
                     Vec::new()
                 } else {
-                    self.provider
-                        .get_account_inbox_messages(account_id, cursor, r.next_inbox_idx())
-                        .await
-                        .map_err(db_error)?
+                    let message_range = local_inbox_message_range(
+                        account_id,
+                        p.cursor_start,
+                        p.cursor_end,
+                        min_start,
+                    )?;
+                    messages_in_range[message_range].to_vec()
                 };
-                cursor = r.next_inbox_idx();
-
                 out.push(RpcUpdateInputData {
-                    seq_no: r.seq_no(),
-                    proof_state: ProofState::new(meta.final_state_root(), r.next_inbox_idx())
-                        .into(),
-                    extra_data: extra_data.into(),
+                    seq_no: p.seq_no,
+                    proof_state: ProofState::new(p.final_state_root, p.cursor_end).into(),
+                    extra_data: p.extra_data.into(),
                     messages: messages.into_iter().map(Into::into).collect(),
                 });
             }

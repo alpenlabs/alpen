@@ -43,6 +43,25 @@ impl NodeRpcProvider {
     }
 }
 
+fn decode_inbox_messages(
+    account_id: AccountId,
+    start_idx: u64,
+    preimages: Vec<Vec<u8>>,
+) -> DbResult<Vec<MessageEntry>> {
+    preimages
+        .into_iter()
+        .enumerate()
+        .map(|(offset, preimage)| {
+            let idx = start_idx + offset as u64;
+            MessageEntry::from_ssz_bytes(&preimage).map_err(|e| {
+                DbError::Other(format!(
+                    "failed to decode account inbox message at index {idx} for account {account_id}: {e}"
+                ))
+            })
+        })
+        .collect()
+}
+
 #[async_trait]
 impl OLRpcProvider for NodeRpcProvider {
     async fn get_canonical_block_at(&self, height: u64) -> DbResult<Option<OLBlockCommitment>> {
@@ -134,18 +153,8 @@ impl OLRpcProvider for NodeRpcProvider {
             .as_ref()
             .get_handle(MmrId::SnarkMsgInbox(account_id));
 
-        let mut messages = Vec::with_capacity((end_idx_exclusive - start_idx) as usize);
-        for idx in start_idx..end_idx_exclusive {
-            let preimage = mmr_handle.get(idx).await?;
-            let message = MessageEntry::from_ssz_bytes(&preimage).map_err(|e| {
-                DbError::Other(format!(
-                    "failed to decode account inbox message at index {idx} for account {account_id}: {e}"
-                ))
-            })?;
-            messages.push(message);
-        }
-
-        Ok(messages)
+        let preimages = mmr_handle.get_range(start_idx, end_idx_exclusive).await?;
+        decode_inbox_messages(account_id, start_idx, preimages)
     }
 
     async fn get_account_creation_epoch(&self, account_id: AccountId) -> DbResult<Option<Epoch>> {
@@ -175,5 +184,53 @@ impl OLRpcProvider for NodeRpcProvider {
 
     async fn submit_transaction(&self, tx: OLTransaction) -> OLMempoolResult<OLTxId> {
         self.mempool_handle.submit_transaction(tx).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ssz::Encode;
+    use strata_acct_types::{BitcoinAmount, MsgPayload};
+    use strata_identifiers::AccountId;
+
+    use super::*;
+
+    fn test_account_id(index: u8) -> AccountId {
+        AccountId::new([index; 32])
+    }
+
+    #[test]
+    fn decode_inbox_messages_round_trips_ssz_entries() {
+        let account_id = test_account_id(1);
+        let messages = vec![
+            MessageEntry::new(
+                test_account_id(2),
+                3,
+                MsgPayload::new(BitcoinAmount::from_sat(10), vec![0xaa]),
+            ),
+            MessageEntry::new(
+                test_account_id(3),
+                3,
+                MsgPayload::new(BitcoinAmount::from_sat(20), vec![0xbb, 0xcc]),
+            ),
+        ];
+        let preimages = messages.iter().map(Encode::as_ssz_bytes).collect();
+
+        let decoded =
+            decode_inbox_messages(account_id, 7, preimages).expect("decode valid messages");
+
+        assert_eq!(decoded, messages);
+    }
+
+    #[test]
+    fn decode_inbox_messages_errors_on_malformed_preimage() {
+        let err = decode_inbox_messages(test_account_id(1), 9, vec![vec![0xff]])
+            .expect_err("malformed preimage should fail");
+
+        assert!(matches!(
+            err,
+            DbError::Other(msg)
+                if msg.contains("index 9") && msg.contains(&test_account_id(1).to_string())
+        ));
     }
 }

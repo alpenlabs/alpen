@@ -36,6 +36,46 @@ impl MmrIndexDatabase for MmrIndexDb {
         Ok(self.preimage_tree.get(&(mmr_id, pos))?)
     }
 
+    /// Returns optional leaf preimages for `[start, end_exclusive)`.
+    ///
+    /// All reads are executed in one sled transaction so the returned range is
+    /// assembled from a single consistent snapshot.
+    fn get_preimage_range(
+        &self,
+        mmr_id: RawMmrId,
+        start: LeafPos,
+        end_exclusive: LeafPos,
+    ) -> DbResult<Vec<Option<Vec<u8>>>> {
+        let start_idx = start.index();
+        let end_idx = end_exclusive.index();
+        let len = end_idx
+            .checked_sub(start_idx)
+            .ok_or(DbError::MmrInvalidRange {
+                start: start_idx,
+                end: end_idx,
+            })?;
+
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+
+        let capacity = usize::try_from(len).map_err(|_| DbError::MmrInvalidRange {
+            start: start_idx,
+            end: end_idx,
+        })?;
+
+        self.config.with_retry(
+            (&self.preimage_tree,),
+            |(pt,): (SledTransactionalTree<MmrIndexPreimageSchema>,)| {
+                let mut out = Vec::with_capacity(capacity);
+                for idx in start_idx..end_idx {
+                    out.push(pt.get(&(mmr_id.clone(), LeafPos::new(idx)))?);
+                }
+                Ok(out)
+            },
+        )
+    }
+
     /// Returns current leaf count for a namespace.
     ///
     /// Absent entries are treated as zero leaves.

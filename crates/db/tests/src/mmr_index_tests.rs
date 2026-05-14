@@ -1,5 +1,5 @@
 use proptest::{collection::vec, prelude::*};
-use strata_db_types::{traits::MmrIndexDatabase, LeafPos, MmrBatchWrite, NodePos};
+use strata_db_types::{traits::MmrIndexDatabase, DbError, LeafPos, MmrBatchWrite, NodePos};
 use strata_identifiers::Hash;
 
 pub fn raw_mmr_id_strategy() -> impl Strategy<Value = Vec<u8>> {
@@ -331,6 +331,60 @@ pub fn test_mmr_index_leaf_count_cas_conflict_rolls_back(
     assert_eq!(db.get_node(mmr_id, pos).expect("node after conflict"), None);
 }
 
+pub fn test_mmr_index_preimage_range_empty(db: &impl MmrIndexDatabase, mmr_id: Vec<u8>) {
+    assert_eq!(
+        db.get_preimage_range(mmr_id, LeafPos::new(3), LeafPos::new(3))
+            .expect("empty range"),
+        Vec::<Option<Vec<u8>>>::new()
+    );
+}
+
+pub fn test_mmr_index_preimage_range_single_and_multi(db: &impl MmrIndexDatabase, mmr_id: Vec<u8>) {
+    let payloads = [vec![0x11], vec![0x22], vec![0x33]];
+    let mut batch = MmrBatchWrite::default();
+    {
+        let mmr_batch = batch.entry(mmr_id.clone());
+        for (idx, payload) in payloads.iter().enumerate() {
+            mmr_batch.put_preimage(LeafPos::new(idx as u64 + 1), payload.clone());
+        }
+    }
+    db.apply_update(batch).expect("seed preimages");
+
+    assert_eq!(
+        db.get_preimage_range(mmr_id.clone(), LeafPos::new(2), LeafPos::new(3))
+            .expect("single range"),
+        vec![Some(payloads[1].clone())]
+    );
+    assert_eq!(
+        db.get_preimage_range(mmr_id, LeafPos::new(1), LeafPos::new(4))
+            .expect("multi range"),
+        payloads.into_iter().map(Some).collect::<Vec<_>>()
+    );
+}
+
+pub fn test_mmr_index_preimage_range_missing_slot(db: &impl MmrIndexDatabase, mmr_id: Vec<u8>) {
+    let mut batch = MmrBatchWrite::default();
+    {
+        let mmr_batch = batch.entry(mmr_id.clone());
+        mmr_batch.put_preimage(LeafPos::new(1), vec![0x11]);
+        mmr_batch.put_preimage(LeafPos::new(3), vec![0x33]);
+    }
+    db.apply_update(batch).expect("seed sparse preimages");
+
+    assert_eq!(
+        db.get_preimage_range(mmr_id, LeafPos::new(1), LeafPos::new(4))
+            .expect("range with missing slot"),
+        vec![Some(vec![0x11]), None, Some(vec![0x33])]
+    );
+}
+
+pub fn test_mmr_index_preimage_range_invalid_bounds(db: &impl MmrIndexDatabase, mmr_id: Vec<u8>) {
+    let err = db
+        .get_preimage_range(mmr_id, LeafPos::new(4), LeafPos::new(2))
+        .expect_err("invalid range should fail");
+    assert!(matches!(err, DbError::MmrInvalidRange { start: 4, end: 2 }));
+}
+
 #[macro_export]
 macro_rules! mmr_index_db_tests {
     ($setup_expr:expr) => {
@@ -495,6 +549,38 @@ macro_rules! mmr_index_db_tests {
                 $crate::mmr_index_tests::test_mmr_index_leaf_count_cas_conflict_rolls_back(
                     &db, mmr_id, pos, hash
                 );
+            }
+
+            #[test]
+            fn test_mmr_index_preimage_range_empty_contract(
+                mmr_id in $crate::mmr_index_tests::raw_mmr_id_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::mmr_index_tests::test_mmr_index_preimage_range_empty(&db, mmr_id);
+            }
+
+            #[test]
+            fn test_mmr_index_preimage_range_single_and_multi_contract(
+                mmr_id in $crate::mmr_index_tests::raw_mmr_id_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::mmr_index_tests::test_mmr_index_preimage_range_single_and_multi(&db, mmr_id);
+            }
+
+            #[test]
+            fn test_mmr_index_preimage_range_missing_slot_contract(
+                mmr_id in $crate::mmr_index_tests::raw_mmr_id_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::mmr_index_tests::test_mmr_index_preimage_range_missing_slot(&db, mmr_id);
+            }
+
+            #[test]
+            fn test_mmr_index_preimage_range_invalid_bounds_contract(
+                mmr_id in $crate::mmr_index_tests::raw_mmr_id_strategy(),
+            ) {
+                let db = $setup_expr;
+                $crate::mmr_index_tests::test_mmr_index_preimage_range_invalid_bounds(&db, mmr_id);
             }
         }
     };
