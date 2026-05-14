@@ -1,3 +1,4 @@
+mod accessed_state;
 mod account;
 mod batch;
 mod chunk_witness;
@@ -7,6 +8,9 @@ mod exec_block;
 mod in_memory;
 mod utils;
 
+pub use accessed_state::AccessedStateStore;
+#[cfg(feature = "test-utils")]
+pub use accessed_state::MockAccessedStateStore;
 #[cfg(feature = "test-utils")]
 pub use account::{tests, MockStorage};
 pub use account::{OLBlockOrEpoch, Storage};

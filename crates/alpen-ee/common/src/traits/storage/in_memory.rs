@@ -7,9 +7,11 @@ use std::{
 
 use async_trait::async_trait;
 
+use strata_acct_types::Hash;
+
 use crate::{
-    Batch, BatchId, BatchStatus, BatchStorage, Chunk, ChunkId, ChunkStatus, ChunkWitnessRecord,
-    ChunkWitnessStore, StorageError,
+    AccessedStateRecord, AccessedStateStore, Batch, BatchId, BatchStatus, BatchStorage, Chunk,
+    ChunkId, ChunkStatus, ChunkWitnessRecord, ChunkWitnessStore, StorageError,
 };
 
 /// In-memory storage for batches and chunks.
@@ -21,6 +23,8 @@ pub struct InMemoryStorage {
     pub chunk_id_to_idx: RwLock<HashMap<ChunkId, u64>>,
     pub batch_chunks: RwLock<HashMap<BatchId, Vec<ChunkId>>>,
     pub chunk_witnesses: RwLock<HashMap<ChunkId, ChunkWitnessRecord>>,
+    pub block_accessed_state: RwLock<HashMap<Hash, AccessedStateRecord>>,
+    pub bytecodes: RwLock<HashMap<Hash, Vec<u8>>>,
 }
 
 impl InMemoryStorage {
@@ -273,6 +277,45 @@ impl ChunkWitnessStore for InMemoryStorage {
     async fn del_chunk_witness(&self, chunk_id: ChunkId) -> Result<(), StorageError> {
         self.chunk_witnesses.write().unwrap().remove(&chunk_id);
         Ok(())
+    }
+}
+
+#[async_trait]
+impl AccessedStateStore for InMemoryStorage {
+    async fn put_block_accessed_state(
+        &self,
+        block_id: Hash,
+        record: AccessedStateRecord,
+    ) -> Result<(), StorageError> {
+        self.block_accessed_state
+            .write()
+            .unwrap()
+            .insert(block_id, record);
+        Ok(())
+    }
+
+    async fn get_block_accessed_state(
+        &self,
+        block_id: Hash,
+    ) -> Result<Option<AccessedStateRecord>, StorageError> {
+        Ok(self.block_accessed_state.read().unwrap().get(&block_id).cloned())
+    }
+
+    async fn del_block_accessed_state(&self, block_id: Hash) -> Result<(), StorageError> {
+        self.block_accessed_state
+            .write()
+            .unwrap()
+            .remove(&block_id);
+        Ok(())
+    }
+
+    async fn put_bytecode(&self, code_hash: Hash, code: Vec<u8>) -> Result<(), StorageError> {
+        self.bytecodes.write().unwrap().insert(code_hash, code);
+        Ok(())
+    }
+
+    async fn get_bytecode(&self, code_hash: Hash) -> Result<Option<Vec<u8>>, StorageError> {
+        Ok(self.bytecodes.read().unwrap().get(&code_hash).cloned())
     }
 }
 

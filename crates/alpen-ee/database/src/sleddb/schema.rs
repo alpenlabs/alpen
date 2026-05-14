@@ -1,4 +1,4 @@
-use alpen_ee_common::ChunkWitnessRecord;
+use alpen_ee_common::{AccessedStateRecord, ChunkWitnessRecord};
 use strata_acct_types::Hash;
 use strata_db_store_sled::{
     define_table_with_default_codec, define_table_without_codec, /* impl_bincode_key_codec, */
@@ -80,6 +80,23 @@ define_table_with_default_codec!(
     /// batch builder and read by `ChunkSpec::fetch_input`. See
     /// `experimental/evgeniy/ee-prover-fetch-input-redesign.md` (phase 1).
     (ChunkWitnessSchema) DBChunkId => ChunkWitnessRecord
+);
+
+define_table_with_default_codec!(
+    /// Per-block accessed-state record, written by the
+    /// `AccessedStateGenerator` exex after reth commits each block. Read
+    /// by the chunk-builder at chunk-seal time to skip block re-execution
+    /// when assembling the chunk witness. Lifecycle is tied to chain
+    /// canonicality — reorg'd block hashes get their record deleted.
+    (BlockAccessedStateSchema) Hash => AccessedStateRecord
+);
+
+define_table_with_default_codec!(
+    /// Content-addressed bytecode cache, written by the
+    /// `AccessedStateGenerator` exex alongside each block's accessed-state
+    /// record. Keyed by code hash. Never deleted — many chunks reference
+    /// the same contracts.
+    (BytecodeSchema) Hash => Vec<u8>
 );
 
 // Prover storage schemas.
