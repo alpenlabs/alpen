@@ -187,7 +187,9 @@ impl Settings {
                 from_file
                     .withdrawal_denomination_sats
                     .unwrap_or(DEFAULT_DENOMINATION_SATS),
-                from_file.max_withdrawal_amount_sats,
+                from_file
+                    .max_withdrawal_amount_sats
+                    .or(Some(DEFAULT_MAX_WITHDRAWAL_SATS)),
             )
             .expect("invalid withdrawal params in config"),
             params,
