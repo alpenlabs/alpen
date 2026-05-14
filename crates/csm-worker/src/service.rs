@@ -7,7 +7,9 @@ use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
 use crate::{
-    context::CsmWorkerContext, processor::process_log, state::CsmWorkerState,
+    context::CsmWorkerContext,
+    processor::{commit_block, process_log},
+    state::CsmWorkerState,
     status::CsmWorkerStatus,
 };
 
@@ -52,16 +54,31 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         trace!("CSM is processing ASM logs.");
 
-        // Track which block we're processing
-        state.last_asm_block = Some(asm_block);
         let prev_confirmed_epoch = state.confirmed_epoch;
         let prev_finalized_epoch = state.finalized_epoch;
 
-        // Process checkpoint logs from ASM status
+        // Snapshot the in-memory client state so a mid-block failure can roll
+        // back any partial update and leave the block to be re-processed.
+        let cur_state_snapshot = state.cur_state.clone();
+
+        // Process checkpoint logs from ASM status. Persist updates only if this succeeds.
+        let mut block_ok = true;
         for log in asm_status.logs() {
             if let Err(e) = process_log(state, log, &asm_block) {
                 error!(%asm_block, err = %e, "Failed to process ASM log");
+                block_ok = false;
+                break;
             }
+        }
+
+        if block_ok {
+            if let Err(e) = commit_block(state, asm_block) {
+                error!(%asm_block, err = %e, "Failed to commit CSM block");
+                state.cur_state = cur_state_snapshot;
+            }
+        } else {
+            // Roll back the partially-applied in-memory state.
+            state.cur_state = cur_state_snapshot;
         }
 
         // Advance finalized epoch from the observation queue based on L1 depth.

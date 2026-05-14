@@ -28,11 +28,7 @@ pub(crate) struct ExtractedCheckpoint {
 /// Mirrors ASM's acceptance rule by calling
 /// [`validate_checkpoint_and_extract_withdrawal_intents`] on each candidate and
 /// returning the first one that passes — matching ASM's first-valid-wins
-/// behavior within a block. Matching on `(epoch, l2_commitment)` alone is not
-/// safe: an attacker (or a buggy/malicious sequencer) can post txs that share
-/// those fields with the accepted payload but carry different sidecar/proof
-/// bytes, and SPS-50 + envelope parsing do not bind the payload to the
-/// sequencer key — only ASM's full validation does.
+/// behavior within a block.
 pub(crate) fn extract_matching_checkpoint(
     block: &Block,
     magic: MagicBytes,
@@ -58,8 +54,8 @@ pub(crate) fn extract_matching_checkpoint(
             Ok(env) => env,
             Err(e) => {
                 warn!(
-                    txid = ?tx.compute_txid(),
-                    error = ?e,
+                    txid = %tx.compute_txid(),
+                    error = %e,
                     "failed to parse checkpoint envelope; skipping"
                 );
                 continue;
@@ -80,9 +76,9 @@ pub(crate) fn extract_matching_checkpoint(
             verified_aux_data,
         ) {
             debug!(
-                txid = ?tx.compute_txid(),
+                txid = %tx.compute_txid(),
                 epoch = expected.epoch,
-                error = ?e,
+                error = %e,
                 "candidate checkpoint tx failed validation; skipping"
             );
             continue;
@@ -91,8 +87,8 @@ pub(crate) fn extract_matching_checkpoint(
         let txid = Buf32::from(tx.compute_txid().to_byte_array());
         let wtxid = Buf32::from(tx.compute_wtxid().to_byte_array());
         debug!(
-            ?txid,
-            ?wtxid,
+            %txid,
+            %wtxid,
             epoch = expected.epoch,
             "matched checkpoint tx"
         );
@@ -136,7 +132,10 @@ mod tests {
     /// and carries the SSZ-encoded `payload`. Mirrors
     /// `create_reveal_transaction_stub` but lets callers control the envelope
     /// pubkey so they can simulate hostile-third-party and self-conflict cases.
-    fn build_checkpoint_envelope_tx(payload: &CheckpointPayload, envelope_pubkey: &[u8]) -> Transaction {
+    fn build_checkpoint_envelope_tx(
+        payload: &CheckpointPayload,
+        envelope_pubkey: &[u8],
+    ) -> Transaction {
         let payload_bytes = encode_to_vec(&CodecSsz::new(payload.clone())).expect("encode payload");
         let reveal_script = EnvelopeScriptBuilder::with_pubkey(envelope_pubkey)
             .expect("envelope builder")
@@ -392,5 +391,4 @@ mod tests {
             "extractor must skip the invalid-proof tx and pick the legit one"
         );
     }
-
 }

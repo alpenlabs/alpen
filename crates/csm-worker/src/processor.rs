@@ -68,26 +68,27 @@ fn process_checkpoint_tip_log<C: CsmWorkerContext>(
         );
     }
 
+    mark_ol_checkpoint_l1_observed(state, checkpoint_tip_update, asm_block)?;
     // Tip logs do not contain full batch transition details.
     // CSM only needs epoch progression for finalized-epoch signaling, so we
     // synthesize a minimal checkpoint view from the tip.
     // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
     // these fields directly without legacy L1Checkpoint shape coupling.
     let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
-    update_client_state_with_checkpoint(state, synthetic_checkpoint, epoch)?;
-    mark_ol_checkpoint_l1_observed(state, checkpoint_tip_update, asm_block)?;
+    apply_checkpoint_to_client_state(state, synthetic_checkpoint, epoch);
 
     state.last_processed_epoch = Some(epoch);
     Ok(())
 }
 
-/// Update and persist client state from a checkpoint.
-fn update_client_state_with_checkpoint<C: CsmWorkerContext>(
+/// Updates the in-memory client state.
+///
+/// This does NOT persist anything.
+fn apply_checkpoint_to_client_state<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
-) -> anyhow::Result<()> {
-    // Get the current client state.
+) {
     let cur_state = state.cur_state.as_ref();
 
     // Determine if this checkpoint should be the last finalized or just recent.
@@ -116,24 +117,24 @@ fn update_client_state_with_checkpoint<C: CsmWorkerContext>(
         }
     };
 
-    // Create new client state.
-    let next_state = ClientState::new(last_finalized, recent);
+    state.cur_state = Arc::new(ClientState::new(last_finalized, recent));
+}
 
-    // Store the new client state
-    let l1_block = state.last_asm_block.expect("should have ASM block");
+/// Persists the client state for `asm_block` and advances the in-memory `last_asm_block`.
+///
+/// Called after every log of the asm block processed without error.
+pub(crate) fn commit_block<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
+    asm_block: L1BlockCommitment,
+) -> anyhow::Result<()> {
+    let next_state = state.cur_state.as_ref().clone();
     state.ctx.put_client_state_update(
-        &l1_block,
+        &asm_block,
         ClientUpdateOutput::new(next_state.clone(), vec![]),
     )?;
-
-    // Update our tracked state
-    state.cur_state = Arc::new(next_state);
-
-    // Update status channel
-    state
-        .ctx
-        .publish_client_state(state.cur_state.as_ref().clone(), l1_block);
-
+    state.last_asm_block = Some(asm_block);
+    // Publish the client state to status channel.
+    state.ctx.publish_client_state(next_state, asm_block);
     Ok(())
 }
 
@@ -146,28 +147,26 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
 
-    // ASM signed off on this block, so a fetch failure means the bitcoind RPC is
-    // unreachable beyond what `get_l1_block`'s internal retry can absorb. Bubble
-    // the error so the operator notices instead of losing the txid silently.
     let block = state
         .ctx
         .get_l1_block(asm_block.blkid())
         .with_context(|| format!("fetching L1 block {asm_block} for checkpoint observation"))?;
 
-    // ASM applied this checkpoint against the state at `asm_block`'s parent; we
-    // need the same pre-state (predicates + verified_tip + accumulator) to
-    // re-run validation locally and pick the same tx ASM accepted.
+    // Prepare for same checkpoint validation that ASM does.
     let parent_block = parent_commitment(asm_block, &block)?;
     let parent_asm_state = state.ctx.get_asm_state(&parent_block).with_context(|| {
         format!("fetching parent ASM state {parent_block} for checkpoint observation")
     })?;
     let checkpoint_state = decode_checkpoint_section(&parent_asm_state)?;
-    let aux_data = state.ctx.get_aux_data(asm_block).with_context(|| {
-        format!("fetching ASM aux data {asm_block} for checkpoint observation")
-    })?;
-    let verified_aux_data =
-        VerifiedAuxData::try_new(&aux_data, &parent_asm_state.state().chain_view.history_accumulator)
-            .with_context(|| format!("verifying ASM aux data for {asm_block}"))?;
+    let aux_data = state
+        .ctx
+        .get_aux_data(asm_block)
+        .with_context(|| format!("fetching ASM aux data {asm_block} for checkpoint observation"))?;
+    let verified_aux_data = VerifiedAuxData::try_new(
+        &aux_data,
+        &parent_asm_state.state().chain_view.history_accumulator,
+    )
+    .with_context(|| format!("verifying ASM aux data for {asm_block}"))?;
 
     let extracted = extract_matching_checkpoint(
         &block,
@@ -256,9 +255,9 @@ fn parent_commitment(
     block: &bitcoin::Block,
 ) -> anyhow::Result<L1BlockCommitment> {
     let height = asm_block.height();
-    let parent_height = height.checked_sub(1).ok_or_else(|| {
-        anyhow::anyhow!("cannot derive parent for genesis L1 block {asm_block}")
-    })?;
+    let parent_height = height
+        .checked_sub(1)
+        .ok_or_else(|| anyhow::anyhow!("cannot derive parent for genesis L1 block {asm_block}"))?;
     let parent_blkid = L1BlockId::from(Buf32::from(block.header.prev_blockhash.to_byte_array()));
     Ok(L1BlockCommitment::new(parent_height, parent_blkid))
 }
@@ -447,6 +446,62 @@ mod tests {
         assert!(
             observation.is_none(),
             "no l1 ref should be written on fetch failure"
+        );
+    }
+
+    #[test]
+    fn commit_block_persists_state_and_advances_cursor() {
+        let (mut state, storage) = create_test_state();
+        let asm_block = L1BlockCommitment::new(300, L1BlockId::from(Buf32::from([7; 32])));
+
+        super::commit_block(&mut state, asm_block).expect("commit should succeed");
+
+        assert_eq!(state.last_asm_block, Some(asm_block));
+        let (persisted_block, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row should exist");
+        assert_eq!(
+            persisted_block, asm_block,
+            "client-state row must be keyed on the committed block"
+        );
+    }
+
+    #[test]
+    fn failed_log_does_not_advance_persisted_cursor() {
+        let epoch = 9u32;
+        let (log, _ol_tip) = placeholder_tip_log(epoch);
+        let asm_block = L1BlockCommitment::new(250, L1BlockId::default());
+
+        let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
+        state.last_asm_block = Some(asm_block);
+
+        // The genesis client-state row seeded by `create_test_storage`.
+        let (before_block, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("seeded client state");
+
+        // Simulate the service loop: a failing log means `commit_block` is
+        // never called. Pin the failure to the L1-fetch path so the test
+        // can't pass on an unrelated error.
+        let err = process_log(&mut state, &log, &asm_block)
+            .expect_err("L1 fetch failure should make the log fail");
+        assert!(
+            err.to_string().contains("fetching L1 block"),
+            "unexpected error: {err}"
+        );
+
+        let (after_block, _) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state still present");
+        assert_eq!(
+            before_block, after_block,
+            "persisted cursor must not move when a block's log failed"
         );
     }
 }
