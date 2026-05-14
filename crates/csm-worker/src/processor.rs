@@ -9,7 +9,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_
 use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
-use strata_identifiers::Epoch;
+use strata_identifiers::{Epoch, RBuf32};
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use tracing::*;
@@ -306,7 +306,7 @@ fn checkpoint_from_tip_update(
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
     // Upstream tip logs do not include txid/wtxid.
-    let checkpoint_txid = Buf32::zero();
+    let checkpoint_txid = RBuf32::zero();
     let checkpoint_wtxid = checkpoint_txid;
     let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 

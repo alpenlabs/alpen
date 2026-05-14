@@ -215,7 +215,7 @@ mod tests {
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::{Buf32, L1BlockId};
+    use strata_identifiers::{Buf32, L1BlockId, RBuf32};
     use strata_params::Params;
     use strata_primitives::prelude::*;
     use strata_status::StatusChannel;
@@ -282,8 +282,8 @@ mod tests {
                 payload_1,
                 CheckpointL1Ref::new(
                     L1BlockCommitment::new(17, L1BlockId::default()),
-                    Buf32::from([1; 32]),
-                    Buf32::from([2; 32]),
+                    RBuf32::from([1; 32]),
+                    RBuf32::from([2; 32]),
                 ),
             )
             .expect("insert epoch 1 observation");
@@ -307,8 +307,8 @@ mod tests {
                 payload_2,
                 CheckpointL1Ref::new(
                     L1BlockCommitment::new(19, L1BlockId::default()),
-                    Buf32::from([3; 32]),
-                    Buf32::from([4; 32]),
+                    RBuf32::from([3; 32]),
+                    RBuf32::from([4; 32]),
                 ),
             )
             .expect("insert epoch 2 observation");

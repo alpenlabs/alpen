@@ -12,7 +12,7 @@ use strata_acct_types::MessageEntry;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::ol_state_index::InboxMessageRecord;
 use strata_identifiers::{
-    AccountId, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
+    AccountId, Buf32, Epoch, EpochCommitment, Hash, L1BlockCommitment, L1Height, L2BlockCommitment,
     OLBlockCommitment, OLBlockId, OLTxId,
 };
 use strata_ledger_types::{IAccountState, ISnarkAccountState};
@@ -712,7 +712,13 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
             .await
             .map_err(db_error)?;
         let confirmation_status = if let Some(obs) = l1_ref {
-            let l1_reference = RpcCheckpointL1Ref::new(obs.l1_commitment, obs.txid, obs.wtxid);
+            // `RpcCheckpointL1Ref` still carries `Buf32`; convert at this RPC
+            // boundary. `RBuf32`/`Buf32` share byte layout, only fmt/serde differ.
+            let l1_reference = RpcCheckpointL1Ref::new(
+                obs.l1_commitment,
+                Buf32::from(obs.txid.0),
+                Buf32::from(obs.wtxid.0),
+            );
             let observed_height = obs.l1_commitment.height();
             let Some(tip) = self.provider.get_l1_tip_height() else {
                 return Err(internal_error(

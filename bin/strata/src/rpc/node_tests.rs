@@ -683,8 +683,8 @@ async fn checkpoint_info_returns_expected_l1_and_l2_ranges() {
 
     let l1_ref = CheckpointL1Ref::new(
         L1BlockCommitment::new(505, fixed_l1_block_id(0x50)),
-        fixed_buf32(0xAA),
-        fixed_buf32(0xBB),
+        RBuf32::from(fixed_buf32(0xAA).0),
+        RBuf32::from(fixed_buf32(0xBB).0),
     );
 
     let tip = OLBlockCommitment::new(120, fixed_ol_block_id(0x77));
@@ -766,8 +766,8 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
 
     let l1_ref = CheckpointL1Ref::new(
         L1BlockCommitment::new(observed_height, fixed_l1_block_id(0x50)),
-        checkpoint_txid,
-        checkpoint_wtxid,
+        RBuf32::from(checkpoint_txid.0),
+        RBuf32::from(checkpoint_wtxid.0),
     );
 
     let tip = OLBlockCommitment::new(120, fixed_ol_block_id(0x77));
@@ -916,8 +916,8 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
 
     let l1_ref = CheckpointL1Ref::new(
         L1BlockCommitment::new(observed_height, fixed_l1_block_id(0x50)),
-        checkpoint_txid,
-        checkpoint_wtxid,
+        RBuf32::from(checkpoint_txid.0),
+        RBuf32::from(checkpoint_wtxid.0),
     );
 
     let tip = OLBlockCommitment::new(120, fixed_ol_block_id(0x77));
@@ -1055,8 +1055,8 @@ async fn checkpoint_info_errors_when_l1_tip_is_below_observed_height() {
 
     let l1_ref = CheckpointL1Ref::new(
         L1BlockCommitment::new(observed_height, fixed_l1_block_id(0x50)),
-        checkpoint_txid,
-        checkpoint_wtxid,
+        RBuf32::from(checkpoint_txid.0),
+        RBuf32::from(checkpoint_wtxid.0),
     );
 
     let tip = OLBlockCommitment::new(120, fixed_ol_block_id(0x77));

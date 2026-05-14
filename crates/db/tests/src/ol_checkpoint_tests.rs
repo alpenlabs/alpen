@@ -5,7 +5,7 @@ use strata_checkpoint_types::EpochSummary;
 use strata_csm_types::CheckpointL1Ref;
 use strata_db_types::{traits::OLCheckpointDatabase, types::L1PayloadIntentIndex};
 use strata_identifiers::{
-    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment,
+    Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, OLBlockCommitment, RBuf32,
 };
 use strata_test_utils::ArbitraryGenerator;
 
@@ -24,8 +24,8 @@ fn l1_ref_entry(height: u32) -> CheckpointL1Ref {
     let blkid = L1BlockId::from(Buf32::from([height as u8; 32]));
     CheckpointL1Ref::new(
         L1BlockCommitment::new(height, blkid),
-        Buf32::from([height as u8; 32]),
-        Buf32::from([(height + 1) as u8; 32]),
+        RBuf32::from([height as u8; 32]),
+        RBuf32::from([(height + 1) as u8; 32]),
     )
 }
 

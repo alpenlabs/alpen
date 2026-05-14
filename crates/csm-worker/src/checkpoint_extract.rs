@@ -9,16 +9,19 @@ use strata_asm_proto_checkpoint_txs::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_checkpoint_from_envelope,
 };
 use strata_asm_proto_checkpoint_types::{CheckpointPayload, CheckpointTip};
+use strata_identifiers::RBuf32;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
-use strata_primitives::buf::Buf32;
 use tracing::{debug, warn};
 
 /// Identification of the L1 transaction that carries a validated checkpoint,
 /// along with its decoded payload.
+///
+/// `txid` and `wtxid` use [`RBuf32`] so their `Debug`/`Display` follow Bitcoin's
+/// reversed-byte hash convention.
 #[derive(Debug, Clone)]
 pub(crate) struct ExtractedCheckpoint {
-    pub(crate) txid: Buf32,
-    pub(crate) wtxid: Buf32,
+    pub(crate) txid: RBuf32,
+    pub(crate) wtxid: RBuf32,
     pub(crate) payload: CheckpointPayload,
 }
 
@@ -84,11 +87,11 @@ pub(crate) fn extract_matching_checkpoint(
             continue;
         }
 
-        let txid = Buf32::from(tx.compute_txid().to_byte_array());
-        let wtxid = Buf32::from(tx.compute_wtxid().to_byte_array());
+        let txid = RBuf32::from(tx.compute_txid().to_byte_array());
+        let wtxid = RBuf32::from(tx.compute_wtxid().to_byte_array());
         debug!(
-            %txid,
-            %wtxid,
+            ?txid,
+            ?wtxid,
             epoch = expected.epoch,
             "matched checkpoint tx"
         );
@@ -255,10 +258,10 @@ mod tests {
         .expect("legitimate checkpoint should validate");
 
         assert_eq!(result.payload.new_tip().epoch, expected.epoch);
-        assert_eq!(result.txid, Buf32::from(tx.compute_txid().to_byte_array()));
+        assert_eq!(result.txid, RBuf32::from(tx.compute_txid().to_byte_array()));
         assert_eq!(
             result.wtxid,
-            Buf32::from(tx.compute_wtxid().to_byte_array())
+            RBuf32::from(tx.compute_wtxid().to_byte_array())
         );
     }
 
@@ -334,7 +337,7 @@ mod tests {
 
         assert_eq!(
             result.txid,
-            Buf32::from(legit_tx.compute_txid().to_byte_array()),
+            RBuf32::from(legit_tx.compute_txid().to_byte_array()),
             "extractor must skip the hostile tx and pick the legit one"
         );
     }
@@ -387,7 +390,7 @@ mod tests {
 
         assert_eq!(
             result.txid,
-            Buf32::from(legit_tx.compute_txid().to_byte_array()),
+            RBuf32::from(legit_tx.compute_txid().to_byte_array()),
             "extractor must skip the invalid-proof tx and pick the legit one"
         );
     }
