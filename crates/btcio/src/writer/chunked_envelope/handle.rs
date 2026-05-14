@@ -502,7 +502,7 @@ async fn publish_commit_immediately<R: Broadcaster>(
             warn!(%txid, ?e, "commit broadcast rejected by mempool; will resign");
             Ok(CommitPublishResult::InvalidInputs)
         }
-        Err(e @ ClientError::Status(500, _)) => Ok(CommitPublishResult::Deferred(e.to_string())),
+        Err(e) if e.is_retriable() => Ok(CommitPublishResult::Deferred(e.to_string())),
         Err(e) => Err(e.into()),
     }
 }
@@ -963,7 +963,10 @@ mod tests {
     use strata_primitives::buf::Buf32;
 
     use super::*;
-    use crate::writer::test_utils::{get_broadcast_handle, get_chunked_envelope_ops};
+    use crate::{
+        test_utils::{SendRawTransactionMode, TestBitcoinClient},
+        writer::test_utils::{get_broadcast_handle, get_chunked_envelope_ops},
+    };
 
     fn bytes_from_start(start: u8) -> [u8; 32] {
         let mut bytes = [0u8; 32];
@@ -1211,6 +1214,22 @@ mod tests {
             .collect();
         entry.status = ChunkedEnvelopeStatus::Unpublished;
         entry
+    }
+
+    #[tokio::test]
+    async fn test_publish_commit_immediately_defers_retriable_rpc_errors() {
+        let client = TestBitcoinClient::new(0)
+            .with_send_raw_transaction_mode(SendRawTransactionMode::ConnectionError);
+        let commit_tx_entry = L1TxEntry::from_tx(&make_test_tx());
+
+        let result = publish_commit_immediately(&client, &commit_tx_entry)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            CommitPublishResult::Deferred(reason) if reason.contains("connection refused")
+        ));
     }
 
     #[tokio::test]

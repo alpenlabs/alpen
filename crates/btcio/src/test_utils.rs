@@ -62,6 +62,7 @@ pub enum SendRawTransactionMode {
     MissingOrInvalidInput,
     InvalidParameter,
     HttpInternalServerError,
+    ConnectionError,
     GenericError,
 }
 
@@ -272,6 +273,9 @@ impl Broadcaster for TestBitcoinClient {
                 500,
                 "Internal Server Error".to_string(),
             )),
+            SendRawTransactionMode::ConnectionError => {
+                Err(ClientError::Connection("connection refused".to_string()))
+            }
             SendRawTransactionMode::GenericError => Err(ClientError::Server(
                 -1,
                 "generic broadcast failure".to_string(),
