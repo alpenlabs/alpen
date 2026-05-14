@@ -13927,6 +13927,7 @@ dependencies = [
  "strata-ol-state-provider",
  "strata-ol-state-support-types",
  "strata-ol-state-types",
+ "strata-ol-stf",
  "strata-paas",
  "strata-params",
  "strata-predicate",

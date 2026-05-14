@@ -24,6 +24,8 @@ debug-utils = [
 ]
 prover = [
   "dep:borsh",
+  "dep:strata-ol-state-support-types",
+  "dep:strata-ol-stf",
   "dep:strata-paas",
   "dep:strata-predicate",
   "dep:strata-proofimpl-checkpoint",
@@ -72,7 +74,9 @@ strata-ol-rpc-api.workspace = true
 strata-ol-rpc-types.workspace = true
 strata-ol-sequencer = { workspace = true, optional = true }
 strata-ol-state-provider = { workspace = true, optional = true }
+strata-ol-state-support-types = { workspace = true, optional = true }
 strata-ol-state-types.workspace = true
+strata-ol-stf = { workspace = true, optional = true }
 strata-paas = { workspace = true, optional = true }
 strata-params.workspace = true
 strata-predicate = { workspace = true, optional = true }

@@ -8,12 +8,10 @@ use std::{
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{Epoch, EpochCommitment, OLBlockCommitment};
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog, OLTxSegment};
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLBlockId, OLLog};
 use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_ol_state_types::OLState;
-use strata_ol_stf::{
-    BlockContext, BlockExecInput, BlockInfo, execute_block_batch, execute_block_inputs,
-};
+use strata_ol_stf::execute_block_batch;
 use strata_primitives::nonempty_vec::NonEmptyVec;
 use strata_storage::NodeStorage;
 use tracing::{debug, warn};
@@ -358,10 +356,10 @@ fn assert_terminal_commitment_matches(
 /// Replays epoch blocks to produce DA state diff bytes, accumulated logs, and
 /// the terminal header.
 ///
-/// Loads the OL state at the previous terminal block and re-executes every
-/// block in the epoch. Full block replay collects logs and validates headers,
-/// while DA accumulation replays only the preseal phases that the checkpoint
-/// proof authenticates against the terminal preseal root.
+/// Loads the OL state at the previous terminal block, wraps it in
+/// `DaAccumulatingState` to intercept mutations, then re-executes every block
+/// in the epoch. The DA blob is extracted from the accumulating layer and the
+/// logs are collected from each block's execution output.
 fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     ctx: &C,
     summary: &EpochSummary,
@@ -376,75 +374,22 @@ fn replay_epoch_and_compute_da<C: CheckpointWorkerContext>(
     let ol_state_raw = ctx
         .get_ol_state(prev_terminal)?
         .ok_or_else(|| anyhow::anyhow!("missing OL state at prev terminal {:?}", prev_terminal))?;
+    let ol_state = MemoryStateBaseLayer::new(ol_state_raw);
 
-    let mut replay_state = MemoryStateBaseLayer::new(ol_state_raw.clone());
-    let logs = execute_block_batch(&mut replay_state, &epoch_blocks, &prev_terminal_header)
+    let mut da_state = DaAccumulatingState::new(ol_state);
+
+    let logs = execute_block_batch(&mut da_state, &epoch_blocks, &prev_terminal_header)
         .map_err(|e| anyhow::anyhow!("epoch block replay failed: {e}"))?;
 
     let terminal_header = epoch_blocks.ensured_last().header().clone();
-    let da_bytes =
-        compute_epoch_preseal_da_diff(&ol_state_raw, &epoch_blocks, &prev_terminal_header)?;
 
-    Ok((da_bytes, logs, terminal_header))
-}
-
-/// Computes the epoch DA payload using only preseal block execution.
-///
-/// Manifest processing is proven by full block replay and terminal header
-/// equality. The DA witness is verified against the terminal preseal root, so
-/// L1-derived manifest mutations must not be included in this blob.
-pub fn compute_epoch_preseal_da_diff(
-    start_state: &OLState,
-    blocks: &[OLBlock],
-    initial_parent: &OLBlockHeader,
-) -> anyhow::Result<Vec<u8>> {
-    let terminal = blocks
-        .last()
-        .ok_or_else(|| anyhow::anyhow!("cannot compute checkpoint DA diff without epoch blocks"))?;
-    anyhow::ensure!(
-        terminal.header().is_terminal(),
-        "cannot compute checkpoint DA diff: terminal block is not marked terminal"
-    );
-    anyhow::ensure!(
-        terminal.body().l1_update().is_some(),
-        "cannot compute checkpoint DA diff: terminal block is missing L1 update"
-    );
-
-    let mut da_state = DaAccumulatingState::new(MemoryStateBaseLayer::new(start_state.clone()));
-    let mut parent = initial_parent.clone();
-    let empty_tx_segment =
-        OLTxSegment::new(Vec::new()).expect("empty transaction segment is valid");
-
-    for block in blocks {
-        let block_info = BlockInfo::from_header(block.header());
-        let block_context = BlockContext::new(&block_info, Some(&parent));
-        let tx_segment = block.body().tx_segment().unwrap_or(&empty_tx_segment);
-        let block_exec_input = BlockExecInput::new(tx_segment, None);
-
-        let outputs = execute_block_inputs(&mut da_state, block_context, block_exec_input)
-            .map_err(|e| anyhow::anyhow!("preseal DA replay failed: {e}"))?;
-
-        let expected_preseal_root = block
-            .body()
-            .l1_update()
-            .map_or(block.header().state_root(), |update| {
-                update.preseal_state_root()
-            });
-        anyhow::ensure!(
-            outputs.header_post_state_root() == expected_preseal_root,
-            "preseal DA replay root mismatch at slot {}: expected {:?}, got {:?}",
-            block.header().slot(),
-            expected_preseal_root,
-            outputs.header_post_state_root()
-        );
-
-        parent = block.header().clone();
-    }
-
-    da_state
+    // Extract the DA blob from the accumulating layer.
+    let da_bytes = da_state
         .take_completed_epoch_da_blob()
         .map_err(|e| anyhow::anyhow!("DA accumulation failed: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("no DA blob produced after preseal DA replay"))
+        .ok_or_else(|| anyhow::anyhow!("no DA blob produced after epoch replay"))?;
+
+    Ok((da_bytes, logs, terminal_header))
 }
 
 /// Collects all blocks in an epoch by walking backwards from the terminal block.
