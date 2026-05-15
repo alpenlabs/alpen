@@ -125,19 +125,36 @@ where
                         ?err,
                         ?block_hash,
                         block_num,
-                        "accessed-state extraction failed"
+                        "accessed-state extraction failed; halting commit to keep \
+                         FinishedHeight contiguous (reth will redeliver on next notification)"
                     );
-                    continue;
+                    break;
                 }
             };
 
             // Persist bytecodes first (content-addressed, idempotent), then
-            // the per-block record. If the record write fails, the bytecode
-            // is still useful for the next block referencing the same hash.
+            // the per-block record. A bytecode failure is fatal for this
+            // block: the record we're about to write references the hash,
+            // and downstream witness extraction errors out on a missing
+            // bytecode lookup. Halt the commit so `finished` stays
+            // contiguous — reth will redeliver the block on the next
+            // notification and we'll retry the whole step.
+            let mut bytecode_failed = false;
             for (code_hash, code) in bytecodes {
                 if let Err(err) = self.store.put_bytecode(code_hash, code).await {
-                    warn!(?err, ?code_hash, "failed to persist bytecode");
+                    error!(
+                        ?err,
+                        ?code_hash,
+                        ?block_hash,
+                        block_num,
+                        "failed to persist bytecode; halting commit"
+                    );
+                    bytecode_failed = true;
+                    break;
                 }
+            }
+            if bytecode_failed {
+                break;
             }
 
             if let Err(err) = self
@@ -149,9 +166,10 @@ where
                     ?err,
                     ?block_hash,
                     block_num,
-                    "failed to persist accessed-state record"
+                    "failed to persist accessed-state record; halting commit to keep \
+                     FinishedHeight contiguous"
                 );
-                continue;
+                break;
             }
 
             debug!(?block_hash, block_num, "persisted accessed-state record");
