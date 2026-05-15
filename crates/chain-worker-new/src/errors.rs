@@ -2,6 +2,7 @@
 
 use strata_db_types::errors::DbError;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
+use strata_ledger_types::StateError;
 use strata_primitives::epoch::EpochCommitment;
 use thiserror::Error;
 
@@ -44,6 +45,14 @@ pub enum WorkerError {
     /// STF execution error.
     #[error("STF execution failure: {0}")]
     StfExecution(#[from] strata_ol_stf::ExecError),
+
+    /// Write-batch application failed when committing executed-block state.
+    #[error("apply_write_batch failed at {commitment:?}: {source}")]
+    ApplyWriteBatch {
+        commitment: OLBlockCommitment,
+        #[source]
+        source: StateError,
+    },
 
     /// Database error.
     #[error("database failure: {0}")]

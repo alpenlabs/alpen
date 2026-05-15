@@ -9,6 +9,7 @@ use strata_ledger_types::{
 use strata_merkle::Mmr64B32;
 use strata_ol_chain_types_new::{ProofSatisfierList, RawMerkleProofList, TxProofs};
 use strata_predicate::PredicateKey;
+use tracing::warn;
 
 /// Context for accumulators/keys we verify proofs against when verifying a
 /// proof.
@@ -193,7 +194,15 @@ impl TxProofVerifier for TxProofVerifierImpl<'_> {
 
         predicate_key
             .verify_claim_witness(claim, witness)
-            .map_err(|_| ProofVerifyError::InvalidProof)?;
+            .map_err(|e| {
+                warn!(
+                    error = %e,
+                    claim_len = claim.len(),
+                    witness_len = witness.len(),
+                    "predicate verification failed"
+                );
+                ProofVerifyError::InvalidProof
+            })?;
 
         self.proof_tracker.inc_next_pred_proof()?;
         Ok(())

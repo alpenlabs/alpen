@@ -203,7 +203,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
                         ?e,
                         "Skipping malformed transaction from database"
                     );
-                    let _ = self.ctx.storage.mempool().del_tx(tx_data.txid);
+                    if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid) {
+                        warn!(
+                            ?tx_data.txid,
+                            error = %del_err,
+                            "failed to delete malformed tx from mempool db; will retry on next reload"
+                        );
+                    }
                     skipped_count += 1;
                     continue;
                 }
@@ -224,7 +230,13 @@ impl<P: StateProvider> MempoolServiceState<P> {
                     ?e,
                     "Skipping invalid transaction from database"
                 );
-                let _ = self.ctx.storage.mempool().del_tx(tx_data.txid);
+                if let Err(del_err) = self.ctx.storage.mempool().del_tx(tx_data.txid) {
+                    warn!(
+                        ?tx_data.txid,
+                        error = %del_err,
+                        "failed to delete invalid tx from mempool db; will retry on next reload"
+                    );
+                }
 
                 // Update reject stats if this is a trackable rejection reason
                 if let Some(reason) = OLMempoolRejectReason::from_error(&e) {

@@ -2,6 +2,7 @@ use ssz::Encode as _;
 use strata_acct_types::{AccountId, AcctError, MessageEntry};
 use strata_ledger_types::{ExecResult, ISnarkAccountState, TxProofVerifier};
 use strata_snark_acct_types::*;
+use tracing::warn;
 
 use crate::update::{SnarkAccountUpdateData, effects_to_update_outputs};
 
@@ -139,9 +140,13 @@ pub(crate) fn verify_update_proof(
     verifier: &mut impl TxProofVerifier,
 ) -> ExecResult<()> {
     let claim: Vec<u8> = compute_update_claim(snark_state, update);
-    let is_valid = verifier.verify_local_predicate_next(&claim).is_ok();
-
-    if !is_valid {
+    if let Err(e) = verifier.verify_local_predicate_next(&claim) {
+        warn!(
+            error = %e,
+            account_id = %target,
+            claim_len = claim.len(),
+            "snark-account update proof rejected"
+        );
         return Err(AcctError::InvalidUpdateProof { account_id: target }.into());
     }
 
