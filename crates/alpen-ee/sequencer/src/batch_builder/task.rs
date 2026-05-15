@@ -79,7 +79,7 @@ async fn get_block_range(
 /// is bounded by chunk size, not chain age.
 async fn seal_batch<P: BatchPolicy>(
     state: &mut BatchBuilderState<P>,
-    batch_storage: &(impl BatchStorage + ChunkWitnessStore),
+    storage: &(impl BatchStorage + ChunkWitnessStore),
     chunk_witness_extractor: Option<&Arc<ChunkWitnessExtractFn>>,
 ) -> Result<Option<BatchId>> {
     if state.accumulator().is_empty() {
@@ -108,7 +108,7 @@ async fn seal_batch<P: BatchPolicy>(
         "Sealing batch"
     );
 
-    batch_storage.save_next_batch(batch).await?;
+    storage.save_next_batch(batch).await?;
 
     // One chunk per batch, spanning the whole batch.
     //
@@ -116,7 +116,7 @@ async fn seal_batch<P: BatchPolicy>(
     // (e.g. sub-batch chunker driven by prover cost). Today the PAAS
     // chunk + acct provers only need the chunk records to exist and
     // be linked to the batch — cardinality is a policy knob.
-    let next_chunk_idx = batch_storage
+    let next_chunk_idx = storage
         .get_latest_chunk()
         .await?
         .map(|(c, _)| c.idx() + 1)
@@ -137,10 +137,8 @@ async fn seal_batch<P: BatchPolicy>(
         .next()
         .expect("chunk has at least last_block");
     let last_block_hash = chunk.last_block();
-    batch_storage.save_next_chunk(chunk).await?;
-    batch_storage
-        .set_batch_chunks(batch_id, vec![chunk_id])
-        .await?;
+    storage.save_next_chunk(chunk).await?;
+    storage.set_batch_chunks(batch_id, vec![chunk_id]).await?;
 
     if let Some(extractor) = chunk_witness_extractor {
         // Pre-compute and persist the chunk witness while we're at-tip.
@@ -156,7 +154,7 @@ async fn seal_batch<P: BatchPolicy>(
             first_block_hash,
             last_block_hash,
             extractor,
-            batch_storage,
+            storage,
         )
         .await
         {
@@ -175,7 +173,7 @@ async fn seal_batch<P: BatchPolicy>(
 
 /// Run the witness extractor for a chunk and persist the result.
 ///
-/// CPU-heavy work happens inside `tokio::task::spawn_blocking` so the
+/// CPU-heavy work happens inside [`tokio::task::spawn_blocking`] so the
 /// batch builder's async loop isn't blocked.
 async fn extract_and_store_chunk_witness(
     chunk_id: ChunkId,

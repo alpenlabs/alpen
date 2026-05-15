@@ -2,10 +2,7 @@
 //!
 //! Written at chunk-seal time by the batch builder (when state is at-tip
 //! and historical depth is shallow), read at proof-time by
-//! `ChunkSpec::fetch_input` instead of re-running
-//! `RangeWitnessExtractor`. This is the storage payload behind the
-//! phase 1 redesign documented in
-//! `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
+//! `ChunkSpec::fetch_input` instead of re-running `RangeWitnessExtractor`.
 //!
 //! The fields are pre-encoded to keep the on-disk type Borsh-friendly:
 //! the partial pre-state uses the same codec encoding the chunk guest
@@ -17,15 +14,14 @@ use strata_acct_types::Hash;
 
 /// Persisted pre-computed witness for one chunk.
 ///
-/// Lifecycle:
+/// Lifecycle in this PR:
 /// - **Written** by the batch builder at chunk-seal time, keyed by [`ChunkId`].
 /// - **Read** by `ChunkSpec::fetch_input` to assemble the chunk proof input.
-/// - **Deleted** on reorg of any contained block, or on chunk cleanup post-finalization.
 ///
-/// Replaces the runtime output of
-/// `alpen_reth_witness::RangeWitnessExtractor::extract_range_witness`.
-///
-/// [`ChunkId`]: super::chunk::ChunkId
+/// TODO(STR-3474): cleanup (deletion on reorg) or pruning after
+/// post-finalization chunk retirement) is **not yet implemented**. 
+/// Records currently accumulate indefinitely; for dev/testnet that's fine,
+/// mainnet will need the cleanup path.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct ChunkWitnessRecord {
     /// Codec-encoded `EvmPartialState` covering accounts/slots/bytecodes
@@ -64,18 +60,17 @@ impl ChunkWitnessRecord {
 }
 
 /// Sync callback that extracts a chunk witness for the block range
-/// `[first_block ..= last_block]` (both inclusive — these are the FIRST
-/// and LAST blocks IN the chunk, NOT the chunk's `prev_block` ancestor).
+/// `[first_block ..= last_block]` — both inclusive, and **both are
+/// blocks INSIDE the chunk**, not the chunk's `prev_block` ancestor.
 ///
-/// Defined as a sync closure (matching the historical `RangeWitnessFn`
-/// pattern in the alpen-client prover) so callers control whether to wrap
-/// it in `tokio::task::spawn_blocking`. Implementations may be CPU-heavy
+/// Sync because callers (the batch builder) control whether to wrap it
+/// in `tokio::task::spawn_blocking`. Implementations may be CPU-heavy
 /// (multiproofs over the chunk's union of accessed state).
 ///
-/// The producer (batch builder) holds an `Arc<ChunkWitnessExtractFn>` and
-/// invokes it at chunk-seal time. The closure is constructed at
-/// alpen-client startup from the reth `ProviderFactory` and the
-/// `AccessedStateStore` and wraps `alpen_reth_witness::RangeWitnessExtractor`
-/// plus the alloy-types → `ChunkWitnessRecord` conversion.
+/// Constructed at alpen-client startup from the reth `ProviderFactory`
+/// and the `AccessedStateStore`; wraps
+/// `alpen_reth_witness::RangeWitnessExtractor` plus the alloy-types →
+/// `ChunkWitnessRecord` conversion. The batch builder holds an
+/// `Arc<ChunkWitnessExtractFn>` and invokes it at chunk-seal time.
 pub type ChunkWitnessExtractFn =
     dyn Fn(Hash, Hash) -> eyre::Result<ChunkWitnessRecord> + Send + Sync;

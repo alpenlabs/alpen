@@ -27,6 +27,8 @@ The test asserts via the service.log signals the rest of the codebase
 already produces — no storage poking, no new RPC surface. Each
 assertion is independent so a regression at any single stage pinpoints
 the failure.
+N.B. The test is intended to be short-lived and parts to be substituted
+with proper accessors or state asserts (and not logs).
 """
 
 import logging

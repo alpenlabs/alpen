@@ -42,13 +42,11 @@ where
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
     pub latest_batch_tx: watch::Sender<BatchId>,
     /// Optional chunk-witness extractor invoked at chunk-seal time. When
-    /// present, `seal_batch` produces a [`ChunkWitnessRecord`] via this
+    /// present, `seal_batch` produces a `ChunkWitnessRecord` via this
     /// callback and persists it via the `ChunkWitnessStore` bound on
     /// `batch_storage`. When absent (tests, configurations without a
-    /// reth provider), chunks seal with no witness pre-computed and
-    /// `ChunkSpec::fetch_input` falls back to its today behavior.
-    ///
-    /// [`ChunkWitnessRecord`]: alpen_ee_common::ChunkWitnessRecord
+    /// reth provider), chunks seal with no witness pre-computed and the
+    /// chunk prover will see a `TransientFailure` on the missing record.
     pub chunk_witness_extractor: Option<Arc<ChunkWitnessExtractFn>>,
     /// Marker for the policy type.
     pub _policy: PhantomData<P>,

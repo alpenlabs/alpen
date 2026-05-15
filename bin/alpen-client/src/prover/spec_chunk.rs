@@ -101,8 +101,8 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// - **`ChunkWitnessStore`** — pre-computed chunk-spanning sparse pre-state + per-block raw block
 ///   bytes, written at chunk-seal time by the batch builder. Read here in `fetch_input` as the
 ///   primary source. A missing record returns `TransientFailure` so paas retries with backoff —
-///   gives an upstream backfill window before prover-core converts the task to permanent
-///   failure on retry exhaustion. See `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
+///   gives an upstream backfill window before prover-core converts the task to permanent failure on
+///   retry exhaustion.
 /// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
@@ -150,14 +150,13 @@ impl ProofSpec for ChunkSpec {
             )));
         }
 
-        // 2. Read the pre-computed chunk witness. The batch builder writes this at chunk-seal
-        //    time when state is at-tip; a missing record means seal-time extraction failed
-        //    (operator will see a `warn!` from the batch builder) or the record was wiped, or
-        //    a transient gap in the upstream `AccessedStateGenerator` exex is still being filled
-        //    in. Return a transient failure so paas retries with backoff — if a backfill or the
-        //    operator restores the record before `max_retries` exhausts, the chunk recovers.
-        //    Otherwise the retry budget runs out and prover-core converts it to a permanent
-        //    failure on its own.
+        // 2. Read the pre-computed chunk witness. The batch builder writes this at chunk-seal time
+        //    when state is at-tip; a missing record means seal-time extraction failed (operator
+        //    will see a `warn!` from the batch builder) or the record was wiped, or a transient gap
+        //    in the upstream `AccessedStateGenerator` exex is still being filled in. Return a
+        //    transient failure so paas retries with backoff — if a backfill or the operator
+        //    restores the record before `max_retries` exhausts, the chunk recovers. Otherwise the
+        //    retry budget runs out and prover-core converts it to a permanent failure on its own.
         let witness = self
             .storage
             .get_chunk_witness(chunk_id)

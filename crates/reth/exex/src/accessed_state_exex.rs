@@ -6,13 +6,11 @@
 //! `AccessedStateStore`. The chunk-builder at chunk-seal time reads these
 //! records to build the chunk witness without re-executing blocks itself.
 //!
-//! Capture path is option A from
-//! `experimental/evgeniy/ee-prover-fetch-input-redesign.md`: re-execute
-//! each committed block here, wrapped in a [`CacheDBProvider`] that
-//! records every account/slot/bytecode read. Reth has already executed
-//! the block once before the exex notification fires; we pay that
-//! re-execution cost as the price of staying out of reth's EVM
-//! customization layer. Production-time historical depth is 1
+//! Capture path: re-execute each committed block here, wrapped in a
+//! [`CacheDBProvider`] that records every account/slot/bytecode read.
+//! Reth has already executed the block once before the exex notification
+//! fires; we pay that re-execution cost as the price of staying out of
+//! reth's EVM customization layer. Production-time historical depth is 1
 //! (`history_by_block_number(blk - 1)`), so memory cost is bounded
 //! regardless of chain age.
 //!

@@ -368,12 +368,10 @@ fn main() {
                 });
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
 
-                // Per-block accessed-state capture (phase 2 of the EE
-                // prover redesign). Re-executes each committed block with
-                // a `CacheDBProvider` to record the read set + bytecodes,
-                // which the chunk-builder consumes at chunk-seal time to
-                // skip its own re-execution loop. See
-                // `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
+                // Per-block accessed-state capture. Re-executes each
+                // committed block with a `CacheDBProvider` to record the
+                // read set + bytecodes, which the chunk-builder consumes
+                // at chunk-seal time to skip its own re-execution loop.
                 node_builder = node_builder.install_exex("accessed_state", {
                     let accessed_state_store = storage.clone();
                     |ctx| async {

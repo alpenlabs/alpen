@@ -1,13 +1,12 @@
 //! Pre-computed chunk witness storage.
 //!
-//! Producer: the batch builder, at chunk-seal time
-//! ([`crates/alpen-ee/sequencer/src/batch_builder/task.rs::seal_batch`]).
+//! Producer: the batch builder, at chunk-seal time (`seal_batch` in
+//! `crates/alpen-ee/sequencer/src/batch_builder/task.rs`).
 //! Consumer: `ChunkSpec::fetch_input` in the chunk prover.
 //!
 //! Sealing-time pre-computation replaces the on-demand
 //! `RangeWitnessExtractor` invocation that previously ran at proof-request
-//! time and OOMed as historical depth grew. See
-//! `experimental/evgeniy/ee-prover-fetch-input-redesign.md` for design.
+//! time and OOMed as historical depth grew.
 
 use async_trait::async_trait;
 

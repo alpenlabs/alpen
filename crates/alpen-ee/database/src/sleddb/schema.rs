@@ -77,8 +77,7 @@ define_table_with_default_codec!(
 
 define_table_with_default_codec!(
     /// Pre-computed chunk witness, written at chunk-seal time by the
-    /// batch builder and read by `ChunkSpec::fetch_input`. See
-    /// `experimental/evgeniy/ee-prover-fetch-input-redesign.md` (phase 1).
+    /// batch builder and read by `ChunkSpec::fetch_input`.
     (ChunkWitnessSchema) DBChunkId => ChunkWitnessRecord
 );
 
