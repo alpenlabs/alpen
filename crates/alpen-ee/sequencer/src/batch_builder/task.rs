@@ -144,10 +144,13 @@ async fn seal_batch<P: BatchPolicy>(
 
     if let Some(extractor) = chunk_witness_extractor {
         // Pre-compute and persist the chunk witness while we're at-tip.
-        // The chunk is already sealed at this point, so the failure path
-        // doesn't undo the seal — but the chunk will be unprovable: the
-        // prover's `ChunkSpec::fetch_input` returns `PermanentFailure` on
-        // a missing witness record. Log so an operator notices.
+        // The chunk is already sealed at this point, so this failure
+        // path doesn't undo the seal. With `ChunkSpec::fetch_input` now
+        // treating a missing witness record as a `TransientFailure`, a
+        // future backfill (or operator-driven re-extraction) can rescue
+        // the chunk before paas exhausts its retry budget; absent that,
+        // prover-core eventually converts the task to a permanent
+        // failure on its own. Log so an operator notices either way.
         if let Err(e) = extract_and_store_chunk_witness(
             chunk_id,
             first_block_hash,
@@ -160,7 +163,7 @@ async fn seal_batch<P: BatchPolicy>(
             warn!(
                 ?chunk_id,
                 error = %e,
-                "chunk witness extraction failed at seal time; chunk will be unprovable until manually re-extracted or wiped"
+                "chunk witness extraction failed at seal time; chunk will retry-and-eventually-fail in the prover until backfilled"
             );
         }
     }

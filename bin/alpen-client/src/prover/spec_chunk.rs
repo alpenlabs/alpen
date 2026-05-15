@@ -100,8 +100,9 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// Two data sources per chunk:
 /// - **`ChunkWitnessStore`** — pre-computed chunk-spanning sparse pre-state + per-block raw block
 ///   bytes, written at chunk-seal time by the batch builder. Read here in `fetch_input` as the
-///   primary source. A missing record is a hard failure — there is no on-demand re-extraction
-///   fallback. See `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
+///   primary source. A missing record returns `TransientFailure` so paas retries with backoff —
+///   gives an upstream backfill window before prover-core converts the task to permanent
+///   failure on retry exhaustion. See `experimental/evgeniy/ee-prover-fetch-input-redesign.md`.
 /// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
@@ -149,18 +150,24 @@ impl ProofSpec for ChunkSpec {
             )));
         }
 
-        // 2. Read the pre-computed chunk witness. The batch builder writes this at chunk-seal time
-        //    when state is at-tip; a missing record means seal-time extraction failed (operator
-        //    will see a `warn!` from the batch builder) or the record was wiped. Either way,
-        //    there's no useful retry — fail permanently with a clear error.
+        // 2. Read the pre-computed chunk witness. The batch builder writes this at chunk-seal
+        //    time when state is at-tip; a missing record means seal-time extraction failed
+        //    (operator will see a `warn!` from the batch builder) or the record was wiped, or
+        //    a transient gap in the upstream `AccessedStateGenerator` exex is still being filled
+        //    in. Return a transient failure so paas retries with backoff — if a backfill or the
+        //    operator restores the record before `max_retries` exhausts, the chunk recovers.
+        //    Otherwise the retry budget runs out and prover-core converts it to a permanent
+        //    failure on its own.
         let witness = self
             .storage
             .get_chunk_witness(chunk_id)
             .await
             .map_err(|e| PaasError::Storage(format!("get_chunk_witness({chunk_id:?}): {e}")))?
             .ok_or_else(|| {
-                PaasError::PermanentFailure(format!(
-                    "no chunk witness for {chunk_id:?} — chunk was sealed without one (seal-time extraction failed) or the record was deleted"
+                PaasError::TransientFailure(format!(
+                    "no chunk witness for {chunk_id:?} yet — seal-time extraction may still be \
+                     in flight, gated on the AccessedStateGenerator exex catching up, or the \
+                     record was deleted"
                 ))
             })?;
 
