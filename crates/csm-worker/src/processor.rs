@@ -190,7 +190,7 @@ pub(crate) fn process_asm_block<C: CsmWorkerContext>(
         warn!(
             %asm_block,
             last_height,
-            "ASM block strictly behind last committed; skipping (possible deeper reorg, see TODO)"
+            "ASM block strictly behind last committed; skipping (possible deeper reorg)"
         );
         return Ok(());
     }
@@ -202,7 +202,7 @@ pub(crate) fn process_asm_block<C: CsmWorkerContext>(
         warn!(
             %asm_block,
             last_blkid = ?last.blkid(),
-            "same-height ASM block with different blkid; processing as reorged tip (see TODO)"
+            "same-height ASM block with different blkid; processing as reorged tip"
         );
         // Directly process the one block reorg.
         return process_block(state, asm_block, logs);

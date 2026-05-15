@@ -810,8 +810,8 @@ async fn checkpoint_info_returns_confirmed_status_with_l1_ref() {
     match info.confirmation_status {
         RpcCheckpointConfStatus::Confirmed { l1_reference } => {
             assert_eq!(l1_reference.l1_block.height(), observed_height);
-            assert_eq!(l1_reference.txid, checkpoint_txid);
-            assert_eq!(l1_reference.wtxid, checkpoint_wtxid);
+            assert_eq!(l1_reference.txid, RBuf32::from(checkpoint_txid.0));
+            assert_eq!(l1_reference.wtxid, RBuf32::from(checkpoint_wtxid.0));
         }
         _ => panic!("expected confirmed checkpoint status"),
     }
@@ -955,8 +955,8 @@ async fn checkpoint_info_returns_finalized_status_when_epoch_is_finalized() {
     match info.confirmation_status {
         RpcCheckpointConfStatus::Finalized { l1_reference } => {
             assert_eq!(l1_reference.l1_block.height(), observed_height);
-            assert_eq!(l1_reference.txid, checkpoint_txid);
-            assert_eq!(l1_reference.wtxid, checkpoint_wtxid);
+            assert_eq!(l1_reference.txid, RBuf32::from(checkpoint_txid.0));
+            assert_eq!(l1_reference.wtxid, RBuf32::from(checkpoint_wtxid.0));
         }
         _ => panic!("expected finalized checkpoint status"),
     }
