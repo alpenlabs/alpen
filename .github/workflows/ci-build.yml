@@ -114,7 +114,7 @@ jobs:
 
       - name: Build strata-datatool + SP1 guest ELFs
         run: |
-          cargo build --bin strata-datatool --features sp1-builder --release
+          cargo build --bin strata-datatool --features sp1-docker-builder --release
 
           mkdir -p artifacts/elfs/sp1
           install -m 0755 target/release/strata-datatool artifacts/strata-datatool
