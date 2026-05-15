@@ -45,10 +45,7 @@ where
     E: EpochSealingPolicy,
     P: StateProvider,
 {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "params can be removed once RollupParams is phased out"
-    )]
+    #[expect(clippy::too_many_arguments, reason = "service builder wiring")]
     pub fn new(
         ol_params: Arc<OLParams>,
         blockasm_config: Arc<BlockAssemblyConfig>,

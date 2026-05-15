@@ -2,7 +2,7 @@
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error as DeError};
 use ssz_derive::{Decode, Encode};
 use thiserror::Error;
 
@@ -11,11 +11,42 @@ use thiserror::Error;
 /// Constructed via [`BridgeParams::new`] which validates the invariants:
 /// - `denomination` must be non-zero
 /// - If `max_withdrawal_amount` is set, it must be `>= denomination` and a multiple of it
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Encode)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct BridgeParams {
     denomination: u64,
     max_withdrawal_amount: Option<u64>,
+}
+
+/// Raw mirror for deserialization. Serde and SSZ decode into this first,
+/// then validate via [`BridgeParams::new`].
+#[derive(Deserialize, Decode)]
+struct BridgeParamsRaw {
+    denomination: u64,
+    max_withdrawal_amount: Option<u64>,
+}
+
+impl<'de> Deserialize<'de> for BridgeParams {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = BridgeParamsRaw::deserialize(deserializer)?;
+        Self::new(raw.denomination, raw.max_withdrawal_amount).map_err(DeError::custom)
+    }
+}
+
+impl ssz::Decode for BridgeParams {
+    fn is_ssz_fixed_len() -> bool {
+        BridgeParamsRaw::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        BridgeParamsRaw::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        let raw = BridgeParamsRaw::from_ssz_bytes(bytes)?;
+        Self::new(raw.denomination, raw.max_withdrawal_amount)
+            .map_err(|e| ssz::DecodeError::BytesInvalid(e.to_string()))
+    }
 }
 
 impl BridgeParams {
@@ -129,5 +160,33 @@ mod tests {
         let w = BridgeParams::new(100_000_000, Some(100_000_000)).unwrap();
         assert!(w.validate_withdrawal_amount(100_000_000));
         assert!(!w.validate_withdrawal_amount(200_000_000));
+    }
+
+    #[test]
+    fn serde_roundtrip() {
+        let bp = BridgeParams::new(100_000_000, Some(1_000_000_000)).unwrap();
+        let json = serde_json::to_string(&bp).unwrap();
+        let decoded: BridgeParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(bp, decoded);
+    }
+
+    #[test]
+    fn serde_rejects_zero_denomination() {
+        let json = r#"{"denomination":0,"max_withdrawal_amount":null}"#;
+        assert!(serde_json::from_str::<BridgeParams>(json).is_err());
+    }
+
+    #[test]
+    fn serde_rejects_invalid_cap() {
+        let json = r#"{"denomination":100000000,"max_withdrawal_amount":150000000}"#;
+        assert!(serde_json::from_str::<BridgeParams>(json).is_err());
+    }
+
+    #[test]
+    fn ssz_roundtrip() {
+        let bp = BridgeParams::new(100_000_000, Some(1_000_000_000)).unwrap();
+        let encoded = ssz::Encode::as_ssz_bytes(&bp);
+        let decoded = <BridgeParams as ssz::Decode>::from_ssz_bytes(&encoded).unwrap();
+        assert_eq!(bp, decoded);
     }
 }
