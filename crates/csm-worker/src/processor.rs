@@ -9,7 +9,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
-use strata_identifiers::{Epoch, RBuf32};
+use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use tracing::*;
@@ -68,13 +68,14 @@ fn process_checkpoint_tip_log<C: CsmWorkerContext>(
         );
     }
 
-    mark_ol_checkpoint_l1_observed(state, checkpoint_tip_update, asm_block)?;
+    let observation = mark_ol_checkpoint_l1_observed(state, checkpoint_tip_update, asm_block)?;
     // Tip logs do not contain full batch transition details.
     // CSM only needs epoch progression for finalized-epoch signaling, so we
     // synthesize a minimal checkpoint view from the tip.
     // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
     // these fields directly without legacy L1Checkpoint shape coupling.
-    let synthetic_checkpoint = checkpoint_from_tip_update(checkpoint_tip_update, asm_block);
+    let synthetic_checkpoint =
+        checkpoint_from_tip_update(checkpoint_tip_update, asm_block, observation);
     apply_checkpoint_to_client_state(state, synthetic_checkpoint, epoch);
 
     state.staged.last_processed_epoch = Some(epoch);
@@ -185,7 +186,7 @@ pub(crate) fn process_asm_block<C: CsmWorkerContext>(
         return Ok(());
     }
 
-    // TODO(STRA-3466): Strictly behind — either a stale message or a deeper reorg.
+    // TODO(STR-3466): Strictly behind — either a stale message or a deeper reorg.
     if target_height < last_height {
         warn!(
             %asm_block,
@@ -233,7 +234,7 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     checkpoint_tip_update: &CheckpointTipUpdate,
     asm_block: &L1BlockCommitment,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<CheckpointL1Ref> {
     let tip = checkpoint_tip_update.tip();
     let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
     let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
@@ -302,7 +303,7 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
         state
             .staged
             .observed_checkpoints
-            .push_back((commitment, observation));
+            .push_back((commitment, observation.clone()));
     }
 
     debug!(
@@ -312,7 +313,7 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
         wtxid = ?extracted.wtxid,
         "Recorded OL checkpoint L1 ref from tip update"
     );
-    Ok(())
+    Ok(observation)
 }
 
 /// Build a compatibility synthetic [`L1Checkpoint`] from a checkpoint tip update.
@@ -321,12 +322,9 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
 fn checkpoint_from_tip_update(
     checkpoint_tip_update: &CheckpointTipUpdate,
     asm_block: &L1BlockCommitment,
+    l1_reference: CheckpointL1Ref,
 ) -> L1Checkpoint {
     let tip = checkpoint_tip_update.tip();
-    // Upstream tip logs do not include txid/wtxid.
-    let checkpoint_txid = RBuf32::zero();
-    let checkpoint_wtxid = checkpoint_txid;
-    let l1_reference = CheckpointL1Ref::new(*asm_block, checkpoint_txid, checkpoint_wtxid);
 
     // TODO(STR-2438): This `BatchInfo` synthesis is semantically incorrect
     // for checkpoint tip updates (start/end L1 and L2 commitments are

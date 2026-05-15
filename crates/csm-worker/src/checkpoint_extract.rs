@@ -30,6 +30,8 @@ pub(crate) struct ExtractedCheckpoint {
 
 /// Returns the SPS-50-tagged checkpoint envelope tx in `block` that ASM accepted
 /// for `expected`, or `None` if none does. Mirrors ASM's verification.
+///
+/// NOTE: This returns the first matching checkpoint tx.
 pub(crate) fn extract_matching_checkpoint(
     block: &Block,
     magic: MagicBytes,
@@ -103,7 +105,7 @@ pub(crate) fn extract_matching_checkpoint(
     None
 }
 
-/// Verifies the checkpoint mimicing how checkpoint subprotocol handles this.
+/// Verifies the checkpoint mimicking how checkpoint subprotocol handles this.
 /// This does not log any errors, just returns error indicating checkpoint validation failed.
 fn verify_checkpoint(
     checkpoint_state: &mut CheckpointState,
