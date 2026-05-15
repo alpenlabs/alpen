@@ -219,6 +219,16 @@ impl ChainWorkerServiceState {
     ///
     /// This fetches parent state, builds the state stack, runs verification,
     /// and extracts the resulting write batch and indexer writes.
+    #[instrument(
+        skip_all,
+        fields(
+            slot = block.header().slot(),
+            epoch = block.header().epoch(),
+            is_terminal = block.header().is_terminal(),
+            %parent_commitment,
+        ),
+        err,
+    )]
     fn execute_stf(
         &self,
         block: &OLBlock,
@@ -240,7 +250,10 @@ impl ChainWorkerServiceState {
         let mut new_state = parent_state;
         new_state
             .apply_write_batch(write_batch.clone())
-            .map_err(|e| WorkerError::Unexpected(format!("Failed to apply write batch: {}", e)))?;
+            .map_err(|source| WorkerError::ApplyWriteBatch {
+                commitment: parent_commitment,
+                source,
+            })?;
         let new_state = new_state.into_inner();
 
         // Use the state root from the header (verify_block validated it).
@@ -256,6 +269,15 @@ impl ChainWorkerServiceState {
     /// Runs the STF verification on a block.
     ///
     /// This is a pure function that builds the state stack and executes the STF.
+    #[instrument(
+        skip_all,
+        fields(
+            slot = block.header().slot(),
+            epoch = block.header().epoch(),
+            is_terminal = block.header().is_terminal(),
+        ),
+        err,
+    )]
     fn run_stf_verification(
         parent_state: &MemoryStateBaseLayer,
         block: &OLBlock,

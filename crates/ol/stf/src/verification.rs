@@ -12,6 +12,7 @@ use strata_ol_chain_types_new::{
     OLTxSegment,
 };
 use strata_ol_da::DaScheme;
+use tracing::error;
 
 use crate::{
     chain_processing,
@@ -226,13 +227,27 @@ pub fn verify_block_preseal<S: IStateAccessorMut>(
     // - if it *is* a terminal, then check against the preseal state root
     let pre_manifest_state_root = state.compute_state_root()?;
     let expected_root = if header.is_terminal() {
-        exp.post_state_roots
-            .preseal_state_root()
-            .ok_or(ExecError::ChainIntegrity)?
+        exp.post_state_roots.preseal_state_root().ok_or_else(|| {
+            error!(
+                slot = header.slot(),
+                epoch = header.epoch(),
+                "terminal block missing preseal state root"
+            );
+            ExecError::ChainIntegrity
+        })?
     } else {
         exp.post_state_roots.header_state_root()
     };
     if &pre_manifest_state_root != expected_root {
+        error!(
+            computed = %pre_manifest_state_root,
+            expected = %expected_root,
+            slot = header.slot(),
+            epoch = header.epoch(),
+            is_terminal = header.is_terminal(),
+            check = "preseal_state_root",
+            "preseal state root mismatch"
+        );
         return Err(ExecError::ChainIntegrity);
     }
 
@@ -259,7 +274,17 @@ pub fn apply_block_manifests<S: IStateAccessorMut>(
 
         // After processing manifests, check the actual final state root against the header.
         let final_state_root = state.compute_state_root()?;
-        if &final_state_root != exp.post_state_roots.header_state_root() {
+        let expected_root = exp.post_state_roots.header_state_root();
+        if &final_state_root != expected_root {
+            error!(
+                computed = %final_state_root,
+                expected = %expected_root,
+                slot = header.slot(),
+                epoch = header.epoch(),
+                is_terminal = header.is_terminal(),
+                check = "post_manifest_state_root",
+                "post-manifest state root mismatch"
+            );
             return Err(ExecError::ChainIntegrity);
         }
     }
@@ -388,7 +413,14 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     chain_processing::process_epoch_initial(state, &init_ctx)?;
 
     // 2. Apply the DA diff.
-    D::apply_to_state(diff, state).map_err(|_| ExecError::ChainIntegrity)?;
+    D::apply_to_state(diff, state).map_err(|e| {
+        error!(
+            error = %e,
+            epoch = epoch_info.epoch(),
+            "DA scheme failed to apply diff during epoch verification"
+        );
+        ExecError::ChainIntegrity
+    })?;
 
     // 3. As if it were the last block of an epoch, call process_block_manifests.
     let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
@@ -399,6 +431,13 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     // 4. Verify the final state root.
     let final_state_root = state.compute_state_root()?;
     if final_state_root != exp.epoch_post_state_root {
+        error!(
+            computed = %final_state_root,
+            expected = %exp.epoch_post_state_root,
+            epoch = epoch_info.epoch(),
+            check = "epoch_post_state_root",
+            "epoch post-state root mismatch"
+        );
         return Err(ExecError::ChainIntegrity);
     }
 
