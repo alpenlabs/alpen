@@ -55,12 +55,12 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
         let prev_confirmed_epoch = state.staged.confirmed_epoch;
         let prev_finalized_epoch = state.staged.finalized_epoch;
 
-        // Process `asm_block` (and any blocks the status channel skipped over).
-        // On failure nothing is persisted and the cursor stays pinned at the
-        // last contiguous block, so a restart re-processes from there instead
-        // of silently jumping past the failed block.
+        // Process `asm_block` and any blocks that might have been skipped.
+        //
+        // Errors here are intentionally swallowed: gap-fill is idempotent and
+        // the next ASM status update will retry the missed blocks.
         if let Err(e) = process_asm_block(state, asm_block, asm_status.logs()) {
-            error!(%asm_block, err = %e, "Failed to process ASM block");
+            error!(%asm_block, err = ?e, "Failed to process ASM block");
         }
 
         // Advance finalized epoch from the observation queue based on L1 depth.

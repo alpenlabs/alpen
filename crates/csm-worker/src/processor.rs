@@ -167,48 +167,66 @@ fn process_block<C: CsmWorkerContext>(
 /// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
 /// between the last committed block and `asm_block`.
 ///
-/// The ASM status channel only delivers the latest block, so gaps from
-/// transient failures must be backfilled. We walk `[last_committed + 1,
-/// asm_block - 1]`, pulling each skipped block's state from storage and
-/// processing it individually before processing `asm_block`. On error the
-/// cursor stays at the last contiguous block, so restarts resume safely.
+///  On error the cursor stays at the last contiguous block, so restarts resume safely.
 pub(crate) fn process_asm_block<C: CsmWorkerContext>(
     state: &mut CsmWorkerState<C>,
     asm_block: L1BlockCommitment,
     logs: &[AsmLogEntry],
 ) -> anyhow::Result<()> {
-    let last_height = state
+    let last = state
         .last_asm_block
-        .map(|b| b.height())
         .ok_or_else(|| anyhow::anyhow!("CSM has no last committed ASM block"))?;
+    let last_height = last.height();
     let target_height = asm_block.height();
 
-    // Already processed (duplicate status) or behind us (reorg) — nothing to do.
-    if target_height <= last_height {
-        debug!(
+    // Exact duplicate — ASM redelivered the same status, nothing to do.
+    if asm_block == last {
+        debug!(%asm_block, "ASM status block matches last committed; skipping");
+        return Ok(());
+    }
+
+    // TODO(STRA-3466): Strictly behind — either a stale message or a deeper reorg.
+    if target_height < last_height {
+        warn!(
             %asm_block,
             last_height,
-            "ASM status block not ahead of last committed block; skipping"
+            "ASM block strictly behind last committed; skipping (possible deeper reorg, see TODO)"
         );
         return Ok(());
     }
 
-    // Replay any blocks the status channel skipped over.
-    for height in (last_height + 1)..target_height {
-        let gap_block = state
-            .ctx
-            .get_canonical_l1_block(height)
-            .with_context(|| format!("resolving gap L1 block at height {height}"))?;
-        let gap_state = state
-            .ctx
-            .get_asm_state(&gap_block)
-            .with_context(|| format!("fetching ASM state for gap block {gap_block}"))?;
-        let gap_logs = gap_state.logs().clone();
-        info!(%gap_block, "replaying ASM block skipped by status channel");
-        process_block(state, gap_block, &gap_logs)?;
+    // Same height, different blkid — the chain reorged out our last tip.
+    // TODO(STR-3466): with this ticket the two conditionals can be collapsed into one `<=`
+    // check.
+    if target_height == last_height {
+        warn!(
+            %asm_block,
+            last_blkid = ?last.blkid(),
+            "same-height ASM block with different blkid; processing as reorged tip (see TODO)"
+        );
+        // Directly process the one block reorg.
+        return process_block(state, asm_block, logs);
     }
 
-    process_block(state, asm_block, logs)
+    for height in (last_height + 1)..=target_height {
+        let (block, block_logs) = if height == target_height {
+            (asm_block, logs.to_vec())
+        } else {
+            // fetch from db.
+            let gap_block = state
+                .ctx
+                .get_canonical_l1_block(height)
+                .with_context(|| format!("resolving gap L1 block at height {height}"))?;
+            let gap_state = state
+                .ctx
+                .get_asm_state(&gap_block)
+                .with_context(|| format!("fetching ASM state for gap block {gap_block}"))?;
+            info!(%gap_block, "replaying ASM block skipped by status channel");
+            (gap_block, gap_state.logs().clone())
+        };
+        process_block(state, block, &block_logs)?;
+    }
+    Ok(())
 }
 
 fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
@@ -786,8 +804,36 @@ mod tests {
         let _ = before_block;
     }
 
+    /// A same-height block with a different blkid is treated as a reorged
+    /// tip: its logs are processed and the cursor advances to the new blkid.
+    #[test]
+    fn same_height_reorg_processes_new_tip() {
+        let (mut state, storage) = create_test_state();
+        let old_blkid = block_id_at(100);
+        let new_blkid = block_id_at(0xFE);
+        let last = L1BlockCommitment::new(100, old_blkid);
+        state.last_asm_block = Some(last);
+
+        let reorged = L1BlockCommitment::new(100, new_blkid);
+        process_asm_block(&mut state, reorged, &[create_non_checkpoint_log_type()])
+            .expect("same-height reorg should process the new tip");
+
+        assert_eq!(
+            state.last_asm_block,
+            Some(reorged),
+            "cursor must advance to the reorged-in blkid"
+        );
+        let row = storage
+            .client_state()
+            .get_update_blocking(&reorged)
+            .expect("query client state");
+        assert!(
+            row.is_some(),
+            "client-state row must be persisted under the new blkid"
+        );
+    }
+
     /// A status for a block at or behind the last committed block is a no-op
-    /// (duplicate delivery or a reorg that moved us back).
     #[test]
     fn stale_or_duplicate_block_is_ignored() {
         let (mut state, storage) = create_test_state();
