@@ -38,7 +38,7 @@ struct RevealArtifact {
 
 /// One unsigned commit tx and N signed reveal txs.
 #[derive(Debug)]
-pub(crate) struct ChunkedEnvelopeTxs {
+pub struct ChunkedEnvelopeTxs {
     pub commit_tx: Transaction,
     pub reveal_txs: Vec<Transaction>,
 }
@@ -52,7 +52,7 @@ pub(crate) struct ChunkedEnvelopeTxs {
 ///
 /// The SPS-51 envelope framing applied to reveals lets the sigCheck transitively
 /// authenticate the commit whose outputs the reveals spend.
-pub(crate) fn build_chunked_envelope_txs(
+pub fn build_chunked_envelope_txs(
     config: &EnvelopeConfig,
     chunks: &[Vec<u8>],
     magic_bytes: &MagicBytes,
