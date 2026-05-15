@@ -2,13 +2,16 @@
 
 use bitcoin::{Block, hashes::Hash};
 use strata_asm_common::{TxInputRef, VerifiedAuxData};
-use strata_asm_proto_checkpoint::{
-    state::CheckpointState, verification::validate_checkpoint_and_extract_withdrawal_intents,
-};
+use strata_asm_proto_checkpoint::CheckpointState;
 use strata_asm_proto_checkpoint_txs::{
     CHECKPOINT_SUBPROTOCOL_ID, OL_STF_CHECKPOINT_TX_TYPE, extract_checkpoint_from_envelope,
 };
-use strata_asm_proto_checkpoint_types::{CheckpointPayload, CheckpointTip};
+use strata_asm_proto_checkpoint_types::{
+    AsmManifestRangeHash, CheckpointPayload, CheckpointTip, compute_asm_manifests_hash_from_leaves,
+};
+use strata_checkpoint_verification::{
+    CheckpointL1Range, verify_progression, verify_sequencer_predicate,
+};
 use strata_identifiers::RBuf32;
 use strata_l1_txfmt::{MagicBytes, ParseConfig};
 use tracing::{debug, warn};
@@ -26,17 +29,12 @@ pub(crate) struct ExtractedCheckpoint {
 }
 
 /// Returns the SPS-50-tagged checkpoint envelope tx in `block` that ASM accepted
-/// for `expected`, or `None` if none does.
-///
-/// Mirrors ASM's acceptance rule by calling
-/// [`validate_checkpoint_and_extract_withdrawal_intents`] on each candidate and
-/// returning the first one that passes — matching ASM's first-valid-wins
-/// behavior within a block.
+/// for `expected`, or `None` if none does. Mirrors ASM's verification.
 pub(crate) fn extract_matching_checkpoint(
     block: &Block,
     magic: MagicBytes,
     expected: &CheckpointTip,
-    checkpoint_state: &CheckpointState,
+    checkpoint_state: &mut CheckpointState,
     current_l1_height: u32,
     verified_aux_data: &VerifiedAuxData,
 ) -> Option<ExtractedCheckpoint> {
@@ -72,10 +70,10 @@ pub(crate) fn extract_matching_checkpoint(
             continue;
         }
 
-        if let Err(e) = validate_checkpoint_and_extract_withdrawal_intents(
+        if let Err(e) = verify_checkpoint(
             checkpoint_state,
-            current_l1_height,
             &envelope,
+            current_l1_height,
             verified_aux_data,
         ) {
             debug!(
@@ -103,6 +101,41 @@ pub(crate) fn extract_matching_checkpoint(
     }
 
     None
+}
+
+/// Verifies the checkpoint mimicing how checkpoint subprotocol handles this.
+/// This does not log any errors, just returns error indicating checkpoint validation failed.
+fn verify_checkpoint(
+    checkpoint_state: &mut CheckpointState,
+    envelope: &strata_asm_proto_checkpoint_txs::EnvelopeCheckpoint,
+    current_l1_height: u32,
+    verified_aux_data: &VerifiedAuxData,
+) -> anyhow::Result<()> {
+    let coverage = verify_sequencer_predicate(
+        checkpoint_state.sequencer_predicate(),
+        &envelope.envelope_pubkey,
+    )
+    .and_then(|_| {
+        verify_progression(
+            checkpoint_state.verified_tip(),
+            envelope.payload.new_tip(),
+            current_l1_height,
+        )
+    })?;
+
+    let asm_manifests_hash = match &coverage {
+        CheckpointL1Range::Empty => AsmManifestRangeHash::ZERO,
+        CheckpointL1Range::Range {
+            start_height,
+            end_height,
+        } => {
+            let manifest_hashes =
+                verified_aux_data.get_manifest_hashes(*start_height as u64, *end_height as u64)?;
+            compute_asm_manifests_hash_from_leaves(&manifest_hashes)
+        }
+    };
+    checkpoint_state.advance(&envelope.payload, asm_manifests_hash)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -242,7 +275,7 @@ mod tests {
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
         let aux = harness.gen_verified_aux(&expected);
-        let state = harness_checkpoint_state(&harness);
+        let mut state = harness_checkpoint_state(&harness);
 
         let tx = legit_envelope_tx(&harness, &payload);
         let block = block_from_txs(vec![create_dummy_tx(1, 1), tx.clone()]);
@@ -251,7 +284,7 @@ mod tests {
             &block,
             TEST_MAGIC_BYTES,
             &expected,
-            &state,
+            &mut state,
             current_l1_height_for(&expected),
             &aux,
         )
@@ -283,14 +316,14 @@ mod tests {
             real_tip.l1_height() + 1,
             Default::default(),
         );
-        let state = harness_checkpoint_state(&harness);
+        let mut state = harness_checkpoint_state(&harness);
 
         assert!(
             extract_matching_checkpoint(
                 &block,
                 TEST_MAGIC_BYTES,
                 &foreign_tip,
-                &state,
+                &mut state,
                 current_l1_height_for(&foreign_tip),
                 &aux,
             )
@@ -309,7 +342,7 @@ mod tests {
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
         let aux = harness.gen_verified_aux(&expected);
-        let state = harness_checkpoint_state(&harness);
+        let mut state = harness_checkpoint_state(&harness);
 
         // Hostile envelope: a separately generated harness signs the same tip
         // but the envelope pubkey is the hostile sequencer's, not the real one.
@@ -329,7 +362,7 @@ mod tests {
             &block,
             TEST_MAGIC_BYTES,
             &expected,
-            &state,
+            &mut state,
             current_l1_height_for(&expected),
             &aux,
         )
@@ -353,7 +386,7 @@ mod tests {
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
         let aux = harness.gen_verified_aux(&expected);
-        let state = harness_checkpoint_state(&harness);
+        let mut state = harness_checkpoint_state(&harness);
 
         // Build a "bad" payload by reusing the new_tip but corrupting the
         // proof so it no longer verifies against the reconstructed claim.
@@ -382,7 +415,7 @@ mod tests {
             &block,
             TEST_MAGIC_BYTES,
             &expected,
-            &state,
+            &mut state,
             current_l1_height_for(&expected),
             &aux,
         )

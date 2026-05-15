@@ -6,7 +6,7 @@ use anyhow::Context;
 use bitcoin::hashes::Hash;
 use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
 use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
-use strata_asm_proto_checkpoint::{state::CheckpointState, subprotocol::CheckpointSubprotocol};
+use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::{Epoch, RBuf32};
@@ -248,7 +248,7 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
     let parent_asm_state = state.ctx.get_asm_state(&parent_block).with_context(|| {
         format!("fetching parent ASM state {parent_block} for checkpoint observation")
     })?;
-    let checkpoint_state = decode_checkpoint_section(&parent_asm_state)?;
+    let mut checkpoint_state = decode_checkpoint_section(&parent_asm_state)?;
     let aux_data = state
         .ctx
         .get_aux_data(asm_block)
@@ -263,7 +263,7 @@ fn mark_ol_checkpoint_l1_observed<C: CsmWorkerContext>(
         &block,
         state.ctx.magic_bytes(),
         tip,
-        &checkpoint_state,
+        &mut checkpoint_state,
         asm_block.height(),
         &verified_aux_data,
     )

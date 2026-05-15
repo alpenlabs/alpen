@@ -15423,6 +15423,7 @@ dependencies = [
  "strata-asm-worker",
  "strata-btc-verification",
  "strata-checkpoint-types",
+ "strata-checkpoint-verification",
  "strata-codec",
  "strata-codec-utils 0.1.0",
  "strata-common",
@@ -16914,7 +16915,7 @@ dependencies = [
 [[package]]
 name = "strata-test-utils-arb"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "arbitrary",
  "rand_core 0.6.4",
@@ -16960,13 +16961,14 @@ dependencies = [
 [[package]]
 name = "strata-test-utils-checkpoint"
 version = "0.3.0-alpha.1"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "borsh",
  "k256",
  "rand 0.8.5",
  "ssz",
  "strata-asm-common",
+ "strata-asm-manifest-types",
  "strata-asm-proto-checkpoint-txs",
  "strata-asm-proto-checkpoint-types",
  "strata-crypto",

@@ -13,8 +13,8 @@ strata-asm-proto-checkpoint.workspace = true
 strata-asm-proto-checkpoint-txs.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-asm-worker.workspace = true
-strata-state.workspace = true
 strata-checkpoint-types.workspace = true
+strata-checkpoint-verification.workspace = true
 strata-common.workspace = true
 strata-csm-types.workspace = true
 strata-identifiers.workspace = true
@@ -22,6 +22,7 @@ strata-l1-txfmt.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
+strata-state.workspace = true
 strata-storage.workspace = true
 
 anyhow.workspace = true
