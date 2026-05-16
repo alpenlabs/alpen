@@ -15451,6 +15451,7 @@ dependencies = [
  "argh",
  "bitcoin",
  "bitcoind-async-client",
+ "borsh",
  "rand_core 0.6.4",
  "reth-chainspec",
  "serde_json",
@@ -16726,6 +16727,7 @@ name = "strata-sp1-guest-builder"
 version = "0.3.0-alpha.1"
 dependencies = [
  "bincode",
+ "borsh",
  "cargo_metadata 0.19.2",
  "cfg-if",
  "once_cell",

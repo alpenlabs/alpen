@@ -8,6 +8,7 @@ once_cell = "1.21.4"
 
 [build-dependencies]
 bincode.workspace = true
+borsh.workspace = true
 cargo_metadata = "0.19.1"
 cfg-if.workspace = true
 sha2.workspace = true
