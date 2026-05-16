@@ -15,11 +15,11 @@ use strata_acct_types::Hash;
 /// Persisted pre-computed witness for one chunk.
 ///
 /// Lifecycle in this PR:
-/// - **Written** by the batch builder at chunk-seal time, keyed by [`ChunkId`].
+/// - **Written** by the batch builder at chunk-seal time, keyed by [`super::chunk::ChunkId`].
 /// - **Read** by `ChunkSpec::fetch_input` to assemble the chunk proof input.
 ///
 /// TODO(STR-3474): cleanup (deletion on reorg) or pruning after
-/// post-finalization chunk retirement) is **not yet implemented**. 
+/// post-finalization chunk retirement) is **not yet implemented**.
 /// Records currently accumulate indefinitely; for dev/testnet that's fine,
 /// mainnet will need the cleanup path.
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]

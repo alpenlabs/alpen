@@ -202,6 +202,33 @@ impl ProofSpec for ChunkSpec {
         let raw_prev_header = encode_to_vec(&parent_evm_header)
             .map_err(|e| PaasError::PermanentFailure(format!("encode prev header: {e}")))?;
 
+        // Integrity check: the witness was extracted for some specific
+        // chunk; here we confirm its parent-header + per-block hashes
+        // line up with the chunk we're proving. A mismatch means the
+        // witness was generated against a different chunk (stale
+        // record, key collision, on-disk corruption) and the rest of
+        // the assembly would happily produce garbage. Cheap to do —
+        // we already have the hashes computed for the assembly loop
+        // below.
+        if parent_blkid != chunk_id.prev_block() {
+            return Err(PaasError::PermanentFailure(format!(
+                "chunk witness prev-block hash mismatch for {chunk_id:?}: \
+                 chunk expects {:?}, witness has {parent_blkid:?}",
+                chunk_id.prev_block(),
+            )));
+        }
+        for (idx, (expected_hash, alloy_block)) in
+            block_hashes.iter().zip(&alloy_blocks).enumerate()
+        {
+            let computed: Hash = EvmHeader::new(alloy_block.header.clone()).compute_block_id();
+            if computed != *expected_hash {
+                return Err(PaasError::PermanentFailure(format!(
+                    "chunk witness block hash mismatch for {chunk_id:?} at index {idx}: \
+                     chunk has {expected_hash:?}, witness has {computed:?}"
+                )));
+            }
+        }
+
         // 4. Build RawBlockData per block from ExecBlockRecord (inputs/outputs)
         //    + persisted alloy Blocks (EvmBlock encoding).
         let mut block_datas: Vec<RawBlockData> = Vec::with_capacity(block_hashes.len());
