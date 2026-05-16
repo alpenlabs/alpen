@@ -246,9 +246,9 @@ where
         // Try to get block data (non-blocking check)
         let Some(block_data) = ctx.block_data_provider.get_block_data(block.hash()).await? else {
             // Data not ready yet, stop processing
-            println!(
-                "processing pending blocks, block data not yet ready {:?}",
-                block.hash()
+            debug!(
+                hash = %block.hash(),
+                "processing pending blocks, block data not yet ready"
             );
             break;
         };

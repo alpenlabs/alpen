@@ -85,7 +85,7 @@ pub fn verify_proof(
             .map_err(|_| CheckpointError::MalformedTransition)?;
 
     if expected_public_output != &actual_public_output {
-        dbg!(actual_public_output, expected_public_output);
+        warn!(%checkpoint_idx, "checkpoint proof public output does not match batch info");
         return Err(CheckpointError::TransitionMismatch);
     }
 
