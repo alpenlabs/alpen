@@ -1,26 +1,32 @@
-# Running Locally
+# Docker
 
 ## Quick Start
 
 ```bash
-# Copy and configure .env (set MNEMONIC for signet miner):
+# Copy and configure developer inputs. Set MNEMONIC for local signet mining.
 cp .env.example .env
 
-# Start everything:
 just docker-seq-up
-
-# Stop everything:
 just docker-seq-down
 ```
 
 ## Architecture
 
-| Compose | Services |
-|---|---|
-| `compose-signet.yml` | `bitcoind` (local signet miner or fullnode) |
-| `compose-ol-el-seq.yml` | `init` → `strata` → `strata-signer`, `alpen-client` |
+The primary local stack is split into two compose files:
 
-Bitcoin is decoupled from the sequencer stack. `init` waits for bitcoin to reach `GENESIS_L1_HEIGHT`, generates params, then exits. Other services start after.
+| Compose | Purpose |
+|---|---|
+| `compose-signet.yml` | Local signet `bitcoind` miner or fullnode |
+| `compose-ol-el-seq.yml` | OL sequencer, external `strata-signer`, and EE sequencer |
+
+Bitcoin is decoupled from the OL/EE stack. `just docker-seq-up` starts signet, runs `gen-params-and-elfs.sh`, then starts the sequencer stack. Generated keys, params, and env files live under `configs/generated/` and are ignored by git.
+
+The retained secondary compose files have narrower test/debug purposes:
+
+| Compose | Purpose |
+|---|---|
+| `docker-compose-eest.yml` | Ethereum execution spec test environment |
+| `docker-compose-p2p-test.yml` | Minimal EE P2P/gossip test |
 
 ## Just Recipes
 
@@ -34,7 +40,7 @@ Bitcoin is decoupled from the sequencer stack. `init` waits for bitcoin to reach
 
 ## Without Just
 
-For controlled image builds, step-by-step debugging, or running individual services, see the just recipes in `.justfile` (search for `group('docker')`) for the underlying `docker compose` commands.
+For controlled image builds, step-by-step debugging, or running individual services, use the commands behind the just recipes in `.justfile` under `group('docker')`.
 
 ## With remote Bitcoin
 
