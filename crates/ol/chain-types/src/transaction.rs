@@ -1,7 +1,10 @@
 use std::fmt;
 
 use int_enum::IntEnum;
-use strata_acct_types::{AccountId, MessageEntry, MsgPayloadError, TxEffects};
+use strata_acct_types::{
+    AccountId, BitcoinAmount, MessageEntry, MsgPayload, MsgPayloadData, MsgPayloadError,
+    SentMessage, TxEffects,
+};
 use strata_identifiers::{Buf32, OLTxId, Slot};
 use tree_hash::{Sha256Hasher, TreeHash};
 
@@ -257,15 +260,24 @@ impl OLTransactionData {
 
     /// Creates a GAM transaction data targeting the given account with a zero-value message
     /// containing the provided payload data.
-    pub fn new_gam(dest: AccountId, data: Vec<u8>) -> Result<Self, MsgPayloadError> {
+    pub fn new_gam(dest: AccountId, data: MsgPayloadData) -> Self {
         let payload = TransactionPayload::GenericAccountMessage(GamTxPayload { target: dest });
         let mut effects = TxEffects::default();
-        effects.push_message(dest, 0, data)?;
-        Ok(Self {
+        effects.add_message(SentMessage::new(
+            dest,
+            MsgPayload::new(BitcoinAmount::zero(), data),
+        ));
+        Self {
             payload,
             constraints: TxConstraints::default(),
             effects,
-        })
+        }
+    }
+
+    /// Creates GAM transaction data from raw message payload bytes.
+    pub fn from_gam_bytes(dest: AccountId, data: Vec<u8>) -> Result<Self, MsgPayloadError> {
+        let msg_payload = MsgPayload::from_bytes_valueless(data)?;
+        Ok(Self::new_gam(dest, msg_payload.data))
     }
 
     /// Sets the constraints on this transaction data, consuming and returning self.
