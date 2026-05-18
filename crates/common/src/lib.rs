@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod bail_tags;
+pub mod healthz;
 pub mod retry;
 
 pub use bail_tags::*;

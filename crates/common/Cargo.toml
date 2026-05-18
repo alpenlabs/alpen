@@ -8,11 +8,16 @@ workspace = true
 
 [dependencies]
 deadpool.workspace = true
+futures.workspace = true
 http.workspace = true
-jsonrpsee = { workspace = true, features = ["client"] }
+jsonrpsee = { workspace = true, features = ["client", "server"] }
 serde.workspace = true
 tokio = { workspace = true, optional = true }
+tower.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
 
 [features]
 async = ["dep:tokio"]
