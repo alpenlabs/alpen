@@ -21,6 +21,7 @@ CHAIN_STATUS_PAYLOAD='{"jsonrpc":"2.0","method":"strata_getChainStatus","params"
 SNARK_STATE_PAYLOAD='{"jsonrpc":"2.0","method":"strata_getSnarkAccountState","params":["'"${ALPEN_ACCOUNT_ID}"'","latest"],"id":1}'
 
 # Signet config
+export SIGNET_IMAGE="public.ecr.aws/alpenlabs/signet:tmpconf2"
 export MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 export MINERENABLED=1
 export MINE_GENESIS=1
@@ -112,19 +113,19 @@ preflight_cleanup() {
 start_signet_fast() {
     echo "=== Starting signet (BLOCKPRODUCTIONDELAY=1) ==="
     cd "${DOCKER_DIR}"
-    export BLOCKPRODUCTIONDELAY=1
+    export BLOCKPRODUCTIONDELAY=0
     docker compose -f compose-signet.yml up -d 2>&1 | tail -1
 
-    echo "Waiting for bitcoin height > 12..."
-    local deadline=$((SECONDS + 120))
+    echo "Waiting for bitcoin height > 101 (coinbase maturity)..."
+    local deadline=$((SECONDS + 300))
     while [ $SECONDS -lt $deadline ]; do
         local height
         height=$(btc_height)
-        [ "${height}" -gt 12 ] && break
+        [ "${height}" -gt 101 ] && break
         sleep 1
     done
-    if [ "$(btc_height)" -le 12 ]; then
-        echo "FAIL: Bitcoin did not reach height 12 within 120s"
+    if [ "$(btc_height)" -le 101 ]; then
+        echo "FAIL: Bitcoin did not reach height 101 within 300s"
         exit 1
     fi
     echo "Bitcoin at height $(btc_height)"
