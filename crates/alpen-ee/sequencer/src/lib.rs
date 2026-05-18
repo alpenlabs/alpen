@@ -3,6 +3,7 @@
 mod batch_builder;
 mod batch_lifecycle;
 mod block_builder;
+mod chunk_witness_task;
 mod ol_chain_tracker;
 #[cfg(test)]
 pub(crate) mod test_utils;
@@ -17,6 +18,9 @@ pub use batch_lifecycle::{
     create_batch_lifecycle_task, init_lifecycle_state, BatchLifecycleHandle, BatchLifecycleState,
 };
 pub use block_builder::{block_builder_task, BlockBuilderConfig};
+pub use chunk_witness_task::{
+    chunk_witness_channel, chunk_witness_task, ChunkExtractRequest, CHUNK_WITNESS_CHANNEL_CAPACITY,
+};
 pub use ol_chain_tracker::{
     build_ol_chain_tracker, init_ol_chain_tracker_state, InboxMessages, OLChainTrackerHandle,
     OLChainTrackerState,

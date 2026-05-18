@@ -2,14 +2,15 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{
-    BatchId, BatchStorage, BlockNumHash, ChunkWitnessExtractFn, ChunkWitnessStore, ExecBlockStorage,
-};
+use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ChunkWitnessStore, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
-use crate::batch_builder::canonical::{CanonicalChainReader, ExecChainCanonicalReader};
+use crate::{
+    batch_builder::canonical::{CanonicalChainReader, ExecChainCanonicalReader},
+    chunk_witness_task::ChunkExtractRequest,
+};
 
 /// Context holding all dependencies for the batch builder task.
 ///
@@ -41,13 +42,14 @@ where
     pub exec_chain: ExecChainHandle,
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
     pub latest_batch_tx: watch::Sender<BatchId>,
-    /// Optional chunk-witness extractor invoked at chunk-seal time. When
-    /// present, `seal_batch` produces a `ChunkWitnessRecord` via this
-    /// callback and persists it via the `ChunkWitnessStore` bound on
-    /// `batch_storage`. When absent (tests, configurations without a
-    /// reth provider), chunks seal with no witness pre-computed and the
-    /// chunk prover will see a `TransientFailure` on the missing record.
-    pub chunk_witness_extractor: Option<Arc<ChunkWitnessExtractFn>>,
+    /// Optional channel to the background chunk-witness task. When
+    /// present, `seal_batch` publishes a `ChunkExtractRequest` per
+    /// sealed chunk and the witness is computed off the builder's hot
+    /// path. When absent (tests, configurations without a reth
+    /// provider), chunks seal with no witness pre-computed and the
+    /// chunk prover will see a `TransientFailure` on the missing
+    /// record.
+    pub chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
     /// Marker for the policy type.
     pub _policy: PhantomData<P>,
 }

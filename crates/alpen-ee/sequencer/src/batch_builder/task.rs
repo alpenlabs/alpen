@@ -1,20 +1,22 @@
 //! Batch builder task implementation.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkId, ChunkWitnessExtractFn,
-    ChunkWitnessStore, ExecBlockStorage,
+    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkWitnessStore, ExecBlockStorage,
 };
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
-use tokio::{task, time};
+use tokio::{sync::mpsc, time};
 use tracing::{debug, error, warn};
 
 use super::{
     ctx::BatchBuilderCtx, BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockDataProvider,
 };
-use crate::batch_builder::reorg::{check_and_handle_reorg, ReorgReport};
+use crate::{
+    batch_builder::reorg::{check_and_handle_reorg, ReorgReport},
+    chunk_witness_task::ChunkExtractRequest,
+};
 
 /// Polling interval for checking pending block data availability.
 const PENDING_BLOCK_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -71,16 +73,14 @@ async fn get_block_range(
 ///
 /// Returns the sealed batch ID, or `None` if accumulator was empty.
 ///
-/// When `chunk_witness_extractor` is provided, also pre-computes the
-/// chunk's witness record (today's `RangeWitnessExtractor` work, moved
-/// from proof-time to chunk-seal time per the EE prover redesign) and
-/// persists it via [`ChunkWitnessStore`]. State is at-tip when this
-/// runs, so the historical-provider depth `extract_range_witness` walks
-/// is bounded by chunk size, not chain age.
+/// When `chunk_witness_tx` is provided, publishes a
+/// [`ChunkExtractRequest`] on the channel for the background
+/// `chunk_witness_task` to process. Extraction itself runs off this
+/// task's hot path; sealing does not wait for it.
 async fn seal_batch<P: BatchPolicy>(
     state: &mut BatchBuilderState<P>,
     storage: &(impl BatchStorage + ChunkWitnessStore),
-    chunk_witness_extractor: Option<&Arc<ChunkWitnessExtractFn>>,
+    chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
 ) -> Result<Option<BatchId>> {
     if state.accumulator().is_empty() {
         return Ok(None);
@@ -140,28 +140,25 @@ async fn seal_batch<P: BatchPolicy>(
     storage.save_next_chunk(chunk).await?;
     storage.set_batch_chunks(batch_id, vec![chunk_id]).await?;
 
-    if let Some(extractor) = chunk_witness_extractor {
-        // Pre-compute and persist the chunk witness while we're at-tip.
-        // The chunk is already sealed at this point, so this failure
-        // path doesn't undo the seal. With `ChunkSpec::fetch_input` now
-        // treating a missing witness record as a `TransientFailure`, a
-        // future backfill (or operator-driven re-extraction) can rescue
-        // the chunk before paas exhausts its retry budget; absent that,
-        // prover-core eventually converts the task to a permanent
-        // failure on its own. Log so an operator notices either way.
-        if let Err(e) = extract_and_store_chunk_witness(
+    if let Some(tx) = chunk_witness_tx {
+        // Hand the chunk off to the background witness task. `send`
+        // backpressures the builder if the extractor is sustainedly
+        // behind (channel full), but does not block on the per-chunk
+        // extraction itself. Channel closure means the task has died —
+        // log so it's visible, but keep sealing; chunks without a
+        // witness produce `TransientFailure` at proof time and can be
+        // backfilled later.
+        let req = ChunkExtractRequest {
             chunk_id,
-            first_block_hash,
-            last_block_hash,
-            extractor,
-            storage,
-        )
-        .await
-        {
+            first_block: first_block_hash,
+            last_block: last_block_hash,
+        };
+        if let Err(e) = tx.send(req).await {
             warn!(
                 ?chunk_id,
                 error = %e,
-                "chunk witness extraction failed at seal time; chunk will retry-and-eventually-fail in the prover until backfilled"
+                "chunk witness channel closed; chunk sealed without witness — \
+                 chunk will remain proof-blocked until manually backfilled"
             );
         }
     }
@@ -169,29 +166,6 @@ async fn seal_batch<P: BatchPolicy>(
     state.advance_batch(last_block);
 
     Ok(Some(batch_id))
-}
-
-/// Run the witness extractor for a chunk and persist the result.
-///
-/// CPU-heavy work happens inside [`tokio::task::spawn_blocking`] so the
-/// batch builder's async loop isn't blocked.
-async fn extract_and_store_chunk_witness(
-    chunk_id: ChunkId,
-    first_block: Hash,
-    last_block: Hash,
-    extractor: &Arc<ChunkWitnessExtractFn>,
-    store: &impl ChunkWitnessStore,
-) -> Result<()> {
-    let extractor = Arc::clone(extractor);
-
-    let witness = task::spawn_blocking(move || (extractor)(first_block, last_block))
-        .await
-        .map_err(|e| eyre!("chunk witness extraction join: {e}"))?
-        .map_err(|e| eyre!("chunk witness extraction: {e}"))?;
-
-    store.put_chunk_witness(chunk_id, witness).await?;
-    debug!(?chunk_id, "persisted chunk witness");
-    Ok(())
 }
 
 /// Main batch builder task.
@@ -356,7 +330,7 @@ where
             if let Some(batch_id) = seal_batch(
                 state,
                 ctx.batch_storage.as_ref(),
-                ctx.chunk_witness_extractor.as_ref(),
+                ctx.chunk_witness_tx.as_ref(),
             )
             .await?
             {

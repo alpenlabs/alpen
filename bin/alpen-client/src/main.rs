@@ -441,8 +441,9 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
-                    create_batch_builder, create_batch_lifecycle_task,
-                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
+                    chunk_witness_channel, chunk_witness_task, create_batch_builder,
+                    create_batch_lifecycle_task, create_update_submitter_task,
+                    BlockCountDataProvider, FixedBlockCountSealing,
                 };
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
@@ -473,11 +474,14 @@ fn main() {
                 let block_data_provider = Arc::new(BlockCountDataProvider);
 
                 // Chunk-spanning witness extractor. Single producer of
-                // `ChunkWitnessRecord`: the batch builder calls it once per
-                // chunk at seal time via `chunk_witness_extract_fn`. The
-                // chunk prover's `ChunkSpec::fetch_input` reads the
-                // persisted record from sled and has no extractor path of
-                // its own — a missing record is a hard `PermanentFailure`.
+                // `ChunkWitnessRecord`: the background `chunk_witness_task`
+                // invokes it once per chunk, off the batch builder's hot
+                // path. The chunk prover's `ChunkSpec::fetch_input` reads
+                // the persisted record from sled and has no extractor path
+                // of its own; a missing record returns `TransientFailure`
+                // and the task here retries on extraction errors (mainly
+                // covering the race against the `AccessedStateGenerator`
+                // exex).
                 let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
                     node.provider.clone(),
                     storage.clone(),
@@ -504,6 +508,15 @@ fn main() {
                     })
                 };
 
+                let (chunk_witness_tx, chunk_witness_rx) = chunk_witness_channel();
+                let chunk_witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
+                    storage.clone();
+                let chunk_witness_task_fut = chunk_witness_task(
+                    chunk_witness_extract_fn,
+                    chunk_witness_store,
+                    chunk_witness_rx,
+                );
+
                 let (batch_builder_handle, batch_builder_task) = create_batch_builder(
                     latest_batch.id(),
                     BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum()),
@@ -514,7 +527,7 @@ fn main() {
                     storage.clone(),
                     storage.clone(),
                     exec_chain_handle.clone(),
-                    Some(chunk_witness_extract_fn),
+                    Some(chunk_witness_tx),
                 );
 
                 // --- DA pipeline ---
@@ -767,6 +780,8 @@ fn main() {
 
                 node.task_executor
                     .spawn_critical("ee_batch_builder", batch_builder_task);
+                node.task_executor
+                    .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
                 node.task_executor
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor

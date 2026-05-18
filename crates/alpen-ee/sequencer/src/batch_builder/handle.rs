@@ -2,16 +2,15 @@
 
 use std::{future::Future, marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{
-    BatchId, BatchStorage, BlockNumHash, ChunkWitnessExtractFn, ChunkWitnessStore, ExecBlockStorage,
-};
+use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ChunkWitnessStore, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
 use super::{
     ctx::BatchBuilderCtx, task::batch_builder_task, BatchBuilderState, BatchPolicy,
     BatchSealingPolicy, BlockDataProvider,
 };
+use crate::chunk_witness_task::ChunkExtractRequest;
 
 /// Handle to observe batch builder state changes.
 ///
@@ -52,7 +51,7 @@ pub fn create_batch_builder<P, D, S, BS, ES>(
     block_storage: Arc<ES>,
     batch_storage: Arc<BS>,
     exec_chain: ExecChainHandle,
-    chunk_witness_extractor: Option<Arc<ChunkWitnessExtractFn>>,
+    chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
 ) -> (BatchBuilderHandle, impl Future<Output = ()>)
 where
     P: BatchPolicy,
@@ -72,7 +71,7 @@ where
         batch_storage,
         exec_chain,
         latest_batch_tx,
-        chunk_witness_extractor,
+        chunk_witness_tx,
         _policy: PhantomData,
     };
 
