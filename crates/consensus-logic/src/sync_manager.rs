@@ -27,7 +27,7 @@ use tokio::{runtime::Handle, sync::mpsc};
 use crate::{
     asm_worker_context::AsmWorkerCtx,
     chain_worker_context::ChainWorkerCtx,
-    csm_worker_context::CsmWorkerCtx,
+    csm_worker_context::CsmWorkerContextImpl,
     exec_worker_context::ExecWorkerCtx,
     fork_choice_manager::{self},
     message::ForkChoiceMessage,
@@ -180,7 +180,7 @@ fn spawn_csm_listener(
     bitcoin_client: Arc<Client>,
 ) -> anyhow::Result<ServiceMonitor<CsmWorkerStatus>> {
     // Create CSM worker state.
-    let ctx = CsmWorkerCtx::new(
+    let ctx = CsmWorkerContextImpl::new(
         executor.handle().clone(),
         bitcoin_client,
         params.clone(),
@@ -226,7 +226,7 @@ fn spawn_csm_listener(
     let csm_input = SyncAsyncInput::new(async_input, executor.handle().clone());
 
     // Launch the CSM worker service (which acts as a listener to ASM worker).
-    let csm_monitor = ServiceBuilder::<CsmWorkerService<CsmWorkerCtx>, _>::new()
+    let csm_monitor = ServiceBuilder::<CsmWorkerService<CsmWorkerContextImpl>, _>::new()
         .with_state(csm_state)
         .with_input(csm_input)
         .launch_sync("csm_worker", executor)?;

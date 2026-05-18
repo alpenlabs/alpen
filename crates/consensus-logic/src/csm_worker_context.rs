@@ -27,7 +27,7 @@ use tokio::runtime::Handle;
     missing_debug_implementations,
     reason = "Inner types don't implement Debug"
 )]
-pub struct CsmWorkerCtx {
+pub struct CsmWorkerContextImpl {
     handle: Handle,
     bitcoin_client: Arc<Client>,
     params: Arc<Params>,
@@ -35,7 +35,7 @@ pub struct CsmWorkerCtx {
     status_channel: Arc<StatusChannel>,
 }
 
-impl CsmWorkerCtx {
+impl CsmWorkerContextImpl {
     pub fn new(
         handle: Handle,
         bitcoin_client: Arc<Client>,
@@ -53,7 +53,7 @@ impl CsmWorkerCtx {
     }
 }
 
-impl CsmWorkerContext for CsmWorkerCtx {
+impl CsmWorkerContext for CsmWorkerContextImpl {
     fn put_client_state_update(
         &self,
         block: &L1BlockCommitment,
