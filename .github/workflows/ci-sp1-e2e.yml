@@ -1,29 +1,148 @@
-# SP1 E2E proving test — stub workflow.
+# Runs the full sequencer stack with real SP1 Groth16 proofs.
+# Validates checkpoint + EE batch proof generation and verification end-to-end.
 #
-# GitHub only discovers workflow_dispatch triggers from the default branch.
-# This stub exists on main so developers can test the full implementation
-# on their feature branches using:
-#
-#   gh workflow run ci-sp1-e2e.yml --ref <branch> -f image_tag=<tag>
-#
-# Full implementation: feat/sp1-e2e-ci
+# Reuses prebuilt images from ci-build (same SHA). If images are not yet
+# available, retries for up to 3 minutes before failing.
 
 name: CI — SP1 E2E Proving Test
 
 on:
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Image tag to test"
-        required: false
-        type: string
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch: {}
 
-permissions: {}
+env:
+  AWS_REGION: us-east-1
+
+concurrency:
+  group: ci-sp1-e2e
+  cancel-in-progress: true
 
 jobs:
-  stub:
-    name: SP1 E2E (stub)
+  check-new-commits:
+    name: Check for new commits
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      short_tag: ${{ steps.check.outputs.short_tag }}
     steps:
-      - name: Placeholder
-        run: echo "Stub — trigger with --ref pointing to a branch with the full implementation"
+      - name: Check for new commits since last success
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT_TAG="${GITHUB_SHA:0:7}"
+          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger — running"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LAST_SUCCESS=$(gh run list \
+            --workflow ci-sp1-e2e.yml \
+            --status success \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // ""')
+
+          if [ "${LAST_SUCCESS}" = "${GITHUB_SHA}" ]; then
+            echo "No new commits since last successful run — skipping"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New commits found — running"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  sp1-e2e:
+    name: SP1 E2E Proof Verification
+    needs: [check-new-commits]
+    if: needs.check-new-commits.outputs.should_run == 'true'
+    runs-on: ubuntu-latest-m
+    timeout-minutes: 30
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
+        env:
+          ROLE_ARN: ${{ secrets.SHARED_ECR_ROLE_ARN }}
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@19d944daaa35f0fa1d3f7f8af1d3f2e5de25c5b7 # v2
+        with:
+          mask-password: "true"
+
+      - name: Pull images (retry up to 5 min)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          IMAGE_TAG: ${{ needs.check-new-commits.outputs.short_tag }}
+        run: |
+          IMAGES="strata alpen-client strata-signer strata-datatool"
+          DEADLINE=$((SECONDS + 300))
+          while [ $SECONDS -lt $DEADLINE ]; do
+            ALL_PULLED=true
+            for img in $IMAGES; do
+              docker pull "${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/${img}:${IMAGE_TAG}" || ALL_PULLED=false
+            done
+            if [ "$ALL_PULLED" = true ]; then
+              echo "All images pulled"
+              exit 0
+            fi
+            echo "Some images not yet available, retrying in 30s..."
+            sleep 30
+          done
+          echo "::error::Images not available after 5 minutes. ci-build may not have run for ${IMAGE_TAG}."
+          exit 1
+
+      - name: Install dependencies
+        run: |
+          pip install coincurve
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Run SP1 E2E test
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}/${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          IMAGE_TAG: ${{ needs.check-new-commits.outputs.short_tag }}
+          NETWORK_PRIVATE_KEY: ${{ secrets.NETWORK_PRIVATE_KEY }}
+        run: |
+          chmod +x .github/sp1-e2e/run-test.sh
+          .github/sp1-e2e/run-test.sh
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sp1-e2e-logs
+          path: .github/sp1-e2e/e2e-logs.txt
+          retention-days: 7
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          IMAGE_TAG: ${{ needs.check-new-commits.outputs.short_tag }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK_URL}" ]; then
+            echo "SLACK_WEBHOOK_URL not set — skipping notification"
+            exit 0
+          fi
+          curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+            -H 'Content-Type: application/json' \
+            -d "{
+              \"text\": \"🚨 *SP1 E2E Test Failed* — commit \`${IMAGE_TAG}\`\n<${RUN_URL}|View run>\nZK proof regression detected. Investigate immediately.\"
+            }"
