@@ -270,6 +270,7 @@ GEOF
             gen-asm-params \
             -o "${ASM_PARAMS}" \
             -n ALPN \
+            -s "${SEQ_XPUB}" \
             -b "${OPERATOR_XPRIV}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
