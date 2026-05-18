@@ -159,6 +159,10 @@ generate_params() {
     rm -rf "${DOCKER_DIR}/configs/generated"
     mkdir -p "${DOCKER_DIR}/configs/generated"
 
+    # Base compose expects docker/.env — create it from exported env vars
+    # so compose variable substitution works.
+    touch "${DOCKER_DIR}/.env"
+
     cd "${DOCKER_DIR}"
     GENESIS_L1_HEIGHT="${GENESIS_HEIGHT}" \
         ./init-network.sh /tmp/strata-datatool
