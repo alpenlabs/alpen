@@ -200,6 +200,12 @@ generate_params() {
     done
     echo "All params use Sp1Groth16"
 
+    for f in configs/generated/{rollup-params,ol-params,asm-params}.json; do
+        echo "::group::${f}"
+        cat "${f}"
+        echo "::endgroup::"
+    done
+
     # Source derived env vars (SEQUENCER_PUBKEY, SEQUENCER_PRIVATE_KEY, etc.)
     # shellcheck disable=SC1091
     set -a; . "${DOCKER_DIR}/configs/generated/.env.alpen"; set +a
