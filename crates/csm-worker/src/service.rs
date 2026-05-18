@@ -50,7 +50,6 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
         trace!("CSM is processing ASM logs.");
 
         let prev_confirmed_epoch = state.confirmed_epoch;
-        let prev_finalized_epoch = state.finalized_epoch;
 
         // Process `asm_block` and any blocks that might have been skipped.
         //
@@ -60,40 +59,12 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
             error!(%asm_block, err = ?e, "Failed to process ASM block");
         }
 
-        // Advance finalized epoch from the observation queue based on L1 depth.
-        let current_l1_tip = asm_block.height();
-        let finality_depth = state.ctx.l1_reorg_safe_depth().max(1);
-        while let Some((commitment, observation)) = state.observed_checkpoints.front() {
-            if state
-                .finalized_epoch
-                .is_some_and(|current| commitment.epoch() <= current.epoch())
-            {
-                state.observed_checkpoints.pop_front();
-                continue;
-            }
-
-            let confirmations = current_l1_tip
-                .saturating_sub(observation.l1_commitment.height())
-                .saturating_add(1);
-            if confirmations >= finality_depth {
-                let epoch = *commitment;
-                state.observed_checkpoints.pop_front();
-                if state
-                    .finalized_epoch
-                    .is_none_or(|current| epoch.epoch() > current.epoch())
-                {
-                    state.finalized_epoch = Some(epoch);
-                }
-            } else {
-                break;
-            }
-        }
+        let finalized_changed = state.advance_finalization(asm_block.height());
+        let confirmed_changed = state.confirmed_epoch != prev_confirmed_epoch;
 
         // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
         // even if client-state object itself did not change (tip-only L1 movement).
-        if state.confirmed_epoch != prev_confirmed_epoch
-            || state.finalized_epoch != prev_finalized_epoch
-        {
+        if confirmed_changed || finalized_changed {
             state
                 .ctx
                 .publish_client_state(state.last_committed_state.as_ref().clone(), asm_block);

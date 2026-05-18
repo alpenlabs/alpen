@@ -181,6 +181,43 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         }
     }
 
+    /// Walks the observation queue and advances `finalized_epoch` for every
+    /// candidate buried at least `finality_depth` deep under `current_l1_tip`.
+    ///
+    /// Returns `true` if `finalized_epoch` advanced.
+    pub(crate) fn advance_finalization(&mut self, current_l1_tip: L1Height) -> bool {
+        let prev_finalized = self.finalized_epoch;
+        let finality_depth = self.ctx.l1_reorg_safe_depth().max(1);
+
+        while let Some((commitment, observation)) = self.observed_checkpoints.front() {
+            if self
+                .finalized_epoch
+                .is_some_and(|current| commitment.epoch() <= current.epoch())
+            {
+                self.observed_checkpoints.pop_front();
+                continue;
+            }
+
+            let confirmations = current_l1_tip
+                .saturating_sub(observation.l1_commitment.height())
+                .saturating_add(1);
+            if confirmations < finality_depth {
+                break;
+            }
+
+            let epoch = *commitment;
+            self.observed_checkpoints.pop_front();
+            if self
+                .finalized_epoch
+                .is_none_or(|current| epoch.epoch() > current.epoch())
+            {
+                self.finalized_epoch = Some(epoch);
+            }
+        }
+
+        self.finalized_epoch != prev_finalized
+    }
+
     /// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
     /// between the last committed block and `asm_block`.
     ///
@@ -406,8 +443,9 @@ mod tests {
     };
     use strata_asm_logs::constants::DEPOSIT_LOG_TYPE_ID;
     use strata_btc_verification::L1Anchor;
-    use strata_csm_types::{ClientState, ClientUpdateOutput};
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
+    use strata_identifiers::RBuf32;
     use strata_l1_txfmt::MagicBytes;
     use strata_params::Params;
     use strata_primitives::prelude::*;
@@ -916,5 +954,113 @@ mod tests {
             before, after,
             "no commit should happen for stale/dup blocks"
         );
+    }
+
+    /// Builds an observation queue entry at `epoch` anchored to L1 `height`.
+    fn observation_at(epoch: u32, l1_height: L1Height) -> (EpochCommitment, CheckpointL1Ref) {
+        let commitment = EpochCommitment::from_terminal(
+            epoch,
+            OLBlockCommitment::new(
+                epoch as u64 * 10,
+                OLBlockId::from(Buf32::from([epoch as u8; 32])),
+            ),
+        );
+        let l1_block = L1BlockCommitment::new(l1_height, block_id_at(l1_height));
+        let l1_ref = CheckpointL1Ref::new(
+            l1_block,
+            RBuf32::from([epoch as u8; 32]),
+            RBuf32::from([epoch as u8; 32]),
+        );
+        (commitment, l1_ref)
+    }
+
+    /// Empty queue is a trivial no-op and never advances `finalized_epoch`.
+    #[test]
+    fn advance_finalization_empty_queue_is_noop() {
+        let (mut state, _) = create_test_state();
+        assert!(state.observed_checkpoints.is_empty());
+
+        let changed = state.advance_finalization(1_000);
+        assert!(!changed);
+        assert_eq!(state.finalized_epoch, None);
+    }
+
+    #[test]
+    fn advance_finalization_below_depth_does_not_advance() {
+        let (mut state, _) = create_test_state();
+        let obs = observation_at(1, 100);
+        state.observed_checkpoints.push_back(obs.clone());
+
+        // tip at 101 has 2 confirmations, below threshold of 3.
+        let changed = state.advance_finalization(101);
+        assert!(!changed);
+        assert_eq!(state.finalized_epoch, None);
+        assert_eq!(state.observed_checkpoints.len(), 1);
+    }
+
+    #[test]
+    fn advance_finalization_single_advance() {
+        let (mut state, _) = create_test_state();
+        let (commitment, _) = observation_at(1, 100);
+        state.observed_checkpoints.push_back(observation_at(1, 100));
+
+        // tip at 102 has 3 confirmations = depth threshold.
+        let changed = state.advance_finalization(102);
+        assert!(changed);
+        assert_eq!(state.finalized_epoch, Some(commitment));
+        assert!(state.observed_checkpoints.is_empty());
+    }
+
+    #[test]
+    fn advance_finalization_multi_advance_in_one_call() {
+        let (mut state, _) = create_test_state();
+        let (_, _) = observation_at(1, 100);
+        let (commitment_2, _) = observation_at(2, 101);
+        state.observed_checkpoints.push_back(observation_at(1, 100));
+        state.observed_checkpoints.push_back(observation_at(2, 101));
+
+        // tip at 103 so both candidates have ≥ 3 confirmations.
+        let changed = state.advance_finalization(103);
+        assert!(changed);
+        assert_eq!(state.finalized_epoch, Some(commitment_2));
+        assert!(state.observed_checkpoints.is_empty());
+    }
+
+    #[test]
+    fn advance_finalization_stops_at_shallow_candidate() {
+        let (mut state, _) = create_test_state();
+        let (commitment_1, _) = observation_at(1, 100);
+        state.observed_checkpoints.push_back(observation_at(1, 100));
+        state.observed_checkpoints.push_back(observation_at(2, 102));
+
+        // tip at 102 so epoch 1 has 3 confirmations (buried), epoch 2 has 1.
+        let changed = state.advance_finalization(102);
+        assert!(changed);
+        assert_eq!(state.finalized_epoch, Some(commitment_1));
+        assert_eq!(state.observed_checkpoints.len(), 1);
+        assert_eq!(
+            state.observed_checkpoints.front().map(|(e, _)| *e),
+            Some(EpochCommitment::from_terminal(
+                2,
+                OLBlockCommitment::new(20, OLBlockId::from(Buf32::from([2u8; 32])))
+            ))
+        );
+    }
+
+    #[test]
+    fn advance_finalization_pops_already_finalized() {
+        let (mut state, _) = create_test_state();
+        let (commitment_1, _) = observation_at(1, 100);
+        state.finalized_epoch = Some(commitment_1);
+        // Stale entry for an epoch ≤ finalized.
+        state.observed_checkpoints.push_back(observation_at(1, 100));
+
+        let changed = state.advance_finalization(200);
+        assert!(
+            !changed,
+            "popping a stale entry must not register as an advance"
+        );
+        assert_eq!(state.finalized_epoch, Some(commitment_1));
+        assert!(state.observed_checkpoints.is_empty());
     }
 }
