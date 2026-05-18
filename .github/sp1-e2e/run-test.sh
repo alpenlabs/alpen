@@ -164,6 +164,7 @@ generate_params() {
     touch "${DOCKER_DIR}/.env"
 
     cd "${DOCKER_DIR}"
+    export ENV_FILE="${DOCKER_DIR}/configs/generated/.env.alpen"
     GENESIS_L1_HEIGHT="${GENESIS_HEIGHT}" \
         ./init-network.sh /tmp/strata-datatool
 
@@ -178,7 +179,7 @@ generate_params() {
 
     # Source derived env vars (SEQUENCER_PUBKEY, SEQUENCER_PRIVATE_KEY, etc.)
     # shellcheck disable=SC1091
-    set -a; . "${DOCKER_DIR}/.env.alpen"; set +a
+    set -a; . "${DOCKER_DIR}/configs/generated/.env.alpen"; set +a
     export GENESIS_L1_HEIGHT="${GENESIS_HEIGHT}"
 }
 
