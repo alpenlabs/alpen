@@ -26,9 +26,10 @@ services:
   alpen-client:
     image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
     platform: linux/amd64
-    command: ["--batch-sealing-block-count", "24"]
+    command: []
     environment:
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
+      - BATCH_SEALING_BLOCK_COUNT=24
     env_file:
       - ../.github/sp1-e2e/.env.ci
       - ./configs/generated/.env.alpen
