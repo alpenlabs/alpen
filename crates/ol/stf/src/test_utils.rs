@@ -246,14 +246,16 @@ pub fn build_chain_with_transactions(
             let msg_entry = MessageEntry::new(
                 crate::SEQUENCER_ACCT_ID,
                 epoch,
-                MsgPayload::new(BitcoinAmount::from_sat(0), msg_data.clone()),
+                MsgPayload::from_bytes(BitcoinAmount::from_sat(0), msg_data.clone())
+                    .expect("message payload bytes must fit within SSZ max length"),
             );
             let proof = inbox_tracker.add_message(&msg_entry);
             pending_msgs.push(msg_entry);
             pending_proofs.push(proof);
 
             let gam_tx = OLTransaction::new(
-                OLTransactionData::new_gam(snark_id, msg_data),
+                OLTransactionData::from_gam_bytes(snark_id, msg_data)
+                    .expect("message payload bytes must fit within SSZ max length"),
                 TxProofs::new_empty(),
             );
             BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
@@ -272,7 +274,8 @@ pub fn build_chain_with_transactions(
         } else if i % 4 == 2 {
             // GAM to regular target account
             let gam_tx = OLTransaction::new(
-                OLTransactionData::new_gam(gam_target, vec![]),
+                OLTransactionData::from_gam_bytes(gam_target, vec![])
+                    .expect("message payload bytes must fit within SSZ max length"),
                 TxProofs::new_empty(),
             );
             BlockComponents::new_txs_from_ol_transactions(vec![gam_tx])
@@ -644,7 +647,8 @@ pub fn create_empty_account(
 /// Helper to make a GAM transaction targeting the given account with empty payload data.
 pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
     OLTransaction::new(
-        OLTransactionData::new_gam(dest, vec![]),
+        OLTransactionData::from_gam_bytes(dest, vec![])
+            .expect("message payload bytes must fit within SSZ max length"),
         TxProofs::new_empty(),
     )
 }
@@ -731,7 +735,8 @@ impl SnarkUpdateBuilder {
 
     /// Add a single message effect
     pub fn with_output_message(mut self, dest: AccountId, amount: u64, data: Vec<u8>) -> Self {
-        let payload = MsgPayload::new(BitcoinAmount::from_sat(amount), data);
+        let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(amount), data)
+            .expect("message payload bytes must fit within SSZ max length");
         self.effects.add_message(SentMessage::new(dest, payload));
         self
     }

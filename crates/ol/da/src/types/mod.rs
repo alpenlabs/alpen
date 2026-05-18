@@ -46,10 +46,11 @@ mod tests {
 
     #[test]
     fn test_da_message_entry_decode_rejects_oversize_payload() {
-        let payload = MsgPayload::new(
+        let payload = MsgPayload::from_bytes(
             BitcoinAmount::from_sat(0),
             vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
-        );
+        )
+        .expect("message payload bytes must fit within SSZ max length");
         let entry = DaMessageEntry::new(AccountId::from([0u8; 32]), 0, payload);
 
         let encoded = encode_to_vec(&entry).expect("encode da message entry");

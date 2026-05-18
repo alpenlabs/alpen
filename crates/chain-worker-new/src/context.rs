@@ -446,7 +446,9 @@ mod tests {
     }
 
     fn message_entry(source_seed: u8, value_sats: u64) -> MessageEntry {
-        let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![source_seed]);
+        let payload =
+            MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), vec![source_seed])
+                .expect("message payload bytes must fit within SSZ max length");
         MessageEntry::new(AccountId::from([source_seed; 32]), 0, payload)
     }
 

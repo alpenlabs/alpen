@@ -260,10 +260,11 @@ mod tests {
                         .prop_map(|(dest, sats, data)| {
                             OutputMessage::new(
                                 AccountId::new(dest),
-                                strata_acct_types::MsgPayload::new(
+                                strata_acct_types::MsgPayload::from_bytes(
                                     BitcoinAmount::from_sat(sats),
                                     data,
-                                ),
+                                )
+                                .expect("message payload bytes must fit within SSZ max length"),
                             )
                         }),
                     0..10

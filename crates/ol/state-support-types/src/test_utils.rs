@@ -36,7 +36,8 @@ pub(crate) fn test_snark_account_state(state_root_seed: u8) -> OLSnarkAccountSta
 
 /// Create a test message entry for inbox testing.
 pub(crate) fn test_message_entry(source_seed: u8, epoch: u32, value_sats: u64) -> MessageEntry {
-    let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![source_seed]);
+    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), vec![source_seed])
+        .expect("message payload bytes must fit within SSZ max length");
     MessageEntry::new(test_account_id(source_seed), epoch, payload)
 }
 

@@ -119,7 +119,8 @@ fn test_snark_account_deposit_and_withdrawal() {
     let deposit_msg_in_inbox = MessageEntry::new(
         BRIDGE_GATEWAY_ACCT_ID,
         0, // genesis epoch
-        MsgPayload::new(BitcoinAmount::from_sat(deposit_amount), deposit_msg_data),
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(deposit_amount), deposit_msg_data)
+            .expect("message payload bytes must fit within SSZ max length"),
     );
 
     // Add the message to the tracker to get a proof

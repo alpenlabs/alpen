@@ -197,7 +197,8 @@ pub(crate) fn create_deposit_message(
     let msg = OwnedMsg::new(DEPOSIT_MSG_TYPE, body).expect("create message");
     let payload_data = msg.to_vec();
 
-    let payload = MsgPayload::new(value, payload_data);
+    let payload = MsgPayload::from_bytes(value, payload_data)
+        .expect("message payload bytes must fit within SSZ max length");
     MessageEntry::new(source, incl_epoch, payload)
 }
 

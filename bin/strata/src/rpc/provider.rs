@@ -206,12 +206,14 @@ mod tests {
             MessageEntry::new(
                 test_account_id(2),
                 3,
-                MsgPayload::new(BitcoinAmount::from_sat(10), vec![0xaa]),
+                MsgPayload::from_bytes(BitcoinAmount::from_sat(10), vec![0xaa])
+                    .expect("message payload bytes must fit within SSZ max length"),
             ),
             MessageEntry::new(
                 test_account_id(3),
                 3,
-                MsgPayload::new(BitcoinAmount::from_sat(20), vec![0xbb, 0xcc]),
+                MsgPayload::from_bytes(BitcoinAmount::from_sat(20), vec![0xbb, 0xcc])
+                    .expect("message payload bytes must fit within SSZ max length"),
             ),
         ];
         let preimages = messages.iter().map(Encode::as_ssz_bytes).collect();

@@ -417,7 +417,9 @@ mod tests {
         let payload = create_test_message_payload();
 
         let tx = OLTransaction::new(
-            OLTransactionData::new_gam(target, payload).with_constraints(constraints.clone()),
+            OLTransactionData::from_gam_bytes(target, payload)
+                .expect("message payload bytes must fit within SSZ max length")
+                .with_constraints(constraints.clone()),
             TxProofs::new_empty(),
         );
 
@@ -456,18 +458,21 @@ mod tests {
         let target = create_test_account_id();
         let payload = create_test_message_payload();
         let tx1 = OLTransaction::new(
-            OLTransactionData::new_gam(target, payload.clone()),
+            OLTransactionData::from_gam_bytes(target, payload.clone())
+                .expect("message payload bytes must fit within SSZ max length"),
             TxProofs::new_empty(),
         );
         let tx2 = OLTransaction::new(
-            OLTransactionData::new_gam(target, payload),
+            OLTransactionData::from_gam_bytes(target, payload)
+                .expect("message payload bytes must fit within SSZ max length"),
             TxProofs::new_empty(),
         );
         assert_eq!(tx1.compute_txid(), tx2.compute_txid());
 
         let different_target = create_test_account_id();
         let tx3 = OLTransaction::new(
-            OLTransactionData::new_gam(different_target, create_test_message_payload()),
+            OLTransactionData::from_gam_bytes(different_target, create_test_message_payload())
+                .expect("message payload bytes must fit within SSZ max length"),
             TxProofs::new_empty(),
         );
         assert_ne!(tx1.compute_txid(), tx3.compute_txid());

@@ -158,7 +158,8 @@ fn test_chunk_output_does_not_change_inner_tracked_balance() {
     let mut outputs = ExecOutputs::new_empty();
     outputs.add_message(ExecOutputMessage::new(
         AccountId::from([3u8; 32]),
-        MsgPayload::new(BitcoinAmount::from(400u64), vec![1, 2, 3]),
+        MsgPayload::from_bytes(BitcoinAmount::from(400u64), vec![1, 2, 3])
+            .expect("message payload bytes must fit within SSZ max length"),
     ));
 
     let tip = Hash::new([0xDD; 32]);

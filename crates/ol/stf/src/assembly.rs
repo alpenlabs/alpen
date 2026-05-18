@@ -216,7 +216,9 @@ impl BlockComponents {
             .map(|p| {
                 let mut effects = TxEffects::default();
                 if let TransactionPayload::GenericAccountMessage(ref gam) = p {
-                    effects.push_message(*gam.target(), 0, vec![]);
+                    effects
+                        .push_message(*gam.target(), 0, vec![])
+                        .expect("message payload bytes must fit within SSZ max length");
                 }
                 let data = OLTransactionData {
                     payload: p,
