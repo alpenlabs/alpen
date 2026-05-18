@@ -15109,6 +15109,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "serde",
+ "serde_json",
  "ssz",
  "ssz_derive",
  "thiserror 2.0.18",
