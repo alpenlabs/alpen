@@ -29,7 +29,7 @@ use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult, ReceiptStor
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_snark_acct_runtime::{Coinput, IInnerState, PrivateInput as UpdatePrivateInput};
 use strata_snark_acct_types::{
-    OutputMessage, OutputTransfer, ProofState, UpdateOutputs, UpdateProofPubParams,
+    OutputMessage, OutputTransfer, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
 };
 
 use super::ChunkTask;
@@ -372,7 +372,12 @@ impl ProofSpec for AcctSpec {
                 )),
             })?;
 
+        let seq_no = batch.update_seq_no().ok_or_else(|| {
+            PaasError::TransientFailure(format!("batch {batch_id} has no assigned update seq_no"))
+        })?;
+
         let pub_params = UpdateProofPubParams::new(
+            Seqno::new(seq_no),
             cur_state,
             new_state,
             messages,

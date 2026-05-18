@@ -20,10 +20,7 @@ use strata_snark_acct_runtime::{
     ArchivedPrivateInput as ArchivedSnarkPrivateInput, Coinput, IInnerState, InputMessage,
     PrivateInput as SnarkPrivateInput, ProgramResult, SnarkAccountProgram,
 };
-use strata_snark_acct_types::{
-    ProofState, SnarkAccountState, UpdateManifest, UpdateOperationData, UpdateOutputs,
-    UpdateProofPubParams,
-};
+use strata_snark_acct_types::*;
 
 /// Serializes an [`EePrivateInput`] and a [`SnarkPrivateInput`] with rkyv, then
 /// calls `f` with the archived references.
@@ -130,6 +127,7 @@ pub fn verify_update(
     let post_root = post_state.compute_state_root();
 
     let pub_params = UpdateProofPubParams::new(
+        Seqno::new(operation.seq_no()),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),
@@ -281,6 +279,7 @@ pub(crate) fn verify_with_chunks(
     let post_root = post_state.compute_state_root();
 
     let pub_params = UpdateProofPubParams::new(
+        Seqno::new(operation.seq_no()),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),

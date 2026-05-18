@@ -19,7 +19,7 @@ use strata_evm_ee::EvmExecutionEnvironment;
 use strata_proofimpl_alpen_acct::{EeAcctProgram, EeAcctProofInput};
 use strata_proofimpl_alpen_chunk::EeChunkProgram;
 use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
-use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
+use strata_snark_acct_types::{LedgerRefs, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams};
 use tracing::info;
 use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
 
@@ -71,6 +71,7 @@ fn prepare_input() -> EeAcctProofInput {
     let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
 
     let pub_params = UpdateProofPubParams::new(
+        Seqno::zero(),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, 0),
         vec![],

@@ -124,7 +124,9 @@ mod tests {
     use strata_identifiers::Hash;
     use strata_predicate::{PredicateKey, PredicateTypeId};
     use strata_snark_acct_runtime::{IInnerState, PrivateInput as UpdatePrivateInput};
-    use strata_snark_acct_types::{LedgerRefs, ProofState, UpdateOutputs, UpdateProofPubParams};
+    use strata_snark_acct_types::{
+        LedgerRefs, ProofState, Seqno, UpdateOutputs, UpdateProofPubParams,
+    };
 
     use super::*;
 
@@ -145,6 +147,7 @@ mod tests {
 
         // With zero chunks and no state change, pre == post state root.
         let pub_params = UpdateProofPubParams::new(
+            Seqno::zero(),
             ProofState::new(state_root, 0),
             ProofState::new(state_root, 0),
             vec![],

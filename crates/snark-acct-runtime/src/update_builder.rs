@@ -377,6 +377,7 @@ impl<P: SnarkAccountProgramVerification> FinalizedUpdate<P> {
         let coinputs = self.coinputs.into_iter().map(Coinput::new).collect();
 
         let pub_params = strata_snark_acct_types::UpdateProofPubParams::new(
+            self.snark_state.seq_no(),
             ProofState::new(self.pre_state.compute_state_root(), pre_inbox_idx),
             new_proof_state,
             self.messages,
