@@ -240,8 +240,10 @@ generate_params() {
     done
 
     # Source derived env vars (SEQUENCER_PUBKEY, SEQUENCER_PRIVATE_KEY, etc.)
+    set -a
     # shellcheck disable=SC1091
-    set -a; . "${DOCKER_DIR}/configs/generated/.env.alpen"; set +a
+    . "${DOCKER_DIR}/configs/generated/.env.alpen"
+    set +a
     export GENESIS_L1_HEIGHT="${GENESIS_HEIGHT}"
 }
 

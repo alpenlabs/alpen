@@ -37,10 +37,12 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ -n "${{ inputs.image_tag }}" ]; then
+          if [ -n "${INPUT_IMAGE_TAG}" ]; then
             # Manual dispatch with explicit tag
-            SHORT_TAG="${{ inputs.image_tag }}"
+            SHORT_TAG="${INPUT_IMAGE_TAG}"
             SHORT_TAG="${SHORT_TAG:0:7}"
             echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
             echo "Manual trigger with tag ${SHORT_TAG} — running"
@@ -68,7 +70,7 @@ jobs:
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
           echo "Latest image build: ${SHORT_TAG}"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             echo "Manual trigger — running with latest build ${SHORT_TAG}"
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -77,6 +79,7 @@ jobs:
           # Scheduled: skip if we already tested this build
           LAST_SUCCESS=$(gh run list -R "${REPO}" \
             --workflow ci-sp1-e2e.yml \
+            --event schedule \
             --status success \
             --limit 1 \
             --json headSha \
@@ -103,6 +106,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
+        with:
+          persist-credentials: false
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
