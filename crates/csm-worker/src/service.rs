@@ -6,10 +6,7 @@ use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{
-    context::CsmWorkerContext, processor::process_asm_block, state::CsmWorkerState,
-    status::CsmWorkerStatus,
-};
+use crate::{context::CsmWorkerContext, state::CsmWorkerState, status::CsmWorkerStatus};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -59,7 +56,7 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
         //
         // Errors here are intentionally swallowed: gap-fill is idempotent and
         // the next ASM status update will retry the missed blocks.
-        if let Err(e) = process_asm_block(state, asm_block, asm_status.logs()) {
+        if let Err(e) = state.process_asm_block(asm_block, asm_status.logs()) {
             error!(%asm_block, err = ?e, "Failed to process ASM block");
         }
 
