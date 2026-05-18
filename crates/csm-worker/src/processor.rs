@@ -42,6 +42,7 @@ impl PendingCsmUpdate {
     }
 }
 
+// TODO(STR-3491): Use typed errors instead of `anyhow!`
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
     pub(crate) fn process_log(
         &self,

@@ -18,6 +18,7 @@ use strata_state::asm_state::AsmState;
 ///
 /// Kept as a trait so tests can swap in a stub without spinning up real storage
 /// or a Bitcoin RPC client.
+// TODO(STR-3491): Use typed errors instead of `anyhow!`
 pub trait CsmWorkerContext: Send + Sync {
     /// Writes a client state update for the given L1 block.
     fn put_client_state_update(

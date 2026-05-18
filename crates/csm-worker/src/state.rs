@@ -47,6 +47,7 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
     pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
 }
 
+// TODO(STR-3491): Use typed errors instead of `anyhow!`
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// Create a new CSM worker state.
     ///
