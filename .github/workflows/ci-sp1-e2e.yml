@@ -1,0 +1,29 @@
+# SP1 E2E proving test — stub workflow.
+#
+# GitHub only discovers workflow_dispatch triggers from the default branch.
+# This stub exists on main so developers can test the full implementation
+# on their feature branches using:
+#
+#   gh workflow run ci-sp1-e2e.yml --ref <branch> -f image_tag=<tag>
+#
+# Full implementation: feat/sp1-e2e-ci
+
+name: CI — SP1 E2E Proving Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to test"
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  stub:
+    name: SP1 E2E (stub)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "Stub — trigger with --ref pointing to a branch with the full implementation"
