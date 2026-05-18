@@ -73,5 +73,5 @@ RUN chmod 0555 /usr/local/bin/alpen-client /usr/local/bin/entrypoint.sh
 
 USER alpen
 
-EXPOSE 8545 8546 30303
+EXPOSE 8545 8546 30303 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

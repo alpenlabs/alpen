@@ -34,10 +34,7 @@ services:
       - alpen_network
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     healthcheck:
-      test: >-
-        curl -sf -X POST -H 'Content-Type: application/json'
-        -d '{"jsonrpc":"2.0","method":"strata_protocolVersion","params":[],"id":1}'
-        http://localhost:8432
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -58,6 +55,12 @@ services:
       - ./configs/generated/sequencer.key:/app/configs/sequencer.key:ro
     networks:
       - alpen_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     restart: unless-stopped
 
   alpen-client:
@@ -87,14 +90,11 @@ services:
       - alpen_network
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     healthcheck:
-      test: >-
-        curl -sf -X POST -H 'Content-Type: application/json'
-        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
-        http://localhost:8545
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz"]
       interval: 5s
       timeout: 5s
       retries: 30
-      start_period: 15s
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

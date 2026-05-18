@@ -2,6 +2,8 @@ sequencer_key = "/app/configs/sequencer.key"
 sequencer_admin_endpoint = "ws://strata:8434"
 sequencer_admin_bearer_token = "dev-only-change-me"
 duty_poll_interval = 1_000
+health_check_host = "0.0.0.0"
+health_check_port = 8080
 
 [logging]
 # service_label = "prod"
