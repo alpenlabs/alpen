@@ -9,7 +9,12 @@ name: CI — SP1 E2E Proving Test
 on:
   schedule:
     - cron: '0 */6 * * *'  # Every 6 hours
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to test (default: current SHA short)"
+        required: false
+        type: string
 
 env:
   AWS_REGION: us-east-1
@@ -33,7 +38,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          SHORT_TAG="${GITHUB_SHA:0:7}"
+          SHORT_TAG="${{ inputs.image_tag || format('{0}', github.sha) }}"
+          SHORT_TAG="${SHORT_TAG:0:7}"
           echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
