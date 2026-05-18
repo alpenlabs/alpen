@@ -25,6 +25,8 @@ strata-ol-params.workspace = true
 strata-params.workspace = true
 strata-predicate.workspace = true
 strata-primitives.workspace = true
+strata-proofimpl-alpen-acct.workspace = true
+strata-proofimpl-checkpoint.workspace = true
 strata-snark-acct-runtime.workspace = true
 
 borsh = { workspace = true, optional = true }

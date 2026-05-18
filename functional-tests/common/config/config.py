@@ -99,6 +99,14 @@ class SequencerConfig:
 
 
 @dataclass
+class ProverConfig:
+    """Integrated prover configuration. Maps to Rust ``ProverConfig``."""
+
+    backend: str = field(default="native")
+    workers: int = field(default=1)
+
+
+@dataclass
 class FeeModelConfig:
     """v1 L2 fee-model configuration mirroring ``SequencerFeeModelConfig``.
 
@@ -152,6 +160,7 @@ class StrataConfig:
     exec: ExecConfig = field(default_factory=ExecConfig)
     relayer: RelayerConfig = field(default_factory=RelayerConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    prover: ProverConfig | None = field(default=None)
 
     def as_toml_string(self) -> str:
         d = asdict(self)

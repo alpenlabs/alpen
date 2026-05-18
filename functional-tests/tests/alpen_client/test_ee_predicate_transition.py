@@ -28,6 +28,12 @@ PREDICATE_SETTLE_TIMEOUT_SECONDS = 120
 SP1_CONDITION_HEX = "11" * 32
 BIP340_CONDITION_HEX = "22" * 32
 
+# Initial Alpen account predicate matches `EeAcctProgram::test_predicate_key()`
+# (deterministic test SK = [0x02; 32] in strata_proofimpl_alpen_acct).
+INITIAL_ACCT_PREDICATE = (
+    "Bip340Schnorr:4d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766"
+)
+
 PREDICATE_TRANSITIONS = [
     "NeverAccept",
     "AlwaysAccept",
@@ -73,9 +79,9 @@ class TestEePredicateTransition(BaseTest):
             return strata_rpc.strata_getSnarkAccountState(ALPEN_ACCOUNT_ID, "latest")["update_vk"]
 
         initial_vk = strata_rpc.strata_getSnarkAccountState(ALPEN_ACCOUNT_ID, "latest")["update_vk"]
-        if initial_vk != "AlwaysAccept":
+        if initial_vk != INITIAL_ACCT_PREDICATE:
             raise AssertionError(
-                f"expected initial update_vk to be AlwaysAccept, got {initial_vk!r}"
+                f"expected initial update_vk to be {INITIAL_ACCT_PREDICATE!r}, got {initial_vk!r}"
             )
 
         for seq_no, target in enumerate(PREDICATE_TRANSITIONS, start=1):

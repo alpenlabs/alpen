@@ -646,16 +646,16 @@ fn main() {
                 // Dev/test escape hatch: use zkaleido NativeHost instead of
                 // the SP1 remote host. This skips real Groth16 proving and
                 // the need for compiled guest ELFs — only safe for
-                // functional tests. For native acct, the chunk predicate
-                // key is always-accept since native mode does not verify
-                // chunk receipts.
+                // functional tests. The acct program is wired with the
+                // chunk program's deterministic test predicate key so the
+                // native-host Schnorr signature actually verifies.
                 let (chunk_prover, acct_prover) = if ext.dev_native_prover {
                     info!(
                         target: "alpen-client",
                         "EE chunk + acct provers: native host (dev/test only)"
                     );
                     let chunk = chunk_builder.native(EeChunkProgram::native_host());
-                    let acct_program = EeAcctProgram::new(PredicateKey::always_accept());
+                    let acct_program = EeAcctProgram::new(EeChunkProgram::test_predicate_key());
                     let acct = acct_builder.native(acct_program.native_host());
                     (chunk, acct)
                 } else {

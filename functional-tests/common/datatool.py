@@ -120,7 +120,7 @@ def generate_rollup_params_unchecked(
     args = [
         "genparams",
         "--checkpoint-predicate",
-        "always-accept",
+        "bip340-schnorr-test",
         "--name",
         "ALPN",
         "--genesis-l1-height",
@@ -157,7 +157,7 @@ def generate_rollup_params(
     args = [
         "genparams",
         "--checkpoint-predicate",
-        "always-accept",
+        "bip340-schnorr-test",
         "--name",
         "ALPN",
         "--genesis-l1-height",
@@ -192,6 +192,8 @@ def generate_ol_params(
 
     args = [
         "gen-ol-params",
+        "--alpen-predicate",
+        "bip340-schnorr-test",
         "--genesis-l1-height",
         str(genesis_l1_height),
         "-o",
@@ -216,7 +218,7 @@ def generate_asm_params(
     args = [
         "gen-asm-params",
         "--checkpoint-predicate",
-        "always-accept",
+        "bip340-schnorr-test",
         "--name",
         "ALPN",
         "--genesis-l1-height",

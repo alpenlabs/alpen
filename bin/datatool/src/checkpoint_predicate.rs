@@ -4,6 +4,7 @@
 use std::{error, fmt, str::FromStr};
 
 use strata_predicate::PredicateKey;
+use strata_proofimpl_checkpoint::program::CheckpointProgram;
 
 /// CLI override for the checkpoint predicate type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +13,9 @@ pub(crate) enum CheckpointPredicateOverride {
     AlwaysAccept,
     /// Use SP1 Groth16 (requires `sp1-builder` feature).
     Sp1Groth16,
+    /// Use BIP-340 Schnorr bound to the checkpoint program's deterministic
+    /// test signing key (functional tests).
+    Bip340SchnorrTest,
 }
 
 /// Error returned when parsing a [`CheckpointPredicateOverride`] from a CLI string.
@@ -22,7 +26,7 @@ impl fmt::Display for ParseCheckpointPredicateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "invalid checkpoint predicate type '{}', expected 'always-accept' or 'sp1-groth16'",
+            "invalid checkpoint predicate type '{}', expected 'always-accept', 'sp1-groth16', or 'bip340-schnorr-test'",
             self.0
         )
     }
@@ -37,6 +41,7 @@ impl FromStr for CheckpointPredicateOverride {
         match s {
             "always-accept" => Ok(Self::AlwaysAccept),
             "sp1-groth16" => Ok(Self::Sp1Groth16),
+            "bip340-schnorr-test" => Ok(Self::Bip340SchnorrTest),
             _ => Err(ParseCheckpointPredicateError(s.to_owned())),
         }
     }
@@ -53,6 +58,9 @@ pub(crate) fn resolve_checkpoint_predicate(
     match override_val {
         Some(CheckpointPredicateOverride::AlwaysAccept) => Ok(PredicateKey::always_accept()),
         Some(CheckpointPredicateOverride::Sp1Groth16) => resolve_sp1_groth16(),
+        Some(CheckpointPredicateOverride::Bip340SchnorrTest) => {
+            Ok(CheckpointProgram::test_predicate_key())
+        }
         None => Ok(resolve_default()),
     }
 }

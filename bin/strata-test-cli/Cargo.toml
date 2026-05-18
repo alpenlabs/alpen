@@ -34,6 +34,7 @@ strata-snark-acct-types.workspace = true
 anyhow.workspace = true
 bdk_bitcoind_rpc.workspace = true
 bdk_wallet.workspace = true
+k256.workspace = true
 musig2.workspace = true
 secp256k1.workspace = true
 ssz.workspace = true

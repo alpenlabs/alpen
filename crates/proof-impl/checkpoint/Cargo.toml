@@ -21,6 +21,8 @@ strata-ol-stf.workspace = true
 zkaleido.workspace = true
 
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
+k256.workspace = true
+strata-predicate.workspace = true
 zkaleido-native-adapter.workspace = true
 
 [dev-dependencies]

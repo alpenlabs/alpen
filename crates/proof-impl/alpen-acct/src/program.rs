@@ -1,8 +1,9 @@
+use k256::schnorr::SigningKey;
 use rkyv::rancor::Error as RkyvError;
 use rsp_primitives::genesis::Genesis;
 use ssz::Decode;
 use strata_ee_acct_runtime::EePrivateInput;
-use strata_predicate::PredicateKey;
+use strata_predicate::{PredicateKey, PredicateTypeId};
 use strata_snark_acct_runtime::PrivateInput as UpdatePrivateInput;
 use strata_snark_acct_types::UpdateProofPubParams;
 use zkaleido::{
@@ -11,6 +12,10 @@ use zkaleido::{
 use zkaleido_native_adapter::NativeHost;
 
 use crate::process_ee_acct_update;
+
+fn test_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[0x02u8; 32]).expect("valid test signing key")
+}
 
 /// Host-side input for the EE account update proof.
 ///
@@ -86,7 +91,16 @@ impl ZkVmProgram for EeAcctProgram {
 impl EeAcctProgram {
     pub fn native_host(&self) -> NativeHost {
         let key = self.chunk_predicate_key.clone();
-        NativeHost::new_with_random_key(move |zkvm| process_ee_acct_update(zkvm, &key))
+        NativeHost::new(test_signing_key(), move |zkvm| {
+            process_ee_acct_update(zkvm, &key)
+        })
+    }
+
+    /// Predicate key matching the signing key the native host uses, for wiring into
+    /// functional-test params so the resulting witness verifies under `Bip340Schnorr`.
+    pub fn test_predicate_key() -> PredicateKey {
+        let pk = test_signing_key().verifying_key().to_bytes().to_vec();
+        PredicateKey::new(PredicateTypeId::Bip340Schnorr, pk)
     }
 
     /// Executes the account proof program using the native host for testing.
