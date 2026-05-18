@@ -111,7 +111,7 @@ preflight_cleanup() {
 }
 
 start_signet_fast() {
-    echo "=== Starting signet (BLOCKPRODUCTIONDELAY=1) ==="
+    echo "=== Starting signet (BLOCKPRODUCTIONDELAY=0) ==="
     cd "${DOCKER_DIR}"
     export BLOCKPRODUCTIONDELAY=0
     docker compose -f compose-signet.yml up -d 2>&1 | tail -1

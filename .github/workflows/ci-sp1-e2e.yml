@@ -38,28 +38,55 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          SHORT_TAG="${{ inputs.image_tag || format('{0}', github.sha) }}"
-          SHORT_TAG="${SHORT_TAG:0:7}"
-          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual trigger — running"
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            # Manual dispatch with explicit tag
+            SHORT_TAG="${{ inputs.image_tag }}"
+            SHORT_TAG="${SHORT_TAG:0:7}"
+            echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+            echo "Manual trigger with tag ${SHORT_TAG} — running"
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          LAST_SUCCESS=$(gh run list \
+          # Find the latest successful image build on main
+          REPO="${{ github.repository }}"
+          BUILD_SHA=$(gh run list -R "${REPO}" \
+            --workflow ci-build.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // ""')
+
+          if [ -z "${BUILD_SHA}" ]; then
+            echo "::error::No successful image build found on main"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          SHORT_TAG="${BUILD_SHA:0:7}"
+          echo "short_tag=${SHORT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Latest image build: ${SHORT_TAG}"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger — running with latest build ${SHORT_TAG}"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Scheduled: skip if we already tested this build
+          LAST_SUCCESS=$(gh run list -R "${REPO}" \
             --workflow ci-sp1-e2e.yml \
             --status success \
             --limit 1 \
             --json headSha \
             --jq '.[0].headSha // ""')
 
-          if [ "${LAST_SUCCESS}" = "${GITHUB_SHA}" ]; then
-            echo "No new commits since last successful run — skipping"
+          if [ "${LAST_SUCCESS}" = "${BUILD_SHA}" ]; then
+            echo "Already tested build ${SHORT_TAG} — skipping"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           else
-            echo "New commits found — running"
+            echo "New build ${SHORT_TAG} not yet tested — running"
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           fi
 
