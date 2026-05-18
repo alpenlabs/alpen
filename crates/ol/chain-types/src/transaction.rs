@@ -1,7 +1,7 @@
 use std::fmt;
 
 use int_enum::IntEnum;
-use strata_acct_types::{AccountId, MessageEntry, TxEffects};
+use strata_acct_types::{AccountId, MessageEntry, MsgPayloadError, TxEffects};
 use strata_identifiers::{Buf32, OLTxId, Slot};
 use tree_hash::{Sha256Hasher, TreeHash};
 
@@ -257,15 +257,15 @@ impl OLTransactionData {
 
     /// Creates a GAM transaction data targeting the given account with a zero-value message
     /// containing the provided payload data.
-    pub fn new_gam(dest: AccountId, data: Vec<u8>) -> Self {
+    pub fn new_gam(dest: AccountId, data: Vec<u8>) -> Result<Self, MsgPayloadError> {
         let payload = TransactionPayload::GenericAccountMessage(GamTxPayload { target: dest });
         let mut effects = TxEffects::default();
-        effects.push_message(dest, 0, data);
-        Self {
+        effects.push_message(dest, 0, data)?;
+        Ok(Self {
             payload,
             constraints: TxConstraints::default(),
             effects,
-        }
+        })
     }
 
     /// Sets the constraints on this transaction data, consuming and returning self.

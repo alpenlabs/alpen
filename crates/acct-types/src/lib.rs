@@ -30,6 +30,7 @@ mod ssz_generated {
 
 pub use constants::SYSTEM_RESERVED_ACCTS;
 pub use errors::{AcctError, AcctResult};
+pub use messages::{MsgPayloadData, MsgPayloadError};
 pub use mmr::{
     CompactMmr64, CompactMmr64Ref, MerkleProof, MerkleProofRef, Mmr64, Mmr64Ref, RawMerkleProof,
     RawMerkleProofRef, StrataHasher,
