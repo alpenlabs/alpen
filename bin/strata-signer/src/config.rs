@@ -6,6 +6,9 @@ use serde::Deserialize;
 
 use crate::constants::DEFAULT_POLL_INTERVAL_MS;
 
+const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
+const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
+
 /// Secret configuration value that redacts itself from debug output.
 #[derive(Clone, Deserialize)]
 #[serde(transparent)]
@@ -40,6 +43,14 @@ pub(crate) struct SignerConfig {
     #[serde(default = "default_duty_poll_interval")]
     pub(crate) duty_poll_interval: u64,
 
+    /// Host for the HTTP health check endpoint.
+    #[serde(default = "default_health_check_host")]
+    pub(crate) health_check_host: String,
+
+    /// Port for the HTTP health check endpoint.
+    #[serde(default = "default_health_check_port")]
+    pub(crate) health_check_port: u16,
+
     /// Logging configuration.
     #[serde(default)]
     pub(crate) logging: LoggingConfig,
@@ -69,8 +80,16 @@ pub(crate) struct LoggingConfig {
     pub(crate) json_format: Option<bool>,
 }
 
-fn default_duty_poll_interval() -> u64 {
+const fn default_duty_poll_interval() -> u64 {
     DEFAULT_POLL_INTERVAL_MS
+}
+
+fn default_health_check_host() -> String {
+    DEFAULT_HEALTH_CHECK_HOST.to_string()
+}
+
+const fn default_health_check_port() -> u16 {
+    DEFAULT_HEALTH_CHECK_PORT
 }
 
 #[cfg(test)]
@@ -101,6 +120,23 @@ mod tests {
             config.sequencer_admin_bearer_token.expose_secret(),
             "test-token"
         );
+        assert_eq!(config.health_check_host, DEFAULT_HEALTH_CHECK_HOST);
+        assert_eq!(config.health_check_port, DEFAULT_HEALTH_CHECK_PORT);
+    }
+
+    #[test]
+    fn test_signer_config_parses_health_check_addr() {
+        let config = r#"
+            sequencer_key = "/tmp/sequencer.key"
+            sequencer_admin_endpoint = "ws://127.0.0.1:8434"
+            sequencer_admin_bearer_token = "test-token"
+            health_check_host = "127.0.0.1"
+            health_check_port = 18_080
+        "#;
+
+        let config = toml::from_str::<SignerConfig>(config).unwrap();
+        assert_eq!(config.health_check_host, "127.0.0.1");
+        assert_eq!(config.health_check_port, 18_080);
     }
 
     #[test]
