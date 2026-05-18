@@ -13,6 +13,8 @@ services:
     platform: linux/amd64
     env_file:
       - ../.github/sp1-e2e/.env.ci
+    environment:
+      - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
     volumes:
       - ../.github/sp1-e2e/config.seq.toml:/app/configs/config.seq.toml:ro
       - ../.github/sp1-e2e/sequencer.toml:/app/configs/sequencer.toml:ro
@@ -25,6 +27,8 @@ services:
     image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
     platform: linux/amd64
     command: []
+    environment:
+      - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
     env_file:
       - ../.github/sp1-e2e/.env.ci
       - ./configs/generated/.env.alpen

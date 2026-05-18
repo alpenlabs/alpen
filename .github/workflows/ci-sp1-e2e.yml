@@ -115,8 +115,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install coincurve
-          sudo apt-get update && sudo apt-get install -y jq
+          pip install -q coincurve
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq > /dev/null
 
       - name: Run SP1 E2E test
         env:
