@@ -351,7 +351,8 @@ impl SimpleTransaction {
                 msg_data.extend_from_slice(data);
 
                 // Emit message output
-                let payload = MsgPayload::new(BitcoinAmount::from(*value), msg_data);
+                let payload = MsgPayload::from_bytes(BitcoinAmount::from(*value), msg_data)
+                    .map_err(|_| EnvError::InvalidBlockTx)?;
                 let message = OutputMessage::new(*dest_account, payload);
                 outputs.add_message(message);
             }

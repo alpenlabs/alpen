@@ -104,7 +104,7 @@ fn create_withdrawal_init_message_payload(
     let msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, body).expect("create message");
     let payload_data = msg.to_vec();
 
-    Some(MsgPayload::new(value, payload_data))
+    MsgPayload::from_bytes(value, payload_data).ok()
 }
 
 #[cfg(test)]

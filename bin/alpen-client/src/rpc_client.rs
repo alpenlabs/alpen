@@ -5,6 +5,7 @@ use alpen_ee_common::{
 use async_trait::async_trait;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use ssz::Encode;
+use strata_acct_types::MessageEntry;
 use strata_common::{
     retry::{
         policies::ExponentialBackoff, retry_with_backoff_async, DEFAULT_ENGINE_CALL_MAX_RETRIES,
@@ -142,8 +143,9 @@ impl OLClient for RpcOLClient {
                 let updates: Vec<UpdateInputData> = epoch_summary
                     .update_inputs()
                     .iter()
-                    .map(Into::into)
-                    .collect();
+                    .map(UpdateInputData::try_from)
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| OLClientError::rpc(e.to_string()))?;
 
                 Ok(OLEpochSummary::new(
                     epoch_summary.epoch_commitment(),
@@ -179,16 +181,21 @@ impl SequencerOLClient for RpcOLClient {
 
                 let blocks = block_summaries
                     .into_iter()
-                    .map(|block_summary| OLBlockData {
-                        commitment: block_summary.block_commitment,
-                        inbox_messages: block_summary
+                    .map(|block_summary| {
+                        let inbox_messages = block_summary
                             .new_inbox_messages
                             .into_iter()
-                            .map(Into::into)
-                            .collect(),
-                        next_inbox_msg_idx: block_summary.next_inbox_msg_idx,
+                            .map(MessageEntry::try_from)
+                            .collect::<Result<_, _>>()
+                            .map_err(|e| OLClientError::rpc(e.to_string()))?;
+
+                        Ok(OLBlockData {
+                            commitment: block_summary.block_commitment,
+                            inbox_messages,
+                            next_inbox_msg_idx: block_summary.next_inbox_msg_idx,
+                        })
                     })
-                    .collect();
+                    .collect::<Result<_, OLClientError>>()?;
 
                 Ok(blocks)
             },

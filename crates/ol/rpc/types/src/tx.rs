@@ -150,6 +150,10 @@ pub enum RpcTxConversionError {
     /// Too many ASM history claims in snark operation.
     #[error("too many ASM history claims in snark operation")]
     TooManyAsmHistoryClaims,
+
+    /// Message payload data exceeds SSZ limits.
+    #[error("invalid message payload: {0}")]
+    InvalidMessagePayload(#[from] strata_acct_types::MsgPayloadError),
 }
 
 impl TryFrom<RpcOLTransaction> for OLTransaction {
@@ -161,8 +165,8 @@ impl TryFrom<RpcOLTransaction> for OLTransaction {
         match rpc_tx.payload {
             RpcTransactionPayload::GenericAccountMessage(gam) => {
                 let target = AccountId::new(gam.target.0);
-                let tx_data =
-                    OLTransactionData::new_gam(target, gam.payload.0).with_constraints(constraints);
+                let tx_data = OLTransactionData::from_gam_bytes(target, gam.payload.0)?
+                    .with_constraints(constraints);
                 Ok(OLTransaction::new(tx_data, TxProofs::new_empty()))
             }
             RpcTransactionPayload::SnarkAccountUpdate(sau) => {

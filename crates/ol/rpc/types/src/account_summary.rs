@@ -1,7 +1,7 @@
 //! RPC types for the Orchestration Layer.
 
 use serde::{Deserialize, Serialize};
-use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry, MsgPayload};
+use strata_acct_types::{AccountId, BitcoinAmount, MessageEntry, MsgPayload, MsgPayloadError};
 use strata_identifiers::OLBlockCommitment;
 use strata_primitives::{EpochCommitment, HexBytes, HexBytes32};
 use strata_snark_acct_types::{ProofState, UpdateInputData, UpdateStateData};
@@ -164,19 +164,29 @@ impl From<UpdateInputData> for RpcUpdateInputData {
     }
 }
 
-impl From<RpcUpdateInputData> for UpdateInputData {
-    fn from(rpc: RpcUpdateInputData) -> Self {
-        UpdateInputData::new(
+impl TryFrom<RpcUpdateInputData> for UpdateInputData {
+    type Error = MsgPayloadError;
+
+    fn try_from(rpc: RpcUpdateInputData) -> Result<Self, Self::Error> {
+        let messages = rpc
+            .messages
+            .into_iter()
+            .map(MessageEntry::try_from)
+            .collect::<Result<_, _>>()?;
+
+        Ok(UpdateInputData::new(
             rpc.seq_no,
-            rpc.messages.into_iter().map(Into::into).collect(),
+            messages,
             UpdateStateData::new(rpc.proof_state.into(), rpc.extra_data.0),
-        )
+        ))
     }
 }
 
-impl From<&RpcUpdateInputData> for UpdateInputData {
-    fn from(rpc: &RpcUpdateInputData) -> Self {
-        rpc.clone().into()
+impl TryFrom<&RpcUpdateInputData> for UpdateInputData {
+    type Error = MsgPayloadError;
+
+    fn try_from(rpc: &RpcUpdateInputData) -> Result<Self, Self::Error> {
+        rpc.clone().try_into()
     }
 }
 
@@ -202,13 +212,15 @@ impl From<MessageEntry> for RpcMessageEntry {
     }
 }
 
-impl From<RpcMessageEntry> for MessageEntry {
-    fn from(rpc: RpcMessageEntry) -> Self {
-        MessageEntry::new(
+impl TryFrom<RpcMessageEntry> for MessageEntry {
+    type Error = MsgPayloadError;
+
+    fn try_from(rpc: RpcMessageEntry) -> Result<Self, Self::Error> {
+        Ok(MessageEntry::new(
             AccountId::new(rpc.source.0),
             rpc.incl_epoch,
-            rpc.payload.into(),
-        )
+            rpc.payload.try_into()?,
+        ))
     }
 }
 
@@ -231,9 +243,11 @@ impl From<MsgPayload> for RpcMsgPayload {
     }
 }
 
-impl From<RpcMsgPayload> for MsgPayload {
-    fn from(rpc: RpcMsgPayload) -> Self {
-        MsgPayload::new(BitcoinAmount::from_sat(rpc.value), rpc.data.into())
+impl TryFrom<RpcMsgPayload> for MsgPayload {
+    type Error = MsgPayloadError;
+
+    fn try_from(rpc: RpcMsgPayload) -> Result<Self, Self::Error> {
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(rpc.value), rpc.data.into())
     }
 }
 
