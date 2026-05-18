@@ -19,9 +19,33 @@ use crate::{
     state::CsmWorkerState,
 };
 
+/// The in-flight CSM update produced by processing one ASM block's logs.
+pub(crate) struct PendingCsmUpdate {
+    /// Client state being built up by an ASM block's logs.
+    pub(crate) cur_state: Arc<ClientState>,
+
+    /// Last epoch a checkpoint log was processed for.
+    pub(crate) last_processed_epoch: Option<Epoch>,
+
+    /// Checkpoint observations made during this block, applied to the worker's
+    /// finality cursors only after a successful commit.
+    pub(crate) observations: Vec<(EpochCommitment, CheckpointL1Ref)>,
+}
+
+impl PendingCsmUpdate {
+    pub(crate) fn new(cur_state: Arc<ClientState>, last_processed_epoch: Option<Epoch>) -> Self {
+        Self {
+            cur_state,
+            last_processed_epoch,
+            observations: Vec::new(),
+        }
+    }
+}
+
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
     pub(crate) fn process_log(
-        &mut self,
+        &self,
+        pending: &mut PendingCsmUpdate,
         log: &AsmLogEntry,
         asm_block: &L1BlockCommitment,
     ) -> anyhow::Result<()> {
@@ -31,7 +55,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
                     anyhow::anyhow!("Failed to deserialize CheckpointTipUpdate: {}", e)
                 })?;
 
-                return self.process_checkpoint_tip_log(&tip_upd, asm_block);
+                return self.process_checkpoint_tip_log(pending, &tip_upd, asm_block);
             }
             Some(log_type) => {
                 debug!(log_type, "log type not processed by CSM");
@@ -45,7 +69,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
     /// Process a checkpoint tip update log from the checkpoint subprotocol.
     fn process_checkpoint_tip_log(
-        &mut self,
+        &self,
+        pending: &mut PendingCsmUpdate,
         checkpoint_tip_update: &CheckpointTipUpdate,
         asm_block: &L1BlockCommitment,
     ) -> anyhow::Result<()> {
@@ -62,14 +87,15 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let l1_height = tip.l1_height();
         if l1_height != asm_block.height() {
-            debug!(
+            warn!(
                 tip_l1_height = l1_height,
                 asm_block_height = asm_block.height(),
                 "Checkpoint tip L1 height differs from current ASM block height; using ASM block commitment"
             );
         }
 
-        let observation = self.mark_ol_checkpoint_l1_observed(checkpoint_tip_update, asm_block)?;
+        let observation =
+            self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
         // Tip logs do not contain full batch transition details.
         // CSM only needs epoch progression for finalized-epoch signaling, so we
         // synthesize a minimal checkpoint view from the tip.
@@ -77,86 +103,82 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         // these fields directly without legacy L1Checkpoint shape coupling.
         let synthetic_checkpoint =
             checkpoint_from_tip_update(checkpoint_tip_update, asm_block, observation);
-        self.apply_checkpoint_to_client_state(synthetic_checkpoint, epoch);
+        pending.cur_state = next_client_state(&pending.cur_state, synthetic_checkpoint, epoch);
 
-        self.staged.last_processed_epoch = Some(epoch);
+        pending.last_processed_epoch = Some(epoch);
         Ok(())
-    }
-
-    /// Updates the in-memory client state.
-    ///
-    /// This does NOT persist anything.
-    fn apply_checkpoint_to_client_state(&mut self, new_checkpoint: L1Checkpoint, epoch: Epoch) {
-        let cur_state = self.staged.cur_state.as_ref();
-
-        // Determine if this checkpoint should be the last finalized or just recent.
-
-        // TODO(STR-2438): This comes from the legacy design currently and will be
-        // simplified in the future.
-        // Currently, `last_finalized` is the buried checkpoint and recent and the last be observed
-        // (the checkpoint that makes the the finalized one to be buried).
-
-        // TODO(STR-2438): it's better to store `L1Checkpoint` separately, move the
-        // logic of "recent/finalized" to the DbManager (that can actually fetches
-        // actual persisted data and doesn't rely on the current state).
-        let (last_finalized, recent) = match cur_state.get_last_checkpoint() {
-            Some(existing) => {
-                // If the new checkpoint is for a later epoch, it becomes recent
-                if epoch > existing.batch_info.epoch() {
-                    (Some(existing.clone()), Some(new_checkpoint))
-                } else {
-                    // Otherwise keep existing
-                    (Some(existing.clone()), None)
-                }
-            }
-            None => {
-                // New checkpoint is the first checkpoint, and it is marked recent
-                (None, Some(new_checkpoint))
-            }
-        };
-
-        self.staged.cur_state = Arc::new(ClientState::new(last_finalized, recent));
     }
 
     /// Persists the client state for `asm_block` and advances the in-memory `last_asm_block`.
     ///
-    /// Called after every log of the asm block processed without error.
-    fn commit_block(&mut self, asm_block: L1BlockCommitment) -> anyhow::Result<()> {
-        let next_state = self.staged.cur_state.as_ref().clone();
-        self.ctx.put_client_state_update(
-            &asm_block,
-            ClientUpdateOutput::new(next_state.clone(), vec![]),
-        )?;
+    /// Called once per block after every log was processed without error.
+    fn commit_block(
+        &mut self,
+        asm_block: L1BlockCommitment,
+        next_state: Arc<ClientState>,
+    ) -> anyhow::Result<()> {
+        let state = next_state.as_ref().clone();
+        self.ctx
+            .put_client_state_update(&asm_block, ClientUpdateOutput::new(state.clone(), vec![]))?;
         self.last_asm_block = Some(asm_block);
+        self.last_committed_state = next_state;
         // Publish the client state to status channel.
-        self.ctx.publish_client_state(next_state, asm_block);
+        self.ctx.publish_client_state(state, asm_block);
         Ok(())
     }
 
     /// Processes every log of a single ASM block and commits it as one unit.
     ///
-    /// All staged state is snapshotted up front and restored on any failure
-    /// including a `commit_block` failure.
+    /// All per-block work lives in [`PendingCsmUpdate`]; on any failure it is
+    /// dropped and the worker's persistent fields are untouched.
     fn process_asm_logs(
         &mut self,
         asm_block: L1BlockCommitment,
         logs: &[AsmLogEntry],
     ) -> anyhow::Result<()> {
-        let staged_snapshot = self.staged.clone();
+        let mut pending =
+            PendingCsmUpdate::new(self.last_committed_state.clone(), self.last_processed_epoch);
 
         for log in logs {
-            if let Err(e) = self.process_log(log, &asm_block) {
-                self.staged = staged_snapshot;
-                return Err(e).with_context(|| format!("processing ASM log for block {asm_block}"));
-            }
+            self.process_log(&mut pending, log, &asm_block)
+                .with_context(|| format!("processing ASM log for block {asm_block}"))?;
         }
 
-        if let Err(e) = self.commit_block(asm_block) {
-            self.staged = staged_snapshot;
-            return Err(e).with_context(|| format!("committing CSM block {asm_block}"));
-        }
+        self.commit_block(asm_block, pending.cur_state)
+            .with_context(|| format!("committing CSM block {asm_block}"))?;
+
+        // Commit succeeded; fold pending outputs onto the worker.
+        self.last_processed_epoch = pending.last_processed_epoch;
+        self.apply_observations(pending.observations);
 
         Ok(())
+    }
+
+    /// Folds checkpoint observations made during a successfully committed block
+    /// into the worker's finality cursors.
+    fn apply_observations(&mut self, observations: Vec<(EpochCommitment, CheckpointL1Ref)>) {
+        for (commitment, observation) in observations {
+            // Update cached confirmed epoch monotonically.
+            if self
+                .confirmed_epoch
+                .is_none_or(|current| commitment.epoch() > current.epoch())
+            {
+                self.confirmed_epoch = Some(commitment);
+            }
+
+            // Queue only non-finalized candidates and avoid duplicates.
+            if self
+                .finalized_epoch
+                .is_none_or(|current| commitment.epoch() > current.epoch())
+                && !self
+                    .observed_checkpoints
+                    .iter()
+                    .any(|(epoch, _)| *epoch == commitment)
+            {
+                self.observed_checkpoints
+                    .push_back((commitment, observation));
+            }
+        }
     }
 
     /// Processes `asm_block` and its logs, first replaying any ASM blocks skipped
@@ -224,8 +246,11 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         Ok(())
     }
 
+    /// Validates a checkpoint tip update against the parent ASM state, writes
+    /// the L1-ref observation to the DB, and updates the observations on the `pending` container.
     fn mark_ol_checkpoint_l1_observed(
-        &mut self,
+        &self,
+        pending: &mut PendingCsmUpdate,
         checkpoint_tip_update: &CheckpointTipUpdate,
         asm_block: &L1BlockCommitment,
     ) -> anyhow::Result<CheckpointL1Ref> {
@@ -275,30 +300,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
             observation.clone(),
         )?;
 
-        // Update cached confirmed epoch monotonically.
-        if self
-            .staged
-            .confirmed_epoch
-            .is_none_or(|current| commitment.epoch() > current.epoch())
-        {
-            self.staged.confirmed_epoch = Some(commitment);
-        }
-
-        // Queue only non-finalized candidates and avoid duplicates.
-        if self
-            .staged
-            .finalized_epoch
-            .is_none_or(|current| commitment.epoch() > current.epoch())
-            && !self
-                .staged
-                .observed_checkpoints
-                .iter()
-                .any(|(epoch, _)| *epoch == commitment)
-        {
-            self.staged
-                .observed_checkpoints
-                .push_back((commitment, observation.clone()));
-        }
+        pending.observations.push((commitment, observation.clone()));
 
         debug!(
             ?commitment,
@@ -311,9 +313,42 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     }
 }
 
+/// Returns the next client state after folding `new_checkpoint` for `epoch`
+/// into `prev`.
+fn next_client_state(
+    prev: &ClientState,
+    new_checkpoint: L1Checkpoint,
+    epoch: Epoch,
+) -> Arc<ClientState> {
+    // Determine if this checkpoint should be the last finalized or just recent.
+
+    // TODO(STR-2438): This comes from the legacy design currently and will be
+    // simplified in the future.
+    // Currently, `last_finalized` is the buried checkpoint and recent and the last be observed
+    // (the checkpoint that makes the the finalized one to be buried).
+    // It's better to store `L1Checkpoint` separately, move the
+    // logic of "recent/finalized" to the DbManager (that can actually fetches
+    // actual persisted data and doesn't rely on the current state).
+    let (last_finalized, recent) = match prev.get_last_checkpoint() {
+        Some(existing) => {
+            // If the new checkpoint is for a later epoch, it becomes recent
+            if epoch > existing.batch_info.epoch() {
+                (Some(existing.clone()), Some(new_checkpoint))
+            } else {
+                // Otherwise keep existing
+                (Some(existing.clone()), None)
+            }
+        }
+        None => {
+            // New checkpoint is the first checkpoint, and it is marked recent
+            (None, Some(new_checkpoint))
+        }
+    };
+
+    Arc::new(ClientState::new(last_finalized, recent))
+}
+
 /// Build a compatibility synthetic [`L1Checkpoint`] from a checkpoint tip update.
-// TODO(STR-2438): Remove this adapter once CSM consumes checkpoint tip update
-// structures directly without legacy `L1Checkpoint` synthesis.
 fn checkpoint_from_tip_update(
     checkpoint_tip_update: &CheckpointTipUpdate,
     asm_block: &L1BlockCommitment,
@@ -493,37 +528,48 @@ mod tests {
             .expect("single-byte raw payload should produce typeless log")
     }
 
+    /// Builds a fresh `PendingCsmUpdate` from `state`'s last-committed values; used
+    /// by tests that call into the per-block log methods directly.
+    fn fresh_pending(state: &CsmWorkerState<StubCtx>) -> super::PendingCsmUpdate {
+        super::PendingCsmUpdate::new(
+            state.last_committed_state.clone(),
+            state.last_processed_epoch,
+        )
+    }
+
     #[test]
     fn test_process_log_with_non_checkpoint_log_type() {
-        let (mut state, _) = create_test_state();
+        let (state, _) = create_test_state();
         let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
 
         let log = create_non_checkpoint_log_type();
+        let mut pending = fresh_pending(&state);
 
         // Should succeed but do nothing
-        let result = state.process_log(&log, &asm_block);
+        let result = state.process_log(&mut pending, &log, &asm_block);
         assert!(
             result.is_ok(),
             "process_log should ignore known non-checkpoint log types"
         );
 
-        // State should not be updated
-        assert_eq!(state.staged.last_processed_epoch, None);
+        // Pending update should not be touched.
+        assert_eq!(pending.last_processed_epoch, None);
     }
 
     #[test]
     fn test_process_log_with_no_log_type() {
-        let (mut state, _) = create_test_state();
+        let (state, _) = create_test_state();
         let asm_block = L1BlockCommitment::new(100, L1BlockId::default());
 
         let log = create_typeless_log();
+        let mut pending = fresh_pending(&state);
 
         // Should succeed but do nothing
-        let result = state.process_log(&log, &asm_block);
+        let result = state.process_log(&mut pending, &log, &asm_block);
         assert!(result.is_ok(), "process_log should handle typeless logs");
 
-        // State should not be updated
-        assert_eq!(state.staged.last_processed_epoch, None);
+        // Pending update should not be touched.
+        assert_eq!(pending.last_processed_epoch, None);
     }
 
     /// Synthesizes a CheckpointTipUpdate log for `epoch`. We use a placeholder
@@ -551,8 +597,9 @@ mod tests {
 
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_l1_fetch_failure());
         state.last_asm_block = Some(asm_block);
+        let mut pending = fresh_pending(&state);
         let err = state
-            .process_log(&log, &asm_block)
+            .process_log(&mut pending, &log, &asm_block)
             .expect_err("fetch failure should propagate");
         assert!(
             err.to_string().contains("fetching L1 block"),
@@ -574,9 +621,10 @@ mod tests {
     fn commit_block_persists_state_and_advances_cursor() {
         let (mut state, storage) = create_test_state();
         let asm_block = L1BlockCommitment::new(300, L1BlockId::from(Buf32::from([7; 32])));
+        let next_state = state.last_committed_state.clone();
 
         state
-            .commit_block(asm_block)
+            .commit_block(asm_block, next_state)
             .expect("commit should succeed");
 
         assert_eq!(state.last_asm_block, Some(asm_block));
@@ -610,8 +658,9 @@ mod tests {
         // Simulate the service loop: a failing log means `commit_block` is
         // never called. Pin the failure to the L1-fetch path so the test
         // can't pass on an unrelated error.
+        let mut pending = fresh_pending(&state);
         let err = state
-            .process_log(&log, &asm_block)
+            .process_log(&mut pending, &log, &asm_block)
             .expect_err("L1 fetch failure should make the log fail");
         assert!(
             err.to_string().contains("fetching L1 block"),
@@ -629,24 +678,29 @@ mod tests {
         );
     }
 
-    /// A `commit_block` failure must roll back all staged state, not just
-    /// `cur_state`.
+    /// A `commit_block` failure must leave the worker's persistent cursors
+    /// untouched. Because the per-block work lives in `PendingCsmUpdate` and is
+    /// only folded back onto the worker after a successful commit, the
+    /// pre-block values must be byte-identical after the failure.
     #[test]
-    fn commit_failure_rolls_back_staged_state() {
+    fn commit_failure_leaves_cursors_unchanged() {
         let (mut state, storage) = create_test_state_with_ctx(|c| c.with_commit_failure());
         let last = L1BlockCommitment::new(100, block_id_at(100));
         state.last_asm_block = Some(last);
 
-        // Seed staged cursors with a known baseline so we can detect any
-        // partial advancement that survives the failed commit.
+        // Seed cursors with a known baseline so we can detect any partial
+        // advancement that survives the failed commit.
         let baseline_epoch = EpochCommitment::from_terminal(
             7,
             OLBlockCommitment::new(70, OLBlockId::from(Buf32::from([7; 32]))),
         );
-        state.staged.last_processed_epoch = Some(7);
-        state.staged.confirmed_epoch = Some(baseline_epoch);
-        state.staged.finalized_epoch = Some(baseline_epoch);
-        let baseline = state.staged.clone();
+        state.last_processed_epoch = Some(7);
+        state.confirmed_epoch = Some(baseline_epoch);
+        state.finalized_epoch = Some(baseline_epoch);
+        let baseline_last_processed_epoch = state.last_processed_epoch;
+        let baseline_confirmed_epoch = state.confirmed_epoch;
+        let baseline_finalized_epoch = state.finalized_epoch;
+        let baseline_observed_checkpoints = state.observed_checkpoints.clone();
 
         let next = L1BlockCommitment::new(101, block_id_at(101));
         let err = state
@@ -659,17 +713,11 @@ mod tests {
 
         // Commit cursor pinned at the last committed block.
         assert_eq!(state.last_asm_block, Some(last));
-        // Every staged field restored to the pre-block baseline.
-        assert_eq!(
-            state.staged.last_processed_epoch,
-            baseline.last_processed_epoch
-        );
-        assert_eq!(state.staged.confirmed_epoch, baseline.confirmed_epoch);
-        assert_eq!(state.staged.finalized_epoch, baseline.finalized_epoch);
-        assert_eq!(
-            state.staged.observed_checkpoints,
-            baseline.observed_checkpoints
-        );
+        // Every cursor unchanged.
+        assert_eq!(state.last_processed_epoch, baseline_last_processed_epoch);
+        assert_eq!(state.confirmed_epoch, baseline_confirmed_epoch);
+        assert_eq!(state.finalized_epoch, baseline_finalized_epoch);
+        assert_eq!(state.observed_checkpoints, baseline_observed_checkpoints);
         assert!(
             storage
                 .client_state()

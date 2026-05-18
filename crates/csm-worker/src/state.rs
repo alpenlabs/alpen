@@ -15,6 +15,10 @@ use crate::{constants, context::CsmWorkerContext};
 ///
 /// This state is used by the CSM worker which acts as a listener to ASM worker
 /// status updates, processing checkpoint logs from the checkpoint subprotocol.
+///
+/// Every field is either the last durably committed value or a running cursor
+/// advanced only after a successful commit. Per-block scratch state lives in
+/// `BlockScratch` and never touches this struct on failure.
 #[expect(
     missing_debug_implementations,
     reason = "context generic doesn't require Debug"
@@ -23,25 +27,11 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
     /// External services and configuration.
     pub(crate) ctx: C,
 
-    /// Last ASM block committed. Advanced only by a successful commit; never
-    /// rolled back.
+    /// Last ASM block committed. Advanced only by a successful commit.
     pub(crate) last_asm_block: Option<L1BlockCommitment>,
 
-    /// State staged while processing the current ASM block's logs; committed as
-    /// a unit by `commit_block` or rolled back on any failure.
-    pub(crate) staged: StagedState,
-}
-
-/// In-memory state that is provisionally mutated while processing an ASM
-/// block's logs.
-///
-/// An ASM block is processed and committed as a unit: every field here is
-/// snapshotted before processing the block's logs and restored on any failure,
-/// so a retry replays from the last committed baseline.
-#[derive(Clone)]
-pub(crate) struct StagedState {
-    /// Current client state.
-    pub(crate) cur_state: Arc<ClientState>,
+    /// Last durably committed client state.
+    pub(crate) last_committed_state: Arc<ClientState>,
 
     /// Last epoch we processed a checkpoint for.
     pub(crate) last_processed_epoch: Option<Epoch>,
@@ -54,7 +44,7 @@ pub(crate) struct StagedState {
 
     /// Ordered observed checkpoint candidates used for incremental depth derivation.
     ///
-    /// Items are appended when new observation facts are written and consumed as
+    /// Items are appended after a successful block commit and consumed as
     /// finalized depth progresses.
     pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
 }
@@ -110,13 +100,11 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         Ok(Self {
             ctx,
             last_asm_block: Some(cur_block),
-            staged: StagedState {
-                cur_state: Arc::new(cur_state),
-                last_processed_epoch: None,
-                confirmed_epoch,
-                finalized_epoch,
-                observed_checkpoints,
-            },
+            last_committed_state: Arc::new(cur_state),
+            last_processed_epoch: None,
+            confirmed_epoch,
+            finalized_epoch,
+            observed_checkpoints,
         })
     }
 
@@ -321,15 +309,11 @@ mod tests {
         );
         let state = CsmWorkerState::new(params, storage, ctx).expect("state init");
 
-        assert_eq!(state.staged.confirmed_epoch, Some(commitment_2));
-        assert_eq!(state.staged.finalized_epoch, Some(commitment_1));
-        assert_eq!(state.staged.observed_checkpoints.len(), 1);
+        assert_eq!(state.confirmed_epoch, Some(commitment_2));
+        assert_eq!(state.finalized_epoch, Some(commitment_1));
+        assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state
-                .staged
-                .observed_checkpoints
-                .front()
-                .map(|(epoch, _)| *epoch),
+            state.observed_checkpoints.front().map(|(epoch, _)| *epoch),
             Some(commitment_2)
         );
     }
