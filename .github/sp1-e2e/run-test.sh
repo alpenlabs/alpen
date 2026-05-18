@@ -36,6 +36,7 @@ export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/testnet-ch
 # --- Low-level helpers ---
 
 cleanup() {
+    [ -n "${MONITOR_PID:-}" ] && kill "${MONITOR_PID}" 2>/dev/null || true
     echo "=== Collecting logs ==="
     docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" logs > "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
     docker compose -f "${DOCKER_DIR}/compose-signet.yml" logs >> "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true
@@ -206,6 +207,13 @@ start_sequencer_stack() {
 
     wait_for_strata
     wait_for_alpen_client
+
+    # Background status monitor — prints raw chain status every 60s
+    (while true; do
+        sleep 60
+        echo "[monitor] $(date -u +%H:%M:%S) chain_status=$(ol_rpc "${CHAIN_STATUS_PAYLOAD}" 2>/dev/null) snark=$(ol_rpc "${SNARK_STATE_PAYLOAD}" 2>/dev/null)"
+    done) &
+    MONITOR_PID=$!
 }
 
 assert_checkpoint_proof() {
