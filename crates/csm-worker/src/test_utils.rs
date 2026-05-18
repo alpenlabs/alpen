@@ -6,6 +6,7 @@ use bitcoin::Block;
 use strata_asm_common::AuxData;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     L1Height,
@@ -32,6 +33,7 @@ pub(crate) struct StubCtx {
     status_channel: Arc<StatusChannel>,
     finality_depth: u32,
     magic: MagicBytes,
+    genesis_l1_block: L1BlockCommitment,
     l1_fetch: L1Fetch,
     /// Canonical ASM states keyed by L1 height, used to serve gap-fill walks.
     canonical_asm_states: HashMap<L1Height, (L1BlockId, AsmState)>,
@@ -49,12 +51,14 @@ impl StubCtx {
         status_channel: Arc<StatusChannel>,
         finality_depth: u32,
         magic: MagicBytes,
+        genesis_l1_block: L1BlockCommitment,
     ) -> Self {
         Self {
             storage,
             status_channel,
             finality_depth,
             magic,
+            genesis_l1_block,
             l1_fetch: L1Fetch::Unset,
             canonical_asm_states: HashMap::new(),
             canonical_fail_height: None,
@@ -164,5 +168,42 @@ impl CsmWorkerContext for StubCtx {
             .get(&height)
             .map(|(blkid, _)| L1BlockCommitment::new(height, *blkid))
             .ok_or_else(|| anyhow::anyhow!("no test canonical block configured at height {height}"))
+    }
+
+    fn fetch_most_recent_client_state(
+        &self,
+    ) -> anyhow::Result<Option<(L1BlockCommitment, ClientState)>> {
+        Ok(self.storage.client_state().fetch_most_recent_state()?)
+    }
+
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        self.genesis_l1_block
+    }
+
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_last_checkpoint_l1_ref_epoch_blocking()?)
+    }
+
+    fn get_canonical_epoch_commitment_at(
+        &self,
+        epoch: Epoch,
+    ) -> anyhow::Result<Option<EpochCommitment>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_blocking(epoch)?)
+    }
+
+    fn get_checkpoint_l1_ref(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointL1Ref>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_blocking(commitment)?)
     }
 }

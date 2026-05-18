@@ -486,6 +486,7 @@ mod tests {
             status_channel,
             params.rollup.l1_reorg_safe_depth,
             params.rollup.magic_bytes,
+            params.rollup.genesis_l1_view.blk,
         )
     }
 
@@ -494,7 +495,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = default_stub_ctx(&params, storage.clone(), status_channel);
-        let state = CsmWorkerState::new(params, storage.clone(), ctx).unwrap();
+        let state = CsmWorkerState::new(ctx).unwrap();
         (state, storage)
     }
 
@@ -508,7 +509,7 @@ mod tests {
         let params = create_test_params_arc();
         let (storage, status_channel) = create_test_storage();
         let ctx = configure(default_stub_ctx(&params, storage.clone(), status_channel));
-        let state = CsmWorkerState::new(params, storage.clone(), ctx).unwrap();
+        let state = CsmWorkerState::new(ctx).unwrap();
         (state, storage)
     }
 

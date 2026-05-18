@@ -10,6 +10,7 @@ use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_common::retry::{policies::ExponentialBackoff, retry_with_backoff};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
 use strata_csm_worker::CsmWorkerContext;
+use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_params::Params;
 use strata_primitives::{
@@ -122,5 +123,42 @@ impl CsmWorkerContext for CsmWorkerContextImpl {
             .get_canonical_blockid_at_height(height)?
             .ok_or_else(|| anyhow::anyhow!("missing canonical L1 block at height {height}"))?;
         Ok(L1BlockCommitment::new(height, blkid))
+    }
+
+    fn fetch_most_recent_client_state(
+        &self,
+    ) -> anyhow::Result<Option<(L1BlockCommitment, ClientState)>> {
+        Ok(self.storage.client_state().fetch_most_recent_state()?)
+    }
+
+    fn genesis_l1_block(&self) -> L1BlockCommitment {
+        self.params.rollup.genesis_l1_view.blk
+    }
+
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> anyhow::Result<Option<EpochCommitment>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_last_checkpoint_l1_ref_epoch_blocking()?)
+    }
+
+    fn get_canonical_epoch_commitment_at(
+        &self,
+        epoch: Epoch,
+    ) -> anyhow::Result<Option<EpochCommitment>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_canonical_epoch_commitment_at_blocking(epoch)?)
+    }
+
+    fn get_checkpoint_l1_ref(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointL1Ref>> {
+        Ok(self
+            .storage
+            .ol_checkpoint()
+            .get_checkpoint_l1_ref_blocking(commitment)?)
     }
 }

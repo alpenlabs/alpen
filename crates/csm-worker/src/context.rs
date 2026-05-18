@@ -4,6 +4,7 @@ use bitcoin::Block;
 use strata_asm_common::AuxData;
 use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+use strata_identifiers::Epoch;
 use strata_l1_txfmt::MagicBytes;
 use strata_primitives::{
     L1Height,
@@ -54,4 +55,30 @@ pub trait CsmWorkerContext: Send + Sync {
 
     /// Resolves the canonical L1 block commitment at `height`.
     fn get_canonical_l1_block(&self, height: L1Height) -> anyhow::Result<L1BlockCommitment>;
+
+    /// Returns the most recently persisted client state, or `None` if storage
+    /// has none yet.
+    fn fetch_most_recent_client_state(
+        &self,
+    ) -> anyhow::Result<Option<(L1BlockCommitment, ClientState)>>;
+
+    /// L1 block that bootstrap should anchor to when storage has no client
+    /// state yet.
+    fn genesis_l1_block(&self) -> L1BlockCommitment;
+
+    /// Returns the epoch of the most recent L1-observed checkpoint, or `None`
+    /// if nothing has been observed yet.
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> anyhow::Result<Option<EpochCommitment>>;
+
+    /// Returns the canonical epoch commitment at `epoch`, if recorded.
+    fn get_canonical_epoch_commitment_at(
+        &self,
+        epoch: Epoch,
+    ) -> anyhow::Result<Option<EpochCommitment>>;
+
+    /// Returns the recorded L1 ref for an observed checkpoint at `commitment`.
+    fn get_checkpoint_l1_ref(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointL1Ref>>;
 }

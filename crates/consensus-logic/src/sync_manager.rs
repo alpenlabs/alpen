@@ -183,11 +183,11 @@ fn spawn_csm_listener(
     let ctx = CsmWorkerContextImpl::new(
         executor.handle().clone(),
         bitcoin_client,
-        params.clone(),
+        params,
         storage.clone(),
         status_channel,
     );
-    let csm_state = CsmWorkerState::new(params, storage.clone(), ctx)?;
+    let csm_state = CsmWorkerState::new(ctx)?;
 
     // Get the starting block from CSM's last processed block
     // If CSM hasn't processed any blocks yet, we get the latest ASM state from storage

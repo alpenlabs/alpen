@@ -4,10 +4,8 @@ use std::{collections::VecDeque, sync::Arc};
 
 use strata_csm_types::{CheckpointL1Ref, ClientState};
 use strata_identifiers::Epoch;
-use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
-use strata_storage::NodeStorage;
 
 use crate::{constants, context::CsmWorkerContext};
 
@@ -52,28 +50,24 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
 impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// Create a new CSM worker state.
     ///
-    /// `params` and `storage` are read once at startup to bootstrap the
-    /// in-memory finalization queue; runtime persistence and L1 fetches go
-    /// through `ctx`.
-    pub fn new(params: Arc<Params>, storage: Arc<NodeStorage>, ctx: C) -> anyhow::Result<Self> {
+    /// All bootstrap reads (last client state, observed checkpoint refs, params)
+    /// go through `ctx`; runtime persistence and L1 fetches use the same
+    /// context after construction.
+    pub fn new(ctx: C) -> anyhow::Result<Self> {
         // Load the most recent client state from storage
-        let (cur_block, cur_state) = storage
-            .client_state()
-            .fetch_most_recent_state()?
-            .unwrap_or((params.rollup.genesis_l1_view.blk, ClientState::default()));
+        let (cur_block, cur_state) = ctx
+            .fetch_most_recent_client_state()?
+            .unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
 
         let current_l1_tip = cur_block.height();
-        let finality_depth = params.rollup.l1_reorg_safe_depth.max(1);
+        let finality_depth = ctx.l1_reorg_safe_depth().max(1);
         let baseline_finalized_epoch = cur_state.get_declared_final_epoch();
         let observation_start_epoch = baseline_finalized_epoch
             .map(|epoch| epoch.epoch().saturating_add(1))
             .unwrap_or(0);
 
-        let mut observed_checkpoints = load_observed_checkpoints_from_db(
-            storage.as_ref(),
-            observation_start_epoch,
-            current_l1_tip,
-        )?;
+        let mut observed_checkpoints =
+            load_observed_checkpoints(&ctx, observation_start_epoch, current_l1_tip)?;
 
         let finalized_from_l1_refs =
             derive_finalized_epoch(observed_checkpoints.iter(), current_l1_tip, finality_depth);
@@ -114,29 +108,27 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     }
 }
 
-/// Loads observed checkpoint candidates from the OL checkpoint DB starting from `start_epoch`.
+/// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
+/// starting from `start_epoch`.
 ///
 /// Only epochs with both a canonical commitment and an L1 ref are included.
 /// Used at startup to populate the incremental finalization queue.
-fn load_observed_checkpoints_from_db(
-    storage: &NodeStorage,
+fn load_observed_checkpoints<C: CsmWorkerContext>(
+    ctx: &C,
     start_epoch: Epoch,
     current_l1_tip: L1Height,
 ) -> anyhow::Result<VecDeque<(EpochCommitment, CheckpointL1Ref)>> {
-    let ol_checkpoint = storage.ol_checkpoint();
-    let Some(last_l1_ref_commitment) = ol_checkpoint.get_last_checkpoint_l1_ref_epoch_blocking()?
-    else {
+    let Some(last_l1_ref_commitment) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
         return Ok(VecDeque::new());
     };
     let last_checkpoint_epoch = last_l1_ref_commitment.epoch();
 
     let mut observed = VecDeque::new();
     for epoch in start_epoch..=last_checkpoint_epoch {
-        let Some(commitment) = ol_checkpoint.get_canonical_epoch_commitment_at_blocking(epoch)?
-        else {
+        let Some(commitment) = ctx.get_canonical_epoch_commitment_at(epoch)? else {
             continue;
         };
-        let Some(observation) = ol_checkpoint.get_checkpoint_l1_ref_blocking(commitment)? else {
+        let Some(observation) = ctx.get_checkpoint_l1_ref(commitment)? else {
             continue;
         };
 
@@ -306,8 +298,9 @@ mod tests {
             status_channel,
             4,
             params.rollup.magic_bytes,
+            params.rollup.genesis_l1_view.blk,
         );
-        let state = CsmWorkerState::new(params, storage, ctx).expect("state init");
+        let state = CsmWorkerState::new(ctx).expect("state init");
 
         assert_eq!(state.confirmed_epoch, Some(commitment_2));
         assert_eq!(state.finalized_epoch, Some(commitment_1));
