@@ -107,7 +107,7 @@ start_signet_fast() {
     echo "=== Starting signet (BLOCKPRODUCTIONDELAY=1) ==="
     cd "${DOCKER_DIR}"
     export BLOCKPRODUCTIONDELAY=1
-    docker compose -f compose-signet.yml up -d
+    docker compose -f compose-signet.yml up -d 2>&1 | tail -1
 
     echo "Waiting for bitcoin height > 12..."
     local deadline=$((SECONDS + 120))
@@ -129,7 +129,7 @@ restart_signet_slow() {
     cd "${DOCKER_DIR}"
     docker compose -f compose-signet.yml down
     export BLOCKPRODUCTIONDELAY=30
-    docker compose -f compose-signet.yml up -d
+    docker compose -f compose-signet.yml up -d 2>&1 | tail -1
 
     echo "Waiting for bitcoind to come back up..."
     local deadline=$((SECONDS + 60))
@@ -148,9 +148,9 @@ restart_signet_slow() {
 
 extract_datatool() {
     echo "=== Extracting datatool from ${DATATOOL_IMAGE} ==="
-    docker create --name dt-extract "${DATATOOL_IMAGE}"
+    docker create --name dt-extract "${DATATOOL_IMAGE}" >/dev/null
     docker cp dt-extract:/usr/local/bin/strata-datatool /tmp/strata-datatool
-    docker rm dt-extract
+    docker rm dt-extract >/dev/null
     chmod +x /tmp/strata-datatool
 }
 
@@ -186,7 +186,7 @@ generate_params() {
 start_sequencer_stack() {
     echo "=== Starting sequencer stack ==="
     cd "${REPO_ROOT}"
-    docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" up -d
+    docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" up -d 2>&1 | tail -3
 
     wait_for_strata
     wait_for_alpen_client

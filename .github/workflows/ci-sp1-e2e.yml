@@ -101,7 +101,7 @@ jobs:
           while [ $SECONDS -lt $DEADLINE ]; do
             ALL_PULLED=true
             for img in $IMAGES; do
-              docker pull "${ECR_REGISTRY}/${img}:${IMAGE_TAG}" || ALL_PULLED=false
+              docker pull -q "${ECR_REGISTRY}/${img}:${IMAGE_TAG}" || ALL_PULLED=false
             done
             if [ "$ALL_PULLED" = true ]; then
               echo "All images pulled"

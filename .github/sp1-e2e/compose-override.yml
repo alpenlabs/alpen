@@ -12,10 +12,10 @@ services:
     image: ${ECR_REGISTRY}/strata:${IMAGE_TAG}
     platform: linux/amd64
     env_file:
-      - .github/sp1-e2e/.env.ci
+      - ../.github/sp1-e2e/.env.ci
     volumes:
-      - ./.github/sp1-e2e/config.seq.toml:/app/configs/config.seq.toml:ro
-      - ./.github/sp1-e2e/sequencer.toml:/app/configs/sequencer.toml:ro
+      - ../.github/sp1-e2e/config.seq.toml:/app/configs/config.seq.toml:ro
+      - ../.github/sp1-e2e/sequencer.toml:/app/configs/sequencer.toml:ro
 
   strata-signer:
     image: ${ECR_REGISTRY}/strata-signer:${IMAGE_TAG}
@@ -26,5 +26,5 @@ services:
     platform: linux/amd64
     command: []
     env_file:
-      - .github/sp1-e2e/.env.ci
-      - docker/configs/generated/.env.alpen
+      - ../.github/sp1-e2e/.env.ci
+      - ./configs/generated/.env.alpen
