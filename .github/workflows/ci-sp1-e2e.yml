@@ -93,8 +93,7 @@ jobs:
 
       - name: Pull images (retry up to 5 min)
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY_PREFIX: ${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}/${{ vars.SHARED_ECR_REPOSITORY_PREFIX }}
           IMAGE_TAG: ${{ needs.check-new-commits.outputs.short_tag }}
         run: |
           IMAGES="strata alpen-client strata-signer strata-datatool"
@@ -102,7 +101,7 @@ jobs:
           while [ $SECONDS -lt $DEADLINE ]; do
             ALL_PULLED=true
             for img in $IMAGES; do
-              docker pull "${ECR_REGISTRY}/${ECR_REPOSITORY_PREFIX}/${img}:${IMAGE_TAG}" || ALL_PULLED=false
+              docker pull "${ECR_REGISTRY}/${img}:${IMAGE_TAG}" || ALL_PULLED=false
             done
             if [ "$ALL_PULLED" = true ]; then
               echo "All images pulled"
