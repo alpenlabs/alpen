@@ -8,6 +8,8 @@ use strata_config::{Config, SecretString};
 use crate::errors::*;
 
 const STRATA_ADMIN_RPC_TOKEN: &str = "STRATA_ADMIN_RPC_TOKEN";
+const DEFAULT_HEALTH_CHECK_HOST: &str = "0.0.0.0";
+const DEFAULT_HEALTH_CHECK_PORT: u16 = 8080;
 
 /// Configs overridable by environment. Mostly for sensitive data.
 #[derive(Debug, Clone)]
@@ -82,6 +84,22 @@ pub(crate) struct Args {
     /// Admin RPC port that the client will listen to.
     #[argh(option, description = "admin rpc port")]
     pub admin_rpc_port: Option<u16>,
+
+    /// Host for the HTTP health check endpoint.
+    #[argh(
+        option,
+        default = "DEFAULT_HEALTH_CHECK_HOST.to_string()",
+        description = "health check host"
+    )]
+    pub health_check_host: String,
+
+    /// Port for the HTTP health check endpoint.
+    #[argh(
+        option,
+        default = "DEFAULT_HEALTH_CHECK_PORT",
+        description = "health check port"
+    )]
+    pub health_check_port: u16,
 
     /// Other generic overrides to the config toml.
     /// Will be used, for example, as `-o btcio.reader.client_poll_dur_ms=1000 -o exec.reth.rpc_url=http://reth`
@@ -215,6 +233,8 @@ mod tests {
             rpc_port: None,
             admin_rpc_host: Some("127.0.0.2".to_string()),
             admin_rpc_port: Some(9544),
+            health_check_host: DEFAULT_HEALTH_CHECK_HOST.to_string(),
+            health_check_port: DEFAULT_HEALTH_CHECK_PORT,
             overrides: Vec::new(),
         };
 
