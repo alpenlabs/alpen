@@ -26,7 +26,7 @@ services:
   alpen-client:
     image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
     platform: linux/amd64
-    command: []
+    command: ["--batch-sealing-block-count", "24"]
     environment:
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
     env_file:
