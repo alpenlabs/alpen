@@ -152,6 +152,22 @@ extract_datatool() {
     docker cp dt-extract:/usr/local/bin/strata-datatool /tmp/strata-datatool
     docker rm dt-extract >/dev/null
     chmod +x /tmp/strata-datatool
+
+    # Copy ELFs from prebuilt images into docker/elfs/ so the base compose
+    # volume mount has real ELFs instead of an empty directory.
+    echo "=== Extracting ELFs from prebuilt images ==="
+    mkdir -p "${DOCKER_DIR}/elfs"
+
+    docker create --name elf-strata "${ECR_REGISTRY}/strata:${IMAGE_TAG}" >/dev/null
+    docker cp elf-strata:/app/elfs/sp1/. "${DOCKER_DIR}/elfs/"
+    docker rm elf-strata >/dev/null
+
+    docker create --name elf-alpen "${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}" >/dev/null
+    docker cp elf-alpen:/app/elfs/sp1/. "${DOCKER_DIR}/elfs/"
+    docker rm elf-alpen >/dev/null
+
+    echo "ELFs extracted:"
+    ls "${DOCKER_DIR}/elfs/"
 }
 
 generate_params() {
