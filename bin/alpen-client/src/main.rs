@@ -480,9 +480,10 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
-                    backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
-                    create_batch_builder, create_batch_lifecycle_task,
-                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
+                    backfill_missing_chunk_witnesses,
+                    block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
+                    chunk_witness_channel, chunk_witness_task, create_batch_builder,
+                    create_batch_lifecycle_task, create_update_submitter_task,
                 };
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),

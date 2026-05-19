@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 
-use super::{Accumulator, BatchPolicy, BatchSealingPolicy, BlockDataProvider};
+use crate::policy::{AccumulationPolicy, Accumulator, BlockDataProvider, SealingPolicy};
 
 /// Block-count based batching policy.
 #[derive(Debug)]
@@ -23,7 +23,7 @@ pub struct BlockCountData;
 #[derive(Debug, Default)]
 pub struct BlockCountValue;
 
-impl BatchPolicy for BlockCountPolicy {
+impl AccumulationPolicy for BlockCountPolicy {
     type BlockData = BlockCountData;
     type AccumulatedValue = BlockCountValue;
 
@@ -56,7 +56,7 @@ impl FixedBlockCountSealing {
     }
 }
 
-impl BatchSealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
+impl SealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
     fn would_exceed(
         &self,
         accumulator: &Accumulator<BlockCountPolicy>,

@@ -8,10 +8,10 @@ use alpen_ee_common::{
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
-use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
 use crate::{
     batch_builder::canonical::{CanonicalChainReader, ExecChainCanonicalReader},
     chunk_witness_task::ChunkExtractRequest,
+    policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
 };
 
 /// Context holding all dependencies for the batch builder task.
@@ -20,9 +20,9 @@ use crate::{
 /// which is passed separately to allow for state recovery on restart.
 pub(crate) struct BatchBuilderCtx<P, D, S, BS, ES>
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
+    S: SealingPolicy<P>,
     BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
@@ -58,9 +58,9 @@ where
 
 impl<P, D, S, BS, ES> BatchBuilderCtx<P, D, S, BS, ES>
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
+    S: SealingPolicy<P>,
     BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage + Send + Sync,
 {

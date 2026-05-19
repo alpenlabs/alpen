@@ -8,11 +8,11 @@ use alpen_ee_common::{
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
-use super::{
-    ctx::BatchBuilderCtx, task::batch_builder_task, BatchBuilderState, BatchPolicy,
-    BatchSealingPolicy, BlockDataProvider,
+use super::{ctx::BatchBuilderCtx, task::batch_builder_task, BatchBuilderState};
+use crate::{
+    chunk_witness_task::ChunkExtractRequest,
+    policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
 };
-use crate::chunk_witness_task::ChunkExtractRequest;
 
 /// Handle to observe batch builder state changes.
 ///
@@ -56,9 +56,9 @@ pub fn create_batch_builder<P, D, S, BS, ES>(
     chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
 ) -> (BatchBuilderHandle, impl Future<Output = ()>)
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
+    S: SealingPolicy<P>,
     BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {

@@ -11,12 +11,11 @@ use strata_acct_types::Hash;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, error, warn};
 
-use super::{
-    ctx::BatchBuilderCtx, BatchBuilderState, BatchPolicy, BatchSealingPolicy, BlockDataProvider,
-};
+use super::{ctx::BatchBuilderCtx, BatchBuilderState};
 use crate::{
     batch_builder::reorg::{check_and_handle_reorg, ReorgReport},
     chunk_witness_task::ChunkExtractRequest,
+    policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
 };
 
 /// Polling interval for checking pending block data availability.
@@ -78,7 +77,7 @@ async fn get_block_range(
 /// [`ChunkExtractRequest`] on the channel for the background
 /// `chunk_witness_task` to process. Extraction itself runs off this
 /// task's hot path; sealing does not wait for it.
-async fn seal_batch<P: BatchPolicy>(
+async fn seal_batch<P: AccumulationPolicy>(
     state: &mut BatchBuilderState<P>,
     storage: &(impl BatchStorage + ChunkStorage + ChunkWitnessStore),
     chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
@@ -88,7 +87,7 @@ async fn seal_batch<P: BatchPolicy>(
     }
 
     let prev_block = state.prev_batch_end();
-    let (inner_blocks, last_block) = state.accumulator_mut().drain_for_batch();
+    let (inner_blocks, last_block) = state.accumulator_mut().drain();
     let inner_blocks: Vec<Hash> = inner_blocks.into_iter().map(|b| b.hash()).collect();
 
     let batch_idx = state.next_batch_idx();
@@ -181,9 +180,9 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     mut state: BatchBuilderState<P>,
     mut ctx: BatchBuilderCtx<P, D, S, BS, ES>,
 ) where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
+    S: SealingPolicy<P>,
     BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
@@ -224,9 +223,9 @@ async fn handle_new_tip<P, D, S, BS, ES>(
     new_tip: BlockNumHash,
 ) -> Result<()>
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
+    S: SealingPolicy<P>,
     BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
@@ -295,9 +294,9 @@ async fn process_pending_blocks<P, D, S, BS, ES>(
     ctx: &BatchBuilderCtx<P, D, S, BS, ES>,
 ) -> Result<()>
 where
-    P: BatchPolicy,
+    P: AccumulationPolicy,
     D: BlockDataProvider<P>,
-    S: BatchSealingPolicy<P>,
+    S: SealingPolicy<P>,
     BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
