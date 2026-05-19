@@ -26,6 +26,7 @@ services:
   alpen-client:
     image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
     platform: linux/amd64
+    shm_size: '8gb'
     command: []
     environment:
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
