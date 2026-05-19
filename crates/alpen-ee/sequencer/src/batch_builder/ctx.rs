@@ -8,6 +8,7 @@ use alpen_ee_common::{
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
+use super::events::BatchBuilderEvent;
 use crate::{
     batch_builder::canonical::{CanonicalChainReader, ExecChainCanonicalReader},
     chunk_witness_task::ChunkExtractRequest,
@@ -52,6 +53,10 @@ where
     /// chunk prover will see a `TransientFailure` on the missing
     /// record.
     pub chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
+    /// Channel for downstream consumers (e.g. chunk builder) to
+    /// receive block-processed and reorg events. `None` in tests or
+    /// when no consumer is configured.
+    pub event_tx: Option<mpsc::Sender<BatchBuilderEvent>>,
     /// Marker for the policy type.
     pub _policy: PhantomData<P>,
 }

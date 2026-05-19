@@ -16,7 +16,8 @@ use crate::policy::{AccumulationPolicy, Accumulator};
 pub struct BatchBuilderState<P: AccumulationPolicy> {
     /// Hash of the last block in the most recent sealed batch (or genesis if no batches).
     prev_batch_end: BlockNumHash,
-    /// Index for the next batch to be created.
+    /// Index for the next batch to be sealed.
+    /// ie. the batch we are currently accumulating blocks for.
     next_batch_idx: u64,
     /// Accumulator for the pending batch.
     accumulator: Accumulator<P>,
@@ -42,7 +43,8 @@ impl<P: AccumulationPolicy> BatchBuilderState<P> {
         self.prev_batch_end
     }
 
-    /// Get the index for the next batch to be created.
+    /// Get the index for the next batch to be sealed.
+    /// This is the batch we are currently accumulating blocks for.
     pub fn next_batch_idx(&self) -> u64 {
         self.next_batch_idx
     }

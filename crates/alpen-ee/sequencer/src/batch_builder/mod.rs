@@ -57,6 +57,7 @@
 //!     block_storage,
 //!     batch_storage,
 //!     exec_chain,
+//!     Some(event_tx), // chunk builder event channel
 //! );
 //!
 //! // Use handle to watch for batch updates
@@ -68,10 +69,12 @@
 
 mod canonical;
 mod ctx;
+mod events;
 mod handle;
 mod reorg;
 mod state;
 mod task;
 
+pub use events::BatchBuilderEvent;
 pub use handle::{create_batch_builder, BatchBuilderHandle};
 pub use state::{init_batch_builder_state, BatchBuilderState};
