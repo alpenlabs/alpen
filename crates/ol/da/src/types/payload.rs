@@ -265,8 +265,10 @@ fn apply_balance_delta<T: IAccountStateMut>(
         acct.add_balance(coin);
     } else {
         let delta = BitcoinAmount::from_sat(incr.magnitude());
-        acct.take_balance(delta)
+        let coin = acct
+            .take_balance(delta)
             .map_err(|_| DaError::InvalidStateDiff("insufficient balance for diff"))?;
+        coin.safely_consume_unchecked();
     }
     Ok(())
 }
@@ -430,6 +432,38 @@ mod tests {
             .expect("read account")
             .expect("account exists");
         assert_eq!(account.balance(), BitcoinAmount::from_sat(2_000));
+    }
+
+    #[test]
+    fn test_ol_state_diff_apply_decreases_balance() {
+        let mut state = create_test_genesis_state();
+        let account_id = test_account_id(30);
+        let new_acct =
+            NewAccountData::new(BitcoinAmount::from_sat(2_000), NewAccountTypeState::Empty);
+        let serial = state
+            .create_new_account(account_id, new_acct)
+            .expect("create account");
+
+        let account_diff = AccountDiff::new(
+            DaCounter::new_changed(SignedVarInt::negative(750)),
+            SnarkAccountDiff::default(),
+        );
+        let diff = StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(Vec::new()),
+                U16LenList::new(vec![AccountDiffEntry::new(serial, account_diff)]),
+            ),
+        );
+
+        let ol_diff = OLStateDiff::<MemoryStateBaseLayer>::new(diff);
+        DaWrite::apply(&ol_diff, &mut state, &()).expect("apply diff");
+
+        let account = state
+            .get_account_state(account_id)
+            .expect("read account")
+            .expect("account exists");
+        assert_eq!(account.balance(), BitcoinAmount::from_sat(1_250));
     }
 
     #[test]
