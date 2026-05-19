@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use strata_identifiers::{Buf32, L1BlockCommitment, L2BlockCommitment};
+use strata_identifiers::{L1BlockCommitment, L2BlockCommitment, RBuf32};
 
 /// RPC checkpoint confirmation status.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -20,19 +20,22 @@ pub enum RpcCheckpointConfStatus {
 }
 
 /// Reference to the L1 transaction carrying the checkpoint.
+///
+/// `txid` and `wtxid` use [`RBuf32`] so JSON serialization matches Bitcoin's
+/// reversed-byte convention used by block explorers and `bitcoin-cli`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RpcCheckpointL1Ref {
     /// L1 block commitment where the checkpoint was observed.
     pub l1_block: L1BlockCommitment,
     /// Txid of checkpoint transaction.
-    pub txid: Buf32,
+    pub txid: RBuf32,
     /// Wtxid of checkpoint transaction.
-    pub wtxid: Buf32,
+    pub wtxid: RBuf32,
 }
 
 impl RpcCheckpointL1Ref {
     /// Creates a new [`RpcCheckpointL1Ref`].
-    pub fn new(l1_block: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
+    pub fn new(l1_block: L1BlockCommitment, txid: RBuf32, wtxid: RBuf32) -> Self {
         Self {
             l1_block,
             txid,

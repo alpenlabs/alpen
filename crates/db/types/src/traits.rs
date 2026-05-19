@@ -376,6 +376,9 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     /// Get an OL checkpoint L1 ref by epoch commitment.
     fn get_checkpoint_l1_ref(&self, epoch: EpochCommitment) -> DbResult<Option<CheckpointL1Ref>>;
 
+    /// Get the highest epoch commitment that has an L1 ref.
+    fn get_last_checkpoint_l1_ref_epoch(&self) -> DbResult<Option<EpochCommitment>>;
+
     /// Delete an OL checkpoint L1 ref by epoch commitment.
     ///
     /// Returns true if it existed and was deleted.
@@ -385,6 +388,37 @@ pub trait OLCheckpointDatabase: Send + Sync + 'static {
     ///
     /// Returns a vector of deleted epoch commitments.
     fn del_checkpoint_l1_refs_from_epoch(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>>;
+
+    /// Atomically inserts the L1-observed checkpoint payload and the L1 ref
+    /// for `commitment`.
+    ///
+    /// The payload is stored in a separate table from the sequencer's
+    /// locally-built payloads so the two sources of truth stay distinct.
+    /// Overwrites any existing entries.
+    fn put_checkpoint_l1_observation(
+        &self,
+        commitment: EpochCommitment,
+        payload: CheckpointPayload,
+        l1_ref: CheckpointL1Ref,
+    ) -> DbResult<()>;
+
+    /// Get the L1-observed checkpoint payload by epoch commitment.
+    fn get_checkpoint_l1_observed_payload(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<CheckpointPayload>>;
+
+    /// Delete the L1-observed checkpoint payload by epoch commitment.
+    ///
+    /// Returns true if it existed and was deleted.
+    fn del_checkpoint_l1_observed_payload(&self, epoch: EpochCommitment) -> DbResult<bool>;
+
+    /// Delete L1-observed checkpoint payloads from the specified epoch onwards
+    /// (inclusive). Returns a vector of deleted epoch commitments.
+    fn del_checkpoint_l1_observed_payloads_from_epoch(
         &self,
         start_epoch: Epoch,
     ) -> DbResult<Vec<EpochCommitment>>;

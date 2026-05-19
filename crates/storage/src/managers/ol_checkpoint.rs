@@ -315,6 +315,18 @@ impl OLCheckpointManager {
         self.ops.get_checkpoint_l1_ref_blocking(epoch)
     }
 
+    /// Gets the highest epoch commitment that has an L1 ref.
+    pub async fn get_last_checkpoint_l1_ref_epoch_async(
+        &self,
+    ) -> DbResult<Option<EpochCommitment>> {
+        self.ops.get_last_checkpoint_l1_ref_epoch_async().await
+    }
+
+    /// Gets the highest epoch commitment that has an L1 ref.
+    pub fn get_last_checkpoint_l1_ref_epoch_blocking(&self) -> DbResult<Option<EpochCommitment>> {
+        self.ops.get_last_checkpoint_l1_ref_epoch_blocking()
+    }
+
     /// Deletes an OL checkpoint L1 ref by epoch commitment.
     pub async fn del_checkpoint_l1_ref_async(&self, epoch: EpochCommitment) -> DbResult<bool> {
         self.ops.del_checkpoint_l1_ref_async(epoch).await
@@ -342,6 +354,84 @@ impl OLCheckpointManager {
     ) -> DbResult<Vec<EpochCommitment>> {
         self.ops
             .del_checkpoint_l1_refs_from_epoch_blocking(start_epoch)
+    }
+
+    /// Atomically stores the L1-observed checkpoint payload and L1 ref.
+    pub async fn put_checkpoint_l1_observation_async(
+        &self,
+        commitment: EpochCommitment,
+        payload: CheckpointPayload,
+        l1_ref: CheckpointL1Ref,
+    ) -> DbResult<()> {
+        self.ops
+            .put_checkpoint_l1_observation_async(commitment, payload, l1_ref)
+            .await
+    }
+
+    /// Atomically stores the L1-observed checkpoint payload and L1 ref.
+    pub fn put_checkpoint_l1_observation_blocking(
+        &self,
+        commitment: EpochCommitment,
+        payload: CheckpointPayload,
+        l1_ref: CheckpointL1Ref,
+    ) -> DbResult<()> {
+        self.ops
+            .put_checkpoint_l1_observation_blocking(commitment, payload, l1_ref)
+    }
+
+    /// Retrieves the L1-observed checkpoint payload by epoch commitment.
+    pub async fn get_checkpoint_l1_observed_payload_async(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<CheckpointPayload>> {
+        self.ops
+            .get_checkpoint_l1_observed_payload_async(epoch)
+            .await
+    }
+
+    /// Retrieves the L1-observed checkpoint payload by epoch commitment.
+    pub fn get_checkpoint_l1_observed_payload_blocking(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<Option<CheckpointPayload>> {
+        self.ops.get_checkpoint_l1_observed_payload_blocking(epoch)
+    }
+
+    /// Deletes the L1-observed checkpoint payload by epoch commitment.
+    pub async fn del_checkpoint_l1_observed_payload_async(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<bool> {
+        self.ops
+            .del_checkpoint_l1_observed_payload_async(epoch)
+            .await
+    }
+
+    /// Deletes the L1-observed checkpoint payload by epoch commitment.
+    pub fn del_checkpoint_l1_observed_payload_blocking(
+        &self,
+        epoch: EpochCommitment,
+    ) -> DbResult<bool> {
+        self.ops.del_checkpoint_l1_observed_payload_blocking(epoch)
+    }
+
+    /// Deletes L1-observed checkpoint payloads from the specified epoch onwards.
+    pub async fn del_checkpoint_l1_observed_payloads_from_epoch_async(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .del_checkpoint_l1_observed_payloads_from_epoch_async(start_epoch)
+            .await
+    }
+
+    /// Deletes L1-observed checkpoint payloads from the specified epoch onwards.
+    pub fn del_checkpoint_l1_observed_payloads_from_epoch_blocking(
+        &self,
+        start_epoch: Epoch,
+    ) -> DbResult<Vec<EpochCommitment>> {
+        self.ops
+            .del_checkpoint_l1_observed_payloads_from_epoch_blocking(start_epoch)
     }
 
     /// Gets the next unsigned checkpoint epoch.

@@ -4,34 +4,32 @@ use std::{collections::VecDeque, sync::Arc};
 
 use strata_csm_types::{CheckpointL1Ref, ClientState};
 use strata_identifiers::Epoch;
-use strata_params::Params;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
-use strata_status::StatusChannel;
-use strata_storage::NodeStorage;
 
-use crate::constants;
+use crate::{constants, context::CsmWorkerContext};
 
 /// State for the CSM worker service.
 ///
 /// This state is used by the CSM worker which acts as a listener to ASM worker
 /// status updates, processing checkpoint logs from the checkpoint subprotocol.
+///
+/// Every field is either the last durably committed value or a running cursor
+/// advanced only after a successful commit. Per-block scratch state lives in
+/// `BlockScratch` and never touches this struct on failure.
 #[expect(
     missing_debug_implementations,
-    reason = "NodeStorage doesn't implement Debug"
+    reason = "context generic doesn't require Debug"
 )]
-pub struct CsmWorkerState {
-    /// Consensus parameters.
-    pub(crate) params: Arc<Params>,
+pub struct CsmWorkerState<C: CsmWorkerContext> {
+    /// External services and configuration.
+    pub(crate) ctx: C,
 
-    /// Node storage handle.
-    pub(crate) storage: Arc<NodeStorage>,
-
-    /// Current client state.
-    pub(crate) cur_state: Arc<ClientState>,
-
-    /// Last ASM update we processed.
+    /// Last ASM block committed. Advanced only by a successful commit.
     pub(crate) last_asm_block: Option<L1BlockCommitment>,
+
+    /// Last durably committed client state.
+    pub(crate) last_committed_state: Arc<ClientState>,
 
     /// Last epoch we processed a checkpoint for.
     pub(crate) last_processed_epoch: Option<Epoch>,
@@ -44,39 +42,33 @@ pub struct CsmWorkerState {
 
     /// Ordered observed checkpoint candidates used for incremental depth derivation.
     ///
-    /// Items are appended when new observation facts are written and consumed as
+    /// Items are appended after a successful block commit and consumed as
     /// finalized depth progresses.
     pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
-
-    /// Status channel for publishing state updates.
-    pub(crate) status_channel: Arc<StatusChannel>,
 }
 
-impl CsmWorkerState {
+// TODO(STR-3491): Use typed errors instead of `anyhow!`
+impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// Create a new CSM worker state.
-    pub fn new(
-        params: Arc<Params>,
-        storage: Arc<NodeStorage>,
-        status_channel: Arc<StatusChannel>,
-    ) -> anyhow::Result<Self> {
+    ///
+    /// All bootstrap reads (last client state, observed checkpoint refs, params)
+    /// go through `ctx`; runtime persistence and L1 fetches use the same
+    /// context after construction.
+    pub fn new(ctx: C) -> anyhow::Result<Self> {
         // Load the most recent client state from storage
-        let (cur_block, cur_state) = storage
-            .client_state()
-            .fetch_most_recent_state()?
-            .unwrap_or((params.rollup.genesis_l1_view.blk, ClientState::default()));
+        let (cur_block, cur_state) = ctx
+            .fetch_most_recent_client_state()?
+            .unwrap_or((ctx.genesis_l1_block(), ClientState::default()));
 
         let current_l1_tip = cur_block.height();
-        let finality_depth = params.rollup.l1_reorg_safe_depth.max(1);
+        let finality_depth = ctx.l1_reorg_safe_depth().max(1);
         let baseline_finalized_epoch = cur_state.get_declared_final_epoch();
         let observation_start_epoch = baseline_finalized_epoch
             .map(|epoch| epoch.epoch().saturating_add(1))
             .unwrap_or(0);
 
-        let mut observed_checkpoints = load_observed_checkpoints_from_db(
-            storage.as_ref(),
-            observation_start_epoch,
-            current_l1_tip,
-        )?;
+        let mut observed_checkpoints =
+            load_observed_checkpoints(&ctx, observation_start_epoch, current_l1_tip)?;
 
         let finalized_from_l1_refs =
             derive_finalized_epoch(observed_checkpoints.iter(), current_l1_tip, finality_depth);
@@ -101,48 +93,43 @@ impl CsmWorkerState {
         }
 
         Ok(Self {
-            params,
-            storage,
-            cur_state: Arc::new(cur_state),
+            ctx,
             last_asm_block: Some(cur_block),
+            last_committed_state: Arc::new(cur_state),
             last_processed_epoch: None,
             confirmed_epoch,
             finalized_epoch,
             observed_checkpoints,
-            status_channel,
         })
     }
 
     /// Get the last ASM block that was processed.
-    pub fn last_asm_block(&self) -> Option<L1BlockCommitment> {
+    pub fn get_last_asm_block(&self) -> Option<L1BlockCommitment> {
         self.last_asm_block
     }
 }
 
-/// Loads observed checkpoint candidates from the OL checkpoint DB starting from `start_epoch`.
+/// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
+/// starting from `start_epoch`.
 ///
 /// Only epochs with both a canonical commitment and an L1 ref are included.
 /// Used at startup to populate the incremental finalization queue.
-fn load_observed_checkpoints_from_db(
-    storage: &NodeStorage,
+fn load_observed_checkpoints<C: CsmWorkerContext>(
+    ctx: &C,
     start_epoch: Epoch,
     current_l1_tip: L1Height,
 ) -> anyhow::Result<VecDeque<(EpochCommitment, CheckpointL1Ref)>> {
-    let ol_checkpoint = storage.ol_checkpoint();
-    let Some(last_payload_commitment) =
-        ol_checkpoint.get_last_checkpoint_payload_epoch_blocking()?
-    else {
+    let Some(last_l1_ref_commitment) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
         return Ok(VecDeque::new());
     };
-    let last_checkpoint_epoch = last_payload_commitment.epoch();
+    let last_checkpoint_epoch = last_l1_ref_commitment.epoch();
 
     let mut observed = VecDeque::new();
     for epoch in start_epoch..=last_checkpoint_epoch {
-        let Some(commitment) = ol_checkpoint.get_canonical_epoch_commitment_at_blocking(epoch)?
-        else {
+        let Some(commitment) = ctx.get_canonical_epoch_commitment_at(epoch)? else {
             continue;
         };
-        let Some(observation) = ol_checkpoint.get_checkpoint_l1_ref_blocking(commitment)? else {
+        let Some(observation) = ctx.get_checkpoint_l1_ref(commitment)? else {
             continue;
         };
 
@@ -195,7 +182,7 @@ fn max_epoch_commitment(
     }
 }
 
-impl ServiceState for CsmWorkerState {
+impl<C: CsmWorkerContext + 'static> ServiceState for CsmWorkerState<C> {
     fn name(&self) -> &str {
         constants::SERVICE_NAME
     }
@@ -209,65 +196,18 @@ mod tests {
     use strata_checkpoint_types::EpochSummary;
     use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
-    use strata_identifiers::Buf32;
-    use strata_params::{Params, RollupParams, SyncParams};
+    use strata_identifiers::{Buf32, L1BlockId, RBuf32};
+    use strata_params::Params;
     use strata_primitives::prelude::*;
     use strata_status::StatusChannel;
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
     use super::CsmWorkerState;
+    use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<Params> {
-        let params_json = r#"{
-            "magic_bytes": "ALPN",
-            "block_time": 1000,
-            "cred_rule": {
-                "schnorr_key": "c18d86b16f91b01a6599c3a290c1f255784f89dfe31ea65f64c4bdbd01564873"
-            },
-            "genesis_l1_view": {
-                "blk": {
-                    "height": 100,
-                    "blkid": "a99c81cc79d156fda27bf222537ce1de784921a52730df60ead99404b43f622a"
-                },
-                "next_target": 545259519,
-                "epoch_start_timestamp": 1296688602,
-                "last_11_timestamps": [
-                    1760287556, 1760287556, 1760287557, 1760287557, 1760287557,
-                    1760287557, 1760287557, 1760287557, 1760287558, 1760287558, 1760287558
-                ]
-            },
-            "operators": [
-                "6e31167a21a20186c270091f3705ba9ba0f9649af9281a4331962a2f02f0b382",
-                "59df7b48d6adbb11fb9f8e4d4a296df83b3edcff6573e80b6c77cdcc4a729ecc",
-                "9ac5088dcf5dea3593e6095250875c89a0138b3e027f615d782be2080a5e4bac",
-                "f86435262dde652b3aef97a4a8cc9ae19aa5da13159e778da0fbceb3a3adb923"
-            ],
-            "evm_genesis_block_hash": "46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc",
-            "evm_genesis_block_state_root": "351714af72d74259f45cd7eab0b04527cd40e74836a45abcae50f92d919d988f",
-            "l1_reorg_safe_depth": 4,
-            "target_l2_batch_size": 64,
-            "deposit_amount": 1000000000,
-            "recovery_delay": 1008,
-            "checkpoint_predicate": "AlwaysAccept",
-            "dispatch_assignment_dur": 64,
-            "proof_publish_mode": {
-                "timeout": 1
-            },
-            "max_deposits_in_block": 16,
-            "network": "signet"
-        }"#;
-
-        let rollup_params: RollupParams =
-            serde_json::from_str(params_json).expect("Failed to parse test params");
-        Arc::new(Params {
-            rollup: rollup_params,
-            run: SyncParams {
-                l1_follow_distance: 10,
-                client_checkpoint_interval: 100,
-                l2_blocks_fetch_limit: 1000,
-            },
-        })
+        Arc::new(strata_test_utils_l2::gen_params())
     }
 
     fn create_test_storage_and_status(
@@ -318,15 +258,13 @@ mod tests {
             .insert_epoch_summary_blocking(summary_1)
             .expect("insert epoch 1 summary");
         ol_checkpoint
-            .put_checkpoint_payload_entry_blocking(commitment_1, payload_1)
-            .expect("insert epoch 1 payload");
-        ol_checkpoint
-            .put_checkpoint_l1_ref_blocking(
+            .put_checkpoint_l1_observation_blocking(
                 commitment_1,
+                payload_1,
                 CheckpointL1Ref::new(
                     L1BlockCommitment::new(17, L1BlockId::default()),
-                    Buf32::from([1; 32]),
-                    Buf32::from([2; 32]),
+                    RBuf32::from([1; 32]),
+                    RBuf32::from([2; 32]),
                 ),
             )
             .expect("insert epoch 1 observation");
@@ -345,20 +283,25 @@ mod tests {
             .insert_epoch_summary_blocking(summary_2)
             .expect("insert epoch 2 summary");
         ol_checkpoint
-            .put_checkpoint_payload_entry_blocking(commitment_2, payload_2)
-            .expect("insert epoch 2 payload");
-        ol_checkpoint
-            .put_checkpoint_l1_ref_blocking(
+            .put_checkpoint_l1_observation_blocking(
                 commitment_2,
+                payload_2,
                 CheckpointL1Ref::new(
                     L1BlockCommitment::new(19, L1BlockId::default()),
-                    Buf32::from([3; 32]),
-                    Buf32::from([4; 32]),
+                    RBuf32::from([3; 32]),
+                    RBuf32::from([4; 32]),
                 ),
             )
             .expect("insert epoch 2 observation");
 
-        let state = CsmWorkerState::new(params, storage, status_channel).expect("state init");
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.rollup.magic_bytes,
+            params.rollup.genesis_l1_view.blk,
+        );
+        let state = CsmWorkerState::new(ctx).expect("state init");
 
         assert_eq!(state.confirmed_epoch, Some(commitment_2));
         assert_eq!(state.finalized_epoch, Some(commitment_1));

@@ -8,7 +8,7 @@ use arbitrary::Arbitrary;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_checkpoint_types::BatchInfo;
-use strata_identifiers::{Buf32, Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height};
+use strata_identifiers::{Epoch, EpochCommitment, L1BlockCommitment, L1BlockId, L1Height, RBuf32};
 
 /// High level client's checkpoint view of the network. This is local to the client, not
 /// coordinated as part of the L2 chain.
@@ -106,17 +106,20 @@ impl CheckpointState {
 }
 
 /// Represents a reference to a transaction in bitcoin. Redundantly puts block_height a well.
+///
+/// `txid` and `wtxid` use [`RBuf32`] so their `Debug`/`Display` follow Bitcoin's
+/// reversed-byte hash convention.
 #[derive(
-    Clone, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
+    Clone, Debug, Eq, PartialEq, Arbitrary, BorshDeserialize, BorshSerialize, Deserialize, Serialize,
 )]
 pub struct CheckpointL1Ref {
     pub l1_commitment: L1BlockCommitment,
-    pub txid: Buf32,
-    pub wtxid: Buf32,
+    pub txid: RBuf32,
+    pub wtxid: RBuf32,
 }
 
 impl CheckpointL1Ref {
-    pub fn new(l1_commitment: L1BlockCommitment, txid: Buf32, wtxid: Buf32) -> Self {
+    pub fn new(l1_commitment: L1BlockCommitment, txid: RBuf32, wtxid: RBuf32) -> Self {
         Self {
             l1_commitment,
             txid,
@@ -156,61 +159,5 @@ impl L1Checkpoint {
             batch_info,
             l1_reference,
         }
-    }
-}
-
-// Custom debug implementation to print txid and wtxid in little endian
-impl fmt::Debug for CheckpointL1Ref {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-        let wtxid_le = {
-            let mut bytes = self.wtxid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-
-        f.debug_struct("CheckpointL1Ref")
-            .field("l1_commitment", &self.l1_commitment)
-            .field("txid", &txid_le)
-            .field("wtxid", &wtxid_le)
-            .finish()
-    }
-}
-
-// Custom display implementation to print txid and wtxid in little endian
-impl fmt::Display for CheckpointL1Ref {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txid_le = {
-            let mut bytes = self.txid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-        let wtxid_le = {
-            let mut bytes = self.wtxid.0;
-            bytes.reverse();
-            bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>()
-        };
-
-        write!(
-            f,
-            "CheckpointL1Ref {{ l1_commitment: {}, txid: {}, wtxid: {} }}",
-            self.l1_commitment, txid_le, wtxid_le
-        )
     }
 }

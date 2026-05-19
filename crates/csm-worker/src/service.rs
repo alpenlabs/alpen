@@ -1,10 +1,12 @@
 //! CSM worker service implementation.
 
+use std::marker::PhantomData;
+
 use strata_asm_worker::AsmWorkerStatus;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
-use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStatus};
+use crate::{context::CsmWorkerContext, state::CsmWorkerState, status::CsmWorkerStatus};
 
 /// CSM worker service that acts as a listener to ASM worker status updates.
 ///
@@ -15,10 +17,12 @@ use crate::{processor::process_log, state::CsmWorkerState, status::CsmWorkerStat
 /// The service follows the listener pattern - it passively observes ASM status updates
 /// via the service framework's `StatusMonitorInput` without ASM being aware of it.
 #[derive(Debug)]
-pub struct CsmWorkerService;
+pub struct CsmWorkerService<C> {
+    _ctx: PhantomData<C>,
+}
 
-impl Service for CsmWorkerService {
-    type State = CsmWorkerState;
+impl<C: CsmWorkerContext + 'static> Service for CsmWorkerService<C> {
+    type State = CsmWorkerState<C>;
     type Msg = AsmWorkerStatus;
     type Status = CsmWorkerStatus;
 
@@ -32,7 +36,7 @@ impl Service for CsmWorkerService {
     }
 }
 
-impl SyncService for CsmWorkerService {
+impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
     fn process_input(state: &mut Self::State, asm_status: Self::Msg) -> anyhow::Result<Response> {
         strata_common::check_bail_trigger(strata_common::BAIL_CSM_EVENT);
 
@@ -45,55 +49,25 @@ impl SyncService for CsmWorkerService {
 
         trace!("CSM is processing ASM logs.");
 
-        // Track which block we're processing
-        state.last_asm_block = Some(asm_block);
         let prev_confirmed_epoch = state.confirmed_epoch;
-        let prev_finalized_epoch = state.finalized_epoch;
 
-        // Process checkpoint logs from ASM status
-        for log in asm_status.logs() {
-            if let Err(e) = process_log(state, log, &asm_block) {
-                error!(%asm_block, err = %e, "Failed to process ASM log");
-            }
+        // Process `asm_block` and any blocks that might have been skipped.
+        //
+        // Errors here are intentionally swallowed: gap-fill is idempotent and
+        // the next ASM status update will retry the missed blocks.
+        if let Err(e) = state.process_asm_block(asm_block, asm_status.logs()) {
+            error!(%asm_block, err = ?e, "Failed to process ASM block");
         }
 
-        // Advance finalized epoch from the observation queue based on L1 depth.
-        let current_l1_tip = asm_block.height();
-        let finality_depth = state.params.rollup.l1_reorg_safe_depth.max(1);
-        while let Some((commitment, observation)) = state.observed_checkpoints.front() {
-            if state
-                .finalized_epoch
-                .is_some_and(|current| commitment.epoch() <= current.epoch())
-            {
-                state.observed_checkpoints.pop_front();
-                continue;
-            }
-
-            let confirmations = current_l1_tip
-                .saturating_sub(observation.l1_commitment.height())
-                .saturating_add(1);
-            if confirmations >= finality_depth {
-                let epoch = *commitment;
-                state.observed_checkpoints.pop_front();
-                if state
-                    .finalized_epoch
-                    .is_none_or(|current| epoch.epoch() > current.epoch())
-                {
-                    state.finalized_epoch = Some(epoch);
-                }
-            } else {
-                break;
-            }
-        }
+        let finalized_changed = state.advance_finalization(asm_block.height());
+        let confirmed_changed = state.confirmed_epoch != prev_confirmed_epoch;
 
         // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
         // even if client-state object itself did not change (tip-only L1 movement).
-        if state.confirmed_epoch != prev_confirmed_epoch
-            || state.finalized_epoch != prev_finalized_epoch
-        {
+        if confirmed_changed || finalized_changed {
             state
-                .status_channel
-                .update_client_state(state.cur_state.as_ref().clone(), asm_block);
+                .ctx
+                .publish_client_state(state.last_committed_state.as_ref().clone(), asm_block);
         }
 
         Ok(Response::Continue)

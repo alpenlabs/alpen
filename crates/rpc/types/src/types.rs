@@ -4,10 +4,10 @@
 //!  - implementation of RPC client
 //!  - crate for just data structures that represents the JSON responses from Bitcoin core RPC
 
-use bitcoin::{BlockHash, Network, Txid, Wtxid};
+use bitcoin::{hashes::Hash, BlockHash, Network, Txid, Wtxid};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_bridge_v1::DepositEntry;
-use strata_btc_types::{Buf32BitcoinExt, L1BlockIdBitcoinExt};
+use strata_btc_types::L1BlockIdBitcoinExt;
 use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, L1Status};
 #[expect(
@@ -295,8 +295,10 @@ impl From<CheckpointL1Ref> for RpcCheckpointL1Ref {
         Self {
             block_height: l1ref.l1_commitment.height() as u64,
             block_id: l1ref.l1_commitment.blkid().to_block_hash(),
-            txid: l1ref.txid.to_txid(),
-            wtxid: l1ref.wtxid.to_wtxid(),
+            // `CheckpointL1Ref.{txid,wtxid}` are `RBuf32`; convert via raw bytes
+            // since `Buf32BitcoinExt` is implemented only for `Buf32`.
+            txid: Txid::from_byte_array(l1ref.txid.0),
+            wtxid: Wtxid::from_byte_array(l1ref.wtxid.0),
         }
     }
 }

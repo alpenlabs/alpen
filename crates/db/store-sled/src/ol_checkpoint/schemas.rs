@@ -12,6 +12,12 @@ define_table_with_default_codec!(
 );
 
 define_table_with_default_codec!(
+    /// Table mapping epoch commitment to the OL checkpoint payload extracted
+    /// from L1, kept separate from the sequencer's locally-built payload table.
+    (OLCheckpointL1ObservedPayloadSchema) EpochCommitment => CheckpointPayload
+);
+
+define_table_with_default_codec!(
     /// Table mapping epoch to OL checkpoint payload intent index.
     (OLCheckpointSigningSchema) EpochCommitment => L1PayloadIntentIndex
 );

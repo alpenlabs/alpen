@@ -694,7 +694,8 @@ mod tests {
             .expect("failed to generate wtxid")
             .current();
 
-        let observation = CheckpointL1Ref::new(l1_commitment, txid, wtxid);
+        let observation =
+            CheckpointL1Ref::new(l1_commitment, RBuf32::from(txid.0), RBuf32::from(wtxid.0));
         let bytes = borsh::to_vec(&observation).unwrap();
         let decoded: CheckpointL1Ref = borsh::from_slice(&bytes).unwrap();
         assert_eq!(decoded, observation);
