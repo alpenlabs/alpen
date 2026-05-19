@@ -45,7 +45,9 @@ fn get_program_dependencies() -> HashMap<&'static str, Vec<&'static str>> {
 
 fn main() {
     // List of guest programs to build
-    let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT];
+    // NOTE: only building checkpoint for VK reproducibility validation (spike)
+    // let guest_programs = [CHECKPOINT, ALPEN_CHUNK, ALPEN_ACCT];
+    let guest_programs = [CHECKPOINT];
 
     // HashSet to keep track of programs that have been built
     let mut built_programs = HashSet::new();
