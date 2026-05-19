@@ -40,7 +40,6 @@ cleanup() {
     [ -n "${LOGS_PID:-}" ] && kill "${LOGS_PID}" 2>/dev/null || true
 
     echo "=== Collecting final state ==="
-    local summary="${SCRIPT_DIR}/e2e-summary.txt"
     {
         echo "--- Chain Status ---"
         ol_rpc "${CHAIN_STATUS_PAYLOAD}" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
@@ -53,7 +52,9 @@ cleanup() {
         echo ""
         echo "--- EE Latest Block ---"
         ee_rpc "${EE_BLOCK_NUMBER_PAYLOAD}" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
-        echo ""
+    } > "${SCRIPT_DIR}/e2e-state.txt" 2>&1
+
+    {
         echo "--- Rollup Params ---"
         cat "${DOCKER_DIR}/configs/generated/rollup-params.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
         echo ""
@@ -62,7 +63,12 @@ cleanup() {
         echo ""
         echo "--- ASM Params ---"
         cat "${DOCKER_DIR}/configs/generated/asm-params.json" 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "(unavailable)"
-    } > "${summary}" 2>&1
+    } > "${SCRIPT_DIR}/e2e-params.txt" 2>&1
+
+    {
+        echo "--- .env.alpen ---"
+        cat "${DOCKER_DIR}/configs/generated/.env.alpen" 2>/dev/null || echo "(unavailable)"
+    } > "${SCRIPT_DIR}/e2e-env.txt" 2>&1
 
     echo "=== Collecting logs ==="
     docker compose -f "${DOCKER_DIR}/compose-ol-el-seq.yml" -f "${SCRIPT_DIR}/compose-override.yml" logs > "${SCRIPT_DIR}/e2e-logs.txt" 2>&1 || true

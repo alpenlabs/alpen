@@ -159,14 +159,17 @@ jobs:
           chmod +x .github/sp1-e2e/run-test.sh
           .github/sp1-e2e/run-test.sh
 
-      - name: Final state summary
+      - name: Chain state
         if: always()
-        run: |
-          if [ -f .github/sp1-e2e/e2e-summary.txt ]; then
-            cat .github/sp1-e2e/e2e-summary.txt
-          else
-            echo "No summary collected"
-          fi
+        run: cat .github/sp1-e2e/e2e-state.txt 2>/dev/null || echo "No state collected"
+
+      - name: Generated params
+        if: always()
+        run: cat .github/sp1-e2e/e2e-params.txt 2>/dev/null || echo "No params collected"
+
+      - name: Alpen env
+        if: always()
+        run: cat .github/sp1-e2e/e2e-env.txt 2>/dev/null || echo "No env collected"
 
       - name: Upload logs on failure
         if: failure()
