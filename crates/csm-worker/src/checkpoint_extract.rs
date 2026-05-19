@@ -28,21 +28,32 @@ pub(crate) struct ExtractedCheckpoint {
     pub(crate) payload: CheckpointPayload,
 }
 
-/// Returns the SPS-50-tagged checkpoint envelope tx in `block` that ASM accepted
-/// for `expected`, or `None` if none does. Mirrors ASM's verification.
+///  Checkpoint related data shared across every checkpoint tip log in one ASM block.
+pub(crate) struct CheckpointVerificationContext {
+    /// L1 block whose txs carry the checkpoint envelopes.
+    pub(crate) block: Block,
+    /// MMR-verified manifest hashes used by `verify_checkpoint`.
+    pub(crate) verified_aux_data: VerifiedAuxData,
+    /// Advances past each accepted checkpoint, mirroring ASM.
+    pub(crate) checkpoint_state: CheckpointState,
+    /// Next `block.txdata` index to scan; advances past each matched tx.
+    pub(crate) scan_cursor: usize,
+}
+
+/// Returns the SPS-50-tagged checkpoint envelope tx in `ctx.block` that ASM
+/// accepted for `expected`, or `None` if none does. Mirrors ASM's verification.
 ///
-/// NOTE: This returns the first matching checkpoint tx.
+/// Resumes from `ctx.scan_cursor`; on a successful match the cursor is bumped
+/// past the matched tx and `ctx.checkpoint_state` is advanced.
 pub(crate) fn extract_matching_checkpoint(
-    block: &Block,
+    ctx: &mut CheckpointVerificationContext,
     magic: MagicBytes,
     expected: &CheckpointTip,
-    checkpoint_state: &mut CheckpointState,
     current_l1_height: u32,
-    verified_aux_data: &VerifiedAuxData,
 ) -> Option<ExtractedCheckpoint> {
     let parser = ParseConfig::new(magic);
 
-    for tx in &block.txdata {
+    for (offset, tx) in ctx.block.txdata[ctx.scan_cursor..].iter().enumerate() {
         let Ok(tag) = parser.try_parse_tx(tx) else {
             continue;
         };
@@ -73,10 +84,10 @@ pub(crate) fn extract_matching_checkpoint(
         }
 
         if let Err(e) = verify_checkpoint(
-            checkpoint_state,
+            &mut ctx.checkpoint_state,
             &envelope,
             current_l1_height,
-            verified_aux_data,
+            &ctx.verified_aux_data,
         ) {
             debug!(
                 txid = %tx.compute_txid(),
@@ -95,6 +106,7 @@ pub(crate) fn extract_matching_checkpoint(
             epoch = expected.epoch,
             "matched checkpoint tx"
         );
+        ctx.scan_cursor += offset + 1;
         return Some(ExtractedCheckpoint {
             txid,
             wtxid,
@@ -269,6 +281,19 @@ mod tests {
         tip.l1_height() + 1
     }
 
+    fn make_ctx(
+        block: Block,
+        verified_aux_data: VerifiedAuxData,
+        checkpoint_state: CheckpointState,
+    ) -> CheckpointVerificationContext {
+        CheckpointVerificationContext {
+            block,
+            verified_aux_data,
+            checkpoint_state,
+            scan_cursor: 0,
+        }
+    }
+
     /// Sanity check: a legit envelope tx alone is picked up and the txid/wtxid
     /// returned point at it.
     #[test]
@@ -276,19 +301,18 @@ mod tests {
         let harness = CheckpointTestHarness::new_random();
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
-        let aux = harness.gen_verified_aux(&expected);
-        let mut state = harness_checkpoint_state(&harness);
-
         let tx = legit_envelope_tx(&harness, &payload);
-        let block = block_from_txs(vec![create_dummy_tx(1, 1), tx.clone()]);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![create_dummy_tx(1, 1), tx.clone()]),
+            harness.gen_verified_aux(&expected),
+            harness_checkpoint_state(&harness),
+        );
 
         let result = extract_matching_checkpoint(
-            &block,
+            &mut ctx,
             TEST_MAGIC_BYTES,
             &expected,
-            &mut state,
             current_l1_height_for(&expected),
-            &aux,
         )
         .expect("legitimate checkpoint should validate");
 
@@ -306,28 +330,27 @@ mod tests {
     fn returns_none_when_no_envelope_matches_expected_tip() {
         let harness = CheckpointTestHarness::new_random();
         let payload = harness.build_payload();
-        let block = block_from_txs(vec![legit_envelope_tx(&harness, &payload)]);
-
         // Use the real payload's tip for aux construction (cheap), then craft
         // a foreign tip that differs on (epoch, l2_commitment) so the cheap
         // pre-filter rejects without ever invoking proof verification.
         let real_tip = *payload.new_tip();
-        let aux = harness.gen_verified_aux(&real_tip);
         let foreign_tip = CheckpointTip::new(
             real_tip.epoch + 1,
             real_tip.l1_height() + 1,
             Default::default(),
         );
-        let mut state = harness_checkpoint_state(&harness);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![legit_envelope_tx(&harness, &payload)]),
+            harness.gen_verified_aux(&real_tip),
+            harness_checkpoint_state(&harness),
+        );
 
         assert!(
             extract_matching_checkpoint(
-                &block,
+                &mut ctx,
                 TEST_MAGIC_BYTES,
                 &foreign_tip,
-                &mut state,
                 current_l1_height_for(&foreign_tip),
-                &aux,
             )
             .is_none()
         );
@@ -343,8 +366,6 @@ mod tests {
         let harness = CheckpointTestHarness::new_random();
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
-        let aux = harness.gen_verified_aux(&expected);
-        let mut state = harness_checkpoint_state(&harness);
 
         // Hostile envelope: a separately generated harness signs the same tip
         // but the envelope pubkey is the hostile sequencer's, not the real one.
@@ -358,15 +379,17 @@ mod tests {
         let hostile_tx = build_checkpoint_envelope_tx(&hostile_payload, hostile.sequencer_pubkey());
         let legit_tx = legit_envelope_tx(&harness, &payload);
 
-        let block = block_from_txs(vec![hostile_tx, legit_tx.clone()]);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![hostile_tx, legit_tx.clone()]),
+            harness.gen_verified_aux(&expected),
+            harness_checkpoint_state(&harness),
+        );
 
         let result = extract_matching_checkpoint(
-            &block,
+            &mut ctx,
             TEST_MAGIC_BYTES,
             &expected,
-            &mut state,
             current_l1_height_for(&expected),
-            &aux,
         )
         .expect("legit checkpoint should still be extracted past the hostile tx");
 
@@ -387,8 +410,6 @@ mod tests {
         let harness = CheckpointTestHarness::new_random();
         let payload = harness.build_payload();
         let expected = *payload.new_tip();
-        let aux = harness.gen_verified_aux(&expected);
-        let mut state = harness_checkpoint_state(&harness);
 
         // Build a "bad" payload by reusing the new_tip but corrupting the
         // proof so it no longer verifies against the reconstructed claim.
@@ -411,15 +432,17 @@ mod tests {
             "txids must differ for the test to be meaningful"
         );
 
-        let block = block_from_txs(vec![bad_tx, legit_tx.clone()]);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![bad_tx, legit_tx.clone()]),
+            harness.gen_verified_aux(&expected),
+            harness_checkpoint_state(&harness),
+        );
 
         let result = extract_matching_checkpoint(
-            &block,
+            &mut ctx,
             TEST_MAGIC_BYTES,
             &expected,
-            &mut state,
             current_l1_height_for(&expected),
-            &aux,
         )
         .expect("legit checkpoint should still be extracted past the invalid one");
 
@@ -428,5 +451,51 @@ mod tests {
             RBuf32::from(legit_tx.compute_txid().to_byte_array()),
             "extractor must skip the invalid-proof tx and pick the legit one"
         );
+    }
+
+    /// Two consecutive valid envelope txs in one block. The shared
+    /// `CheckpointState` must advance between calls so the second one verifies.
+    #[test]
+    fn advances_state_across_consecutive_checkpoints() {
+        let mut harness = CheckpointTestHarness::new_random();
+        let initial_tip = *harness.verified_tip();
+        let state = harness_checkpoint_state(&harness);
+
+        let payload_1 = harness.build_payload();
+        let tip_1 = *payload_1.new_tip();
+        let tx_1 = legit_envelope_tx(&harness, &payload_1);
+
+        harness.update_verified_tip(tip_1);
+        let payload_2 = harness.build_payload();
+        let tip_2 = *payload_2.new_tip();
+        let tx_2 = legit_envelope_tx(&harness, &payload_2);
+
+        // Rewind so `gen_verified_aux` covers the union of both payloads' L1
+        // sub-ranges in one aux blob.
+        harness.update_verified_tip(initial_tip);
+        let mut ctx = make_ctx(
+            block_from_txs(vec![tx_1.clone(), tx_2.clone()]),
+            harness.gen_verified_aux(&tip_2),
+            state,
+        );
+        let current_l1_height = current_l1_height_for(&tip_2);
+
+        let result_1 =
+            extract_matching_checkpoint(&mut ctx, TEST_MAGIC_BYTES, &tip_1, current_l1_height)
+                .expect("first checkpoint should validate");
+        assert_eq!(
+            result_1.txid,
+            RBuf32::from(tx_1.compute_txid().to_byte_array())
+        );
+        assert_eq!(ctx.scan_cursor, 1, "cursor should advance past tx_1");
+
+        let result_2 =
+            extract_matching_checkpoint(&mut ctx, TEST_MAGIC_BYTES, &tip_2, current_l1_height)
+                .expect("second checkpoint must validate against the advanced state");
+        assert_eq!(
+            result_2.txid,
+            RBuf32::from(tx_2.compute_txid().to_byte_array())
+        );
+        assert_eq!(ctx.scan_cursor, 2, "cursor should advance past tx_2");
     }
 }

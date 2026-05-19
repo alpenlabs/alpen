@@ -15,7 +15,8 @@ use strata_state::asm_state::AsmState;
 use tracing::*;
 
 use crate::{
-    checkpoint_extract::extract_matching_checkpoint, context::CsmWorkerContext,
+    checkpoint_extract::{CheckpointVerificationContext, extract_matching_checkpoint},
+    context::CsmWorkerContext,
     state::CsmWorkerState,
 };
 
@@ -30,6 +31,9 @@ pub(crate) struct PendingCsmUpdate {
     /// Checkpoint observations made during this block, applied to the worker's
     /// finality cursors only after a successful commit.
     pub(crate) observations: Vec<(EpochCommitment, CheckpointL1Ref)>,
+
+    /// Per-block verification fixtures, built once on the first checkpoint tip log.
+    pub(crate) ckpt_verification_ctx: Option<CheckpointVerificationContext>,
 }
 
 impl PendingCsmUpdate {
@@ -38,6 +42,7 @@ impl PendingCsmUpdate {
             cur_state,
             last_processed_epoch,
             observations: Vec::new(),
+            ckpt_verification_ctx: None,
         }
     }
 }
@@ -284,6 +289,38 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         Ok(())
     }
 
+    fn get_checkpoint_verification_context(
+        &self,
+        asm_block: &L1BlockCommitment,
+    ) -> anyhow::Result<CheckpointVerificationContext> {
+        let block = self
+            .ctx
+            .get_l1_block(asm_block.blkid())
+            .with_context(|| format!("fetching L1 block {asm_block} for checkpoint observation"))?;
+
+        // Prepare for same checkpoint validation that ASM does.
+        let parent_block = parent_commitment(asm_block, &block)?;
+        let parent_asm_state = self.ctx.get_asm_state(&parent_block).with_context(|| {
+            format!("fetching parent ASM state {parent_block} for checkpoint observation")
+        })?;
+        let checkpoint_state = decode_checkpoint_section(&parent_asm_state)?;
+        let aux_data = self.ctx.get_aux_data(asm_block).with_context(|| {
+            format!("fetching ASM aux data {asm_block} for checkpoint observation")
+        })?;
+        let verified_aux_data = VerifiedAuxData::try_new(
+            &aux_data,
+            &parent_asm_state.state().chain_view.history_accumulator,
+        )
+        .with_context(|| format!("verifying ASM aux data for {asm_block}"))?;
+
+        Ok(CheckpointVerificationContext {
+            block,
+            verified_aux_data,
+            checkpoint_state,
+            scan_cursor: 0,
+        })
+    }
+
     /// Validates a checkpoint tip update against the parent ASM state, writes
     /// the L1-ref observation to the DB, and updates the observations on the `pending` container.
     fn mark_ol_checkpoint_l1_observed(
@@ -296,40 +333,23 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let _span = info_span!("mark_ol_checkpoint_l1_observed", epoch = tip.epoch).entered();
         let commitment = EpochCommitment::from_terminal(tip.epoch, *tip.l2_commitment());
 
-        let block = self
-            .ctx
-            .get_l1_block(asm_block.blkid())
-            .with_context(|| format!("fetching L1 block {asm_block} for checkpoint observation"))?;
+        if pending.ckpt_verification_ctx.is_none() {
+            pending.ckpt_verification_ctx =
+                Some(self.get_checkpoint_verification_context(asm_block)?);
+        }
+        let ctx = pending
+            .ckpt_verification_ctx
+            .as_mut()
+            .expect("just initialized above");
 
-        // Prepare for same checkpoint validation that ASM does.
-        let parent_block = parent_commitment(asm_block, &block)?;
-        let parent_asm_state = self.ctx.get_asm_state(&parent_block).with_context(|| {
-            format!("fetching parent ASM state {parent_block} for checkpoint observation")
-        })?;
-        let mut checkpoint_state = decode_checkpoint_section(&parent_asm_state)?;
-        let aux_data = self.ctx.get_aux_data(asm_block).with_context(|| {
-            format!("fetching ASM aux data {asm_block} for checkpoint observation")
-        })?;
-        let verified_aux_data = VerifiedAuxData::try_new(
-            &aux_data,
-            &parent_asm_state.state().chain_view.history_accumulator,
-        )
-        .with_context(|| format!("verifying ASM aux data for {asm_block}"))?;
-
-        let extracted = extract_matching_checkpoint(
-            &block,
-            self.ctx.magic_bytes(),
-            tip,
-            &mut checkpoint_state,
-            asm_block.height(),
-            &verified_aux_data,
-        )
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "no checkpoint envelope tx in L1 block {asm_block} validated for epoch {}",
-                tip.epoch
-            )
-        })?;
+        let extracted =
+            extract_matching_checkpoint(ctx, self.ctx.magic_bytes(), tip, asm_block.height())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "no checkpoint envelope tx in L1 block {asm_block} validated for epoch {}",
+                        tip.epoch
+                    )
+                })?;
 
         let observation = CheckpointL1Ref::new(*asm_block, extracted.txid, extracted.wtxid);
         self.ctx.put_checkpoint_l1_observation(
