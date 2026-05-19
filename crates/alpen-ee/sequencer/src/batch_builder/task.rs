@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use alpen_ee_common::{
-    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkWitnessStore, ExecBlockStorage,
+    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkStorage, ChunkWitnessStore,
+    ExecBlockStorage,
 };
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
@@ -79,7 +80,7 @@ async fn get_block_range(
 /// task's hot path; sealing does not wait for it.
 async fn seal_batch<P: BatchPolicy>(
     state: &mut BatchBuilderState<P>,
-    storage: &(impl BatchStorage + ChunkWitnessStore),
+    storage: &(impl BatchStorage + ChunkStorage + ChunkWitnessStore),
     chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
 ) -> Result<Option<BatchId>> {
     if state.accumulator().is_empty() {
@@ -183,7 +184,7 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     let mut pending_poll_interval = time::interval(PENDING_BLOCK_POLL_INTERVAL);
@@ -226,7 +227,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     // Check and handle reorgs first
@@ -297,7 +298,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     let mut processed = 0;

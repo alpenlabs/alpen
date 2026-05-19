@@ -2,8 +2,9 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use alpen_ee_common::{
     AccessedStateRecord, AccessedStateStore, Batch, BatchId, BatchStatus, BatchStorage, Chunk,
-    ChunkId, ChunkStatus, ChunkWitnessRecord, ChunkWitnessStore, EeAccountStateAtEpoch,
-    ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
+    ChunkId, ChunkStatus, ChunkStorage, ChunkWitnessRecord, ChunkWitnessStore,
+    EeAccountStateAtEpoch, ExecBlockPayload, ExecBlockRecord, ExecBlockStorage, OLBlockOrEpoch,
+    Storage, StorageError,
 };
 use async_trait::async_trait;
 use strata_acct_types::Hash;
@@ -276,7 +277,10 @@ impl BatchStorage for EeNodeStorage {
     async fn get_latest_batch(&self) -> Result<Option<(Batch, BatchStatus)>, StorageError> {
         self.ops.get_latest_batch_async().await.map_err(Into::into)
     }
+}
 
+#[async_trait]
+impl ChunkStorage for EeNodeStorage {
     async fn save_next_chunk(&self, chunk: Chunk) -> Result<(), StorageError> {
         self.ops
             .save_next_chunk_async(chunk)
@@ -428,7 +432,9 @@ impl AccessedStateStore for EeNodeStorage {
 mod tests {
     use std::sync::Arc;
 
-    use alpen_ee_common::{batch_storage_tests, exec_block_storage_tests, storage_tests};
+    use alpen_ee_common::{
+        batch_storage_tests, chunk_storage_tests, exec_block_storage_tests, storage_tests,
+    };
     use strata_db_store_sled::SledDbConfig;
     use typed_sled::SledDb;
 
@@ -450,4 +456,5 @@ mod tests {
     storage_tests!(setup_storage());
     exec_block_storage_tests!(setup_storage());
     batch_storage_tests!(setup_storage());
+    chunk_storage_tests!(setup_storage());
 }

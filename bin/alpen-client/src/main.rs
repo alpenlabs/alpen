@@ -19,7 +19,8 @@ use std::{env, process, sync::Arc, time::Duration};
 
 use alpen_chainspec::{chain_value_parser, AlpenChainSpecParser};
 use alpen_ee_common::{
-    chain_status_checked, BatchStorage, BlockNumHash, ExecBlockStorage, OLClient, Storage,
+    chain_status_checked, BatchStorage, BlockNumHash, ChunkStorage, ExecBlockStorage, OLClient,
+    Storage,
 };
 use alpen_ee_config::{AlpenEeConfig, AlpenEeParams};
 use alpen_ee_database::init_db_storage;
@@ -563,13 +564,13 @@ fn main() {
                 // a panic in either path warrants taking the node down
                 // rather than silently producing un-provable chunks.
                 let chunk_witness_backfill_task = {
-                    let batch_storage: Arc<dyn BatchStorage> = storage.clone();
+                    let chunk_storage: Arc<dyn ChunkStorage> = storage.clone();
                     let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
                         storage.clone();
                     let tx = chunk_witness_tx.clone();
                     async move {
                         if let Err(e) = backfill_missing_chunk_witnesses(
-                            batch_storage.as_ref(),
+                            chunk_storage.as_ref(),
                             witness_store.as_ref(),
                             &tx,
                         )
@@ -712,6 +713,7 @@ fn main() {
                     Arc::new(EeChunkReceiptStore::new(prover_db.clone()));
                 let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
                 let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
+                let chunk_storage_dyn: Arc<dyn ChunkStorage> = storage.clone();
 
                 let genesis = {
                     use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
@@ -723,19 +725,20 @@ fn main() {
                         .expect("invalid withdrawal params");
 
                 let chunk_builder = ProverBuilder::new(ChunkSpec::new(
-                    batch_storage_dyn.clone(),
+                    chunk_storage_dyn.clone(),
                     storage.clone(),
                     genesis.clone(),
                     bridge_params,
                 ))
                 .task_store(task_store.clone())
                 .receipt_store(chunk_receipts.clone())
-                .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
+                .receipt_hook(ChunkReceiptHook::new(chunk_storage_dyn.clone()))
                 .retry(RetryConfig::default());
 
                 let acct_builder = ProverBuilder::new(AcctSpec::new(
                     chunk_receipts.clone(),
                     batch_storage_dyn.clone(),
+                    chunk_storage_dyn.clone(),
                     storage.clone(),
                     ol_client.clone(),
                     genesis,
@@ -808,7 +811,7 @@ fn main() {
                 let batch_prover = Arc::new(PaasBatchProver::new(
                     chunk_handle,
                     acct_handle,
-                    batch_storage_dyn,
+                    chunk_storage_dyn,
                     batch_proofs,
                 ));
 

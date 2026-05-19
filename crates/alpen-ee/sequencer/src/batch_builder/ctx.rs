@@ -2,7 +2,9 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ChunkWitnessStore, ExecBlockStorage};
+use alpen_ee_common::{
+    BatchId, BatchStorage, BlockNumHash, ChunkStorage, ChunkWitnessStore, ExecBlockStorage,
+};
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
@@ -21,7 +23,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     /// Genesis block hash, used as the starting point for the first batch.
@@ -59,7 +61,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage + Send + Sync,
 {
     pub(crate) fn canonical_reader(&self) -> impl CanonicalChainReader {

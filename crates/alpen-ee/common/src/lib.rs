@@ -17,7 +17,7 @@ pub use traits::{
     prover::{BatchProver, ProofGenerationStatus},
     storage::{
         require_best_ee_account_state, require_best_finalized_block, require_genesis_batch,
-        require_latest_batch, AccessedStateStore, BatchStorage, ChunkWitnessStore,
+        require_latest_batch, AccessedStateStore, BatchStorage, ChunkStorage, ChunkWitnessStore,
         ExecBlockStorage, OLBlockOrEpoch, Storage, StorageError,
     },
 };
@@ -27,9 +27,9 @@ pub use traits::{
     ol_client::{MockOLClient, MockSequencerOLClient},
     prover::MockBatchProver,
     storage::{
-        batch_storage_test_fns, exec_block_storage_test_fns, tests as storage_test_fns,
-        InMemoryStorage, MockAccessedStateStore, MockBatchStorage, MockChunkWitnessStore,
-        MockExecBlockStorage, MockStorage,
+        batch_storage_test_fns, chunk_storage_test_fns, exec_block_storage_test_fns,
+        tests as storage_test_fns, InMemoryStorage, MockAccessedStateStore, MockBatchStorage,
+        MockChunkStorage, MockChunkWitnessStore, MockExecBlockStorage, MockStorage,
     },
 };
 pub use types::{
