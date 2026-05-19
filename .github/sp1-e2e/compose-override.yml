@@ -30,6 +30,7 @@ services:
     environment:
       - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
       - BATCH_SEALING_BLOCK_COUNT=24
+      - CHAIN_SPEC=testnet
     env_file:
       - ../.github/sp1-e2e/.env.ci
       - ./configs/generated/.env.alpen
