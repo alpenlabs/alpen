@@ -1950,7 +1950,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-common"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "bitcoin",
  "borsh",
@@ -1977,7 +1977,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-logs"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "strata-asm-common",
  "strata-asm-proto-checkpoint-types",
@@ -1991,7 +1991,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-manifest-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "borsh",
  "serde",
@@ -2012,7 +2012,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-proto-bridge-v1-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "arbitrary",
  "bitcoin-bosd 0.10.0",
@@ -2029,7 +2029,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-proto-checkpoint-txs"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "bitcoin",
  "strata-asm-common",
@@ -2044,7 +2044,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-proto-checkpoint-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "borsh",
  "serde",
@@ -2084,7 +2084,7 @@ dependencies = [
 [[package]]
 name = "strata-btc-verification"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "arbitrary",
  "bitcoin",
@@ -2279,6 +2279,7 @@ dependencies = [
  "strata-codec",
  "strata-crypto",
  "strata-identifiers",
+ "strata-predicate",
  "thiserror 2.0.18",
  "tree_hash",
  "tree_hash_derive",
@@ -2448,6 +2449,7 @@ dependencies = [
  "strata-acct-types",
  "strata-ledger-types",
  "strata-snark-acct-types",
+ "tracing",
 ]
 
 [[package]]
@@ -2824,7 +2826,7 @@ dependencies = [
 [[package]]
 name = "zkaleido-logging"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.1#d24c4ce44e4ff2abd4328a5adb373ffb79f34c8c"
+source = "git+https://github.com/alpenlabs/zkaleido?tag=v0.1-beta.2#c2683cf676490decc045d9a91d6c8b5740138f1c"
 dependencies = [
  "tracing",
 ]

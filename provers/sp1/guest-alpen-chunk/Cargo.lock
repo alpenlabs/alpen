@@ -5073,7 +5073,7 @@ dependencies = [
 [[package]]
 name = "strata-asm-proto-bridge-v1-types"
 version = "0.1.0"
-source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.8#4f37c74fc1347f1bca799613455d63fd86dfa4e0"
+source = "git+https://github.com/alpenlabs/asm?tag=v0.1-alpha.9#dfb8e53cfdb2ec1f70f09c1d592b581b68fe0537"
 dependencies = [
  "arbitrary",
  "bitcoin-bosd 0.10.0",
