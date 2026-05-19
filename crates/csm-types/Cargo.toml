@@ -7,6 +7,7 @@ version = "0.3.0-alpha.1"
 workspace = true
 
 [dependencies]
+strata-asm-proto-checkpoint-types.workspace = true
 strata-btc-types.workspace = true
 strata-checkpoint-types.workspace = true
 strata-identifiers.workspace = true
@@ -18,6 +19,7 @@ serde.workspace = true
 
 [dev-dependencies]
 bitcoin.workspace = true
+strata-test-utils.workspace = true
 
 [features]
 default = ["std"]

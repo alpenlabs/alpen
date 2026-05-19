@@ -7,7 +7,6 @@ use bitcoin::hashes::Hash;
 use strata_asm_common::{AsmLogEntry, Subprotocol, VerifiedAuxData};
 use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_TYPE};
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
-use strata_checkpoint_types::BatchInfo;
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
@@ -102,14 +101,8 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let observation =
             self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
-        // Tip logs do not contain full batch transition details.
-        // CSM only needs epoch progression for finalized-epoch signaling, so we
-        // synthesize a minimal checkpoint view from the tip.
-        // TODO(STR-2438): Remove this synthetic mapping once CSM persists/consumes
-        // these fields directly without legacy L1Checkpoint shape coupling.
-        let synthetic_checkpoint =
-            checkpoint_from_tip_update(checkpoint_tip_update, asm_block, observation);
-        pending.cur_state = next_client_state(&pending.cur_state, synthetic_checkpoint, epoch);
+        let new_checkpoint = L1Checkpoint::new(*checkpoint_tip_update.tip(), observation);
+        pending.cur_state = next_client_state(&pending.cur_state, new_checkpoint, epoch);
 
         pending.last_processed_epoch = Some(epoch);
         Ok(())
@@ -378,19 +371,22 @@ fn next_client_state(
     new_checkpoint: L1Checkpoint,
     epoch: Epoch,
 ) -> Arc<ClientState> {
-    // Determine if this checkpoint should be the last finalized or just recent.
-
-    // TODO(STR-2438): This comes from the legacy design currently and will be
-    // simplified in the future.
-    // Currently, `last_finalized` is the buried checkpoint and recent and the last be observed
-    // (the checkpoint that makes the the finalized one to be buried).
-    // It's better to store `L1Checkpoint` separately, move the
-    // logic of "recent/finalized" to the DbManager (that can actually fetches
-    // actual persisted data and doesn't rely on the current state).
+    // Slot the new checkpoint into `ClientState`'s two-slot view.
+    //
+    // `last_seen_checkpoint` holds the most recent tip we've observed on L1.
+    // `last_finalized_checkpoint` is set to the *previous* `last_seen` once a
+    // successor's tip is observed — i.e. a heuristic, not depth-based finality.
+    //
+    // FIXME: This is not real finality. Actual depth-driven finalization lives
+    // in `CsmWorkerState::finalized_epoch` and the observed-checkpoint queue.
+    // The two coexisting notions can diverge. The recent/finalized split here
+    // should be removed and consumers should read finality from the persisted
+    // observation facts (or `CsmWorkerState`) directly. Out of scope for the
+    // STR-2438 shape refactor.
     let (last_finalized, recent) = match prev.get_last_checkpoint() {
         Some(existing) => {
             // If the new checkpoint is for a later epoch, it becomes recent
-            if epoch > existing.batch_info.epoch() {
+            if epoch > existing.tip.epoch {
                 (Some(existing.clone()), Some(new_checkpoint))
             } else {
                 // Otherwise keep existing
@@ -404,27 +400,6 @@ fn next_client_state(
     };
 
     Arc::new(ClientState::new(last_finalized, recent))
-}
-
-/// Build a compatibility synthetic [`L1Checkpoint`] from a checkpoint tip update.
-fn checkpoint_from_tip_update(
-    checkpoint_tip_update: &CheckpointTipUpdate,
-    asm_block: &L1BlockCommitment,
-    l1_reference: CheckpointL1Ref,
-) -> L1Checkpoint {
-    let tip = checkpoint_tip_update.tip();
-
-    // TODO(STR-2438): This `BatchInfo` synthesis is semantically incorrect
-    // for checkpoint tip updates (start/end L1 and L2 commitments are
-    // duplicated placeholders). Replace with native checkpoint data flow
-    // and remove legacy `BatchInfo` construction.
-    let batch_info = BatchInfo::new(
-        tip.epoch,
-        (*asm_block, *asm_block),
-        (*tip.l2_commitment(), *tip.l2_commitment()),
-    );
-
-    L1Checkpoint::new(batch_info, l1_reference)
 }
 
 /// Returns the parent L1 commitment derived from `block`'s header.
