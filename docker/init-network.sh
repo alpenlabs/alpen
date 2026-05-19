@@ -200,7 +200,7 @@ if [ "${MODE}" = "sequencer" ]; then
     GENESIS_L1_VIEW="${OUTPUT_DIR}/genesis-l1-view.json"
     if [ ! -f "${GENESIS_L1_VIEW}" ]; then
         if [ -n "${BITCOIND_RPC_URL}" ] && [ -n "${BITCOIND_RPC_USER}" ] && [ -n "${BITCOIND_RPC_PASSWORD}" ]; then
-            # Fetch real L1 view from Bitcoin node - produces correct values for
+            # Fetch real L1 view from Bitcoin node — produces correct values for
             # all fields (next_target, epoch_start_timestamp, last_11_timestamps).
             echo "fetching genesis L1 view from ${BITCOIND_RPC_URL} at height ${GENESIS_L1_HEIGHT}..."
             "${DATATOOL_PATH}" -b "${BITCOIN_NETWORK}" \
@@ -212,7 +212,7 @@ if [ "${MODE}" = "sequencer" ]; then
                 -o "${GENESIS_L1_VIEW}"
             echo "generated ${GENESIS_L1_VIEW} (from Bitcoin RPC)"
         else
-            # No RPC available - write a placeholder L1 view using network-specific
+            # No RPC available — write a placeholder L1 view using network-specific
             # genesis block values.  On regtest the strata entrypoint patches
             # height + blkid at runtime; on signet this will be incomplete and you
             # should provide BITCOIN_RPC_* vars instead.
@@ -247,8 +247,7 @@ GEOF
             -g "${GENESIS_L1_HEIGHT}" \
             --proof-timeout 30 \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
-            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"} \
-            ${ALPEN_CHAIN_CONFIG:+--chain-config "$ALPEN_CHAIN_CONFIG"}
+            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
         echo "generated ${ROLLUP_PARAMS}"
     fi
 
@@ -259,8 +258,7 @@ GEOF
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
-            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"} \
-            ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
+            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"}
         echo "generated ${OL_PARAMS}"
     fi
 
@@ -270,7 +268,6 @@ GEOF
             gen-asm-params \
             -o "${ASM_PARAMS}" \
             -n ALPN \
-            -s "${SEQ_XPUB}" \
             -b "${OPERATOR_XPRIV}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
