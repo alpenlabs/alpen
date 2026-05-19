@@ -2,7 +2,9 @@
 
 use std::{future::Future, marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ChunkWitnessStore, ExecBlockStorage};
+use alpen_ee_common::{
+    BatchId, BatchStorage, BlockNumHash, ChunkStorage, ChunkWitnessStore, ExecBlockStorage,
+};
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
@@ -57,7 +59,7 @@ where
     P: BatchPolicy,
     D: BlockDataProvider<P>,
     S: BatchSealingPolicy<P>,
-    BS: BatchStorage + ChunkWitnessStore,
+    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
     ES: ExecBlockStorage,
 {
     let (latest_batch_tx, latest_batch_rx) = watch::channel(initial_batch_id);
