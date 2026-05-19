@@ -3,9 +3,11 @@
 #
 # Generate-params and CD dispatch are tracked separately (STR-2775).
 
-name: CI — Build and Push Images
+name: CI - Build and Push Images
 
 on:
+  schedule:
+    - cron: '30 4,10,16,22 * * *'  # Every 6hr, ~1.5hr before SP1 E2E test
   push:
     branches: [main]
     paths:
@@ -32,17 +34,53 @@ on:
 env:
   AWS_REGION: us-east-1
 
-# Cancel in-progress runs for the same branch (except main — let those finish)
+# Cancel in-progress runs for the same branch (except main - let those finish)
 concurrency:
   group: ci-build-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Skip scheduled runs if no new commits since last successful build
+  # ---------------------------------------------------------------------------
+  check-new-commits:
+    name: Check for new commits
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check for new commits since last success
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          LAST_SUCCESS=$(gh run list -R "${REPO}" \
+            --workflow ci-build.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // ""')
+
+          if [ "${LAST_SUCCESS}" = "${GITHUB_SHA}" ]; then
+            echo "No new commits since last successful build - skipping"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New commits found - running"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
   # Determine which programs to build
   # ---------------------------------------------------------------------------
   prepare:
     name: Prepare build matrix
+    needs: [check-new-commits]
+    if: always() && (needs.check-new-commits.result == 'skipped' || needs.check-new-commits.outputs.should_run == 'true')
     runs-on: ubuntu-latest
     permissions: {}
     outputs:
@@ -53,7 +91,7 @@ jobs:
         env:
           INPUT: ${{ inputs.programs }}
         run: |
-          # New architecture images only — pushed to shared ECR account
+          # New architecture images only - pushed to shared ECR account
           ALL='["strata","alpen-client","strata-signer"]'
 
           if [ -z "$INPUT" ]; then
@@ -65,15 +103,17 @@ jobs:
           fi
 
   # ---------------------------------------------------------------------------
-  # Build SP1 artifacts (datatool + guest ELFs) — shared by all images
+  # Build SP1 artifacts (datatool + guest ELFs) - shared by all images
   # ---------------------------------------------------------------------------
   build-sp1-artifacts:
     name: Build SP1 artifacts
+    needs: [check-new-commits]
+    if: always() && (needs.check-new-commits.result == 'skipped' || needs.check-new-commits.outputs.should_run == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      # Inline cleanup before checkout — the local composite action needs the
+      # Inline cleanup before checkout - the local composite action needs the
       # repo to exist, but the repo is too large to clone without freeing space.
       - name: Free up disk space
         run: |

@@ -1,0 +1,35 @@
+# SP1 E2E CI override - swaps local builds for prebuilt ECR images,
+# uses CI-specific env and fast epoch config.
+#
+# Usage (from repo root):
+#   docker compose \
+#     -f docker/compose-ol-el-seq.yml \
+#     -f .github/sp1-e2e/compose-override.yml \
+#     up -d
+
+services:
+  strata:
+    image: ${ECR_REGISTRY}/strata:${IMAGE_TAG}
+    platform: linux/amd64
+    env_file:
+      - ../.github/sp1-e2e/.env.ci
+    environment:
+      - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
+    volumes:
+      - ../.github/sp1-e2e/config.seq.toml:/app/configs/config.seq.toml:ro
+      - ../.github/sp1-e2e/sequencer.toml:/app/configs/sequencer.toml:ro
+
+  strata-signer:
+    image: ${ECR_REGISTRY}/strata-signer:${IMAGE_TAG}
+    platform: linux/amd64
+
+  alpen-client:
+    image: ${ECR_REGISTRY}/alpen-client:${IMAGE_TAG}
+    platform: linux/amd64
+    command: []
+    environment:
+      - NETWORK_PRIVATE_KEY=${NETWORK_PRIVATE_KEY}
+      - BATCH_SEALING_BLOCK_COUNT=24
+    env_file:
+      - ../.github/sp1-e2e/.env.ci
+      - ./configs/generated/.env.alpen
