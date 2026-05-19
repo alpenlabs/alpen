@@ -807,10 +807,8 @@ fn main() {
                     .spawn_critical("ee_batch_builder", batch_builder_task);
                 node.task_executor
                     .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
-                node.task_executor.spawn_critical(
-                    "ee_chunk_witness_backfill",
-                    chunk_witness_backfill_task,
-                );
+                node.task_executor
+                    .spawn_critical("ee_chunk_witness_backfill", chunk_witness_backfill_task);
                 node.task_executor
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor

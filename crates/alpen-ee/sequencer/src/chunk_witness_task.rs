@@ -30,7 +30,7 @@ use alpen_ee_common::{BatchStorage, ChunkId, ChunkWitnessExtractFn, ChunkWitness
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
 use tokio::{sync::mpsc, task, time};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn, Instrument};
 
 /// Channel capacity. Each entry is one sealed chunk awaiting witness
 /// extraction. Bounded so a persistent extractor stall backpressures the
@@ -78,11 +78,18 @@ pub async fn chunk_witness_task(
 ) {
     info!("chunk witness task started");
     while let Some(req) = rx.recv().await {
-        process_request(&extractor, store.as_ref(), req).await;
+        let span = tracing::debug_span!("chunk_witness", chunk_id = ?req.chunk_id);
+        process_request(&extractor, store.as_ref(), req)
+            .instrument(span)
+            .await;
     }
     warn!("chunk witness channel closed; exiting");
 }
 
+/// Runs the extractor for one chunk with bounded retry. Logged fields
+/// shared across attempts (`chunk_id`) come from the caller's span;
+/// per-attempt logs only need to add the changing `attempt` field.
+#[instrument(level = "debug", skip_all)]
 async fn process_request(
     extractor: &Arc<ChunkWitnessExtractFn>,
     store: &dyn ChunkWitnessStore,
@@ -102,25 +109,19 @@ async fn process_request(
         match join {
             Ok(Ok(witness)) => {
                 match store.put_chunk_witness(chunk_id, witness).await {
-                    Ok(()) => {
-                        debug!(?chunk_id, attempt, "persisted chunk witness");
-                    }
-                    Err(e) => {
-                        error!(
-                            ?chunk_id,
-                            attempt,
-                            error = %e,
-                            "failed to persist chunk witness; chunk will remain proof-blocked \
-                             until a manual backfill writes the record"
-                        );
-                    }
+                    Ok(()) => debug!(attempt, "persisted chunk witness"),
+                    Err(e) => error!(
+                        attempt,
+                        error = %e,
+                        "failed to persist chunk witness; chunk will remain proof-blocked \
+                         until a manual backfill writes the record"
+                    ),
                 }
                 return;
             }
             Ok(Err(e)) => {
                 if attempt < RETRY_MAX_ATTEMPTS {
                     debug!(
-                        ?chunk_id,
                         attempt,
                         sleep_ms = sleep.as_millis() as u64,
                         error = %e,
@@ -133,7 +134,6 @@ async fn process_request(
                     continue;
                 }
                 error!(
-                    ?chunk_id,
                     attempt,
                     error = %e,
                     "chunk witness extraction exhausted retries; chunk will remain \
@@ -143,7 +143,6 @@ async fn process_request(
             }
             Err(join_err) => {
                 error!(
-                    ?chunk_id,
                     attempt,
                     error = %join_err,
                     "chunk witness extraction task panicked or was cancelled; giving up"

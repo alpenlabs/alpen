@@ -33,7 +33,6 @@ with proper accessors or state asserts (and not logs).
 
 import logging
 import re
-import time
 from pathlib import Path
 
 import flexitest
@@ -49,6 +48,7 @@ from common.evm import (
 from common.evm_utils import wait_for_receipt
 from common.services.alpen_client import AlpenClientService
 from common.services.bitcoin import BitcoinService
+from common.wait import wait_until_with_value
 from envconfigs.el_ol import EeOLEnv
 
 logger = logging.getLogger(__name__)
@@ -108,21 +108,26 @@ def _wait_for_log_signal(
 
     Mines bitcoin blocks between polls so the batch DA confirmations
     advance, which is what eventually drives the batch lifecycle into
-    `ProofPending` and triggers the chunk + acct prover request. The
-    same pattern is used by `wait_for_output_snark_update` in the bridge
-    test — we copy it here to stay focused on the prover pipeline.
+    `ProofPending` and triggers the chunk + acct prover request.
     """
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+
+    def mine_and_count() -> int:
         count = _count_log_matches(log_path, pattern, after_offset)
-        if count > 0:
-            logger.info(f"{description}: observed {count} match(es)")
-            return count
-        btc_rpc.proxy.generatetoaddress(btc_blocks_per_step, miner_addr)
-        time.sleep(poll)
-    raise AssertionError(
-        f"{description}: no log match for {pattern!r} within {timeout}s (log: {log_path})"
+        if count == 0:
+            btc_rpc.proxy.generatetoaddress(btc_blocks_per_step, miner_addr)
+        return count
+
+    count = wait_until_with_value(
+        mine_and_count,
+        lambda c: c > 0,
+        error_with=(
+            f"{description}: no log match for {pattern!r} within {timeout}s (log: {log_path})"
+        ),
+        timeout=timeout,
+        step=poll,
     )
+    logger.info(f"{description}: observed {count} match(es)")
+    return count
 
 
 @flexitest.register
