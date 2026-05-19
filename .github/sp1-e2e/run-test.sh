@@ -33,6 +33,7 @@ export BITCOIND_RPC_URL=http://localhost:38332
 export CHECKPOINT_PREDICATE=sp1-groth16
 export ALPEN_PREDICATE=sp1-groth16
 export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/testnet-chain.json"
+export CHAIN_SPEC=testnet
 
 # --- Low-level helpers ---
 
