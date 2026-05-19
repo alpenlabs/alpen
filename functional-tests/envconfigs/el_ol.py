@@ -41,7 +41,6 @@ class EeOLEnv(flexitest.EnvConfig):
         ol_block_time_ms: int | None = None,
         dev_track_latest_epoch: bool = False,
         batch_sealing_block_count: int = 10,
-        custom_chain: str = "dev",
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
@@ -53,7 +52,6 @@ class EeOLEnv(flexitest.EnvConfig):
         self.ol_block_time_ms = ol_block_time_ms
         self.dev_track_latest_epoch = dev_track_latest_epoch
         self.batch_sealing_block_count = batch_sealing_block_count
-        self.custom_chain = custom_chain
         self.epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
@@ -71,7 +69,6 @@ class EeOLEnv(flexitest.EnvConfig):
             fund_test_cli_wallet=self.fund_test_cli_wallet,
             admin_confirmation_depth=self.admin_confirmation_depth,
             ol_block_time_ms=self.ol_block_time_ms,
-            alpen_chain_config=self.custom_chain if self.custom_chain != "dev" else None,
         )
         strata_services = strata_config._get_services(ectx)
 
@@ -90,7 +87,6 @@ class EeOLEnv(flexitest.EnvConfig):
             ol_endpoint=ol_endpoint,
             dev_track_latest_epoch=self.dev_track_latest_epoch,
             batch_sealing_block_count=self.batch_sealing_block_count,
-            custom_chain=self.custom_chain,
         )
 
         services = {**alpen_services, **strata_services}

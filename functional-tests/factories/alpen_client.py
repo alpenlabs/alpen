@@ -41,11 +41,6 @@ def generate_sequencer_keypair() -> tuple[str, str]:
     return privkey, pubkey
 
 
-def use_dev_native_prover() -> bool:
-    raw = os.getenv("ALPEN_EE_DEV_NATIVE_PROVER")
-    return raw is None or raw.lower() not in ("0", "false", "no", "off")
-
-
 class AlpenClientFactory(flexitest.Factory):
     """
     Factory for creating alpen-client nodes.
@@ -121,14 +116,10 @@ class AlpenClientFactory(flexitest.Factory):
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
             "-vvvv",
+            # Functional tests don't ship the SP1 guest ELFs, so run the
+            # EE chunk + acct provers on the zkaleido NativeHost.
+            "--dev-native-prover",
         ]
-        if use_dev_native_prover():
-            # Functional tests don't ship the SP1 guest ELFs by default, so run
-            # the EE chunk + acct provers on the zkaleido NativeHost unless a
-            # verification run opts into real SP1.
-            cmd.append("--dev-native-prover")
-        if deadline := os.getenv("ALPEN_SP1_PROOF_DEADLINE_SECS"):
-            cmd.extend(["--sp1-proof-deadline-secs", deadline])
         if dev_track_latest_epoch:
             # Advance the OL chain tracker on `latest` epoch (FCM)
             # instead of `confirmed` epoch (CSM/L1-checkpoint). Lets
@@ -156,12 +147,6 @@ class AlpenClientFactory(flexitest.Factory):
 
         # DA pipeline configuration
         if da_config is not None:
-            batch_sealing_block_count = int(
-                os.getenv(
-                    "ALPEN_EE_BATCH_SEALING_BLOCK_COUNT",
-                    str(da_config.batch_sealing_block_count),
-                )
-            )
             # fmt: off
             cmd.extend([
                 "--ee-da-magic-bytes", da_config.magic_bytes.decode("ascii"),
@@ -170,7 +155,7 @@ class AlpenClientFactory(flexitest.Factory):
                 "--btc-rpc-password", da_config.btc_rpc_password,
                 "--l1-reorg-safe-depth", str(da_config.l1_reorg_safe_depth),
                 "--genesis-l1-height", str(da_config.genesis_l1_height),
-                "--batch-sealing-block-count", str(batch_sealing_block_count),
+                "--batch-sealing-block-count", str(da_config.batch_sealing_block_count),
             ])
             # fmt: on
 
@@ -188,9 +173,7 @@ class AlpenClientFactory(flexitest.Factory):
         # Set environment variable for sequencer private key
         env = os.environ.copy()
         env["SEQUENCER_PRIVATE_KEY"] = sequencer_privkey
-        env["ALPEN_EE_BLOCK_TIME_MS"] = os.getenv(
-            "ALPEN_EE_BLOCK_TIME_MS", str(DEFAULT_EE_BLOCK_TIME_MS)
-        )
+        env["ALPEN_EE_BLOCK_TIME_MS"] = str(DEFAULT_EE_BLOCK_TIME_MS)
 
         svc = AlpenClientService(
             props,
@@ -199,7 +182,7 @@ class AlpenClientFactory(flexitest.Factory):
             name="ee_sequencer",
             env=env,
         )
-        svc.stop_timeout = int(os.getenv("ALPEN_CLIENT_STOP_TIMEOUT", "30"))
+        svc.stop_timeout = 30
 
         try:
             svc.start()

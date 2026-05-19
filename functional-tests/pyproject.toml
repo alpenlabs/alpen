@@ -8,7 +8,6 @@ dependencies = [
   "flexitest",
   "requests>=2.33.1",
   "bitcoinlib>=0.7.8",
-  "coincurve>=21.0.0",
   "toml>=0.10.2",
   "eth-account>=0.13.0",
   "eth-abi>=5.0.0",

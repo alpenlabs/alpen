@@ -55,7 +55,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_magic_bytes: bytes = DEFAULT_DA_MAGIC_BYTES,
         l1_reorg_safe_depth: int = 1,
         batch_sealing_block_count: int = 5,
-        custom_chain: str = "dev",
     ):
         self.fullnode_count = fullnode_count
         self.enable_discovery = enable_discovery
@@ -65,7 +64,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
         self.da_magic_bytes = da_magic_bytes
         self.l1_reorg_safe_depth = l1_reorg_safe_depth
         self.batch_sealing_block_count = batch_sealing_block_count
-        self.custom_chain = custom_chain
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
         if mesh_bootnodes and not enable_discovery:
@@ -84,7 +82,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
             self.da_magic_bytes,
             self.l1_reorg_safe_depth,
             self.batch_sealing_block_count,
-            custom_chain=self.custom_chain,
         )
         return flexitest.LiveEnv(services)
 
@@ -102,7 +99,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
         dev_track_latest_epoch: bool = False,
-        custom_chain: str = "dev",
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -160,7 +156,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
             ol_endpoint=ol_endpoint,
             da_config=da_config,
             dev_track_latest_epoch=dev_track_latest_epoch,
-            custom_chain=custom_chain,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()
@@ -187,7 +182,6 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
-                custom_chain=custom_chain,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)

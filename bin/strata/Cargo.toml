@@ -45,7 +45,6 @@ strata-acct-types.workspace = true
 strata-asm-common.workspace = true
 strata-asm-params.workspace = true
 strata-asm-proto-checkpoint-txs = { workspace = true, optional = true }
-strata-asm-proto-checkpoint-types.workspace = true
 strata-asm-worker.workspace = true
 strata-btc-types.workspace = true
 strata-btcio.workspace = true

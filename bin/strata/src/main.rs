@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use argh::from_env;
-use strata_asm_proto_checkpoint_types as _;
 use strata_db_types as _;
 use strata_logging::{LoggingInitConfig, init_logging_from_config};
 #[cfg(test)]
