@@ -1064,8 +1064,10 @@ dependencies = [
 name = "alpen-client"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alloy-consensus",
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types-engine",
  "alpen-chainspec",
  "alpen-ee-common",
@@ -1171,6 +1173,7 @@ dependencies = [
  "async-trait",
  "bincode",
  "bitcoin",
+ "borsh",
  "eyre",
  "futures",
  "mockall",
@@ -1430,17 +1433,22 @@ dependencies = [
  "alloy-genesis",
  "alloy-primitives",
  "alloy-rpc-types",
+ "alpen-ee-common",
  "alpen-reth-db",
  "alpen-reth-statediff",
  "eyre",
  "futures-util",
+ "reth-evm",
  "reth-exex",
  "reth-node-api",
  "reth-primitives",
+ "reth-primitives-traits",
  "reth-provider",
  "reth-revm",
  "revm-primitives",
  "rsp-primitives",
+ "strata-acct-types",
+ "tokio",
  "tracing",
 ]
 
@@ -1552,18 +1560,18 @@ version = "0.3.0-alpha.1"
 dependencies = [
  "alloy-consensus",
  "alloy-primitives",
- "alpen-reth-exex",
+ "alpen-ee-common",
  "eyre",
- "reth-evm",
  "reth-primitives",
- "reth-primitives-traits",
  "reth-provider",
  "reth-revm",
  "reth-trie",
  "reth-trie-common",
  "rsp-mpt",
+ "strata-acct-types",
  "strata-codec",
  "strata-evm-ee",
+ "tokio",
  "tracing",
 ]
 

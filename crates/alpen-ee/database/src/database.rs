@@ -1,6 +1,6 @@
 use alpen_ee_common::{
-    Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus, EeAccountStateAtEpoch,
-    ExecBlockRecord,
+    AccessedStateRecord, Batch, BatchId, BatchStatus, Chunk, ChunkId, ChunkStatus,
+    ChunkWitnessRecord, EeAccountStateAtEpoch, ExecBlockRecord,
 };
 use strata_acct_types::Hash;
 use strata_ee_acct_types::EeAccountState;
@@ -115,6 +115,43 @@ pub(crate) trait EeNodeDb: Send + Sync + 'static {
 
     /// Get the chunk-id list previously set for a batch.
     fn get_batch_chunks(&self, batch_id: BatchId) -> DbResult<Option<Vec<ChunkId>>>;
+
+    // Chunk witness operations
+    //
+    // Pre-computed witness records, written at chunk-seal time and read
+    // by the chunk prover's `fetch_input`. See the EE prover redesign
+    // doc for context.
+
+    /// Store the pre-computed witness for a chunk. Overwrites if present.
+    fn put_chunk_witness(&self, chunk_id: ChunkId, witness: ChunkWitnessRecord) -> DbResult<()>;
+
+    /// Fetch the pre-computed witness for a chunk, if one exists.
+    fn get_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<Option<ChunkWitnessRecord>>;
+
+    /// Delete a chunk's witness record. Idempotent — succeeds whether or not
+    /// the record was present.
+    fn del_chunk_witness(&self, chunk_id: ChunkId) -> DbResult<()>;
+
+    // Per-block accessed-state + content-addressed bytecode operations
+    //
+    // Written by the `AccessedStateGenerator` exex (phase 2) and read by
+    // the chunk-builder to skip per-block re-execution at chunk-seal time.
+
+    /// Store the accessed-state record for `block_id`. Overwrites if present.
+    fn put_block_accessed_state(&self, block_id: Hash, record: AccessedStateRecord)
+        -> DbResult<()>;
+
+    /// Fetch the accessed-state record for `block_id`, if one exists.
+    fn get_block_accessed_state(&self, block_id: Hash) -> DbResult<Option<AccessedStateRecord>>;
+
+    /// Delete a block's accessed-state record. Idempotent.
+    fn del_block_accessed_state(&self, block_id: Hash) -> DbResult<()>;
+
+    /// Store a bytecode keyed by its code hash. Idempotent (content-addressed).
+    fn put_bytecode(&self, code_hash: Hash, code: Vec<u8>) -> DbResult<()>;
+
+    /// Fetch a bytecode by code hash, if present.
+    fn get_bytecode(&self, code_hash: Hash) -> DbResult<Option<Vec<u8>>>;
 }
 
 pub(crate) mod ops {
@@ -159,6 +196,18 @@ pub(crate) mod ops {
             get_latest_chunk() => Option<(Chunk, ChunkStatus)>;
             set_batch_chunks(batch_id: BatchId, chunks: Vec<ChunkId>) => ();
             get_batch_chunks(batch_id: BatchId) => Option<Vec<ChunkId>>;
+
+            // Chunk witness operations
+            put_chunk_witness(chunk_id: ChunkId, witness: ChunkWitnessRecord) => ();
+            get_chunk_witness(chunk_id: ChunkId) => Option<ChunkWitnessRecord>;
+            del_chunk_witness(chunk_id: ChunkId) => ();
+
+            // Per-block accessed-state + bytecode operations
+            put_block_accessed_state(block_id: Hash, record: AccessedStateRecord) => ();
+            get_block_accessed_state(block_id: Hash) => Option<AccessedStateRecord>;
+            del_block_accessed_state(block_id: Hash) => ();
+            put_bytecode(code_hash: Hash, code: Vec<u8>) => ();
+            get_bytecode(code_hash: Hash) => Option<Vec<u8>>;
         }
     }
 }

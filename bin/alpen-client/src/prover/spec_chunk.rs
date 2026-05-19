@@ -8,11 +8,10 @@
 
 use std::{fmt, sync::Arc};
 
-use alloy_primitives::B256;
-use alpen_ee_common::{BatchStorage, ChunkId, ExecBlockStorage};
+use alpen_ee_common::{BatchStorage, ChunkId, ChunkWitnessStore, ExecBlockStorage};
 use alpen_ee_database::EeNodeStorage;
-use alpen_reth_witness::RangeWitnessData;
 use async_trait::async_trait;
+use reth_primitives::Block;
 use reth_primitives_traits::Block as _;
 use rsp_primitives::genesis::Genesis;
 use strata_acct_types::Hash;
@@ -25,14 +24,6 @@ use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
 use strata_paas::{ProofSpec, ProverError as PaasError, ProverResult};
 use strata_proofimpl_alpen_chunk::{EeChunkProgram, EeChunkProofInput};
-use tokio::task;
-
-/// Type-erased range witness extractor.
-///
-/// Wraps [`alpen_reth_witness::RangeWitnessExtractor`] behind a closure
-/// so `ChunkSpec` doesn't have to be generic over the reth provider.
-/// Constructed in `main.rs` from the launched node's provider + evm config.
-pub(crate) type RangeWitnessFn = dyn Fn(B256, B256) -> eyre::Result<RangeWitnessData> + Send + Sync;
 
 /// Chunk-id-shaped task identifier for paas.
 ///
@@ -107,15 +98,17 @@ impl TryFrom<Vec<u8>> for ChunkTask {
 /// Chunk proof specification.
 ///
 /// Two data sources per chunk:
-/// - `RangeWitnessExtractor` (via [`RangeWitnessFn`]) — chunk-spanning sparse pre-state + per-block
-///   alloy Blocks (for `EvmBlock` encoding).
-/// - `ExecBlockStorage` — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
+/// - **`ChunkWitnessStore`** — pre-computed chunk-spanning sparse pre-state + per-block raw block
+///   bytes, written at chunk-seal time by the batch builder. Read here in `fetch_input` as the
+///   primary source. A missing record returns `TransientFailure` so paas retries with backoff —
+///   gives an upstream backfill window before prover-core converts the task to permanent failure on
+///   retry exhaustion.
+/// - **`ExecBlockStorage`** — per-block `ExecBlockRecord` for authoritative `ExecInputs` /
 ///   `ExecOutputs`.
 pub(crate) struct ChunkSpec {
     batch_storage: Arc<dyn BatchStorage>,
     storage: Arc<EeNodeStorage>,
     genesis: Genesis,
-    range_witness_fn: Arc<RangeWitnessFn>,
 }
 
 impl ChunkSpec {
@@ -123,13 +116,11 @@ impl ChunkSpec {
         batch_storage: Arc<dyn BatchStorage>,
         storage: Arc<EeNodeStorage>,
         genesis: Genesis,
-        range_witness_fn: Arc<RangeWitnessFn>,
     ) -> Self {
         Self {
             batch_storage,
             storage,
             genesis,
-            range_witness_fn,
         }
     }
 }
@@ -159,42 +150,93 @@ impl ProofSpec for ChunkSpec {
             )));
         }
 
-        let first_block_hash = B256::from(block_hashes[0].0);
-        let last_block_hash = B256::from(block_hashes.last().unwrap().0);
+        // 2. Read the pre-computed chunk witness. The batch builder writes this at chunk-seal time
+        //    when state is at-tip; a missing record means seal-time extraction failed (operator
+        //    will see a `warn!` from the batch builder) or the record was wiped, or a transient gap
+        //    in the upstream `AccessedStateGenerator` exex is still being filled in. Return a
+        //    transient failure so paas retries with backoff — if a backfill or the operator
+        //    restores the record before `max_retries` exhausts, the chunk recovers. Otherwise the
+        //    retry budget runs out and prover-core converts it to a permanent failure on its own.
+        let witness = self
+            .storage
+            .get_chunk_witness(chunk_id)
+            .await
+            .map_err(|e| PaasError::Storage(format!("get_chunk_witness({chunk_id:?}): {e}")))?
+            .ok_or_else(|| {
+                PaasError::TransientFailure(format!(
+                    "no chunk witness for {chunk_id:?} yet — seal-time extraction may still be \
+                     in flight, gated on the AccessedStateGenerator exex catching up, or the \
+                     record was deleted"
+                ))
+            })?;
 
-        // 2. Extract chunk-spanning witness via RangeWitnessExtractor.
-        //
-        //    Produces a single sparse `EvmPartialState` covering the union
-        //    of all blocks' read sets, projected onto the pre-chunk state,
-        //    plus the alloy Blocks for `EvmBlock` encoding.
-        //
-        //    Suboptimal: re-executes blocks on every call. Should be
-        //    pre-computed at chunk sealing time once the chunk builder
-        //    exists — see comment in main.rs.
-        let range_fn = self.range_witness_fn.clone();
-        let range_data: RangeWitnessData =
-            task::spawn_blocking(move || (range_fn)(first_block_hash, last_block_hash))
-                .await
-                .map_err(|e| PaasError::TransientFailure(format!("witness extraction join: {e}")))?
-                .map_err(|e| PaasError::TransientFailure(format!("witness extraction: {e}")))?;
+        if witness.block_count() != block_hashes.len() {
+            return Err(PaasError::PermanentFailure(format!(
+                "chunk witness block count mismatch for {chunk_id:?}: chunk has {} blocks, witness has {}",
+                block_hashes.len(),
+                witness.block_count(),
+            )));
+        }
 
-        let raw_partial_pre_state = range_data.raw_partial_pre_state;
+        // Decode RLP-encoded alloy types from the witness for the rest of the
+        // assembly path. (The encoding is the inverse of what the batch
+        // builder did via `ChunkWitnessRecord::new` in main.rs.)
+        let prev_header: alloy_consensus::Header =
+            alloy_rlp::decode_exact(&witness.prev_header_rlp[..]).map_err(|e| {
+                PaasError::PermanentFailure(format!("decode prev_header_rlp for {chunk_id:?}: {e}"))
+            })?;
+        let alloy_blocks: Vec<Block> = witness
+            .blocks_rlp
+            .iter()
+            .map(|b| alloy_rlp::decode_exact(&b[..]))
+            .collect::<Result<_, _>>()
+            .map_err(|e| {
+                PaasError::PermanentFailure(format!("decode block RLP for {chunk_id:?}: {e}"))
+            })?;
+        let raw_partial_pre_state = witness.raw_partial_pre_state;
 
         // 3. Parent header — wrap in `EvmHeader` and encode via `strata_codec` for the guest
         //    (expects the varint length prefix).
-        let parent_evm_header = EvmHeader::new(range_data.prev_header);
+        let parent_evm_header = EvmHeader::new(prev_header);
         let parent_blkid: Hash = parent_evm_header.compute_block_id();
         let raw_prev_header = encode_to_vec(&parent_evm_header)
             .map_err(|e| PaasError::PermanentFailure(format!("encode prev header: {e}")))?;
 
+        // Integrity check: the witness was extracted for some specific
+        // chunk; here we confirm its parent-header + per-block hashes
+        // line up with the chunk we're proving. A mismatch means the
+        // witness was generated against a different chunk (stale
+        // record, key collision, on-disk corruption) and the rest of
+        // the assembly would happily produce garbage. Cheap to do —
+        // we already have the hashes computed for the assembly loop
+        // below.
+        if parent_blkid != chunk_id.prev_block() {
+            return Err(PaasError::PermanentFailure(format!(
+                "chunk witness prev-block hash mismatch for {chunk_id:?}: \
+                 chunk expects {:?}, witness has {parent_blkid:?}",
+                chunk_id.prev_block(),
+            )));
+        }
+        for (idx, (expected_hash, alloy_block)) in
+            block_hashes.iter().zip(&alloy_blocks).enumerate()
+        {
+            let computed: Hash = EvmHeader::new(alloy_block.header.clone()).compute_block_id();
+            if computed != *expected_hash {
+                return Err(PaasError::PermanentFailure(format!(
+                    "chunk witness block hash mismatch for {chunk_id:?} at index {idx}: \
+                     chunk has {expected_hash:?}, witness has {computed:?}"
+                )));
+            }
+        }
+
         // 4. Build RawBlockData per block from ExecBlockRecord (inputs/outputs)
-        //    + range witness blocks (EvmBlock encoding).
+        //    + persisted alloy Blocks (EvmBlock encoding).
         let mut block_datas: Vec<RawBlockData> = Vec::with_capacity(block_hashes.len());
         let mut aggregated_inputs = ExecInputs::new_empty();
         let mut aggregated_outputs = ExecOutputs::new_empty();
         let mut tip_blkid = parent_blkid;
 
-        for (block_hash, alloy_block) in block_hashes.iter().zip(&range_data.blocks) {
+        for (block_hash, alloy_block) in block_hashes.iter().zip(&alloy_blocks) {
             // Authoritative inputs/outputs from ExecBlockRecord.
             let record = self
                 .storage

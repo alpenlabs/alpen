@@ -1,29 +1,36 @@
 //! Range witness extraction for arbitrary block ranges.
+//!
+//! Reads per-block accessed-state records produced at production time by
+//! [`alpen_reth_exex::AccessedStateGenerator`] (see phase 2 of the EE
+//! prover redesign), unions them into a chunk-level accessed-state set,
+//! and runs the two pre/post multiproofs. No block re-execution happens
+//! here — that work happens once per produced block inside the exex.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use alloy_consensus::Header;
 use alloy_primitives::{
     keccak256,
     map::{B256Set, DefaultHashBuilder, HashMap},
-    Address, B256,
+    Address, B256, U256,
 };
-use alpen_reth_exex::{AccessedState, CacheDBProvider, StorageKey};
+use alpen_ee_common::AccessedStateStore;
 use eyre::{eyre, Result};
-use reth_evm::{
-    execute::{BasicBlockExecutor, Executor},
-    ConfigureEvm,
-};
-use reth_primitives::{Block, EthPrimitives};
-use reth_primitives_traits::Block as _;
+use reth_primitives::Block;
 use reth_provider::{BlockReader, StateProvider, StateProviderFactory};
-use reth_revm::{db::CacheDB, state::Bytecode};
+use reth_revm::state::Bytecode;
 use reth_trie::{HashedPostState, MultiProofTargets, TrieInput};
 use reth_trie_common::KeccakKeyHasher;
 use rsp_mpt::EthereumState;
+use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_evm_ee::EvmPartialState;
+use tokio::runtime::Handle;
 use tracing::debug;
+
+/// Storage key — kept locally; `alpen_reth_exex::StorageKey` is the
+/// runtime cache type which we no longer depend on here.
+type StorageKey = U256;
 
 /// Witness data extracted for a block range.
 #[derive(Debug)]
@@ -45,21 +52,32 @@ pub struct RangeWitnessData {
 }
 
 /// Extracts witness data for block ranges.
-#[derive(Debug)]
-pub struct RangeWitnessExtractor<F, E> {
+///
+/// Reads accessed-state per block from [`AccessedStateStore`] (populated
+/// by `AccessedStateGenerator` at block-commit time) instead of
+/// re-executing blocks. No `EvmConfig` is needed — block execution
+/// happens once in the exex, never here.
+#[expect(
+    missing_debug_implementations,
+    reason = "AccessedStateStore trait objects don't impl Debug"
+)]
+pub struct RangeWitnessExtractor<F, S>
+where
+    S: AccessedStateStore + 'static,
+{
     provider_factory: F,
-    evm_config: E,
+    accessed_state_store: Arc<S>,
 }
 
-impl<F, E> RangeWitnessExtractor<F, E>
+impl<F, S> RangeWitnessExtractor<F, S>
 where
     F: StateProviderFactory + BlockReader<Block = Block>,
-    E: ConfigureEvm<Primitives = EthPrimitives> + Clone,
+    S: AccessedStateStore + 'static,
 {
-    pub fn new(provider_factory: F, evm_config: E) -> Self {
+    pub fn new(provider_factory: F, accessed_state_store: Arc<S>) -> Self {
         Self {
             provider_factory,
-            evm_config,
+            accessed_state_store,
         }
     }
 
@@ -103,7 +121,7 @@ where
 
         // 1. Execute all blocks to discover accessed state
         let (accessed, blocks) =
-            self.execute_blocks_for_accessed_state(start_block_num, end_block_num)?;
+            self.read_blocks_and_accessed_state(start_block_num, end_block_num)?;
 
         // 2. Get providers for pre-range and post-range states
         let pre_state_provider = self
@@ -138,11 +156,22 @@ where
         })
     }
 
-    fn execute_blocks_for_accessed_state(
+    /// Read the per-block accessed-state records produced by the
+    /// `AccessedStateGenerator` exex for the block range and union them
+    /// into a single `AccumulatedState`. Also returns the alloy `Block`
+    /// objects (still read from reth, just no execution).
+    ///
+    /// Bridges async sled reads to the sync caller via
+    /// [`Handle::current().block_on`]. The caller must be inside a Tokio
+    /// runtime context (e.g. invoked via `task::spawn_blocking` from an
+    /// async task) — which the chunk-builder's `seal_batch` is.
+    fn read_blocks_and_accessed_state(
         &self,
         start_block: u64,
         end_block: u64,
     ) -> Result<(AccumulatedState, Vec<Block>)> {
+        let handle = Handle::try_current()
+            .map_err(|e| eyre!("no tokio runtime available for accessed-state reads: {e}"))?;
         let mut acc = AccumulatedState::default();
         let mut blocks = Vec::with_capacity((end_block - start_block + 1) as usize);
 
@@ -151,21 +180,53 @@ where
                 .provider_factory
                 .block_by_number(blk_num)?
                 .ok_or_else(|| eyre!("block {} not found", blk_num))?;
+            let block_hash = block.header.hash_slow();
+            let block_hash_storage_key = Hash::from(block_hash.0);
 
-            let sealed = block.clone().seal_slow();
-            let recovered = sealed.try_recover()?;
+            let record = handle
+                .block_on(
+                    self.accessed_state_store
+                        .get_block_accessed_state(block_hash_storage_key),
+                )
+                .map_err(|e| eyre!("get_block_accessed_state({block_hash:?}): {e}"))?
+                .ok_or_else(|| {
+                    eyre!(
+                        "no accessed-state record for block {} ({block_hash:?}) — exex \
+                         AccessedStateGenerator did not run for this block",
+                        blk_num,
+                    )
+                })?;
 
-            // Get history at parent block for this execution
-            let history = self
-                .provider_factory
-                .history_by_block_number(blk_num.saturating_sub(1))?;
-            let cache_provider = CacheDBProvider::new(history);
-            let cache_db = CacheDB::new(&cache_provider);
+            // Resolve bytecodes from the content-addressed store and
+            // merge into the accumulator.
+            for code_hash_bytes in &record.bytecode_hashes {
+                let code_hash_storage_key = Hash::from(*code_hash_bytes);
+                let code = handle
+                    .block_on(
+                        self.accessed_state_store
+                            .get_bytecode(code_hash_storage_key),
+                    )
+                    .map_err(|e| eyre!("get_bytecode({code_hash_storage_key:?}): {e}"))?
+                    .ok_or_else(|| {
+                        eyre!(
+                            "no bytecode for code hash {code_hash_storage_key:?} referenced \
+                             by block {block_hash:?}",
+                        )
+                    })?;
+                acc.bytecodes
+                    .entry(B256::from(*code_hash_bytes))
+                    .or_insert_with(|| Bytecode::new_raw(code.into()));
+            }
+            for stored_account in &record.accounts {
+                let address = Address::from(stored_account.address);
+                let entry = acc.accounts.entry(address).or_default();
+                for slot_bytes in &stored_account.storage_slots {
+                    entry.insert(U256::from_be_bytes(*slot_bytes));
+                }
+            }
+            acc.block_idxs
+                .extend(record.ancestor_block_numbers.iter().copied());
 
-            let executor = BasicBlockExecutor::new(self.evm_config.clone(), cache_db);
-            let _output = executor.execute(&recovered)?;
-
-            acc.merge(&cache_provider.get_accessed_state());
             blocks.push(block);
         }
 
@@ -260,22 +321,4 @@ struct AccumulatedState {
     accounts: HashMap<Address, HashSet<StorageKey>>,
     bytecodes: HashMap<B256, Bytecode>,
     block_idxs: HashSet<u64>,
-}
-
-impl AccumulatedState {
-    fn merge(&mut self, other: &AccessedState) {
-        for (addr, slots) in other.accessed_accounts() {
-            self.accounts
-                .entry(*addr)
-                .or_default()
-                .extend(slots.iter().copied());
-        }
-        self.bytecodes.extend(
-            other
-                .accessed_contracts()
-                .iter()
-                .map(|(k, v)| (*k, v.clone())),
-        );
-        self.block_idxs.extend(other.accessed_block_idxs());
-    }
 }
