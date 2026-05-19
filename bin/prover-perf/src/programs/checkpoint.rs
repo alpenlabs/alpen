@@ -17,7 +17,7 @@ use strata_identifiers::Buf64;
 use strata_ledger_types::IStateAccessor;
 use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
 use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
-use strata_ol_stf::test_utils::{build_empty_chain, create_test_genesis_state};
+use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
 use strata_proofimpl_checkpoint::program::{CheckpointProgram, CheckpointProverInput};
 use tracing::info;
 use zkaleido::{ExecutionSummary, ZkVmHost, ZkVmProgram};
@@ -26,7 +26,7 @@ const SLOTS_PER_EPOCH: u64 = 9;
 const NUM_BLOCKS: usize = 10;
 
 fn prepare_checkpoint_input() -> CheckpointProverInput {
-    let mut state = create_test_genesis_state();
+    let mut state = make_genesis_state();
     let mut blocks = build_empty_chain(&mut state, NUM_BLOCKS, SLOTS_PER_EPOCH)
         .expect("build_empty_chain should succeed");
 
@@ -34,7 +34,7 @@ fn prepare_checkpoint_input() -> CheckpointProverInput {
     let parent = blocks.remove(0).into_header();
 
     // Rebuild start_state: execute just the genesis block to get state after genesis.
-    let mut start_state = create_test_genesis_state();
+    let mut start_state = make_genesis_state();
     let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH)
         .expect("build_empty_chain should succeed");
 

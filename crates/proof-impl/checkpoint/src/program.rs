@@ -93,19 +93,19 @@ mod tests {
     use strata_ol_chain_types_new::{OLBlock, SignedOLBlockHeader};
     use strata_ol_da::{GlobalStateDiff, LedgerDiff, OLDaPayloadV1, StateDiff};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_stf::test_utils::{build_empty_chain, create_test_genesis_state};
+    use strata_ol_stf::test_utils::{build_empty_chain, make_genesis_state};
 
     use crate::program::{CheckpointProgram, CheckpointProverInput};
 
     fn prepare_input() -> CheckpointProverInput {
         const SLOTS_PER_EPOCH: u64 = 9;
 
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let mut blocks = build_empty_chain(&mut state, 10, SLOTS_PER_EPOCH).unwrap();
         let parent = blocks.remove(0).into_header();
 
         // Start state is after the genesis block
-        let mut start_state = create_test_genesis_state();
+        let mut start_state = make_genesis_state();
         let _ = build_empty_chain(&mut start_state, 1, SLOTS_PER_EPOCH).unwrap();
 
         let blocks: Vec<OLBlock> = blocks

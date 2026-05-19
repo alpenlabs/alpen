@@ -33,14 +33,14 @@ impl<S: IStateAccessorMut> DaScheme<S> for OLDaSchemeV1 {
 mod tests {
     use strata_da_framework::DaCounter;
     use strata_ledger_types::IStateAccessor;
-    use strata_ol_stf::test_utils::create_test_genesis_state;
+    use strata_ol_stf::test_utils::make_genesis_state;
 
     use super::*;
     use crate::{GlobalStateDiff, LedgerDiff, StateDiff};
 
     #[test]
     fn test_ol_da_scheme_v1_apply_updates_global_slot() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let start_slot = state.cur_slot();
 
         let diff = StateDiff::new(

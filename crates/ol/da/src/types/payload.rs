@@ -312,7 +312,7 @@ mod tests {
     use strata_identifiers::AccountSerial;
     use strata_ledger_types::{IStateAccessor, IStateAccessorMut, NewAccountData};
     use strata_ol_state_support_types::MemoryStateBaseLayer;
-    use strata_ol_stf::test_utils::create_test_genesis_state;
+    use strata_ol_stf::test_utils::make_genesis_state;
     use strata_predicate::PredicateKey;
 
     use super::*;
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_poll_context_rejects_existing_new_account() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let account_id = test_account_id(2);
         let new_acct = NewAccountData::new(BitcoinAmount::from_sat(10), NewAccountTypeState::Empty);
         state
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_apply_updates_balance() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let account_id = test_account_id(3);
         let new_acct =
             NewAccountData::new(BitcoinAmount::from_sat(1_000), NewAccountTypeState::Empty);
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_apply_decreases_balance() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let account_id = test_account_id(30);
         let new_acct =
             NewAccountData::new(BitcoinAmount::from_sat(2_000), NewAccountTypeState::Empty);
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_apply_updates_limbo_funds() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         assert_eq!(state.limbo_funds(), BitcoinAmount::from_sat(0));
 
         let global_diff = GlobalStateDiff::new(
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_ol_state_diff_apply_snark_seqno() {
-        let mut state = create_test_genesis_state();
+        let mut state = make_genesis_state();
         let account_id = test_account_id(4);
         let new_acct = NewAccountData::new(
             BitcoinAmount::from_sat(500),

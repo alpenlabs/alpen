@@ -611,7 +611,7 @@ mod tests {
     use strata_ol_state_support_types::MemoryStateBaseLayer;
     use strata_ol_state_types::OLState;
     use strata_ol_stf::{
-        test_utils::{create_test_genesis_state, execute_block},
+        test_utils::{execute_block, make_genesis_state},
         BlockComponents, BlockInfo, CompletedBlock,
     };
     use strata_predicate::PredicateKey;
@@ -954,7 +954,7 @@ mod tests {
     }
 
     fn execute_test_genesis() -> (ExecutedBlock, MemoryStateBaseLayer) {
-        let mut genesis_state = create_test_genesis_state();
+        let mut genesis_state = make_genesis_state();
         let genesis_manifest = AsmManifest::new(
             1,
             L1BlockId::from(Buf32::zero()),
@@ -1404,7 +1404,7 @@ mod tests {
     #[tokio::test]
     async fn stub_storage_round_trips_executed_blocks_and_epochs() {
         let storage = StubFcmStorage::new();
-        let state = create_test_genesis_state().state().clone();
+        let state = make_genesis_state().state().clone();
         let block = make_storage_block(0, OLBlockId::from(Buf32::zero()));
         let blkid = block.header().compute_blkid();
         let commitment = OLBlockCommitment::new(block.header().slot(), blkid);
@@ -1461,14 +1461,12 @@ mod tests {
 
         ctx.storage().put_executed_block(
             genesis,
-            create_test_genesis_state().state().clone(),
+            make_genesis_state().state().clone(),
             BlockStatus::Valid,
         );
         ctx.storage().put_ol_block(block);
-        ctx.storage().put_toplevel_ol_state(
-            block_commitment,
-            create_test_genesis_state().state().clone(),
-        );
+        ctx.storage()
+            .put_toplevel_ol_state(block_commitment, make_genesis_state().state().clone());
         ctx.storage().put_canonical_epoch_commitment(genesis_epoch);
 
         let mut fcm_state = init_fcm_service_state(PredicateKey::always_accept(), ctx.clone())

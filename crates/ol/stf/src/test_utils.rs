@@ -1630,7 +1630,7 @@ impl ManifestMmrTracker {
     /// Creates a tracker matching the test genesis state (genesis L1 height 0).
     ///
     /// This prefills the tracked MMR with a single sentinel leaf so its index
-    /// space lines up with `create_test_genesis_state`'s prefilled state MMR.
+    /// space lines up with `make_genesis_state`'s prefilled state MMR.
     pub fn new() -> Self {
         Self::with_genesis_l1_height(0)
     }
