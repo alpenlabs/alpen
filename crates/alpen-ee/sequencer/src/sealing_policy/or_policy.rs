@@ -1,6 +1,6 @@
 //! Combinators for composing batch policies and sealing strategies.
 //!
-//! [`ComposedPolicy`] pairs two [`BatchPolicy`] types into one whose block data
+//! [`ComposedPolicy`] pairs two [`AccumulationPolicy`] types into one whose block data
 //! and accumulated value are tuples of the inner types. Sealing combinators
 //! like [`OrSealing`] define how the two halves are checked.
 //! [`ComposedDataProvider`] fetches block data from both inner providers.
@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 
-use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
+use super::policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy};
 
 /// Composed batch policy that pairs two inner policies.
 ///
@@ -18,9 +18,9 @@ use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
 /// `(A::AccumulatedValue, B::AccumulatedValue)`. Each half is accumulated
 /// independently.
 #[derive(Debug)]
-pub struct ComposedPolicy<A: BatchPolicy, B: BatchPolicy>(PhantomData<(A, B)>);
+pub struct ComposedPolicy<A: AccumulationPolicy, B: AccumulationPolicy>(PhantomData<(A, B)>);
 
-impl<A: BatchPolicy, B: BatchPolicy> BatchPolicy for ComposedPolicy<A, B> {
+impl<A: AccumulationPolicy, B: AccumulationPolicy> AccumulationPolicy for ComposedPolicy<A, B> {
     type BlockData = (A::BlockData, B::BlockData);
     type AccumulatedValue = (A::AccumulatedValue, B::AccumulatedValue);
 
@@ -35,7 +35,7 @@ impl<A: BatchPolicy, B: BatchPolicy> BatchPolicy for ComposedPolicy<A, B> {
 /// Both `SA` and `SB` operate on their respective projected half of the
 /// composed accumulated value.
 #[derive(Debug)]
-pub struct OrSealing<A: BatchPolicy, B: BatchPolicy, SA, SB> {
+pub struct OrSealing<A: AccumulationPolicy, B: AccumulationPolicy, SA, SB> {
     a: SA,
     b: SB,
     _marker: PhantomData<(A, B)>,
@@ -43,10 +43,10 @@ pub struct OrSealing<A: BatchPolicy, B: BatchPolicy, SA, SB> {
 
 impl<A, B, SA, SB> OrSealing<A, B, SA, SB>
 where
-    A: BatchPolicy,
-    B: BatchPolicy,
-    SA: BatchSealingPolicy<A>,
-    SB: BatchSealingPolicy<B>,
+    A: AccumulationPolicy,
+    B: AccumulationPolicy,
+    SA: SealingPolicy<A>,
+    SB: SealingPolicy<B>,
 {
     /// Create a new OR-combined sealing policy.
     pub fn new(a: SA, b: SB) -> Self {
@@ -58,12 +58,12 @@ where
     }
 }
 
-impl<A, B, SA, SB> BatchSealingPolicy<ComposedPolicy<A, B>> for OrSealing<A, B, SA, SB>
+impl<A, B, SA, SB> SealingPolicy<ComposedPolicy<A, B>> for OrSealing<A, B, SA, SB>
 where
-    A: BatchPolicy,
-    B: BatchPolicy,
-    SA: BatchSealingPolicy<A>,
-    SB: BatchSealingPolicy<B>,
+    A: AccumulationPolicy,
+    B: AccumulationPolicy,
+    SA: SealingPolicy<A>,
+    SB: SealingPolicy<B>,
 {
     fn would_exceed(
         &self,
@@ -76,7 +76,7 @@ where
 
 /// Composed data provider that fetches block data from two inner providers.
 #[derive(Debug)]
-pub struct ComposedDataProvider<A: BatchPolicy, B: BatchPolicy, DA, DB> {
+pub struct ComposedDataProvider<A: AccumulationPolicy, B: AccumulationPolicy, DA, DB> {
     a: DA,
     b: DB,
     _marker: PhantomData<(A, B)>,
@@ -84,8 +84,8 @@ pub struct ComposedDataProvider<A: BatchPolicy, B: BatchPolicy, DA, DB> {
 
 impl<A, B, DA, DB> ComposedDataProvider<A, B, DA, DB>
 where
-    A: BatchPolicy,
-    B: BatchPolicy,
+    A: AccumulationPolicy,
+    B: AccumulationPolicy,
     DA: BlockDataProvider<A>,
     DB: BlockDataProvider<B>,
 {
@@ -102,8 +102,8 @@ where
 #[async_trait]
 impl<A, B, DA, DB> BlockDataProvider<ComposedPolicy<A, B>> for ComposedDataProvider<A, B, DA, DB>
 where
-    A: BatchPolicy,
-    B: BatchPolicy,
+    A: AccumulationPolicy,
+    B: AccumulationPolicy,
     DA: BlockDataProvider<A>,
     DB: BlockDataProvider<B>,
 {
@@ -120,10 +120,10 @@ where
 mod tests {
     use super::*;
     use crate::{
-        batch_builder::{
-            block_count::{BlockCountData, BlockCountPolicy, FixedBlockCountSealing},
-            gas_limit::{GasBlockData, GasLimitPolicy, MaxGasSealing},
-            Accumulator,
+        sealing_policy::{
+            block_count_policy::{BlockCountData, BlockCountPolicy, FixedBlockCountSealing},
+            gas_limit_policy::{GasBlockData, GasLimitPolicy, MaxGasSealing},
+            policy::Accumulator,
         },
         test_utils::*,
     };
@@ -206,7 +206,7 @@ mod tests {
         assert!(acc.would_exceed(&sealing, &block_data(10)));
 
         // Drain (seal the batch)
-        let (inner, last) = acc.drain_for_batch();
+        let (inner, last) = acc.drain();
         assert_eq!(inner.len(), 1);
         assert_eq!(last, test_blocknumhash(2));
 

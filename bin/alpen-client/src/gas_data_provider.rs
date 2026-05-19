@@ -2,7 +2,10 @@
 //! batch sealing.
 
 use alloy_consensus::BlockHeader;
-use alpen_ee_sequencer::{BlockDataProvider, GasBlockData, GasLimitPolicy};
+use alpen_ee_sequencer::sealing_policy::{
+    gas_limit_policy::{GasBlockData, GasLimitPolicy},
+    BlockDataProvider,
+};
 use async_trait::async_trait;
 use reth_provider::HeaderProvider;
 use strata_acct_types::Hash;

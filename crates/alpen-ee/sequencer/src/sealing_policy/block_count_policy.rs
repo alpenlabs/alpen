@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use strata_acct_types::Hash;
 
-use super::{BatchPolicy, BatchSealingPolicy, BlockDataProvider};
+use super::policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy};
 
 /// Block-count based batching policy.
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub struct BlockCountValue {
     pub count: u64,
 }
 
-impl BatchPolicy for BlockCountPolicy {
+impl AccumulationPolicy for BlockCountPolicy {
     type BlockData = BlockCountData;
     type AccumulatedValue = BlockCountValue;
 
@@ -55,7 +55,7 @@ impl FixedBlockCountSealing {
     }
 }
 
-impl BatchSealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
+impl SealingPolicy<BlockCountPolicy> for FixedBlockCountSealing {
     fn would_exceed(&self, value: &BlockCountValue, _block_data: &BlockCountData) -> bool {
         // Each block contributes exactly 1 to the count.
         value.count + 1 > self.max_blocks
@@ -79,7 +79,7 @@ impl BlockDataProvider<BlockCountPolicy> for BlockCountDataProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{batch_builder::Accumulator, test_utils::*};
+    use crate::{sealing_policy::Accumulator, test_utils::*};
 
     #[test]
     fn test_would_not_exceed_when_empty() {

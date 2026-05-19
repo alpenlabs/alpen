@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use alpen_ee_common::{BatchStorage, BlockNumHash};
 use eyre::Result;
 
-use super::{Accumulator, BatchPolicy};
+use crate::sealing_policy::{AccumulationPolicy, Accumulator};
 
 /// State for the batch builder task.
 ///
@@ -13,7 +13,7 @@ use super::{Accumulator, BatchPolicy};
 /// the pending batch. This state is not persisted; it is rebuilt from
 /// [`BatchStorage`] on restart.
 #[derive(Debug)]
-pub struct BatchBuilderState<P: BatchPolicy> {
+pub struct BatchBuilderState<P: AccumulationPolicy> {
     /// Hash of the last block in the most recent sealed batch (or genesis if no batches).
     prev_batch_end: BlockNumHash,
     /// Index for the next batch to be created.
@@ -24,7 +24,7 @@ pub struct BatchBuilderState<P: BatchPolicy> {
     pending_blocks: VecDeque<BlockNumHash>,
 }
 
-impl<P: BatchPolicy> BatchBuilderState<P> {
+impl<P: AccumulationPolicy> BatchBuilderState<P> {
     /// Initialize state from the last sealed batch.
     ///
     /// Used when resuming from storage where batches already exist.
@@ -107,7 +107,7 @@ impl<P: BatchPolicy> BatchBuilderState<P> {
 ///
 /// If batches exist in storage, resumes from the last batch.
 /// Otherwise, starts fresh from genesis.
-pub async fn init_batch_builder_state<P: BatchPolicy>(
+pub async fn init_batch_builder_state<P: AccumulationPolicy>(
     batch_storage: &impl BatchStorage,
 ) -> Result<BatchBuilderState<P>> {
     let (batch, _) = batch_storage
@@ -123,7 +123,7 @@ pub async fn init_batch_builder_state<P: BatchPolicy>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{batch_builder::block_count::BlockCountPolicy, test_utils::*};
+    use crate::{sealing_policy::block_count_policy::BlockCountPolicy, test_utils::*};
 
     #[test]
     fn test_from_last_batch() {

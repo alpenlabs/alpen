@@ -488,8 +488,12 @@ fn main() {
                 use alpen_ee_sequencer::{
                     backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
                     create_batch_builder, create_batch_lifecycle_task,
-                    create_update_submitter_task, BlockCountDataProvider, ComposedDataProvider,
-                    FixedBlockCountSealing, MaxGasSealing, OrSealing,
+                    create_update_submitter_task,
+                    sealing_policy::{
+                        block_count_policy::{BlockCountDataProvider, FixedBlockCountSealing},
+                        gas_limit_policy::MaxGasSealing,
+                        or_policy::{ComposedDataProvider, OrSealing},
+                    },
                 };
 
                 use crate::gas_data_provider::RethGasDataProvider;
