@@ -2,8 +2,8 @@
 # Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind for DA.
 #
 # Usage:
-#   ./init-alpen-client-keys.sh
-#   docker compose --env-file .env.alpen-client -f docker-compose-eest.yml up
+#   ./init-eest-keys.sh
+#   docker compose --env-file .env.alpen -f docker-compose-eest.yml up
 
 services:
 
@@ -38,52 +38,33 @@ services:
       bitcoind:
         condition: service_healthy
     command:
-      - --sequencer
-      - --sequencer-pubkey
-      - ${SEQUENCER_PUBKEY}
-      - --dummy-ol-client
-      - --custom-chain
-      - ${CHAIN_SPEC:-dev}
-      - --datadir
-      - /app/data
       - --p2p-secret-key
       - /app/keys/seq-p2p.hex
-      - --addr
-      - "0.0.0.0"
       - --port
       - "30303"
       - --nat
       - none
       - --disable-discovery
-      - --http
-      - --http.addr
-      - "0.0.0.0"
-      - --http.port
-      - "8545"
-      - --http.api
-      - eth,net,web3,txpool,admin,debug
-      - --ee-da-magic-bytes
-      - ${EE_DA_MAGIC_BYTES:-ALPN}
-      - --btc-rpc-url
-      - http://bitcoind:${BITCOIND_RPC_PORT:-18443}
-      - --btc-rpc-user
-      - ${BITCOIND_RPC_USER:-rpcuser}
-      - --btc-rpc-password
-      - ${BITCOIND_RPC_PASSWORD:-rpcpassword}
-      - --l1-reorg-safe-depth
-      - "${L1_REORG_SAFE_DEPTH:-1}"
-      - --genesis-l1-height
-      - "${GENESIS_L1_HEIGHT:-101}"
-      - --batch-sealing-block-count
-      - "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      - --dev-native-prover
       - --color
       - never
     environment:
       SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
+      SEQUENCER_PUBKEY: ${SEQUENCER_PUBKEY}
+      DUMMY_OL_CLIENT: "1"
+      CHAIN_SPEC: ${CHAIN_SPEC:-dev}
+      BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      EE_DA_MAGIC_BYTES: ${EE_DA_MAGIC_BYTES:-ALPN}
+      L1_REORG_SAFE_DEPTH: "${L1_REORG_SAFE_DEPTH:-1}"
+      GENESIS_L1_HEIGHT: "${GENESIS_L1_HEIGHT:-101}"
+      BATCH_SEALING_BLOCK_COUNT: "${BATCH_SEALING_BLOCK_COUNT:-5}"
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "8545:8545"
     volumes:
+      - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
       - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:

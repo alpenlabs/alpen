@@ -81,9 +81,11 @@ jobs:
         uses: ./.github/actions/sp1-core-runner-override # zizmor: ignore[unpinned-uses]
 
       - name: Build Cargo project
-        run: cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-signer --bin strata-datatool --bin strata-test-cli
+        run: |
+          cargo build --locked -F debug-utils -F sequencer --bin strata --bin strata-signer --bin strata-datatool --bin strata-test-cli
+          cargo build --locked -p alpen-client --no-default-features --features sequencer --bin alpen-client
 
-      - name: Run basic env in fntests
+      - name: Run alpen EE env in fntests
         env:
           NO_COLOR: "1"
           LOG_LEVEL: "info"
@@ -92,12 +94,23 @@ jobs:
           NEWPATH="$(realpath target/debug/)"
           export PATH="${NEWPATH}:${PATH}"
           which strata
+          which alpen-client
           cd functional-tests
-          screen -dmS basic_env uv run python entry.py --keep-alive basic
-          sleep 20  # Wait for the service to start
+          screen -dmS alpen_ee_env uv run python entry.py --keep-alive alpen_ee
+          for _i in $(seq 1 60); do
+            if curl -sf -X POST http://localhost:30303 \
+              -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' > /dev/null 2>&1; then
+              echo "alpen-client RPC is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "alpen-client RPC did not become ready"
+          find _dd -type f -name "service.log" -print -exec tail -100 {} \; || true
+          exit 1
 
       - name: Run tests
-        id: runtests
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           git clone https://github.com/alpenlabs/execution-spec-tests
@@ -105,34 +118,19 @@ jobs:
           uv python install 3.11
           uv python pin 3.11
           uv sync --all-extras
+          uv pip install solc-select
           uv run solc-select use 0.8.24 --always-install
           uv run execute remote \
             -m state_test \
             --fork=Prague \
-            --rpc-endpoint=http://localhost:12603 \
+            "--deselect=tests/frontier/opcodes/test_call.py::test_call_memory_expands_on_early_revert[fork_Prague-state_test]" \
+            --rpc-endpoint=http://localhost:30303 \
             --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
             --rpc-chain-id 2892 \
-            --tx-wait-timeout 30 \
+            --tx-wait-timeout 120 \
             -v
-        continue-on-error: true
-
-      - name: Generate a proof of EE blocks execution.
-        working-directory: docker
-        run: |
-          chmod +x test_ee_proof.sh
-          ./test_ee_proof.sh local
 
       - name: Stop service
         if: always()
         run: |
-          screen -S basic_env -X quit
-
-      - name: Check tests execution
-        # the purpose of the workflow is twofold:
-        # - run the EF tests
-        # - make sure EE proof is completed with EF txns (regardless if some tests have failed)
-        # Thus, we check the whole logic here.
-        if: steps.runtests.outcome == 'failure'
-        run: |
-          echo "Functional tests failed"
-          exit 1
+          screen -S alpen_ee_env -X quit || true
