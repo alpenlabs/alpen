@@ -65,6 +65,7 @@ class StrataFactory(flexitest.Factory):
         admin_confirmation_depth: int | None = None,
         env: dict[str, str] | None = None,
         ol_block_time_ms: int | None = None,
+        alpen_chain_config: str | Path | None = None,
         **kwargs,
     ) -> CreateNodeResult:
         """
@@ -81,12 +82,12 @@ class StrataFactory(flexitest.Factory):
             admin_confirmation_depth: Optional admin subprotocol confirmation depth.
             env: Additional process environment variables.
             ol_block_time_ms: Optional sequencer OL block time override.
+            alpen_chain_config: Optional EVM chain spec used for Alpen EE genesis state.
         """
         # Ensured by `with_ectx` decorator. Don't like this though.
         ctx: flexitest.EnvContext = kwargs["ctx"]
 
-        if config_overrides is None:
-            config_overrides = dict()
+        config_overrides = dict() if config_overrides is None else dict(config_overrides)
 
         mode = "sequencer" if is_sequencer else "fullnode"
         datadir = Path(ctx.make_service_dir(f"{ServiceType.Strata}_{mode}"))
@@ -115,11 +116,18 @@ class StrataFactory(flexitest.Factory):
             bitcoind=bconfig,
             client=client_config,
             logging=logging_config,
-            prover=ProverConfig(backend="native"),
+            prover=ProverConfig(backend=os.getenv("ALPEN_OL_PROVER_BACKEND", "native")),
         )
         config_path = datadir / "config.toml"
         with open(config_path, "w") as f:
-            f.write(config.as_toml_string())
+            config_text = config.as_toml_string()
+            if deadline := os.getenv("ALPEN_SP1_PROOF_DEADLINE_SECS"):
+                config_text = config_text.replace(
+                    "[prover]\n",
+                    f"[prover]\nsp1_proof_deadline_secs = {deadline}\n",
+                    1,
+                )
+            f.write(config_text)
 
         sequencer_config_path = datadir / "sequencer.toml"
         if is_sequencer:
@@ -146,7 +154,12 @@ class StrataFactory(flexitest.Factory):
             ol_params_path = datadir / "ol-params.json"
             ol_params_path.write_text(ol_params.as_json_string())
         else:
-            ol_params_path = generate_ol_params(datadir, bconfig, genesis_l1_height)
+            ol_params_path = generate_ol_params(
+                datadir,
+                bconfig,
+                genesis_l1_height,
+                alpen_chain_config=alpen_chain_config,
+            )
 
         # Generate ASM params via datatool (computes correct genesis_ol_blkid from OL params).
         asm_params_path = generate_asm_params(

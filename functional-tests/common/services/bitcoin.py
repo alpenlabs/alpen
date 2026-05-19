@@ -18,6 +18,11 @@ class BitcoinProps(TypedDict):
 
     p2p_port: int
     rpc_port: int
+    zmq_hashblock: int
+    zmq_hashtx: int
+    zmq_rawblock: int
+    zmq_rawtx: int
+    zmq_sequence: int
     rpc_user: str
     rpc_password: str
     rpc_url: str
