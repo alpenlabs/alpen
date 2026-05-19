@@ -29,6 +29,7 @@ class TestCheckpointFinalized(StrataNodeTest):
         # Wait for RPC to be ready
         logger.info("Waiting for Strata RPC to be ready...")
         strata_rpc = strata.wait_for_rpc_ready(timeout=20)
+        btc_rpc = bitcoin.create_rpc()
 
         # Get initial sync status
         initial_status = strata.get_sync_status(strata_rpc)
@@ -64,6 +65,12 @@ class TestCheckpointFinalized(StrataNodeTest):
             )
             assert l1_ref["wtxid"] != ZERO_HASH, (
                 f"epoch {target_epoch} l1_reference has zero wtxid: {l1_ref}"
+            )
+
+            # Check if the tx exists
+            tx = btc_rpc.proxy.getrawtransaction(l1_ref["txid"], 1)
+            assert tx.get("txid") == l1_ref["txid"], (
+                f"epoch {target_epoch} txid {l1_ref['txid']} mismatched on-chain: {tx}"
             )
 
         return True
