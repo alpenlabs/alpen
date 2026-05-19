@@ -2,7 +2,8 @@
 
 use std::{fs::read_to_string, path::PathBuf};
 
-use alloy_consensus::Header;
+use alloy_consensus::{Header, Sealable};
+use revm::DatabaseRef;
 use revm_primitives::alloy_primitives::{Address, B256, Bloom, Bytes, U256};
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::Deserialize;
@@ -59,6 +60,44 @@ fn create_test_header() -> Header {
         excess_blob_gas: None,
         parent_beacon_block_root: None,
         requests_hash: None,
+    }
+}
+
+fn create_test_header_at(number: u64, parent_hash: B256) -> Header {
+    let mut header = create_test_header();
+    header.parent_hash = parent_hash;
+    header.number = number;
+    header.timestamp += number;
+    header.extra_data = Bytes::from(number.to_be_bytes().to_vec());
+    header
+}
+
+fn create_test_ancestor_headers() -> Vec<Header> {
+    let parent = create_test_header_at(100, B256::from([42u8; 32]));
+    let child = create_test_header_at(101, parent.clone().seal_slow().hash());
+    let grandchild = create_test_header_at(102, child.clone().seal_slow().hash());
+
+    vec![parent, child, grandchild]
+}
+
+fn assert_block_hashes_match_headers(partial_state: &EvmPartialState, headers: &[Header]) {
+    let witness_db = partial_state.create_witness_db();
+
+    assert_eq!(partial_state.block_hashes().len(), headers.len());
+
+    for header in headers {
+        let sealed = header.clone().seal_slow();
+
+        assert_eq!(
+            partial_state.block_hashes().get(&header.number).copied(),
+            Some(sealed.hash())
+        );
+        assert_eq!(
+            witness_db
+                .block_hash_ref(header.number)
+                .expect("block hash lookup must succeed"),
+            sealed.hash()
+        );
     }
 }
 
@@ -216,6 +255,64 @@ fn test_evm_partial_state_codec_roundtrip() {
 
     // Verify ancestor headers match
     assert_eq!(decoded.ancestor_headers(), partial_state.ancestor_headers());
+}
+
+#[test]
+fn test_evm_partial_state_block_hashes_include_single_ancestor() {
+    let witness = load_witness_test_data();
+    let ancestor_headers = vec![
+        create_test_ancestor_headers()
+            .into_iter()
+            .next()
+            .expect("test ancestor"),
+    ];
+    let partial_state =
+        EvmPartialState::new(witness.parent_state, vec![], ancestor_headers.clone());
+
+    assert_block_hashes_match_headers(&partial_state, &ancestor_headers);
+}
+
+#[test]
+fn test_evm_partial_state_block_hashes_include_all_ancestors() {
+    let witness = load_witness_test_data();
+    let ancestor_headers = create_test_ancestor_headers();
+    let partial_state =
+        EvmPartialState::new(witness.parent_state, vec![], ancestor_headers.clone());
+
+    assert_block_hashes_match_headers(&partial_state, &ancestor_headers);
+}
+
+#[test]
+fn test_evm_partial_state_block_hashes_survive_codec_roundtrip() {
+    let witness = load_witness_test_data();
+    let ancestor_headers = create_test_ancestor_headers();
+    let partial_state =
+        EvmPartialState::new(witness.parent_state, vec![], ancestor_headers.clone());
+
+    let encoded = encode_to_vec(&partial_state).expect("encode failed");
+    let decoded: EvmPartialState = decode_buf_exact(&encoded).expect("decode failed");
+
+    assert_block_hashes_match_headers(&decoded, &ancestor_headers);
+}
+
+#[test]
+#[should_panic(expected = "Invalid header block number")]
+fn test_evm_partial_state_rejects_non_contiguous_ancestor_headers() {
+    let witness = load_witness_test_data();
+    let parent = create_test_header_at(100, B256::from([42u8; 32]));
+    let child = create_test_header_at(102, parent.clone().seal_slow().hash());
+
+    EvmPartialState::new(witness.parent_state, vec![], vec![parent, child]);
+}
+
+#[test]
+#[should_panic(expected = "Invalid header parent hash")]
+fn test_evm_partial_state_rejects_invalid_ancestor_parent_hash() {
+    let witness = load_witness_test_data();
+    let mut ancestor_headers = create_test_ancestor_headers();
+    ancestor_headers[1].parent_hash = B256::from([99u8; 32]);
+
+    EvmPartialState::new(witness.parent_state, vec![], ancestor_headers);
 }
 
 /// Verifies that a codec-roundtripped EvmPartialState can still execute blocks.

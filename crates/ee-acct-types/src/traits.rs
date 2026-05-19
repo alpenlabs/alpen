@@ -106,6 +106,20 @@ pub trait ExecutionEnvironment: Sized + 'static {
         state: &mut Self::PartialState,
         wb: &Self::WriteBatch,
     ) -> EnvResult<()>;
+
+    /// Updates partial state with data derived from a successfully executed block.
+    ///
+    /// Execution environments that expose per-block lookups to later blocks in
+    /// the same chunk must override this method. The default no-op is only safe
+    /// when no post-block metadata, such as block hashes, is needed by subsequent
+    /// executions.
+    fn update_partial_state_after_block(
+        &self,
+        _state: &mut Self::PartialState,
+        _header: &<Self::Block as ExecBlock>::Header,
+    ) -> EnvResult<()> {
+        Ok(())
+    }
 }
 
 /// Block assembly trait for constructing complete headers from execution outputs.

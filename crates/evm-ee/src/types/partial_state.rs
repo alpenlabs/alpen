@@ -22,7 +22,7 @@ use crate::{
 /// Partial state for EVM block execution.
 ///
 /// Contains the witness data needed to execute a block: the sparse Merkle Patricia Trie
-/// state, contract bytecodes, and ancestor block headers for BLOCKHASH opcode support.
+/// state, contract bytecodes, and ancestor block headers for `BLOCKHASH` opcode support.
 ///
 /// This struct pre-computes expensive operations (header hashing, block hash map) during
 /// construction to avoid repeated work when preparing witness databases.
@@ -36,7 +36,7 @@ pub struct EvmPartialState {
     /// Ancestor block headers with pre-computed hashes, indexed by block number.
     /// Headers are sealed once during construction to avoid repeated hash computations.
     ancestor_headers: BTreeMap<u64, Sealed<Header>>,
-    /// Pre-computed block hash lookup map for BLOCKHASH opcode.
+    /// Pre-computed block hash lookup map for `BLOCKHASH` opcode.
     /// Built once during construction from sealed ancestor headers.
     block_hashes: HashMap<u64, B256>,
 }
@@ -75,31 +75,7 @@ impl EvmPartialState {
             })
             .collect();
 
-        // Validate header chain and build block_hashes map once
-        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
-        for (child_sealed, parent_sealed) in ancestor_headers.values().tuple_windows() {
-            // Validate block number continuity
-            assert_eq!(
-                parent_sealed.number() + 1,
-                child_sealed.number(),
-                "Invalid header block number: expected {}, got {}",
-                parent_sealed.number() + 1,
-                child_sealed.number()
-            );
-
-            // Validate parent hash matches
-            let parent_hash = parent_sealed.hash();
-            assert_eq!(
-                parent_hash,
-                child_sealed.parent_hash(),
-                "Invalid header parent hash: expected {}, got {}",
-                parent_hash,
-                child_sealed.parent_hash()
-            );
-
-            // Insert parent's hash into block_hashes map
-            block_hashes.insert(parent_sealed.number(), child_sealed.parent_hash());
-        }
+        let block_hashes = build_block_hashes(&ancestor_headers);
 
         Self {
             ethereum_state,
@@ -146,7 +122,7 @@ impl EvmPartialState {
     /// Adds a newly executed block's header to the witness state.
     ///
     /// This is called after executing a block in a batch to make its hash
-    /// available for BLOCKHASH opcode in subsequent blocks.
+    /// available for `BLOCKHASH` opcode in subsequent blocks.
     // NOTE: not sure we we should be adding this in proof generation flow. Looks like we can
     // prepare all of this for whole batch while generating witness.
     pub fn add_executed_block(&mut self, header: Header) {
@@ -247,31 +223,7 @@ impl Codec for EvmPartialState {
             .map(|sealed| (sealed.number(), sealed))
             .collect();
 
-        // Validate header chain and build block_hashes map
-        let mut block_hashes: HashMap<u64, B256> = HashMap::with_hasher(Default::default());
-        for (child_sealed, parent_sealed) in ancestor_headers.values().tuple_windows() {
-            // Validate block number continuity
-            assert_eq!(
-                parent_sealed.number() + 1,
-                child_sealed.number(),
-                "Invalid header block number: expected {}, got {}",
-                parent_sealed.number() + 1,
-                child_sealed.number()
-            );
-
-            // Validate parent hash matches
-            let parent_hash = parent_sealed.hash();
-            assert_eq!(
-                parent_hash,
-                child_sealed.parent_hash(),
-                "Invalid header parent hash: expected {}, got {}",
-                parent_hash,
-                child_sealed.parent_hash()
-            );
-
-            // Insert parent's hash into block_hashes map
-            block_hashes.insert(parent_sealed.number(), child_sealed.parent_hash());
-        }
+        let block_hashes = build_block_hashes(&ancestor_headers);
 
         Ok(Self {
             ethereum_state,
@@ -280,4 +232,34 @@ impl Codec for EvmPartialState {
             block_hashes,
         })
     }
+}
+
+/// Validates ancestor header continuity and builds the `BLOCKHASH` lookup map.
+///
+/// The lookup map stores every ancestor block number with that header's own hash,
+/// matching EVM `BLOCKHASH(n)` semantics.
+fn build_block_hashes(ancestor_headers: &BTreeMap<u64, Sealed<Header>>) -> HashMap<u64, B256> {
+    for (parent_sealed, child_sealed) in ancestor_headers.values().tuple_windows() {
+        assert_eq!(
+            parent_sealed.number() + 1,
+            child_sealed.number(),
+            "Invalid header block number: expected {}, got {}",
+            parent_sealed.number() + 1,
+            child_sealed.number()
+        );
+
+        let parent_hash = parent_sealed.hash();
+        assert_eq!(
+            parent_hash,
+            child_sealed.parent_hash(),
+            "Invalid header parent hash: expected {}, got {}",
+            parent_hash,
+            child_sealed.parent_hash()
+        );
+    }
+
+    ancestor_headers
+        .values()
+        .map(|sealed_header| (sealed_header.number(), sealed_header.hash()))
+        .collect()
 }

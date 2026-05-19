@@ -32,6 +32,7 @@ pub fn process_block<E: ExecutionEnvironment>(
 
     // Merge the changes and return the outputs.
     ee.merge_write_into_state(state, exec_outp.write_batch())?;
+    ee.update_partial_state_after_block(state, eb.get_header())?;
 
     Ok(())
 }
