@@ -11,7 +11,7 @@ use strata_acct_types::Hash;
 use tokio::{sync::mpsc, time};
 use tracing::{debug, error, warn};
 
-use super::{ctx::BatchBuilderCtx, BatchBuilderState};
+use super::{ctx::BatchBuilderCtx, events::BatchBuilderEvent, BatchBuilderState};
 use crate::{
     batch_builder::reorg::{check_and_handle_reorg, ReorgReport},
     chunk_witness_task::ChunkExtractRequest,
@@ -244,15 +244,29 @@ where
         }
         ReorgReport::ShallowReorg => {
             // Shallow reorg. Pending blocks and accumulator reset.
-            // Latest batch has not changed.
-            // Continue execution with new state.
+            // Latest sealed batch has not changed.
+            emit_event(
+                &ctx.event_tx,
+                BatchBuilderEvent::Reorg {
+                    revert_to: state.prev_batch_end(),
+                    last_valid_batch_idx: state.next_batch_idx().saturating_sub(1),
+                },
+            )
+            .await;
         }
         ReorgReport::Reorg(batch_id) => {
-            // Unfinalized batch is has been reorg'd.
+            // Unfinalized batch has been reorg'd.
             // Latest batch reverted. Pending blocks and accumulator reset.
-            // notify new latest batch
+            // State is already reset by check_and_handle_reorg;
             let _ = ctx.latest_batch_tx.send(batch_id);
-            // Continue execution with new state.
+            emit_event(
+                &ctx.event_tx,
+                BatchBuilderEvent::Reorg {
+                    revert_to: state.prev_batch_end(),
+                    last_valid_batch_idx: state.next_batch_idx().saturating_sub(1),
+                },
+            )
+            .await;
         }
         ReorgReport::DeepReorg => {
             // TODO(STR-3682): unrecoverable error
@@ -311,10 +325,7 @@ where
         // Try to get block data (non-blocking check)
         let Some(block_data) = ctx.block_data_provider.get_block_data(block.hash()).await? else {
             // Data not ready yet, stop processing
-            println!(
-                "processing pending blocks, block data not yet ready {:?}",
-                block.hash()
-            );
+            debug!(hash = %block.hash(), "block data not yet ready");
             break;
         };
 
@@ -322,6 +333,7 @@ where
         state.pop_pending_block();
 
         // Check if adding this block would exceed threshold
+        let mut batch_sealed = None;
         if !state.accumulator().is_empty()
             && state
                 .accumulator()
@@ -336,15 +348,40 @@ where
             {
                 // Notify watchers of new batch
                 let _ = ctx.latest_batch_tx.send(batch_id);
+                batch_sealed = Some(batch_id);
             }
         }
 
         // Add block to accumulator
         state.accumulator_mut().add_block(block, &block_data);
 
+        // Notify downstream (chunk builder) of the processed block.
+        // `batch_sealed` is set when this block triggered a batch seal
+        // — the sealed batch contains the *previous* accumulator's
+        // blocks, and this block is the first of the next batch.
+        emit_event(
+            &ctx.event_tx,
+            BatchBuilderEvent::BlockProcessed {
+                block,
+                batch_idx: state.next_batch_idx(),
+                batch_sealed,
+            },
+        )
+        .await;
+
         debug!(hash = %block.hash(), "Processed block");
         processed += 1;
     }
 
     Ok(())
+}
+
+/// Send a [`BatchBuilderEvent`] if the channel is configured. Logs a warning
+/// if the receiver has been dropped (should not happen in production).
+async fn emit_event(tx: &Option<mpsc::Sender<BatchBuilderEvent>>, event: BatchBuilderEvent) {
+    if let Some(tx) = tx {
+        if let Err(e) = tx.send(event).await {
+            warn!(error = %e, "batch event channel closed; event dropped");
+        }
+    }
 }

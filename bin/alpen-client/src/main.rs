@@ -634,6 +634,7 @@ fn main() {
                     storage.clone(),
                     exec_chain_handle.clone(),
                     Some(chunk_witness_tx),
+                    None, // event_tx: no chunk builder consumer yet
                 );
 
                 // --- DA pipeline ---

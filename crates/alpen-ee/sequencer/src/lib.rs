@@ -12,7 +12,8 @@ pub(crate) mod test_utils;
 mod update_submitter;
 
 pub use batch_builder::{
-    create_batch_builder, init_batch_builder_state, BatchBuilderHandle, BatchBuilderState,
+    create_batch_builder, init_batch_builder_state, BatchBuilderEvent, BatchBuilderHandle,
+    BatchBuilderState,
 };
 pub use batch_lifecycle::{
     create_batch_lifecycle_task, init_lifecycle_state, BatchLifecycleHandle, BatchLifecycleState,
