@@ -26,7 +26,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use alpen_ee_common::{ChunkId, ChunkWitnessExtractFn, ChunkWitnessStore};
+use alpen_ee_common::{BatchStorage, ChunkId, ChunkWitnessExtractFn, ChunkWitnessStore};
+use eyre::{eyre, Result};
 use strata_acct_types::Hash;
 use tokio::{sync::mpsc, task, time};
 use tracing::{debug, error, info, warn};
@@ -151,4 +152,85 @@ async fn process_request(
             }
         }
     }
+}
+
+/// One-shot startup recovery: enqueue extraction requests for every
+/// sealed chunk that has no persisted [`alpen_ee_common::ChunkWitnessRecord`].
+///
+/// Covers two cases the channel-only handoff can't:
+/// - **Crash mid-extraction.** The chunk was sealed (so it's in [`BatchStorage`]) but the process
+///   died before the background task wrote the witness — the `mpsc` request was lost with the
+///   process.
+/// - **Pre-existing chunks.** Chunks sealed before this PR (or otherwise ending up without a
+///   witness row) would otherwise loop on `TransientFailure` until the prover retry budget exhausts
+///   and the task becomes a permanent failure.
+///
+/// Returns the number of chunks enqueued. Each `send` is awaited so
+/// channel backpressure naturally throttles a large backlog instead of
+/// flooding the in-memory queue.
+pub async fn backfill_missing_chunk_witnesses(
+    batch_storage: &dyn BatchStorage,
+    witness_store: &dyn ChunkWitnessStore,
+    tx: &mpsc::Sender<ChunkExtractRequest>,
+) -> Result<usize> {
+    let Some((latest, _)) = batch_storage
+        .get_latest_chunk()
+        .await
+        .map_err(|e| eyre!("get_latest_chunk: {e}"))?
+    else {
+        debug!("no chunks in storage; nothing to backfill");
+        return Ok(0);
+    };
+
+    let latest_idx = latest.idx();
+    let mut sent = 0usize;
+    for idx in 0..=latest_idx {
+        let Some((chunk, _)) = batch_storage
+            .get_chunk_by_idx(idx)
+            .await
+            .map_err(|e| eyre!("get_chunk_by_idx({idx}): {e}"))?
+        else {
+            // Hole in the chunk index space (e.g. partial revert). Skip.
+            continue;
+        };
+        let chunk_id = chunk.id();
+
+        if witness_store
+            .get_chunk_witness(chunk_id)
+            .await
+            .map_err(|e| eyre!("get_chunk_witness({chunk_id:?}): {e}"))?
+            .is_some()
+        {
+            continue;
+        }
+
+        let Some(first_block) = chunk.blocks_iter().next() else {
+            warn!(
+                ?chunk_id,
+                idx, "chunk has no blocks; skipping witness backfill"
+            );
+            continue;
+        };
+
+        let req = ChunkExtractRequest {
+            chunk_id,
+            first_block,
+            last_block: chunk.last_block(),
+        };
+        tx.send(req)
+            .await
+            .map_err(|e| eyre!("send chunk extract request: {e}"))?;
+        sent += 1;
+        debug!(?chunk_id, idx, "enqueued chunk witness backfill");
+    }
+
+    if sent > 0 {
+        info!(
+            enqueued = sent,
+            latest_idx, "chunk witness backfill complete"
+        );
+    } else {
+        debug!(latest_idx, "no missing chunk witnesses; backfill skipped");
+    }
+    Ok(sent)
 }

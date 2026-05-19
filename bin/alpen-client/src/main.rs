@@ -441,9 +441,9 @@ fn main() {
 
                 use alpen_ee_common::{require_latest_batch, BlockNumHash, DaBlobSource};
                 use alpen_ee_sequencer::{
-                    chunk_witness_channel, chunk_witness_task, create_batch_builder,
-                    create_batch_lifecycle_task, create_update_submitter_task,
-                    BlockCountDataProvider, FixedBlockCountSealing,
+                    backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
+                    create_batch_builder, create_batch_lifecycle_task,
+                    create_update_submitter_task, BlockCountDataProvider, FixedBlockCountSealing,
                 };
                 let payload_engine = Arc::new(AlpenRethPayloadEngine::new(
                     node.payload_builder_handle.clone(),
@@ -516,6 +516,31 @@ fn main() {
                     chunk_witness_store,
                     chunk_witness_rx,
                 );
+
+                // Startup recovery for sealed-without-witness chunks.
+                // Covers crash-mid-extraction (mpsc request lost with the
+                // process) and any pre-existing chunks lacking a witness
+                // row. Spawned critical alongside `ee_chunk_witness`:
+                // witness assembly gates the entire proving pipeline, so
+                // a panic in either path warrants taking the node down
+                // rather than silently producing un-provable chunks.
+                let chunk_witness_backfill_task = {
+                    let batch_storage: Arc<dyn BatchStorage> = storage.clone();
+                    let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
+                        storage.clone();
+                    let tx = chunk_witness_tx.clone();
+                    async move {
+                        if let Err(e) = backfill_missing_chunk_witnesses(
+                            batch_storage.as_ref(),
+                            witness_store.as_ref(),
+                            &tx,
+                        )
+                        .await
+                        {
+                            error!(error = %e, "chunk witness backfill failed at startup");
+                        }
+                    }
+                };
 
                 let (batch_builder_handle, batch_builder_task) = create_batch_builder(
                     latest_batch.id(),
@@ -782,6 +807,10 @@ fn main() {
                     .spawn_critical("ee_batch_builder", batch_builder_task);
                 node.task_executor
                     .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
+                node.task_executor.spawn_critical(
+                    "ee_chunk_witness_backfill",
+                    chunk_witness_backfill_task,
+                );
                 node.task_executor
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor

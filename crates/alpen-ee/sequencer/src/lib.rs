@@ -19,7 +19,8 @@ pub use batch_lifecycle::{
 };
 pub use block_builder::{block_builder_task, BlockBuilderConfig};
 pub use chunk_witness_task::{
-    chunk_witness_channel, chunk_witness_task, ChunkExtractRequest, CHUNK_WITNESS_CHANNEL_CAPACITY,
+    backfill_missing_chunk_witnesses, chunk_witness_channel, chunk_witness_task,
+    ChunkExtractRequest, CHUNK_WITNESS_CHANNEL_CAPACITY,
 };
 pub use ol_chain_tracker::{
     build_ol_chain_tracker, init_ol_chain_tracker_state, InboxMessages, OLChainTrackerHandle,
