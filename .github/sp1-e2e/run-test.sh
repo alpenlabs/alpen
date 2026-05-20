@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DOCKER_DIR="${REPO_ROOT}/docker"
-PROOF_TIMEOUT="${PROOF_TIMEOUT:-1800}"
+PROOF_TIMEOUT="${PROOF_TIMEOUT:-7200}"
 
 DATATOOL_IMAGE="${ECR_REGISTRY}/strata-datatool:${IMAGE_TAG}"
 
@@ -127,6 +127,10 @@ parse_result() {
 
 get_confirmed_epoch() {
     ol_rpc "${CHAIN_STATUS_PAYLOAD}" | parse_result "['confirmed']['epoch']" || echo 0
+}
+
+get_tip_epoch() {
+    ol_rpc "${CHAIN_STATUS_PAYLOAD}" | parse_result "['tip']['epoch']" || echo 0
 }
 
 get_snark_seq_no() {
@@ -271,38 +275,40 @@ assert_proofs() {
     local timeout="${PROOF_TIMEOUT}"
     echo "=== Waiting for proofs (timeout ${timeout}s) ==="
 
-    local checkpoint_ok=false
-    local batch_ok=false
+    local sau_epoch=-1
+    local sau_accepted=false
+    local sau_confirmed=false
     local deadline=$((SECONDS + timeout))
 
     while [ $SECONDS -lt $deadline ]; do
-        if [ "${checkpoint_ok}" = false ]; then
-            local confirmed
-            confirmed=$(get_confirmed_epoch)
-            if [ "${confirmed}" -ge 1 ]; then
-                echo "PASS: Checkpoint proof validated — confirmed epoch ${confirmed}"
-                checkpoint_ok=true
-            fi
-        fi
-
-        if [ "${batch_ok}" = false ]; then
+        if [ "${sau_accepted}" = false ]; then
             local seq_no
             seq_no=$(get_snark_seq_no)
             if [ "${seq_no}" -gt 0 ]; then
-                echo "PASS: EE batch proof accepted — seq_no ${seq_no}"
-                batch_ok=true
+                sau_epoch=$(get_tip_epoch)
+                echo "PASS: SAU accepted by OL — seq_no ${seq_no}, epoch ${sau_epoch}"
+                sau_accepted=true
             fi
         fi
 
-        if [ "${checkpoint_ok}" = true ] && [ "${batch_ok}" = true ]; then
+        if [ "${sau_accepted}" = true ] && [ "${sau_confirmed}" = false ]; then
+            local confirmed
+            confirmed=$(get_confirmed_epoch)
+            if [ "${confirmed}" -ge "${sau_epoch}" ]; then
+                echo "PASS: SAU-containing epoch ${sau_epoch} confirmed — confirmed epoch ${confirmed}"
+                sau_confirmed=true
+            fi
+        fi
+
+        if [ "${sau_accepted}" = true ] && [ "${sau_confirmed}" = true ]; then
             return 0
         fi
 
         sleep 5
     done
 
-    [ "${checkpoint_ok}" = false ] && echo "FAIL: Checkpoint proof not validated within ${timeout}s"
-    [ "${batch_ok}" = false ] && echo "FAIL: EE batch proof not accepted within ${timeout}s"
+    [ "${sau_accepted}" = false ] && echo "FAIL: SAU not accepted within ${timeout}s"
+    [ "${sau_confirmed}" = false ] && echo "FAIL: SAU epoch ${sau_epoch} not confirmed within ${timeout}s (confirmed=$(get_confirmed_epoch))"
     exit 1
 }
 
