@@ -17,7 +17,7 @@ use rsp_client_executor::BlockValidator;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{
-    BlockAssembler, EnvError, EnvResult, ExecBlockOutput, ExecPartialState, ExecPayload,
+    BlockAssembler, EnvError, EnvResult, ExecBlock, ExecBlockOutput, ExecPartialState, ExecPayload,
     ExecutionEnvironment,
 };
 use strata_ee_chain_types::{ExecInputs, ExecOutputs, OutputMessage};
@@ -212,6 +212,15 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
 
         Ok(())
     }
+
+    fn update_partial_state_after_block(
+        &self,
+        state: &mut Self::PartialState,
+        header: &<Self::Block as ExecBlock>::Header,
+    ) -> EnvResult<()> {
+        state.add_executed_block(header.header().clone());
+        Ok(())
+    }
 }
 
 impl BlockAssembler for EvmExecutionEnvironment {
@@ -256,6 +265,12 @@ impl BlockAssembler for EvmExecutionEnvironment {
 mod tests {
     use std::{fs, path::PathBuf};
 
+    use alloy_consensus::Sealable;
+    use reth_primitives_traits::Block as RethBlockTrait;
+    use revm::DatabaseRef;
+    use revm_primitives::B256;
+    use rsp_client_executor::io::EthClientExecutorInput;
+    use serde::Deserialize;
     use strata_ee_acct_types::ExecBlock;
     use strata_msg_fmt::{Msg, MsgRef};
     use strata_ol_bridge_types::OperatorSelection;
@@ -304,13 +319,58 @@ mod tests {
         assert_eq!(withdrawal.dest_desc(), destination_bytes.as_slice());
     }
 
+    #[test]
+    fn update_partial_state_after_block_adds_block_hash_for_subsequent_blocks() {
+        #[derive(Deserialize, Debug)]
+        struct TestData {
+            witness: EthClientExecutorInput,
+        }
+
+        let test_data_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("test-utils/data/evm_ee/witness_params.json");
+
+        let json_content = fs::read_to_string(&test_data_path)
+            .expect("Failed to read witness_params.json from test-utils/data/evm_ee");
+
+        let test_data: TestData =
+            serde_json::from_str(&json_content).expect("Failed to parse test data");
+
+        let chain_spec: Arc<ChainSpec> = Arc::new((&test_data.witness.genesis).try_into().unwrap());
+        let env = EvmExecutionEnvironment::new(chain_spec);
+        let header = test_data.witness.current_block.header().clone();
+        let evm_header = EvmHeader::new(header.clone());
+        let mut state = EvmPartialState::new(
+            test_data.witness.parent_state,
+            test_data.witness.bytecodes,
+            test_data.witness.ancestor_headers,
+        );
+
+        assert_eq!(
+            state
+                .create_witness_db()
+                .block_hash_ref(header.number)
+                .expect("block hash lookup must succeed"),
+            B256::ZERO
+        );
+
+        env.update_partial_state_after_block(&mut state, &evm_header)
+            .expect("post-block state update should succeed");
+
+        assert_eq!(
+            state
+                .create_witness_db()
+                .block_hash_ref(header.number)
+                .expect("block hash lookup must succeed"),
+            header.seal_slow().hash()
+        );
+    }
+
     /// Test with real witness data from the reference implementation.
     /// This is an integration test that validates the full execution flow with real block data.
     #[test]
     fn test_with_witness_params() {
-        use rsp_client_executor::io::EthClientExecutorInput;
-        use serde::Deserialize;
-
         #[derive(Deserialize, Debug)]
         struct TestData {
             witness: EthClientExecutorInput,
@@ -344,7 +404,6 @@ mod tests {
         let evm_header = EvmHeader::new(header.clone());
 
         // Get transactions from the block
-        use reth_primitives_traits::Block as RethBlockTrait;
         let block_body = test_data.witness.current_block.body().clone();
         let evm_body = EvmBlockBody::from_alloy_body(block_body);
 
