@@ -71,7 +71,7 @@ use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::{VarVec, encode_to_vec};
 use strata_identifiers::{
-    AccountSerial, Buf32, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
+    AccountSerial, Buf32, Buf64, Epoch, L1BlockCommitment, L1BlockId, L1Height, Slot, SubjectId,
     SubjectIdBytes, WtxidsRoot,
 };
 use strata_ledger_types::*;
@@ -137,6 +137,14 @@ pub fn make_gam_tx(dest: AccountId) -> OLTransaction {
         OLTransactionData::from_gam_bytes(dest, vec![])
             .expect("message payload bytes must fit within SSZ max length"),
         TxProofs::new_empty(),
+    )
+}
+
+/// Wraps a [`CompletedBlock`] into an [`OLBlock`] with a zero signature.
+pub fn to_ol_block(cb: &CompletedBlock) -> OLBlock {
+    OLBlock::new(
+        SignedOLBlockHeader::new(cb.header().clone(), Buf64::zero()),
+        cb.body().clone(),
     )
 }
 
@@ -2004,4 +2012,14 @@ impl SnarkUpdateBuilder {
 
         OLTransaction::new(data, tx_proofs)
     }
+}
+
+/// Returns the (`OLAccountState`, `OLSnarkAccountState`) for `snark_id`,
+/// panicking if not found or not a snark account.
+pub fn get_snark_state_expect(
+    state: &MemoryStateBaseLayer,
+    snark_id: AccountId,
+) -> (&OLAccountState, &OLSnarkAccountState) {
+    let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
+    (snark_account, snark_account.as_snark_account().unwrap())
 }

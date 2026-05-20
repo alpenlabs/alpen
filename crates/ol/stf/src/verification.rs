@@ -377,32 +377,8 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
     manifests: &[AsmManifest],
     exp: &EpochExecExpectations,
 ) -> ExecResult<()> {
-    // 1. Apply the initial processing by calling process_epoch_initial.
-    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
-    chain_processing::process_epoch_initial(state, &init_ctx)?;
+    apply_da_epoch::<S, D>(state, epoch_info, diff, manifests)?;
 
-    // 2. Apply the DA diff.
-    D::apply_to_state(diff, state).map_err(|e| {
-        error!(
-            error = %e,
-            epoch = epoch_info.epoch(),
-            "DA scheme failed to apply diff during epoch verification"
-        );
-        ExecError::ChainIntegrity
-    })?;
-
-    // 3. As if it were the epoch terminal, replay the manifest buffering and
-    // then drain the buffered logs. The DA diff (step 2) reproduces the
-    // ledger/global tx effects; replaying the manifests here reproduces the
-    // intraepoch/MMR/epochal state and the deferred drain effects, which the
-    // DA diff does not carry.
-    let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
-    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
-    manifest_processing::process_block_manifests(state, manifests)?;
-    manifest_processing::process_epoch_terminal(state, &term_ctx)?;
-    output.verify_logs_within_block_limit()?;
-
-    // 4. Verify the final state root.
     let final_state_root = state.compute_state_root()?;
     if final_state_root != exp.epoch_post_state_root {
         error!(
@@ -414,6 +390,42 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
         );
         return Err(ExecError::ChainIntegrity);
     }
+
+    Ok(())
+}
+
+/// Reconstructs a full-epoch transition from a DA diff.
+///
+/// Like [`verify_epoch_with_diff`] but without the post-state root check. Use this when post root
+/// check is not needed i.e. the diff is trusted.
+pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
+    state: &mut S,
+    epoch_info: &EpochInfo,
+    diff: D::Diff,
+    manifests: &[AsmManifest],
+) -> ExecResult<()> {
+    let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+    chain_processing::process_epoch_initial(state, &init_ctx)?;
+
+    D::apply_to_state(diff, state).map_err(|e| {
+        error!(
+            error = %e,
+            epoch = epoch_info.epoch(),
+            "DA scheme failed to apply diff during epoch reconstruction"
+        );
+        ExecError::ChainIntegrity
+    })?;
+
+    // As if it were the epoch terminal, replay the manifest buffering and
+    // then drain the buffered logs. The DA diff (step 2) reproduces the
+    // ledger/global tx effects; replaying the manifests here reproduces the
+    // intraepoch/MMR/epochal state and the deferred drain effects, which the
+    // DA diff does not carry.
+    let output = ExecOutputBuffer::new_empty(); // this gets discarded anyways
+    let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+    manifest_processing::process_block_manifests(state, manifests)?;
+    manifest_processing::process_epoch_terminal(state, &term_ctx)?;
+    output.verify_logs_within_block_limit()?;
 
     Ok(())
 }
