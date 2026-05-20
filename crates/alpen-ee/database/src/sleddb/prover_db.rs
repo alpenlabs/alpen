@@ -131,6 +131,13 @@ impl ProverTaskDatabase for EeProverDbSled {
         Ok(())
     }
 
+    fn delete_task(&self, key: Vec<u8>) -> DbResult<bool> {
+        let old = self.prover_task_tree.get(&key)?;
+        let existed = old.is_some();
+        self.prover_task_tree.compare_and_swap(key, old, None)?;
+        Ok(existed)
+    }
+
     fn list_retriable(&self, now_secs: u64) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
         let mut out = Vec::new();
         for item in self.prover_task_tree.iter() {
@@ -151,6 +158,14 @@ impl ProverTaskDatabase for EeProverDbSled {
             if record.status().is_unfinished() {
                 out.push((key, record));
             }
+        }
+        Ok(out)
+    }
+
+    fn list_all_tasks(&self) -> DbResult<Vec<(Vec<u8>, TaskRecordData)>> {
+        let mut out = Vec::new();
+        for item in self.prover_task_tree.iter() {
+            out.push(item?);
         }
         Ok(out)
     }

@@ -1,5 +1,6 @@
-use strata_db_types::traits::CheckpointProofDatabase;
+use strata_db_types::traits::{CheckpointProofDatabase, ProverTaskDatabase};
 use strata_identifiers::EpochCommitment;
+use strata_paas::{TaskRecordData, TaskStatus};
 use zkaleido::{
     ProgramId, Proof, ProofMetadata, ProofReceipt, ProofReceiptWithMetadata, ProofType,
     PublicValues, ZkVm,
@@ -41,6 +42,22 @@ pub fn test_get_nonexistent_proof(db: &impl CheckpointProofDatabase) {
     assert_eq!(stored_proof, None, "Nonexistent proof should return None");
 }
 
+pub fn test_delete_task_roundtrip(db: &impl ProverTaskDatabase) {
+    let key = b"task-key-1".to_vec();
+    let record = TaskRecordData::new(TaskStatus::Pending);
+
+    // Deleting a missing key reports false.
+    assert!(matches!(db.delete_task(key.clone()), Ok(false)));
+
+    db.insert_task(key.clone(), record).unwrap();
+    assert!(db.get_task(key.clone()).unwrap().is_some());
+
+    // First delete reports true; second reports false.
+    assert!(matches!(db.delete_task(key.clone()), Ok(true)));
+    assert!(matches!(db.delete_task(key.clone()), Ok(false)));
+    assert!(db.get_task(key).unwrap().is_none());
+}
+
 // Helper functions
 fn generate_proof() -> (EpochCommitment, ProofReceiptWithMetadata) {
     let epoch = EpochCommitment::null();
@@ -76,6 +93,12 @@ macro_rules! proof_db_tests {
         fn test_get_nonexistent_proof() {
             let db = $setup_expr;
             $crate::proof_tests::test_get_nonexistent_proof(&db);
+        }
+
+        #[test]
+        fn test_delete_task_roundtrip() {
+            let db = $setup_expr;
+            $crate::proof_tests::test_delete_task_roundtrip(&db);
         }
     };
 }
