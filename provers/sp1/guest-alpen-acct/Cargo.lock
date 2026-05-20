@@ -63,7 +63,7 @@ dependencies = [
  "either",
  "k256",
  "once_cell",
- "rand 0.8.5",
+ "rand 0.8.6",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
@@ -826,7 +826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -836,7 +836,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -846,7 +846,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -1747,7 +1747,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -1870,7 +1870,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "835c052cb0c08c1acf6ffd71c022172e18723949c8282f2b9f27efbc51e64534"
 dependencies = [
  "byteorder",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rustc-hex",
  "static_assertions",
 ]
@@ -2050,7 +2050,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60f8970a75c006bb2f8ae79c6768a116dd215fa8346a87aed99bf9d82ca43394"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -2856,7 +2856,7 @@ dependencies = [
  "p3-mds 0.2.3-succinct",
  "p3-poseidon2 0.2.3-succinct",
  "p3-symmetric 0.2.3-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -2871,7 +2871,7 @@ dependencies = [
  "p3-field 0.3.2-succinct",
  "p3-poseidon2 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -2925,7 +2925,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "num-traits",
  "p3-util 0.2.3-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -2939,7 +2939,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "num-traits",
  "p3-util 0.3.2-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -2954,7 +2954,7 @@ dependencies = [
  "p3-mds 0.3.2-succinct",
  "p3-poseidon2 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -2968,7 +2968,7 @@ dependencies = [
  "p3-field 0.2.3-succinct",
  "p3-maybe-rayon 0.2.3-succinct",
  "p3-util 0.2.3-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
  "tracing",
 ]
@@ -2983,7 +2983,7 @@ dependencies = [
  "p3-field 0.3.2-succinct",
  "p3-maybe-rayon 0.3.2-succinct",
  "p3-util 0.3.2-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
  "tracing",
 ]
@@ -3012,7 +3012,7 @@ dependencies = [
  "p3-matrix 0.2.3-succinct",
  "p3-symmetric 0.2.3-succinct",
  "p3-util 0.2.3-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -3027,7 +3027,7 @@ dependencies = [
  "p3-matrix 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
  "p3-util 0.3.2-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -3040,7 +3040,7 @@ dependencies = [
  "p3-field 0.2.3-succinct",
  "p3-mds 0.2.3-succinct",
  "p3-symmetric 0.2.3-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -3054,7 +3054,7 @@ dependencies = [
  "p3-field 0.3.2-succinct",
  "p3-mds 0.3.2-succinct",
  "p3-symmetric 0.3.2-succinct",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
 ]
 
@@ -3154,7 +3154,7 @@ dependencies = [
  "ff 0.12.1",
  "group 0.12.1",
  "lazy_static",
- "rand 0.8.5",
+ "rand 0.8.6",
  "static_assertions",
  "subtle",
 ]
@@ -3169,7 +3169,7 @@ dependencies = [
  "ff 0.13.1",
  "group 0.13.0",
  "lazy_static",
- "rand 0.8.5",
+ "rand 0.8.6",
  "static_assertions",
  "subtle",
 ]
@@ -3456,9 +3456,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -4362,9 +4362,9 @@ dependencies = [
 
 [[package]]
 name = "ruint"
-version = "1.17.2"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c141e807189ad38a07276942c6623032d3753c8859c146104ac2e4d68865945a"
+checksum = "0298da754d1395046b0afdc2f20ee76d29a8ae310cd30ffa84ed42acba9cb12a"
 dependencies = [
  "alloy-rlp",
  "ark-ff 0.3.0",
@@ -4379,7 +4379,7 @@ dependencies = [
  "parity-scale-codec",
  "primitive-types",
  "proptest",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rand 0.9.2",
  "rlp",
  "ruint-macro",
@@ -4434,7 +4434,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -4514,7 +4514,7 @@ dependencies = [
  "bitcoin_hashes",
  "cfg-if",
  "k256",
- "rand 0.8.5",
+ "rand 0.8.6",
  "secp256k1-sys 0.10.0",
  "serde",
 ]
@@ -4526,7 +4526,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.8.5",
+ "rand 0.8.6",
  "secp256k1-sys 0.10.0",
  "serde",
 ]
@@ -4934,7 +4934,7 @@ dependencies = [
  "getrandom 0.3.4",
  "lazy_static",
  "libm",
- "rand 0.8.5",
+ "rand 0.8.6",
  "sha2",
  "slop-algebra",
  "sp1-lib 6.1.0",
@@ -5021,7 +5021,7 @@ version = "0.15.0"
 source = "git+https://github.com/alpenlabs/ssz-gen?tag=v0.15.0#6e4b99ef2831ea3a97b8cb98a88c06206395f337"
 dependencies = [
  "hex",
- "rand 0.8.5",
+ "rand 0.8.6",
  "ruint",
 ]
 
@@ -5433,7 +5433,7 @@ dependencies = [
  "crunchy",
  "lazy_static",
  "num-bigint 0.4.6",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rustc-hex",
  "sp1-lib 6.1.0",
 ]
@@ -5518,7 +5518,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys",
 ]
 
 [[package]]
@@ -5992,15 +5992,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-sys"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
-dependencies = [
- "windows-link",
-]
-
-[[package]]
 name = "windows-targets"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6349,7 +6340,7 @@ dependencies = [
  "jubjub",
  "lazy_static",
  "pasta_curves 0.5.1",
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
  "sha2",
  "sha3",
