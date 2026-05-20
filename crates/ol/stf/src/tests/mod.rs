@@ -3,6 +3,7 @@
 mod asm_manifests;
 mod chain;
 mod chain_processing;
+mod da_epoch_reconstruction;
 mod da_preseal_correctness;
 mod deposit_withdrawal;
 mod ee_predicate_update;
