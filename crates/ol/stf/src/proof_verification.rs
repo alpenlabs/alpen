@@ -219,6 +219,7 @@ mod tests {
     use strata_ol_chain_types_new::{
         ProofSatisfier, ProofSatisfierList, RawMerkleProofList, TxProofs,
     };
+    use strata_predicate::{PredicateError, PredicateKey, PredicateTypeId};
 
     use super::*;
 
@@ -298,5 +299,24 @@ mod tests {
         // Incrementing past the end returns NoNextProof.
         let err = tracker.inc_next_pred_proof().unwrap_err();
         assert!(matches!(err, ProofVerifyError::NoNextProof));
+    }
+
+    #[test]
+    fn sp1_groth16_predicate_verifier_is_available() {
+        let predicate_key = PredicateKey::new(PredicateTypeId::Sp1Groth16, Vec::new());
+        let err = predicate_key
+            .verify_claim_witness(&[], &[])
+            .expect_err("empty condition is invalid, but verifier must be compiled in");
+
+        assert!(
+            !matches!(
+                err,
+                PredicateError::UnsupportedPredicateType {
+                    id: PredicateTypeId::Sp1Groth16,
+                    ..
+                }
+            ),
+            "Sp1Groth16 verifier feature must be enabled for OL STF replay"
+        );
     }
 }
