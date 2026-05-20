@@ -2,12 +2,12 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_csm_types::{CheckpointL1Ref, ClientState};
+use strata_csm_types::{ClientState, L1Checkpoint};
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
 
-use crate::{constants, context::CsmWorkerContext};
+use crate::{constants, context::CsmWorkerContext, processor::epoch_commitment_for};
 
 /// State for the CSM worker service.
 ///
@@ -44,7 +44,7 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
     ///
     /// Items are appended after a successful block commit and consumed as
     /// finalized depth progresses.
-    pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
+    pub(crate) observed_checkpoints: VecDeque<L1Checkpoint>,
 }
 
 // TODO(STR-3491): Use typed errors instead of `anyhow!`
@@ -79,14 +79,14 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         // observations after finalized, fall back to finalized when no newer observed entry exists.
         let confirmed_epoch = observed_checkpoints
             .back()
-            .map(|(epoch, _)| *epoch)
+            .map(epoch_commitment_for)
             .or(finalized_epoch);
 
         // Keep only non-finalized candidates for incremental tip-driven advancement.
         if let Some(finalized) = finalized_epoch {
             while observed_checkpoints
                 .front()
-                .is_some_and(|(epoch, _)| epoch.epoch() <= finalized.epoch())
+                .is_some_and(|checkpoint| checkpoint.tip.epoch <= finalized.epoch())
             {
                 observed_checkpoints.pop_front();
             }
@@ -112,13 +112,15 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 /// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
 /// starting from `start_epoch`.
 ///
-/// Only epochs with both a canonical commitment and an L1 ref are included.
-/// Used at startup to populate the incremental finalization queue.
+/// Only epochs with both a canonical commitment and a complete observation
+/// (payload + L1 ref) are included. Used at startup to populate the
+/// incremental finalization queue and reconstruct the latest finalized
+/// `L1Checkpoint` view of `ClientState`.
 fn load_observed_checkpoints<C: CsmWorkerContext>(
     ctx: &C,
     start_epoch: Epoch,
     current_l1_tip: L1Height,
-) -> anyhow::Result<VecDeque<(EpochCommitment, CheckpointL1Ref)>> {
+) -> anyhow::Result<VecDeque<L1Checkpoint>> {
     let Some(last_l1_ref_commitment) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
         return Ok(VecDeque::new());
     };
@@ -132,12 +134,15 @@ fn load_observed_checkpoints<C: CsmWorkerContext>(
         let Some(observation) = ctx.get_checkpoint_l1_ref(commitment)? else {
             continue;
         };
+        let Some(payload) = ctx.get_checkpoint_payload(commitment)? else {
+            continue;
+        };
 
         if observation.l1_commitment.height() > current_l1_tip {
             continue;
         }
 
-        observed.push_back((commitment, observation));
+        observed.push_back(L1Checkpoint::new(*payload.new_tip(), observation));
     }
 
     Ok(observed)
@@ -152,17 +157,17 @@ fn derive_finalized_epoch<'a, I>(
     finality_depth: u32,
 ) -> Option<EpochCommitment>
 where
-    I: Iterator<Item = &'a (EpochCommitment, CheckpointL1Ref)>,
+    I: Iterator<Item = &'a L1Checkpoint>,
 {
     let mut latest_finalized = None;
     let finality_depth = finality_depth.max(1);
 
-    for (commitment, observation) in observed {
+    for checkpoint in observed {
         let confirmations = current_l1_tip
-            .saturating_sub(observation.l1_commitment.height())
+            .saturating_sub(checkpoint.l1_reference.l1_commitment.height())
             .saturating_add(1);
         if confirmations >= finality_depth {
-            latest_finalized = Some(*commitment);
+            latest_finalized = Some(epoch_commitment_for(checkpoint));
         }
     }
 
@@ -203,7 +208,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::CsmWorkerState;
+    use super::{CsmWorkerState, epoch_commitment_for};
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<Params> {
@@ -307,7 +312,7 @@ mod tests {
         assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state.observed_checkpoints.front().map(|(epoch, _)| *epoch),
+            state.observed_checkpoints.front().map(epoch_commitment_for),
             Some(commitment_2)
         );
     }

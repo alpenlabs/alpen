@@ -82,4 +82,12 @@ pub trait CsmWorkerContext: Send + Sync {
         &self,
         commitment: EpochCommitment,
     ) -> anyhow::Result<Option<CheckpointL1Ref>>;
+
+    /// Returns the L1-observed checkpoint payload at `commitment` (carries the
+    /// tip the checkpoint declared). Paired with [`Self::get_checkpoint_l1_ref`]
+    /// to reconstruct the full observation record at bootstrap.
+    fn get_checkpoint_payload(
+        &self,
+        commitment: EpochCommitment,
+    ) -> anyhow::Result<Option<CheckpointPayload>>;
 }

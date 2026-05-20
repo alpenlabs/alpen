@@ -1,8 +1,10 @@
 //! CSM worker service implementation.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
 use strata_asm_worker::AsmWorkerStatus;
+use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
+use strata_primitives::l1::L1BlockCommitment;
 use strata_service::{Response, Service, SyncService};
 use tracing::*;
 
@@ -59,12 +61,22 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
             error!(%asm_block, err = ?e, "Failed to process ASM block");
         }
 
-        let finalized_changed = state.advance_finalization(asm_block.height());
+        let newly_finalized = state.advance_finalization(asm_block.height());
         let confirmed_changed = state.confirmed_epoch != prev_confirmed_epoch;
+
+        // If depth-driven finality advanced, refresh ClientState's
+        // `last_finalized_checkpoint` so persisted state matches the worker's
+        // depth-derived view. ClientState is the only thing downstream consumers
+        // (fork choice, chain worker, RPC) can see, so it has to carry the truth.
+        if let Some(finalized) = newly_finalized.as_ref()
+            && let Err(e) = refresh_finalized_checkpoint(state, asm_block, finalized.clone())
+        {
+            error!(%asm_block, err = ?e, "Failed to persist refreshed finalized checkpoint");
+        }
 
         // FCM listens on checkpoint-state updates. Emit when checkpoint status changed
         // even if client-state object itself did not change (tip-only L1 movement).
-        if confirmed_changed || finalized_changed {
+        if confirmed_changed || newly_finalized.is_some() {
             state
                 .ctx
                 .publish_client_state(state.last_committed_state.as_ref().clone(), asm_block);
@@ -72,4 +84,22 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         Ok(Response::Continue)
     }
+}
+
+/// Rewrites the committed `ClientState` so its `last_finalized_checkpoint`
+/// matches the depth-finalized `L1Checkpoint`, then re-persists it under
+/// `asm_block`. The publish happens in the caller alongside other status edges.
+fn refresh_finalized_checkpoint<C: CsmWorkerContext>(
+    state: &mut CsmWorkerState<C>,
+    asm_block: L1BlockCommitment,
+    finalized: L1Checkpoint,
+) -> anyhow::Result<()> {
+    let last_seen = state.last_committed_state.get_last_checkpoint();
+    let refreshed = ClientState::new(Some(finalized), last_seen);
+    state.ctx.put_client_state_update(
+        &asm_block,
+        ClientUpdateOutput::new(refreshed.clone(), vec![]),
+    )?;
+    state.last_committed_state = Arc::new(refreshed);
+    Ok(())
 }
