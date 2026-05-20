@@ -101,7 +101,13 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
         let new_checkpoint =
             self.mark_ol_checkpoint_l1_observed(pending, checkpoint_tip_update, asm_block)?;
-        pending.cur_state = next_client_state(&pending.cur_state, new_checkpoint);
+        // `last_finalized_checkpoint` is left as the previous value here; the
+        // service loop refreshes it once `advance_finalization` declares a new
+        // finalized epoch based on L1 depth.
+        pending.cur_state = Arc::new(ClientState::new(
+            pending.cur_state.get_last_finalized_checkpoint(),
+            Some(new_checkpoint),
+        ));
 
         pending.last_processed_epoch = Some(epoch);
         Ok(())
@@ -156,7 +162,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     /// into the worker's finality cursors.
     fn apply_observations(&mut self, observations: Vec<L1Checkpoint>) {
         for checkpoint in observations {
-            let commitment = epoch_commitment_for(&checkpoint);
+            let commitment = EpochCommitment::from(&checkpoint);
 
             // Update cached confirmed epoch monotonically.
             if self
@@ -173,7 +179,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
                 && !self
                     .observed_checkpoints
                     .iter()
-                    .any(|existing| epoch_commitment_for(existing) == commitment)
+                    .any(|existing| EpochCommitment::from(existing) == commitment)
             {
                 self.observed_checkpoints.push_back(checkpoint);
             }
@@ -196,7 +202,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let mut latest_finalized: Option<L1Checkpoint> = None;
 
         while let Some(candidate) = self.observed_checkpoints.front() {
-            let commitment = epoch_commitment_for(candidate);
+            let commitment = EpochCommitment::from(candidate);
             if self
                 .finalized_epoch
                 .is_some_and(|current| commitment.epoch() <= current.epoch())
@@ -380,24 +386,6 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
     }
 }
 
-/// Derives the [`EpochCommitment`] for a checkpoint from its tip.
-pub(crate) fn epoch_commitment_for(checkpoint: &L1Checkpoint) -> EpochCommitment {
-    EpochCommitment::from_terminal(checkpoint.tip.epoch, checkpoint.tip.l2_commitment)
-}
-
-/// Returns the next client state after recording `new_checkpoint` as the most
-/// recently observed L1 checkpoint.
-///
-/// `last_finalized_checkpoint` is untouched here; it is refreshed separately
-/// by the service loop once `advance_finalization` declares a new finalized
-/// epoch based on L1 depth.
-fn next_client_state(prev: &ClientState, new_checkpoint: L1Checkpoint) -> Arc<ClientState> {
-    Arc::new(ClientState::new(
-        prev.get_last_finalized_checkpoint(),
-        Some(new_checkpoint),
-    ))
-}
-
 /// Returns the parent L1 commitment derived from `block`'s header.
 ///
 /// Fails for the genesis block where no parent exists; that case isn't
@@ -446,7 +434,6 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::epoch_commitment_for;
     use crate::{state::CsmWorkerState, test_utils::StubCtx};
 
     /// Builds a minimal `AsmState` carrying `logs`. The anchor state itself is
@@ -996,7 +983,7 @@ mod tests {
     fn advance_finalization_single_advance() {
         let (mut state, _) = create_test_state();
         let candidate = observation_at(1, 100);
-        let commitment = epoch_commitment_for(&candidate);
+        let commitment = EpochCommitment::from(&candidate);
         state.observed_checkpoints.push_back(candidate.clone());
 
         // tip at 102 has 3 confirmations = depth threshold.
@@ -1011,7 +998,7 @@ mod tests {
         let (mut state, _) = create_test_state();
         let candidate_1 = observation_at(1, 100);
         let candidate_2 = observation_at(2, 101);
-        let commitment_2 = epoch_commitment_for(&candidate_2);
+        let commitment_2 = EpochCommitment::from(&candidate_2);
         state.observed_checkpoints.push_back(candidate_1);
         state.observed_checkpoints.push_back(candidate_2.clone());
 
@@ -1026,7 +1013,7 @@ mod tests {
     fn advance_finalization_stops_at_shallow_candidate() {
         let (mut state, _) = create_test_state();
         let candidate_1 = observation_at(1, 100);
-        let commitment_1 = epoch_commitment_for(&candidate_1);
+        let commitment_1 = EpochCommitment::from(&candidate_1);
         let candidate_2 = observation_at(2, 102);
         state.observed_checkpoints.push_back(candidate_1.clone());
         state.observed_checkpoints.push_back(candidate_2.clone());
@@ -1037,7 +1024,10 @@ mod tests {
         assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state.observed_checkpoints.front().map(epoch_commitment_for),
+            state
+                .observed_checkpoints
+                .front()
+                .map(EpochCommitment::from),
             Some(EpochCommitment::from_terminal(
                 2,
                 OLBlockCommitment::new(20, OLBlockId::from(Buf32::from([2u8; 32])))
@@ -1049,7 +1039,7 @@ mod tests {
     fn advance_finalization_pops_already_finalized() {
         let (mut state, _) = create_test_state();
         let candidate = observation_at(1, 100);
-        let commitment_1 = epoch_commitment_for(&candidate);
+        let commitment_1 = EpochCommitment::from(&candidate);
         state.finalized_epoch = Some(commitment_1);
         // Stale entry for an epoch ≤ finalized.
         state.observed_checkpoints.push_back(candidate);

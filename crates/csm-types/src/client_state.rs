@@ -64,7 +64,7 @@ impl ClientState {
     pub fn get_last_epoch(&self) -> Option<EpochCommitment> {
         self.last_seen_checkpoint
             .as_ref()
-            .map(epoch_commitment_for_tip)
+            .map(EpochCommitment::from)
     }
 
     /// Gets the last checkpoint that has already been finalized.
@@ -76,7 +76,7 @@ impl ClientState {
     pub fn get_declared_final_epoch(&self) -> Option<EpochCommitment> {
         self.last_finalized_checkpoint
             .as_ref()
-            .map(epoch_commitment_for_tip)
+            .map(EpochCommitment::from)
     }
 
     /// Gets the next epoch we expect to be confirmed.
@@ -86,10 +86,6 @@ impl ClientState {
             .map(|ck| ck.tip.epoch + 1)
             .unwrap_or(0u32)
     }
-}
-
-fn epoch_commitment_for_tip(checkpoint: &L1Checkpoint) -> EpochCommitment {
-    EpochCommitment::from_terminal(checkpoint.tip.epoch, checkpoint.tip.l2_commitment)
 }
 
 /// A [`ClientState`] wrapper used in StatusChannel.
@@ -171,6 +167,12 @@ impl fmt::Display for L1Checkpoint {
 impl L1Checkpoint {
     pub fn new(tip: CheckpointTip, l1_reference: CheckpointL1Ref) -> Self {
         Self { tip, l1_reference }
+    }
+}
+
+impl From<&L1Checkpoint> for EpochCommitment {
+    fn from(checkpoint: &L1Checkpoint) -> Self {
+        EpochCommitment::from_terminal(checkpoint.tip.epoch, checkpoint.tip.l2_commitment)
     }
 }
 

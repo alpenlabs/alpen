@@ -7,7 +7,7 @@ use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
 
-use crate::{constants, context::CsmWorkerContext, processor::epoch_commitment_for};
+use crate::{constants, context::CsmWorkerContext};
 
 /// State for the CSM worker service.
 ///
@@ -79,7 +79,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         // observations after finalized, fall back to finalized when no newer observed entry exists.
         let confirmed_epoch = observed_checkpoints
             .back()
-            .map(epoch_commitment_for)
+            .map(EpochCommitment::from)
             .or(finalized_epoch);
 
         // Keep only non-finalized candidates for incremental tip-driven advancement.
@@ -167,7 +167,7 @@ where
             .saturating_sub(checkpoint.l1_reference.l1_commitment.height())
             .saturating_add(1);
         if confirmations >= finality_depth {
-            latest_finalized = Some(epoch_commitment_for(checkpoint));
+            latest_finalized = Some(EpochCommitment::from(checkpoint));
         }
     }
 
@@ -208,7 +208,7 @@ mod tests {
     use strata_storage::create_node_storage;
     use strata_test_utils::ArbitraryGenerator;
 
-    use super::{CsmWorkerState, epoch_commitment_for};
+    use super::CsmWorkerState;
     use crate::test_utils::StubCtx;
 
     fn create_test_params() -> Arc<Params> {
@@ -312,7 +312,10 @@ mod tests {
         assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state.observed_checkpoints.front().map(epoch_commitment_for),
+            state
+                .observed_checkpoints
+                .front()
+                .map(EpochCommitment::from),
             Some(commitment_2)
         );
     }
