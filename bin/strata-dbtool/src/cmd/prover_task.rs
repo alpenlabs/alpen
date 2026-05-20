@@ -7,12 +7,15 @@
 use std::{fmt, str::FromStr};
 
 use argh::FromArgs;
+use strata_checkpoint_types::CheckpointProofTask;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
 use strata_db_types::traits::{DatabaseBackend, ProverTaskDatabase};
-use strata_paas::TaskStatus;
+use strata_identifiers::Epoch;
+use strata_paas::{TaskRecordData, TaskStatus};
 
 use crate::{
     cli::OutputFormat,
+    cmd::checkpoint::get_canonical_epoch_commitment_at,
     output::{
         output,
         prover_task::{ProverTaskInfo, ProverTasksSummaryInfo},
@@ -404,4 +407,184 @@ pub(crate) fn delete_prover_task(
 
     println!("deleted: {}", args.key_hex);
     Ok(())
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "backfill-checkpoint-proof-task")]
+/// Queue a fresh `Pending` checkpoint-proof task for an epoch.
+///
+/// Resolves the canonical commitment at the epoch and constructs the
+/// task key via [`CheckpointProofTask`] so the running node picks it up
+/// on next startup recovery.
+pub(crate) struct BackfillCheckpointProofTaskArgs {
+    /// checkpoint epoch
+    #[argh(positional)]
+    pub(crate) epoch: Epoch,
+
+    /// confirm the insertion
+    #[argh(switch)]
+    pub(crate) confirm: bool,
+}
+
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "backfill-prover-task-raw")]
+/// Insert a `Pending` task record under a raw hex-encoded key.
+///
+/// Escape hatch for proof kinds without a typed helper. Caller is
+/// responsible for matching the key format the host expects.
+pub(crate) struct BackfillProverTaskRawArgs {
+    /// hex-encoded task key
+    #[argh(positional)]
+    pub(crate) key_hex: String,
+
+    /// confirm the insertion
+    #[argh(switch)]
+    pub(crate) confirm: bool,
+}
+
+/// Insert a Pending checkpoint-proof task for the canonical commitment at
+/// the given epoch.
+pub(crate) fn backfill_checkpoint_proof_task(
+    db: &impl DatabaseBackend,
+    args: BackfillCheckpointProofTaskArgs,
+) -> Result<(), DisplayedError> {
+    require_confirm(args.confirm, "backfill a checkpoint-proof task")?;
+
+    let commitment = get_canonical_epoch_commitment_at(db, args.epoch)?.ok_or_else(|| {
+        DisplayedError::UserError(
+            "No canonical checkpoint commitment at epoch".to_string(),
+            Box::new(args.epoch),
+        )
+    })?;
+    let task = CheckpointProofTask(commitment);
+    let key = task.to_key_bytes();
+    let key_hex = hex::encode(&key);
+    let record = TaskRecordData::new(TaskStatus::Pending);
+
+    db.prover_task_db()
+        .insert_task(key, record)
+        .internal_error("Failed to insert prover task")?;
+
+    println!(
+        "backfilled checkpoint proof task: {key_hex} (epoch {})",
+        args.epoch
+    );
+    Ok(())
+}
+
+/// Insert a Pending task under a caller-provided raw key.
+pub(crate) fn backfill_prover_task_raw(
+    db: &impl DatabaseBackend,
+    args: BackfillProverTaskRawArgs,
+) -> Result<(), DisplayedError> {
+    require_confirm(args.confirm, "backfill a prover task")?;
+
+    let key = parse_task_key(&args.key_hex)?;
+    let record = TaskRecordData::new(TaskStatus::Pending);
+
+    db.prover_task_db()
+        .insert_task(key, record)
+        .internal_error("Failed to insert prover task")?;
+
+    println!("backfilled prover task: {}", args.key_hex);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_filter_matches_each_variant() {
+        let pending = TaskStatus::Pending;
+        let proving = TaskStatus::Proving { retry_count: 2 };
+        let completed = TaskStatus::Completed;
+        let transient = TaskStatus::TransientFailure {
+            retry_count: 1,
+            error: "x".into(),
+        };
+        let permanent = TaskStatus::PermanentFailure { error: "y".into() };
+
+        assert!(StatusFilter::All.matches(&pending));
+        assert!(StatusFilter::All.matches(&permanent));
+
+        assert!(StatusFilter::Pending.matches(&pending));
+        assert!(!StatusFilter::Pending.matches(&proving));
+
+        assert!(StatusFilter::Proving.matches(&proving));
+        assert!(!StatusFilter::Proving.matches(&pending));
+
+        assert!(StatusFilter::Completed.matches(&completed));
+        assert!(!StatusFilter::Completed.matches(&pending));
+
+        assert!(StatusFilter::TransientFailure.matches(&transient));
+        assert!(!StatusFilter::TransientFailure.matches(&permanent));
+
+        assert!(StatusFilter::PermanentFailure.matches(&permanent));
+        assert!(!StatusFilter::PermanentFailure.matches(&transient));
+
+        // Unfinished == Pending | Proving.
+        assert!(StatusFilter::Unfinished.matches(&pending));
+        assert!(StatusFilter::Unfinished.matches(&proving));
+        assert!(!StatusFilter::Unfinished.matches(&completed));
+        assert!(!StatusFilter::Unfinished.matches(&transient));
+
+        // Terminal == Completed | PermanentFailure.
+        assert!(StatusFilter::Terminal.matches(&completed));
+        assert!(StatusFilter::Terminal.matches(&permanent));
+        assert!(!StatusFilter::Terminal.matches(&pending));
+        assert!(!StatusFilter::Terminal.matches(&transient));
+    }
+
+    #[test]
+    fn status_filter_from_str_accepts_canonical_and_aliases() {
+        assert_eq!("all".parse::<StatusFilter>().unwrap(), StatusFilter::All);
+        assert_eq!(
+            "PENDING".parse::<StatusFilter>().unwrap(),
+            StatusFilter::Pending
+        );
+        // Both hyphenated and snake-cased forms are accepted.
+        assert_eq!(
+            "transient-failure".parse::<StatusFilter>().unwrap(),
+            StatusFilter::TransientFailure
+        );
+        assert_eq!(
+            "transient_failure".parse::<StatusFilter>().unwrap(),
+            StatusFilter::TransientFailure
+        );
+        assert_eq!(
+            "permanent-failure".parse::<StatusFilter>().unwrap(),
+            StatusFilter::PermanentFailure
+        );
+        assert_eq!(
+            "unfinished".parse::<StatusFilter>().unwrap(),
+            StatusFilter::Unfinished
+        );
+        assert_eq!(
+            "terminal".parse::<StatusFilter>().unwrap(),
+            StatusFilter::Terminal
+        );
+
+        assert!("bogus".parse::<StatusFilter>().is_err());
+    }
+
+    #[test]
+    fn parse_task_key_accepts_hex_with_and_without_prefix() {
+        assert_eq!(
+            parse_task_key("deadbeef").unwrap(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
+        assert_eq!(
+            parse_task_key("0xdeadbeef").unwrap(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
+        assert_eq!(parse_task_key("").unwrap(), Vec::<u8>::new());
+    }
+
+    #[test]
+    fn parse_task_key_rejects_invalid_hex() {
+        assert!(parse_task_key("not-hex").is_err());
+        // Odd length is invalid for hex.
+        assert!(parse_task_key("abc").is_err());
+    }
 }

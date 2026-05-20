@@ -15,7 +15,8 @@ use crate::cmd::{
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
     prover_task::{
-        AbandonProverTaskArgs, AbandonProverTasksArgs, DeleteProverTaskArgs, GetProverTaskArgs,
+        AbandonProverTaskArgs, AbandonProverTasksArgs, BackfillCheckpointProofTaskArgs,
+        BackfillProverTaskRawArgs, DeleteProverTaskArgs, GetProverTaskArgs,
         GetProverTasksSummaryArgs, ResetProverTaskArgs,
     },
     syncinfo::GetSyncinfoArgs,
@@ -61,6 +62,8 @@ pub(crate) enum Command {
     DeleteProverTask(DeleteProverTaskArgs),
     GetCheckpointProof(GetCheckpointProofArgs),
     DeleteCheckpointProof(DeleteCheckpointProofArgs),
+    BackfillCheckpointProofTask(BackfillCheckpointProofTaskArgs),
+    BackfillProverTaskRaw(BackfillProverTaskRawArgs),
 }
 
 /// Output format

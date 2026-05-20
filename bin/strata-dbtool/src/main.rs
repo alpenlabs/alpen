@@ -23,7 +23,8 @@ use crate::{
         ol::{get_ol_block, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
         prover_task::{
-            abandon_prover_task, abandon_prover_tasks, delete_prover_task, get_prover_task,
+            abandon_prover_task, abandon_prover_tasks, backfill_checkpoint_proof_task,
+            backfill_prover_task_raw, delete_prover_task, get_prover_task,
             get_prover_tasks_summary, reset_prover_task,
         },
         syncinfo::get_syncinfo,
@@ -67,6 +68,8 @@ fn main() {
         Command::DeleteProverTask(args) => delete_prover_task(db, args),
         Command::GetCheckpointProof(args) => get_checkpoint_proof(db, args),
         Command::DeleteCheckpointProof(args) => delete_checkpoint_proof(db, args),
+        Command::BackfillCheckpointProofTask(args) => backfill_checkpoint_proof_task(db, args),
+        Command::BackfillProverTaskRaw(args) => backfill_prover_task_raw(db, args),
     };
 
     if let Err(e) = result {
