@@ -340,6 +340,112 @@ Execute revert with block deletion:
 strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b692e3b1a01b426705885b --l1-reorg-safe-depth 6
 ```
 
+## Prover Task Admin
+
+> [!WARNING]
+>
+> These commands mutate the prover-task store and the checkpoint-proof receipt
+> store. Stop the node before using them — concurrent writes from a running
+> prover will conflict with these edits and may corrupt state.
+
+Each mutating subcommand requires an explicit `--confirm` flag. Bulk variants
+also accept `--dry-run` to preview the change set without writing.
+
+### Semantics — `abandon` vs `reset` vs `delete`
+
+| Verb       | Final status                                    | When to use                                               |
+|------------|-------------------------------------------------|-----------------------------------------------------------|
+| `abandon`  | `PermanentFailure { error: "abandoned via dbtool" }` | Stop the recovery scanner from respawning a stuck task while keeping an audit trail. |
+| `reset`    | `Pending` (retry-after cleared)                 | Force a fresh prove attempt — drops accumulated retry count. |
+| `delete`   | row removed                                     | Prefer `abandon` unless you really want no trace left.    |
+| `backfill` | `Pending` (newly inserted)                      | Queue a proof request "from outside" — e.g. for an epoch the node never picked up. |
+
+### `get-prover-task`
+Fetch a single prover task record by its hex-encoded key.
+
+```bash
+strata-dbtool get-prover-task <key_hex> [OPTIONS]
+```
+
+### `get-prover-tasks-summary`
+Aggregate counts by status, plus a bounded slice of matching entries.
+
+```bash
+strata-dbtool get-prover-tasks-summary [--status <filter>] [--limit <n>] [OPTIONS]
+```
+
+**Options:**
+- `--status <filter>` — one of `all` (default), `pending`, `proving`, `completed`, `transient-failure`, `permanent-failure`, `unfinished`, `terminal`
+- `--limit <n>` — maximum entries to include in the output (default: 20)
+
+### `abandon-prover-task`
+Mark a single task as `PermanentFailure { error: "abandoned via dbtool" }`.
+
+```bash
+strata-dbtool abandon-prover-task <key_hex> --confirm
+```
+
+### `abandon-prover-tasks`
+Bulk-abandon every `Pending` or `Proving` task.
+
+```bash
+strata-dbtool abandon-prover-tasks --all-unfinished --confirm [--dry-run]
+```
+
+### `reset-prover-task`
+Flip a task back to `Pending` and clear its retry-after timestamp.
+
+```bash
+strata-dbtool reset-prover-task <key_hex> --confirm
+```
+
+### `delete-prover-task`
+Hard-delete a task row.
+
+```bash
+strata-dbtool delete-prover-task <key_hex> --confirm
+```
+
+### `backfill-checkpoint-proof-task`
+Queue a fresh `Pending` checkpoint-proof task for an epoch. Resolves the
+canonical commitment at the epoch and constructs the task key via the shared
+`CheckpointProofTask` encoding, so the running node will pick the task up on
+its next startup-recovery pass.
+
+```bash
+strata-dbtool backfill-checkpoint-proof-task <epoch> --confirm
+```
+
+### `backfill-prover-task-raw`
+Insert a `Pending` task record under a caller-provided raw key. Escape hatch
+for proof kinds without a typed helper.
+
+```bash
+strata-dbtool backfill-prover-task-raw <key_hex> --confirm
+```
+
+### `get-checkpoint-proof`
+Fetch the stored proof receipt for an OL checkpoint epoch.
+
+```bash
+strata-dbtool get-checkpoint-proof <epoch> [OPTIONS]
+```
+
+### `delete-checkpoint-proof`
+Delete the stored proof receipt for an epoch. Operates on the canonical
+commitment at that epoch. Use case: force a re-prove after a guest-program
+upgrade.
+
+```bash
+strata-dbtool delete-checkpoint-proof <epoch> --confirm
+```
+
+### Not yet supported
+
+The EE prover task store (`alpen-client` datadir — chunk receipts, acct
+proofs, shared task tree) is not yet wired into this tool. Add a follow-up
+ticket if operator workflows need it.
+
 ## Output Formats
 
 ### Porcelain Format (Default)
