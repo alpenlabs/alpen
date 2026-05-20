@@ -9,6 +9,7 @@ use argh::FromArgs;
 use crate::cmd::{
     broadcaster::{GetBroadcasterSummaryArgs, GetBroadcasterTxArgs},
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
+    checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
@@ -58,6 +59,8 @@ pub(crate) enum Command {
     AbandonProverTasks(AbandonProverTasksArgs),
     ResetProverTask(ResetProverTaskArgs),
     DeleteProverTask(DeleteProverTaskArgs),
+    GetCheckpointProof(GetCheckpointProofArgs),
+    DeleteCheckpointProof(DeleteCheckpointProofArgs),
 }
 
 /// Output format

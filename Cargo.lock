@@ -15608,6 +15608,7 @@ dependencies = [
  "strata-paas",
  "strata-primitives",
  "tracing-subscriber 0.3.23",
+ "zkaleido",
 ]
 
 [[package]]

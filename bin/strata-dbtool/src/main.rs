@@ -17,6 +17,7 @@ use crate::{
     cmd::{
         broadcaster::{get_broadcaster_summary, get_broadcaster_tx},
         checkpoint::{get_checkpoint, get_checkpoints_summary, get_epoch_summary},
+        checkpoint_proof::{delete_checkpoint_proof, get_checkpoint_proof},
         client_state::get_client_state_update,
         l1::{get_l1_block, get_l1_summary},
         ol::{get_ol_block, get_ol_summary},
@@ -64,6 +65,8 @@ fn main() {
         Command::AbandonProverTasks(args) => abandon_prover_tasks(db, args),
         Command::ResetProverTask(args) => reset_prover_task(db, args),
         Command::DeleteProverTask(args) => delete_prover_task(db, args),
+        Command::GetCheckpointProof(args) => get_checkpoint_proof(db, args),
+        Command::DeleteCheckpointProof(args) => delete_checkpoint_proof(db, args),
     };
 
     if let Err(e) = result {
