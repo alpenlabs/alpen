@@ -13,6 +13,7 @@ use crate::cmd::{
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
+    prover_task::{GetProverTaskArgs, GetProverTasksSummaryArgs},
     syncinfo::GetSyncinfoArgs,
     writer::{GetWriterPayloadArgs, GetWriterSummaryArgs},
 };
@@ -48,6 +49,8 @@ pub(crate) enum Command {
     GetSyncinfo(GetSyncinfoArgs),
     GetOLState(GetOLStateArgs),
     RevertOLState(RevertOLStateArgs),
+    GetProverTask(GetProverTaskArgs),
+    GetProverTasksSummary(GetProverTasksSummaryArgs),
 }
 
 /// Output format

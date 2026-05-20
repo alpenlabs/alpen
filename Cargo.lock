@@ -15605,6 +15605,7 @@ dependencies = [
  "strata-identifiers",
  "strata-ol-chain-types",
  "strata-ol-chain-types-new",
+ "strata-paas",
  "strata-primitives",
  "tracing-subscriber 0.3.23",
 ]

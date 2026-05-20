@@ -28,4 +28,5 @@ strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ol-chain-types.workspace = true
 strata-ol-chain-types-new.workspace = true
+strata-paas.workspace = true
 strata-primitives.workspace = true

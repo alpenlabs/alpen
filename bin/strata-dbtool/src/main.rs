@@ -21,6 +21,7 @@ use crate::{
         l1::{get_l1_block, get_l1_summary},
         ol::{get_ol_block, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
+        prover_task::{get_prover_task, get_prover_tasks_summary},
         syncinfo::get_syncinfo,
         writer::{get_writer_payload, get_writer_summary},
     },
@@ -54,6 +55,8 @@ fn main() {
         Command::GetEpochSummary(args) => get_epoch_summary(db, args),
         Command::GetSyncinfo(args) => get_syncinfo(db, args),
         Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
+        Command::GetProverTask(args) => get_prover_task(db, args),
+        Command::GetProverTasksSummary(args) => get_prover_tasks_summary(db, args),
     };
 
     if let Err(e) = result {
