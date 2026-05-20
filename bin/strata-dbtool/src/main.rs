@@ -21,7 +21,10 @@ use crate::{
         l1::{get_l1_block, get_l1_summary},
         ol::{get_ol_block, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
-        prover_task::{get_prover_task, get_prover_tasks_summary},
+        prover_task::{
+            abandon_prover_task, abandon_prover_tasks, delete_prover_task, get_prover_task,
+            get_prover_tasks_summary, reset_prover_task,
+        },
         syncinfo::get_syncinfo,
         writer::{get_writer_payload, get_writer_summary},
     },
@@ -57,6 +60,10 @@ fn main() {
         Command::GetClientStateUpdate(args) => get_client_state_update(db, args),
         Command::GetProverTask(args) => get_prover_task(db, args),
         Command::GetProverTasksSummary(args) => get_prover_tasks_summary(db, args),
+        Command::AbandonProverTask(args) => abandon_prover_task(db, args),
+        Command::AbandonProverTasks(args) => abandon_prover_tasks(db, args),
+        Command::ResetProverTask(args) => reset_prover_task(db, args),
+        Command::DeleteProverTask(args) => delete_prover_task(db, args),
     };
 
     if let Err(e) = result {
