@@ -13,6 +13,7 @@ import flexitest
 
 from common.base_test import AlpenClientTest
 from common.config import ServiceType
+from envconfigs.alpen_client import AlpenClientEnv
 from tests.dbtool.helpers import run_dbtool_ee, run_dbtool_ee_json
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,10 @@ def _task(ee_datadir: str, key_hex: str) -> dict:
 @flexitest.register
 class DbtoolEeProverTaskAdminTest(AlpenClientTest):
     def __init__(self, ctx: flexitest.InitContext):
-        ctx.set_env("alpen_ee")
+        # Use a private env: the test stops the sequencer to poke at the
+        # sled DB directly, so it must not share the `alpen_ee` env with
+        # other tests that expect the sequencer to be live.
+        ctx.set_env(AlpenClientEnv(fullnode_count=0, enable_l1_da=True))
 
     def main(self, ctx):
         seq_service = self.get_service(ServiceType.AlpenSequencer)
