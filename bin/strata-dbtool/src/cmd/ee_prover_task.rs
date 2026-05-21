@@ -9,6 +9,10 @@
 //! Chunk and acct tasks share one tree, disambiguated by a single-byte
 //! kind tag at the start of the key (`b'c'` / `b'a'`). The `--kind`
 //! filter on the summary and bulk-abandon commands selects on that tag.
+//!
+//! Every mutating verb follows the `revert-ol-state` UX: without
+//! `-f/--force` the command is a dry run; with `--force` the mutation
+//! actually lands.
 
 use std::{fmt, str::FromStr};
 
@@ -20,7 +24,7 @@ use strata_paas::{TaskRecordData, TaskStatus};
 
 use crate::{
     cli::OutputFormat,
-    cmd::prover_task_common::{parse_task_key, require_confirm, StatusFilter, ABANDONED_REASON},
+    cmd::prover_task_common::{parse_task_key, print_force_hint, StatusFilter, ABANDONED_REASON},
     output::{
         output,
         prover_task::{ProverTaskInfo, ProverTasksSummaryInfo},
@@ -110,20 +114,21 @@ pub(crate) struct EeGetProverTasksSummaryArgs {
 /// Mark a single EE prover task as `PermanentFailure { error: "abandoned via dbtool" }`.
 ///
 /// Leaves the record in the DB for audit; recovery will not respawn it.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct EeAbandonProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the mutation (required — the command is a no-op without it)
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-abandon-prover-tasks")]
 /// Bulk-abandon every Pending/Proving EE prover task, optionally
-/// restricted by kind.
+/// restricted by kind. Dry-run unless `--force` is passed.
 pub(crate) struct EeAbandonProverTasksArgs {
     /// only consider Pending/Proving tasks (currently the only supported
     /// selector — kept explicit so future selectors can be added)
@@ -134,26 +139,23 @@ pub(crate) struct EeAbandonProverTasksArgs {
     #[argh(option, default = "KindFilter::All")]
     pub(crate) kind: KindFilter,
 
-    /// confirm the mutation
-    #[argh(switch)]
-    pub(crate) confirm: bool,
-
-    /// preview the change set without writing
-    #[argh(switch)]
-    pub(crate) dry_run: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-reset-prover-task")]
 /// Reset an EE prover task to `Pending` and clear its retry-after timestamp.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct EeResetProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the mutation
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -161,14 +163,15 @@ pub(crate) struct EeResetProverTaskArgs {
 /// Hard-delete an EE prover task record.
 ///
 /// Prefer `ee-abandon-prover-task` unless you really want the row gone.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct EeDeleteProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the deletion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -177,15 +180,15 @@ pub(crate) struct EeDeleteProverTaskArgs {
 ///
 /// EE task keys are produced by the chunk/acct spec encodings — they're
 /// not easily reconstructible offline, so this raw escape hatch is the
-/// only supported backfill path.
+/// only supported backfill path. Dry-run unless `--force` is passed.
 pub(crate) struct EeBackfillProverTaskRawArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the insertion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 pub(crate) fn ee_get_prover_task(
@@ -261,7 +264,6 @@ pub(crate) fn ee_abandon_prover_task(
     db: &EeProverDbSled,
     args: EeAbandonProverTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "abandon an EE prover task")?;
     let key = parse_task_key(&args.key_hex)?;
 
     let mut record = db
@@ -279,6 +281,12 @@ pub(crate) fn ee_abandon_prover_task(
             "Task is already in a terminal state".to_string(),
             Box::new(args.key_hex),
         ));
+    }
+
+    if !args.force {
+        println!("would abandon: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
     }
 
     record.set_status(TaskStatus::PermanentFailure {
@@ -301,9 +309,6 @@ pub(crate) fn ee_abandon_prover_tasks(
             Box::new(()),
         ));
     }
-    if !args.dry_run {
-        require_confirm(args.confirm, "bulk-abandon EE prover tasks")?;
-    }
 
     let unfinished = db
         .list_unfinished()
@@ -315,25 +320,28 @@ pub(crate) fn ee_abandon_prover_tasks(
             continue;
         }
         let key_hex = hex::encode(&key);
-        if args.dry_run {
-            println!("would abandon: {key_hex}");
-        } else {
+        if args.force {
             record.set_status(TaskStatus::PermanentFailure {
                 error: ABANDONED_REASON.to_string(),
             });
             db.put_task(key, record)
                 .internal_error("Failed to persist abandoned EE task")?;
             println!("abandoned: {key_hex}");
+        } else {
+            println!("would abandon: {key_hex}");
         }
         abandoned += 1;
     }
 
-    let verb = if args.dry_run {
-        "would abandon"
-    } else {
+    let verb = if args.force {
         "abandoned"
+    } else {
+        "would abandon"
     };
     println!("{verb} {abandoned} task(s)");
+    if !args.force {
+        print_force_hint();
+    }
     Ok(())
 }
 
@@ -341,7 +349,6 @@ pub(crate) fn ee_reset_prover_task(
     db: &EeProverDbSled,
     args: EeResetProverTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "reset an EE prover task")?;
     let key = parse_task_key(&args.key_hex)?;
 
     let mut record = db
@@ -353,6 +360,12 @@ pub(crate) fn ee_reset_prover_task(
                 Box::new(args.key_hex.clone()),
             )
         })?;
+
+    if !args.force {
+        println!("would reset: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
+    }
 
     record.set_status(TaskStatus::Pending);
     record.set_retry_after_secs(None);
@@ -367,18 +380,29 @@ pub(crate) fn ee_delete_prover_task(
     db: &EeProverDbSled,
     args: EeDeleteProverTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "delete an EE prover task")?;
     let key = parse_task_key(&args.key_hex)?;
 
-    let existed = db
-        .delete_task(key)
-        .internal_error("Failed to delete EE prover task")?;
-    if !existed {
+    // Resolve existence up front so the dry run can surface a clear
+    // error rather than silently "previewing" a no-op delete.
+    let exists = db
+        .get_task(key.clone())
+        .internal_error("Failed to read EE prover task record")?
+        .is_some();
+    if !exists {
         return Err(DisplayedError::UserError(
             "No EE prover task found for key".to_string(),
             Box::new(args.key_hex),
         ));
     }
+
+    if !args.force {
+        println!("would delete: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
+    }
+
+    db.delete_task(key)
+        .internal_error("Failed to delete EE prover task")?;
 
     println!("deleted: {}", args.key_hex);
     Ok(())
@@ -388,10 +412,15 @@ pub(crate) fn ee_backfill_prover_task_raw(
     db: &EeProverDbSled,
     args: EeBackfillProverTaskRawArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "backfill an EE prover task")?;
     let key = parse_task_key(&args.key_hex)?;
-    let record = TaskRecordData::new(TaskStatus::Pending);
 
+    if !args.force {
+        println!("would backfill EE prover task: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
+    }
+
+    let record = TaskRecordData::new(TaskStatus::Pending);
     db.insert_task(key, record)
         .internal_error("Failed to insert EE prover task")?;
 

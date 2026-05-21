@@ -16,7 +16,7 @@ use strata_primitives::buf::Buf32;
 
 use crate::{
     cli::OutputFormat,
-    cmd::prover_task_common::{parse_task_key, require_confirm},
+    cmd::prover_task_common::{parse_task_key, print_force_hint},
     output::{
         ee_receipts::{DeletedEeReceiptInfo, EeReceiptInfo},
         output,
@@ -41,15 +41,15 @@ pub(crate) struct EeGetChunkReceiptArgs {
 /// Delete a stored chunk-proof receipt.
 ///
 /// Use case: drop a stale receipt after a guest-program upgrade so the
-/// next chunk-prover run re-proves it.
+/// next chunk-prover run re-proves it. Dry-run unless `--force` is passed.
 pub(crate) struct EeDeleteChunkReceiptArgs {
     /// hex-encoded chunk task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the deletion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -74,15 +74,16 @@ pub(crate) struct EeGetAcctProofArgs {
 /// Delete the stored acct/batch proof for a [`BatchId`].
 ///
 /// Also clears the secondary `ProofId → BatchId` index so future
-/// `get_proof_by_id` lookups miss instead of dangling.
+/// `get_proof_by_id` lookups miss instead of dangling. Dry-run unless
+/// `--force` is passed.
 pub(crate) struct EeDeleteAcctProofArgs {
     /// batch id as "<prev_block_hex>:<last_block_hex>" (each 32 bytes)
     #[argh(positional)]
     pub(crate) batch_id: String,
 
-    /// confirm the deletion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -146,17 +147,34 @@ pub(crate) fn ee_delete_chunk_receipt(
     db: &EeProverDbSled,
     args: EeDeleteChunkReceiptArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "delete a chunk receipt")?;
     let key = parse_task_key(&args.key_hex)?;
 
+    // Resolve existence up front so the dry run still emits the same
+    // structured `existed` field operators check against.
     let existed = db
+        .get_chunk_receipt(&key)
+        .internal_error("Failed to read chunk receipt")?
+        .is_some();
+
+    if !args.force {
+        let ack = DeletedEeReceiptInfo {
+            address: args.key_hex,
+            kind: "chunk",
+            existed,
+        };
+        output(&ack, args.output_format)?;
+        print_force_hint();
+        return Ok(());
+    }
+
+    let actually_existed = db
         .delete_chunk_receipt(&key)
         .internal_error("Failed to delete chunk receipt")?;
 
     let ack = DeletedEeReceiptInfo {
         address: args.key_hex,
         kind: "chunk",
-        existed,
+        existed: actually_existed,
     };
     output(&ack, args.output_format)
 }
@@ -184,17 +202,33 @@ pub(crate) fn ee_delete_acct_proof(
     db: &EeProverDbSled,
     args: EeDeleteAcctProofArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "delete an acct proof")?;
     let batch_id = parse_batch_id(&args.batch_id)?;
 
+    // Resolve existence up front so the dry run still emits the same
+    // structured `existed` field operators check against.
     let existed = db
+        .has_acct_proof(batch_id)
+        .internal_error("Failed to read acct proof")?;
+
+    if !args.force {
+        let ack = DeletedEeReceiptInfo {
+            address: args.batch_id,
+            kind: "acct",
+            existed,
+        };
+        output(&ack, args.output_format)?;
+        print_force_hint();
+        return Ok(());
+    }
+
+    let actually_existed = db
         .delete_acct_proof(batch_id)
         .internal_error("Failed to delete acct proof")?;
 
     let ack = DeletedEeReceiptInfo {
         address: args.batch_id,
         kind: "acct",
-        existed,
+        existed: actually_existed,
     };
     output(&ack, args.output_format)
 }

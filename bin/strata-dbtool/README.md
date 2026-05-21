@@ -349,8 +349,10 @@ strata-dbtool revert-ol-state -f -d 858c390aaaabd7c457cb24c955d06fb9de0f6666d0b6
 > store. Stop the node before using them — concurrent writes from a running
 > prover will conflict with these edits and may corrupt state.
 
-Each mutating subcommand requires an explicit `--confirm` flag. Bulk variants
-also accept `--dry-run` to preview the change set without writing.
+Every mutating subcommand is a **dry run** unless `-f, --force` is passed —
+the same UX as `revert-ol-state`. Without `--force`, the command prints
+what *would* happen and a `Use --force to execute these changes.` hint;
+with `--force`, the mutation actually lands.
 
 ### Semantics — `abandon` vs `reset` vs `delete`
 
@@ -383,28 +385,29 @@ strata-dbtool get-prover-tasks-summary [--status <filter>] [--limit <n>] [OPTION
 Mark a single task as `PermanentFailure { error: "abandoned via dbtool" }`.
 
 ```bash
-strata-dbtool abandon-prover-task <key_hex> --confirm
+strata-dbtool abandon-prover-task <key_hex> --force
 ```
 
 ### `abandon-prover-tasks`
-Bulk-abandon every `Pending` or `Proving` task.
+Bulk-abandon every `Pending` or `Proving` task. Without `--force`, prints
+the change set as a dry run.
 
 ```bash
-strata-dbtool abandon-prover-tasks --all-unfinished --confirm [--dry-run]
+strata-dbtool abandon-prover-tasks --all-unfinished --force
 ```
 
 ### `reset-prover-task`
 Flip a task back to `Pending` and clear its retry-after timestamp.
 
 ```bash
-strata-dbtool reset-prover-task <key_hex> --confirm
+strata-dbtool reset-prover-task <key_hex> --force
 ```
 
 ### `delete-prover-task`
 Hard-delete a task row.
 
 ```bash
-strata-dbtool delete-prover-task <key_hex> --confirm
+strata-dbtool delete-prover-task <key_hex> --force
 ```
 
 ### `backfill-checkpoint-proof-task`
@@ -414,7 +417,7 @@ canonical commitment at the epoch and constructs the task key via the shared
 its next startup-recovery pass.
 
 ```bash
-strata-dbtool backfill-checkpoint-proof-task <epoch> --confirm
+strata-dbtool backfill-checkpoint-proof-task <epoch> --force
 ```
 
 ### `backfill-prover-task-raw`
@@ -422,7 +425,7 @@ Insert a `Pending` task record under a caller-provided raw key. Escape hatch
 for proof kinds without a typed helper.
 
 ```bash
-strata-dbtool backfill-prover-task-raw <key_hex> --confirm
+strata-dbtool backfill-prover-task-raw <key_hex> --force
 ```
 
 ### `get-checkpoint-proof`
@@ -438,7 +441,7 @@ commitment at that epoch. Use case: force a re-prove after a guest-program
 upgrade.
 
 ```bash
-strata-dbtool delete-checkpoint-proof <epoch> --confirm
+strata-dbtool delete-checkpoint-proof <epoch> --force
 ```
 
 ## EE Prover Task & Receipt Admin
@@ -491,28 +494,29 @@ strata-dbtool --ee-datadir <path> ee-get-prover-tasks-summary [--status <filter>
 Mark a single EE task as `PermanentFailure { error: "abandoned via dbtool" }`.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-abandon-prover-task <key_hex> --confirm
+strata-dbtool --ee-datadir <path> ee-abandon-prover-task <key_hex> --force
 ```
 
 ### `ee-abandon-prover-tasks`
-Bulk-abandon every `Pending`/`Proving` EE task, optionally restricted by kind.
+Bulk-abandon every `Pending`/`Proving` EE task, optionally restricted by
+kind. Without `--force`, prints the change set as a dry run.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-abandon-prover-tasks --all-unfinished [--kind <kind>] --confirm [--dry-run]
+strata-dbtool --ee-datadir <path> ee-abandon-prover-tasks --all-unfinished [--kind <kind>] --force
 ```
 
 ### `ee-reset-prover-task`
 Flip an EE task back to `Pending` and clear its retry-after timestamp.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-reset-prover-task <key_hex> --confirm
+strata-dbtool --ee-datadir <path> ee-reset-prover-task <key_hex> --force
 ```
 
 ### `ee-delete-prover-task`
 Hard-delete an EE task record.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-delete-prover-task <key_hex> --confirm
+strata-dbtool --ee-datadir <path> ee-delete-prover-task <key_hex> --force
 ```
 
 ### `ee-backfill-prover-task-raw`
@@ -521,7 +525,7 @@ task keys come from the chunk/acct spec encodings; raw is the only
 supported backfill path (no typed equivalent of `backfill-checkpoint-proof-task`).
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-backfill-prover-task-raw <key_hex> --confirm
+strata-dbtool --ee-datadir <path> ee-backfill-prover-task-raw <key_hex> --force
 ```
 
 ### `ee-get-chunk-receipt` / `ee-delete-chunk-receipt`
@@ -531,7 +535,7 @@ prover re-proves it.
 
 ```bash
 strata-dbtool --ee-datadir <path> ee-get-chunk-receipt <key_hex> [OPTIONS]
-strata-dbtool --ee-datadir <path> ee-delete-chunk-receipt <key_hex> --confirm
+strata-dbtool --ee-datadir <path> ee-delete-chunk-receipt <key_hex> --force
 ```
 
 ### `ee-get-acct-proof` / `ee-delete-acct-proof`
@@ -542,7 +546,7 @@ also clears the secondary `ProofId → BatchId` index.
 
 ```bash
 strata-dbtool --ee-datadir <path> ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
-strata-dbtool --ee-datadir <path> ee-delete-acct-proof <prev_block>:<last_block> --confirm
+strata-dbtool --ee-datadir <path> ee-delete-acct-proof <prev_block>:<last_block> --force
 ```
 
 ## Output Formats

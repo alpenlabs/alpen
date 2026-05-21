@@ -11,7 +11,7 @@ use strata_identifiers::Epoch;
 
 use crate::{
     cli::OutputFormat,
-    cmd::checkpoint::get_canonical_epoch_commitment_at,
+    cmd::{checkpoint::get_canonical_epoch_commitment_at, prover_task_common::print_force_hint},
     output::{
         checkpoint_proof::{CheckpointProofInfo, DeletedCheckpointProofInfo},
         output,
@@ -37,15 +37,15 @@ pub(crate) struct GetCheckpointProofArgs {
 ///
 /// Operates on the canonical commitment at the given epoch. Use case:
 /// force a re-prove after a guest-program upgrade or to drop a stale
-/// receipt from a broken run.
+/// receipt from a broken run. Dry-run unless `--force` is passed.
 pub(crate) struct DeleteCheckpointProofArgs {
     /// checkpoint epoch
     #[argh(positional)]
     pub(crate) epoch: Epoch,
 
-    /// confirm the deletion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
@@ -84,13 +84,6 @@ pub(crate) fn delete_checkpoint_proof(
     db: &impl DatabaseBackend,
     args: DeleteCheckpointProofArgs,
 ) -> Result<(), DisplayedError> {
-    if !args.confirm {
-        return Err(DisplayedError::UserError(
-            "--confirm is required to delete a checkpoint proof".to_string(),
-            Box::new(args.epoch),
-        ));
-    }
-
     let commitment = get_canonical_epoch_commitment_at(db, args.epoch)?.ok_or_else(|| {
         DisplayedError::UserError(
             "No canonical checkpoint commitment at epoch".to_string(),
@@ -98,7 +91,26 @@ pub(crate) fn delete_checkpoint_proof(
         )
     })?;
 
+    // Resolve existence up front so the dry run still emits the same
+    // structured `existed` field operators check against.
     let existed = db
+        .checkpoint_proof_db()
+        .get_proof(commitment)
+        .internal_error("Failed to read checkpoint proof")?
+        .is_some();
+
+    if !args.force {
+        let ack = DeletedCheckpointProofInfo {
+            epoch: args.epoch,
+            terminal_blkid: *commitment.last_blkid(),
+            existed,
+        };
+        output(&ack, args.output_format)?;
+        print_force_hint();
+        return Ok(());
+    }
+
+    let actually_existed = db
         .checkpoint_proof_db()
         .del_proof(commitment)
         .internal_error("Failed to delete checkpoint proof")?;
@@ -106,7 +118,7 @@ pub(crate) fn delete_checkpoint_proof(
     let ack = DeletedCheckpointProofInfo {
         epoch: args.epoch,
         terminal_blkid: *commitment.last_blkid(),
-        existed,
+        existed: actually_existed,
     };
     output(&ack, args.output_format)
 }

@@ -3,6 +3,11 @@
 //! These talk directly to [`strata_db_types::traits::ProverTaskDatabase`]
 //! so they can manipulate records without going through the running
 //! prover service — by design, the node must be offline.
+//!
+//! Every mutating verb follows the `revert-ol-state` UX: without
+//! `-f/--force` the command is a dry run (prints what *would* happen
+//! and a `Use --force to execute these changes.` hint); with `--force`
+//! the mutation actually lands.
 
 use argh::FromArgs;
 use strata_checkpoint_types::CheckpointProofTask;
@@ -15,7 +20,7 @@ use crate::{
     cli::OutputFormat,
     cmd::{
         checkpoint::get_canonical_epoch_commitment_at,
-        prover_task_common::{parse_task_key, require_confirm, StatusFilter, ABANDONED_REASON},
+        prover_task_common::{parse_task_key, print_force_hint, StatusFilter, ABANDONED_REASON},
     },
     output::{
         output,
@@ -130,14 +135,15 @@ pub(crate) fn get_prover_tasks_summary(
 /// Mark a single prover task as `PermanentFailure { error: "abandoned via dbtool" }`.
 ///
 /// Leaves the record in the DB for audit; recovery will not respawn it.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct AbandonProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the mutation (required — the command is a no-op without it)
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -146,19 +152,16 @@ pub(crate) struct AbandonProverTaskArgs {
 ///
 /// Use case: after a crash or operator-induced restart, prevent stuck
 /// in-progress tasks from being respawned by the recovery scanner.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct AbandonProverTasksArgs {
     /// only consider Pending/Proving tasks (currently the only supported
     /// selector — kept explicit so future selectors can be added)
     #[argh(switch)]
     pub(crate) all_unfinished: bool,
 
-    /// confirm the mutation
-    #[argh(switch)]
-    pub(crate) confirm: bool,
-
-    /// preview the change set without writing
-    #[argh(switch)]
-    pub(crate) dry_run: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -166,14 +169,15 @@ pub(crate) struct AbandonProverTasksArgs {
 /// Reset a prover task to `Pending` and clear its retry-after timestamp.
 ///
 /// Use case: force a fresh prove attempt (drops accumulated retry count).
+/// Dry-run unless `--force` is passed.
 pub(crate) struct ResetProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the mutation
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -181,14 +185,15 @@ pub(crate) struct ResetProverTaskArgs {
 /// Hard-delete a prover task record.
 ///
 /// Prefer `abandon-prover-task` unless you really want the row gone.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct DeleteProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the deletion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 /// Abandon a single task by flipping its status to `PermanentFailure`.
@@ -196,7 +201,6 @@ pub(crate) fn abandon_prover_task(
     db: &impl DatabaseBackend,
     args: AbandonProverTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "abandon a prover task")?;
     let key = parse_task_key(&args.key_hex)?;
     let task_db = db.prover_task_db();
 
@@ -215,6 +219,12 @@ pub(crate) fn abandon_prover_task(
             "Task is already in a terminal state".to_string(),
             Box::new(args.key_hex),
         ));
+    }
+
+    if !args.force {
+        println!("would abandon: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
     }
 
     record.set_status(TaskStatus::PermanentFailure {
@@ -239,9 +249,6 @@ pub(crate) fn abandon_prover_tasks(
             Box::new(()),
         ));
     }
-    if !args.dry_run {
-        require_confirm(args.confirm, "bulk-abandon prover tasks")?;
-    }
 
     let task_db = db.prover_task_db();
     let unfinished = task_db
@@ -251,9 +258,7 @@ pub(crate) fn abandon_prover_tasks(
     let mut abandoned = 0usize;
     for (key, mut record) in unfinished {
         let key_hex = hex::encode(&key);
-        if args.dry_run {
-            println!("would abandon: {key_hex}");
-        } else {
+        if args.force {
             record.set_status(TaskStatus::PermanentFailure {
                 error: ABANDONED_REASON.to_string(),
             });
@@ -261,16 +266,21 @@ pub(crate) fn abandon_prover_tasks(
                 .put_task(key, record)
                 .internal_error("Failed to persist abandoned task")?;
             println!("abandoned: {key_hex}");
+        } else {
+            println!("would abandon: {key_hex}");
         }
         abandoned += 1;
     }
 
-    let verb = if args.dry_run {
-        "would abandon"
-    } else {
+    let verb = if args.force {
         "abandoned"
+    } else {
+        "would abandon"
     };
     println!("{verb} {abandoned} task(s)");
+    if !args.force {
+        print_force_hint();
+    }
     Ok(())
 }
 
@@ -279,7 +289,6 @@ pub(crate) fn reset_prover_task(
     db: &impl DatabaseBackend,
     args: ResetProverTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "reset a prover task")?;
     let key = parse_task_key(&args.key_hex)?;
     let task_db = db.prover_task_db();
 
@@ -292,6 +301,12 @@ pub(crate) fn reset_prover_task(
                 Box::new(args.key_hex.clone()),
             )
         })?;
+
+    if !args.force {
+        println!("would reset: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
+    }
 
     record.set_status(TaskStatus::Pending);
     record.set_retry_after_secs(None);
@@ -308,19 +323,31 @@ pub(crate) fn delete_prover_task(
     db: &impl DatabaseBackend,
     args: DeleteProverTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "delete a prover task")?;
     let key = parse_task_key(&args.key_hex)?;
     let task_db = db.prover_task_db();
 
-    let existed = task_db
-        .delete_task(key)
-        .internal_error("Failed to delete prover task")?;
-    if !existed {
+    // Resolve existence up front so the dry run can surface a clear
+    // error rather than silently "previewing" a no-op delete.
+    let exists = task_db
+        .get_task(key.clone())
+        .internal_error("Failed to read prover task record")?
+        .is_some();
+    if !exists {
         return Err(DisplayedError::UserError(
             "No prover task found for key".to_string(),
             Box::new(args.key_hex),
         ));
     }
+
+    if !args.force {
+        println!("would delete: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
+    }
+
+    task_db
+        .delete_task(key)
+        .internal_error("Failed to delete prover task")?;
 
     println!("deleted: {}", args.key_hex);
     Ok(())
@@ -332,15 +359,15 @@ pub(crate) fn delete_prover_task(
 ///
 /// Resolves the canonical commitment at the epoch and constructs the
 /// task key via [`CheckpointProofTask`] so the running node picks it up
-/// on next startup recovery.
+/// on next startup recovery. Dry-run unless `--force` is passed.
 pub(crate) struct BackfillCheckpointProofTaskArgs {
     /// checkpoint epoch
     #[argh(positional)]
     pub(crate) epoch: Epoch,
 
-    /// confirm the insertion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug)]
@@ -349,14 +376,15 @@ pub(crate) struct BackfillCheckpointProofTaskArgs {
 ///
 /// Escape hatch for proof kinds without a typed helper. Caller is
 /// responsible for matching the key format the host expects.
+/// Dry-run unless `--force` is passed.
 pub(crate) struct BackfillProverTaskRawArgs {
     /// hex-encoded task key
     #[argh(positional)]
     pub(crate) key_hex: String,
 
-    /// confirm the insertion
-    #[argh(switch)]
-    pub(crate) confirm: bool,
+    /// force execution (without this flag, only a dry run is performed)
+    #[argh(switch, short = 'f')]
+    pub(crate) force: bool,
 }
 
 /// Insert a Pending checkpoint-proof task for the canonical commitment at
@@ -365,8 +393,6 @@ pub(crate) fn backfill_checkpoint_proof_task(
     db: &impl DatabaseBackend,
     args: BackfillCheckpointProofTaskArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "backfill a checkpoint-proof task")?;
-
     let commitment = get_canonical_epoch_commitment_at(db, args.epoch)?.ok_or_else(|| {
         DisplayedError::UserError(
             "No canonical checkpoint commitment at epoch".to_string(),
@@ -376,8 +402,17 @@ pub(crate) fn backfill_checkpoint_proof_task(
     let task = CheckpointProofTask(commitment);
     let key = task.to_key_bytes();
     let key_hex = hex::encode(&key);
-    let record = TaskRecordData::new(TaskStatus::Pending);
 
+    if !args.force {
+        println!(
+            "would backfill checkpoint proof task: {key_hex} (epoch {})",
+            args.epoch
+        );
+        print_force_hint();
+        return Ok(());
+    }
+
+    let record = TaskRecordData::new(TaskStatus::Pending);
     db.prover_task_db()
         .insert_task(key, record)
         .internal_error("Failed to insert prover task")?;
@@ -394,11 +429,15 @@ pub(crate) fn backfill_prover_task_raw(
     db: &impl DatabaseBackend,
     args: BackfillProverTaskRawArgs,
 ) -> Result<(), DisplayedError> {
-    require_confirm(args.confirm, "backfill a prover task")?;
-
     let key = parse_task_key(&args.key_hex)?;
-    let record = TaskRecordData::new(TaskStatus::Pending);
 
+    if !args.force {
+        println!("would backfill prover task: {}", args.key_hex);
+        print_force_hint();
+        return Ok(());
+    }
+
+    let record = TaskRecordData::new(TaskStatus::Pending);
     db.prover_task_db()
         .insert_task(key, record)
         .internal_error("Failed to insert prover task")?;

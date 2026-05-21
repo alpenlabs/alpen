@@ -56,56 +56,65 @@ class DbtoolProverTaskAdminTest(StrataNodeTest):
         summary = _summary(datadir)
         assert summary["total"] == 0, summary
 
-        # --confirm gating: every mutate must refuse without --confirm.
-        for cmd in (
-            ("backfill-prover-task-raw", _RAW_KEY_A),
-            ("abandon-prover-task", _RAW_KEY_A),
-            ("reset-prover-task", _RAW_KEY_A),
-            ("delete-prover-task", _RAW_KEY_A),
-        ):
-            code, _, stderr = run_dbtool(datadir, *cmd)
-            assert code != 0, f"expected {cmd[0]} to refuse without --confirm"
-            assert "--confirm is required" in stderr, stderr
+        # Dry-run-by-default: without --force the mutates must print
+        # "would X" + the force hint, exit 0, and leave the DB alone.
+        # Backfill needs to come first since the other verbs need a row
+        # to operate on; we run its dry-run on a key that doesn't exist
+        # yet so we can confirm it didn't create one.
+        code, stdout, stderr = run_dbtool(datadir, "backfill-prover-task-raw", _RAW_KEY_A)
+        assert code == 0, stderr
+        assert "would backfill" in stdout, stdout
+        assert "Use --force to execute these changes." in stdout, stdout
+        assert _summary(datadir)["total"] == 0, "dry-run backfill must not write"
 
-        # Backfill two raw tasks; both should land in Pending.
+        # Backfill two raw tasks for real; both should land in Pending.
         for key in (_RAW_KEY_A, _RAW_KEY_B):
-            code, _, stderr = run_dbtool(datadir, "backfill-prover-task-raw", key, "--confirm")
+            code, _, stderr = run_dbtool(datadir, "backfill-prover-task-raw", key, "--force")
             assert code == 0, stderr
 
         summary = _summary(datadir)
         assert summary["total"] == 2, summary
         assert summary["pending"] == 2, summary
 
+        # Single-row dry runs against existing keys preview the action
+        # and emit the same force hint, without writing.
+        for verb in ("abandon-prover-task", "reset-prover-task", "delete-prover-task"):
+            code, stdout, stderr = run_dbtool(datadir, verb, _RAW_KEY_A)
+            assert code == 0, stderr
+            assert "Use --force to execute these changes." in stdout, (verb, stdout)
+        # State after the dry runs is unchanged.
+        assert _task(datadir, _RAW_KEY_A)["status"]["name"] == "pending"
+
         # Abandon the first → PermanentFailure with the documented reason.
-        code, _, stderr = run_dbtool(datadir, "abandon-prover-task", _RAW_KEY_A, "--confirm")
+        code, _, stderr = run_dbtool(datadir, "abandon-prover-task", _RAW_KEY_A, "--force")
         assert code == 0, stderr
         record = _task(datadir, _RAW_KEY_A)
         assert record["status"]["name"] == "permanent_failure", record
         assert record["status"]["error"] == "abandoned via dbtool", record
 
         # Reset moves the second back to Pending and clears any retry_after.
-        code, _, stderr = run_dbtool(datadir, "reset-prover-task", _RAW_KEY_B, "--confirm")
+        code, _, stderr = run_dbtool(datadir, "reset-prover-task", _RAW_KEY_B, "--force")
         assert code == 0, stderr
         record = _task(datadir, _RAW_KEY_B)
         assert record["status"]["name"] == "pending", record
         assert "retry_after_secs" not in record, record
 
         # Delete the abandoned one; it should drop from the summary.
-        code, _, stderr = run_dbtool(datadir, "delete-prover-task", _RAW_KEY_A, "--confirm")
+        code, _, stderr = run_dbtool(datadir, "delete-prover-task", _RAW_KEY_A, "--force")
         assert code == 0, stderr
         summary = _summary(datadir)
         assert summary["total"] == 1, summary
         assert summary["pending"] == 1, summary
 
-        # Bulk dry-run prints intent without writing.
+        # Bulk dry run (no --force) prints intent without writing.
         code, stdout, stderr = run_dbtool(
             datadir,
             "abandon-prover-tasks",
             "--all-unfinished",
-            "--dry-run",
         )
         assert code == 0, stderr
         assert "would abandon" in stdout, stdout
+        assert "Use --force to execute these changes." in stdout, stdout
         summary = _summary(datadir)
         assert summary["pending"] == 1, summary
 
@@ -114,7 +123,7 @@ class DbtoolProverTaskAdminTest(StrataNodeTest):
             datadir,
             "abandon-prover-tasks",
             "--all-unfinished",
-            "--confirm",
+            "--force",
         )
         assert code == 0, stderr
         summary = _summary(datadir)

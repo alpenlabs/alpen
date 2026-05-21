@@ -86,16 +86,11 @@ pub(crate) fn parse_task_key(hex_str: &str) -> Result<Vec<u8>, DisplayedError> {
     })
 }
 
-/// Common confirm-required guard for every mutating subcommand.
-pub(crate) fn require_confirm(confirm: bool, action: &str) -> Result<(), DisplayedError> {
-    if confirm {
-        Ok(())
-    } else {
-        Err(DisplayedError::UserError(
-            format!("--confirm is required to {action}"),
-            Box::new(()),
-        ))
-    }
+/// Standard tail line printed at the end of a dry-run, matching the
+/// phrasing used by `revert-ol-state`.
+pub(crate) fn print_force_hint() {
+    println!();
+    println!("Use --force to execute these changes.");
 }
 
 #[cfg(test)]
@@ -190,11 +185,5 @@ mod tests {
     fn parse_task_key_rejects_invalid_hex() {
         assert!(parse_task_key("not-hex").is_err());
         assert!(parse_task_key("abc").is_err());
-    }
-
-    #[test]
-    fn require_confirm_gates_action() {
-        assert!(require_confirm(true, "do thing").is_ok());
-        assert!(require_confirm(false, "do thing").is_err());
     }
 }
