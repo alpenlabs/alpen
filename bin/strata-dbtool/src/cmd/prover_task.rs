@@ -4,8 +4,6 @@
 //! so they can manipulate records without going through the running
 //! prover service — by design, the node must be offline.
 
-use std::{fmt, str::FromStr};
-
 use argh::FromArgs;
 use strata_checkpoint_types::CheckpointProofTask;
 use strata_cli_common::errors::{DisplayableError, DisplayedError};
@@ -15,73 +13,15 @@ use strata_paas::{TaskRecordData, TaskStatus};
 
 use crate::{
     cli::OutputFormat,
-    cmd::checkpoint::get_canonical_epoch_commitment_at,
+    cmd::{
+        checkpoint::get_canonical_epoch_commitment_at,
+        prover_task_common::{parse_task_key, require_confirm, StatusFilter, ABANDONED_REASON},
+    },
     output::{
         output,
         prover_task::{ProverTaskInfo, ProverTasksSummaryInfo},
     },
 };
-
-/// Status filter accepted by the summary command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StatusFilter {
-    All,
-    Pending,
-    Proving,
-    Completed,
-    TransientFailure,
-    PermanentFailure,
-    /// Pending or Proving — what the prover's startup recovery would respawn.
-    Unfinished,
-    /// Completed or PermanentFailure — won't be retried again.
-    Terminal,
-}
-
-impl StatusFilter {
-    fn matches(&self, status: &TaskStatus) -> bool {
-        match self {
-            Self::All => true,
-            Self::Pending => matches!(status, TaskStatus::Pending),
-            Self::Proving => matches!(status, TaskStatus::Proving { .. }),
-            Self::Completed => matches!(status, TaskStatus::Completed),
-            Self::TransientFailure => matches!(status, TaskStatus::TransientFailure { .. }),
-            Self::PermanentFailure => matches!(status, TaskStatus::PermanentFailure { .. }),
-            Self::Unfinished => status.is_unfinished(),
-            Self::Terminal => status.is_terminal(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct UnsupportedStatusFilter;
-
-impl fmt::Display for UnsupportedStatusFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "must be one of: all, pending, proving, completed, transient-failure, \
-             permanent-failure, unfinished, terminal"
-        )
-    }
-}
-
-impl FromStr for StatusFilter {
-    type Err = UnsupportedStatusFilter;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "all" => Ok(Self::All),
-            "pending" => Ok(Self::Pending),
-            "proving" => Ok(Self::Proving),
-            "completed" => Ok(Self::Completed),
-            "transient-failure" | "transient_failure" => Ok(Self::TransientFailure),
-            "permanent-failure" | "permanent_failure" => Ok(Self::PermanentFailure),
-            "unfinished" => Ok(Self::Unfinished),
-            "terminal" => Ok(Self::Terminal),
-            _ => Err(UnsupportedStatusFilter),
-        }
-    }
-}
 
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-prover-task")]
@@ -112,14 +52,6 @@ pub(crate) struct GetProverTasksSummaryArgs {
     /// output format: "porcelain" (default) or "json"
     #[argh(option, short = 'o', default = "OutputFormat::Porcelain")]
     pub(crate) output_format: OutputFormat,
-}
-
-/// Parse a hex string into a task key, normalizing a `0x` prefix.
-pub(crate) fn parse_task_key(hex_str: &str) -> Result<Vec<u8>, DisplayedError> {
-    let trimmed = hex_str.strip_prefix("0x").unwrap_or(hex_str);
-    hex::decode(trimmed).map_err(|e| {
-        DisplayedError::UserError("Invalid hex-encoded task key".to_string(), Box::new(e))
-    })
 }
 
 /// Fetch a single prover task record by hex-encoded key.
@@ -193,9 +125,6 @@ pub(crate) fn get_prover_tasks_summary(
     output(&summary, args.output_format)
 }
 
-/// Error string written into `PermanentFailure` by the abandon commands.
-const ABANDONED_REASON: &str = "abandoned via dbtool";
-
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "abandon-prover-task")]
 /// Mark a single prover task as `PermanentFailure { error: "abandoned via dbtool" }`.
@@ -260,18 +189,6 @@ pub(crate) struct DeleteProverTaskArgs {
     /// confirm the deletion
     #[argh(switch)]
     pub(crate) confirm: bool,
-}
-
-/// Common confirm-required guard.
-fn require_confirm(confirm: bool, action: &str) -> Result<(), DisplayedError> {
-    if confirm {
-        Ok(())
-    } else {
-        Err(DisplayedError::UserError(
-            format!("--confirm is required to {action}"),
-            Box::new(()),
-        ))
-    }
 }
 
 /// Abandon a single task by flipping its status to `PermanentFailure`.
@@ -488,103 +405,4 @@ pub(crate) fn backfill_prover_task_raw(
 
     println!("backfilled prover task: {}", args.key_hex);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn status_filter_matches_each_variant() {
-        let pending = TaskStatus::Pending;
-        let proving = TaskStatus::Proving { retry_count: 2 };
-        let completed = TaskStatus::Completed;
-        let transient = TaskStatus::TransientFailure {
-            retry_count: 1,
-            error: "x".into(),
-        };
-        let permanent = TaskStatus::PermanentFailure { error: "y".into() };
-
-        assert!(StatusFilter::All.matches(&pending));
-        assert!(StatusFilter::All.matches(&permanent));
-
-        assert!(StatusFilter::Pending.matches(&pending));
-        assert!(!StatusFilter::Pending.matches(&proving));
-
-        assert!(StatusFilter::Proving.matches(&proving));
-        assert!(!StatusFilter::Proving.matches(&pending));
-
-        assert!(StatusFilter::Completed.matches(&completed));
-        assert!(!StatusFilter::Completed.matches(&pending));
-
-        assert!(StatusFilter::TransientFailure.matches(&transient));
-        assert!(!StatusFilter::TransientFailure.matches(&permanent));
-
-        assert!(StatusFilter::PermanentFailure.matches(&permanent));
-        assert!(!StatusFilter::PermanentFailure.matches(&transient));
-
-        // Unfinished == Pending | Proving.
-        assert!(StatusFilter::Unfinished.matches(&pending));
-        assert!(StatusFilter::Unfinished.matches(&proving));
-        assert!(!StatusFilter::Unfinished.matches(&completed));
-        assert!(!StatusFilter::Unfinished.matches(&transient));
-
-        // Terminal == Completed | PermanentFailure.
-        assert!(StatusFilter::Terminal.matches(&completed));
-        assert!(StatusFilter::Terminal.matches(&permanent));
-        assert!(!StatusFilter::Terminal.matches(&pending));
-        assert!(!StatusFilter::Terminal.matches(&transient));
-    }
-
-    #[test]
-    fn status_filter_from_str_accepts_canonical_and_aliases() {
-        assert_eq!("all".parse::<StatusFilter>().unwrap(), StatusFilter::All);
-        assert_eq!(
-            "PENDING".parse::<StatusFilter>().unwrap(),
-            StatusFilter::Pending
-        );
-        // Both hyphenated and snake-cased forms are accepted.
-        assert_eq!(
-            "transient-failure".parse::<StatusFilter>().unwrap(),
-            StatusFilter::TransientFailure
-        );
-        assert_eq!(
-            "transient_failure".parse::<StatusFilter>().unwrap(),
-            StatusFilter::TransientFailure
-        );
-        assert_eq!(
-            "permanent-failure".parse::<StatusFilter>().unwrap(),
-            StatusFilter::PermanentFailure
-        );
-        assert_eq!(
-            "unfinished".parse::<StatusFilter>().unwrap(),
-            StatusFilter::Unfinished
-        );
-        assert_eq!(
-            "terminal".parse::<StatusFilter>().unwrap(),
-            StatusFilter::Terminal
-        );
-
-        assert!("bogus".parse::<StatusFilter>().is_err());
-    }
-
-    #[test]
-    fn parse_task_key_accepts_hex_with_and_without_prefix() {
-        assert_eq!(
-            parse_task_key("deadbeef").unwrap(),
-            vec![0xde, 0xad, 0xbe, 0xef]
-        );
-        assert_eq!(
-            parse_task_key("0xdeadbeef").unwrap(),
-            vec![0xde, 0xad, 0xbe, 0xef]
-        );
-        assert_eq!(parse_task_key("").unwrap(), Vec::<u8>::new());
-    }
-
-    #[test]
-    fn parse_task_key_rejects_invalid_hex() {
-        assert!(parse_task_key("not-hex").is_err());
-        // Odd length is invalid for hex.
-        assert!(parse_task_key("abc").is_err());
-    }
 }
