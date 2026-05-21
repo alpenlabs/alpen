@@ -13,7 +13,7 @@ use std::{
 
 use parking_lot::Mutex;
 use tokio::{sync::oneshot, task::spawn_blocking};
-use tracing::{error, info, info_span, warn, Instrument};
+use tracing::{error, info, info_span, warn, Instrument, Span};
 use zkaleido::ZkVmHost;
 #[cfg(feature = "remote")]
 use zkaleido::ZkVmRemoteHost;
@@ -356,7 +356,19 @@ impl<H: ProofSpec> Prover<H> {
             });
 
             let strategy = self.strategy.clone();
-            let prove_result = spawn_blocking(move || strategy.prove(&input, ctx)).await;
+            // Capture the active `prove{task=...}` span (set up at the top
+            // of run_task and active here via `.instrument(span)`) and
+            // re-enter it inside the blocking closure. spawn_blocking runs
+            // on a different thread than the async task; tracing's span
+            // dispatch is thread-local, so without this re-entry every
+            // event emitted by the strategy (zkaleido logs, SP1 SDK logs,
+            // any future guest-stderr tee) would lose the task tag.
+            let parent_span = Span::current();
+            let prove_result = spawn_blocking(move || {
+                let _guard = parent_span.enter();
+                strategy.prove(&input, ctx)
+            })
+            .await;
 
             let receipt = match prove_result {
                 Ok(Ok(receipt)) => receipt,
