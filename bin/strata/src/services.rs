@@ -4,20 +4,22 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use strata_btcio::reader::query::{ReaderValidation, bitcoin_data_reader_task};
-use strata_chain_worker_new::start_chain_worker_service_from_ctx;
+use strata_chain_worker_new::{ChainWorkerHandle, start_chain_worker_service_from_ctx};
 use strata_consensus_logic::{
     AsmBlockSubmitter,
     sync_manager::{spawn_asm_worker_with_ctx, spawn_csm_listener_with_ctx},
 };
+use strata_csm_worker::CsmWorkerStatus;
 use strata_node_context::NodeContext;
 use strata_ol_checkpoint::OLCheckpointBuilder;
 use strata_ol_mempool::{MempoolBuilder, MempoolHandle, OLMempoolConfig};
+use strata_service::ServiceMonitor;
 
 use crate::{
     context::ensure_genesis,
-    fcm,
+    css, fcm,
     helpers::rollup_to_btcio_params,
-    run_context::{RunContext, ServiceHandles},
+    run_context::{RunContext, ServiceHandles, SyncServiceHandle},
 };
 
 #[cfg(feature = "sequencer")]
@@ -300,8 +302,8 @@ pub(crate) fn start_strata_services(
     let sequencer_handles =
         sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;
 
-    let fcm_handle = fcm::start(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
-    let fcm_handle = Arc::new(fcm_handle);
+    let sync_handle =
+        start_sync_services(&nodectx, chain_worker_handle.clone(), csm_monitor.clone())?;
 
     let service_handles_builder = ServiceHandles::builder(
         asm_handle,
@@ -309,7 +311,7 @@ pub(crate) fn start_strata_services(
         mempool_handle,
         chain_worker_handle,
         checkpoint_handle,
-        fcm_handle,
+        sync_handle,
     );
     let service_handles =
         sequencer_services::attach_service_handles(service_handles_builder, sequencer_handles)
@@ -343,6 +345,24 @@ fn start_btcio_reader(nodectx: &NodeContext, asm_handle: Arc<strata_asm_worker::
             Arc::new(AsmBlockSubmitter::new(asm_handle)),
         ),
     );
+}
+
+/// Starts the OL sync service for the node's role.
+///
+/// Sequencer nodes run the fork-choice manager; non-sequencer nodes run the
+/// checkpoint sync service. A node runs exactly one.
+fn start_sync_services(
+    nodectx: &NodeContext,
+    chain_worker_handle: Arc<ChainWorkerHandle>,
+    csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
+) -> Result<SyncServiceHandle> {
+    if nodectx.config().client.is_sequencer {
+        let fcm_handle = fcm::start(nodectx, chain_worker_handle, csm_monitor)?;
+        Ok(SyncServiceHandle::Fcm(Arc::new(fcm_handle)))
+    } else {
+        let css_handle = css::start(nodectx, chain_worker_handle, csm_monitor)?;
+        Ok(SyncServiceHandle::Css(Arc::new(css_handle)))
+    }
 }
 
 /// Starts the mempool service.
