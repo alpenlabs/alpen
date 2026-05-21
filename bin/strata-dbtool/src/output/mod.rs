@@ -2,6 +2,7 @@ pub(crate) mod broadcaster;
 pub(crate) mod checkpoint;
 pub(crate) mod checkpoint_proof;
 pub(crate) mod client_state;
+pub(crate) mod ee_receipts;
 pub(crate) mod helpers;
 pub(crate) mod l1;
 pub(crate) mod ol;

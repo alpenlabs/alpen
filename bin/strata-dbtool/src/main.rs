@@ -26,6 +26,9 @@ use crate::{
             ee_delete_prover_task, ee_get_prover_task, ee_get_prover_tasks_summary,
             ee_reset_prover_task,
         },
+        ee_receipts::{
+            ee_delete_acct_proof, ee_delete_chunk_receipt, ee_get_acct_proof, ee_get_chunk_receipt,
+        },
         l1::{get_l1_block, get_l1_summary},
         ol::{get_ol_block, get_ol_summary},
         ol_state::{get_ol_state, revert_ol_state},
@@ -102,6 +105,16 @@ fn main() {
         }
         Command::EeBackfillProverTaskRaw(args) => {
             with_ee_db(ee_datadir, |db| ee_backfill_prover_task_raw(db, args))
+        }
+        Command::EeGetChunkReceipt(args) => {
+            with_ee_db(ee_datadir, |db| ee_get_chunk_receipt(db, args))
+        }
+        Command::EeDeleteChunkReceipt(args) => {
+            with_ee_db(ee_datadir, |db| ee_delete_chunk_receipt(db, args))
+        }
+        Command::EeGetAcctProof(args) => with_ee_db(ee_datadir, |db| ee_get_acct_proof(db, args)),
+        Command::EeDeleteAcctProof(args) => {
+            with_ee_db(ee_datadir, |db| ee_delete_acct_proof(db, args))
         }
     };
 

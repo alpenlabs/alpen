@@ -15590,12 +15590,14 @@ dependencies = [
 name = "strata-dbtool"
 version = "0.3.0-alpha.1"
 dependencies = [
+ "alpen-ee-common",
  "alpen-ee-database",
  "argh",
  "hex",
  "serde",
  "serde_json",
  "sled",
+ "strata-acct-types",
  "strata-asm-logs",
  "strata-asm-proto-checkpoint-types",
  "strata-checkpoint-types",

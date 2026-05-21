@@ -16,6 +16,9 @@ use crate::cmd::{
         EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
         EeResetProverTaskArgs,
     },
+    ee_receipts::{
+        EeDeleteAcctProofArgs, EeDeleteChunkReceiptArgs, EeGetAcctProofArgs, EeGetChunkReceiptArgs,
+    },
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
@@ -81,6 +84,10 @@ pub(crate) enum Command {
     EeResetProverTask(EeResetProverTaskArgs),
     EeDeleteProverTask(EeDeleteProverTaskArgs),
     EeBackfillProverTaskRaw(EeBackfillProverTaskRawArgs),
+    EeGetChunkReceipt(EeGetChunkReceiptArgs),
+    EeDeleteChunkReceipt(EeDeleteChunkReceiptArgs),
+    EeGetAcctProof(EeGetAcctProofArgs),
+    EeDeleteAcctProof(EeDeleteAcctProofArgs),
 }
 
 /// Output format
