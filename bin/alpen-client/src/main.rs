@@ -259,9 +259,20 @@ fn main() {
                 let ol_url = ext.ol_client_url.as_ref().ok_or_else(|| {
                     eyre::eyre!("--ol-client-url is required when not using --dummy-ol-client")
                 })?;
+                if ext.sequencer && ext.ol_submit_url.is_none() {
+                    eyre::bail!(
+                        "--ol-submit-url is required with --sequencer when not using \
+                         --dummy-ol-client"
+                    );
+                }
                 OLClientKind::Rpc(
-                    RpcOLClient::try_new(config.params().account_id(), ol_url)
-                        .map_err(|e| eyre::eyre!("failed to create OL client: {e}"))?,
+                    RpcOLClient::try_new(
+                        config.params().account_id(),
+                        ol_url,
+                        ext.ol_submit_url.as_deref(),
+                        ext.ol_submit_bearer_token.as_deref(),
+                    )
+                    .map_err(|e| eyre::eyre!("failed to create OL client: {e}"))?,
                 )
             };
             let ol_client = Arc::new(ol_client);
@@ -906,6 +917,15 @@ pub struct AdditionalConfig {
     /// Required unless `--dummy-ol-client` is specified.
     #[arg(long)]
     pub ol_client_url: Option<String>,
+
+    /// URL of the authenticated OL transaction submission RPC.
+    /// Required with `--sequencer` unless `--dummy-ol-client` is specified.
+    #[arg(long)]
+    pub ol_submit_url: Option<String>,
+
+    /// Bearer token for the authenticated OL transaction submission RPC.
+    #[arg(long, env = "STRATA_SUBMIT_RPC_TOKEN")]
+    pub ol_submit_bearer_token: Option<String>,
 
     /// Use a dummy OL client instead of connecting to a real OL node.
     /// This is useful for testing EE functionality in isolation.
