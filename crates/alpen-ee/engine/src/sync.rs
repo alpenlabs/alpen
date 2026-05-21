@@ -305,7 +305,6 @@ mod tests {
         MockExecBlockStorage, StorageError,
     };
     use async_trait::async_trait;
-    use strata_acct_types::BitcoinAmount;
     use strata_ee_acct_types::EeAccountState;
     use strata_ee_chain_types::{ExecBlockCommitment, ExecBlockPackage, ExecInputs, ExecOutputs};
 
@@ -472,13 +471,7 @@ mod tests {
             ExecInputs::new_empty(),
             ExecOutputs::new_empty(),
         );
-        let account_state = EeAccountState::new(
-            block_hash,
-            Hash::zero(),
-            BitcoinAmount::ZERO,
-            vec![],
-            vec![],
-        );
+        let account_state = EeAccountState::new(block_hash, Hash::zero(), vec![], vec![]);
 
         // Create OL block commitment
         let mut ol_block_bytes = [0u8; 32];

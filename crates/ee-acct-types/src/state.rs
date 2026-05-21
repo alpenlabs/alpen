@@ -1,6 +1,5 @@
 //! EE account internal state.
 
-use strata_acct_types::BitcoinAmount;
 use strata_identifiers::Hash;
 use strata_snark_acct_runtime::IInnerState;
 use tree_hash::{Sha256Hasher, TreeHash};
@@ -11,14 +10,12 @@ impl EeAccountState {
     pub fn new(
         last_exec_blkid: Hash,
         last_exec_state_root: Hash,
-        tracked_balance: BitcoinAmount,
         pending_inputs: Vec<PendingInputEntry>,
         pending_fincls: Vec<PendingFinclEntry>,
     ) -> Self {
         Self {
             last_exec_blkid: last_exec_blkid.0.into(),
             last_exec_state_root: last_exec_state_root.0.into(),
-            tracked_balance,
             pending_inputs: pending_inputs
                 .try_into()
                 .expect("pending inputs should not exceed capacity"),
@@ -28,15 +25,7 @@ impl EeAccountState {
         }
     }
 
-    pub fn into_parts(
-        self,
-    ) -> (
-        Hash,
-        Hash,
-        BitcoinAmount,
-        Vec<PendingInputEntry>,
-        Vec<PendingFinclEntry>,
-    ) {
+    pub fn into_parts(self) -> (Hash, Hash, Vec<PendingInputEntry>, Vec<PendingFinclEntry>) {
         (
             self.last_exec_blkid
                 .as_ref()
@@ -46,7 +35,6 @@ impl EeAccountState {
                 .as_ref()
                 .try_into()
                 .expect("FixedBytes<32> should convert to [u8; 32]"),
-            self.tracked_balance,
             self.pending_inputs.into(),
             self.pending_fincls.into(),
         )
@@ -72,18 +60,6 @@ impl EeAccountState {
 
     pub fn set_last_exec_state_root(&mut self, root: Hash) {
         self.last_exec_state_root = root.0.into();
-    }
-
-    pub fn tracked_balance(&self) -> BitcoinAmount {
-        self.tracked_balance
-    }
-
-    /// Adds to the tracked balance, panicking on overflow.
-    pub fn add_tracked_balance(&mut self, amt: BitcoinAmount) {
-        self.tracked_balance = self
-            .tracked_balance
-            .checked_add(amt)
-            .expect("snarkacct: overflowing balance");
     }
 
     pub fn pending_inputs(&self) -> &[PendingInputEntry] {
@@ -231,7 +207,6 @@ mod tests {
             (
                 any::<[u8; 32]>(),
                 any::<[u8; 32]>(),
-                any::<u64>(),
                 prop::collection::vec(pending_input_entry_strategy(), 0..5),
                 prop::collection::vec(
                     (any::<u32>(), any::<[u8; 32]>()).prop_map(|(epoch, hash)| PendingFinclEntry {
@@ -241,21 +216,18 @@ mod tests {
                     0..5,
                 ),
             )
-                .prop_map(
-                    |(last_exec_blkid, last_exec_state_root, balance, inputs, fincls)| {
-                        EeAccountState {
-                            last_exec_blkid: last_exec_blkid.into(),
-                            last_exec_state_root: last_exec_state_root.into(),
-                            tracked_balance: BitcoinAmount::from_sat(balance),
-                            pending_inputs: inputs
-                                .try_into()
-                                .expect("pending inputs should not exceed capacity"),
-                            pending_fincls: fincls
-                                .try_into()
-                                .expect("pending fincls should not exceed capacity"),
-                        }
-                    },
-                )
+                .prop_map(|(last_exec_blkid, last_exec_state_root, inputs, fincls)| {
+                    EeAccountState {
+                        last_exec_blkid: last_exec_blkid.into(),
+                        last_exec_state_root: last_exec_state_root.into(),
+                        pending_inputs: inputs
+                            .try_into()
+                            .expect("pending inputs should not exceed capacity"),
+                        pending_fincls: fincls
+                            .try_into()
+                            .expect("pending fincls should not exceed capacity"),
+                    }
+                },)
         );
 
         #[test]
@@ -263,14 +235,12 @@ mod tests {
             let a = EeAccountState::new(
                 Hash::from([1u8; 32]),
                 Hash::from([2u8; 32]),
-                BitcoinAmount::from_sat(10),
                 Vec::new(),
                 Vec::new(),
             );
             let b = EeAccountState::new(
                 Hash::from([1u8; 32]),
                 Hash::from([3u8; 32]),
-                BitcoinAmount::from_sat(10),
                 Vec::new(),
                 Vec::new(),
             );

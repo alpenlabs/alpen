@@ -168,13 +168,7 @@ pub fn assert_both_paths_succeed(
 
 /// Creates a simple initial state for testing.
 pub(crate) fn create_initial_state() -> (EeAccountState, SnarkAccountState) {
-    let ee_state = EeAccountState::new(
-        Hash::new([0u8; 32]),
-        Hash::zero(),
-        BitcoinAmount::from(0u64),
-        Vec::new(),
-        Vec::new(),
-    );
+    let ee_state = EeAccountState::new(Hash::new([0u8; 32]), Hash::zero(), Vec::new(), Vec::new());
 
     let snark_state = make_snark_state(&ee_state);
 

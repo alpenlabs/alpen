@@ -16419,7 +16419,6 @@ dependencies = [
  "rkyv",
  "rsp-primitives",
  "ssz",
- "strata-acct-types",
  "strata-codec",
  "strata-ee-acct-runtime",
  "strata-ee-acct-types",

@@ -27,9 +27,6 @@ class EeAccountState(Container):
     ### State root of the last execution block that we've processed
     last_exec_state_root: Bytes32
 
-    ### Tracked balance bridged into execution env, according to processed messages
-    tracked_balance: strata_acct_types.BitcoinAmount
-
     ### Pending inputs that haven't been accepted into a block (must be processed in order)
     pending_inputs: List[PendingInputEntry, MAX_PENDING_INPUTS]
 
