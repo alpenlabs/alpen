@@ -1,4 +1,4 @@
-name: Ethereum Execution Spec tests against staging docker.
+name: Ethereum Execution Spec tests against staging alpen-client docker.
 
 on:
   schedule:
@@ -93,10 +93,6 @@ jobs:
           ./contrib/assert-eest-prover-pipeline.sh \
             --docker-container alpen_eest \
             --baseline-file "${RUNNER_TEMP}/eest-ee-log.offset" \
-            --bitcoin-container eest_bitcoind \
-            --bitcoin-rpc-user rpcuser \
-            --bitcoin-rpc-password rpcpassword \
-            --bitcoin-rpc-wallet default \
             --timeout 900
 
       - name: Tear down services

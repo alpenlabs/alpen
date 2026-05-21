@@ -301,6 +301,10 @@ def main(argv: list[str]) -> int:
         ),
         # Alpen-client (EE) environments
         "alpen_ee": AlpenClientEnv(enable_l1_da=True),
+        # Execution-spec tests only need a sequencer RPC endpoint. Keep this
+        # isolated from L1 DA/prover services so EEST failures reflect EE
+        # execution behavior rather than Bitcoin publishing.
+        "alpen_eest": AlpenClientEnv(fullnode_count=0, enable_l1_da=False),
         "alpen_ee_discovery": AlpenClientEnv(
             enable_discovery=True, pure_discovery=True, enable_l1_da=True
         ),

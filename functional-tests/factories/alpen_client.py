@@ -67,6 +67,7 @@ class AlpenClientFactory(flexitest.Factory):
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
         da_config: EeDaConfig | None = None,
+        batch_sealing_block_count: int = 100,
         dev_track_latest_epoch: bool = False,
         **kwargs,
     ) -> AlpenClientService:
@@ -124,6 +125,7 @@ class AlpenClientFactory(flexitest.Factory):
             "--health-check-port", "0",
             "--p2p-secret-key", str(p2p_secret_key_file),
             "--custom-chain", custom_chain,
+            "--batch-sealing-block-count", str(batch_sealing_block_count),
             "-vvvv",
             # Functional tests don't ship the SP1 guest ELFs, so run the
             # EE chunk + acct provers on the zkaleido NativeHost.
@@ -164,7 +166,6 @@ class AlpenClientFactory(flexitest.Factory):
                 "--btc-rpc-password", da_config.btc_rpc_password,
                 "--l1-reorg-safe-depth", str(da_config.l1_reorg_safe_depth),
                 "--genesis-l1-height", str(da_config.genesis_l1_height),
-                "--batch-sealing-block-count", str(da_config.batch_sealing_block_count),
             ])
             # fmt: on
 
