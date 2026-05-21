@@ -17,6 +17,8 @@ on:
       - "docker/strata/**"
       - "docker/alpen-client/**"
       - "docker/strata-signer/**"
+      - "docker/strata-datatool/**"
+      - "provers/sp1/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
