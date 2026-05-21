@@ -12,13 +12,15 @@
 use strata_bridge_params::BridgeParams;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::errors::DbError;
-use strata_identifiers::OLBlockCommitment;
-use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLLog};
+use strata_identifiers::{Epoch, OLBlockCommitment};
+use strata_ledger_types::IStateAccessor;
+use strata_ol_chain_types_new::{OLBlock, OLBlockHeader, OLL1ManifestContainer, OLLog};
+use strata_ol_da::{OLDaSchemeV1, decode_ol_da_payload_bytes};
 use strata_ol_state_support_types::{
     IndexerState, IndexerWrites, MemoryStateBaseLayer, WriteTrackingState,
 };
 use strata_ol_state_types::{IStateBatchApplicable, OLAccountState, OLState, WriteBatch};
-use strata_ol_stf::verify_block;
+use strata_ol_stf::{BlockInfo, EpochInfo, apply_da_epoch, verify_block};
 use strata_primitives::{epoch::EpochCommitment, l1::L1BlockCommitment};
 use strata_service::ServiceState;
 use tracing::*;
@@ -308,6 +310,24 @@ impl ChainWorkerServiceState {
         Ok(())
     }
 
+    // Get previous terminal from storage. Expects `cur_epoch` to be > 0.
+    fn get_prev_terminal(&self, cur_epoch: Epoch) -> WorkerResult<OLBlockCommitment> {
+        if cur_epoch == 0 {
+            return Err(WorkerError::Unexpected(
+                "received prev terminal request for unexpected epoch 0".to_string(),
+            ));
+        }
+        // Since chain worker starts executing blocks from slot 1, it is expected that previous
+        // terminal exists. For epoch 1, the prev terminal is the genesis block which should be
+        // already stored.
+        let target_epoch = cur_epoch.saturating_sub(1);
+        let prev_summaries = self.ctx.fetch_epoch_summaries(target_epoch)?;
+        prev_summaries
+            .first()
+            .map(|s| *s.terminal())
+            .ok_or(WorkerError::MissingSummaryForEpoch(target_epoch))
+    }
+
     /// Takes the block and post-state and inserts database entries to reflect
     /// the epoch being finished on-chain.
     fn handle_complete_epoch(
@@ -318,15 +338,7 @@ impl ChainWorkerServiceState {
     ) -> WorkerResult<()> {
         let completed_epoch = block.header().epoch();
 
-        // Get previous terminal from storage.
-        // Note: Epoch 0 (genesis) is created by genesis initialization, not chain-worker.
-        // Chain-worker starts processing from slot 1, so completed_epoch >= 1 is guaranteed.
-        let prev_summaries = self.ctx.fetch_epoch_summaries(completed_epoch - 1)?;
-        let prev_terminal = prev_summaries
-            .first()
-            .map(|s| *s.terminal())
-            .unwrap_or(OLBlockCommitment::null());
-
+        let prev_terminal = self.get_prev_terminal(completed_epoch)?;
         let summary =
             build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
 
@@ -346,6 +358,111 @@ impl ChainWorkerServiceState {
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         self.ctx.merge_finalized_epoch(&epoch)?;
         self.state.last_finalized_epoch = Some(epoch);
+        Ok(())
+    }
+
+    /// Reconstructs an epoch's OL state from its checkpoint and persists it.
+    ///
+    /// Used by checkpoint sync. Reconstructs state from the checkpoint's DA
+    /// diff via [`apply_da_epoch`].
+    #[instrument(skip_all, fields(epoch = epoch.epoch()), err)]
+    pub(crate) fn apply_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
+        // Epoch 0 is genesis-initialized on every node, never checkpoint-applied.
+        if epoch.epoch() == 0 {
+            return Err(WorkerError::CannotApplyGenesisEpoch);
+        }
+
+        let payload = self
+            .ctx
+            .fetch_checkpoint_payload(&epoch)?
+            .ok_or(WorkerError::MissingCheckpointPayload(epoch))?;
+
+        // Fetch previous terminal state.
+        let prev_terminal = self.get_prev_terminal(epoch.epoch())?;
+        let base_state_raw = self
+            .ctx
+            .fetch_ol_state(prev_terminal)?
+            .ok_or(WorkerError::MissingPreState(prev_terminal))?;
+        let base_state = MemoryStateBaseLayer::new(base_state_raw);
+
+        // Decode the DA diff and assemble the manifest range.
+        let sidecar = payload.sidecar();
+        let da_payload = decode_ol_da_payload_bytes(sidecar.ol_state_diff())
+            .map_err(|e| WorkerError::Unexpected(format!("decode OL DA payload: {e}")))?;
+
+        let tip = payload.new_tip();
+        let from_height = base_state.last_l1_height() + 1;
+        let manifests = self.ctx.fetch_l1_manifests(from_height, tip.l1_height())?;
+        let manifest_cont = OLL1ManifestContainer::new(manifests)
+            .map_err(|e| WorkerError::Unexpected(format!("build manifest container: {e}")))?;
+
+        // Create contextual data for applying da.
+        let terminal = *tip.l2_commitment();
+        let terminal_info = BlockInfo::new(
+            sidecar.terminal_header_complement().timestamp(),
+            terminal.slot(),
+            epoch.epoch(),
+        );
+        let epoch_info = EpochInfo::new(terminal_info, prev_terminal);
+
+        // Reconstruct: wrap the base state in the write-tracking + indexer
+        // stack, run apply_da_epoch, then extract the batch and indexer writes.
+        let tracking_state = WriteTrackingState::new_empty(&base_state);
+        let mut indexer_state = IndexerState::new(tracking_state);
+        apply_da_epoch::<_, OLDaSchemeV1>(
+            &mut indexer_state,
+            &epoch_info,
+            da_payload,
+            &manifest_cont,
+        )?;
+        let indexer_state_root = indexer_state.compute_state_root().map_err(|e| {
+            WorkerError::Unexpected(format!("compute indexer state root: {epoch} {e}"))
+        })?;
+
+        let (tracking_state, indexer_writes) = indexer_state.into_parts();
+        let write_batch: WriteBatch<OLAccountState> = tracking_state.into_batch();
+
+        // Apply the batch onto the base state to get the reconstructed state.
+        let mut new_state = base_state;
+        new_state
+            .apply_write_batch(write_batch.clone())
+            .map_err(|source| WorkerError::ApplyWriteBatch {
+                commitment: prev_terminal,
+                source,
+            })?;
+        let final_state_root = new_state.compute_state_root().map_err(|e| {
+            WorkerError::Unexpected(format!("compute final state root {epoch}: {e}"))
+        })?;
+
+        // Sanity check: indexer state root and final state root are same
+        if final_state_root != indexer_state_root {
+            return Err(WorkerError::Unexpected(format!(
+                "state roots from applying da and write batch should be same({epoch})"
+            )));
+        }
+        let new_state = new_state.into_inner();
+
+        // L1 info comes from the reconstructed post-state's epochal state, the
+        // same source FCM's `build_epoch_summary` uses.
+        let epoch_state = new_state.epoch_state();
+        let new_l1 =
+            L1BlockCommitment::new(epoch_state.last_l1_height(), *epoch_state.last_l1_blkid());
+
+        let output = OLBlockExecutionOutput::new(final_state_root, write_batch, indexer_writes);
+
+        // Persist: toplevel state at the terminal commitment, epoch summary,
+        // and the epoch-granular index.
+        let summary = EpochSummary::new(
+            epoch.epoch(),
+            terminal,
+            prev_terminal,
+            new_l1,
+            final_state_root,
+        );
+        self.ctx.store_toplevel_state(terminal, new_state)?;
+        self.ctx.store_summary(summary)?;
+        self.ctx.apply_epoch_indexing(&epoch, &output)?;
+
         Ok(())
     }
 }
