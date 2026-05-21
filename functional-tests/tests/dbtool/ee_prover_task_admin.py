@@ -25,9 +25,7 @@ _ACCT_KEY = "61" + "22" * 8  # b'a' + 8 arbitrary bytes
 
 
 def _summary(ee_datadir: str, *extra: str) -> dict:
-    return run_dbtool_ee_json(
-        ee_datadir, "ee-get-prover-tasks-summary", "--limit", "100", *extra
-    )
+    return run_dbtool_ee_json(ee_datadir, "ee-get-prover-tasks-summary", "--limit", "100", *extra)
 
 
 def _task(ee_datadir: str, key_hex: str) -> dict:
@@ -55,15 +53,11 @@ class DbtoolEeProverTaskAdminTest(AlpenClientTest):
 
         # Dry-run-by-default: without --force, the backfill must print
         # "would backfill" + force hint and leave the DB unchanged.
-        code, stdout, stderr = run_dbtool_ee(
-            ee_datadir, "ee-backfill-prover-task-raw", _CHUNK_KEY
-        )
+        code, stdout, stderr = run_dbtool_ee(ee_datadir, "ee-backfill-prover-task-raw", _CHUNK_KEY)
         assert code == 0, stderr
         assert "would backfill" in stdout, stdout
         assert "Use --force to execute these changes." in stdout, stdout
-        assert _summary(ee_datadir)["total"] == baseline_total, (
-            "dry-run backfill must not write"
-        )
+        assert _summary(ee_datadir)["total"] == baseline_total, "dry-run backfill must not write"
 
         # Backfill one chunk-tagged and one acct-tagged task for real;
         # both should land in Pending.
@@ -113,9 +107,7 @@ class DbtoolEeProverTaskAdminTest(AlpenClientTest):
         # Abandon the chunk-tagged task → PermanentFailure with the
         # documented reason. The single-key path operates on the opaque
         # key, so no kind flag is needed.
-        code, _, stderr = run_dbtool_ee(
-            ee_datadir, "ee-abandon-prover-task", _CHUNK_KEY, "--force"
-        )
+        code, _, stderr = run_dbtool_ee(ee_datadir, "ee-abandon-prover-task", _CHUNK_KEY, "--force")
         assert code == 0, stderr
         record = _task(ee_datadir, _CHUNK_KEY)
         assert record["status"]["name"] == "permanent_failure", record
@@ -124,9 +116,7 @@ class DbtoolEeProverTaskAdminTest(AlpenClientTest):
 
         # Reset moves the acct-tagged task back to Pending and clears
         # any retry_after.
-        code, _, stderr = run_dbtool_ee(
-            ee_datadir, "ee-reset-prover-task", _ACCT_KEY, "--force"
-        )
+        code, _, stderr = run_dbtool_ee(ee_datadir, "ee-reset-prover-task", _ACCT_KEY, "--force")
         assert code == 0, stderr
         record = _task(ee_datadir, _ACCT_KEY)
         assert record["status"]["name"] == "pending", record
@@ -134,9 +124,7 @@ class DbtoolEeProverTaskAdminTest(AlpenClientTest):
         assert record["kind"] == "acct", record
 
         # Delete the abandoned one; it should drop from the summary.
-        code, _, stderr = run_dbtool_ee(
-            ee_datadir, "ee-delete-prover-task", _CHUNK_KEY, "--force"
-        )
+        code, _, stderr = run_dbtool_ee(ee_datadir, "ee-delete-prover-task", _CHUNK_KEY, "--force")
         assert code == 0, stderr
         after_delete = _summary(ee_datadir)
         assert after_delete["total"] == baseline_total + 1, after_delete

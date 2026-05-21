@@ -119,7 +119,9 @@ def run_dbtool_ee_json(ee_datadir: str, *args: str, timeout: int = 60) -> dict[s
     """Run strata-dbtool ee-* command with JSON output and parse response."""
     code, stdout, stderr = run_dbtool_ee(ee_datadir, *args, "-o", "json", timeout=timeout)
     if code != 0:
-        raise RuntimeError(f"strata-dbtool ee command failed ({' '.join(args)}): {stderr or stdout}")
+        raise RuntimeError(
+            f"strata-dbtool ee command failed ({' '.join(args)}): {stderr or stdout}"
+        )
     return extract_json_from_output(stdout)
 
 
