@@ -184,6 +184,13 @@ impl ChainWorkerServiceState {
         // Persist results (including the full state)
         self.persist_execution_output(&block, *block_commitment, &output, new_state)?;
 
+        // Merge the epoch's write batches into the terminal state. Must run
+        // after persist_execution_output, since the merge reads every block's
+        // write batch including the terminal block's, stored just above.
+        if let Some(epoch) = completed_epoch {
+            self.ctx.merge_epoch_data(&epoch)?;
+        }
+
         Ok(())
     }
 
@@ -312,22 +319,26 @@ impl ChainWorkerServiceState {
 
     /// Takes the block and post-state and inserts database entries to reflect
     /// the epoch being finished on-chain.
+    ///
+    /// Returns the completed epoch's commitment so the caller can merge its
+    /// epoch data once the terminal block's write batch is persisted.
     fn handle_terminal_block_exec_post_ops(
         &mut self,
         block: &OLBlock,
         last_block_output: &OLBlockExecutionOutput,
         new_state: &OLState,
-    ) -> WorkerResult<()> {
+    ) -> WorkerResult<EpochCommitment> {
         let completed_epoch = block.header().epoch();
 
         let prev_terminal = get_prev_terminal(&self.ctx, completed_epoch)?;
         let summary =
             build_epoch_summary(block.header(), last_block_output, new_state, prev_terminal);
+        let epoch = summary.get_epoch_commitment();
 
         debug!(?summary, "completed chain epoch");
         self.ctx.store_summary(summary)?;
 
-        Ok(())
+        Ok(epoch)
     }
 
     /// Updates the current tip as managed by the worker.
@@ -336,9 +347,17 @@ impl ChainWorkerServiceState {
         Ok(())
     }
 
-    /// Finalizes an epoch, merging write batches into finalized state.
+    /// Marks an epoch as finalized.
+    ///
+    /// By the time this runs the epoch's terminal state has already been merged
+    /// and stored — by [`Self::handle_terminal_block_exec_post_ops`] for full
+    /// sync, or by `apply_checkpoint` for checkpoint sync. This verifies that
+    /// state is present, then records the epoch as finalized.
     pub(crate) fn finalize_epoch(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
-        self.ctx.merge_finalized_epoch(&epoch)?;
+        let terminal = epoch.to_block_commitment();
+        if self.ctx.fetch_ol_state(terminal)?.is_none() {
+            return Err(WorkerError::MissingPreState(terminal));
+        }
         self.state.last_finalized_epoch = Some(epoch);
         Ok(())
     }

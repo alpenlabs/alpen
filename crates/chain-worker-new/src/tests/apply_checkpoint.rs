@@ -138,7 +138,7 @@ impl ChainWorkerContext for MockChainWorkerContext {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 
-    fn merge_finalized_epoch(&self, _epoch: &EpochCommitment) -> WorkerResult<()> {
+    fn merge_epoch_data(&self, _epoch: &EpochCommitment) -> WorkerResult<()> {
         unimplemented!("not used by apply_checkpoint_epoch")
     }
 

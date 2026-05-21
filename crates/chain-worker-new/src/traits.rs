@@ -82,10 +82,8 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     /// Fetches all summaries for an epoch index.
     fn fetch_epoch_summaries(&self, epoch: u32) -> WorkerResult<Vec<EpochSummary>>;
 
-    /// Merges write batches up to the given epoch into the finalized state.
-    ///
-    /// This means we have to load fewer write batches when reconstructing state.
-    fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
+    /// Merges write batches of an epoch and stores the result.
+    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
 
     /// Seeds the DB-side L1 block refs MMR mirror with sentinel leaves matching
     /// the in-state MMR's genesis prefill. Called once at chain worker init.
