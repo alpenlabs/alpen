@@ -283,7 +283,7 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
         Ok(summaries)
     }
 
-    fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
+    fn merge_epoch_data(&self, epoch: &EpochCommitment) -> WorkerResult<()> {
         let summary = self.fetch_summary(epoch)?;
         let terminal = *summary.terminal();
         let prev_terminal = *summary.prev_terminal();
