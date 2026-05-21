@@ -11,6 +11,7 @@ services:
   strata:
     image: ${ECR_REGISTRY}/strata:${IMAGE_TAG}
     platform: linux/amd64
+    shm_size: '8gb'
     env_file:
       - ../.github/sp1-e2e/.env.ci
     environment:
