@@ -28,6 +28,9 @@ use crate::{
 mod args;
 mod config;
 mod context;
+// Not yet wired into `services.rs` — that is the non-sequencer dispatch.
+#[expect(dead_code, reason = "wired into services.rs in a follow-up")]
+mod css;
 mod errors;
 mod fcm;
 mod genesis;
