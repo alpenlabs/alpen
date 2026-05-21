@@ -108,11 +108,15 @@ fn build_update_operation(
     }
 
     // 3. Build extra data
+    let value_sent = outputs
+        .compute_total_value()
+        .ok_or_else(|| eyre!("overflow computing aggregate value sent"))?;
     let extra_data = UpdateExtraData::new(
         new_tip_blkid,
         new_tip_state_root,
         processed_inputs as u32,
         0,
+        value_sent,
     );
     let extra_data_buf = encode_to_vec(&extra_data)?;
 

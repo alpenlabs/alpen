@@ -73,7 +73,13 @@ fn prepare_input() -> EeAcctProofInput {
     // 4. Build pubvals matching the post-state. The witness fixture is a vanilla Ethereum block —
     //    it doesn't touch the EE precompiles that emit subject deposits or output messages, so all
     //    the aggregate fields are empty.
-    let extra_data = UpdateExtraData::new(chunk_transition.tip_exec_blkid(), tip_state_root, 0, 0);
+    let extra_data = UpdateExtraData::new(
+        chunk_transition.tip_exec_blkid(),
+        tip_state_root,
+        0,
+        0,
+        BitcoinAmount::ZERO,
+    );
     let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
 
     let pub_params = UpdateProofPubParams::new(

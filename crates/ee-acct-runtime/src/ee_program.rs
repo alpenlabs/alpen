@@ -69,6 +69,13 @@ impl<E: ExecutionEnvironment> SnarkAccountProgram for EeSnarkAccountProgram<E> {
         // mismatched `UpdateExtraData.new_tip_state_root`.
         state.set_last_exec_state_root(*extra_data.new_tip_state_root());
 
+        // Decrement tracked balance by the aggregate value sent out by chunk
+        // outputs in this update.  The verification path independently
+        // accumulates this value and checks it against `extra_data.value_sent`
+        // in `process_chunks_on_acct`, so this subtraction stays bound to what
+        // the chunks actually emitted.
+        state.try_subtract_tracked_balance(*extra_data.value_sent())?;
+
         Ok(())
     }
 

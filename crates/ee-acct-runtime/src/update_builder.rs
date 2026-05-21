@@ -4,7 +4,7 @@
 //! inputs, allowing the consumer to query available inputs and accept
 //! validated [`ChunkTransition`]s.
 
-use strata_acct_types::{Hash, MessageEntry};
+use strata_acct_types::{BitcoinAmount, Hash, MessageEntry};
 use strata_ee_acct_types::{
     EeAccountState, ExecutionEnvironment, PendingInputEntry, UpdateExtraData,
 };
@@ -49,6 +49,11 @@ pub struct UpdateBuilder<'i, E: ExecutionEnvironment> {
 
     /// Number of forced inclusions processed.
     fincls_processed: usize,
+
+    /// Aggregate value sent out by accepted chunk outputs (transfers + message
+    /// payload values).  Carried into `UpdateExtraData::value_sent` so the
+    /// finalization step can decrement `tracked_balance` accordingly.
+    value_sent: BitcoinAmount,
 }
 
 impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
@@ -85,6 +90,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             pending_inputs,
             inputs_consumed: 0,
             fincls_processed: 0,
+            value_sent: BitcoinAmount::ZERO,
         })
     }
 
@@ -197,6 +203,20 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
         // 3. Merge outputs.
         let outputs = transition.outputs();
 
+        // Sum the value being sent out by this chunk and accumulate into the
+        // running total carried in `UpdateExtraData::value_sent`.
+        let chunk_value_sent = outputs
+            .output_transfers()
+            .iter()
+            .map(|t| t.value())
+            .chain(outputs.output_messages().iter().map(|m| m.payload().value()))
+            .try_fold(BitcoinAmount::ZERO, |acc, v| acc.checked_add(v))
+            .ok_or(BuilderError::OutputOverflow)?;
+        self.value_sent = self
+            .value_sent
+            .checked_add(chunk_value_sent)
+            .ok_or(BuilderError::OutputOverflow)?;
+
         self.inner
             .outputs_mut()
             .try_extend_transfers(
@@ -251,6 +271,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             self.cur_tip_state_root,
             self.inputs_consumed as u32,
             self.fincls_processed as u32,
+            self.value_sent,
         );
 
         let (op, coinputs) = self
@@ -271,6 +292,7 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             self.cur_tip_state_root,
             self.inputs_consumed as u32,
             self.fincls_processed as u32,
+            self.value_sent,
         );
 
         Ok(self.inner.build_private_input(extra_data)?)

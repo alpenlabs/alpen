@@ -360,8 +360,18 @@ impl ProofSpec for AcctSpec {
         let cur_state = ProofState::new(pre_ee_state.compute_state_root(), pre_inbox_idx);
         let new_state = ProofState::new(post_state_root, new_inbox_idx);
 
-        let extra_data =
-            UpdateExtraData::new(new_tip_blkid, new_tip_state_root, processed_inputs, 0);
+        let value_sent = update_outputs.compute_total_value().ok_or_else(|| {
+            PaasError::PermanentFailure(format!(
+                "overflow computing aggregate value sent for batch {batch_id}"
+            ))
+        })?;
+        let extra_data = UpdateExtraData::new(
+            new_tip_blkid,
+            new_tip_state_root,
+            processed_inputs,
+            0,
+            value_sent,
+        );
         let extra_data_bytes = encode_to_vec(&extra_data)
             .map_err(|e| PaasError::PermanentFailure(format!("encode extra data: {e}")))?;
         let ledger_refs = build_ledger_refs_from_da(&da_refs, self.ol_client.as_ref())

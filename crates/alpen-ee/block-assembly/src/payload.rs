@@ -3,7 +3,7 @@ use std::num::NonZero;
 use alloy_primitives::B256;
 use alpen_ee_common::{DepositInfo, EnginePayload, PayloadBuildAttributes, PayloadBuilderEngine};
 use alpen_reth_evm::subject_to_address_unchecked;
-use strata_acct_types::Hash;
+use strata_acct_types::{BitcoinAmount, Hash};
 use strata_ee_acct_types::{EeAccountState, PendingInputEntry, UpdateExtraData};
 use tracing::debug;
 
@@ -61,6 +61,9 @@ pub(crate) async fn build_exec_payload<E: PayloadBuilderEngine>(
         new_tip_state_root,
         processed_inputs,
         processed_fincls,
+        // No outputs are emitted by this path; balance reconciliation deduction
+        // is zero.
+        BitcoinAmount::ZERO,
     );
 
     Ok((payload, update_extra_data))

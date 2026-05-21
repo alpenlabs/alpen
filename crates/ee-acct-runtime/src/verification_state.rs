@@ -156,6 +156,11 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         self.cur_balance
     }
 
+    /// Returns the total value sent out by chunk outputs processed so far.
+    pub fn total_val_sent(&self) -> BitcoinAmount {
+        self.total_val_sent
+    }
+
     /// Increases our verification state tracked balance.
     ///
     /// This is intended for when we accept a message.
@@ -295,6 +300,12 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
         // Check that the number of consumed pending inputs matches what
         // extra_data claims were processed.
         if pending_inp_tracker.consumed() != *extra_data.processed_inputs() as usize {
+            return Err(EnvError::InconsistentChunkIo);
+        }
+
+        // Bind the deduction applied to `tracked_balance` in `pre_finalize_state`
+        // to the aggregate value the chunk outputs actually emitted.
+        if self.total_val_sent != *extra_data.value_sent() {
             return Err(EnvError::InconsistentChunkIo);
         }
 

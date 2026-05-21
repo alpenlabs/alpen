@@ -111,6 +111,7 @@ fn test_output_mismatch_fails() {
         initial_state.last_exec_state_root(),
         0,
         0,
+        BitcoinAmount::ZERO,
     );
     let extra_data_buf = encode_to_vec(&extra_data).unwrap();
 
@@ -139,7 +140,13 @@ fn test_extra_data_tip_mismatch() {
 
     // Manually construct operation data with a wrong tip.
     let wrong_tip = Hash::new([0xAA; 32]);
-    let extra_data = UpdateExtraData::new(wrong_tip, initial_state.last_exec_state_root(), 0, 0);
+    let extra_data = UpdateExtraData::new(
+        wrong_tip,
+        initial_state.last_exec_state_root(),
+        0,
+        0,
+        BitcoinAmount::ZERO,
+    );
     let extra_data_buf = encode_to_vec(&extra_data).unwrap();
 
     let operation = UpdateOperationData::new(

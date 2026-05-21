@@ -5,7 +5,10 @@ use strata_identifiers::Hash;
 use strata_snark_acct_runtime::IInnerState;
 use tree_hash::{Sha256Hasher, TreeHash};
 
-use crate::ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry};
+use crate::{
+    errors::{EnvError, EnvResult},
+    ssz_generated::ssz::state::{EeAccountState, PendingFinclEntry, PendingInputEntry},
+};
 
 impl EeAccountState {
     pub fn new(
@@ -84,6 +87,19 @@ impl EeAccountState {
             .tracked_balance
             .checked_add(amt)
             .expect("snarkacct: overflowing balance");
+    }
+
+    /// Subtracts from the tracked balance, returning [`EnvError::InsufficientFunds`]
+    /// if the result would underflow.
+    ///
+    /// On error the balance is left unchanged.
+    pub fn try_subtract_tracked_balance(&mut self, amt: BitcoinAmount) -> EnvResult<()> {
+        let new_balance = self
+            .tracked_balance
+            .checked_sub(amt)
+            .ok_or(EnvError::InsufficientFunds)?;
+        self.tracked_balance = new_balance;
+        Ok(())
     }
 
     pub fn pending_inputs(&self) -> &[PendingInputEntry] {
@@ -225,6 +241,7 @@ mod tests {
         use strata_snark_acct_runtime::IInnerState;
 
         use super::*;
+        use crate::errors::EnvError;
 
         ssz_proptest!(
             EeAccountState,
@@ -277,6 +294,31 @@ mod tests {
 
             assert_ne!(a.compute_state_root(), b.compute_state_root());
             assert_ne!(a.last_exec_state_root(), b.last_exec_state_root());
+        }
+
+        #[test]
+        fn tracked_balance_add_then_subtract_roundtrips() {
+            let mut s = EeAccountState::new(
+                Hash::from([0u8; 32]),
+                Hash::from([0u8; 32]),
+                BitcoinAmount::from_sat(100),
+                Vec::new(),
+                Vec::new(),
+            );
+
+            s.add_tracked_balance(BitcoinAmount::from_sat(50));
+            assert_eq!(s.tracked_balance(), BitcoinAmount::from_sat(150));
+
+            s.try_subtract_tracked_balance(BitcoinAmount::from_sat(75))
+                .expect("subtract within balance must succeed");
+            assert_eq!(s.tracked_balance(), BitcoinAmount::from_sat(75));
+
+            // Underflow must error and leave the balance unchanged.
+            let err = s
+                .try_subtract_tracked_balance(BitcoinAmount::from_sat(1000))
+                .expect_err("subtract beyond balance must fail");
+            assert!(matches!(err, EnvError::InsufficientFunds));
+            assert_eq!(s.tracked_balance(), BitcoinAmount::from_sat(75));
         }
     }
 }

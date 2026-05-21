@@ -1,6 +1,6 @@
 //! Interpretation of extra data.
 
-use strata_acct_types::Hash;
+use strata_acct_types::{BitcoinAmount, Hash};
 use strata_codec::impl_type_flat_struct;
 use strata_snark_acct_runtime::IExtraData;
 
@@ -31,6 +31,12 @@ impl_type_flat_struct! {
 
         /// The total number of items to remove from the fincl queue.
         processed_fincls: u32,
+
+        /// Aggregate value sent out by chunk outputs (transfers + message
+        /// payloads) processed in this update.  Subtracted from the account's
+        /// tracked balance during state finalization so that the EE-tracked
+        /// balance stays reconciled with the OL-side ledger view.
+        value_sent: BitcoinAmount,
     }
 }
 
