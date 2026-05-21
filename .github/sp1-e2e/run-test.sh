@@ -295,7 +295,7 @@ assert_proofs() {
             local confirmed
             confirmed=$(get_confirmed_epoch)
             if [ "${confirmed}" -ge "${sau_epoch}" ]; then
-                echo "PASS: SAU-containing epoch ${sau_epoch} confirmed — confirmed epoch ${confirmed}"
+                echo "PASS: SAU with seq_no ${seq_no}, received in epoch ${sau_epoch}, confirmed — confirmed epoch ${confirmed}"
                 sau_confirmed=true
             fi
         fi
