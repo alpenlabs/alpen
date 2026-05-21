@@ -5,10 +5,7 @@
 use core::fmt;
 
 use arbitrary::{Arbitrary, Unstructured};
-use borsh::{
-    io::{Read, Result as BorshIoResult, Write},
-    BorshDeserialize, BorshSerialize,
-};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use strata_asm_proto_checkpoint_types::CheckpointTip;
 use strata_identifiers::{
@@ -148,10 +145,10 @@ pub struct L1Checkpoint {
     /// `tip.l1_height` is the L1 view consumed by the OL for this epoch — distinct
     /// from `l1_reference.l1_commitment`, which records where the checkpoint
     /// envelope was observed on L1.
-    #[borsh(
-        serialize_with = "borsh_serialize_checkpoint_tip",
-        deserialize_with = "borsh_deserialize_checkpoint_tip"
-    )]
+    ///
+    /// `CheckpointTip` is SSZ-defined; its Borsh impl is provided by
+    /// `impl_borsh_via_ssz_fixed!` in `strata-asm-proto-checkpoint-types`, so a
+    /// plain Borsh derive on the parent works without field-level codecs.
     pub tip: CheckpointTip,
 
     /// L1 reference for the envelope that carried this checkpoint.
@@ -176,9 +173,9 @@ impl From<&L1Checkpoint> for EpochCommitment {
     }
 }
 
-// `CheckpointTip` lives in an external crate and doesn't derive `Arbitrary`.
-// Construct one field-by-field; the orphan rule prevents impl-ing `Arbitrary`
-// directly on `CheckpointTip`.
+// `CheckpointTip` is an SSZ-generated type in an external crate and doesn't
+// derive `Arbitrary`; the orphan rule blocks adding it there, so we provide
+// the `Arbitrary` impl on the wrapper.
 impl<'a> Arbitrary<'a> for L1Checkpoint {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         let tip = CheckpointTip {
@@ -189,30 +186,6 @@ impl<'a> Arbitrary<'a> for L1Checkpoint {
         let l1_reference = CheckpointL1Ref::arbitrary(u)?;
         Ok(Self { tip, l1_reference })
     }
-}
-
-// Field-level Borsh codec for `CheckpointTip`: the external SSZ-generated type
-// has no Borsh derive and the orphan rule blocks adding one. Order matches the
-// struct definition.
-fn borsh_serialize_checkpoint_tip<W: Write>(
-    tip: &CheckpointTip,
-    writer: &mut W,
-) -> BorshIoResult<()> {
-    BorshSerialize::serialize(&tip.epoch, writer)?;
-    BorshSerialize::serialize(&tip.l1_height, writer)?;
-    BorshSerialize::serialize(&tip.l2_commitment, writer)?;
-    Ok(())
-}
-
-fn borsh_deserialize_checkpoint_tip<R: Read>(reader: &mut R) -> BorshIoResult<CheckpointTip> {
-    let epoch = BorshDeserialize::deserialize_reader(reader)?;
-    let l1_height = BorshDeserialize::deserialize_reader(reader)?;
-    let l2_commitment = BorshDeserialize::deserialize_reader(reader)?;
-    Ok(CheckpointTip {
-        epoch,
-        l1_height,
-        l2_commitment,
-    })
 }
 
 #[cfg(test)]
