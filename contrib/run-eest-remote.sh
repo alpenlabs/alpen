@@ -103,6 +103,17 @@ if [[ -n "${BASELINE_LOG_FILE}${BASELINE_DOCKER_CONTAINER}" && -z "${BASELINE_OU
     exit 1
 fi
 
+WORKSPACE_DIR="$(pwd)"
+if [[ -n "${BASELINE_LOG_FILE}" && "${BASELINE_LOG_FILE}" != /* ]]; then
+    BASELINE_LOG_FILE="${WORKSPACE_DIR}/${BASELINE_LOG_FILE}"
+fi
+if [[ -n "${BASELINE_OUTPUT}" && "${BASELINE_OUTPUT}" != /* ]]; then
+    BASELINE_OUTPUT="${WORKSPACE_DIR}/${BASELINE_OUTPUT}"
+fi
+if [[ "${CHECKOUT_DIR}" != /* ]]; then
+    CHECKOUT_DIR="${WORKSPACE_DIR}/${CHECKOUT_DIR}"
+fi
+
 if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="${HOME}/.local/bin:${PATH}"
