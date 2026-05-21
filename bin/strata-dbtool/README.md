@@ -32,6 +32,7 @@ strata-dbtool [OPTIONS] <COMMAND>
 ### Global Options
 
 - `-d, --datadir <path>` - Node data directory (default: `data`)
+- `--ee-datadir <path>` - Alpen-client data directory. Required for any `ee-*` subcommand; points at the alpen-client's `--datadir`, not the strata node's.
 
 ## Commands
 
@@ -440,11 +441,109 @@ upgrade.
 strata-dbtool delete-checkpoint-proof <epoch> --confirm
 ```
 
-### Not yet supported
+## EE Prover Task & Receipt Admin
 
-The EE prover task store (`alpen-client` datadir — chunk receipts, acct
-proofs, shared task tree) is not yet wired into this tool. Add a follow-up
-ticket if operator workflows need it.
+> [!WARNING]
+>
+> These commands mutate the EE prover store under the **alpen-client**
+> datadir (not the strata node's). Stop the alpen-client before using
+> them — concurrent writes from a running chunk/acct prover will conflict
+> with these edits and may corrupt state.
+
+The alpen-client maintains a separate sled instance for prover-side
+persistence — shared task tree (chunk + acct), chunk-receipt store, and
+typed acct-proof store. All `ee-*` subcommands require `--ee-datadir`,
+which points at the alpen-client's `--datadir`.
+
+### Which surface to use
+
+| Concern              | Lives in              | Subcommand prefix |
+|----------------------|-----------------------|--------------------|
+| OL checkpoint proofs | strata node datadir   | (no prefix)        |
+| EE chunk proofs      | alpen-client datadir  | `ee-*` (`--kind chunk`) |
+| EE acct/batch proofs | alpen-client datadir  | `ee-*` (`--kind acct`)  |
+
+Chunk and acct tasks share one tree, disambiguated by a single-byte
+**kind tag** at the start of every task key (`b'c'` for chunk, `b'a'`
+for acct). The `--kind` filter on the summary and bulk-abandon commands
+selects on that tag; single-key commands operate on opaque keys, so the
+kind comes from whatever the key starts with.
+
+### `ee-get-prover-task`
+Fetch a single EE prover task record by its hex-encoded key.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-get-prover-task <key_hex> [OPTIONS]
+```
+
+### `ee-get-prover-tasks-summary`
+Aggregate counts by status, plus a bounded slice of matching entries.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-get-prover-tasks-summary [--status <filter>] [--kind <kind>] [--limit <n>] [OPTIONS]
+```
+
+**Options:**
+- `--status <filter>` — same set as the OL summary command (`all`, `pending`, …, `terminal`).
+- `--kind <kind>` — one of `all` (default), `chunk`, `acct`.
+
+### `ee-abandon-prover-task`
+Mark a single EE task as `PermanentFailure { error: "abandoned via dbtool" }`.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-abandon-prover-task <key_hex> --confirm
+```
+
+### `ee-abandon-prover-tasks`
+Bulk-abandon every `Pending`/`Proving` EE task, optionally restricted by kind.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-abandon-prover-tasks --all-unfinished [--kind <kind>] --confirm [--dry-run]
+```
+
+### `ee-reset-prover-task`
+Flip an EE task back to `Pending` and clear its retry-after timestamp.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-reset-prover-task <key_hex> --confirm
+```
+
+### `ee-delete-prover-task`
+Hard-delete an EE task record.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-delete-prover-task <key_hex> --confirm
+```
+
+### `ee-backfill-prover-task-raw`
+Insert a `Pending` EE task record under a caller-provided raw key. EE
+task keys come from the chunk/acct spec encodings; raw is the only
+supported backfill path (no typed equivalent of `backfill-checkpoint-proof-task`).
+
+```bash
+strata-dbtool --ee-datadir <path> ee-backfill-prover-task-raw <key_hex> --confirm
+```
+
+### `ee-get-chunk-receipt` / `ee-delete-chunk-receipt`
+Inspect or remove a stored chunk-proof receipt by its task key. Use
+case: drop a stale receipt after a guest-program upgrade so the chunk
+prover re-proves it.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-get-chunk-receipt <key_hex> [OPTIONS]
+strata-dbtool --ee-datadir <path> ee-delete-chunk-receipt <key_hex> --confirm
+```
+
+### `ee-get-acct-proof` / `ee-delete-acct-proof`
+Inspect or remove a stored acct/batch proof. The batch id is passed as
+`<prev_block_hex>:<last_block_hex>` (each 32 bytes), matching `BatchId`'s
+`Display` format — copy directly from the alpen-client's logs. Delete
+also clears the secondary `ProofId → BatchId` index.
+
+```bash
+strata-dbtool --ee-datadir <path> ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
+strata-dbtool --ee-datadir <path> ee-delete-acct-proof <prev_block>:<last_block> --confirm
+```
 
 ## Output Formats
 
