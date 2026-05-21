@@ -71,7 +71,13 @@ pub trait OLClientRpc {
         &self,
         l1_height: L1Height,
     ) -> RpcResult<Option<HexBytes32>>;
+}
 
+/// OL RPC methods served by sequencer nodes for transaction submission.
+#[strata_open_rpc_macros::open_rpc(namespace = "strata", tag = "Submit")]
+#[cfg_attr(not(feature = "client"), rpc(server, namespace = "strata"))]
+#[cfg_attr(feature = "client", rpc(server, client, namespace = "strata"))]
+pub trait OLSubmitRpc {
     /// Submit transaction to the node. Returns immediately with tx ID.
     #[method(name = "submitTransaction")]
     async fn submit_transaction(&self, tx: RpcOLTransaction) -> RpcResult<OLTxId>;

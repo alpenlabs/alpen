@@ -1,4 +1,4 @@
-//! Authentication middleware for the admin RPC listener.
+//! Authentication middleware for authenticated RPC listeners.
 
 use std::{
     future::Future,
@@ -13,14 +13,14 @@ use http::{
 use jsonrpsee::server::{HttpBody, HttpResponse};
 use tower::{Layer, Service};
 
-/// Tower layer that requires a bearer token on every admin RPC request.
+/// Tower layer that requires a bearer token on every RPC request.
 #[derive(Clone, Debug)]
-pub(crate) struct AdminAuthLayer {
+pub(crate) struct BearerAuthLayer {
     expected_authorization: HeaderValue,
 }
 
-impl AdminAuthLayer {
-    /// Creates a new admin auth layer.
+impl BearerAuthLayer {
+    /// Creates a new bearer auth layer.
     pub(crate) fn new(token: &str) -> Self {
         let expected_authorization = HeaderValue::from_str(&format!("Bearer {token}"))
             .expect("bearer token should be representable as a header value");
@@ -30,25 +30,25 @@ impl AdminAuthLayer {
     }
 }
 
-impl<S> Layer<S> for AdminAuthLayer {
-    type Service = AdminAuthService<S>;
+impl<S> Layer<S> for BearerAuthLayer {
+    type Service = BearerAuthService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        AdminAuthService {
+        BearerAuthService {
             inner,
             expected_authorization: self.expected_authorization.clone(),
         }
     }
 }
 
-/// Service produced by [`AdminAuthLayer`].
+/// Service produced by [`BearerAuthLayer`].
 #[derive(Clone, Debug)]
-pub(crate) struct AdminAuthService<S> {
+pub(crate) struct BearerAuthService<S> {
     inner: S,
     expected_authorization: HeaderValue,
 }
 
-impl<S, B> Service<Request<B>> for AdminAuthService<S>
+impl<S, B> Service<Request<B>> for BearerAuthService<S>
 where
     S: Service<Request<B>, Response = HttpResponse> + Send + Clone + 'static,
     S::Future: Send + 'static,

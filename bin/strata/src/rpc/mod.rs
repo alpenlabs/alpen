@@ -26,7 +26,7 @@ use strata_ol_block_assembly::BlockasmHandle;
 use strata_ol_mempool::MempoolHandle;
 #[cfg(feature = "sequencer")]
 use strata_ol_rpc_api::OLSequencerRpcServer;
-use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer};
+use strata_ol_rpc_api::{OLClientRpcServer, OLFullNodeRpcServer, OLSubmitRpcServer};
 #[cfg(feature = "sequencer")]
 use strata_primitives::buf::Buf32;
 use strata_status::StatusChannel;
@@ -50,6 +50,9 @@ struct RpcDeps {
     admin_rpc_host: String,
     admin_rpc_port: u16,
     admin_rpc_bearer_token: Option<SecretString>,
+    submit_rpc_host: String,
+    submit_rpc_port: u16,
+    submit_rpc_bearer_token: Option<SecretString>,
     genesis_l1_height: L1Height,
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
@@ -145,6 +148,9 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         admin_rpc_host: runctx.config().client.admin_rpc_host.clone(),
         admin_rpc_port: runctx.config().client.admin_rpc_port,
         admin_rpc_bearer_token: runctx.config().client.admin_rpc_bearer_token.clone(),
+        submit_rpc_host: runctx.config().client.submit_rpc_host.clone(),
+        submit_rpc_port: runctx.config().client.submit_rpc_port,
+        submit_rpc_bearer_token: runctx.config().client.submit_rpc_bearer_token.clone(),
         genesis_l1_height: runctx.asm_params().anchor.block.height(),
         max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
@@ -162,7 +168,10 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
     if runctx.config().client.is_sequencer {
         runctx
             .executor()
-            .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps));
+            .spawn_critical_async("admin-rpc", spawn_admin_rpc(deps.clone()));
+        runctx
+            .executor()
+            .spawn_critical_async("submit-rpc", spawn_submit_rpc(deps));
     }
     Ok(())
 }
@@ -255,6 +264,21 @@ fn build_admin_rpc_module(deps: &RpcDeps) -> Result<RpcModule<()>> {
     Ok(module)
 }
 
+fn build_submit_rpc_module(deps: &RpcDeps) -> Result<RpcModule<OLRpcServer<NodeRpcProvider>>> {
+    let submit_provider = NodeRpcProvider::new(
+        deps.storage.clone(),
+        deps.status_channel.clone(),
+        deps.mempool_handle.clone(),
+    );
+    let submit_listener = OLRpcServer::new(
+        submit_provider,
+        deps.genesis_l1_height,
+        deps.max_headers_range,
+    );
+
+    Ok(<OLRpcServer<NodeRpcProvider> as OLSubmitRpcServer>::into_rpc(submit_listener))
+}
+
 /// Spawns the public RPC server.
 async fn spawn_public_rpc(deps: RpcDeps) -> Result<()> {
     let module = build_public_rpc_module(&deps)?;
@@ -288,12 +312,34 @@ async fn spawn_admin_rpc(deps: RpcDeps) -> Result<()> {
         .admin_rpc_bearer_token
         .clone()
         .ok_or_else(|| anyhow!("client.admin_rpc_bearer_token must be set"))?;
-    let auth_layer = ServiceBuilder::new().layer(auth::AdminAuthLayer::new(token.expose_secret()));
+    let auth_layer = ServiceBuilder::new().layer(auth::BearerAuthLayer::new(token.expose_secret()));
     let rpc_server = ServerBuilder::new()
         .set_http_middleware(auth_layer)
         .build(&addr)
         .await
         .map_err(|e| anyhow!("Failed to build admin RPC server on {addr}: {e}"))?;
+
+    let rpc_handle = rpc_server.start(module);
+    rpc_handle.stopped().await;
+
+    Ok(())
+}
+
+/// Spawns the submit RPC server.
+async fn spawn_submit_rpc(deps: RpcDeps) -> Result<()> {
+    let module = build_submit_rpc_module(&deps)?;
+    let addr = format!("{}:{}", deps.submit_rpc_host, deps.submit_rpc_port);
+    info!(%addr, "starting submit RPC server");
+    let token = deps
+        .submit_rpc_bearer_token
+        .clone()
+        .ok_or_else(|| anyhow!("client.submit_rpc_bearer_token must be set"))?;
+    let auth_layer = ServiceBuilder::new().layer(auth::BearerAuthLayer::new(token.expose_secret()));
+    let rpc_server = ServerBuilder::new()
+        .set_http_middleware(auth_layer)
+        .build(&addr)
+        .await
+        .map_err(|e| anyhow!("Failed to build submit RPC server on {addr}: {e}"))?;
 
     let rpc_handle = rpc_server.start(module);
     rpc_handle.stopped().await;
@@ -312,6 +358,16 @@ mod tests {
             !module
                 .method_names()
                 .any(|method| method.contains("strataadmin_"))
+        );
+    }
+
+    #[test]
+    fn public_static_rpc_module_does_not_include_submit_transaction() {
+        let module = build_public_static_rpc_module();
+        assert!(
+            !module
+                .method_names()
+                .any(|method| method == "strata_submitTransaction")
         );
     }
 }
