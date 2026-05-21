@@ -51,11 +51,33 @@ impl From<&TaskStatus> for StatusInfo {
     }
 }
 
+/// EE task-key prefix carried by the alpen-client's shared chunk+acct
+/// task tree. Documented in `bin/alpen-client/src/prover/storage.rs`.
+const CHUNK_TASK_TAG: u8 = b'c';
+const ACCT_TASK_TAG: u8 = b'a';
+
+/// Classifies an EE task key by its kind tag.
+///
+/// Returns `None` for OL keys (which don't carry a tag — they're borsh
+/// commitments) and for EE raw-backfilled keys that don't follow the
+/// chunk/acct convention.
+pub(crate) fn ee_kind_for_key(key: &[u8]) -> Option<&'static str> {
+    match key.first().copied() {
+        Some(CHUNK_TASK_TAG) => Some("chunk"),
+        Some(ACCT_TASK_TAG) => Some("acct"),
+        _ => Some("unknown"),
+    }
+}
+
 /// Per-task detail emitted by `get-prover-task` and as an element of the
 /// summary command's `entries` list.
 #[derive(Serialize)]
 pub(crate) struct ProverTaskInfo {
     pub(crate) key_hex: String,
+    /// Set only for EE entries — distinguishes chunk vs acct vs unknown.
+    /// Omitted from OL output to keep the existing JSON shape unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) kind: Option<&'static str>,
     pub(crate) status: StatusInfo,
     pub(crate) updated_at_secs: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,11 +92,21 @@ impl ProverTaskInfo {
         let metadata = data.metadata();
         Self {
             key_hex: hex::encode(key),
+            kind: None,
             status: StatusInfo::from(data.status()),
             updated_at_secs: data.updated_at_secs(),
             retry_after_secs: data.retry_after_secs(),
             metadata_len: metadata.map(|m| m.len()).unwrap_or(0),
             metadata_hex: metadata.map(hex::encode),
+        }
+    }
+
+    /// Same as [`Self::from_record`] but tags the entry with its EE kind
+    /// derived from the key's first byte.
+    pub(crate) fn from_ee_record(key: &[u8], data: &TaskRecordData) -> Self {
+        Self {
+            kind: ee_kind_for_key(key),
+            ..Self::from_record(key, data)
         }
     }
 }
@@ -83,6 +115,9 @@ impl Formattable for ProverTaskInfo {
     fn format_porcelain(&self) -> String {
         let mut out = Vec::new();
         out.push(porcelain_field("key_hex", &self.key_hex));
+        if let Some(kind) = self.kind {
+            out.push(porcelain_field("kind", kind));
+        }
         out.push(porcelain_field("status", self.status.name));
         if let Some(rc) = self.status.retry_count {
             out.push(porcelain_field("status.retry_count", rc));
@@ -134,6 +169,9 @@ impl Formattable for ProverTasksSummaryInfo {
                 &format!("entries[{i}].key_hex"),
                 &entry.key_hex,
             ));
+            if let Some(kind) = entry.kind {
+                out.push(porcelain_field(&format!("entries[{i}].kind"), kind));
+            }
             out.push(porcelain_field(
                 &format!("entries[{i}].status"),
                 entry.status.name,
@@ -224,5 +262,27 @@ mod tests {
         assert!(out.contains("key_hex: aabb"));
         assert!(out.contains("status: proving"));
         assert!(out.contains("status.retry_count: 1"));
+        // OL entries leave `kind` unset; porcelain must not surface it.
+        assert!(!out.contains("kind:"));
+    }
+
+    #[test]
+    fn ee_kind_for_key_recognizes_chunk_and_acct_tags() {
+        assert_eq!(ee_kind_for_key(b"c-something"), Some("chunk"));
+        assert_eq!(ee_kind_for_key(b"a-something"), Some("acct"));
+        assert_eq!(ee_kind_for_key(b"zzz"), Some("unknown"));
+        assert_eq!(ee_kind_for_key(&[]), Some("unknown"));
+    }
+
+    #[test]
+    fn from_ee_record_tags_kind_and_surfaces_it_in_porcelain() {
+        let record = TaskRecordData::new(TaskStatus::Pending);
+        let chunk = ProverTaskInfo::from_ee_record(b"c-xyz", &record);
+        assert_eq!(chunk.kind, Some("chunk"));
+        assert!(chunk.format_porcelain().contains("kind: chunk"));
+
+        let acct = ProverTaskInfo::from_ee_record(b"a-xyz", &record);
+        assert_eq!(acct.kind, Some("acct"));
+        assert!(acct.format_porcelain().contains("kind: acct"));
     }
 }

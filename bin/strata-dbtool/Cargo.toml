@@ -15,9 +15,12 @@ argh.workspace = true
 hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sled.workspace = true
 tracing-subscriber.workspace = true
+typed-sled.workspace = true
 zkaleido.workspace = true
 
+alpen-ee-database.workspace = true
 strata-asm-logs.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-checkpoint-types.workspace = true

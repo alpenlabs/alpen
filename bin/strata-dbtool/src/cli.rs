@@ -11,6 +11,11 @@ use crate::cmd::{
     checkpoint::{GetCheckpointArgs, GetCheckpointsSummaryArgs, GetEpochSummaryArgs},
     checkpoint_proof::{DeleteCheckpointProofArgs, GetCheckpointProofArgs},
     client_state::GetClientStateUpdateArgs,
+    ee_prover_task::{
+        EeAbandonProverTaskArgs, EeAbandonProverTasksArgs, EeBackfillProverTaskRawArgs,
+        EeDeleteProverTaskArgs, EeGetProverTaskArgs, EeGetProverTasksSummaryArgs,
+        EeResetProverTaskArgs,
+    },
     l1::{GetL1BlockArgs, GetL1SummaryArgs},
     ol::{GetOLBlockArgs, GetOLSummaryArgs},
     ol_state::{GetOLStateArgs, RevertOLStateArgs},
@@ -30,6 +35,11 @@ pub(crate) struct Cli {
     /// node data directory (same as `--datadir` used by the node).
     #[argh(option, short = 'd', default = "PathBuf::from(\"data\")")]
     pub(crate) datadir: PathBuf,
+
+    /// alpen-client data directory — required for any `ee-*` subcommand.
+    /// Points at the alpen-client's `--datadir`, not the strata node's.
+    #[argh(option)]
+    pub(crate) ee_datadir: Option<PathBuf>,
 
     #[argh(subcommand)]
     pub(crate) cmd: Command,
@@ -64,6 +74,13 @@ pub(crate) enum Command {
     DeleteCheckpointProof(DeleteCheckpointProofArgs),
     BackfillCheckpointProofTask(BackfillCheckpointProofTaskArgs),
     BackfillProverTaskRaw(BackfillProverTaskRawArgs),
+    EeGetProverTask(EeGetProverTaskArgs),
+    EeGetProverTasksSummary(EeGetProverTasksSummaryArgs),
+    EeAbandonProverTask(EeAbandonProverTaskArgs),
+    EeAbandonProverTasks(EeAbandonProverTasksArgs),
+    EeResetProverTask(EeResetProverTaskArgs),
+    EeDeleteProverTask(EeDeleteProverTaskArgs),
+    EeBackfillProverTaskRaw(EeBackfillProverTaskRawArgs),
 }
 
 /// Output format
