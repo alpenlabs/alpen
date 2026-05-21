@@ -97,40 +97,53 @@ jobs:
           which alpen-client
           cd functional-tests
           screen -dmS alpen_ee_env uv run python entry.py --keep-alive alpen_ee
-          for _i in $(seq 1 60); do
-            if curl -sf -X POST http://localhost:30303 \
-              -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' > /dev/null 2>&1; then
-              echo "alpen-client RPC is up"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "alpen-client RPC did not become ready"
-          find _dd -type f -name "service.log" -print -exec tail -100 {} \; || true
-          exit 1
+          if ! ../contrib/wait-for-json-rpc.sh http://localhost:30303 120; then
+            find _dd -type f -name "service.log" -print -exec tail -100 {} \; || true
+            exit 1
+          fi
+
+      - name: Locate EE proof logs
+        run: |
+          EE_LOG="$(find functional-tests/_dd -path '*/alpen_ee/ee_sequencer/service.log' -print | sort | tail -n 1)"
+          BTC_LOG="$(find functional-tests/_dd -path '*/alpen_ee/bitcoin/service.log' -print | sort | tail -n 1)"
+          if [ -z "${EE_LOG}" ] || [ -z "${BTC_LOG}" ]; then
+            echo "could not find alpen_ee service logs"
+            find functional-tests/_dd -type f -name "service.log" -print || true
+            exit 1
+          fi
+          {
+            echo "EEST_EE_LOG=${EE_LOG}"
+            echo "EEST_BTC_LOG=${BTC_LOG}"
+          } >> "${GITHUB_ENV}"
 
       - name: Run tests
+        id: runtests
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          git clone https://github.com/alpenlabs/execution-spec-tests
-          cd execution-spec-tests
-          uv python install 3.11
-          uv python pin 3.11
-          uv sync --all-extras
-          uv pip install solc-select
-          uv run solc-select use 0.8.24 --always-install
-          uv run execute remote \
-            -m state_test \
-            --fork=Prague \
-            "--deselect=tests/frontier/opcodes/test_call.py::test_call_memory_expands_on_early_revert[fork_Prague-state_test]" \
-            --rpc-endpoint=http://localhost:30303 \
-            --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-            --rpc-chain-id 2892 \
+          ./contrib/run-eest-remote.sh \
+            --rpc-endpoint http://localhost:30303 \
+            --fork Prague \
             --tx-wait-timeout 120 \
-            -v
+            --baseline-log-file "${EEST_EE_LOG}" \
+            --baseline-output "${RUNNER_TEMP}/eest-ee-log.offset"
+        continue-on-error: true
+
+      - name: Assert EE proof pipeline covered EEST blocks
+        if: always() && steps.runtests.outcome != 'skipped'
+        run: |
+          ./contrib/assert-eest-prover-pipeline.sh \
+            --log-file "${EEST_EE_LOG}" \
+            --baseline-file "${RUNNER_TEMP}/eest-ee-log.offset" \
+            --bitcoin-service-log "${EEST_BTC_LOG}" \
+            --bitcoin-rpc-wallet testwallet \
+            --timeout 900
 
       - name: Stop service
         if: always()
         run: |
           screen -S alpen_ee_env -X quit || true
+
+      - name: Check tests execution
+        if: steps.runtests.outcome == 'failure'
+        run: |
+          echo "Functional tests failed"
+          exit 1

@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: development
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v5
         with:
@@ -70,39 +70,34 @@ jobs:
 
       - name: Wait for alpen-client to be ready
         run: |
-          echo "Waiting for alpen-client RPC..."
-          for _i in $(seq 1 30); do
-            if curl -sf -X POST http://localhost:8545 \
-              -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' > /dev/null 2>&1; then
-              echo "alpen-client RPC is up"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "alpen-client failed to start"
-          docker logs alpen_eest
-          exit 1
+          if ! ./contrib/wait-for-json-rpc.sh http://localhost:8545 60; then
+            echo "alpen-client failed to start"
+            docker logs alpen_eest
+            exit 1
+          fi
 
       - name: Run tests
+        id: runtests
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          git clone https://github.com/alpenlabs/execution-spec-tests
-          cd execution-spec-tests
-          uv python install 3.11
-          uv python pin 3.11
-          uv sync --all-extras
-          uv pip install solc-select
-          uv run solc-select use 0.8.24 --always-install
-          uv run execute remote \
-            -m state_test \
-            --fork=Prague \
-            "--deselect=tests/frontier/opcodes/test_call.py::test_call_memory_expands_on_early_revert[fork_Prague-state_test]" \
-            --rpc-endpoint=http://localhost:8545 \
-            --rpc-seed-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-            --rpc-chain-id 2892 \
+          ./contrib/run-eest-remote.sh \
+            --rpc-endpoint http://localhost:8545 \
+            --fork Prague \
             --tx-wait-timeout 120 \
-            -v
+            --baseline-docker-container alpen_eest \
+            --baseline-output "${RUNNER_TEMP}/eest-ee-log.offset"
+        continue-on-error: true
+
+      - name: Assert EE proof pipeline covered EEST blocks
+        if: always() && steps.runtests.outcome != 'skipped'
+        run: |
+          ./contrib/assert-eest-prover-pipeline.sh \
+            --docker-container alpen_eest \
+            --baseline-file "${RUNNER_TEMP}/eest-ee-log.offset" \
+            --bitcoin-container eest_bitcoind \
+            --bitcoin-rpc-user rpcuser \
+            --bitcoin-rpc-password rpcpassword \
+            --bitcoin-rpc-wallet default \
+            --timeout 900
 
       - name: Tear down services
         if: always()
@@ -112,3 +107,9 @@ jobs:
             docker compose --env-file docker/.env.alpen \
               -f docker/docker-compose-eest.yml down
           fi
+
+      - name: Check tests execution
+        if: steps.runtests.outcome == 'failure'
+        run: |
+          echo "Functional tests failed"
+          exit 1
