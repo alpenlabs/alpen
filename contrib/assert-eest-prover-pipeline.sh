@@ -140,7 +140,8 @@ fi
 : "${BITCOIN_RPC_PASSWORD:?missing --bitcoin-rpc-password or --bitcoin-service-log}"
 
 TMP_LOG="$(mktemp)"
-trap 'rm -f "${TMP_LOG}"' EXIT
+TMP_FRAGMENT="$(mktemp)"
+trap 'rm -f "${TMP_LOG}" "${TMP_FRAGMENT}"' EXIT
 
 capture_log_since_baseline() {
     if [[ -n "${DOCKER_CONTAINER}" ]]; then
@@ -192,7 +193,8 @@ mine_blocks() {
 
 has_pattern() {
     local pattern="$1"
-    capture_log_since_baseline | grep -Eq "${pattern}"
+    capture_log_since_baseline >"${TMP_FRAGMENT}"
+    grep -Eq "${pattern}" "${TMP_FRAGMENT}"
 }
 
 START_SECONDS="$(date +%s)"
