@@ -204,7 +204,8 @@ fn process_deposit_log<S: IStateAccessorMut>(
     let deposit_data = OwnedMsg::new(DEPOSIT_MSG_TYPE_ID, deposit_body)
         .expect("deposit message body must fit into msg-fmt envelope")
         .to_vec();
-    let msg_payload = MsgPayload::new(deposit.amount.into(), deposit_data);
+    let msg_payload = MsgPayload::from_bytes(deposit.amount.into(), deposit_data)
+        .expect("deposit message payload bytes must fit within SSZ max length");
 
     debug!(
         %dest_id,

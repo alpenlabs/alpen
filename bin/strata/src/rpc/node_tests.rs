@@ -460,12 +460,26 @@ fn make_message_entry(
     payload_value_sat: u64,
     payload_buf: Vec<u8>,
 ) -> MessageEntry {
-    let payload = MsgPayload::new(BitcoinAmount::from_sat(payload_value_sat), payload_buf);
+    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(payload_value_sat), payload_buf)
+        .expect("message payload bytes must fit within SSZ max length");
     MessageEntry::new(source, incl_epoch, payload)
 }
 
 fn rpc_messages_to_entries(messages: &[RpcMessageEntry]) -> Vec<MessageEntry> {
-    messages.iter().cloned().map(Into::into).collect()
+    messages
+        .iter()
+        .cloned()
+        .map(|msg| {
+            msg.try_into()
+                .expect("message payload bytes must fit within SSZ max length")
+        })
+        .collect()
+}
+
+fn rpc_update_to_input(update: RpcUpdateInputData) -> UpdateInputData {
+    update
+        .try_into()
+        .expect("message payload bytes must fit within SSZ max length")
 }
 
 fn inbox_fetch_expect_success(
@@ -1335,7 +1349,7 @@ async fn blocks_summaries_populates_updates_and_new_inbox_messages_from_index() 
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].updates().len(), 1);
 
-    let update: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let update = rpc_update_to_input(summaries[0].updates()[0].clone());
     assert_eq!(update.seq_no(), 6);
     assert_eq!(update.extra_data(), extra_data.as_slice());
     assert_eq!(update.new_state().inner_state(), final_state_root);
@@ -1424,8 +1438,8 @@ async fn blocks_summaries_slices_processed_messages_from_index_ranges() {
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].updates().len(), 2);
 
-    let u0: UpdateInputData = summaries[0].updates()[0].clone().into();
-    let u1: UpdateInputData = summaries[0].updates()[1].clone().into();
+    let u0 = rpc_update_to_input(summaries[0].updates()[0].clone());
+    let u1 = rpc_update_to_input(summaries[0].updates()[1].clone());
     assert_eq!(u0.processed_messages(), msgs_1.as_slice());
     assert_eq!(u1.processed_messages(), msgs_2.as_slice());
 }
@@ -1506,8 +1520,8 @@ async fn blocks_summaries_walks_cursor_across_epochs() {
         .expect("summaries");
     assert_eq!(summaries.len(), 2);
 
-    let u_e1: UpdateInputData = summaries[0].updates()[0].clone().into();
-    let u_e2: UpdateInputData = summaries[1].updates()[0].clone().into();
+    let u_e1 = rpc_update_to_input(summaries[0].updates()[0].clone());
+    let u_e2 = rpc_update_to_input(summaries[1].updates()[0].clone());
     assert_eq!(u_e1.processed_messages(), msgs_e1.as_slice());
     assert_eq!(u_e2.processed_messages(), msgs_e2.as_slice());
 }
@@ -1560,7 +1574,7 @@ async fn blocks_summaries_seeds_cursor_to_zero_for_new_account() {
         .expect("summaries");
     assert_eq!(summaries.len(), 1);
 
-    let update: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let update = rpc_update_to_input(summaries[0].updates()[0].clone());
     assert_eq!(update.processed_messages(), msgs.as_slice());
 }
 
@@ -1672,7 +1686,7 @@ async fn blocks_summaries_account_appears_midway_through_range() {
                 1,
                 "epoch {epoch} (account appears)"
             );
-            let update: UpdateInputData = summary.updates()[0].clone().into();
+            let update = rpc_update_to_input(summary.updates()[0].clone());
             assert_eq!(update.processed_messages(), msgs.as_slice());
         } else {
             assert!(
@@ -1767,7 +1781,7 @@ async fn blocks_summaries_out_of_chain_directset_does_not_fail_rpc() {
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].updates().len(), 1);
 
-    let update: UpdateInputData = summaries[0].updates()[0].clone().into();
+    let update = rpc_update_to_input(summaries[0].updates()[0].clone());
     assert_eq!(update.seq_no(), 2);
     assert_eq!(update.extra_data(), [0xA0]);
 }
@@ -1856,8 +1870,8 @@ async fn blocks_summaries_cursor_passes_checkpoint_sync_row() {
     assert_eq!(summaries.len(), 1);
     assert_eq!(summaries[0].updates().len(), 2);
 
-    let u_a: UpdateInputData = summaries[0].updates()[0].clone().into();
-    let u_c: UpdateInputData = summaries[0].updates()[1].clone().into();
+    let u_a = rpc_update_to_input(summaries[0].updates()[0].clone());
+    let u_c = rpc_update_to_input(summaries[0].updates()[1].clone());
     assert_eq!(u_a.processed_messages(), msgs_a.as_slice());
     assert_eq!(u_c.processed_messages(), msgs_c.as_slice());
 }
@@ -1941,7 +1955,7 @@ proptest! {
         for (rpc_update, (_, seq_no, root, extra_data)) in
             summaries[0].updates().iter().zip(expected_block0.iter())
         {
-            let update: UpdateInputData = rpc_update.clone().into();
+            let update = rpc_update_to_input(rpc_update.clone());
             prop_assert_eq!(update.seq_no(), u64::from(*seq_no));
             prop_assert_eq!(update.extra_data(), extra_data.as_slice());
             prop_assert_eq!(
@@ -1955,7 +1969,7 @@ proptest! {
         for (rpc_update, (_, seq_no, root, extra_data)) in
             summaries[1].updates().iter().zip(expected_block1.iter())
         {
-            let update: UpdateInputData = rpc_update.clone().into();
+            let update = rpc_update_to_input(rpc_update.clone());
             prop_assert_eq!(update.seq_no(), u64::from(*seq_no));
             prop_assert_eq!(update.extra_data(), extra_data.as_slice());
             prop_assert_eq!(

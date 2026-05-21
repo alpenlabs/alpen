@@ -1043,7 +1043,8 @@ fn test_message_source_missing_is_rejected() {
     let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
     let mut da_state = DaAccumulatingState::new(layer);
 
-    let payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![0u8; 4]);
+    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![0u8; 4])
+        .expect("message payload bytes must fit within SSZ max length");
     let missing_source = test_account_id(99);
     let msg = MessageEntry::new(missing_source, 0, payload);
     da_state
@@ -1068,7 +1069,8 @@ fn test_special_message_source_is_encoded() {
     let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
     let mut da_state = DaAccumulatingState::new(layer);
 
-    let payload = MsgPayload::new(BitcoinAmount::from_sat(0), vec![0u8; 4]);
+    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(0), vec![0u8; 4])
+        .expect("message payload bytes must fit within SSZ max length");
     let special_source = AccountId::special(0x10);
     let msg = MessageEntry::new(special_source, 0, payload);
     da_state
@@ -1098,10 +1100,11 @@ fn test_message_payload_size_limit() {
     let (layer, _) = setup_layer_with_snark_account(account_id, 1, BitcoinAmount::from_sat(1_000));
     let mut da_state = DaAccumulatingState::new(layer);
 
-    let payload = MsgPayload::new(
+    let payload = MsgPayload::from_bytes(
         BitcoinAmount::from_sat(0),
         vec![0u8; MAX_MSG_PAYLOAD_BYTES + 1],
-    );
+    )
+    .expect("message payload bytes must fit within SSZ max length");
     let msg = MessageEntry::new(test_account_id(2), 0, payload);
     da_state
         .update_account(account_id, |acct| {

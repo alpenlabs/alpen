@@ -54,12 +54,14 @@ async fn test_multi_sender_attribution() {
     let expected_msg_from_a = MessageEntry::new(
         sender_a,
         epoch,
-        MsgPayload::new(BitcoinAmount::from_sat(100), vec![]),
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(100), vec![])
+            .expect("message payload bytes must fit within SSZ max length"),
     );
     let expected_msg_from_b = MessageEntry::new(
         sender_b,
         epoch,
-        MsgPayload::new(BitcoinAmount::from_sat(250), vec![]),
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(250), vec![])
+            .expect("message payload bytes must fit within SSZ max length"),
     );
     let included_block1 = included_txids(&output_block1.template);
     assert_eq!(

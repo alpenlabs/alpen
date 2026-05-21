@@ -266,7 +266,9 @@ pub(crate) fn create_test_generic_tx_with_constraints(constraints: TxConstraints
     let mut runner = TestRunner::default();
     let payload_strategy = prop::collection::vec(any::<u8>(), 10..100);
     let payload = payload_strategy.new_tree(&mut runner).unwrap().current();
-    let data = OLTransactionData::new_gam(target, payload).with_constraints(constraints);
+    let data = OLTransactionData::from_gam_bytes(target, payload)
+        .expect("message payload bytes must fit within SSZ max length")
+        .with_constraints(constraints);
     OLTransaction::new(data, TxProofs::new_empty())
 }
 
@@ -288,7 +290,9 @@ pub(crate) fn create_test_generic_tx_with_size(
     let mut runner = TestRunner::default();
     let payload_strategy = prop::collection::vec(any::<u8>(), size..=size);
     let payload = payload_strategy.new_tree(&mut runner).unwrap().current();
-    let data = OLTransactionData::new_gam(target, payload).with_constraints(constraints);
+    let data = OLTransactionData::from_gam_bytes(target, payload)
+        .expect("message payload bytes must fit within SSZ max length")
+        .with_constraints(constraints);
     OLTransaction::new(data, TxProofs::new_empty())
 }
 
@@ -421,7 +425,9 @@ pub(crate) fn create_test_generic_tx_for_account(account_id: u8) -> OLTransactio
     let mut payload = payload_strategy.new_tree(&mut runner).unwrap().current();
     // Prepend account_id to make it deterministic per account
     payload.insert(0, account_id);
-    let data = OLTransactionData::new_gam(target, payload).with_constraints(constraints);
+    let data = OLTransactionData::from_gam_bytes(target, payload)
+        .expect("message payload bytes must fit within SSZ max length")
+        .with_constraints(constraints);
     OLTransaction::new(data, TxProofs::new_empty())
 }
 

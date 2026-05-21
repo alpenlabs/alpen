@@ -141,7 +141,8 @@ pub(crate) fn create_test_message(source_id: u8, epoch: u32, value_sats: u64) ->
         .unwrap()
         .current();
     let payload_bytes = sampled_message.payload().data().to_vec();
-    let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), payload_bytes);
+    let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), payload_bytes)
+        .expect("message payload bytes must fit within SSZ max length");
     MessageEntry::new(source, epoch, payload)
 }
 
@@ -407,7 +408,8 @@ impl MempoolGamTxBuilder {
     /// Builds the mempool transaction.
     pub(crate) fn build(self) -> OLTransaction {
         OLTransaction::new(
-            OLTransactionData::new_gam(self.target, self.data),
+            OLTransactionData::from_gam_bytes(self.target, self.data)
+                .expect("message payload bytes must fit within SSZ max length"),
             TxProofs::new_empty(),
         )
     }
@@ -423,10 +425,11 @@ pub(crate) fn withdrawal_output_message(
         .expect("valid withdrawal data");
     let encoded_body = encode_to_vec(&withdrawal_data).expect("encode withdrawal body");
     let withdrawal_msg = OwnedMsg::new(WITHDRAWAL_MSG_TYPE_ID, encoded_body).expect("msg format");
-    let payload = MsgPayload::new(
+    let payload = MsgPayload::from_bytes(
         BitcoinAmount::from_sat(amount_sats),
         withdrawal_msg.to_vec(),
-    );
+    )
+    .expect("withdrawal message payload bytes must fit within SSZ max length");
     OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, payload)
 }
 
@@ -546,7 +549,9 @@ impl MempoolSnarkTxBuilder {
             self.outputs
                 .into_iter()
                 .map(|(dest, value_sats)| {
-                    let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), vec![]);
+                    let payload =
+                        MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), vec![])
+                            .expect("message payload bytes must fit within SSZ max length");
                     OutputMessage::new(dest, payload)
                 })
                 .collect()
@@ -554,11 +559,13 @@ impl MempoolSnarkTxBuilder {
 
         let mut effects = strata_acct_types::TxEffects::default();
         for msg in output_messages {
-            effects.push_message(
-                msg.dest(),
-                msg.payload().value().to_sat(),
-                msg.payload().data().to_vec(),
-            );
+            effects
+                .push_message(
+                    msg.dest(),
+                    msg.payload().value().to_sat(),
+                    msg.payload().data().to_vec(),
+                )
+                .expect("message payload bytes must fit within SSZ max length");
         }
 
         let data = OLTransactionData::new(payload, effects);
@@ -682,7 +689,8 @@ pub(crate) fn generate_message_entries(
                 })
                 .collect();
 
-            let payload = MsgPayload::new(BitcoinAmount::from_sat(value_sats), data);
+            let payload = MsgPayload::from_bytes(BitcoinAmount::from_sat(value_sats), data)
+                .expect("message payload bytes must fit within SSZ max length");
             MessageEntry::new(source_account, incl_epoch, payload)
         })
         .collect()

@@ -48,7 +48,8 @@ fn limbo_message_to_nonexistent_account() {
     let context = BasicExecContext::new(block_info, &outputs);
 
     let value = BitcoinAmount::from_sat(2_500_000);
-    let payload = MsgPayload::new(value, vec![]);
+    let payload = MsgPayload::from_bytes(value, vec![])
+        .expect("message payload bytes must fit within SSZ max length");
 
     account_processing::process_message(
         &mut state,
