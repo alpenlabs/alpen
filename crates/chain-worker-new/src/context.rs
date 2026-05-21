@@ -8,6 +8,8 @@ use std::{collections::BTreeMap, sync::Arc};
 use ssz::Encode;
 use strata_acct_types::{MessageEntry, tree_hash::TreeHash};
 use strata_bridge_params::BridgeParams;
+use strata_asm_common::AsmManifest;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_db_types::{
     errors::DbError,
@@ -21,8 +23,8 @@ use strata_params::Params;
 use strata_primitives::epoch::EpochCommitment;
 use strata_status::StatusChannel;
 use strata_storage::{
-    MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager, OLStateIndexingManager,
-    OLStateManager,
+    L1BlockManager, MmrId, MmrIndexManager, OLBlockManager, OLCheckpointManager,
+    OLStateIndexingManager, OLStateManager,
 };
 use tokio::{runtime::Handle, sync::watch};
 use tracing::debug;
@@ -55,6 +57,9 @@ pub struct ChainWorkerContextImpl {
     /// Manager for OL state indexing data (per-block writes, epoch finalization).
     ol_state_indexing_mgr: Arc<OLStateIndexingManager>,
 
+    /// Manager for L1 block data, used to read ASM manifests by height.
+    l1_block_mgr: Arc<L1BlockManager>,
+
     /// Manager for append-only MMR proof indices.
     mmr_index_mgr: Arc<MmrIndexManager>,
 
@@ -83,6 +88,7 @@ impl ChainWorkerContextImpl {
             ol_state_mgr: nodectx.storage().ol_state().clone(),
             ol_checkpoint_mgr: nodectx.storage().ol_checkpoint().clone(),
             ol_state_indexing_mgr: nodectx.storage().ol_state_indexing().clone(),
+            l1_block_mgr: nodectx.storage().l1().clone(),
             mmr_index_mgr: nodectx.storage().mmr_index().clone(),
             status_channel: nodectx.status_channel().clone(),
             epoch_summary_tx,
@@ -331,6 +337,39 @@ impl ChainWorkerContext for ChainWorkerContextImpl {
 
         Ok(())
     }
+
+    fn fetch_checkpoint_payload(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> WorkerResult<Option<CheckpointPayload>> {
+        Ok(self
+            .ol_checkpoint_mgr
+            .get_checkpoint_l1_observed_payload_blocking(*epoch)?)
+    }
+
+    fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>> {
+        let mut manifests = Vec::new();
+        for height in from..=to {
+            let manifest = self
+                .l1_block_mgr
+                .get_block_manifest_at_height(height)?
+                .ok_or(WorkerError::MissingDependency("l1 manifest"))?;
+            manifests.push(manifest);
+        }
+        Ok(manifests)
+    }
+
+    fn apply_epoch_indexing(
+        &self,
+        epoch: &EpochCommitment,
+        output: &OLBlockExecutionOutput,
+    ) -> WorkerResult<()> {
+        let writes = build_checkpoint_indexing_writes(output);
+        self.ol_state_indexing_mgr
+            .apply_epoch_indexing_blocking(*epoch, writes)?;
+        index_inbox_mmr_writes(&self.mmr_index_mgr, output)?;
+        Ok(())
+    }
 }
 
 /// Builds an [`IndexingWrites`] payload from a block-execution output.
@@ -370,6 +409,48 @@ fn build_indexing_writes(
     for write in indexer_writes.inbox_messages() {
         let entry_bytes = write.entry().as_ssz_bytes();
         let record = InboxMessageRecord::new(entry_bytes, Some(commitment));
+        account_inbox_writes
+            .entry(write.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    IndexingWrites::new(created_accounts, account_updates, account_inbox_writes)
+}
+
+/// Builds an [`IndexingWrites`] payload for a DA-reconstructed epoch.
+///
+/// Like [`build_indexing_writes`] but stamps no block commitment: checkpoint
+/// sync has no per-block attribution, so update records carry `update_meta:
+/// None` and inbox records carry `block_commitment: None`. RPC readers treat
+/// these as epoch-scoped rows.
+fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> IndexingWrites {
+    let indexer_writes = output.indexer_writes();
+
+    let created_accounts: Vec<AccountId> = indexer_writes
+        .created_accounts()
+        .iter()
+        .map(|c| c.account_id())
+        .collect();
+
+    let mut account_updates: BTreeMap<AccountId, Vec<AccountUpdateRecord>> = BTreeMap::new();
+    for update in indexer_writes.snark_state_updates() {
+        let record = AccountUpdateRecord::new(
+            None,
+            *update.seqno().inner(),
+            update.next_read_idx(),
+            update.extra_data().map(<[u8]>::to_vec),
+        );
+        account_updates
+            .entry(update.account_id())
+            .or_default()
+            .push(record);
+    }
+
+    let mut account_inbox_writes: BTreeMap<AccountId, Vec<InboxMessageRecord>> = BTreeMap::new();
+    for write in indexer_writes.inbox_messages() {
+        let entry_bytes = write.entry().as_ssz_bytes();
+        let record = InboxMessageRecord::new(entry_bytes, None);
         account_inbox_writes
             .entry(write.account_id())
             .or_default()

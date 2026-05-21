@@ -1,5 +1,7 @@
 //! Traits for the chain worker to interface with the underlying system.
 
+use strata_asm_common::AsmManifest;
+use strata_asm_proto_checkpoint_types::CheckpointPayload;
 use strata_checkpoint_types::EpochSummary;
 use strata_identifiers::{OLBlockCommitment, OLBlockId};
 use strata_ol_chain_types_new::{OLBlock, OLBlockHeader};
@@ -84,4 +86,25 @@ pub trait ChainWorkerContext: Send + Sync + 'static {
     ///
     /// This means we have to load fewer write batches when reconstructing state.
     fn merge_finalized_epoch(&self, epoch: &EpochCommitment) -> WorkerResult<()>;
+
+    /// Fetches the checkpoint payload observed on L1 for the given epoch.
+    ///
+    /// This is the payload extracted from a buried L1 checkpoint, used by
+    /// checkpoint sync to reconstruct epoch state.
+    fn fetch_checkpoint_payload(
+        &self,
+        epoch: &EpochCommitment,
+    ) -> WorkerResult<Option<CheckpointPayload>>;
+
+    /// Fetches ASM manifests for the inclusive L1 height range `[from, to]`.
+    ///
+    /// Used to replay manifest processing during DA-based epoch reconstruction.
+    fn fetch_l1_manifests(&self, from: u32, to: u32) -> WorkerResult<Vec<AsmManifest>>;
+
+    /// Applies epoch-granular state index writes for a reconstructed epoch.
+    fn apply_epoch_indexing(
+        &self,
+        epoch: &EpochCommitment,
+        writes: &OLBlockExecutionOutput,
+    ) -> WorkerResult<()>;
 }
