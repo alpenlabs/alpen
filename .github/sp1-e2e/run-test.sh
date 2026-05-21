@@ -12,7 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DOCKER_DIR="${REPO_ROOT}/docker"
-PROOF_TIMEOUT="${PROOF_TIMEOUT:-7200}"
+PROOF_TIMEOUT="${PROOF_TIMEOUT:-2400}"
 
 DATATOOL_IMAGE="${ECR_REGISTRY}/strata-datatool:${IMAGE_TAG}"
 
