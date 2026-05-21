@@ -9,7 +9,7 @@ from common.config.constants import ServiceType
 
 logger = logging.getLogger(__name__)
 
-EXPECTED_GENESIS_HASH = "0x46c0dc60fb131be4ccc55306a345fcc20e44233324950f978ba5f185aa2af4dc"
+EXPECTED_GENESIS_HASH = "0x5c17d78b1ce8c2c52fb850077d0056864f334f3b619d2c4a5e15ab9709710f4f"
 
 
 @flexitest.register
