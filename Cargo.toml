@@ -503,6 +503,8 @@ tree_hash_derive = { git = "https://github.com/alpenlabs/ssz-gen", tag = "v0.15.
 # `next_request_id >= readable_request_id` invariant, which fires under
 # concurrent bitcoind RPC traffic in coverage/debug builds. Tracked upstream at
 # https://github.com/rust-bitcoin/corepc/issues/583 (PR #584 unmerged).
+#
+# TODO(STR-3554): remove this when PR merged
 [profile.dev.package.bitreq]
 debug-assertions = false
 
