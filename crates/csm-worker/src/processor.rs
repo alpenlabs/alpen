@@ -160,29 +160,37 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 
     /// Folds checkpoint observations made during a successfully committed block
     /// into the worker's finality cursors.
-    fn apply_observations(&mut self, observations: Vec<L1Checkpoint>) {
+    fn apply_observations(&mut self, observations: impl IntoIterator<Item = L1Checkpoint>) {
         for checkpoint in observations {
-            let commitment = EpochCommitment::from(&checkpoint);
+            self.apply_checkpoint_observation(checkpoint);
+        }
+    }
 
-            // Update cached confirmed epoch monotonically.
-            if self
-                .confirmed_epoch
-                .is_none_or(|current| commitment.epoch() > current.epoch())
-            {
-                self.confirmed_epoch = Some(commitment);
-            }
+    /// Folds a single checkpoint observation into the worker's finality
+    /// cursors: bumps `confirmed_epoch` monotonically and queues the
+    /// observation for incremental depth-driven finalization if it's still
+    /// ahead of `finalized_epoch` and not already present.
+    fn apply_checkpoint_observation(&mut self, checkpoint: L1Checkpoint) {
+        let commitment = EpochCommitment::from(&checkpoint);
 
-            // Queue only non-finalized candidates and avoid duplicates.
-            if self
-                .finalized_epoch
-                .is_none_or(|current| commitment.epoch() > current.epoch())
-                && !self
-                    .observed_checkpoints
-                    .iter()
-                    .any(|existing| EpochCommitment::from(existing) == commitment)
-            {
-                self.observed_checkpoints.push_back(checkpoint);
-            }
+        // Update cached confirmed epoch monotonically.
+        if self
+            .confirmed_epoch
+            .is_none_or(|current| commitment.epoch() > current.epoch())
+        {
+            self.confirmed_epoch = Some(commitment);
+        }
+
+        // Queue only non-finalized candidates and avoid duplicates.
+        if self
+            .finalized_epoch
+            .is_none_or(|current| commitment.epoch() > current.epoch())
+            && !self
+                .observed_checkpoints
+                .iter()
+                .any(|existing| EpochCommitment::from(existing) == commitment)
+        {
+            self.observed_checkpoints.push_back(checkpoint);
         }
     }
 
