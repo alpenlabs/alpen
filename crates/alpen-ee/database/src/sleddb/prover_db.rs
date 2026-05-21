@@ -72,6 +72,14 @@ impl EeProverDbSled {
         Ok(self.chunk_receipt_tree.get(&key.to_vec())?)
     }
 
+    /// Removes a chunk receipt, returning `true` if a row existed.
+    ///
+    /// Admin-only path (offline dbtool). Callers must keep the node down
+    /// to avoid racing with chunk-prover writes.
+    pub fn delete_chunk_receipt(&self, key: &[u8]) -> DbResult<bool> {
+        Ok(self.chunk_receipt_tree.take(&key.to_vec())?.is_some())
+    }
+
     // ---- Acct proof store (typed BatchId API) ----
 
     pub fn put_acct_proof(
@@ -107,6 +115,21 @@ impl EeProverDbSled {
         };
         let batch_id: BatchId = db_id.into();
         self.get_acct_proof(batch_id)
+    }
+
+    /// Removes an acct proof along with its secondary index entry,
+    /// returning `true` if the proof row existed.
+    ///
+    /// Admin-only path (offline dbtool). The two trees are not deleted
+    /// in a single transaction — acceptable because callers stop the
+    /// node before invoking this, so no concurrent writer can observe
+    /// the intermediate state.
+    pub fn delete_acct_proof(&self, batch_id: BatchId) -> DbResult<bool> {
+        let db_id: DBBatchId = batch_id.into();
+        let proof_id = proof_id_for(batch_id);
+        let existed = self.acct_proof_tree.take(&db_id)?.is_some();
+        self.acct_proof_id_index_tree.remove(&proof_id)?;
+        Ok(existed)
     }
 }
 
@@ -187,4 +210,77 @@ impl ProverTaskDatabase for EeProverDbSled {
 /// it here so the sled-layer index and the in-memory index agree.
 fn proof_id_for(batch_id: BatchId) -> ProofId {
     batch_id.last_block()
+}
+
+#[cfg(test)]
+mod tests {
+    use strata_acct_types::Hash;
+    use zkaleido::{ProgramId, Proof, ProofMetadata, ProofReceipt, ProofType, PublicValues, ZkVm};
+
+    use super::*;
+
+    fn setup_db() -> EeProverDbSled {
+        let sled_db = sled::Config::new().temporary(true).open().unwrap();
+        let typed_sled = Arc::new(SledDb::new(sled_db).unwrap());
+        let config = SledDbConfig::new_with_constant_backoff(2, 0);
+        EeProverDbSled::new(typed_sled, config).unwrap()
+    }
+
+    fn dummy_receipt() -> ProofReceiptWithMetadata {
+        let receipt = ProofReceipt::new(Proof::default(), PublicValues::default());
+        let metadata = ProofMetadata::new(
+            ZkVm::Native,
+            ProgramId([0u8; 32]),
+            "0.1".to_string(),
+            ProofType::Groth16,
+        );
+        ProofReceiptWithMetadata::new(receipt, metadata)
+    }
+
+    fn hash_from_u8(seed: u8) -> Hash {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 1;
+        bytes[31] = seed;
+        Hash::from(bytes)
+    }
+
+    #[test]
+    fn delete_chunk_receipt_roundtrip() {
+        let db = setup_db();
+        let key = b"chunk-key".to_vec();
+        let receipt = dummy_receipt();
+
+        assert!(matches!(db.delete_chunk_receipt(&key), Ok(false)));
+
+        db.put_chunk_receipt(key.clone(), receipt).unwrap();
+        assert!(db.get_chunk_receipt(&key).unwrap().is_some());
+
+        assert!(matches!(db.delete_chunk_receipt(&key), Ok(true)));
+        assert!(matches!(db.delete_chunk_receipt(&key), Ok(false)));
+        assert!(db.get_chunk_receipt(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn delete_acct_proof_clears_primary_and_secondary_rows() {
+        let db = setup_db();
+        let batch_id = BatchId::from_parts(hash_from_u8(1), hash_from_u8(2));
+        let proof_id: ProofId = batch_id.last_block();
+
+        // Missing primary row reports false; secondary index already absent
+        // so the call is a clean no-op.
+        assert!(matches!(db.delete_acct_proof(batch_id), Ok(false)));
+
+        db.put_acct_proof(batch_id, dummy_receipt()).unwrap();
+        assert!(db.has_acct_proof(batch_id).unwrap());
+        assert!(db.get_acct_proof_by_id(proof_id).unwrap().is_some());
+
+        assert!(matches!(db.delete_acct_proof(batch_id), Ok(true)));
+        assert!(!db.has_acct_proof(batch_id).unwrap());
+        // Secondary index entry must be cleared so the by-id lookup also
+        // misses — otherwise the index would dangle.
+        assert!(db.get_acct_proof_by_id(proof_id).unwrap().is_none());
+
+        // Second delete is idempotent.
+        assert!(matches!(db.delete_acct_proof(batch_id), Ok(false)));
+    }
 }
