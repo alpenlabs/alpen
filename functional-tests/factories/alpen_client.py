@@ -64,6 +64,8 @@ class AlpenClientFactory(flexitest.Factory):
         enable_discovery: bool = False,
         custom_chain: str = "dev",
         ol_endpoint: str | None = None,
+        ol_submit_endpoint: str | None = None,
+        ol_submit_token: str | None = None,
         da_config: EeDaConfig | None = None,
         dev_track_latest_epoch: bool = False,
         **kwargs,
@@ -97,7 +99,12 @@ class AlpenClientFactory(flexitest.Factory):
         key_hex = p2p_secret_key.removeprefix("0x")
         p2p_secret_key_file.write_text(key_hex)
 
-        ol_client_args = ["--ol-client-url", ol_endpoint] if ol_endpoint else ["--dummy-ol-client"]
+        if ol_endpoint:
+            ol_client_args = ["--ol-client-url", ol_endpoint]
+            if ol_submit_endpoint:
+                ol_client_args.extend(["--ol-submit-url", ol_submit_endpoint])
+        else:
+            ol_client_args = ["--dummy-ol-client"]
 
         # fmt: off
         cmd = [
@@ -176,6 +183,8 @@ class AlpenClientFactory(flexitest.Factory):
         env = os.environ.copy()
         env["SEQUENCER_PRIVATE_KEY"] = sequencer_privkey
         env["ALPEN_EE_BLOCK_TIME_MS"] = str(DEFAULT_EE_BLOCK_TIME_MS)
+        if ol_submit_token:
+            env["STRATA_SUBMIT_RPC_TOKEN"] = ol_submit_token
 
         svc = AlpenClientService(
             props,
