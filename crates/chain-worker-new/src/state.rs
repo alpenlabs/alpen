@@ -362,7 +362,7 @@ impl ChainWorkerServiceState {
 ///
 /// Expects `cur_epoch > 0`; the chain worker executes blocks from slot 1, so
 /// the previous epoch's terminal is always already stored.
-fn get_prev_terminal(
+pub(crate) fn get_prev_terminal(
     ctx: &impl ChainWorkerContext,
     cur_epoch: Epoch,
 ) -> WorkerResult<OLBlockCommitment> {
@@ -384,7 +384,7 @@ fn get_prev_terminal(
 /// Fetches the checkpoint payload, replays the DA diff and ASM manifests via
 /// [`apply_da_epoch`], and builds the epoch summary. Returns the values that
 /// [`ChainWorkerServiceState::apply_checkpoint`] then persists.
-fn apply_checkpoint_epoch(
+pub(crate) fn apply_checkpoint_epoch(
     ctx: &impl ChainWorkerContext,
     epoch: EpochCommitment,
 ) -> WorkerResult<AppliedEpochArtifacts> {
@@ -480,15 +480,16 @@ fn apply_checkpoint_epoch(
 
 /// The values produced by reconstructing one epoch from its checkpoint,
 /// before persistence.
-struct AppliedEpochArtifacts {
+#[derive(Debug)]
+pub(crate) struct AppliedEpochArtifacts {
     /// Terminal block commitment of the epoch.
-    terminal: OLBlockCommitment,
+    pub(crate) terminal: OLBlockCommitment,
     /// Reconstructed post-epoch toplevel state.
-    new_state: OLState,
+    pub(crate) new_state: OLState,
     /// Epoch summary built from the reconstructed state.
-    summary: EpochSummary,
+    pub(crate) summary: EpochSummary,
     /// Execution output (state root, write batch, indexer writes).
-    output: OLBlockExecutionOutput,
+    pub(crate) output: OLBlockExecutionOutput,
 }
 
 impl ServiceState for ChainWorkerServiceState {

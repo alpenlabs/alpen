@@ -23,6 +23,9 @@ mod service;
 mod state;
 mod traits;
 
+#[cfg(test)]
+mod tests;
+
 pub use context::ChainWorkerContextImpl;
 pub use errors::{WorkerError, WorkerResult};
 pub use handle::ChainWorkerHandle;

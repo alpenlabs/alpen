@@ -5,7 +5,7 @@
 //! combined. Each test builds a multi-block epoch with empty filler blocks
 //! around the meaningful ones.
 
-use strata_acct_types::{BitcoinAmount, MessageEntry, MsgPayload};
+use strata_acct_types::{BitcoinAmount, MessageEntry};
 use strata_asm_common::{AsmLogEntry, AsmManifest};
 use strata_asm_logs::DepositLog;
 use strata_codec::decode_buf_exact;
@@ -22,13 +22,13 @@ use strata_ol_state_support_types::{DaAccumulatingState, MemoryStateBaseLayer};
 use strata_predicate::PredicateKey;
 
 use crate::{
-    BlockInfo, EpochInfo, SEQUENCER_ACCT_ID, apply_da_epoch,
+    BlockInfo, EpochInfo, apply_da_epoch,
     assembly::{BlockComponents, CompletedBlock},
     execute_block_batch_preseal,
     test_utils::{
         InboxMmrTracker, SnarkUpdateBuilder, TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID,
         execute_block, get_snark_state_expect, insert_empty_account, make_account_id,
-        make_empty_manifest, make_genesis_state, make_state_root, to_ol_block,
+        make_empty_manifest, make_genesis_state, make_state_root, snark_inbox_msg, to_ol_block,
     },
 };
 
@@ -318,16 +318,6 @@ fn assert_reconstruction_matches(
         direct_root,
         "DA-reconstructed state root must equal directly-executed root"
     );
-}
-
-/// The inbox message a GAM block delivers and the snark update consumes.
-fn snark_inbox_msg() -> MessageEntry {
-    MessageEntry::new(
-        SEQUENCER_ACCT_ID,
-        1,
-        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), b"inbox msg".to_vec())
-            .expect("inbox msg payload"),
-    )
 }
 
 /// Wraps a single transaction into block components.

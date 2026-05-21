@@ -2023,3 +2023,13 @@ pub fn get_snark_state_expect(
     let snark_account = state.get_account_state(snark_id).unwrap().unwrap();
     (snark_account, snark_account.as_snark_account().unwrap())
 }
+
+/// The inbox message a GAM block delivers and a snark update consumes in tests.
+pub fn snark_inbox_msg() -> MessageEntry {
+    MessageEntry::new(
+        crate::SEQUENCER_ACCT_ID,
+        1,
+        MsgPayload::from_bytes(BitcoinAmount::from_sat(0), b"inbox msg".to_vec())
+            .expect("inbox msg payload"),
+    )
+}

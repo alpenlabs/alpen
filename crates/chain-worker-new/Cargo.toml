@@ -19,8 +19,8 @@ strata-ledger-types.workspace = true
 strata-msg-fmt.workspace = true
 strata-node-context.workspace = true
 strata-ol-chain-types-new.workspace = true
-strata-ol-params.workspace = true
 strata-ol-da.workspace = true
+strata-ol-params.workspace = true
 strata-ol-state-support-types.workspace = true
 strata-ol-state-types.workspace = true
 strata-ol-stf.workspace = true
@@ -38,8 +38,11 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+strata-codec.workspace = true
 strata-db-store-sled.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
+strata-ol-stf = { workspace = true, features = ["test-utils"] }
+strata-predicate.workspace = true
 strata-snark-acct-types.workspace = true
 sled.workspace = true
 threadpool.workspace = true
