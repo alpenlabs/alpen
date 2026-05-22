@@ -540,9 +540,10 @@ strata-dbtool ee-delete-chunk-receipt <key_hex> --force
 
 ### `ee-get-acct-proof` / `ee-delete-acct-proof`
 Inspect or remove a stored acct/batch proof. The batch id is passed as
-`<prev_block_hex>:<last_block_hex>` (each 32 bytes), matching `BatchId`'s
-`Display` format — copy directly from the alpen-client's logs. Delete
-also clears the secondary `ProofId → BatchId` index.
+`<prev_block_hex>:<last_block_hex>` (each 32 bytes, optional `0x`
+prefix), which is exactly what `BatchId::Display` emits — copy a
+`%batch_id` field straight from the alpen-client's logs. Delete also
+clears the secondary `ProofId → BatchId` index.
 
 ```bash
 strata-dbtool ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]

@@ -3,9 +3,9 @@
 //! Chunk receipts are keyed by the opaque chunk-task key (`Vec<u8>`),
 //! matching the `paas::ReceiptStore` shape. Acct proofs are keyed by
 //! [`alpen_ee_common::BatchId`], which the CLI parses from a
-//! `prev_block_hex:last_block_hex` literal — the same shape the
-//! `BatchId::Display` impl emits, so operators can copy directly from
-//! logs.
+//! `<prev_block_hex>:<last_block_hex>` literal — the same shape
+//! `BatchId::Display` emits, so operators can copy the `%batch_id` value
+//! straight out of alpen-client logs.
 
 use alpen_ee_common::BatchId;
 use alpen_ee_database::EeProverDbSled;
@@ -92,9 +92,10 @@ pub(crate) struct EeDeleteAcctProofArgs {
 
 /// Parses `"<prev_block_hex>:<last_block_hex>"` into a [`BatchId`].
 ///
-/// Each hex half is exactly 32 bytes (64 hex chars). Both parts are
-/// required — there is no fallback to a single-hash form because the
-/// underlying type literally is a pair of hashes.
+/// Each hex half is exactly 32 bytes (64 hex chars), with an optional
+/// `0x` prefix on either half. This is the exact shape `BatchId::Display`
+/// emits, so a `%batch_id` value copied from alpen-client logs round-trips
+/// through the parser.
 pub(crate) fn parse_batch_id(s: &str) -> Result<BatchId, DisplayedError> {
     let (prev, last) = s.split_once(':').ok_or_else(|| {
         DisplayedError::UserError(
