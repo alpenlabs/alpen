@@ -17,6 +17,7 @@ strata-common.workspace = true
 strata-crypto.workspace = true
 strata-key-derivation.workspace = true
 strata-logging.workspace = true
+strata-metrics.workspace = true
 strata-primitives.workspace = true
 strata-tasks.workspace = true
 
