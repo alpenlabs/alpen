@@ -104,8 +104,9 @@ pub struct ClientConfig {
     #[serde(default = "default_p2p_port")]
     pub p2p_port: u16,
 
-    /// Endpoint that the client will use for syncing blocks. In this case sequencer's rpc
-    /// endpoint.
+    /// OL peer endpoint to sync from.
+    /// NOTE: Currently unused. non-sequencer nodes sync from L1 checkpoints, not from a
+    /// peer RPC. Retained for config compatibility.
     pub sync_endpoint: Option<String>,
 
     /// How many l2 blocks to fetch at once while syncing.
