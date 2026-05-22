@@ -375,7 +375,12 @@ fn test_evm_write_batch_codec_roundtrip() {
     let intrinsics_state_root = Hash::from([42u8; 32]);
     let logs_bloom = Bloom::from([0xAB; 256]);
 
-    let write_batch = EvmWriteBatch::new(hashed_post_state, intrinsics_state_root, logs_bloom);
+    let write_batch = EvmWriteBatch::new(
+        hashed_post_state,
+        intrinsics_state_root,
+        logs_bloom,
+        Vec::new(),
+    );
 
     // Encode
     let encoded = encode_to_vec(&write_batch).expect("encode failed");

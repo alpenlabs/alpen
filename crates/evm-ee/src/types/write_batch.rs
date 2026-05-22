@@ -1,11 +1,17 @@
 //! EVM write batch implementation.
 
+use std::collections::BTreeMap;
+
 use reth_trie::HashedPostState;
-use revm_primitives::alloy_primitives::Bloom;
+use revm::state::Bytecode;
+use revm_primitives::{B256, alloy_primitives::Bloom};
 use strata_acct_types::Hash;
 use strata_codec::{Codec, CodecError};
 
-use crate::codec_shims::{decode_hashed_post_state, encode_hashed_post_state};
+use crate::codec_shims::{
+    decode_bytes_with_length, decode_hashed_post_state, encode_bytes_with_length,
+    encode_hashed_post_state,
+};
 
 /// Write batch for EVM execution containing state changes.
 ///
@@ -28,6 +34,8 @@ pub struct EvmWriteBatch {
     intrinsics_state_root: Hash,
     /// The accumulated logs bloom from all receipts
     logs_bloom: Bloom,
+    /// Bytecodes created while executing this block, keyed by code hash.
+    created_bytecodes: BTreeMap<B256, Bytecode>,
 }
 
 impl EvmWriteBatch {
@@ -36,11 +44,19 @@ impl EvmWriteBatch {
         hashed_post_state: HashedPostState,
         intrinsics_state_root: Hash,
         logs_bloom: Bloom,
+        created_bytecodes: Vec<Bytecode>,
     ) -> Self {
+        let created_bytecodes = created_bytecodes
+            .into_iter()
+            .filter(|bytecode| !bytecode.original_bytes().is_empty())
+            .map(|bytecode| (bytecode.hash_slow(), bytecode))
+            .collect();
+
         Self {
             hashed_post_state,
             intrinsics_state_root,
             logs_bloom,
+            created_bytecodes,
         }
     }
 
@@ -62,6 +78,11 @@ impl EvmWriteBatch {
         self.logs_bloom
     }
 
+    /// Gets the bytecodes created while executing this block.
+    pub fn created_bytecodes(&self) -> impl Iterator<Item = &Bytecode> {
+        self.created_bytecodes.values()
+    }
+
     /// Consumes self and returns the underlying HashedPostState.
     pub fn into_hashed_post_state(self) -> HashedPostState {
         self.hashed_post_state
@@ -78,6 +99,13 @@ impl Codec for EvmWriteBatch {
 
         // Encode logs_bloom (256 bytes)
         enc.write_buf(self.logs_bloom.as_slice())?;
+
+        // Encode bytecodes in deterministic hash order.
+        (self.created_bytecodes.len() as u32).encode(enc)?;
+        for (hash, bytecode) in &self.created_bytecodes {
+            encode_bytes_with_length(&bytecode.original_bytes(), enc)?;
+            enc.write_buf(hash.as_slice())?;
+        }
 
         Ok(())
     }
@@ -96,10 +124,26 @@ impl Codec for EvmWriteBatch {
         dec.read_buf(&mut logs_bloom_bytes)?;
         let logs_bloom = Bloom::from(logs_bloom_bytes);
 
+        // Decode bytecodes with their pre-computed hashes.
+        let bytecode_count = u32::decode(dec)? as usize;
+        let mut created_bytecodes = BTreeMap::new();
+        for _ in 0..bytecode_count {
+            let bytes = decode_bytes_with_length(dec)?;
+            let bytecode = Bytecode::new_raw_checked(bytes.into())
+                .map_err(|_| CodecError::MalformedField("Bytecode decode failed"))?;
+
+            let mut hash_bytes = [0u8; 32];
+            dec.read_buf(&mut hash_bytes)?;
+            let hash = B256::from(hash_bytes);
+
+            created_bytecodes.insert(hash, bytecode);
+        }
+
         Ok(Self {
             hashed_post_state,
             intrinsics_state_root,
             logs_bloom,
+            created_bytecodes,
         })
     }
 }

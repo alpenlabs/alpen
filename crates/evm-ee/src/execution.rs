@@ -9,10 +9,10 @@ use alloy_consensus::Header;
 use alpen_reth_evm::{accumulate_logs_bloom, evm::AlpenEvmFactory, extract_withdrawal_intents};
 use reth_chainspec::ChainSpec;
 use reth_consensus_common::validation::validate_body_against_header;
-use reth_evm::execute::{BasicBlockExecutor, Executor};
+use reth_evm::execute::{BasicBlockExecutor, BlockExecutionOutput, Executor};
 use reth_evm_ethereum::EthEvmConfig;
-use reth_primitives::EthPrimitives;
-use revm::database::WrapDatabaseRef;
+use reth_primitives::{EthPrimitives, Receipt as EthereumReceipt};
+use revm::{database::WrapDatabaseRef, state::Bytecode};
 use rsp_client_executor::BlockValidator;
 use strata_acct_types::{AccountId, BitcoinAmount, MsgPayload};
 use strata_codec::encode_to_vec;
@@ -148,6 +148,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         let transactions = block.into_transactions();
         let withdrawal_intents =
             extract_withdrawal_intents(&transactions, &execution_output.receipts).collect();
+        let created_bytecodes = collect_created_bytecodes(&execution_output);
 
         // Step 9: Convert execution outcome to HashedPostState
         let header_intrinsics = exec_payload.header_intrinsics();
@@ -168,6 +169,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
             hashed_post_state,
             intrinsics_state_root.0.into(),
             logs_bloom,
+            created_bytecodes,
         );
 
         // Step 12: Create ExecOutputs with withdrawal intent messages
@@ -201,6 +203,7 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
     ) -> EnvResult<()> {
         // Merge the HashedPostState into the EthereumState
         state.merge_write_batch(wb);
+        state.add_bytecodes(wb.created_bytecodes().cloned().collect());
 
         // Verify state root AFTER merge (avoids expensive clone that would be needed
         // to compute the root before mutation)
@@ -222,6 +225,12 @@ impl ExecutionEnvironment for EvmExecutionEnvironment {
         state.add_executed_block(header.header().clone());
         Ok(())
     }
+}
+
+fn collect_created_bytecodes(
+    execution_output: &BlockExecutionOutput<EthereumReceipt>,
+) -> Vec<Bytecode> {
+    execution_output.state.contracts.values().cloned().collect()
 }
 
 impl BlockAssembler for EvmExecutionEnvironment {
