@@ -2,6 +2,7 @@
 Alpen-client test environment configurations.
 """
 
+from dataclasses import dataclass
 from typing import cast
 
 import flexitest
@@ -25,6 +26,20 @@ def _generate_blocks_in_chunks(btc_rpc, block_count: int, mining_address: str) -
         chunk = min(remaining, INITIAL_L1_MINE_CHUNK_SIZE)
         btc_rpc.proxy.generatetoaddress(chunk, mining_address)
         remaining -= chunk
+
+
+@dataclass
+class AlpenClientEnvParams:
+    fullnode_count: int
+    enable_discovery: bool
+    pure_discovery: bool
+    mesh_bootnodes: bool
+    enable_l1_da: bool = False
+    da_magic_bytes: bytes = b"0000"
+    l1_reorg_safe_depth: int = 2
+    batch_sealing_block_count: int = 10
+    dev_track_latest_epoch: bool = False
+    beneficiary_address: str | None = None
 
 
 class AlpenClientEnv(flexitest.EnvConfig):
@@ -57,15 +72,17 @@ class AlpenClientEnv(flexitest.EnvConfig):
         batch_sealing_block_count: int = 5,
         beneficiary_address: str | None = None,
     ):
-        self.fullnode_count = fullnode_count
-        self.enable_discovery = enable_discovery
-        self.pure_discovery = pure_discovery
-        self.mesh_bootnodes = mesh_bootnodes
-        self.enable_l1_da = enable_l1_da
-        self.da_magic_bytes = da_magic_bytes
-        self.l1_reorg_safe_depth = l1_reorg_safe_depth
-        self.batch_sealing_block_count = batch_sealing_block_count
-        self.beneficiary_address = beneficiary_address
+        self.env_params = AlpenClientEnvParams(
+            fullnode_count=fullnode_count,
+            enable_discovery=enable_discovery,
+            pure_discovery=pure_discovery,
+            mesh_bootnodes=mesh_bootnodes,
+            enable_l1_da=enable_l1_da,
+            da_magic_bytes=da_magic_bytes,
+            l1_reorg_safe_depth=l1_reorg_safe_depth,
+            batch_sealing_block_count=batch_sealing_block_count,
+            beneficiary_address=beneficiary_address,
+        )
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
         if mesh_bootnodes and not enable_discovery:
@@ -74,37 +91,17 @@ class AlpenClientEnv(flexitest.EnvConfig):
             raise ValueError(f"da_magic_bytes must be exactly 4 bytes, got {len(da_magic_bytes)}")
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
-        services = self.get_services(
-            ectx,
-            self.enable_discovery,
-            self.fullnode_count,
-            self.mesh_bootnodes,
-            self.pure_discovery,
-            self.enable_l1_da,
-            self.da_magic_bytes,
-            self.l1_reorg_safe_depth,
-            self.batch_sealing_block_count,
-            beneficiary_address=self.beneficiary_address,
-        )
+        services = self.get_services(ectx, self.env_params)
         return flexitest.LiveEnv(services)
 
     @staticmethod
     def get_services(
         ectx: flexitest.EnvContext,
-        enable_discovery: bool,
-        fullnode_count: int,
-        mesh_bootnodes: int,
-        pure_discovery: bool,
-        enable_l1_da: bool = True,
-        da_magic_bytes: bytes = DEFAULT_DA_MAGIC_BYTES,
-        l1_reorg_safe_depth: int = 2,
-        batch_sealing_block_count: int = 10,
+        envparams: AlpenClientEnvParams,
         bitcoin_service: BitcoinService | None = None,
         ol_endpoint: str | None = None,
         ol_submit_endpoint: str | None = None,
         ol_submit_token: str | None = None,
-        dev_track_latest_epoch: bool = False,
-        beneficiary_address: str | None = None,
     ):
         factory = cast(AlpenClientFactory, ectx.get_factory(ServiceType.AlpenClient))
         privkey, pubkey = generate_sequencer_keypair()
@@ -113,7 +110,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         da_config = None
 
         # Start Bitcoin if DA is enabled
-        if enable_l1_da:
+        if envparams.enable_l1_da:
             if bitcoin_service is None:
                 btc_factory = cast(BitcoinFactory, ectx.get_factory(ServiceType.Bitcoin))
                 bitcoin = btc_factory.create_regtest()
@@ -147,10 +144,10 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 btc_rpc_url=btc_rpc_url,
                 btc_rpc_user=bitcoin.props["rpc_user"],
                 btc_rpc_password=bitcoin.props["rpc_password"],
-                magic_bytes=da_magic_bytes,
-                l1_reorg_safe_depth=l1_reorg_safe_depth,
+                magic_bytes=envparams.da_magic_bytes,
+                l1_reorg_safe_depth=envparams.l1_reorg_safe_depth,
                 genesis_l1_height=genesis_l1_height,
-                batch_sealing_block_count=batch_sealing_block_count,
+                batch_sealing_block_count=envparams.batch_sealing_block_count,
             )
             services[ServiceType.Bitcoin] = bitcoin
 
@@ -158,14 +155,14 @@ class AlpenClientEnv(flexitest.EnvConfig):
         sequencer = factory.create_sequencer(
             sequencer_pubkey=pubkey,
             sequencer_privkey=privkey,
-            enable_discovery=enable_discovery,
+            enable_discovery=envparams.enable_discovery,
             ol_endpoint=ol_endpoint,
             ol_submit_endpoint=ol_submit_endpoint,
             ol_submit_token=ol_submit_token,
             da_config=da_config,
-            batch_sealing_block_count=batch_sealing_block_count,
-            dev_track_latest_epoch=dev_track_latest_epoch,
-            beneficiary_address=beneficiary_address,
+            batch_sealing_block_count=envparams.batch_sealing_block_count,
+            dev_track_latest_epoch=envparams.dev_track_latest_epoch,
+            beneficiary_address=envparams.beneficiary_address,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()
@@ -176,19 +173,19 @@ class AlpenClientEnv(flexitest.EnvConfig):
         fn_enodes = []  # Track fullnode enodes for mesh bootnodes
 
         # Start fullnodes
-        for i in range(fullnode_count):
+        for i in range(envparams.fullnode_count):
             # Build bootnode list
             bootnodes = None
-            if enable_discovery:
+            if envparams.enable_discovery:
                 bootnodes = [seq_enode]
                 # Add previous fullnodes as bootnodes for mesh formation
-                if mesh_bootnodes:
+                if envparams.mesh_bootnodes:
                     bootnodes.extend(fn_enodes)
 
             fullnode = factory.create_fullnode(
                 sequencer_pubkey=pubkey,
                 bootnodes=bootnodes,
-                enable_discovery=enable_discovery,
+                enable_discovery=envparams.enable_discovery,
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
@@ -197,19 +194,19 @@ class AlpenClientEnv(flexitest.EnvConfig):
             fullnodes.append(fullnode)
 
             # Track enode for mesh bootnodes
-            if mesh_bootnodes:
+            if envparams.mesh_bootnodes:
                 fn_enodes.append(fullnode.get_enode())
 
             # Use "fullnode" for single, "fullnode_N" for multiple
             key = (
                 ServiceType.AlpenFullNode
-                if fullnode_count == 1
+                if envparams.fullnode_count == 1
                 else f"{ServiceType.AlpenFullNode}_{i}"
             )
             services[key] = fullnode
 
         # Connect fullnodes to sequencer via admin_addPeer (unless pure_discovery mode)
-        if not pure_discovery:
+        if not envparams.pure_discovery:
             seq_rpc = sequencer.create_rpc()
             for fn in fullnodes:
                 fn_enode = fn.get_enode()

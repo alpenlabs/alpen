@@ -8,7 +8,7 @@ from common.config.config import EpochSealingConfig
 from common.config.constants import ServiceType
 from common.services.bitcoin import BitcoinService
 from common.services.strata import StrataService
-from envconfigs.alpen_client import AlpenClientEnv
+from envconfigs.alpen_client import AlpenClientEnv, AlpenClientEnvParams
 from envconfigs.strata import StrataEnvConfig
 
 
@@ -42,35 +42,35 @@ class EeOLEnv(flexitest.EnvConfig):
         dev_track_latest_epoch: bool = False,
         batch_sealing_block_count: int = 10,
     ):
-        self.fullnode_count = fullnode_count
-        self.enable_discovery = enable_discovery
-        self.pure_discovery = pure_discovery
-        self.mesh_bootnodes = mesh_bootnodes
-        self.pre_generate_blocks = pre_generate_blocks
-        self.admin_confirmation_depth = admin_confirmation_depth
-        self.fund_test_cli_wallet = fund_test_cli_wallet
-        self.ol_block_time_ms = ol_block_time_ms
-        self.dev_track_latest_epoch = dev_track_latest_epoch
-        self.batch_sealing_block_count = batch_sealing_block_count
-        self.epoch_seal_config = (
+        epoch_seal_config = (
             EpochSealingConfig.new_fixed_slot(seal_epoch_slots)
             if seal_epoch_slots
             else EpochSealingConfig()
         )
+
+        self.alpen_env_params = AlpenClientEnvParams(
+            fullnode_count=fullnode_count,
+            enable_discovery=enable_discovery,
+            pure_discovery=pure_discovery,
+            mesh_bootnodes=mesh_bootnodes,
+            batch_sealing_block_count=batch_sealing_block_count,
+            dev_track_latest_epoch=dev_track_latest_epoch,
+        )
+        self.strata_config = StrataEnvConfig(
+            pre_generate_blocks=pre_generate_blocks,
+            epoch_sealing=epoch_seal_config,
+            fund_test_cli_wallet=fund_test_cli_wallet,
+            admin_confirmation_depth=admin_confirmation_depth,
+            ol_block_time_ms=ol_block_time_ms,
+        )
+
         if pure_discovery and not enable_discovery:
             raise ValueError("pure_discovery requires enable_discovery=True")
         if mesh_bootnodes and not enable_discovery:
             raise ValueError("mesh_bootnodes requires enable_discovery=True")
 
     def init(self, ectx: flexitest.EnvContext) -> flexitest.LiveEnv:
-        strata_config = StrataEnvConfig(
-            pre_generate_blocks=self.pre_generate_blocks,
-            epoch_sealing=self.epoch_seal_config,
-            fund_test_cli_wallet=self.fund_test_cli_wallet,
-            admin_confirmation_depth=self.admin_confirmation_depth,
-            ol_block_time_ms=self.ol_block_time_ms,
-        )
-        strata_services = strata_config._get_services(ectx)
+        strata_services = self.strata_config._get_services(ectx)
 
         # Get and pass ol endpoint
         seq: StrataService = strata_services[ServiceType.Strata]
@@ -81,16 +81,11 @@ class EeOLEnv(flexitest.EnvConfig):
 
         alpen_services = AlpenClientEnv.get_services(
             ectx,
-            self.enable_discovery,
-            self.fullnode_count,
-            self.mesh_bootnodes,
-            self.pure_discovery,
+            self.alpen_env_params,
             bitcoin_service=bitcoin,
             ol_endpoint=ol_endpoint,
             ol_submit_endpoint=ol_submit_endpoint,
             ol_submit_token=ol_submit_token,
-            dev_track_latest_epoch=self.dev_track_latest_epoch,
-            batch_sealing_block_count=self.batch_sealing_block_count,
         )
 
         services = {**alpen_services, **strata_services}
