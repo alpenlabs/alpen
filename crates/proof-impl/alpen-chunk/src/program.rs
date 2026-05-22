@@ -128,7 +128,14 @@ mod tests {
         // Build partial pre-state from witness data.
         let pre_state = EvmPartialState::new(
             witness.parent_state,
-            witness.bytecodes,
+            // This RSP fixture stores bytecodes as a Vec without original code-hash
+            // keys. Re-hashing keeps the fixture behavior; production range
+            // witnesses preserve the AccessedStateGenerator keys instead.
+            witness
+                .bytecodes
+                .into_iter()
+                .map(|bytecode| (bytecode.hash_slow(), bytecode))
+                .collect(),
             witness.ancestor_headers,
         );
 

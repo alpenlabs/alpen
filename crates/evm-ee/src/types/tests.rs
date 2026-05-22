@@ -1,9 +1,9 @@
 //! Tests for EVM types Codec implementations.
 
-use std::{fs::read_to_string, path::PathBuf};
+use std::{collections::BTreeMap, fs::read_to_string, path::PathBuf};
 
 use alloy_consensus::{Header, Sealable};
-use revm::DatabaseRef;
+use revm::{DatabaseRef, state::Bytecode};
 use revm_primitives::alloy_primitives::{Address, B256, Bloom, Bytes, U256};
 use rsp_client_executor::io::EthClientExecutorInput;
 use serde::Deserialize;
@@ -32,6 +32,16 @@ fn load_witness_test_data() -> EthClientExecutorInput {
         serde_json::from_str(&json_content).expect("Failed to parse test data");
 
     test_data.witness
+}
+
+fn rehashed_fixture_bytecodes(bytecodes: Vec<Bytecode>) -> BTreeMap<B256, Bytecode> {
+    // The RSP fixture stores bytecodes as a Vec without the original code-hash
+    // keys. Re-hashing here preserves the old fixture behavior; production
+    // range witnesses pass keyed bytecodes from AccessedStateGenerator.
+    bytecodes
+        .into_iter()
+        .map(|bytecode| (bytecode.hash_slow(), bytecode))
+        .collect()
 }
 
 /// Helper function to create a test header with realistic values
@@ -227,7 +237,7 @@ fn test_evm_partial_state_codec_roundtrip() {
     let witness = load_witness_test_data();
     let partial_state = EvmPartialState::new(
         witness.parent_state,
-        witness.bytecodes,
+        rehashed_fixture_bytecodes(witness.bytecodes),
         witness.ancestor_headers,
     );
 
@@ -266,8 +276,11 @@ fn test_evm_partial_state_block_hashes_include_single_ancestor() {
             .next()
             .expect("test ancestor"),
     ];
-    let partial_state =
-        EvmPartialState::new(witness.parent_state, vec![], ancestor_headers.clone());
+    let partial_state = EvmPartialState::new(
+        witness.parent_state,
+        BTreeMap::new(),
+        ancestor_headers.clone(),
+    );
 
     assert_block_hashes_match_headers(&partial_state, &ancestor_headers);
 }
@@ -276,8 +289,11 @@ fn test_evm_partial_state_block_hashes_include_single_ancestor() {
 fn test_evm_partial_state_block_hashes_include_all_ancestors() {
     let witness = load_witness_test_data();
     let ancestor_headers = create_test_ancestor_headers();
-    let partial_state =
-        EvmPartialState::new(witness.parent_state, vec![], ancestor_headers.clone());
+    let partial_state = EvmPartialState::new(
+        witness.parent_state,
+        BTreeMap::new(),
+        ancestor_headers.clone(),
+    );
 
     assert_block_hashes_match_headers(&partial_state, &ancestor_headers);
 }
@@ -286,8 +302,11 @@ fn test_evm_partial_state_block_hashes_include_all_ancestors() {
 fn test_evm_partial_state_block_hashes_survive_codec_roundtrip() {
     let witness = load_witness_test_data();
     let ancestor_headers = create_test_ancestor_headers();
-    let partial_state =
-        EvmPartialState::new(witness.parent_state, vec![], ancestor_headers.clone());
+    let partial_state = EvmPartialState::new(
+        witness.parent_state,
+        BTreeMap::new(),
+        ancestor_headers.clone(),
+    );
 
     let encoded = encode_to_vec(&partial_state).expect("encode failed");
     let decoded: EvmPartialState = decode_buf_exact(&encoded).expect("decode failed");
@@ -302,7 +321,7 @@ fn test_evm_partial_state_rejects_non_contiguous_ancestor_headers() {
     let parent = create_test_header_at(100, B256::from([42u8; 32]));
     let child = create_test_header_at(102, parent.clone().seal_slow().hash());
 
-    EvmPartialState::new(witness.parent_state, vec![], vec![parent, child]);
+    EvmPartialState::new(witness.parent_state, BTreeMap::new(), vec![parent, child]);
 }
 
 #[test]
@@ -312,7 +331,7 @@ fn test_evm_partial_state_rejects_invalid_ancestor_parent_hash() {
     let mut ancestor_headers = create_test_ancestor_headers();
     ancestor_headers[1].parent_hash = B256::from([99u8; 32]);
 
-    EvmPartialState::new(witness.parent_state, vec![], ancestor_headers);
+    EvmPartialState::new(witness.parent_state, BTreeMap::new(), ancestor_headers);
 }
 
 /// Verifies that a codec-roundtripped EvmPartialState can still execute blocks.
@@ -336,7 +355,7 @@ fn test_evm_partial_state_codec_roundtrip_execution() {
     // Build partial state and verify execution works on the original.
     let partial_state = EvmPartialState::new(
         witness.parent_state,
-        witness.bytecodes,
+        rehashed_fixture_bytecodes(witness.bytecodes),
         witness.ancestor_headers,
     );
 

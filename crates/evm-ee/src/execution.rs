@@ -264,11 +264,11 @@ impl BlockAssembler for EvmExecutionEnvironment {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{collections::BTreeMap, fs, path::PathBuf};
 
     use alloy_consensus::Sealable;
     use reth_primitives_traits::Block as RethBlockTrait;
-    use revm::DatabaseRef;
+    use revm::{DatabaseRef, state::Bytecode};
     use revm_primitives::B256;
     use rsp_client_executor::io::EthClientExecutorInput;
     use serde::Deserialize;
@@ -280,6 +280,16 @@ mod tests {
 
     use super::*;
     use crate::types::{EvmBlock, EvmBlockBody, EvmHeader, EvmPartialState};
+
+    fn rehashed_fixture_bytecodes(bytecodes: Vec<Bytecode>) -> BTreeMap<B256, Bytecode> {
+        // The RSP fixture stores bytecodes as a Vec without the original code-hash
+        // keys. Re-hashing here preserves the old fixture behavior; production
+        // range witnesses pass keyed bytecodes from AccessedStateGenerator.
+        bytecodes
+            .into_iter()
+            .map(|bytecode| (bytecode.hash_slow(), bytecode))
+            .collect()
+    }
 
     #[test]
     fn withdrawal_messages_are_sent_to_bridge_gateway_with_msg_envelope() {
@@ -344,7 +354,7 @@ mod tests {
         let evm_header = EvmHeader::new(header.clone());
         let mut state = EvmPartialState::new(
             test_data.witness.parent_state,
-            test_data.witness.bytecodes,
+            rehashed_fixture_bytecodes(test_data.witness.bytecodes),
             test_data.witness.ancestor_headers,
         );
 
@@ -396,7 +406,7 @@ mod tests {
         // Use the pre-state directly from witness data (it already has all the proofs!)
         let pre_state = EvmPartialState::new(
             test_data.witness.parent_state,
-            test_data.witness.bytecodes,
+            rehashed_fixture_bytecodes(test_data.witness.bytecodes),
             test_data.witness.ancestor_headers,
         );
 

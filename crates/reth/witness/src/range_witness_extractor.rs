@@ -6,7 +6,10 @@
 //! and runs the two pre/post multiproofs. No block re-execution happens
 //! here — that work happens once per produced block inside the exex.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use alloy_consensus::Header;
 use alloy_primitives::{
@@ -239,7 +242,7 @@ where
         post_state: &P,
         start_state_root: B256,
         accessed: &AccumulatedState,
-    ) -> Result<(EthereumState, Vec<Bytecode>)>
+    ) -> Result<(EthereumState, BTreeMap<B256, Bytecode>)>
     where
         P: StateProvider,
     {
@@ -287,7 +290,17 @@ where
 
         let state =
             EthereumState::from_transition_proofs(start_state_root, &pre_proofs, &post_proofs)?;
-        let bytecodes: Vec<Bytecode> = accessed.bytecodes.values().cloned().collect();
+
+        // Preserve the code-hash key recorded by AccessedStateGenerator.
+        // Re-hashing bytes after they pass through revm representations can produce
+        // a different key if legacy-analysis padding was materialized as input.
+        // In revm, "legacy" is the normal non-EIP-7702 contract bytecode path.
+        // https://github.com/bluealloy/revm/blob/main/crates/bytecode/src/legacy/analysis.rs#L42-L47
+        let bytecodes = accessed
+            .bytecodes
+            .iter()
+            .map(|(hash, bytecode)| (*hash, bytecode.clone()))
+            .collect();
         Ok((state, bytecodes))
     }
 
