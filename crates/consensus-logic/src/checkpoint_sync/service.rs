@@ -2,7 +2,6 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use anyhow::anyhow;
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
 use strata_primitives::EpochCommitment;
@@ -13,6 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::checkpoint_sync::{
     context::CheckpointSyncCtx,
+    errors::{CheckpointSyncError, CheckpointSyncResult},
     input::{CheckpointSyncEvent, CheckpointSyncInput},
     state::{apply_checkpoint, build_ol_sync_status, CheckpointSyncState, InnerState},
 };
@@ -102,8 +102,15 @@ pub async fn start_css_service<C: CheckpointSyncCtx + 'static>(
 
 /// Catches up on any unapplied finalized epochs at startup and returns the
 /// resulting last-applied epoch.
-async fn initialize_css_inner_state(ctx: &impl CheckpointSyncCtx) -> anyhow::Result<InnerState> {
-    let Some(cur_finalized) = ctx.fetch_csm_status().await?.last_finalized_epoch else {
+async fn initialize_css_inner_state(
+    ctx: &impl CheckpointSyncCtx,
+) -> CheckpointSyncResult<InnerState> {
+    let Some(cur_finalized) = ctx
+        .fetch_csm_status()
+        .await
+        .map_err(CheckpointSyncError::ChainWorker)?
+        .last_finalized_epoch
+    else {
         debug!("no finalized checkpoint in client state, nothing to catch up on");
         return Ok(InnerState::new(None));
     };
@@ -118,8 +125,11 @@ async fn initialize_css_inner_state(ctx: &impl CheckpointSyncCtx) -> anyhow::Res
 pub(crate) async fn find_and_apply_unapplied_epochs(
     ctx: &impl CheckpointSyncCtx,
     cur_finalized: EpochCommitment,
-) -> anyhow::Result<Option<EpochCommitment>> {
-    let l1_tip_height = ctx.fetch_l1_tip_height().await?;
+) -> CheckpointSyncResult<Option<EpochCommitment>> {
+    let l1_tip_height = ctx
+        .fetch_l1_tip_height()
+        .await
+        .map_err(CheckpointSyncError::ChainWorker)?;
     let reorg_safe_depth = ctx.rollup_params().l1_reorg_safe_depth;
     debug!(
         %cur_finalized,
@@ -165,7 +175,7 @@ pub(crate) async fn scan_unapplied_epochs(
     start_finalized: EpochCommitment,
     l1_tip_height: u32,
     reorg_safe_depth: u32,
-) -> anyhow::Result<(Option<EpochCommitment>, Vec<EpochCommitment>)> {
+) -> CheckpointSyncResult<(Option<EpochCommitment>, Vec<EpochCommitment>)> {
     let mut unapplied = Vec::new();
     let mut cur_finalized = start_finalized;
 
@@ -178,7 +188,7 @@ pub(crate) async fn scan_unapplied_epochs(
         let l1_ref = ctx
             .get_checkpoint_l1_ref(cur_finalized)
             .await?
-            .ok_or_else(|| fin_epoch_err(cur_finalized, "l1 observation entry"))?;
+            .ok_or(CheckpointSyncError::MissingL1Ref(cur_finalized))?;
 
         let depth = l1_tip_height.saturating_sub(l1_ref.block_height());
         debug!(
@@ -190,9 +200,11 @@ pub(crate) async fn scan_unapplied_epochs(
         );
 
         if depth < reorg_safe_depth {
-            return Err(anyhow!(
-                "obtained unfinalized epoch when descendants are finalized: {cur_finalized}"
-            ));
+            return Err(CheckpointSyncError::NotReorgSafe {
+                epoch: cur_finalized,
+                depth,
+                required: reorg_safe_depth,
+            });
         }
 
         // An epoch is applied iff its summary exists: the chain worker inserts
@@ -208,15 +220,8 @@ pub(crate) async fn scan_unapplied_epochs(
         cur_finalized = ctx
             .get_canonical_epoch_commitment(prev_epoch_num)
             .await?
-            .ok_or_else(|| {
-                anyhow!("predecessor epoch {prev_epoch_num} not found in db for finalized epoch")
-            })?;
+            .ok_or(CheckpointSyncError::MissingPredecessor(prev_epoch_num))?;
     };
 
     Ok((last_applied, unapplied))
-}
-
-/// Builds an error for a finalized epoch missing an expected db entry.
-fn fin_epoch_err(epoch: EpochCommitment, item: &str) -> anyhow::Error {
-    anyhow!("finalized epoch {epoch} does not have {item} in db")
 }
