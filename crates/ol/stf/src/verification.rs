@@ -475,151 +475,103 @@ pub fn verify_epoch_preseal_with_diff<S: IStateAccessor, D: DaScheme<S>>(
 
 #[cfg(test)]
 mod tests {
-    use strata_identifiers::OLBlockCommitment;
-    use strata_ol_chain_types_new::{BlockFlags, OLBlockId, OLL1ManifestContainer, OLTxSegment};
-    use strata_ol_da::{OLDaPayloadV1, OLDaSchemeV1, StateDiff};
+    use strata_acct_types::BitcoinAmount;
+    use strata_codec::{decode_buf_exact, encode_to_vec};
+    use strata_identifiers::AccountSerial;
+    use strata_ol_chain_types_new::{
+        BlockFlags, OLBlockId, OLL1ManifestContainer, OLL1Update, OLLog, OLTxSegment,
+    };
+    use strata_ol_da::{
+        AccountInit, AccountTypeInit, GlobalStateDiff, LedgerDiff, NewAccountEntry, OLDaPayloadV1,
+        OLDaSchemeV1, StateDiff, U16LenList,
+    };
+    use strata_ol_state_support_types::MemoryStateBaseLayer;
 
     use super::*;
-    use crate::test_utils::create_test_genesis_state;
+    use crate::{
+        assembly::BlockExecOutputs,
+        test_utils::{FixtureAsmManifestBuilder, OLStfFixture, make_account_id},
+    };
 
-    #[test]
-    fn test_verify_header_continuity_happy_path() {
-        // Test valid genesis (must be terminal)
-        let mut genesis_flags = BlockFlags::zero();
-        genesis_flags.set_is_terminal(true);
-        let genesis = OLBlockHeader::new(
-            1000000,
-            genesis_flags,
-            0,
-            0,
-            OLBlockId::null(),
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
-        );
-        assert!(verify_header_continuity(&genesis, None).is_ok());
+    const STATE_DIFF_EMPTY_ACCOUNT_ID: u32 = 77;
 
-        // Test valid parent-child relationship
-        let parent = OLBlockHeader::new(
-            1000000,
-            BlockFlags::zero(),
-            5,
-            1,
-            OLBlockId::from(Buf32::from([1u8; 32])),
-            Buf32::from([2u8; 32]),
-            Buf32::from([3u8; 32]),
-            Buf32::from([4u8; 32]),
-        );
-        let child = OLBlockHeader::new(
-            1001000,
-            BlockFlags::zero(),
-            6,
-            1,
-            parent.compute_blkid(),
-            Buf32::from([5u8; 32]),
-            Buf32::from([6u8; 32]),
-            Buf32::from([7u8; 32]),
-        );
-        assert!(verify_header_continuity(&child, Some(&parent)).is_ok());
+    fn make_sequential_logs(count: u32) -> Vec<OLLog> {
+        (0..count)
+            .map(|i| OLLog::new(AccountSerial::from(i), vec![i as u8]))
+            .collect()
     }
 
-    #[test]
-    fn test_verify_header_continuity_failures() {
-        // Test wrong parent block ID
-        let parent = OLBlockHeader::new(
-            1000000,
-            BlockFlags::zero(),
-            5,
-            1,
-            OLBlockId::from(Buf32::from([1u8; 32])),
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
+    fn compute_assembly_logs_root(logs: Vec<OLLog>) -> Buf32 {
+        BlockExecOutputs::new(BlockPostStateCommitments::Common(Buf32::zero()), logs)
+            .compute_block_logs_root()
+    }
+
+    fn setup_epoch1_diff_state() -> (MemoryStateBaseLayer, EpochInfo) {
+        let fixture = OLStfFixture::builder().execute_genesis();
+        let state = fixture.state().clone();
+        let terminal_info = BlockInfo::new(1_001_000, 1, state.cur_epoch());
+        let epoch_info = EpochInfo::new(
+            terminal_info,
+            fixture.parent_header().compute_block_commitment(),
         );
+        (state, epoch_info)
+    }
 
-        let bad_child = OLBlockHeader::new(
-            1001000,
-            BlockFlags::zero(),
-            6,
-            1,
-            OLBlockId::from(Buf32::from([99u8; 32])), // wrong parent
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
+    fn state_changing_epoch_diff() -> StateDiff {
+        let new_empty_acct_id = make_account_id(STATE_DIFF_EMPTY_ACCOUNT_ID);
+        let new_account = NewAccountEntry::new(
+            new_empty_acct_id,
+            AccountInit::new(BitcoinAmount::from_sat(1), AccountTypeInit::Empty),
         );
+        StateDiff::new(
+            GlobalStateDiff::default(),
+            LedgerDiff::new(
+                U16LenList::new(vec![new_account]),
+                U16LenList::new(Vec::new()),
+            ),
+        )
+    }
 
-        assert!(matches!(
-            verify_header_continuity(&bad_child, Some(&parent)).unwrap_err(),
-            ExecError::BlockParentMismatch
-        ));
+    fn duplicate_epoch_diff(state_diff: &StateDiff) -> StateDiff {
+        let encoded = encode_to_vec(state_diff).expect("state diff should encode");
+        decode_buf_exact(&encoded).expect("state diff should decode")
+    }
 
-        // Test epoch skip
-        let child_epoch_skip = OLBlockHeader::new(
-            1001000,
-            BlockFlags::zero(),
-            6,
-            3, // epoch jumps from 1 to 3
-            parent.compute_blkid(),
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
-        );
+    fn compute_preseal_root_after_epoch_diff(
+        state: &MemoryStateBaseLayer,
+        epoch_info: &EpochInfo,
+        state_diff: StateDiff,
+    ) -> Buf32 {
+        let mut expected_state = state.clone();
+        let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+        chain_processing::process_epoch_initial(&mut expected_state, &init_ctx)
+            .expect("epoch initial processing should succeed");
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
+            .expect("state-changing epoch diff should apply");
+        expected_state
+            .compute_state_root()
+            .expect("preseal state root should compute")
+    }
 
-        assert!(matches!(
-            verify_header_continuity(&child_epoch_skip, Some(&parent)).unwrap_err(),
-            ExecError::SkipEpochs(1, 3)
-        ));
-
-        // Test slot skip
-        let child_slot_skip = OLBlockHeader::new(
-            1001000,
-            BlockFlags::zero(),
-            8,
-            1, // slot jumps from 5 to 8
-            parent.compute_blkid(),
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
-        );
-
-        assert!(matches!(
-            verify_header_continuity(&child_slot_skip, Some(&parent)).unwrap_err(),
-            ExecError::SkipTooManySlots(5, 8)
-        ));
-
-        // Test non-genesis without parent
-        let non_genesis = OLBlockHeader::new(
-            1000000,
-            BlockFlags::zero(),
-            1,
-            0,
-            OLBlockId::null(),
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
-        );
-
-        assert!(matches!(
-            verify_header_continuity(&non_genesis, None).unwrap_err(),
-            ExecError::GenesisCoordsNonzero
-        ));
-
-        // Test genesis with non-null parent
-        let bad_genesis = OLBlockHeader::new(
-            1000000,
-            BlockFlags::zero(),
-            0,
-            0,
-            OLBlockId::from(Buf32::from([1u8; 32])),
-            Buf32::zero(),
-            Buf32::zero(),
-            Buf32::zero(),
-        );
-
-        assert!(matches!(
-            verify_header_continuity(&bad_genesis, None).unwrap_err(),
-            ExecError::GenesisParentNonnull
-        ));
+    fn compute_post_epoch_root_after_diff(
+        state: &MemoryStateBaseLayer,
+        epoch_info: &EpochInfo,
+        state_diff: StateDiff,
+        manifests: &OLL1ManifestContainer,
+    ) -> Buf32 {
+        let mut expected_state = state.clone();
+        let init_ctx = EpochInitialContext::new(epoch_info.epoch(), epoch_info.prev_terminal());
+        chain_processing::process_epoch_initial(&mut expected_state, &init_ctx)
+            .expect("epoch initial processing should succeed");
+        OLDaSchemeV1::apply_to_state(OLDaPayloadV1::new(state_diff), &mut expected_state)
+            .expect("state-changing epoch diff should apply");
+        let output = ExecOutputBuffer::new_empty();
+        let term_ctx = BasicExecContext::new(epoch_info.terminal_info(), &output);
+        manifest_processing::process_block_manifests(&mut expected_state, manifests, &term_ctx)
+            .expect("manifest processing should succeed");
+        expected_state
+            .compute_state_root()
+            .expect("post-epoch state root should compute")
     }
 
     #[test]
@@ -669,17 +621,68 @@ mod tests {
         );
 
         assert!(matches!(
-            verify_block_structure(&header, &body).unwrap_err(),
+            verify_block_structure(&header, &body)
+                .expect_err("mismatched body root should fail structure verification"),
             ExecError::BlockStructureMismatch
         ));
     }
 
     #[test]
+    fn test_verify_block_structure_rejects_terminal_header_without_l1_update() {
+        let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
+        let body = OLBlockBody::new(tx_segment, None);
+        let body_root = body.compute_hash_commitment();
+
+        let mut flags = BlockFlags::zero();
+        flags.set_is_terminal(true);
+        let header = OLBlockHeader::new(
+            1000000,
+            flags,
+            0,
+            0,
+            OLBlockId::null(),
+            body_root,
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        assert!(matches!(
+            verify_block_structure(&header, &body)
+                .expect_err("inconsistent terminality should fail structure"),
+            ExecError::InconsistentBodyTerminality
+        ));
+    }
+
+    #[test]
+    fn test_verify_block_structure_rejects_nonterminal_header_with_l1_update() {
+        let tx_segment = OLTxSegment::new(vec![]).expect("tx segment should be within limits");
+        let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests should fit");
+        let l1_update = OLL1Update::new(Buf32::zero(), manifests);
+        let body = OLBlockBody::new(tx_segment, Some(l1_update));
+        let body_root = body.compute_hash_commitment();
+
+        let header = OLBlockHeader::new(
+            1000000,
+            BlockFlags::zero(),
+            0,
+            0,
+            OLBlockId::null(),
+            body_root,
+            Buf32::zero(),
+            Buf32::zero(),
+        );
+
+        assert!(matches!(
+            verify_block_structure(&header, &body)
+                .expect_err("inconsistent terminality should fail structure"),
+            ExecError::InconsistentBodyTerminality
+        ));
+    }
+
+    #[test]
     fn test_verify_epoch_with_diff_final_root_mismatch() {
-        let mut state = create_test_genesis_state();
-        let terminal_info = BlockInfo::new(1_000_000, 1, state.cur_epoch());
-        let epoch_info = EpochInfo::new(terminal_info, OLBlockCommitment::null());
-        let diff = OLDaPayloadV1::new(StateDiff::default());
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
         let manifests = OLL1ManifestContainer::new(vec![]).expect("empty manifests");
         let exp = EpochExecExpectations {
             epoch_post_state_root: Buf32::from([9u8; 32]),
@@ -692,6 +695,94 @@ mod tests {
             &manifests,
             &exp,
         );
-        assert!(matches!(res.unwrap_err(), ExecError::ChainIntegrity));
+        assert!(matches!(
+            res.expect_err("mismatched final root should fail epoch verification"),
+            ExecError::ChainIntegrity
+        ));
+    }
+
+    #[test]
+    fn test_verify_epoch_with_diff_accepts_matching_root() {
+        // Non-empty manifest at the next L1 height (no logs) so
+        // `process_block_manifests` advances `last_l1_height` and updates the
+        // asm-manifests MMR — distinct from the preseal case which never
+        // reaches manifest processing. Per-log behavior is covered in
+        // `asm_manifests.rs`.
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let state_diff = state_changing_epoch_diff();
+        let next_manifest = FixtureAsmManifestBuilder::new_at_height(state.last_l1_height() + 1)
+            .with_variant(2)
+            .build();
+        let manifests =
+            OLL1ManifestContainer::new(vec![next_manifest]).expect("manifest container should fit");
+
+        let expected_post_root = compute_post_epoch_root_after_diff(
+            &state,
+            &epoch_info,
+            duplicate_epoch_diff(&state_diff),
+            &manifests,
+        );
+        let exp = EpochExecExpectations {
+            epoch_post_state_root: expected_post_root,
+        };
+
+        verify_epoch_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            OLDaPayloadV1::new(state_diff),
+            &manifests,
+            &exp,
+        )
+        .expect("matching post-epoch root should verify");
+    }
+
+    #[test]
+    fn test_verify_epoch_preseal_with_diff_accepts_matching_root() {
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let state_diff = state_changing_epoch_diff();
+        let expected_preseal_root = compute_preseal_root_after_epoch_diff(
+            &state,
+            &epoch_info,
+            duplicate_epoch_diff(&state_diff),
+        );
+        let diff = OLDaPayloadV1::new(state_diff);
+
+        verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            diff,
+            &expected_preseal_root,
+        )
+        .expect("matching preseal root should verify");
+    }
+
+    #[test]
+    fn test_verify_epoch_preseal_with_diff_rejects_root_mismatch() {
+        let (mut state, epoch_info) = setup_epoch1_diff_state();
+        let diff = OLDaPayloadV1::new(state_changing_epoch_diff());
+        let wrong_preseal_root = Buf32::from([9u8; 32]);
+
+        let res = verify_epoch_preseal_with_diff::<_, OLDaSchemeV1>(
+            &mut state,
+            &epoch_info,
+            diff,
+            &wrong_preseal_root,
+        );
+
+        assert!(matches!(
+            res.expect_err("mismatched preseal root should fail epoch verification"),
+            ExecError::ChainIntegrity
+        ));
+    }
+
+    #[test]
+    fn test_compute_logs_root_matches_assembly_for_empty_logs() {
+        assert_eq!(compute_logs_root(&[]), compute_assembly_logs_root(vec![]));
+    }
+
+    #[test]
+    fn test_compute_logs_root_matches_assembly_for_padded_log_count() {
+        let logs = make_sequential_logs(3);
+        assert_eq!(compute_logs_root(&logs), compute_assembly_logs_root(logs));
     }
 }

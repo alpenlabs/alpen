@@ -1,6 +1,6 @@
 use strata_acct_types::{AccountId, AccountSerial, AccountTypeId, AcctError, BitcoinAmount};
 use strata_codec::CodecError;
-use strata_identifiers::{Epoch, OLTxId, Slot};
+use strata_identifiers::{Epoch, L1Height, OLTxId, Slot};
 use strata_snark_acct_types::Seqno;
 use thiserror::Error;
 
@@ -84,7 +84,10 @@ pub type ExecResult<T> = Result<T, ExecError>;
 #[derive(Debug, Error)]
 pub enum ExecError {
     #[error("header epoch does not match state epoch (header {0}, state {1})")]
-    EpochMismatch(Epoch, Epoch),
+    HeaderEpochMismatch(Epoch, Epoch),
+
+    #[error("context epoch does not match state epoch (context {0}, state {1})")]
+    ContextEpochMismatch(Epoch, Epoch),
 
     /// Signature is invalid, for some purpose.
     #[error("signature for {0} is invalid")]
@@ -112,6 +115,22 @@ pub enum ExecError {
     /// For like if we'd be skipping blocks in validation somehow.
     #[error("chain integrity invalid")]
     ChainIntegrity,
+
+    #[error("ASM manifest height mismatch at index {index} (expected {expected}, actual {actual})")]
+    AsmManifestHeightMismatch {
+        expected: L1Height,
+        actual: L1Height,
+        index: usize,
+    },
+
+    #[error("ASM manifest height overflow")]
+    AsmManifestHeightOverflow,
+
+    #[error("epoch overflow")]
+    EpochOverflow,
+
+    #[error("slot overflow")]
+    SlotOverflow,
 
     #[error("tried to interact with nonexistent account ({0:?})")]
     UnknownAccount(AccountId),
