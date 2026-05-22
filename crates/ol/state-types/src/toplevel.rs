@@ -7,9 +7,7 @@ use strata_ol_params::OLParams;
 
 use crate::{
     MMR_SENTINEL_DUMMY_LEAF, OLAccountTypeState, OLSnarkAccountState, WriteBatch,
-    ssz_generated::ssz::state::{
-        EpochalState, GlobalState, OLAccountState, OLState, TsnlLedgerAccountsTable,
-    },
+    ssz_generated::ssz::state::*,
 };
 
 impl OLState {
@@ -65,10 +63,12 @@ impl OLState {
             checkpointed_epoch,
             l1_block_refs_mmr,
         );
+        let intraepoch = IntraepochState::default();
 
         Ok(Self {
             epoch,
             global,
+            intraepoch,
             ledger,
         })
     }
