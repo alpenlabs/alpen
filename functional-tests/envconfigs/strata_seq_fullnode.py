@@ -58,35 +58,37 @@ class StrataSequencerFullnodeEnvConfig(flexitest.EnvConfig):
         )
 
         genesis_l1 = GenesisL1View.at_latest_block(btc_rpc)
-        sequencer, sequencer_key_path = strata_factory.create_node(
+        sequencer_node = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=True,
             epoch_sealing_config=epoch_sealing_config,
         )
+        sequencer = sequencer_node.service
         sequencer.wait_for_ready(timeout=20)
 
         # Start strata-signer for the sequencer only
-        assert sequencer_key_path is not None
+        assert sequencer_node.sequencer_key_path is not None
         signer = signer_factory.create_signer(
-            sequencer_key_path,
+            sequencer_node.sequencer_key_path,
             sequencer.props["admin_rpc_host"],
             sequencer.props["admin_rpc_port"],
             sequencer.props["admin_rpc_token"],
         )
         signer.wait_for_ready(timeout=10)
 
-        fullnode, _ = strata_factory.create_node(
+        fullnode_result = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=False,
             config_overrides={"client.sync_endpoint": sequencer.props["rpc_url"]},
         )
+        fullnode = fullnode_result.service
         fullnode.wait_for_ready(timeout=20)
 
         return {
             ServiceType.Bitcoin: bitcoind,
             ServiceType.Strata: sequencer,
             ServiceType.StrataSigner: signer,
-            STRATA_FULLNODE_SERVICE_NAME: fullnode,
+            ServiceType.StrataCheckpointNode: fullnode,
         }
