@@ -1,10 +1,11 @@
 """End-to-end exercise of the EE prover-task admin commands.
 
 Mirrors `prover_task_admin.py` but drives the alpen-client's prover
-store (`<ee-datadir>/sled`) via `--ee-datadir`. We deliberately don't
-drive the chunk/acct provers — the value of this test is to lock in
-the DB-level admin contract, kind-tag filtering, and the dry-run-by-
-default `--force` semantics that the dbtool delivers.
+store at `<alpen-client datadir>/sled`, with `-d` pointed at the
+alpen-client's `--datadir`. We deliberately don't drive the chunk/acct
+provers — the value of this test is to lock in the DB-level admin
+contract, kind-tag filtering, and the dry-run-by-default `--force`
+semantics that the dbtool delivers.
 """
 
 import logging

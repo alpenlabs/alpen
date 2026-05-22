@@ -35,14 +35,12 @@ use crate::cmd::{
 #[derive(FromArgs)]
 /// Inspect, repair and roll back an Strata node's database while the node is offline.
 pub(crate) struct Cli {
-    /// node data directory (same as `--datadir` used by the node).
+    /// data directory of the node whose DB is being inspected. For
+    /// `ee-*` subcommands, point this at the alpen-client's `--datadir`
+    /// instead of the strata node's — each invocation is standalone and
+    /// opens exactly one sled.
     #[argh(option, short = 'd', default = "PathBuf::from(\"data\")")]
     pub(crate) datadir: PathBuf,
-
-    /// alpen-client data directory — required for any `ee-*` subcommand.
-    /// Points at the alpen-client's `--datadir`, not the strata node's.
-    #[argh(option)]
-    pub(crate) ee_datadir: Option<PathBuf>,
 
     #[argh(subcommand)]
     pub(crate) cmd: Command,

@@ -3,8 +3,9 @@
 //! These talk directly to [`alpen_ee_database::EeProverDbSled`]'s
 //! [`strata_db_types::traits::ProverTaskDatabase`] impl. Same DB contract
 //! as the OL surface, but the underlying store lives in a separate sled
-//! instance under the alpen-client datadir (`<ee-datadir>/sled`), so
-//! mutations here can't race with OL writers.
+//! instance under the alpen-client datadir (`<datadir>/sled`), so
+//! mutations here can't race with OL writers. Point `-d`/`--datadir` at
+//! the alpen-client's `--datadir` to drive these commands.
 //!
 //! Chunk and acct tasks share one tree, disambiguated by a single-byte
 //! kind tag at the start of the key (`b'c'` / `b'a'`). The `--kind`

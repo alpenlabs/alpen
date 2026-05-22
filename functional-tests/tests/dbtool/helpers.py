@@ -92,12 +92,13 @@ def run_dbtool_json(datadir: str, *args: str, timeout: int = 60) -> dict[str, An
 
 
 def run_dbtool_ee(ee_datadir: str, *args: str, timeout: int = 60) -> tuple[int, str, str]:
-    """Run strata-dbtool against an alpen-client datadir using --ee-datadir.
+    """Run strata-dbtool against an alpen-client datadir.
 
-    `ee-*` subcommands run against a separate sled instance, so they need
-    --ee-datadir rather than -d.
+    `ee-*` subcommands open a separate sled at `<datadir>/sled`; the
+    dbtool uses the same `-d` flag for both surfaces — callers just point
+    it at the alpen-client's `--datadir`.
     """
-    cmd = ["strata-dbtool", "--ee-datadir", ee_datadir, *args]
+    cmd = ["strata-dbtool", "-d", ee_datadir, *args]
     logger.info("Running command: %s", " ".join(cmd))
     result = subprocess.run(
         cmd,

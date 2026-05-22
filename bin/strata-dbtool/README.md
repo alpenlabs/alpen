@@ -31,8 +31,7 @@ strata-dbtool [OPTIONS] <COMMAND>
 
 ### Global Options
 
-- `-d, --datadir <path>` - Node data directory (default: `data`)
-- `--ee-datadir <path>` - Alpen-client data directory. Required for any `ee-*` subcommand; points at the alpen-client's `--datadir`, not the strata node's.
+- `-d, --datadir <path>` - Data directory of the node whose DB is being inspected (default: `data`). For `ee-*` subcommands, point this at the alpen-client's `--datadir` instead of the strata node's — each invocation is standalone and opens exactly one sled.
 
 ## Commands
 
@@ -455,8 +454,9 @@ strata-dbtool delete-checkpoint-proof <epoch> --force
 
 The alpen-client maintains a separate sled instance for prover-side
 persistence — shared task tree (chunk + acct), chunk-receipt store, and
-typed acct-proof store. All `ee-*` subcommands require `--ee-datadir`,
-which points at the alpen-client's `--datadir`.
+typed acct-proof store. For every `ee-*` subcommand, point `-d`/`--datadir`
+at the alpen-client's `--datadir` (the strata node's `-d` is never used
+by these commands).
 
 ### Which surface to use
 
@@ -476,14 +476,14 @@ kind comes from whatever the key starts with.
 Fetch a single EE prover task record by its hex-encoded key.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-get-prover-task <key_hex> [OPTIONS]
+strata-dbtool ee-get-prover-task <key_hex> [OPTIONS]
 ```
 
 ### `ee-get-prover-tasks-summary`
 Aggregate counts by status, plus a bounded slice of matching entries.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-get-prover-tasks-summary [--status <filter>] [--kind <kind>] [--limit <n>] [OPTIONS]
+strata-dbtool ee-get-prover-tasks-summary [--status <filter>] [--kind <kind>] [--limit <n>] [OPTIONS]
 ```
 
 **Options:**
@@ -494,7 +494,7 @@ strata-dbtool --ee-datadir <path> ee-get-prover-tasks-summary [--status <filter>
 Mark a single EE task as `PermanentFailure { error: "abandoned via dbtool" }`.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-abandon-prover-task <key_hex> --force
+strata-dbtool ee-abandon-prover-task <key_hex> --force
 ```
 
 ### `ee-abandon-prover-tasks`
@@ -502,21 +502,21 @@ Bulk-abandon every `Pending`/`Proving` EE task, optionally restricted by
 kind. Without `--force`, prints the change set as a dry run.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-abandon-prover-tasks --all-unfinished [--kind <kind>] --force
+strata-dbtool ee-abandon-prover-tasks --all-unfinished [--kind <kind>] --force
 ```
 
 ### `ee-reset-prover-task`
 Flip an EE task back to `Pending` and clear its retry-after timestamp.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-reset-prover-task <key_hex> --force
+strata-dbtool ee-reset-prover-task <key_hex> --force
 ```
 
 ### `ee-delete-prover-task`
 Hard-delete an EE task record.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-delete-prover-task <key_hex> --force
+strata-dbtool ee-delete-prover-task <key_hex> --force
 ```
 
 ### `ee-backfill-prover-task-raw`
@@ -525,7 +525,7 @@ task keys come from the chunk/acct spec encodings; raw is the only
 supported backfill path (no typed equivalent of `backfill-checkpoint-proof-task`).
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-backfill-prover-task-raw <key_hex> --force
+strata-dbtool ee-backfill-prover-task-raw <key_hex> --force
 ```
 
 ### `ee-get-chunk-receipt` / `ee-delete-chunk-receipt`
@@ -534,8 +534,8 @@ case: drop a stale receipt after a guest-program upgrade so the chunk
 prover re-proves it.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-get-chunk-receipt <key_hex> [OPTIONS]
-strata-dbtool --ee-datadir <path> ee-delete-chunk-receipt <key_hex> --force
+strata-dbtool ee-get-chunk-receipt <key_hex> [OPTIONS]
+strata-dbtool ee-delete-chunk-receipt <key_hex> --force
 ```
 
 ### `ee-get-acct-proof` / `ee-delete-acct-proof`
@@ -545,8 +545,8 @@ Inspect or remove a stored acct/batch proof. The batch id is passed as
 also clears the secondary `ProofId → BatchId` index.
 
 ```bash
-strata-dbtool --ee-datadir <path> ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
-strata-dbtool --ee-datadir <path> ee-delete-acct-proof <prev_block>:<last_block> --force
+strata-dbtool ee-get-acct-proof <prev_block>:<last_block> [OPTIONS]
+strata-dbtool ee-delete-acct-proof <prev_block>:<last_block> --force
 ```
 
 ## Output Formats

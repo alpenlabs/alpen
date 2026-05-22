@@ -18,15 +18,16 @@ pub(crate) fn open_database(path: &Path) -> Result<Arc<SledBackend>, DisplayedEr
     Ok(backend)
 }
 
-/// Opens the EE prover sled store at `<ee_datadir>/sled`.
+/// Opens the EE prover sled store at `<datadir>/sled`.
 ///
-/// Mirrors the alpen-client's [`alpen_ee_database::init_db_storage`]
-/// opener but only constructs the prover-task / chunk-receipt / acct-proof
-/// trees — the dbtool has no use for the other EE DBs (witness, broadcast,
+/// `datadir` is expected to be the alpen-client's `--datadir`. Mirrors
+/// the alpen-client's [`alpen_ee_database::init_db_storage`] opener but
+/// only constructs the prover-task / chunk-receipt / acct-proof trees —
+/// the dbtool has no use for the other EE DBs (witness, broadcast,
 /// chunked-envelope, DA context), and skipping them keeps the cold-start
 /// surface smaller.
-pub(crate) fn open_ee_database(ee_datadir: &Path) -> Result<Arc<EeProverDbSled>, DisplayedError> {
-    let database_dir = ee_datadir.join("sled");
+pub(crate) fn open_ee_database(datadir: &Path) -> Result<Arc<EeProverDbSled>, DisplayedError> {
+    let database_dir = datadir.join("sled");
     let sled_db = sled::open(&database_dir).map_err(|e| {
         DisplayedError::UserError(
             format!("Failed to open EE sled database at {database_dir:?}"),
