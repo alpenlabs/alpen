@@ -28,9 +28,9 @@ use crate::{
     },
 };
 
+/// Fetch a single prover task record by its hex-encoded key.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-prover-task")]
-/// Fetch a single prover task record by its hex-encoded key.
 pub(crate) struct GetProverTaskArgs {
     /// hex-encoded task key (as stored by `ProverTaskDatabase`)
     #[argh(positional)]
@@ -41,9 +41,9 @@ pub(crate) struct GetProverTaskArgs {
     pub(crate) output_format: OutputFormat,
 }
 
+/// Summarize prover tasks by status, with a bounded slice of entries.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "get-prover-tasks-summary")]
-/// Summarize prover tasks by status, with a bounded slice of entries.
 pub(crate) struct GetProverTasksSummaryArgs {
     /// status filter: all (default), pending, proving, completed,
     /// transient-failure, permanent-failure, unfinished, terminal
@@ -130,12 +130,12 @@ pub(crate) fn get_prover_tasks_summary(
     output(&summary, args.output_format)
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "abandon-prover-task")]
 /// Mark a single prover task as `PermanentFailure { error: "abandoned via dbtool" }`.
 ///
 /// Leaves the record in the DB for audit; recovery will not respawn it.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "abandon-prover-task")]
 pub(crate) struct AbandonProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
@@ -146,13 +146,13 @@ pub(crate) struct AbandonProverTaskArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "abandon-prover-tasks")]
 /// Bulk-abandon every Pending/Proving prover task.
 ///
 /// Use case: after a crash or operator-induced restart, prevent stuck
 /// in-progress tasks from being respawned by the recovery scanner.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "abandon-prover-tasks")]
 pub(crate) struct AbandonProverTasksArgs {
     /// only consider Pending/Proving tasks (currently the only supported
     /// selector — kept explicit so future selectors can be added)
@@ -164,12 +164,12 @@ pub(crate) struct AbandonProverTasksArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "reset-prover-task")]
 /// Reset a prover task to `Pending` and clear its retry-after timestamp.
 ///
 /// Use case: force a fresh prove attempt (drops accumulated retry count).
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "reset-prover-task")]
 pub(crate) struct ResetProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
@@ -180,12 +180,12 @@ pub(crate) struct ResetProverTaskArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "delete-prover-task")]
 /// Hard-delete a prover task record.
 ///
 /// Prefer `abandon-prover-task` unless you really want the row gone.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "delete-prover-task")]
 pub(crate) struct DeleteProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
@@ -353,13 +353,13 @@ pub(crate) fn delete_prover_task(
     Ok(())
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "backfill-checkpoint-proof-task")]
 /// Queue a fresh `Pending` checkpoint-proof task for an epoch.
 ///
 /// Resolves the canonical commitment at the epoch and constructs the
 /// task key via [`CheckpointProofTask`] so the running node picks it up
 /// on next startup recovery. Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "backfill-checkpoint-proof-task")]
 pub(crate) struct BackfillCheckpointProofTaskArgs {
     /// checkpoint epoch
     #[argh(positional)]
@@ -370,13 +370,13 @@ pub(crate) struct BackfillCheckpointProofTaskArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "backfill-prover-task-raw")]
 /// Insert a `Pending` task record under a raw hex-encoded key.
 ///
 /// Escape hatch for proof kinds without a typed helper. Caller is
 /// responsible for matching the key format the host expects.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "backfill-prover-task-raw")]
 pub(crate) struct BackfillProverTaskRawArgs {
     /// hex-encoded task key
     #[argh(positional)]

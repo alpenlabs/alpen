@@ -74,9 +74,9 @@ impl FromStr for KindFilter {
     }
 }
 
+/// Fetch a single EE prover task record by its hex-encoded key.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-get-prover-task")]
-/// Fetch a single EE prover task record by its hex-encoded key.
 pub(crate) struct EeGetProverTaskArgs {
     /// hex-encoded task key (as stored by `EeProverDbSled`)
     #[argh(positional)]
@@ -87,10 +87,10 @@ pub(crate) struct EeGetProverTaskArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-get-prover-tasks-summary")]
 /// Summarize EE prover tasks by status and kind, with a bounded slice
 /// of entries.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-get-prover-tasks-summary")]
 pub(crate) struct EeGetProverTasksSummaryArgs {
     /// status filter: all (default), pending, proving, completed,
     /// transient-failure, permanent-failure, unfinished, terminal
@@ -110,12 +110,12 @@ pub(crate) struct EeGetProverTasksSummaryArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-abandon-prover-task")]
 /// Mark a single EE prover task as `PermanentFailure { error: "abandoned via dbtool" }`.
 ///
 /// Leaves the record in the DB for audit; recovery will not respawn it.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-abandon-prover-task")]
 pub(crate) struct EeAbandonProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
@@ -126,10 +126,10 @@ pub(crate) struct EeAbandonProverTaskArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-abandon-prover-tasks")]
 /// Bulk-abandon every Pending/Proving EE prover task, optionally
 /// restricted by kind. Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-abandon-prover-tasks")]
 pub(crate) struct EeAbandonProverTasksArgs {
     /// only consider Pending/Proving tasks (currently the only supported
     /// selector — kept explicit so future selectors can be added)
@@ -145,10 +145,10 @@ pub(crate) struct EeAbandonProverTasksArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-reset-prover-task")]
 /// Reset an EE prover task to `Pending` and clear its retry-after timestamp.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-reset-prover-task")]
 pub(crate) struct EeResetProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
@@ -159,12 +159,12 @@ pub(crate) struct EeResetProverTaskArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-delete-prover-task")]
 /// Hard-delete an EE prover task record.
 ///
 /// Prefer `ee-abandon-prover-task` unless you really want the row gone.
 /// Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-delete-prover-task")]
 pub(crate) struct EeDeleteProverTaskArgs {
     /// hex-encoded task key
     #[argh(positional)]
@@ -175,13 +175,13 @@ pub(crate) struct EeDeleteProverTaskArgs {
     pub(crate) force: bool,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-backfill-prover-task-raw")]
 /// Insert a `Pending` EE task record under a raw hex-encoded key.
 ///
 /// EE task keys are produced by the chunk/acct spec encodings — they're
 /// not easily reconstructible offline, so this raw escape hatch is the
 /// only supported backfill path. Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-backfill-prover-task-raw")]
 pub(crate) struct EeBackfillProverTaskRawArgs {
     /// hex-encoded task key
     #[argh(positional)]

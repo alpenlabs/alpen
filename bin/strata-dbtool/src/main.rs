@@ -66,9 +66,9 @@ fn main() {
         Command::GetCheckpointsSummary(args) => {
             with_ol_db(&datadir, |db| get_checkpoints_summary(db, args))
         }
-        Command::GetBroadcasterSummary(args) => {
-            with_ol_db(&datadir, |db| get_broadcaster_summary(db.broadcast_db(), args))
-        }
+        Command::GetBroadcasterSummary(args) => with_ol_db(&datadir, |db| {
+            get_broadcaster_summary(db.broadcast_db(), args)
+        }),
         Command::GetBroadcasterTx(args) => {
             with_ol_db(&datadir, |db| get_broadcaster_tx(db.broadcast_db(), args))
         }

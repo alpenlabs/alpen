@@ -23,9 +23,9 @@ use crate::{
     },
 };
 
+/// Fetch a stored chunk-proof receipt by its task key.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-get-chunk-receipt")]
-/// Fetch a stored chunk-proof receipt by its task key.
 pub(crate) struct EeGetChunkReceiptArgs {
     /// hex-encoded chunk task key
     #[argh(positional)]
@@ -36,12 +36,12 @@ pub(crate) struct EeGetChunkReceiptArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-delete-chunk-receipt")]
 /// Delete a stored chunk-proof receipt.
 ///
 /// Use case: drop a stale receipt after a guest-program upgrade so the
 /// next chunk-prover run re-proves it. Dry-run unless `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-delete-chunk-receipt")]
 pub(crate) struct EeDeleteChunkReceiptArgs {
     /// hex-encoded chunk task key
     #[argh(positional)]
@@ -56,9 +56,9 @@ pub(crate) struct EeDeleteChunkReceiptArgs {
     pub(crate) output_format: OutputFormat,
 }
 
+/// Fetch the stored acct/batch proof for a [`BatchId`].
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(subcommand, name = "ee-get-acct-proof")]
-/// Fetch the stored acct/batch proof for a [`BatchId`].
 pub(crate) struct EeGetAcctProofArgs {
     /// batch id as "<prev_block_hex>:<last_block_hex>" (each 32 bytes)
     #[argh(positional)]
@@ -69,13 +69,13 @@ pub(crate) struct EeGetAcctProofArgs {
     pub(crate) output_format: OutputFormat,
 }
 
-#[derive(FromArgs, PartialEq, Debug)]
-#[argh(subcommand, name = "ee-delete-acct-proof")]
 /// Delete the stored acct/batch proof for a [`BatchId`].
 ///
 /// Also clears the secondary `ProofId → BatchId` index so future
 /// `get_proof_by_id` lookups miss instead of dangling. Dry-run unless
 /// `--force` is passed.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand, name = "ee-delete-acct-proof")]
 pub(crate) struct EeDeleteAcctProofArgs {
     /// batch id as "<prev_block_hex>:<last_block_hex>" (each 32 bytes)
     #[argh(positional)]
