@@ -2,19 +2,14 @@
 
 use std::{future::Future, marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{
-    BatchId, BatchStorage, BlockNumHash, ChunkStorage, ChunkWitnessStore, ExecBlockStorage,
-};
+use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
 use super::{
     ctx::BatchBuilderCtx, events::BatchBuilderEvent, task::batch_builder_task, BatchBuilderState,
 };
-use crate::{
-    chunk_witness_task::ChunkExtractRequest,
-    sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
-};
+use crate::sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy};
 
 /// Handle to observe batch builder state changes.
 ///
@@ -55,14 +50,13 @@ pub fn create_batch_builder<P, D, S, BS, ES>(
     block_storage: Arc<ES>,
     batch_storage: Arc<BS>,
     exec_chain: ExecChainHandle,
-    chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
     event_tx: Option<mpsc::Sender<BatchBuilderEvent>>,
 ) -> (BatchBuilderHandle, impl Future<Output = ()>)
 where
     P: AccumulationPolicy,
     D: BlockDataProvider<P>,
     S: SealingPolicy<P>,
-    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     let (latest_batch_tx, latest_batch_rx) = watch::channel(initial_batch_id);
@@ -76,7 +70,6 @@ where
         batch_storage,
         exec_chain,
         latest_batch_tx,
-        chunk_witness_tx,
         event_tx,
         _policy: PhantomData,
     };

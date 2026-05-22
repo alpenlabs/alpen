@@ -139,7 +139,7 @@ pub mod tests {
     pub fn create_test_chunk(idx: u64, prev_block_val: u8, last_block_val: u8) -> Chunk {
         let prev_block = create_test_hash(prev_block_val);
         let last_block = create_test_hash(last_block_val);
-        Chunk::new(idx, prev_block, last_block, Vec::new())
+        Chunk::new(idx, prev_block, last_block, 0, 0, Vec::new())
     }
 
     /// Create a genesis batch for testing (needed by isolation tests).

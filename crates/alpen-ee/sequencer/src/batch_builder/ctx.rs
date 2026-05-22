@@ -2,16 +2,13 @@
 
 use std::{marker::PhantomData, sync::Arc};
 
-use alpen_ee_common::{
-    BatchId, BatchStorage, BlockNumHash, ChunkStorage, ChunkWitnessStore, ExecBlockStorage,
-};
+use alpen_ee_common::{BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use alpen_ee_exec_chain::ExecChainHandle;
 use tokio::sync::{mpsc, watch};
 
 use super::events::BatchBuilderEvent;
 use crate::{
     batch_builder::canonical::{CanonicalChainReader, ExecChainCanonicalReader},
-    chunk_witness_task::ChunkExtractRequest,
     sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
 };
 
@@ -24,7 +21,7 @@ where
     P: AccumulationPolicy,
     D: BlockDataProvider<P>,
     S: SealingPolicy<P>,
-    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     /// Genesis block hash, used as the starting point for the first batch.
@@ -37,22 +34,12 @@ where
     pub sealing_policy: S,
     /// Storage for exec blocks.
     pub block_storage: Arc<ES>,
-    /// Storage for batches + chunk witnesses (single concrete type
-    /// implements both today, but the bounds keep the two concerns
-    /// distinct).
+    /// Storage for batches.
     pub batch_storage: Arc<BS>,
     /// Handle to query canonical chain status.
     pub exec_chain: ExecChainHandle,
     /// Sender to notify about latest batch updates (new batch sealed or reorg).
     pub latest_batch_tx: watch::Sender<BatchId>,
-    /// Optional channel to the background chunk-witness task. When
-    /// present, `seal_batch` publishes a `ChunkExtractRequest` per
-    /// sealed chunk and the witness is computed off the builder's hot
-    /// path. When absent (tests, configurations without a reth
-    /// provider), chunks seal with no witness pre-computed and the
-    /// chunk prover will see a `TransientFailure` on the missing
-    /// record.
-    pub chunk_witness_tx: Option<mpsc::Sender<ChunkExtractRequest>>,
     /// Channel for downstream consumers (e.g. chunk builder) to
     /// receive block-processed and reorg events. `None` in tests or
     /// when no consumer is configured.
@@ -66,7 +53,7 @@ where
     P: AccumulationPolicy,
     D: BlockDataProvider<P>,
     S: SealingPolicy<P>,
-    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
+    BS: BatchStorage,
     ES: ExecBlockStorage + Send + Sync,
 {
     pub(crate) fn canonical_reader(&self) -> impl CanonicalChainReader {

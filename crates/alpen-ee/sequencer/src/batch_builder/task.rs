@@ -2,10 +2,7 @@
 
 use std::time::Duration;
 
-use alpen_ee_common::{
-    Batch, BatchId, BatchStorage, BlockNumHash, Chunk, ChunkStorage, ChunkWitnessStore,
-    ExecBlockStorage,
-};
+use alpen_ee_common::{Batch, BatchId, BatchStorage, BlockNumHash, ExecBlockStorage};
 use eyre::{eyre, Result};
 use strata_acct_types::Hash;
 use tokio::{sync::mpsc, time};
@@ -14,7 +11,6 @@ use tracing::{debug, error, warn};
 use super::{ctx::BatchBuilderCtx, events::BatchBuilderEvent, BatchBuilderState};
 use crate::{
     batch_builder::reorg::{check_and_handle_reorg, ReorgReport},
-    chunk_witness_task::ChunkExtractRequest,
     sealing_policy::{AccumulationPolicy, BlockDataProvider, SealingPolicy},
 };
 
@@ -73,14 +69,12 @@ async fn get_block_range(
 ///
 /// Returns the sealed batch ID, or `None` if accumulator was empty.
 ///
-/// When `chunk_witness_tx` is provided, publishes a
-/// [`ChunkExtractRequest`] on the channel for the background
-/// `chunk_witness_task` to process. Extraction itself runs off this
-/// task's hot path; sealing does not wait for it.
+/// Chunk creation is handled by the downstream chunk builder, which
+/// receives a [`BatchBuilderEvent::BlockProcessed`] with `batch_sealed`
+/// set.
 async fn seal_batch<P: AccumulationPolicy>(
     state: &mut BatchBuilderState<P>,
-    storage: &(impl BatchStorage + ChunkStorage + ChunkWitnessStore),
-    chunk_witness_tx: Option<&mpsc::Sender<ChunkExtractRequest>>,
+    storage: &impl BatchStorage,
 ) -> Result<Option<BatchId>> {
     if state.accumulator().is_empty() {
         return Ok(None);
@@ -96,7 +90,7 @@ async fn seal_batch<P: AccumulationPolicy>(
         prev_block.hash(),
         last_block.hash(),
         last_block.blocknum(),
-        inner_blocks.clone(),
+        inner_blocks,
     )
     .map_err(|err| eyre!(err))?;
     let batch_id = batch.id();
@@ -109,60 +103,6 @@ async fn seal_batch<P: AccumulationPolicy>(
     );
 
     storage.save_next_batch(batch).await?;
-
-    // One chunk per batch, spanning the whole batch.
-    //
-    // TODO(STR-3499): replace with a real chunking/batching policy
-    // (e.g. sub-batch chunker driven by prover cost). Today the PAAS
-    // chunk + acct provers only need the chunk records to exist and
-    // be linked to the batch — cardinality is a policy knob.
-    let next_chunk_idx = storage
-        .get_latest_chunk()
-        .await?
-        .map(|(c, _)| c.idx() + 1)
-        .unwrap_or(0);
-    let chunk = Chunk::new(
-        next_chunk_idx,
-        prev_block.hash(),
-        last_block.hash(),
-        inner_blocks,
-    );
-    let chunk_id = chunk.id();
-    // The chunk's first block (inner_blocks[0] if non-empty, else
-    // last_block). The extractor needs this — NOT `chunk_id.prev_block`,
-    // which is the last block of the *previous* chunk and lives in reth
-    // as a block, not as the chunk's range start.
-    let first_block_hash = chunk
-        .blocks_iter()
-        .next()
-        .expect("chunk has at least last_block");
-    let last_block_hash = chunk.last_block();
-    storage.save_next_chunk(chunk).await?;
-    storage.set_batch_chunks(batch_id, vec![chunk_id]).await?;
-
-    if let Some(tx) = chunk_witness_tx {
-        // Hand the chunk off to the background witness task. `send`
-        // backpressures the builder if the extractor is sustainedly
-        // behind (channel full), but does not block on the per-chunk
-        // extraction itself. Channel closure means the task has died —
-        // log so it's visible, but keep sealing; chunks without a
-        // witness produce `TransientFailure` at proof time and can be
-        // backfilled later.
-        let req = ChunkExtractRequest {
-            chunk_id,
-            first_block: first_block_hash,
-            last_block: last_block_hash,
-        };
-        if let Err(e) = tx.send(req).await {
-            warn!(
-                ?chunk_id,
-                error = %e,
-                "chunk witness channel closed; chunk sealed without witness — \
-                 chunk will remain proof-blocked until manually backfilled"
-            );
-        }
-    }
-
     state.advance_batch(last_block);
 
     Ok(Some(batch_id))
@@ -183,7 +123,7 @@ pub(crate) async fn batch_builder_task<P, D, S, BS, ES>(
     P: AccumulationPolicy,
     D: BlockDataProvider<P>,
     S: SealingPolicy<P>,
-    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     let mut pending_poll_interval = time::interval(PENDING_BLOCK_POLL_INTERVAL);
@@ -226,7 +166,7 @@ where
     P: AccumulationPolicy,
     D: BlockDataProvider<P>,
     S: SealingPolicy<P>,
-    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     // Check and handle reorgs first
@@ -311,7 +251,7 @@ where
     P: AccumulationPolicy,
     D: BlockDataProvider<P>,
     S: SealingPolicy<P>,
-    BS: BatchStorage + ChunkStorage + ChunkWitnessStore,
+    BS: BatchStorage,
     ES: ExecBlockStorage,
 {
     let mut processed = 0;
@@ -339,13 +279,7 @@ where
                 .accumulator()
                 .would_exceed(&ctx.sealing_policy, &block_data)
         {
-            if let Some(batch_id) = seal_batch(
-                state,
-                ctx.batch_storage.as_ref(),
-                ctx.chunk_witness_tx.as_ref(),
-            )
-            .await?
-            {
+            if let Some(batch_id) = seal_batch(state, ctx.batch_storage.as_ref()).await? {
                 // Notify watchers of new batch
                 let _ = ctx.latest_batch_tx.send(batch_id);
                 batch_sealed = Some(batch_id);
