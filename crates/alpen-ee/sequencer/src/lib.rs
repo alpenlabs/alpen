@@ -4,6 +4,7 @@ mod batch_builder;
 mod batch_lifecycle;
 mod block_builder;
 pub mod block_count_policy;
+pub mod chunk_builder;
 mod chunk_witness_task;
 mod ol_chain_tracker;
 pub mod policy;
