@@ -6,6 +6,8 @@
 name: CI — Build and Push Images
 
 on:
+  schedule:
+    - cron: '30 4,10,16,22 * * *'  # Every 6hr, ~1.5hr before SP1 E2E test
   push:
     branches: [main]
     paths:
@@ -15,6 +17,8 @@ on:
       - "docker/strata/**"
       - "docker/alpen-client/**"
       - "docker/strata-signer/**"
+      - "docker/strata-datatool/**"
+      - "provers/sp1/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
@@ -39,10 +43,46 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Skip scheduled runs if no new commits since last successful build
+  # ---------------------------------------------------------------------------
+  check-new-commits:
+    name: Check for new commits
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check for new commits since last success
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          LAST_SUCCESS=$(gh run list -R "${REPO}" \
+            --workflow ci-build.yml \
+            --branch main \
+            --status success \
+            --limit 1 \
+            --json headSha \
+            --jq '.[0].headSha // ""')
+
+          if [ "${LAST_SUCCESS}" = "${GITHUB_SHA}" ]; then
+            echo "No new commits since last successful build — skipping"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New commits found — running"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
   # Determine which programs to build
   # ---------------------------------------------------------------------------
   prepare:
     name: Prepare build matrix
+    needs: [check-new-commits]
+    if: always() && (needs.check-new-commits.result == 'skipped' || needs.check-new-commits.outputs.should_run == 'true')
     runs-on: ubuntu-latest
     permissions: {}
     outputs:
@@ -69,6 +109,8 @@ jobs:
   # ---------------------------------------------------------------------------
   build-sp1-artifacts:
     name: Build SP1 artifacts
+    needs: [check-new-commits]
+    if: always() && (needs.check-new-commits.result == 'skipped' || needs.check-new-commits.outputs.should_run == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read

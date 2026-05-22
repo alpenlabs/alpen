@@ -247,7 +247,8 @@ GEOF
             -g "${GENESIS_L1_HEIGHT}" \
             --proof-timeout 30 \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
-            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"}
+            ${CHECKPOINT_PREDICATE:+--checkpoint-predicate "$CHECKPOINT_PREDICATE"} \
+            ${ALPEN_CHAIN_CONFIG:+--chain-config "$ALPEN_CHAIN_CONFIG"}
         echo "generated ${ROLLUP_PARAMS}"
     fi
 
@@ -258,7 +259,8 @@ GEOF
             -o "${OL_PARAMS}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
-            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"}
+            ${ALPEN_PREDICATE:+--alpen-predicate "$ALPEN_PREDICATE"} \
+            ${ALPEN_CHAIN_CONFIG:+--alpen-chain-config "$ALPEN_CHAIN_CONFIG"}
         echo "generated ${OL_PARAMS}"
     fi
 
@@ -268,6 +270,7 @@ GEOF
             gen-asm-params \
             -o "${ASM_PARAMS}" \
             -n ALPN \
+            -s "${SEQ_XPUB}" \
             -b "${OPERATOR_XPRIV}" \
             -g "${GENESIS_L1_HEIGHT}" \
             --genesis-l1-view-file "${GENESIS_L1_VIEW}" \
