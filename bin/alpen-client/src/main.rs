@@ -74,6 +74,8 @@ use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
+#[cfg(feature = "sequencer")]
+use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 #[cfg(feature = "sequencer")]
@@ -1011,10 +1013,7 @@ fn main() {
                                                     Ok(Some(_)) => break,
                                                     Ok(None) if attempts < 60 => {
                                                         attempts += 1;
-                                                        tokio::time::sleep(Duration::from_millis(
-                                                            500,
-                                                        ))
-                                                        .await;
+                                                        sleep(Duration::from_millis(500)).await;
                                                     }
                                                     Ok(None) => {
                                                         warn!(
@@ -1463,7 +1462,7 @@ fn resolve_da_args(ext: &AdditionalConfig) -> eyre::Result<Option<DaArgs>> {
     }
 
     match (
-        ext.ee_da_magic_bytes.clone(),
+        ext.ee_da_magic_bytes,
         ext.btc_rpc_url.clone(),
         ext.btc_rpc_user.clone(),
         ext.btc_rpc_password.clone(),
