@@ -24,6 +24,7 @@
 use std::sync::Arc;
 
 use alloy_eips::BlockNumHash;
+use alloy_primitives::B256;
 use alpen_ee_common::{AccessedAccount, AccessedStateRecord, AccessedStateStore};
 use futures_util::TryStreamExt;
 use reth_evm::{
@@ -35,7 +36,7 @@ use reth_node_api::{FullNodeComponents, NodeTypes};
 use reth_primitives::{Block, EthPrimitives};
 use reth_primitives_traits::Block as _;
 use reth_provider::{BlockReader, Chain, StateProviderFactory};
-use reth_revm::db::CacheDB;
+use reth_revm::{db::CacheDB, state::Bytecode};
 use strata_acct_types::Hash;
 use tokio::task;
 use tracing::{debug, error, warn};
@@ -267,15 +268,41 @@ where
         ancestor_block_numbers,
     };
 
-    let bytecodes: Vec<BytecodeEntry> = accessed
-        .accessed_contracts()
-        .iter()
-        .map(|(hash, code)| (hash_from_b256(*hash), code.bytes().to_vec()))
-        .collect();
+    let bytecodes = bytecode_entries_from_accessed_contracts(accessed.accessed_contracts().iter());
 
     Ok((record, bytecodes))
 }
 
-fn hash_from_b256(hash: alloy_primitives::B256) -> Hash {
+fn bytecode_entries_from_accessed_contracts<'a>(
+    bytecodes: impl Iterator<Item = (&'a B256, &'a Bytecode)>,
+) -> Vec<BytecodeEntry> {
+    bytecodes
+        .map(|(hash, code)| (hash_from_b256(*hash), code.original_bytes().to_vec()))
+        .collect()
+}
+
+fn hash_from_b256(hash: B256) -> Hash {
     Hash::from(hash.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::Bytes;
+
+    use super::*;
+
+    #[test]
+    fn bytecode_entries_preserve_original_runtime_bytes() {
+        let code_hash = B256::from([0x12; 32]);
+        let runtime = Bytes::from_static(&[0x60, 0x01, 0x5f, 0x55]);
+        let bytecode = Bytecode::new_raw(runtime.clone());
+
+        assert_eq!(bytecode.original_bytes(), runtime);
+        assert_ne!(bytecode.bytes(), runtime);
+
+        let entries =
+            bytecode_entries_from_accessed_contracts(std::iter::once((&code_hash, &bytecode)));
+
+        assert_eq!(entries, vec![(hash_from_b256(code_hash), runtime.to_vec())]);
+    }
 }
