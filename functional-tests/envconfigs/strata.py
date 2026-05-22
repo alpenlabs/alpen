@@ -9,7 +9,7 @@ from common.config import BitcoindConfig, EpochSealingConfig, ServiceType
 from common.config.params import GenesisAccountData, GenesisL1View, OLParams
 from factories.bitcoin import BitcoinFactory
 from factories.signer import SignerFactory
-from factories.strata import StrataFactory
+from factories.strata import CreateNodeResult, StrataFactory
 
 
 class StrataEnvConfig(flexitest.EnvConfig):
@@ -37,6 +37,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
         self.admin_confirmation_depth = admin_confirmation_depth
         self.strata_env = strata_env
         self.ol_block_time_ms = ol_block_time_ms
+        self.sequencer_node: CreateNodeResult | None = None
 
     def _fund_bdk_wallet(self, btc_rpc) -> None:
         """Pre-fund the strata-test-cli BDK wallet so it can build Bitcoin txs."""
@@ -100,7 +101,7 @@ class StrataEnvConfig(flexitest.EnvConfig):
             ol_params = OLParams(accounts=self.genesis_accounts).with_genesis_l1(genesis_l1)
 
         # Start Strata sequencer
-        strata, sequencer_key_path = strata_factory.create_node(
+        sequencer_node = strata_factory.create_node(
             bitcoind_config,
             genesis_l1.blk.height,
             is_sequencer=True,
@@ -110,12 +111,14 @@ class StrataEnvConfig(flexitest.EnvConfig):
             env=self.strata_env,
             ol_block_time_ms=self.ol_block_time_ms,
         )
+        self.sequencer_node = sequencer_node
+        strata = sequencer_node.service
         strata.wait_for_ready(timeout=30)
 
         # Start strata-signer for the sequencer (connects to strata's WS RPC)
-        assert sequencer_key_path is not None
+        assert sequencer_node.sequencer_key_path is not None
         signer = signer_factory.create_signer(
-            sequencer_key_path,
+            sequencer_node.sequencer_key_path,
             strata.props["admin_rpc_host"],
             strata.props["admin_rpc_port"],
             strata.props["admin_rpc_token"],

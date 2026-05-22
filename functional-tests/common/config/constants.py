@@ -66,6 +66,7 @@ class ServiceType(str, Enum):
     AlpenClient = "alpen_client"
     Bitcoin = "bitcoin"
     Strata = "strata"
+    StrataCheckpointNode = "strata_ckpt_node"
     AlpenSequencer = "alpen_sequencer"
     AlpenFullNode = "alpen_fullnode"
     StrataSigner = "strata_signer"

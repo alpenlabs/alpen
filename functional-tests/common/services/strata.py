@@ -238,6 +238,27 @@ class StrataService(RpcService):
         sync_status = self.get_sync_status(rpc)
         return sync_status["tip"]["slot"]
 
+    def get_account_epoch_summary(
+        self,
+        account_id: str,
+        epoch: int,
+        rpc: JsonRpcClient | None = None,
+    ) -> AccountEpochSummary:
+        """
+        Get an account's summary at a given epoch.
+
+        Args:
+            account_id: Account identifier to query.
+            epoch: Epoch number to query.
+            rpc: Optional RPC client. If None, creates a new one.
+
+        Returns:
+            AccountEpochSummary
+        """
+        if rpc is None:
+            rpc = self.create_rpc()
+        return rpc.strata_getAccountEpochSummary(account_id, epoch)
+
     def wait_for_block_height(
         self,
         target_height: int,
