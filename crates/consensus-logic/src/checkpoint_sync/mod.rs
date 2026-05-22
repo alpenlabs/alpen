@@ -5,9 +5,13 @@
 //! checkpoints, then publishes the resulting OL sync status.
 
 mod context;
+mod errors;
 mod input;
 mod service;
 mod state;
+
+#[cfg(test)]
+mod tests;
 
 pub use context::CheckpointSyncCtx;
 pub use service::{
