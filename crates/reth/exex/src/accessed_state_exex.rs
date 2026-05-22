@@ -287,6 +287,8 @@ fn hash_from_b256(hash: B256) -> Hash {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::once;
+
     use alloy_primitives::Bytes;
 
     use super::*;
@@ -300,8 +302,7 @@ mod tests {
         assert_eq!(bytecode.original_bytes(), runtime);
         assert_ne!(bytecode.bytes(), runtime);
 
-        let entries =
-            bytecode_entries_from_accessed_contracts(std::iter::once((&code_hash, &bytecode)));
+        let entries = bytecode_entries_from_accessed_contracts(once((&code_hash, &bytecode)));
 
         assert_eq!(entries, vec![(hash_from_b256(code_hash), runtime.to_vec())]);
     }
