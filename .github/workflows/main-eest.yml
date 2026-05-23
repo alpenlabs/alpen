@@ -81,7 +81,7 @@ jobs:
           export PATH="${NEWPATH}:${PATH}"
           which alpen-client
           cd functional-tests
-          screen -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_ee
+          screen -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_eest
           if ! ../contrib/wait-for-json-rpc.sh http://localhost:30303 120; then
             find _dd -type f -name "service.log" -print -exec tail -100 {} \; || true
             exit 1
@@ -104,11 +104,13 @@ jobs:
             --tx-wait-timeout 120
         continue-on-error: true
 
-      - name: Assert EE proof pipeline covered EEST blocks
+      - name: Assert EEST blocks reached confirmed EE/OL status
         if: always() && steps.runtests.outcome != 'skipped'
         run: |
-          ./contrib/assert-eest-proof-pipeline.sh \
+          ./contrib/assert-eest-prover-pipeline.sh \
             --rpc-endpoint http://localhost:30303 \
+            --bitcoin-rpc-url http://user:password@localhost:18444 \
+            --bitcoin-wallet testwallet \
             --advanced-from "${EEST_START_BLOCK}" \
             --timeout 900
 

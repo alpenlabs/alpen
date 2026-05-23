@@ -1,8 +1,9 @@
 # Setup for Ethereum Execution Spec Tests (EEST).
-# Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind for DA.
+# Runs a full regtest stack: bitcoind + Strata OL + alpen-client sequencer.
 #
 # Usage:
-#   ./init-eest-keys.sh
+#   cargo build --release --bin strata-datatool
+#   cd docker && ./init-network.sh --sequencer ../target/release/strata-datatool
 #   docker compose --env-file .env.alpen -f docker-compose-eest.yml up
 
 services:
@@ -23,11 +24,58 @@ services:
     ports:
       - "18443:18443"
     healthcheck:
-      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=${BITCOIND_RPC_USER} -rpcpassword=${BITCOIND_RPC_PASSWORD} getwalletinfo"]
+      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=${BITCOIND_RPC_USER:-rpcuser} -rpcpassword=${BITCOIND_RPC_PASSWORD:-rpcpassword} getwalletinfo"]
       interval: 2s
       timeout: 5s
       retries: 30
       start_period: 5s
+    networks:
+      - eest
+
+  strata:
+    build:
+      context: ..
+      dockerfile: docker/strata/Dockerfile
+    image: strata:latest
+    container_name: eest_strata
+    user: "0:0"
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    command:
+      - --sequencer
+      - --sequencer-key
+      - /app/configs/generated/sequencer.key
+      - --rpc-host
+      - "0.0.0.0"
+    environment:
+      CONFIG_PATH: /app/configs/config.regtest.toml
+      PARAM_PATH: /app/configs/generated/rollup-params.json
+      OL_PARAMS_PATH: /app/configs/generated/ol-params.json
+      ASM_PARAMS_PATH: /app/configs/generated/asm-params.json
+      BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      BITCOIN_NETWORK: regtest
+      OL_BLOCK_TIME_MS: ${OL_BLOCK_TIME_MS:-5000}
+      RUST_LOG: ${RUST_LOG:-info}
+      RUST_BACKTRACE: 1
+      NO_COLOR: 1
+    volumes:
+      - ./configs:/app/configs:ro
+      - strata-data:/app/data
+    ports:
+      - "8432:8432"
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    healthcheck:
+      test: >-
+        curl -sf -X POST -H 'Content-Type: application/json'
+        -d '{"jsonrpc":"2.0","method":"strata_protocolVersion","params":[],"id":1}'
+        http://localhost:8432
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     networks:
       - eest
 
@@ -36,6 +84,8 @@ services:
     container_name: alpen_eest
     depends_on:
       bitcoind:
+        condition: service_healthy
+      strata:
         condition: service_healthy
     command:
       - --p2p-secret-key
@@ -46,31 +96,33 @@ services:
       - none
       - --disable-discovery
       - --dev-native-prover
-      - --ee-proof-pipeline-rpc
       - --color
       - never
     environment:
       SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
       SEQUENCER_PUBKEY: ${SEQUENCER_PUBKEY}
-      DUMMY_OL_CLIENT: "1"
+      OL_CLIENT_URL: ws://strata:8432
       CHAIN_SPEC: ${CHAIN_SPEC:-dev}
-      BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}
+      BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}/wallet/default
       BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
       BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
       EE_DA_MAGIC_BYTES: ${EE_DA_MAGIC_BYTES:-ALPN}
       L1_REORG_SAFE_DEPTH: "${L1_REORG_SAFE_DEPTH:-1}"
-      GENESIS_L1_HEIGHT: "${GENESIS_L1_HEIGHT:-101}"
+      GENESIS_L1_HEIGHT: "${GENESIS_L1_HEIGHT:-0}"
       BATCH_SEALING_BLOCK_COUNT: "${BATCH_SEALING_BLOCK_COUNT:-5}"
       HTTP_API: ${HTTP_API:-eth,net,web3,txpool,admin,debug,alpen}
       RUST_LOG: ${RUST_LOG:-info}
     ports:
       - "8545:8545"
     volumes:
-      - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
-      - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+      - ./configs/generated/jwt.hex:/app/keys/jwt.hex:ro
+      - ./configs/generated/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
       - eest
+
+volumes:
+  strata-data:
 
 networks:
   eest:

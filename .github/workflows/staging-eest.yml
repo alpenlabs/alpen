@@ -25,6 +25,25 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Extract Rust toolchain version
+        id: extract
+        uses: ./.github/actions/extract-rust-version # zizmor: ignore[unpinned-uses]
+
+      - name: Set up Rust
+        env:
+          RUST_NIGHTLY: ${{ steps.extract.outputs.rust-version }}
+        run: |
+          rustup toolchain install "$RUST_NIGHTLY" --profile minimal
+          rustup default "$RUST_NIGHTLY"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
+        with:
+          cache-on-failure: true
+
       - name: Configure AWS ECR Details
         uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v4
         with:
@@ -58,10 +77,12 @@ jobs:
           docker pull "${IMG_URL}"
           docker tag "${IMG_URL}" "alpen-client:latest"
 
-      - name: Generate alpen-client keys
+      - name: Generate full-stack docker config
         run: |
           pip3 install coincurve
-          cd docker && ./init-eest-keys.sh
+          cargo build --locked --release --bin strata-datatool
+          cd docker
+          ./init-network.sh --sequencer ../target/release/strata-datatool
 
       - name: Start services
         run: |
@@ -93,11 +114,13 @@ jobs:
             --tx-wait-timeout 120
         continue-on-error: true
 
-      - name: Assert EE proof pipeline covered EEST blocks
+      - name: Assert EEST blocks reached confirmed EE/OL status
         if: always() && steps.runtests.outcome != 'skipped'
         run: |
-          ./contrib/assert-eest-proof-pipeline.sh \
+          ./contrib/assert-eest-prover-pipeline.sh \
             --rpc-endpoint http://localhost:8545 \
+            --bitcoin-rpc-url http://rpcuser:rpcpassword@localhost:18443 \
+            --bitcoin-wallet default \
             --advanced-from "${EEST_START_BLOCK}" \
             --timeout 900
 
@@ -105,6 +128,8 @@ jobs:
         if: always()
         run: |
           docker logs alpen_eest || true
+          docker logs eest_strata || true
+          docker logs eest_bitcoind || true
           if [ -f docker/.env.alpen ]; then
             docker compose --env-file docker/.env.alpen \
               -f docker/docker-compose-eest.yml down
