@@ -3,19 +3,14 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: run-eest-remote.sh [options]
+Usage: run-eest-remote.sh --rpc-endpoint URL [options]
 
 Options:
-  --rpc-endpoint URL       Execution JSON-RPC endpoint.
+  --rpc-endpoint URL      Execution JSON-RPC endpoint.
   --fork NAME             EEST fork name. Default: Prague.
   --rpc-chain-id ID       Chain ID. Default: 2892.
   --rpc-seed-key KEY      Seed private key for EEST transactions.
   --tx-wait-timeout SEC   Transaction wait timeout. Default: 120.
-  --baseline-log-file FILE
-                         Capture this file's byte offset just before EEST runs.
-  --baseline-docker-container NAME
-                         Capture this container log offset just before EEST runs.
-  --baseline-output FILE  Where to write the captured offset.
   --repo URL              execution-spec-tests repository.
   --checkout-dir DIR      Clone/use this directory. Default: execution-spec-tests.
   -h, --help              Show this help.
@@ -27,9 +22,6 @@ FORK="Prague"
 RPC_CHAIN_ID="2892"
 RPC_SEED_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 TX_WAIT_TIMEOUT="120"
-BASELINE_LOG_FILE=""
-BASELINE_DOCKER_CONTAINER=""
-BASELINE_OUTPUT=""
 EEST_REPO="https://github.com/alpenlabs/execution-spec-tests"
 CHECKOUT_DIR="execution-spec-tests"
 
@@ -53,18 +45,6 @@ while (($#)); do
             ;;
         --tx-wait-timeout)
             TX_WAIT_TIMEOUT="${2:?missing value for --tx-wait-timeout}"
-            shift 2
-            ;;
-        --baseline-log-file)
-            BASELINE_LOG_FILE="${2:?missing value for --baseline-log-file}"
-            shift 2
-            ;;
-        --baseline-docker-container)
-            BASELINE_DOCKER_CONTAINER="${2:?missing value for --baseline-docker-container}"
-            shift 2
-            ;;
-        --baseline-output)
-            BASELINE_OUTPUT="${2:?missing value for --baseline-output}"
             shift 2
             ;;
         --repo)
@@ -93,23 +73,7 @@ if [[ -z "${RPC_ENDPOINT}" ]]; then
     exit 1
 fi
 
-if [[ -n "${BASELINE_LOG_FILE}" && -n "${BASELINE_DOCKER_CONTAINER}" ]]; then
-    echo "pass only one of --baseline-log-file or --baseline-docker-container" >&2
-    exit 1
-fi
-
-if [[ -n "${BASELINE_LOG_FILE}${BASELINE_DOCKER_CONTAINER}" && -z "${BASELINE_OUTPUT}" ]]; then
-    echo "--baseline-output is required when capturing a baseline" >&2
-    exit 1
-fi
-
 WORKSPACE_DIR="$(pwd)"
-if [[ -n "${BASELINE_LOG_FILE}" && "${BASELINE_LOG_FILE}" != /* ]]; then
-    BASELINE_LOG_FILE="${WORKSPACE_DIR}/${BASELINE_LOG_FILE}"
-fi
-if [[ -n "${BASELINE_OUTPUT}" && "${BASELINE_OUTPUT}" != /* ]]; then
-    BASELINE_OUTPUT="${WORKSPACE_DIR}/${BASELINE_OUTPUT}"
-fi
 if [[ "${CHECKOUT_DIR}" != /* ]]; then
     CHECKOUT_DIR="${WORKSPACE_DIR}/${CHECKOUT_DIR}"
 fi
@@ -129,27 +93,17 @@ uv python install 3.11
 uv python pin 3.11
 uv sync --all-extras
 
-# Keep Alpen-specific expected mismatches in the EEST skip-list mechanism
-# instead of passing ad hoc pytest deselects in workflow YAML.
-SKIP_ENTRY="tests/frontier/opcodes/test_call.py::test_call_memory_expands_on_early_revert[fork_${FORK}-state_test]"
-if ! grep -Fqx "  - ${SKIP_ENTRY}" skip_tests.yaml; then
-    {
-        echo
-        echo "  # Alpen execution currently differs from upstream Reth on this edge case."
-        echo "  - ${SKIP_ENTRY}"
-    } >> skip_tests.yaml
+# The Alpen fork keeps expected mismatches in skip_tests.yaml. Fail early if
+# the checked-out EEST tree is missing the Prague skip needed by CI.
+if [[ "${FORK}" == "Prague" ]]; then
+    REQUIRED_SKIP="tests/frontier/opcodes/test_call.py::test_call_memory_expands_on_early_revert[fork_${FORK}-state_test]"
+    if [[ ! -f skip_tests.yaml ]] || ! grep -Fq "${REQUIRED_SKIP}" skip_tests.yaml; then
+        echo "execution-spec-tests skip_tests.yaml is missing required Alpen skip: ${REQUIRED_SKIP}" >&2
+        exit 1
+    fi
 fi
 
 uv run --with solc-select solc-select use 0.8.24 --always-install
-
-if [[ -n "${BASELINE_OUTPUT}" ]]; then
-    mkdir -p "$(dirname "${BASELINE_OUTPUT}")"
-    if [[ -n "${BASELINE_DOCKER_CONTAINER}" ]]; then
-        docker logs "${BASELINE_DOCKER_CONTAINER}" 2>&1 | wc -c > "${BASELINE_OUTPUT}"
-    else
-        wc -c < "${BASELINE_LOG_FILE}" > "${BASELINE_OUTPUT}"
-    fi
-fi
 
 uv run --with solc-select execute remote \
     -m state_test \

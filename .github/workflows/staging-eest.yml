@@ -76,23 +76,29 @@ jobs:
             exit 1
           fi
 
+      - name: Capture EEST start block
+        run: |
+          START_BLOCK="$(curl -sf -X POST http://localhost:8545 \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+            | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["result"], 16))')"
+          echo "EEST_START_BLOCK=${START_BLOCK}" >> "${GITHUB_ENV}"
+
       - name: Run tests
         id: runtests
         run: |
           ./contrib/run-eest-remote.sh \
             --rpc-endpoint http://localhost:8545 \
             --fork Prague \
-            --tx-wait-timeout 120 \
-            --baseline-docker-container alpen_eest \
-            --baseline-output "${RUNNER_TEMP}/eest-ee-log.offset"
+            --tx-wait-timeout 120
         continue-on-error: true
 
       - name: Assert EE proof pipeline covered EEST blocks
         if: always() && steps.runtests.outcome != 'skipped'
         run: |
-          ./contrib/assert-eest-prover-pipeline.sh \
-            --docker-container alpen_eest \
-            --baseline-file "${RUNNER_TEMP}/eest-ee-log.offset" \
+          ./contrib/assert-eest-proof-pipeline.sh \
+            --rpc-endpoint http://localhost:8545 \
+            --advanced-from "${EEST_START_BLOCK}" \
             --timeout 900
 
       - name: Tear down services

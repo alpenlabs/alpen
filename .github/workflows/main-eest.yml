@@ -81,21 +81,19 @@ jobs:
           export PATH="${NEWPATH}:${PATH}"
           which alpen-client
           cd functional-tests
-          screen -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_eest
+          screen -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_ee
           if ! ../contrib/wait-for-json-rpc.sh http://localhost:30303 120; then
             find _dd -type f -name "service.log" -print -exec tail -100 {} \; || true
             exit 1
           fi
 
-      - name: Locate EE proof logs
+      - name: Capture EEST start block
         run: |
-          EE_LOG="$(find functional-tests/_dd -path '*/alpen_eest/ee_sequencer/service.log' -print | sort | tail -n 1)"
-          if [ -z "${EE_LOG}" ]; then
-            echo "could not find alpen_eest service log"
-            find functional-tests/_dd -type f -name "service.log" -print || true
-            exit 1
-          fi
-          echo "EEST_EE_LOG=${EE_LOG}" >> "${GITHUB_ENV}"
+          START_BLOCK="$(curl -sf -X POST http://localhost:30303 \
+            -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+            | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["result"], 16))')"
+          echo "EEST_START_BLOCK=${START_BLOCK}" >> "${GITHUB_ENV}"
 
       - name: Run tests
         id: runtests
@@ -103,17 +101,15 @@ jobs:
           ./contrib/run-eest-remote.sh \
             --rpc-endpoint http://localhost:30303 \
             --fork Prague \
-            --tx-wait-timeout 120 \
-            --baseline-log-file "${EEST_EE_LOG}" \
-            --baseline-output "${RUNNER_TEMP}/eest-ee-log.offset"
+            --tx-wait-timeout 120
         continue-on-error: true
 
       - name: Assert EE proof pipeline covered EEST blocks
         if: always() && steps.runtests.outcome != 'skipped'
         run: |
-          ./contrib/assert-eest-prover-pipeline.sh \
-            --log-file "${EEST_EE_LOG}" \
-            --baseline-file "${RUNNER_TEMP}/eest-ee-log.offset" \
+          ./contrib/assert-eest-proof-pipeline.sh \
+            --rpc-endpoint http://localhost:30303 \
+            --advanced-from "${EEST_START_BLOCK}" \
             --timeout 900
 
       - name: Stop service

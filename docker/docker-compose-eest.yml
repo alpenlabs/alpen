@@ -1,7 +1,5 @@
 # Setup for Ethereum Execution Spec Tests (EEST).
-# Runs alpen-client in sequencer mode with dummy OL and native chunk proving.
-# EEST only exercises execution-layer behavior, so this stack intentionally
-# omits OL and Bitcoin DA services.
+# Runs alpen-client in sequencer mode with dummy OL + regtest bitcoind for DA.
 #
 # Usage:
 #   ./init-eest-keys.sh
@@ -9,51 +7,68 @@
 
 services:
 
+  bitcoind:
+    build:
+      context: ./bitcoind/
+    image: strata_bitcoind:v0.1.2
+    container_name: eest_bitcoind
+    environment:
+      RPC_ALLOW_IP: "0.0.0.0/0"
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      BITCOIND_WALLET: default
+      GENERATE_BLOCKS: 101
+    volumes:
+      - ./bitcoind/entrypoint.sh:/app/entrypoint.sh
+    ports:
+      - "18443:18443"
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=${BITCOIND_RPC_USER} -rpcpassword=${BITCOIND_RPC_PASSWORD} getwalletinfo"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - eest
+
   alpen-client:
     image: alpen-client:latest
     container_name: alpen_eest
-    entrypoint: ["alpen-client"]
+    depends_on:
+      bitcoind:
+        condition: service_healthy
     command:
-      - --sequencer
-      - --sequencer-pubkey
-      - ${SEQUENCER_PUBKEY}
-      - --dummy-ol-client
-      - --dev-native-prover
-      - --custom-chain
-      - ${CHAIN_SPEC:-dev}
-      - --batch-sealing-block-count
-      - ${BATCH_SEALING_BLOCK_COUNT:-5}
-      - --datadir
-      - /app/data
       - --p2p-secret-key
       - /app/keys/seq-p2p.hex
-      - --addr
-      - "0.0.0.0"
       - --port
       - "30303"
       - --nat
       - none
       - --disable-discovery
-      - --http
-      - --http.addr
-      - "0.0.0.0"
-      - --http.port
-      - "8545"
-      - --http.api
-      - eth,net,web3,txpool,admin,debug
-      - --txpool.minimal-protocol-fee
-      - "0"
+      - --dev-native-prover
+      - --ee-proof-pipeline-rpc
       - --color
       - never
     environment:
       SEQUENCER_PRIVATE_KEY: ${SEQUENCER_PRIVATE_KEY}
-      ALPEN_EE_BLOCK_TIME_MS: ${ALPEN_EE_BLOCK_TIME_MS:-1000}
+      SEQUENCER_PUBKEY: ${SEQUENCER_PUBKEY}
+      DUMMY_OL_CLIENT: "1"
+      CHAIN_SPEC: ${CHAIN_SPEC:-dev}
+      BITCOIND_RPC_URL: http://bitcoind:${BITCOIND_RPC_PORT:-18443}
+      BITCOIND_RPC_USER: ${BITCOIND_RPC_USER:-rpcuser}
+      BITCOIND_RPC_PASSWORD: ${BITCOIND_RPC_PASSWORD:-rpcpassword}
+      EE_DA_MAGIC_BYTES: ${EE_DA_MAGIC_BYTES:-ALPN}
+      L1_REORG_SAFE_DEPTH: "${L1_REORG_SAFE_DEPTH:-1}"
+      GENESIS_L1_HEIGHT: "${GENESIS_L1_HEIGHT:-101}"
+      BATCH_SEALING_BLOCK_COUNT: "${BATCH_SEALING_BLOCK_COUNT:-5}"
+      HTTP_API: ${HTTP_API:-eth,net,web3,txpool,admin,debug,alpen}
       RUST_LOG: ${RUST_LOG:-info}
-      NO_COLOR: "1"
     ports:
       - "8545:8545"
     volumes:
+      - ./configs/alpen-client/jwt.hex:/app/keys/jwt.hex:ro
       - ./configs/alpen-client/seq-p2p.hex:/app/keys/seq-p2p.hex:ro
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
     networks:
       - eest
 

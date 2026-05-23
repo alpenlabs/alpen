@@ -40,6 +40,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                         (in addition to sequencer) to help form mesh topology.
                         Requires enable_discovery=True. (default False)
         enable_l1_da: Enable DA pipeline for posting state diffs to Bitcoin L1 (default False)
+        enable_proof_pipeline_rpc: Enable test-only EE proof pipeline RPC (default False)
         da_magic_bytes: 4-byte magic for OP_RETURN tagging (default: b"ALPN")
         l1_reorg_safe_depth: Confirmation depth for L1 transactions (default: 1)
         batch_sealing_block_count: Number of blocks before sealing a batch (default: 5)
@@ -52,6 +53,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         pure_discovery: bool = False,
         mesh_bootnodes: bool = False,
         enable_l1_da: bool = False,
+        enable_proof_pipeline_rpc: bool = False,
         da_magic_bytes: bytes = DEFAULT_DA_MAGIC_BYTES,
         l1_reorg_safe_depth: int = 1,
         batch_sealing_block_count: int = 5,
@@ -61,6 +63,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         self.pure_discovery = pure_discovery
         self.mesh_bootnodes = mesh_bootnodes
         self.enable_l1_da = enable_l1_da
+        self.enable_proof_pipeline_rpc = enable_proof_pipeline_rpc
         self.da_magic_bytes = da_magic_bytes
         self.l1_reorg_safe_depth = l1_reorg_safe_depth
         self.batch_sealing_block_count = batch_sealing_block_count
@@ -79,6 +82,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             self.mesh_bootnodes,
             self.pure_discovery,
             self.enable_l1_da,
+            self.enable_proof_pipeline_rpc,
             self.da_magic_bytes,
             self.l1_reorg_safe_depth,
             self.batch_sealing_block_count,
@@ -93,6 +97,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
         mesh_bootnodes: int,
         pure_discovery: bool,
         enable_l1_da: bool = True,
+        enable_proof_pipeline_rpc: bool = False,
         da_magic_bytes: bytes = b"0000",
         l1_reorg_safe_depth: int = 2,
         batch_sealing_block_count: int = 10,
@@ -161,6 +166,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
             da_config=da_config,
             batch_sealing_block_count=batch_sealing_block_count,
             dev_track_latest_epoch=dev_track_latest_epoch,
+            enable_proof_pipeline_rpc=enable_proof_pipeline_rpc,
         )
         sequencer.wait_for_ready(timeout=60)
         seq_enode = sequencer.get_enode()
@@ -187,6 +193,7 @@ class AlpenClientEnv(flexitest.EnvConfig):
                 instance_id=i,
                 sequencer_http=seq_http_url,  # Forward transactions to sequencer
                 ol_endpoint=ol_endpoint,
+                enable_proof_pipeline_rpc=enable_proof_pipeline_rpc,
             )
             fullnode.wait_for_ready(timeout=60)
             fullnodes.append(fullnode)
