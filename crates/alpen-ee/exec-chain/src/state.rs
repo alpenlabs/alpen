@@ -40,6 +40,8 @@ pub struct ExecChainState {
     unfinalized: UnfinalizedTracker,
     /// Orphan blocks waiting for their parent to arrive
     orphans: OrphanTracker,
+    /// Latest finalized block that is known but not connected to the finalized chain yet.
+    pending_finalized: Option<Hash>,
     /// Cached block data for quick access
     blocks: HashMap<Hash, ExecBlockRecord>,
 }
@@ -50,6 +52,7 @@ impl ExecChainState {
         Self {
             unfinalized: UnfinalizedTracker::new_empty((&finalized_block).into()),
             orphans: OrphanTracker::new_empty(),
+            pending_finalized: None,
             blocks: HashMap::from([(finalized_block.blockhash(), finalized_block)]),
         }
     }
@@ -141,6 +144,21 @@ impl ExecChainState {
     /// Checks if a block exists in the orphan tracker.
     pub(crate) fn contains_orphan_block(&self, hash: &Hash) -> bool {
         self.orphans.has_block(hash)
+    }
+
+    /// Returns the latest finalized block that could not be applied yet.
+    pub(crate) fn pending_finalized_blockhash(&self) -> Option<Hash> {
+        self.pending_finalized
+    }
+
+    /// Stores a finalized block that is waiting for its parent chain to arrive.
+    pub(crate) fn set_pending_finalized(&mut self, hash: Hash) {
+        self.pending_finalized = Some(hash);
+    }
+
+    /// Clears any pending finalized block.
+    pub(crate) fn clear_pending_finalized(&mut self) {
+        self.pending_finalized = None;
     }
 
     /// Checks if a block is on the canonical chain.
