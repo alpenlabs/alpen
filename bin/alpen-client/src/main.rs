@@ -74,9 +74,7 @@ use strata_logging::{init_logging_from_config, LoggingInitConfig};
 use strata_predicate::PredicateKey;
 use strata_primitives::{buf::Buf32, L1Height};
 use tokio::sync::{mpsc, watch};
-#[cfg(feature = "sequencer")]
-use tokio::time::sleep;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 #[cfg(feature = "sequencer")]
 mod sequencer_imports {
@@ -97,8 +95,8 @@ mod sequencer_imports {
         header_summary::RethHeaderSummaryProvider,
         payload_builder::AlpenRethPayloadEngine,
         prover::{
-            AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, ChunkTask,
-            EeBatchProofDbManager, EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
+            AcctReceiptHook, AcctSpec, ChunkReceiptHook, ChunkSpec, EeBatchProofDbManager,
+            EeChunkReceiptStore, EeProverTaskDbManager, PaasBatchProver,
         },
     };
 }
@@ -184,11 +182,15 @@ fn main() {
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");
 
             #[cfg(feature = "sequencer")]
-            let da_args = resolve_da_args(&ext)?;
+            let da_args = if ext.sequencer {
+                Some(resolve_da_args(&ext)?)
+            } else {
+                None
+            };
 
             // Resolve btcio writer config up front so flag misuse surfaces before I/O.
             #[cfg(feature = "sequencer")]
-            let writer_config = if da_args.is_some() {
+            let writer_config = if ext.sequencer {
                 let cfg = Arc::new(resolve_writer_config(&ext)?);
                 log_writer_config(&cfg);
                 Some(cfg)
@@ -385,10 +387,10 @@ fn main() {
                     }
                 });
 
-            // Install state diff exex only when sequencer DA is enabled.
+            // Install state diff exex for sequencer nodes.
             // The exex persists per-block state diffs that the blob provider reads.
             #[cfg(feature = "sequencer")]
-            if da_args.is_some() {
+            if ext.sequencer {
                 node_builder = node_builder.install_exex("state_diffs", {
                     let state_diff_db = dbs.witness_db();
                     |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
@@ -497,591 +499,348 @@ fn main() {
                     storage.clone(),
                 );
 
-                if let Some((magic_bytes, btc_url, btc_user, btc_pass)) = da_args {
-                    let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
+                let (magic_bytes, btc_url, btc_user, btc_pass) =
+                    da_args.expect("resolve_da_args requires DA args for sequencer mode");
 
-                    let batch_sealing_policy =
-                        FixedBlockCountSealing::new(ext.batch_sealing_block_count);
-                    let block_data_provider = Arc::new(BlockCountDataProvider);
+                let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
 
-                    // Chunk-spanning witness extractor. Single producer of
-                    // `ChunkWitnessRecord`: the background `chunk_witness_task`
-                    // invokes it once per chunk, off the batch builder's hot
-                    // path. The chunk prover's `ChunkSpec::fetch_input` reads
-                    // the persisted record from sled and has no extractor path
-                    // of its own; a missing record returns `TransientFailure`
-                    // and the task here retries on extraction errors (mainly
-                    // covering the race against the `AccessedStateGenerator`
-                    // exex).
-                    let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
-                        node.provider.clone(),
-                        storage.clone(),
-                    ));
+                let batch_sealing_policy =
+                    FixedBlockCountSealing::new(ext.batch_sealing_block_count);
+                let block_data_provider = Arc::new(BlockCountDataProvider);
 
-                    // `ChunkWitnessExtractFn` is the production-time hook: takes
-                    // chunk endpoints, returns the persisted `ChunkWitnessRecord`.
-                    // Reth's alloy `Header` / `Block` are RLP-encoded here so the
-                    // record stays Borsh-friendly for sled.
-                    let chunk_witness_extract_fn: Arc<ChunkWitnessExtractFn> = {
-                        let extractor = range_witness_extractor.clone();
-                        Arc::new(move |first_block, last_block| {
-                            let first_b256 = alloy_primitives::B256::from(first_block.0);
-                            let last_b256 = alloy_primitives::B256::from(last_block.0);
-                            let data = extractor.extract_range_witness(first_b256, last_b256)?;
-                            let prev_header_rlp = alloy_rlp::encode(&data.prev_header);
-                            let blocks_rlp: Vec<Vec<u8>> =
-                                data.blocks.iter().map(alloy_rlp::encode).collect();
-                            Ok(ChunkWitnessRecord::new(
-                                data.raw_partial_pre_state,
-                                prev_header_rlp,
-                                blocks_rlp,
-                            ))
-                        })
-                    };
+                // Chunk-spanning witness extractor. Single producer of
+                // `ChunkWitnessRecord`: the background `chunk_witness_task`
+                // invokes it once per chunk, off the batch builder's hot
+                // path. The chunk prover's `ChunkSpec::fetch_input` reads
+                // the persisted record from sled and has no extractor path
+                // of its own; a missing record returns `TransientFailure`
+                // and the task here retries on extraction errors (mainly
+                // covering the race against the `AccessedStateGenerator`
+                // exex).
+                let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
+                    node.provider.clone(),
+                    storage.clone(),
+                ));
 
-                    let (chunk_witness_tx, chunk_witness_rx) = chunk_witness_channel();
-                    let chunk_witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
+                // `ChunkWitnessExtractFn` is the production-time hook: takes
+                // chunk endpoints, returns the persisted `ChunkWitnessRecord`.
+                // Reth's alloy `Header` / `Block` are RLP-encoded here so the
+                // record stays Borsh-friendly for sled.
+                let chunk_witness_extract_fn: Arc<ChunkWitnessExtractFn> = {
+                    let extractor = range_witness_extractor.clone();
+                    Arc::new(move |first_block, last_block| {
+                        let first_b256 = alloy_primitives::B256::from(first_block.0);
+                        let last_b256 = alloy_primitives::B256::from(last_block.0);
+                        let data = extractor.extract_range_witness(first_b256, last_b256)?;
+                        let prev_header_rlp = alloy_rlp::encode(&data.prev_header);
+                        let blocks_rlp: Vec<Vec<u8>> =
+                            data.blocks.iter().map(alloy_rlp::encode).collect();
+                        Ok(ChunkWitnessRecord::new(
+                            data.raw_partial_pre_state,
+                            prev_header_rlp,
+                            blocks_rlp,
+                        ))
+                    })
+                };
+
+                let (chunk_witness_tx, chunk_witness_rx) = chunk_witness_channel();
+                let chunk_witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
+                    storage.clone();
+                let chunk_witness_task_fut = chunk_witness_task(
+                    chunk_witness_extract_fn,
+                    chunk_witness_store,
+                    chunk_witness_rx,
+                );
+
+                // Startup recovery for sealed-without-witness chunks.
+                // Covers crash-mid-extraction (mpsc request lost with the
+                // process) and any pre-existing chunks lacking a witness
+                // row. Spawned critical alongside `ee_chunk_witness`:
+                // witness assembly gates the entire proving pipeline, so
+                // a panic in either path warrants taking the node down
+                // rather than silently producing un-provable chunks.
+                let chunk_witness_backfill_task = {
+                    let batch_storage: Arc<dyn BatchStorage> = storage.clone();
+                    let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
                         storage.clone();
-                    let chunk_witness_task_fut = chunk_witness_task(
-                        chunk_witness_extract_fn,
-                        chunk_witness_store,
-                        chunk_witness_rx,
-                    );
-
-                    // Startup recovery for sealed-without-witness chunks.
-                    // Covers crash-mid-extraction (mpsc request lost with the
-                    // process) and any pre-existing chunks lacking a witness
-                    // row. Spawned critical alongside `ee_chunk_witness`:
-                    // witness assembly gates the entire proving pipeline, so
-                    // a panic in either path warrants taking the node down
-                    // rather than silently producing un-provable chunks.
-                    let chunk_witness_backfill_task = {
-                        let batch_storage: Arc<dyn BatchStorage> = storage.clone();
-                        let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
-                            storage.clone();
-                        let tx = chunk_witness_tx.clone();
-                        async move {
-                            if let Err(e) = backfill_missing_chunk_witnesses(
-                                batch_storage.as_ref(),
-                                witness_store.as_ref(),
-                                &tx,
-                            )
-                            .await
-                            {
-                                error!(error = %e, "chunk witness backfill failed at startup");
-                            }
+                    let tx = chunk_witness_tx.clone();
+                    async move {
+                        if let Err(e) = backfill_missing_chunk_witnesses(
+                            batch_storage.as_ref(),
+                            witness_store.as_ref(),
+                            &tx,
+                        )
+                        .await
+                        {
+                            error!(error = %e, "chunk witness backfill failed at startup");
                         }
-                    };
+                    }
+                };
 
-                    let (batch_builder_handle, batch_builder_task) = create_batch_builder(
-                        latest_batch.id(),
-                        BlockNumHash::new(
-                            genesis_info.blockhash().0.into(),
-                            genesis_info.blocknum(),
-                        ),
-                        batch_builder_state,
-                        preconf_rx,
-                        block_data_provider,
-                        batch_sealing_policy,
-                        storage.clone(),
-                        storage.clone(),
-                        exec_chain_handle.clone(),
-                        Some(chunk_witness_tx),
-                    );
+                let (batch_builder_handle, batch_builder_task) = create_batch_builder(
+                    latest_batch.id(),
+                    BlockNumHash::new(genesis_info.blockhash().0.into(), genesis_info.blocknum()),
+                    batch_builder_state,
+                    preconf_rx,
+                    block_data_provider,
+                    batch_sealing_policy,
+                    storage.clone(),
+                    storage.clone(),
+                    exec_chain_handle.clone(),
+                    Some(chunk_witness_tx),
+                );
 
-                    // --- DA pipeline ---
-                    // Create BtcioParams directly from CLI args.
-                    let btcio_params = BtcioParams::new(
-                        ext.l1_reorg_safe_depth,
-                        magic_bytes,
-                        ext.genesis_l1_height,
-                    );
+                // --- DA pipeline ---
+                // Create BtcioParams directly from CLI args.
+                let btcio_params =
+                    BtcioParams::new(ext.l1_reorg_safe_depth, magic_bytes, ext.genesis_l1_height);
 
-                    // Bitcoin RPC client.
-                    let btc_client = Arc::new(
-                        BtcClient::new(
-                            btc_url,
-                            Auth::UserPass(btc_user, btc_pass),
-                            Some(ext.btcio_retry_count),
-                            Some(ext.btcio_retry_interval),
-                            None,
-                        )
-                        .map_err(|e| eyre::eyre!("creating Bitcoin RPC client: {e}"))?,
-                    );
-                    info!(
-                        target: "alpen-client",
-                        retry_count = ext.btcio_retry_count,
-                        retry_interval_ms = ext.btcio_retry_interval,
-                        "btcio Bitcoin RPC retry policy configured",
-                    );
-
-                    // Sequencer address from bitcoin wallet.
-                    let sequencer_address = btc_client
-                        .get_new_address()
-                        .await
-                        .map_err(|e| eyre::eyre!("failed to get sequencer address: {e}"))?;
-
-                    // Wrap raw DBs in ops using the shared DB threadpool.
-                    let broadcast_ops = Arc::new(dbs.broadcast_ops(db_pool.clone()));
-                    let envelope_ops = Arc::new(dbs.chunked_envelope_ops(db_pool));
-
-                    // Launch broadcaster service and create chunked envelope task.
-                    let broadcast_poll_interval = 5_000;
-
-                    let broadcast_handle = Arc::new(
-                        BroadcasterBuilder::new(
-                            btc_client.clone(),
-                            broadcast_ops.clone(),
-                            btcio_params,
-                        )
-                        .with_broadcast_poll_interval_ms(broadcast_poll_interval)
-                        .launch(&service_executor)
-                        .await
-                        .map_err(|e| eyre::eyre!("starting broadcaster service: {e}"))?,
-                    );
-
-                    let writer_config = writer_config
-                        .clone()
-                        .expect("writer_config resolved at startup when EE DA is configured");
-                    let sequencer_keypair = sequencer_keypair.ok_or_else(|| {
-                        eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
-                    })?;
-                    let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
-                        btc_client,
-                        writer_config,
-                        btcio_params,
-                        sequencer_address,
-                        sequencer_keypair,
-                        envelope_ops,
-                        broadcast_handle.clone(),
+                // Bitcoin RPC client.
+                let btc_client = Arc::new(
+                    BtcClient::new(
+                        btc_url,
+                        Auth::UserPass(btc_user, btc_pass),
+                        Some(ext.btcio_retry_count),
+                        Some(ext.btcio_retry_interval),
+                        None,
                     )
-                    .map_err(|e| eyre::eyre!("creating chunked envelope task: {e}"))?;
+                    .map_err(|e| eyre::eyre!("creating Bitcoin RPC client: {e}"))?,
+                );
+                info!(
+                    target: "alpen-client",
+                    retry_count = ext.btcio_retry_count,
+                    retry_interval_ms = ext.btcio_retry_interval,
+                    "btcio Bitcoin RPC retry policy configured",
+                );
 
-                    let header_summary =
-                        Arc::new(RethHeaderSummaryProvider::new(node.provider.clone()));
+                // Sequencer address from bitcoin wallet.
+                let sequencer_address = btc_client
+                    .get_new_address()
+                    .await
+                    .map_err(|e| eyre::eyre!("failed to get sequencer address: {e}"))?;
 
-                    let da_context_db = dbs.da_context_db();
-                    let blob_provider: Arc<dyn DaBlobSource> =
-                        Arc::new(StateDiffBlobProvider::new(
-                            storage.clone(),
-                            dbs.witness_db(),
-                            header_summary,
-                            da_context_db.clone(),
-                        ));
+                // Wrap raw DBs in ops using the shared DB threadpool.
+                let broadcast_ops = Arc::new(dbs.broadcast_ops(db_pool.clone()));
+                let envelope_ops = Arc::new(dbs.chunked_envelope_ops(db_pool));
 
-                    let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
-                        blob_provider.clone(),
-                        envelope_handle,
-                        broadcast_ops,
-                        magic_bytes,
-                    ));
+                // Launch broadcaster service and create chunked envelope task.
+                let broadcast_poll_interval = 5_000;
 
-                    // Spawn btcio tasks.
-                    node.task_executor
-                        .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
+                let broadcast_handle = Arc::new(
+                    BroadcasterBuilder::new(
+                        btc_client.clone(),
+                        broadcast_ops.clone(),
+                        btcio_params,
+                    )
+                    .with_broadcast_poll_interval_ms(broadcast_poll_interval)
+                    .launch(&service_executor)
+                    .await
+                    .map_err(|e| eyre::eyre!("starting broadcaster service: {e}"))?,
+                );
 
-                    info!(target: "alpen-client", "btcio DA pipeline started");
+                let writer_config = writer_config
+                    .clone()
+                    .expect("writer_config resolved at startup when EE DA is configured");
+                let sequencer_keypair = sequencer_keypair.ok_or_else(|| {
+                    eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
+                })?;
+                let (envelope_handle, envelope_watcher_task) = create_chunked_envelope_task(
+                    btc_client,
+                    writer_config,
+                    btcio_params,
+                    sequencer_address,
+                    sequencer_keypair,
+                    envelope_ops,
+                    broadcast_handle.clone(),
+                )
+                .map_err(|e| eyre::eyre!("creating chunked envelope task: {e}"))?;
 
-                    // EE chunk + acct paas provers. Both use SP1 remote
-                    // proving (production); native is dev-only via the
-                    // proofimpl crates' `native_host()` for tests.
-                    //
-                    // Storage layout (sled-backed, own sled db under
-                    // `<datadir>/sled` — fully separate from OL's; the
-                    // prover trees live alongside the EE node trees):
-                    //   - `task_store` — shared across both provers; task keys carry a kind tag
-                    //     (`b'c'`/`b'a'`) so chunk and batch entries don't collide in one tree.
-                    //   - `chunk_receipts` — chunk prover writes (via paas auto-store); acct
-                    //     `fetch_input` reads back.
-                    //   - `batch_proofs` — outer-proof store keyed by `BatchId`; outer hook writes,
-                    //     OL submission reads.
-                    //
-                    // All backed by `EeProverDbSled`; see
-                    // `alpen_ee_database::sleddb::prover_db` for schemas.
-                    let prover_db = dbs.prover_db();
-                    let task_store: Arc<dyn TaskStore> =
-                        Arc::new(EeProverTaskDbManager::new(prover_db.clone()));
-                    let chunk_receipts: Arc<dyn ReceiptStore> =
-                        Arc::new(EeChunkReceiptStore::new(prover_db.clone()));
-                    let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
-                    let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
+                let header_summary =
+                    Arc::new(RethHeaderSummaryProvider::new(node.provider.clone()));
 
-                    let genesis = {
-                        use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
-                        ext.custom_chain.genesis().config.clone().into_rsp()
-                    };
+                let da_context_db = dbs.da_context_db();
+                let blob_provider: Arc<dyn DaBlobSource> = Arc::new(StateDiffBlobProvider::new(
+                    storage.clone(),
+                    dbs.witness_db(),
+                    header_summary,
+                    da_context_db.clone(),
+                ));
 
-                    let chunk_builder = ProverBuilder::new(ChunkSpec::new(
-                        batch_storage_dyn.clone(),
-                        storage.clone(),
-                        genesis.clone(),
-                    ))
-                    .task_store(task_store.clone())
-                    .receipt_store(chunk_receipts.clone())
-                    .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
-                    .retry(RetryConfig::default());
+                let batch_da_provider = Arc::new(ChunkedEnvelopeDaProvider::new(
+                    blob_provider.clone(),
+                    envelope_handle,
+                    broadcast_ops,
+                    magic_bytes,
+                ));
 
-                    let acct_builder = ProverBuilder::new(AcctSpec::new(
-                        chunk_receipts.clone(),
-                        batch_storage_dyn.clone(),
-                        storage.clone(),
-                        ol_client.clone(),
-                        genesis,
-                    ))
-                    .task_store(task_store)
-                    .receipt_hook(AcctReceiptHook::new(
-                        batch_storage_dyn.clone(),
-                        batch_proofs.clone(),
-                    ))
-                    .retry(RetryConfig::default());
+                // Spawn btcio tasks.
+                node.task_executor
+                    .spawn_critical("chunked_envelope_watcher", envelope_watcher_task);
 
-                    // Dev/test escape hatch: use zkaleido NativeHost instead of
-                    // the SP1 remote host. This skips real Groth16 proving and
-                    // the need for compiled guest ELFs — only safe for
-                    // functional tests. The acct program is wired with the
-                    // chunk program's deterministic test predicate key so the
-                    // native-host Schnorr signature actually verifies.
-                    let (chunk_prover, acct_prover) = if ext.dev_native_prover {
-                        info!(
-                            target: "alpen-client",
-                            "EE chunk + acct provers: native host (dev/test only)"
-                        );
-                        let chunk = chunk_builder.native(EeChunkProgram::native_host());
-                        let acct_program = EeAcctProgram::new(EeChunkProgram::test_predicate_key());
-                        let acct = acct_builder.native(acct_program.native_host());
-                        (chunk, acct)
-                    } else {
-                        #[cfg(feature = "sp1")]
-                        {
-                            let deadline_secs = ext
-                                .sp1_proof_deadline_secs
-                                .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-                            let deadline = Duration::from_secs(deadline_secs);
-                            info!(
-                                target: "alpen-client",
-                                deadline_secs,
-                                "sp1 EE prover deadline configured"
-                            );
-                            let sp1_config = SP1HostConfig::default().with_deadline(deadline);
-                            let chunk_host: SP1Host =
-                                (**alpen_chunk_host(sp1_config.clone()).await).clone();
-                            let acct_host: SP1Host = (**alpen_acct_host(sp1_config).await).clone();
-                            (
-                                chunk_builder.remote(chunk_host),
-                                acct_builder.remote(acct_host),
-                            )
-                        }
-                        #[cfg(not(feature = "sp1"))]
-                        {
-                            return Err(eyre::eyre!(
-                                "remote SP1 prover is not compiled in; pass --dev-native-prover \
-                             or build with the `sp1` feature"
-                            ));
-                        }
-                    };
+                info!(target: "alpen-client", "btcio DA pipeline started");
 
-                    let prover_tick = Duration::from_secs(5);
-                    let chunk_handle = ProverServiceBuilder::new(chunk_prover)
-                        .tick_interval(prover_tick)
-                        .launch(&service_executor)
-                        .await
-                        .map_err(|e| eyre::eyre!("launching chunk prover service: {e}"))?;
-                    let acct_handle = ProverServiceBuilder::new(acct_prover)
-                        .tick_interval(prover_tick)
-                        .launch(&service_executor)
-                        .await
-                        .map_err(|e| eyre::eyre!("launching acct prover service: {e}"))?;
+                // EE chunk + acct paas provers. Both use SP1 remote
+                // proving (production); native is dev-only via the
+                // proofimpl crates' `native_host()` for tests.
+                //
+                // Storage layout (sled-backed, own sled db under
+                // `<datadir>/sled` — fully separate from OL's; the
+                // prover trees live alongside the EE node trees):
+                //   - `task_store` — shared across both provers; task keys carry a kind tag
+                //     (`b'c'`/`b'a'`) so chunk and batch entries don't collide in one tree.
+                //   - `chunk_receipts` — chunk prover writes (via paas auto-store); acct
+                //     `fetch_input` reads back.
+                //   - `batch_proofs` — outer-proof store keyed by `BatchId`; outer hook writes, OL
+                //     submission reads.
+                //
+                // All backed by `EeProverDbSled`; see
+                // `alpen_ee_database::sleddb::prover_db` for schemas.
+                let prover_db = dbs.prover_db();
+                let task_store: Arc<dyn TaskStore> =
+                    Arc::new(EeProverTaskDbManager::new(prover_db.clone()));
+                let chunk_receipts: Arc<dyn ReceiptStore> =
+                    Arc::new(EeChunkReceiptStore::new(prover_db.clone()));
+                let batch_proofs = Arc::new(EeBatchProofDbManager::new(prover_db));
+                let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
 
-                    let batch_prover = Arc::new(PaasBatchProver::new(
-                        chunk_handle,
-                        acct_handle,
-                        batch_storage_dyn,
-                        batch_proofs,
-                    ));
+                let genesis = {
+                    use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
+                    ext.custom_chain.genesis().config.clone().into_rsp()
+                };
 
-                    info!(target: "alpen-client", "EE chunk + acct paas provers started (SP1 remote)");
+                let chunk_builder = ProverBuilder::new(ChunkSpec::new(
+                    batch_storage_dyn.clone(),
+                    storage.clone(),
+                    genesis.clone(),
+                ))
+                .task_store(task_store.clone())
+                .receipt_store(chunk_receipts.clone())
+                .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
+                .retry(RetryConfig::default());
 
-                    let (batch_lifecycle_handle, batch_lifecycle_task) =
-                        create_batch_lifecycle_task(
-                            None,
-                            batch_lifecycle_state,
-                            batch_builder_handle.latest_batch_watcher(),
-                            batch_da_provider,
-                            batch_prover.clone(),
-                            storage.clone(),
-                            blob_provider,
-                            da_context_db,
-                        );
+                let acct_builder = ProverBuilder::new(AcctSpec::new(
+                    chunk_receipts.clone(),
+                    batch_storage_dyn.clone(),
+                    storage.clone(),
+                    ol_client.clone(),
+                    genesis,
+                ))
+                .task_store(task_store)
+                .receipt_hook(AcctReceiptHook::new(
+                    batch_storage_dyn.clone(),
+                    batch_proofs.clone(),
+                ))
+                .retry(RetryConfig::default());
 
-                    let update_submitter_task = create_update_submitter_task(
-                        ol_client,
-                        storage.clone(),
-                        storage.clone(),
-                        batch_prover,
-                        batch_lifecycle_handle.latest_proof_ready_watcher(),
-                        status_watcher,
-                    );
-
-                    node.task_executor
-                        .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
-                    node.task_executor.spawn_critical(
-                        "block_assembly",
-                        block_builder_task(
-                            block_builder_config,
-                            exec_chain_handle,
-                            ol_chain_tracker,
-                            payload_engine,
-                            storage.clone(),
-                        ),
-                    );
-
-                    node.task_executor
-                        .spawn_critical("ee_batch_builder", batch_builder_task);
-                    node.task_executor
-                        .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
-                    node.task_executor
-                        .spawn_critical("ee_chunk_witness_backfill", chunk_witness_backfill_task);
-                    node.task_executor
-                        .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
-                    node.task_executor
-                        .spawn_critical("ee_update_submitter", update_submitter_task);
-                } else {
+                // Dev/test escape hatch: use zkaleido NativeHost instead of
+                // the SP1 remote host. This skips real Groth16 proving and
+                // the need for compiled guest ELFs — only safe for
+                // functional tests. The acct program is wired with the
+                // chunk program's deterministic test predicate key so the
+                // native-host Schnorr signature actually verifies.
+                let (chunk_prover, acct_prover) = if ext.dev_native_prover {
                     info!(
                         target: "alpen-client",
-                        "EE DA pipeline disabled; running sequencer with chunk-only EE proving"
+                        "EE chunk + acct provers: native host (dev/test only)"
                     );
-
-                    let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
-
-                    let batch_sealing_policy =
-                        FixedBlockCountSealing::new(ext.batch_sealing_block_count);
-                    let block_data_provider = Arc::new(BlockCountDataProvider);
-
-                    let range_witness_extractor = Arc::new(RangeWitnessExtractor::new(
-                        node.provider.clone(),
-                        storage.clone(),
-                    ));
-
-                    let chunk_witness_extract_fn: Arc<ChunkWitnessExtractFn> = {
-                        let extractor = range_witness_extractor.clone();
-                        Arc::new(move |first_block, last_block| {
-                            let first_b256 = alloy_primitives::B256::from(first_block.0);
-                            let last_b256 = alloy_primitives::B256::from(last_block.0);
-                            let data = extractor.extract_range_witness(first_b256, last_b256)?;
-                            let prev_header_rlp = alloy_rlp::encode(&data.prev_header);
-                            let blocks_rlp: Vec<Vec<u8>> =
-                                data.blocks.iter().map(alloy_rlp::encode).collect();
-                            Ok(ChunkWitnessRecord::new(
-                                data.raw_partial_pre_state,
-                                prev_header_rlp,
-                                blocks_rlp,
-                            ))
-                        })
-                    };
-
-                    let (chunk_witness_tx, chunk_witness_rx) = chunk_witness_channel();
-                    let chunk_witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
-                        storage.clone();
-                    let chunk_witness_task_fut = chunk_witness_task(
-                        chunk_witness_extract_fn,
-                        chunk_witness_store,
-                        chunk_witness_rx,
-                    );
-
-                    let chunk_witness_backfill_task = {
-                        let batch_storage: Arc<dyn BatchStorage> = storage.clone();
-                        let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
-                            storage.clone();
-                        let tx = chunk_witness_tx.clone();
-                        async move {
-                            if let Err(e) = backfill_missing_chunk_witnesses(
-                                batch_storage.as_ref(),
-                                witness_store.as_ref(),
-                                &tx,
-                            )
-                            .await
-                            {
-                                error!(error = %e, "chunk witness backfill failed at startup");
-                            }
-                        }
-                    };
-
-                    let (batch_builder_handle, batch_builder_task) = create_batch_builder(
-                        latest_batch.id(),
-                        BlockNumHash::new(
-                            genesis_info.blockhash().0.into(),
-                            genesis_info.blocknum(),
-                        ),
-                        batch_builder_state,
-                        preconf_rx,
-                        block_data_provider,
-                        batch_sealing_policy,
-                        storage.clone(),
-                        storage.clone(),
-                        exec_chain_handle.clone(),
-                        Some(chunk_witness_tx),
-                    );
-
-                    let prover_db = dbs.prover_db();
-                    let task_store: Arc<dyn TaskStore> =
-                        Arc::new(EeProverTaskDbManager::new(prover_db.clone()));
-                    let chunk_receipts: Arc<dyn ReceiptStore> =
-                        Arc::new(EeChunkReceiptStore::new(prover_db));
-                    let batch_storage_dyn: Arc<dyn BatchStorage> = storage.clone();
-
-                    let genesis = {
-                        use alpen_reth_exex::alloy2reth::IntoRspChainConfig as _;
-                        ext.custom_chain.genesis().config.clone().into_rsp()
-                    };
-
-                    let chunk_builder = ProverBuilder::new(ChunkSpec::new(
-                        batch_storage_dyn.clone(),
-                        storage.clone(),
-                        genesis,
-                    ))
-                    .task_store(task_store)
-                    .receipt_store(chunk_receipts)
-                    .receipt_hook(ChunkReceiptHook::new(batch_storage_dyn.clone()))
-                    .retry(RetryConfig::default());
-
-                    let chunk_prover = if ext.dev_native_prover {
+                    let chunk = chunk_builder.native(EeChunkProgram::native_host());
+                    let acct_program = EeAcctProgram::new(EeChunkProgram::test_predicate_key());
+                    let acct = acct_builder.native(acct_program.native_host());
+                    (chunk, acct)
+                } else {
+                    #[cfg(feature = "sp1")]
+                    {
+                        let deadline_secs = ext
+                            .sp1_proof_deadline_secs
+                            .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
+                        let deadline = Duration::from_secs(deadline_secs);
                         info!(
                             target: "alpen-client",
-                            "EE chunk prover: native host (dev/test only)"
+                            deadline_secs,
+                            "sp1 EE prover deadline configured"
                         );
-                        chunk_builder.native(EeChunkProgram::native_host())
-                    } else {
-                        #[cfg(feature = "sp1")]
-                        {
-                            let deadline_secs = ext
-                                .sp1_proof_deadline_secs
-                                .unwrap_or(DEFAULT_SP1_DEADLINE_SECS);
-                            let deadline = Duration::from_secs(deadline_secs);
-                            info!(
-                                target: "alpen-client",
-                                deadline_secs,
-                                "sp1 EE chunk prover deadline configured"
-                            );
-                            let sp1_config = SP1HostConfig::default().with_deadline(deadline);
-                            let chunk_host: SP1Host =
-                                (**alpen_chunk_host(sp1_config).await).clone();
-                            chunk_builder.remote(chunk_host)
-                        }
-                        #[cfg(not(feature = "sp1"))]
-                        {
-                            return Err(eyre::eyre!(
-                                "remote SP1 chunk prover is not compiled in; pass \
-                                 --dev-native-prover or build with the `sp1` feature"
-                            ));
-                        }
-                    };
+                        let sp1_config = SP1HostConfig::default().with_deadline(deadline);
+                        let chunk_host: SP1Host =
+                            (**alpen_chunk_host(sp1_config.clone()).await).clone();
+                        let acct_host: SP1Host = (**alpen_acct_host(sp1_config).await).clone();
+                        (
+                            chunk_builder.remote(chunk_host),
+                            acct_builder.remote(acct_host),
+                        )
+                    }
+                    #[cfg(not(feature = "sp1"))]
+                    {
+                        return Err(eyre::eyre!(
+                            "remote SP1 prover is not compiled in; pass --dev-native-prover \
+                             or build with the `sp1` feature"
+                        ));
+                    }
+                };
 
-                    let prover_tick = Duration::from_secs(5);
-                    let chunk_handle = ProverServiceBuilder::new(chunk_prover)
-                        .tick_interval(prover_tick)
-                        .launch(&service_executor)
-                        .await
-                        .map_err(|e| eyre::eyre!("launching chunk prover service: {e}"))?;
+                let prover_tick = Duration::from_secs(5);
+                let chunk_handle = ProverServiceBuilder::new(chunk_prover)
+                    .tick_interval(prover_tick)
+                    .launch(&service_executor)
+                    .await
+                    .map_err(|e| eyre::eyre!("launching chunk prover service: {e}"))?;
+                let acct_handle = ProverServiceBuilder::new(acct_prover)
+                    .tick_interval(prover_tick)
+                    .launch(&service_executor)
+                    .await
+                    .map_err(|e| eyre::eyre!("launching acct prover service: {e}"))?;
 
-                    let chunk_proof_submitter_task = {
-                        let mut latest_batch_rx = batch_builder_handle.latest_batch_watcher();
-                        let batch_storage = batch_storage_dyn.clone();
-                        let witness_store: Arc<dyn alpen_ee_common::ChunkWitnessStore> =
-                            storage.clone();
-                        async move {
-                            loop {
-                                if latest_batch_rx.changed().await.is_err() {
-                                    warn!("latest batch watcher closed; exiting chunk submitter");
-                                    return;
-                                }
+                let batch_prover = Arc::new(PaasBatchProver::new(
+                    chunk_handle,
+                    acct_handle,
+                    batch_storage_dyn,
+                    batch_proofs,
+                ));
 
-                                let batch_id = *latest_batch_rx.borrow_and_update();
-                                match batch_storage.get_batch_chunks(batch_id).await {
-                                    Ok(Some(chunks)) => {
-                                        info!(
-                                            %batch_id,
-                                            chunk_count = chunks.len(),
-                                            "submitting chunk proof tasks for sealed batch"
-                                        );
-                                        for chunk_id in chunks {
-                                            let mut attempts = 0;
-                                            loop {
-                                                match witness_store
-                                                    .get_chunk_witness(chunk_id)
-                                                    .await
-                                                {
-                                                    Ok(Some(_)) => break,
-                                                    Ok(None) if attempts < 60 => {
-                                                        attempts += 1;
-                                                        sleep(Duration::from_millis(500)).await;
-                                                    }
-                                                    Ok(None) => {
-                                                        warn!(
-                                                            ?chunk_id,
-                                                            "chunk witness still missing; \
-                                                             submitting proof task and relying on \
-                                                             prover retry"
-                                                        );
-                                                        break;
-                                                    }
-                                                    Err(e) => {
-                                                        error!(
-                                                            ?chunk_id,
-                                                            error = %e,
-                                                            "failed to check chunk witness before \
-                                                             submitting proof task"
-                                                        );
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            if let Err(e) =
-                                                chunk_handle.submit(ChunkTask(chunk_id)).await
-                                            {
-                                                error!(
-                                                    %batch_id,
-                                                    ?chunk_id,
-                                                    error = %e,
-                                                    "failed to submit chunk proof task"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Ok(None) => warn!(
-                                        %batch_id,
-                                        "sealed batch has no chunks; skipping chunk proof submission"
-                                    ),
-                                    Err(e) => error!(
-                                        %batch_id,
-                                        error = %e,
-                                        "failed to read chunks for sealed batch"
-                                    ),
-                                }
-                            }
-                        }
-                    };
+                info!(target: "alpen-client", "EE chunk + acct paas provers started (SP1 remote)");
 
-                    node.task_executor
-                        .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
-                    node.task_executor.spawn_critical(
-                        "block_assembly",
-                        block_builder_task(
-                            block_builder_config,
-                            exec_chain_handle,
-                            ol_chain_tracker,
-                            payload_engine,
-                            storage.clone(),
-                        ),
-                    );
-                    node.task_executor
-                        .spawn_critical("ee_batch_builder", batch_builder_task);
-                    node.task_executor
-                        .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
-                    node.task_executor
-                        .spawn_critical("ee_chunk_witness_backfill", chunk_witness_backfill_task);
-                    node.task_executor
-                        .spawn_critical("ee_chunk_proof_submitter", chunk_proof_submitter_task);
-                }
+                let (batch_lifecycle_handle, batch_lifecycle_task) = create_batch_lifecycle_task(
+                    None,
+                    batch_lifecycle_state,
+                    batch_builder_handle.latest_batch_watcher(),
+                    batch_da_provider,
+                    batch_prover.clone(),
+                    storage.clone(),
+                    blob_provider,
+                    da_context_db,
+                );
+
+                let update_submitter_task = create_update_submitter_task(
+                    ol_client,
+                    storage.clone(),
+                    storage.clone(),
+                    batch_prover,
+                    batch_lifecycle_handle.latest_proof_ready_watcher(),
+                    status_watcher,
+                );
+
+                node.task_executor
+                    .spawn_critical("ol_chain_tracker", ol_chain_tracker_task);
+                node.task_executor.spawn_critical(
+                    "block_assembly",
+                    block_builder_task(
+                        block_builder_config,
+                        exec_chain_handle,
+                        ol_chain_tracker,
+                        payload_engine,
+                        storage.clone(),
+                    ),
+                );
+
+                node.task_executor
+                    .spawn_critical("ee_batch_builder", batch_builder_task);
+                node.task_executor
+                    .spawn_critical("ee_chunk_witness", chunk_witness_task_fut);
+                node.task_executor
+                    .spawn_critical("ee_chunk_witness_backfill", chunk_witness_backfill_task);
+                node.task_executor
+                    .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
+                node.task_executor
+                    .spawn_critical("ee_update_submitter", update_submitter_task);
             }
 
             health_check_state.mark_ready();
@@ -1191,10 +950,9 @@ pub struct AdditionalConfig {
     pub db_retry_count: Option<u16>,
 
     /// Run the node as a sequencer. Requires the `sequencer` feature and a
-    /// `SEQUENCER_PRIVATE_KEY` environment variable. When Bitcoin DA is
-    /// enabled, all DA-related arguments (`--ee-da-magic-bytes`,
-    /// `--btc-rpc-url`, `--btc-rpc-user`, `--btc-rpc-password`) must be
-    /// provided together.
+    /// `SEQUENCER_PRIVATE_KEY` environment variable. Sequencer mode requires
+    /// all DA-related arguments (`--ee-da-magic-bytes`, `--btc-rpc-url`,
+    /// `--btc-rpc-user`, `--btc-rpc-password`).
     #[arg(long, default_value_t = false)]
     pub sequencer: bool,
 
@@ -1208,15 +966,15 @@ pub struct AdditionalConfig {
     #[arg(long, required = false, value_parser = parse_magic_bytes)]
     pub ee_da_magic_bytes: Option<MagicBytes>,
 
-    /// Bitcoin Core RPC URL. Required when enabling Bitcoin DA.
+    /// Bitcoin Core RPC URL. Required in sequencer mode.
     #[arg(long, required = false)]
     pub btc_rpc_url: Option<String>,
 
-    /// Bitcoin Core RPC username. Required when enabling Bitcoin DA.
+    /// Bitcoin Core RPC username. Required in sequencer mode.
     #[arg(long, required = false)]
     pub btc_rpc_user: Option<String>,
 
-    /// Bitcoin Core RPC password. Required when enabling Bitcoin DA.
+    /// Bitcoin Core RPC password. Required in sequencer mode.
     #[arg(long, required = false)]
     pub btc_rpc_password: Option<String>,
 
@@ -1454,26 +1212,21 @@ impl From<BtcioMempoolTierArg> for MempoolExplorerFeePolicy {
 #[cfg(feature = "sequencer")]
 type DaArgs = (MagicBytes, String, String, String);
 
-/// Resolves optional Bitcoin DA configuration from CLI flags.
+/// Resolves Bitcoin DA configuration from CLI flags.
 #[cfg(feature = "sequencer")]
-fn resolve_da_args(ext: &AdditionalConfig) -> eyre::Result<Option<DaArgs>> {
-    if !ext.sequencer {
-        return Ok(None);
-    }
-
+fn resolve_da_args(ext: &AdditionalConfig) -> eyre::Result<DaArgs> {
     match (
         ext.ee_da_magic_bytes,
         ext.btc_rpc_url.clone(),
         ext.btc_rpc_user.clone(),
         ext.btc_rpc_password.clone(),
     ) {
-        (None, None, None, None) => Ok(None),
         (Some(magic_bytes), Some(btc_url), Some(btc_user), Some(btc_pass)) => {
-            Ok(Some((magic_bytes, btc_url, btc_user, btc_pass)))
+            Ok((magic_bytes, btc_url, btc_user, btc_pass))
         }
         _ => Err(eyre::eyre!(
-            "EE DA is optional, but --ee-da-magic-bytes, --btc-rpc-url, \
-             --btc-rpc-user, and --btc-rpc-password must be provided together"
+            "--sequencer requires --ee-da-magic-bytes, --btc-rpc-url, \
+             --btc-rpc-user, and --btc-rpc-password"
         )),
     }
 }
@@ -1580,10 +1333,26 @@ mod resolve_writer_config_tests {
     }
 
     #[test]
-    fn sequencer_allows_no_da_args() {
+    fn sequencer_requires_da_args() {
         let cfg = <AdditionalConfig as clap::Parser>::parse_from(sequencer_argv([]));
         assert!(cfg.sequencer);
-        assert!(resolve_da_args(&cfg).unwrap().is_none());
+        let err = resolve_da_args(&cfg).unwrap_err();
+        assert!(err.to_string().contains("--sequencer requires"));
+    }
+
+    #[test]
+    fn sequencer_accepts_da_args() {
+        let cfg = <AdditionalConfig as clap::Parser>::parse_from(sequencer_argv([
+            "--ee-da-magic-bytes",
+            "ALPN",
+            "--btc-rpc-url",
+            "http://127.0.0.1:18443",
+            "--btc-rpc-user",
+            "user",
+            "--btc-rpc-password",
+            "pass",
+        ]));
+        assert_eq!(resolve_da_args(&cfg).unwrap().1, "http://127.0.0.1:18443");
     }
 
     #[test]
@@ -1593,7 +1362,7 @@ mod resolve_writer_config_tests {
             "ALPN",
         ]));
         let err = resolve_da_args(&cfg).unwrap_err();
-        assert!(err.to_string().contains("must be provided together"));
+        assert!(err.to_string().contains("--sequencer requires"));
     }
 
     #[test]
