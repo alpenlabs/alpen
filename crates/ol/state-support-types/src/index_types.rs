@@ -313,6 +313,14 @@ impl IndexerWrites {
         self.snark_acct_state_updates.push(update);
     }
 
+    /// Replaces all tracked snark state updates with `updates`.
+    ///
+    /// This is required to collect the granular snark updates during checkpoint sync because diff
+    /// only doesn't contain the granular updates, which has to come from OL logs in the checkpoint.
+    pub fn set_snark_acct_state_updates(&mut self, updates: Vec<SnarkAcctStateUpdate>) {
+        self.snark_acct_state_updates = updates;
+    }
+
     /// Records a predicate key update.
     pub fn push_predicate_key_update(&mut self, update: PredicateKeyUpdate) {
         self.predicate_key_updates.push(update);

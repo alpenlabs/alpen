@@ -15239,6 +15239,7 @@ dependencies = [
  "strata-predicate",
  "strata-primitives",
  "strata-service",
+ "strata-snark-acct-types",
  "strata-status",
  "strata-storage",
  "thiserror 2.0.18",

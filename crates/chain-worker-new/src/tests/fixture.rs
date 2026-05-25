@@ -7,10 +7,11 @@
 
 #![allow(unreachable_pub, reason = "test fixture module")]
 
-use strata_acct_types::{BitcoinAmount, MessageEntry};
+use strata_acct_types::{BitcoinAmount, MessageEntry, RawMerkleProof};
 use strata_asm_common::AsmManifest;
 use strata_asm_proto_checkpoint_types::{
-    CheckpointPayload, CheckpointSidecar, CheckpointTip, TerminalHeaderComplement,
+    CheckpointPayload, CheckpointSidecar, CheckpointTip, OLLog as CheckpointOLLog,
+    TerminalHeaderComplement,
 };
 use strata_checkpoint_types::EpochSummary;
 use strata_codec::decode_buf_exact;
@@ -30,7 +31,7 @@ use strata_ol_stf::{
         InboxMmrTracker, SnarkUpdateBuilder, TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID,
         execute_block, get_snark_state_expect, insert_empty_account, make_account_id,
         make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state, make_state_root,
-        snark_inbox_msg, to_ol_block,
+        snark_inbox_msg_with_data, to_ol_block,
     },
     verify_block,
 };
@@ -48,12 +49,12 @@ const TERMINAL_L1_HEIGHT: u32 = 2;
 /// The shape of the epoch [`build_epoch`] constructs.
 #[derive(Debug, Clone, Copy)]
 pub enum EpochShape {
-    /// Empty filler blocks plus a terminal carrying a deposit manifest.
+    /// Empty filler blocks plus a terminal carrying a deposit manifest. No
+    /// snark updates: covers the path where `ol_logs` is empty.
     DepositManifestOnly,
-    /// A GAM-then-snark-update sequence with an empty terminal manifest.
-    SnarkUpdate,
-    /// A snark update sequence plus a terminal deposit manifest.
-    SnarkUpdateAndDeposit,
+    /// Multiple OL txs, plus a terminal deposit manifest. Exercises per-update record
+    /// reconstruction from `ol_logs` (N > 1) alongside deposit-manifest indexing.
+    SnarkMultiUpdateAndDeposit,
 }
 
 /// One built OL epoch with the reference values for cross-mode comparison.
@@ -108,14 +109,8 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
             manifest
         }
-        EpochShape::SnarkUpdate => {
-            let prev = run_snark_update_blocks(&mut state, &mut blocks, genesis.header());
-            let manifest = make_empty_manifest(TERMINAL_L1_HEIGHT, 0);
-            run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
-            manifest
-        }
-        EpochShape::SnarkUpdateAndDeposit => {
-            let prev = run_snark_update_blocks(&mut state, &mut blocks, genesis.header());
+        EpochShape::SnarkMultiUpdateAndDeposit => {
+            let prev = run_snark_multi_update_blocks(&mut state, &mut blocks, genesis.header());
             let manifest = make_deposit_manifest_for_account(TERMINAL_L1_HEIGHT, 0, snark_serial, SubjectId::from([42u8; 32]), BitcoinAmount::from_sat(150_000_000));
             run_terminal(&mut state, &mut blocks, &prev, manifest.clone());
             manifest
@@ -169,11 +164,11 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
         full_sync_state_root,
     );
 
-    // DA blob the checkpoint payload carries as its OL state diff.
-    let da_blob = rebuild_da_blob(&pre_epoch_layer, &blocks, genesis.header());
+    // DA blob and per-update OL logs the checkpoint payload carries.
+    let (da_blob, ol_logs) = rebuild_da_and_logs(&pre_epoch_layer, &blocks, genesis.header());
 
     let checkpoint_payload =
-        assemble_checkpoint_payload(da_blob, &terminal_header, terminal_commitment);
+        assemble_checkpoint_payload(da_blob, ol_logs, &terminal_header, terminal_commitment);
 
     BuiltEpoch {
         epoch_commitment,
@@ -189,9 +184,10 @@ pub fn build_epoch(shape: EpochShape) -> BuiltEpoch {
     }
 }
 
-/// Assembles the checkpoint payload from the DA blob and terminal header.
+/// Assembles the checkpoint payload from the DA blob, OL logs, and terminal header.
 fn assemble_checkpoint_payload(
     da_blob: Vec<u8>,
+    ol_logs: Vec<CheckpointOLLog>,
     terminal_header: &OLBlockHeader,
     terminal_commitment: OLBlockCommitment,
 ) -> CheckpointPayload {
@@ -202,7 +198,7 @@ fn assemble_checkpoint_payload(
         *terminal_header.logs_root(),
     );
     let sidecar =
-        CheckpointSidecar::new(da_blob, Vec::new(), complement).expect("build checkpoint sidecar");
+        CheckpointSidecar::new(da_blob, ol_logs, complement).expect("build checkpoint sidecar");
     let tip = CheckpointTip::new(
         terminal_header.epoch(),
         TERMINAL_L1_HEIGHT,
@@ -250,24 +246,26 @@ fn run_full_sync(
     (new_state.into_inner(), state_root, indexer_writes)
 }
 
-/// Rebuilds the epoch DA blob via the checkpoint-builder preseal path.
-///
-/// Sanity-decodes the blob as an [`OLDaPayloadV1`] so a malformed blob fails
-/// here rather than deep inside checkpoint-sync reconstruction.
-fn rebuild_da_blob(
+/// Rebuilds the epoch DA blob and per-update OL logs via the checkpoint-builder
+/// preseal path.
+fn rebuild_da_and_logs(
     pre_epoch_state: &MemoryStateBaseLayer,
     blocks: &[OLBlock],
     genesis_header: &OLBlockHeader,
-) -> Vec<u8> {
+) -> (Vec<u8>, Vec<CheckpointOLLog>) {
     let mut da = DaAccumulatingState::new(pre_epoch_state.clone());
-    execute_block_batch_preseal(&mut da, blocks, genesis_header)
+    let logs = execute_block_batch_preseal(&mut da, blocks, genesis_header)
         .expect("execute_block_batch_preseal");
     let blob = da
         .take_completed_epoch_da_blob()
         .expect("finalize DA")
         .expect("DA blob");
     let _: OLDaPayloadV1 = decode_buf_exact(&blob).expect("DA blob decodes");
-    blob
+    let ol_logs = logs
+        .into_iter()
+        .map(|l| CheckpointOLLog::new(l.account_serial(), l.payload().to_vec()))
+        .collect();
+    (blob, ol_logs)
 }
 
 /// Seeds the recipient and snark accounts, returning the snark account serial.
@@ -336,11 +334,10 @@ fn run_terminal(
     cb
 }
 
-/// Runs the non-terminal blocks of a snark-update epoch: a GAM delivering an
-/// inbox message followed by a snark update consuming it.
-///
-/// Returns the header of the last block, for the terminal to build on.
-fn run_snark_update_blocks(
+/// Runs the non-terminal blocks of a multi-update snark epoch: two GAMs
+/// deliver two distinct inbox messages, then two snark updates each consume
+/// one (in order). Returns the header of the last block.
+fn run_snark_multi_update_blocks(
     state: &mut MemoryStateBaseLayer,
     blocks: &mut Vec<OLBlock>,
     genesis_header: &OLBlockHeader,
@@ -348,48 +345,72 @@ fn run_snark_update_blocks(
     use strata_ol_chain_types_new::{OLTransaction, OLTransactionData, TxProofs};
 
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-    let inbox_msg = snark_inbox_msg();
+    let msg_a = snark_inbox_msg_with_data(b"multi-msg-a");
+    let msg_b = snark_inbox_msg_with_data(b"multi-msg-b");
 
-    let mut prev = run_block(state, blocks, genesis_header, BlockComponents::new_empty());
-
-    let gam_tx = OLTransaction::new(
-        OLTransactionData::from_gam_bytes(snark_id, inbox_msg.payload().data().to_vec())
+    // Two GAMs in successive blocks deliver two distinct inbox messages.
+    let gam_a = OLTransaction::new(
+        OLTransactionData::from_gam_bytes(snark_id, msg_a.payload().data().to_vec())
             .expect("gam payload"),
         TxProofs::new_empty(),
+    );
+    let gam_b = OLTransaction::new(
+        OLTransactionData::from_gam_bytes(snark_id, msg_b.payload().data().to_vec())
+            .expect("gam payload"),
+        TxProofs::new_empty(),
+    );
+    let mut prev = run_block(
+        state,
+        blocks,
+        genesis_header,
+        BlockComponents::new_txs_from_ol_transactions(vec![gam_a]),
     );
     prev = run_block(
         state,
         blocks,
         &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![gam_tx]),
+        BlockComponents::new_txs_from_ol_transactions(vec![gam_b]),
     );
 
-    prev = run_block(state, blocks, &prev, BlockComponents::new_empty());
+    // Track the MMR across both adds, then read each leaf's *final* proof so
+    // both are valid against the post-GAM-b MMR state the snark account sees.
+    let mut tracker = InboxMmrTracker::new();
+    tracker.add_message(&msg_a);
+    tracker.add_message(&msg_b);
+    let proof_a = tracker.proof_for(0);
+    let proof_b = tracker.proof_for(1);
 
-    let update_tx = build_snark_update(state, &inbox_msg);
+    // First update consumes msg_a; the snark account's seqno/next_inbox_idx
+    // advance accordingly so the second update is built against the post-state.
+    let update_a = build_snark_update_with(state, &msg_a, proof_a, make_state_root(2));
+    prev = run_block(
+        state,
+        blocks,
+        &prev,
+        BlockComponents::new_txs_from_ol_transactions(vec![update_a]),
+    );
+
+    let update_b = build_snark_update_with(state, &msg_b, proof_b, make_state_root(3));
     run_block(
         state,
         blocks,
         &prev,
-        BlockComponents::new_txs_from_ol_transactions(vec![update_tx]),
+        BlockComponents::new_txs_from_ol_transactions(vec![update_b]),
     )
 }
 
-/// Builds a snark account update tx consuming the single inbox message from
-/// `state`'s live snark account.
-fn build_snark_update(
+/// Helper to build a snark update tx with caller-supplied inbox proof and post-state root.
+fn build_snark_update_with(
     state: &MemoryStateBaseLayer,
     inbox_msg: &MessageEntry,
+    proof: RawMerkleProof,
+    new_state_root: Buf32,
 ) -> strata_ol_chain_types_new::OLTransaction {
     let snark_id = make_account_id(TEST_SNARK_ACCOUNT_ID);
-
-    let mut inbox_tracker = InboxMmrTracker::new();
-    let proof = inbox_tracker.add_message(inbox_msg);
-
     let (_, snark_state) = get_snark_state_expect(state, snark_id);
     SnarkUpdateBuilder::from_snark_state(snark_state.clone())
         .with_processed_msgs(vec![inbox_msg.clone()])
         .with_inbox_proofs(vec![proof])
         .with_transfer(make_account_id(TEST_RECIPIENT_ID), 1_000_000)
-        .build(snark_id, make_state_root(2), vec![0u8; 32])
+        .build(snark_id, new_state_root, vec![0u8; 32])
 }

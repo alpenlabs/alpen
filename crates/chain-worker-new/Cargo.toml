@@ -13,6 +13,7 @@ strata-asm-common.workspace = true
 strata-asm-proto-checkpoint-types.workspace = true
 strata-bridge-params.workspace = true
 strata-checkpoint-types.workspace = true
+strata-codec.workspace = true
 strata-db-types.workspace = true
 strata-identifiers.workspace = true
 strata-ledger-types.workspace = true
@@ -25,6 +26,7 @@ strata-ol-stf.workspace = true
 strata-params.workspace = true
 strata-primitives.workspace = true
 strata-service.workspace = true
+strata-snark-acct-types.workspace = true
 strata-status.workspace = true
 strata-storage.workspace = true
 
@@ -36,7 +38,6 @@ tokio.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-strata-codec.workspace = true
 strata-db-store-sled.workspace = true
 strata-ol-state-types = { workspace = true, features = ["test-utils"] }
 strata-ol-stf = { workspace = true, features = ["test-utils"] }
