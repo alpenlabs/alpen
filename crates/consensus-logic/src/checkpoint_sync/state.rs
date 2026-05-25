@@ -30,13 +30,13 @@ pub(crate) struct InnerState {
 }
 
 impl InnerState {
-    pub(crate) fn new(last_finalized_epoch: Option<EpochCommitment>) -> Self {
+    pub(crate) fn new(last_finalized_and_applied: Option<EpochCommitment>) -> Self {
         Self {
-            last_finalized_and_applied: last_finalized_epoch,
+            last_finalized_and_applied,
         }
     }
 
-    pub(crate) fn last_finalized_epoch(&self) -> Option<EpochCommitment> {
+    pub(crate) fn last_finalized_and_applied(&self) -> Option<EpochCommitment> {
         self.last_finalized_and_applied
     }
 }
@@ -47,9 +47,8 @@ impl<C: CheckpointSyncCtx> CheckpointSyncState<C> {
     }
 
     /// Returns the last epoch finalized and applied so far.
-    #[cfg(test)]
-    pub(crate) fn last_finalized_epoch(&self) -> Option<EpochCommitment> {
-        self.inner.last_finalized_epoch()
+    pub(crate) fn last_finalized_and_applied(&self) -> Option<EpochCommitment> {
+        self.inner.last_finalized_and_applied()
     }
 
     /// Handles a new CSM client state: applies any newly finalized epochs and
@@ -136,6 +135,31 @@ pub(crate) async fn apply_checkpoint(
     ctx.publish_ol_sync_status(status);
 
     info!(%epoch, "checkpoint applied and finalized");
+    Ok(())
+}
+
+/// Re-runs the safe-tip + finalize + publish-status tail of [`apply_checkpoint`]
+/// for an epoch whose state is already persisted.
+///
+/// Used at startup to recover from a crash that left the summary written but
+/// finalization unfinished: idempotent calls, no re-application.
+pub(crate) async fn refinalize_applied_epoch(
+    ctx: &impl CheckpointSyncCtx,
+    epoch: EpochCommitment,
+) -> CheckpointSyncResult<()> {
+    let blk = epoch.to_block_commitment();
+    debug!(%epoch, "re-updating safe tip on already-applied epoch");
+    ctx.update_safe_tip(blk)
+        .await
+        .map_err(CheckpointSyncError::ChainWorker)?;
+
+    debug!(%epoch, "re-finalizing already-applied epoch");
+    ctx.finalize_epoch(epoch)
+        .await
+        .map_err(CheckpointSyncError::ChainWorker)?;
+
+    let status = build_ol_sync_status(ctx, epoch).await?;
+    ctx.publish_ol_sync_status(status);
     Ok(())
 }
 

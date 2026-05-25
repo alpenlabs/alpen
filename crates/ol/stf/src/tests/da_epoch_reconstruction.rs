@@ -28,7 +28,8 @@ use crate::{
     test_utils::{
         InboxMmrTracker, SnarkUpdateBuilder, TEST_RECIPIENT_ID, TEST_SNARK_ACCOUNT_ID,
         execute_block, get_snark_state_expect, insert_empty_account, make_account_id,
-        make_empty_manifest, make_genesis_state, make_state_root, snark_inbox_msg, to_ol_block,
+        make_deposit_manifest_for_account, make_empty_manifest, make_genesis_state, make_state_root,
+        snark_inbox_msg, to_ol_block,
     },
 };
 
@@ -57,7 +58,13 @@ fn test_apply_da_epoch_deposit_manifest_only() {
         &mut state,
         &mut blocks,
         &prev,
-        deposit_manifest(TERMINAL_L1_HEIGHT, snark_serial),
+        make_deposit_manifest_for_account(
+            TERMINAL_L1_HEIGHT,
+            1,
+            snark_serial,
+            SubjectId::from([42u8; 32]),
+            BitcoinAmount::from_sat(150_000_000),
+        ),
     );
 
     assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);
@@ -95,7 +102,13 @@ fn test_apply_da_epoch_snark_update_and_deposit() {
         &mut state,
         &mut blocks,
         &prev,
-        deposit_manifest(TERMINAL_L1_HEIGHT, snark_serial),
+        make_deposit_manifest_for_account(
+            TERMINAL_L1_HEIGHT,
+            1,
+            snark_serial,
+            SubjectId::from([42u8; 32]),
+            BitcoinAmount::from_sat(150_000_000),
+        ),
     );
 
     assert_reconstruction_matches(&state, &pre_epoch_state, &genesis, &terminal, &blocks);

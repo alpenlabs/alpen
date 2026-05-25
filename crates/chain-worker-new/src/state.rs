@@ -373,7 +373,11 @@ impl ChainWorkerServiceState {
 
     /// Reconstructs an epoch's OL state from its checkpoint and persists it. Used by checkpoint
     /// sync.
-    #[instrument(skip_all, fields(epoch = epoch.epoch()), err)]
+    #[instrument(
+        skip_all,
+        fields(epoch = epoch.epoch(), slot = epoch.last_slot(), blkid = %epoch.last_blkid()),
+        err
+    )]
     pub(crate) fn apply_checkpoint(&mut self, epoch: EpochCommitment) -> WorkerResult<()> {
         let artifacts = apply_checkpoint_epoch(&self.ctx, epoch)?;
 
@@ -401,13 +405,20 @@ pub(crate) fn get_prev_terminal(
             "received prev terminal request for unexpected epoch 0".to_string(),
         ));
     }
-    let target_epoch = cur_epoch.saturating_sub(1);
+    let target_epoch = cur_epoch - 1;
     let prev_summaries = ctx.fetch_epoch_summaries(target_epoch)?;
     prev_summaries
         .first()
         .map(|s| *s.terminal())
         .ok_or(WorkerError::MissingSummaryForEpoch(target_epoch))
 }
+
+/// Safety cap on the L1 block range an epoch's manifests can span.
+///
+/// Defends against an outsized range from a malformed payload allocating an
+/// unbounded `Vec<AsmManifest>`. Tuned generously: a healthy epoch spans at
+/// most a few hundred L1 blocks.
+const MAX_EPOCH_L1_RANGE: u64 = 100_000;
 
 /// Reconstructs an epoch's OL state from its checkpoint, persisting nothing.
 ///
@@ -441,7 +452,14 @@ pub(crate) fn apply_checkpoint_epoch(
 
     let tip = payload.new_tip();
     let from_height = base_state.last_l1_height() + 1;
-    let manifests = ctx.fetch_l1_manifests(from_height, tip.l1_height())?;
+    let to_height = tip.l1_height();
+    let range_len = to_height.saturating_sub(from_height).saturating_add(1) as u64;
+    if range_len > MAX_EPOCH_L1_RANGE {
+        return Err(WorkerError::Unexpected(format!(
+            "epoch L1 manifest range too large at {epoch}: {range_len} blocks (max {MAX_EPOCH_L1_RANGE})"
+        )));
+    }
+    let manifests = ctx.fetch_l1_manifests(from_height, to_height)?;
     let manifest_cont = OLL1ManifestContainer::new(manifests)
         .map_err(|e| WorkerError::Unexpected(format!("build manifest container: {e}")))?;
 
@@ -492,7 +510,7 @@ pub(crate) fn apply_checkpoint_epoch(
     // Sanity check: indexer state root and final state root are same.
     if final_state_root != indexer_state_root {
         return Err(WorkerError::Unexpected(format!(
-            "state roots from applying da and write batch should be same({epoch})"
+            "state root divergence at {epoch}: indexer={indexer_state_root} batch={final_state_root}"
         )));
     }
     let new_state = new_state.into_inner();
@@ -537,10 +555,11 @@ fn collect_pre_seqnos<S: IStateAccessor>(
                 .get_account_state(id)
                 .map_err(|e| WorkerError::Unexpected(format!("read pre-state account {id}: {e}")))?
             {
-                Some(state) => state
-                    .as_snark_account()
-                    .map(|s| s.seqno())
-                    .unwrap_or_else(|_| Seqno::zero()),
+                Some(state) => state.as_snark_account().map(|s| s.seqno()).map_err(|e| {
+                    WorkerError::Unexpected(format!(
+                        "received log for non-snark account({id}): {e}"
+                    ))
+                })?,
                 None => Seqno::zero(),
             },
             None => Seqno::zero(),

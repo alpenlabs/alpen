@@ -398,7 +398,7 @@ async fn handle_skips_when_finalized_unchanged() {
     state.handle_new_client_state().await.unwrap();
 
     // No-op: inner state unchanged, no recorder activity.
-    assert_eq!(state.last_finalized_epoch(), Some(epoch1));
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
     assert!(ctx.applied_epochs.lock().unwrap().is_empty());
     assert!(ctx.safe_tips.lock().unwrap().is_empty());
     assert!(ctx.finalized_epochs.lock().unwrap().is_empty());
@@ -430,7 +430,7 @@ async fn handle_errors_on_chain_hole_leaves_state_unadvanced() {
     let err = state.handle_new_client_state().await.unwrap_err();
     assert!(matches!(err, CheckpointSyncError::MissingPredecessor(2)));
 
-    assert_eq!(state.last_finalized_epoch(), Some(epoch1));
+    assert_eq!(state.last_finalized_and_applied(), Some(epoch1));
     assert!(ctx.applied_epochs.lock().unwrap().is_empty());
     assert!(ctx.safe_tips.lock().unwrap().is_empty());
     assert!(ctx.finalized_epochs.lock().unwrap().is_empty());

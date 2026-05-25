@@ -137,6 +137,13 @@ fn get_config(args: Args) -> Result<Config, InitError> {
 }
 
 fn validate_config(config: Config) -> Result<Config, InitError> {
+    if config.client.sync_endpoint.is_some() {
+        warn!(
+            "client.sync_endpoint is set but ignored: non-sequencer nodes sync from L1 checkpoints, \
+             not from a peer RPC"
+        );
+    }
+
     if config.client.is_sequencer
         && config
             .client

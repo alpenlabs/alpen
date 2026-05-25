@@ -396,8 +396,11 @@ pub fn verify_epoch_with_diff<S: IStateAccessorMut, D: DaScheme<S>>(
 
 /// Reconstructs a full-epoch transition from a DA diff.
 ///
-/// Like [`verify_epoch_with_diff`] but without the post-state root check. Use this when post root
-/// check is not needed i.e. the diff is trusted.
+/// Like [`verify_epoch_with_diff`] but without the post-state root check.
+///
+/// Use this only when the diff has already been verified to bind the post-state root via an
+/// upstream proof — e.g. the CSM-verified `CheckpointPayload` path that drives checkpoint sync.
+/// Do not use with peer-supplied or RPC-supplied diffs.
 pub fn apply_da_epoch<S: IStateAccessorMut, D: DaScheme<S>>(
     state: &mut S,
     epoch_info: &EpochInfo,

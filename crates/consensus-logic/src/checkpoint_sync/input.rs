@@ -3,7 +3,7 @@
 use strata_csm_types::{CheckpointState, ClientState};
 use strata_service::{AsyncServiceInput, ServiceInput};
 use tokio::sync::watch;
-use tracing::{debug, trace};
+use tracing::{debug, warn};
 
 /// Input source that wakes the service on each new CSM client state update.
 #[derive(Debug)]
@@ -38,7 +38,7 @@ impl AsyncServiceInput for CheckpointSyncInput {
             .map(|_| CheckpointSyncEvent::NewCsmStateUpdate)
             .inspect(|v| debug!(client_state = ?v, "received new client state update"))
             .unwrap_or_else(|e| {
-                trace!("ClientState update channel closed: {e}");
+                warn!("ClientState update channel closed: {e}");
                 CheckpointSyncEvent::Abort
             });
         Ok(Some(msg))
