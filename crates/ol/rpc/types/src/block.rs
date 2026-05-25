@@ -170,10 +170,10 @@ impl From<&OLBlock> for RpcOLBlockSummary {
     }
 }
 
-/// Detailed view of an OL block returned by `getBlockBySlot`.
+/// Decoded summary of an OL block returned by `getBlockBySlot`.
 ///
-/// Composes [`RpcBlockHeaderEntry`] with body and credential fields decoded
-/// from the SSZ block.
+/// Composes [`RpcBlockHeaderEntry`] with selected credential and body fields
+/// decoded from the SSZ block.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "jsonschema", derive(schemars::JsonSchema))]
 pub struct RpcOLBlockDetail {

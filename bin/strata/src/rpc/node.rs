@@ -213,20 +213,18 @@ impl<P: OLRpcProvider> OLRpcServer<P> {
                     .ok_or_else(|| internal_error("OL sync status not available"))?
                     .tip
             }
-            OLBlockOrTag::Confirmed => {
-                self.provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?
-                    .confirmed_epoch
-                    .to_block_commitment()
-            }
-            OLBlockOrTag::Finalized => {
-                self.provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?
-                    .finalized_epoch
-                    .to_block_commitment()
-            }
+            OLBlockOrTag::Confirmed => self
+                .provider
+                .get_ol_sync_status()
+                .ok_or_else(|| internal_error("OL sync status not available"))?
+                .confirmed_epoch
+                .to_block_commitment(),
+            OLBlockOrTag::Finalized => self
+                .provider
+                .get_ol_sync_status()
+                .ok_or_else(|| internal_error("OL sync status not available"))?
+                .finalized_epoch
+                .to_block_commitment(),
             OLBlockOrTag::OLBlockId(block_id) => {
                 let block = self.get_block(block_id).await?;
                 OLBlockCommitment::new(block.header().slot(), block_id)
@@ -950,49 +948,7 @@ impl<P: OLRpcProvider> OLClientRpcServer for OLRpcServer<P> {
         account_id: AccountId,
         block_or_tag: OLBlockOrTag,
     ) -> RpcResult<Option<RpcSnarkAccountState>> {
-        // Resolve block_or_tag to a block commitment
-        let block_commitment = match block_or_tag {
-            OLBlockOrTag::Latest => {
-                let chain_sync_status = self
-                    .provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?;
-                chain_sync_status.tip
-            }
-            OLBlockOrTag::Confirmed => {
-                let chain_sync_status = self
-                    .provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?;
-                // TODO: STR-2420 Address this incorrect use of prev_epoch as confirmed epoch
-                chain_sync_status.prev_epoch.to_block_commitment()
-            }
-            OLBlockOrTag::Finalized => {
-                let chain_sync_status = self
-                    .provider
-                    .get_ol_sync_status()
-                    .ok_or_else(|| internal_error("OL sync status not available"))?;
-                chain_sync_status.finalized_epoch.to_block_commitment()
-            }
-            OLBlockOrTag::OLBlockId(block_id) => {
-                let block = self
-                    .provider
-                    .get_block_data(block_id)
-                    .await
-                    .map_err(|e| {
-                        error!(?e, %block_id, "Failed to get block data");
-                        db_error(e)
-                    })?
-                    .ok_or_else(|| not_found_error(format!("Block {block_id} not found")))?;
-                OLBlockCommitment::new(block.header().slot(), block_id)
-            }
-            OLBlockOrTag::Slot(slot) => self
-                .provider
-                .get_canonical_block_at(slot)
-                .await
-                .map_err(db_error)?
-                .ok_or_else(|| not_found_error(format!("No block found at slot {slot}")))?,
-        };
+        let block_commitment = self.resolve_block_or_tag(block_or_tag).await?;
 
         // Get OL state at the resolved block
         let ol_state = self
@@ -1174,9 +1130,6 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
         start: u64,
         count: u64,
     ) -> RpcResult<RpcAccountListPage> {
-        if count == 0 {
-            return Ok(RpcAccountListPage::new(Vec::new(), 0, None));
-        }
         if count as usize > self.max_headers_range {
             return Err(invalid_params_error(format!(
                 "count {} exceeds max_headers_range {}",
@@ -1203,7 +1156,7 @@ impl<P: OLRpcProvider> OLFullNodeRpcServer for OLRpcServer<P> {
             .map(RpcAccountEntry::from)
             .collect();
         let consumed = start.saturating_add(entries.len() as u64);
-        let next_offset = if consumed < total && (entries.len() as u64) == count {
+        let next_offset = if count > 0 && consumed < total && (entries.len() as u64) == count {
             Some(consumed)
         } else {
             None

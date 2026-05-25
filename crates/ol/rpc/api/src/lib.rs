@@ -104,7 +104,7 @@ pub trait OLFullNodeRpc {
         end_height: u64,
     ) -> RpcResult<Vec<RpcBlockHeaderEntry>>;
 
-    /// Get the canonical OL block at the given slot, fully decoded.
+    /// Get a decoded summary of the canonical OL block at the given slot.
     ///
     /// Returns `None` when no block exists at the slot.
     #[method(name = "getBlockBySlot")]

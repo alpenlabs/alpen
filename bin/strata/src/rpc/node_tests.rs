@@ -401,7 +401,8 @@ fn make_block_with_gam_tx(
         Buf32::zero(),
     );
     let signed = SignedOLBlockHeader::new(header, Buf64::zero());
-    let tx_data_inner = OLTransactionData::new_gam(tx_target, tx_data);
+    let tx_data_inner = OLTransactionData::from_gam_bytes(tx_target, tx_data)
+        .expect("test payload should fit in GAM transaction");
     let tx = OLTransaction::new(tx_data_inner, TxProofs::new_empty());
     let segment = OLTxSegment::new(vec![tx]).expect("segment with one tx");
     let body = OLBlockBody::new_common(segment);
@@ -2751,6 +2752,47 @@ async fn snark_account_state_by_block_id() {
     assert_eq!(state.seq_no(), 11);
 }
 
+#[tokio::test]
+async fn snark_account_state_confirmed_uses_confirmed_epoch() {
+    let account_id = test_account_id(1);
+
+    let confirmed_block = make_block(5, 1, null_blkid());
+    let confirmed_blkid = confirmed_block.header().compute_blkid();
+    let confirmed_epoch_commitment = EpochCommitment::new(1, 5, confirmed_blkid);
+    let confirmed_state = ol_state_with_snark_account(account_id, 5, 7, DEFAULT_NEXT_INBOX_MSG_IDX);
+
+    let prev_block = make_block(10, 2, confirmed_blkid);
+    let prev_blkid = prev_block.header().compute_blkid();
+    let prev_epoch_commitment = EpochCommitment::new(2, 10, prev_blkid);
+    let prev_state = ol_state_with_snark_account(account_id, 10, 11, DEFAULT_NEXT_INBOX_MSG_IDX);
+
+    let tip = OLBlockCommitment::new(10, prev_blkid);
+    let provider = MockProvider::new()
+        .with_sync_status(make_sync_status(
+            tip,
+            2,
+            false,
+            prev_epoch_commitment,
+            confirmed_epoch_commitment,
+            EpochCommitment::null(),
+        ))
+        .with_block_and_state(&confirmed_block, confirmed_state)
+        .with_block_and_state(&prev_block, prev_state);
+    let rpc = make_rpc(provider);
+
+    let state = rpc
+        .get_snark_account_state(account_id, OLBlockOrTag::Confirmed)
+        .await
+        .expect("snark state")
+        .expect("confirmed snark account");
+
+    assert_eq!(
+        state.seq_no(),
+        7,
+        "confirmed tag must resolve to confirmed_epoch, not prev_epoch"
+    );
+}
+
 // ── get_raw_blocks_range ──
 
 #[tokio::test]
@@ -3085,7 +3127,11 @@ async fn list_accounts_count_exceeds_max_returns_invalid_params() {
     let rpc = make_rpc(provider);
 
     let result = rpc
-        .list_accounts(OLBlockOrTag::Slot(4), 0, (TEST_MAX_HEADERS_RANGE as u64) + 1)
+        .list_accounts(
+            OLBlockOrTag::Slot(4),
+            0,
+            (TEST_MAX_HEADERS_RANGE as u64) + 1,
+        )
         .await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().code(), INVALID_PARAMS_CODE);
@@ -3093,6 +3139,7 @@ async fn list_accounts_count_exceeds_max_returns_invalid_params() {
 
 #[tokio::test]
 async fn list_accounts_zero_count_returns_empty_page() {
+    let acct = test_account_id(1);
     let block = make_block(4, 0, null_blkid());
     let blkid = block.header().compute_blkid();
     let tip = OLBlockCommitment::new(4, blkid);
@@ -3105,7 +3152,7 @@ async fn list_accounts_zero_count_returns_empty_page() {
             EpochCommitment::null(),
             EpochCommitment::null(),
         ))
-        .with_block_and_state(&block, genesis_ol_state());
+        .with_block_and_state(&block, ol_state_with_n_empty_accounts(&[acct], 4));
     let rpc = make_rpc(provider);
 
     let page = rpc
@@ -3113,7 +3160,24 @@ async fn list_accounts_zero_count_returns_empty_page() {
         .await
         .expect("list accounts");
     assert!(page.entries().is_empty());
+    assert_eq!(page.total(), 1);
     assert!(page.next_offset().is_none());
+}
+
+#[tokio::test]
+async fn list_accounts_zero_count_still_resolves_block() {
+    let provider = MockProvider::new().with_sync_status(make_sync_status(
+        OLBlockCommitment::new(0, null_blkid()),
+        0,
+        false,
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+        EpochCommitment::null(),
+    ));
+    let rpc = make_rpc(provider);
+
+    let result = rpc.list_accounts(OLBlockOrTag::Slot(4), 0, 0).await;
+    assert!(result.is_err());
 }
 
 #[tokio::test]

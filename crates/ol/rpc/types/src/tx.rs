@@ -209,9 +209,7 @@ impl From<&OLTransaction> for RpcOLTxDetail {
                 RpcOLTxKind::SnarkAccountUpdate(RpcSauTxSummary::from(sau_payload))
             }
         };
-        let target = tx
-            .target()
-            .map(|a| HexBytes32::from(<[u8; 32]>::from(a)));
+        let target = tx.target().map(|a| HexBytes32::from(<[u8; 32]>::from(a)));
         let constraints = RpcTxConstraints::from(data.constraints().clone());
         let effects = RpcTxEffectsView::from(data.effects());
         Self {
@@ -257,7 +255,10 @@ impl RpcTxEffectsView {
 impl From<&TxEffects> for RpcTxEffectsView {
     fn from(effects: &TxEffects) -> Self {
         Self {
-            transfers: effects.transfers_iter().map(RpcSentTransfer::from).collect(),
+            transfers: effects
+                .transfers_iter()
+                .map(RpcSentTransfer::from)
+                .collect(),
             messages: effects
                 .messages_iter()
                 .map(RpcSentMessageEffect::from)
