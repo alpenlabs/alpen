@@ -519,9 +519,12 @@ pub trait ProverTaskDatabase: Send + Sync + 'static {
 /// (no shared enum, no opaque-byte scheme). Future EE chunk / EE acct
 /// proofs will be `EeChunkProofDatabase`, `EeAcctProofDatabase`, etc.
 pub trait CheckpointProofDatabase: Send + Sync + 'static {
-    /// Inserts a checkpoint proof for the given epoch.
+    /// Upserts a checkpoint proof for the given epoch.
     ///
-    /// Returns `Ok(())` on success, or an error on failure.
+    /// Overwrites any existing proof for the same epoch. Re-proves attest to
+    /// the same statement, so overwriting is safe and keeps the receipt hook
+    /// idempotent — refusing the write would surface as a spurious storage
+    /// error on the prover task.
     fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()>;
 
     /// Retrieves the checkpoint proof for the given epoch.

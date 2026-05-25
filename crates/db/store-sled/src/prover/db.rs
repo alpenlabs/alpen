@@ -19,11 +19,14 @@ define_sled_database!(
 
 impl CheckpointProofDatabase for ProofDBSled {
     fn put_proof(&self, epoch: EpochCommitment, proof: ProofReceiptWithMetadata) -> DbResult<()> {
-        if self.checkpoint_proof_tree.get(&epoch)?.is_some() {
-            return Err(DbError::EntryAlreadyExists);
-        }
+        // Upsert: a re-prove for the same epoch attests to the same statement,
+        // so overwriting is safe and lets the receipt hook be idempotent.
+        // Refusing the write would only turn "we already have a valid proof"
+        // into a confusing PermanentFailure on the prover task. Matches the EE
+        // side's `put_acct_proof`.
+        let old = self.checkpoint_proof_tree.get(&epoch)?;
         self.checkpoint_proof_tree
-            .compare_and_swap(epoch, None, Some(proof))?;
+            .compare_and_swap(epoch, old, Some(proof))?;
         Ok(())
     }
 

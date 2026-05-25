@@ -19,13 +19,18 @@ pub fn test_insert_new_proof(db: &impl CheckpointProofDatabase) {
     assert_eq!(stored_proof, Some(proof));
 }
 
-pub fn test_insert_duplicate_proof(db: &impl CheckpointProofDatabase) {
-    let (epoch, proof) = generate_proof();
+pub fn test_put_proof_overwrites(db: &impl CheckpointProofDatabase) {
+    let (epoch, first) = generate_proof();
+    db.put_proof(epoch, first).unwrap();
 
-    db.put_proof(epoch, proof.clone()).unwrap();
+    // Second put with a distinct receipt for the same epoch upserts.
+    // Re-proves attest to the same statement, so overwriting is safe and
+    // keeps the receipt hook idempotent.
+    let second = distinct_proof();
+    db.put_proof(epoch, second.clone()).unwrap();
 
-    let result = db.put_proof(epoch, proof);
-    assert!(result.is_err(), "Duplicate proof insertion should fail");
+    let stored = db.get_proof(epoch).unwrap();
+    assert_eq!(stored, Some(second), "second put should replace the first");
 }
 
 pub fn test_get_nonexistent_proof(db: &impl CheckpointProofDatabase) {
@@ -74,6 +79,19 @@ fn generate_proof() -> (EpochCommitment, ProofReceiptWithMetadata) {
     (epoch, proof_receipt)
 }
 
+/// Distinct receipt with a different `ProgramId` so equality comparisons
+/// can prove the upsert actually replaced the row rather than being a no-op.
+fn distinct_proof() -> ProofReceiptWithMetadata {
+    let receipt = ProofReceipt::new(Proof::default(), PublicValues::default());
+    let metadata = ProofMetadata::new(
+        ZkVm::Native,
+        ProgramId([1u8; 32]),
+        "0.2".to_string(),
+        ProofType::Groth16,
+    );
+    ProofReceiptWithMetadata::new(receipt, metadata)
+}
+
 #[macro_export]
 macro_rules! proof_db_tests {
     ($setup_expr:expr) => {
@@ -84,9 +102,9 @@ macro_rules! proof_db_tests {
         }
 
         #[test]
-        fn test_insert_duplicate_proof() {
+        fn test_put_proof_overwrites() {
             let db = $setup_expr;
-            $crate::proof_tests::test_insert_duplicate_proof(&db);
+            $crate::proof_tests::test_put_proof_overwrites(&db);
         }
 
         #[test]
