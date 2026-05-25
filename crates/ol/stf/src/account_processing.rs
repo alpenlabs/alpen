@@ -148,12 +148,22 @@ fn handle_bridge_gateway_message<S: IStateAccessorMut>(
     }
 
     // 4. If it is, then we can emit a OL log with the amount and destination.
+    let selected_operator = withdrawal_data.selected_operator();
+    let dest = withdrawal_data.into_dest_desc();
+    let dest_desc_len = dest.len();
     let log_data = SimpleWithdrawalIntentLogData {
         amt: withdrawal_amt.into(),
-        selected_operator: withdrawal_data.selected_operator(),
-        dest: withdrawal_data.into_dest_desc(),
+        selected_operator,
+        dest,
     };
     context.emit_typed_log(BRIDGE_GATEWAY_ACCT_SERIAL, &log_data)?;
+    info!(
+        %sender,
+        amount_sat = amt_raw,
+        selected_operator,
+        dest_desc_len,
+        "emitted bridge withdrawal intent log",
+    );
     coin.safely_consume_unchecked();
 
     Ok(())
