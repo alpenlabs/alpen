@@ -50,12 +50,16 @@ mod sequencer_services {
 
     pub(super) fn start_if_enabled(
         nodectx: &NodeContext,
-        mempool_handle: Arc<MempoolHandle>,
+        mempool_handle: Option<Arc<MempoolHandle>>,
         envelope_pubkey: Option<[u8; 32]>,
     ) -> Result<Option<SequencerServiceHandles>> {
         if !nodectx.config().client.is_sequencer {
             return Ok(None);
         }
+
+        // Sequencer mode always starts the mempool upstream; if not, that's a
+        // wiring regression in `start_strata_services`.
+        let mempool_handle = mempool_handle.expect("sequencer node must have a mempool handle");
 
         let broadcast_handle = Arc::new(start_broadcaster(nodectx)?);
         let (envelope_handle, watcher_handle) =
@@ -264,8 +268,16 @@ pub(crate) fn start_strata_services(
         nodectx.status_channel().as_ref(),
     )?;
 
-    // Start mempool service
-    let mempool_handle = Arc::new(start_mempool(&nodectx)?);
+    // Mempool and the OL checkpoint builder are sequencer-only: a checkpoint-sync
+    // fullnode never has the OL block bodies they walk through, so launching them
+    // would kill the node on the first epoch summary the chain worker writes.
+    let is_sequencer = nodectx.config().client.is_sequencer;
+
+    let mempool_handle = if is_sequencer {
+        Some(Arc::new(start_mempool(&nodectx)?))
+    } else {
+        None
+    };
 
     // Start Chain worker
     let chain_worker_handle = Arc::new(start_chain_worker_service_from_ctx(&nodectx)?);
@@ -275,29 +287,34 @@ pub(crate) fn start_strata_services(
     // the proof DB and signals ProofNotify to wake the checkpoint worker.
     // The worker waits indefinitely for proofs. Without a prover, empty
     // proofs are used immediately.
-    let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
-    let checkpoint_builder = OLCheckpointBuilder::new()
-        .with_node_context(&nodectx)
-        .with_epoch_summary_receiver(epoch_summary_rx);
+    let (checkpoint_handle, proof_notify) = if is_sequencer {
+        let epoch_summary_rx = chain_worker_handle.subscribe_epoch_summaries();
+        let checkpoint_builder = OLCheckpointBuilder::new()
+            .with_node_context(&nodectx)
+            .with_epoch_summary_receiver(epoch_summary_rx);
 
-    #[cfg(feature = "prover")]
-    let (checkpoint_builder, proof_notify): (
-        OLCheckpointBuilder,
-        Option<Arc<strata_ol_checkpoint::ProofNotify>>,
-    ) = if nodectx.config().prover.is_some() {
-        let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
-        let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
-            notify: notify.clone(),
-        });
-        (builder, Some(notify))
+        #[cfg(feature = "prover")]
+        let (checkpoint_builder, proof_notify): (
+            OLCheckpointBuilder,
+            Option<Arc<strata_ol_checkpoint::ProofNotify>>,
+        ) = if nodectx.config().prover.is_some() {
+            let notify = Arc::new(strata_ol_checkpoint::ProofNotify::new());
+            let builder = checkpoint_builder.with_prover(strata_ol_checkpoint::ProverConfig {
+                notify: notify.clone(),
+            });
+            (builder, Some(notify))
+        } else {
+            (checkpoint_builder, None)
+        };
+
+        #[cfg(not(feature = "prover"))]
+        let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
+
+        let handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
+        (Some(handle), proof_notify)
     } else {
-        (checkpoint_builder, None)
+        (None, None)
     };
-
-    #[cfg(not(feature = "prover"))]
-    let proof_notify: Option<Arc<strata_ol_checkpoint::ProofNotify>> = None;
-
-    let checkpoint_handle = Arc::new(checkpoint_builder.launch(nodectx.executor())?);
 
     let sequencer_handles =
         sequencer_services::start_if_enabled(&nodectx, mempool_handle.clone(), envelope_pubkey)?;

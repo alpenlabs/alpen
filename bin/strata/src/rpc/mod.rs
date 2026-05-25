@@ -57,7 +57,9 @@ struct RpcDeps {
     max_headers_range: usize,
     storage: Arc<NodeStorage>,
     status_channel: Arc<StatusChannel>,
-    mempool_handle: Arc<MempoolHandle>,
+    /// [`None`] on checkpoint-sync nodes; `submit_transaction` returns an
+    /// unavailable error in that case.
+    mempool_handle: Option<Arc<MempoolHandle>>,
     #[cfg(feature = "sequencer")]
     seq_deps: Option<SeqRpcDeps>,
 }
@@ -170,7 +172,7 @@ pub(crate) fn start_rpc(runctx: &RunContext) -> Result<()> {
         max_headers_range: runctx.config().client.max_headers_range,
         storage: runctx.storage().clone(),
         status_channel: runctx.status_channel().clone(),
-        mempool_handle: runctx.mempool_handle().clone(),
+        mempool_handle: runctx.mempool_handle().cloned(),
         #[cfg(feature = "sequencer")]
         seq_deps,
     };
