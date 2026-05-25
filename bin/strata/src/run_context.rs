@@ -68,9 +68,13 @@ impl RunContext {
         self.common.status_channel()
     }
 
-    /// Returns the mempool handle.
-    pub(crate) fn mempool_handle(&self) -> &Arc<MempoolHandle> {
-        &self.service_handles.mempool_handle
+    /// Returns the mempool handle if this node runs the mempool.
+    ///
+    /// `Some` for sequencer nodes (and any future fullnode that admits txs);
+    /// `None` for checkpoint-sync nodes which never have the OL block bodies
+    /// the mempool needs.
+    pub(crate) fn mempool_handle(&self) -> Option<&Arc<MempoolHandle>> {
+        self.service_handles.mempool_handle.as_ref()
     }
 
     /// Returns the chain worker handle.
@@ -184,14 +188,15 @@ pub(crate) struct ServiceHandles {
     /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
 
-    /// Handle for the mempool.
-    mempool_handle: Arc<MempoolHandle>,
+    /// Handle for the mempool ([`None`] on checkpoint-sync nodes).
+    mempool_handle: Option<Arc<MempoolHandle>>,
 
     /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
 
-    /// Handle for the checkpoint worker.
-    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
+    /// Handle for the checkpoint worker ([`None`] on checkpoint-sync nodes
+    /// which don't author L1 checkpoints).
+    checkpoint_handle: Option<Arc<OLCheckpointWorkerHandle>>,
 
     /// Handle for the OL sync service (FCM or checkpoint sync).
     sync_handle: SyncServiceHandle,
@@ -206,9 +211,9 @@ impl ServiceHandles {
     pub(crate) fn builder(
         asm_handle: Arc<AsmWorkerHandle>,
         csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
-        mempool_handle: Arc<MempoolHandle>,
+        mempool_handle: Option<Arc<MempoolHandle>>,
         chain_worker_handle: Arc<ChainWorkerHandle>,
-        checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
+        checkpoint_handle: Option<Arc<OLCheckpointWorkerHandle>>,
         sync_handle: SyncServiceHandle,
     ) -> ServiceHandlesBuilder {
         ServiceHandlesBuilder {
@@ -232,14 +237,14 @@ pub(crate) struct ServiceHandlesBuilder {
     /// Handle for the CSM worker.
     csm_monitor: Arc<ServiceMonitor<CsmWorkerStatus>>,
 
-    /// Handle for the mempool.
-    mempool_handle: Arc<MempoolHandle>,
+    /// Handle for the mempool ([`None`] on checkpoint-sync nodes).
+    mempool_handle: Option<Arc<MempoolHandle>>,
 
     /// Handle for the chain worker.
     chain_worker_handle: Arc<ChainWorkerHandle>,
 
-    /// Handle for the checkpoint worker.
-    checkpoint_handle: Arc<OLCheckpointWorkerHandle>,
+    /// Handle for the checkpoint worker ([`None`] on checkpoint-sync nodes).
+    checkpoint_handle: Option<Arc<OLCheckpointWorkerHandle>>,
 
     /// Handle for the OL sync service (FCM or checkpoint sync).
     sync_handle: SyncServiceHandle,
