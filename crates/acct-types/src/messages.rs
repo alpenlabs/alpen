@@ -159,7 +159,11 @@ impl Codec for MsgPayload {
         let value = BitcoinAmount::decode(dec)?;
 
         let len_vi = Varint::decode(dec)?;
-        let mut buf = vec![0; len_vi.inner() as usize];
+        let len = len_vi.inner() as usize;
+        if len > MAX_MSG_PAYLOAD_DATA_BYTES as usize {
+            return Err(CodecError::OverflowContainer);
+        }
+        let mut buf = vec![0; len];
         dec.read_buf(&mut buf)?;
         let data = VariableList::new(buf).map_err(|_| CodecError::OverflowContainer)?;
 
