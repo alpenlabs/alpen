@@ -315,3 +315,151 @@ where
         client.get_transaction_confirmation(&txid).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::slice::from_ref;
+
+    use bitcoin::{
+        consensus::encode::deserialize_hex, hashes::Hash, Amount, BlockHash, Network, Txid,
+    };
+    use bitcoind_async_client::{
+        traits::{Broadcaster, Reader, Signer, Wallet},
+        types::{
+            CreateRawTransactionArguments, CreateRawTransactionOutput, ListUnspentQueryOptions,
+            WalletCreateFundedPsbtOptions,
+        },
+    };
+
+    use super::*;
+    use crate::test_utils::{TestBitcoinClient, SOME_TX};
+
+    #[tokio::test]
+    async fn delegates_bitcoin_rpc_traits_through_serialized_client() {
+        let client = SerializedBitcoinClient::new(TestBitcoinClient::new(2));
+        let tx: Transaction = deserialize_hex(SOME_TX).expect("test tx should decode");
+        let txid = tx.compute_txid();
+        let block_hash = BlockHash::all_zeros();
+
+        assert_eq!(client.estimate_smart_fee(1).await.unwrap(), 3);
+        client.get_block_header(&block_hash).await.unwrap();
+        client.get_block(&block_hash).await.unwrap();
+        assert_eq!(client.get_block_height(&block_hash).await.unwrap(), 100);
+        client.get_block_header_at(100).await.unwrap();
+        client.get_block_at(100).await.unwrap();
+        assert_eq!(client.get_block_count().await.unwrap(), 100);
+        client.get_block_hash(100).await.unwrap();
+        assert_eq!(client.get_blockchain_info().await.unwrap().blocks, 100);
+        assert_eq!(client.get_current_timestamp().await.unwrap(), 1_000);
+        assert!(client.get_raw_mempool().await.unwrap().0.is_empty());
+        assert!(client.get_raw_mempool_verbose().await.unwrap().0.is_empty());
+        assert_eq!(client.get_mempool_info().await.unwrap().size, 0);
+        client
+            .get_raw_transaction_verbosity_zero(&txid)
+            .await
+            .unwrap();
+        client
+            .get_raw_transaction_verbosity_one(&txid)
+            .await
+            .unwrap();
+        client.get_tx_out(&txid, 0, true).await.unwrap();
+        assert_eq!(client.network().await.unwrap(), Network::Regtest);
+
+        assert_eq!(
+            client.send_raw_transaction(&tx).await.unwrap(),
+            Txid::from_slice(&[1; 32]).unwrap()
+        );
+        client.test_mempool_accept(&tx).await.unwrap();
+        client.submit_package(from_ref(&tx)).await.unwrap();
+
+        let address = client.get_new_address().await.unwrap();
+        assert_eq!(
+            client.get_transaction(&txid).await.unwrap().confirmations,
+            2
+        );
+        assert!(client
+            .list_transactions(Some(1))
+            .await
+            .unwrap()
+            .0
+            .is_empty());
+        assert!(client.list_wallets().await.unwrap().is_empty());
+        client
+            .create_raw_transaction(CreateRawTransactionArguments {
+                inputs: vec![],
+                outputs: vec![CreateRawTransactionOutput::Data {
+                    data: "00".to_string(),
+                }],
+            })
+            .await
+            .unwrap();
+        client
+            .wallet_create_funded_psbt(
+                &[],
+                &[CreateRawTransactionOutput::Data {
+                    data: "00".to_string(),
+                }],
+                None,
+                Some(WalletCreateFundedPsbtOptions::default()),
+                Some(false),
+            )
+            .await
+            .unwrap();
+        assert!(client.get_address_info(&address).await.unwrap().is_mine);
+        let query_options = ListUnspentQueryOptions {
+            minimum_amount: Some(Amount::from_sat(1)),
+            maximum_amount: None,
+            maximum_count: Some(1),
+        };
+        assert_eq!(
+            client
+                .list_unspent(
+                    Some(1),
+                    None,
+                    Some(from_ref(&address)),
+                    Some(true),
+                    Some(query_options),
+                )
+                .await
+                .unwrap()
+                .0
+                .len(),
+            1
+        );
+
+        assert!(
+            client
+                .sign_raw_transaction_with_wallet(&tx, None)
+                .await
+                .unwrap()
+                .complete
+        );
+        assert!(client.get_xpriv().await.unwrap().is_some());
+        assert!(
+            client
+                .import_descriptors(vec![], "testwallet".to_string())
+                .await
+                .unwrap()
+                .0[0]
+                .success
+        );
+        assert!(
+            client
+                .wallet_process_psbt("70736274ff", Some(false), None, Some(false))
+                .await
+                .unwrap()
+                .complete
+        );
+        client.psbt_bump_fee(&txid, None).await.unwrap();
+
+        let coverage = client
+            .get_transaction_confirmation(&txid)
+            .await
+            .expect("wallet lookup should succeed");
+        let TxLookupOutcome::Found(info) = coverage else {
+            panic!("expected found transaction");
+        };
+        assert_eq!(info.confirmations, 2);
+        assert_eq!(info.block_height.unwrap(), 100);
+    }
+}
