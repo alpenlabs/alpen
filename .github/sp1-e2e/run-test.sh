@@ -361,21 +361,14 @@ deploy_and_interact_contract() {
     deploy_block=$(echo "${deploy_out}" | python3 -c "import json,sys; print(int(json.load(sys.stdin)['blockNumber'],16))")
     echo "  Deployed at ${contract} (block ${deploy_block})"
 
-    echo "  Sending ${n_interactions} increment() txs..."
-    local pids=()
+    echo "  Sending ${n_interactions} increment() txs sequentially..."
     for i in $(seq 1 ${n_interactions}); do
         docker run --rm --network host --entrypoint cast \
             ghcr.io/foundry-rs/foundry:latest \
             send --private-key "${privkey}" --rpc-url "${rpc}" \
-            "${contract}" "${increment_sig}" --json >/dev/null 2>&1 &
-        pids+=($!)
+            "${contract}" "${increment_sig}" --json >/dev/null 2>&1
+        echo "    tx ${i}/${n_interactions} confirmed"
     done
-
-    local failed=0
-    for pid in "${pids[@]}"; do
-        wait "${pid}" || ((failed++))
-    done
-    echo "  Sent ${n_interactions} txs (${failed} failed)"
 
     local count_hex
     count_hex=$(docker run --rm --network host --entrypoint cast \
