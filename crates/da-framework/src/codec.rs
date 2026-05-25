@@ -10,6 +10,9 @@ pub use strata_codec::{
 // Create type alias for Result
 pub type CodecResult<T> = Result<T, CodecError>;
 
+/// Maximum collection size for encode/decode (1M entries).
+const MAX_COLLECTION_COUNT: usize = 1_000_000;
+
 // Std collections encoding/decoding helpers
 
 /// Encodes a BTreeMap where both key and value implement [`Codec`].
@@ -17,6 +20,9 @@ pub fn encode_map<K: Codec, V: Codec>(
     map: &BTreeMap<K, V>,
     enc: &mut impl Encoder,
 ) -> Result<(), CodecError> {
+    if map.len() > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     (map.len() as u32).encode(enc)?;
     for (k, v) in map {
         k.encode(enc)?;
@@ -30,6 +36,9 @@ pub fn decode_map<K: Codec + Ord, V: Codec>(
     dec: &mut impl Decoder,
 ) -> Result<BTreeMap<K, V>, CodecError> {
     let count = u32::decode(dec)? as usize;
+    if count > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     let mut map = BTreeMap::new();
     for _ in 0..count {
         let k = K::decode(dec)?;
@@ -41,6 +50,9 @@ pub fn decode_map<K: Codec + Ord, V: Codec>(
 
 /// Encodes a Vec where elements implement [`Codec`].
 pub fn encode_vec<T: Codec>(vec: &[T], enc: &mut impl Encoder) -> Result<(), CodecError> {
+    if vec.len() > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     (vec.len() as u32).encode(enc)?;
     for item in vec {
         item.encode(enc)?;
@@ -51,6 +63,9 @@ pub fn encode_vec<T: Codec>(vec: &[T], enc: &mut impl Encoder) -> Result<(), Cod
 /// Decodes a Vec where elements implement [`Codec`].
 pub fn decode_vec<T: Codec>(dec: &mut impl Decoder) -> Result<Vec<T>, CodecError> {
     let count = u32::decode(dec)? as usize;
+    if count > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     let mut vec = Vec::with_capacity(count);
     for _ in 0..count {
         vec.push(T::decode(dec)?);
@@ -71,6 +86,9 @@ where
     CK: Codec,
     CV: Codec,
 {
+    if map.len() > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     (map.len() as u32).encode(enc)?;
     for (k, v) in map {
         encode_key(k).encode(enc)?;
@@ -93,6 +111,9 @@ where
     CV: Codec,
 {
     let count = u32::decode(dec)? as usize;
+    if count > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     let mut map = BTreeMap::new();
     for _ in 0..count {
         let k = decode_key(CK::decode(dec)?);
@@ -111,6 +132,9 @@ pub fn encode_vec_with<T, CT>(
 where
     CT: Codec,
 {
+    if vec.len() > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     (vec.len() as u32).encode(enc)?;
     for item in vec {
         encode_elem(item).encode(enc)?;
@@ -127,6 +151,9 @@ where
     CT: Codec,
 {
     let count = u32::decode(dec)? as usize;
+    if count > MAX_COLLECTION_COUNT {
+        return Err(CodecError::OverflowContainer);
+    }
     let mut vec = Vec::with_capacity(count);
     for _ in 0..count {
         vec.push(decode_elem(CT::decode(dec)?));
