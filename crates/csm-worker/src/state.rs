@@ -4,6 +4,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
+use strata_params::is_l1_reorg_safe;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
 
@@ -191,13 +192,13 @@ where
     I: Iterator<Item = &'a L1Checkpoint>,
 {
     let mut latest_finalized = None;
-    let finality_depth = finality_depth.max(1);
 
     for checkpoint in observed {
-        let confirmations = current_l1_tip
-            .saturating_sub(checkpoint.l1_reference.l1_commitment.height())
-            .saturating_add(1);
-        if confirmations >= finality_depth {
+        if is_l1_reorg_safe(
+            checkpoint.l1_reference.l1_commitment.height(),
+            current_l1_tip,
+            finality_depth,
+        ) {
             latest_finalized = Some(checkpoint);
         }
     }

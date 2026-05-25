@@ -9,6 +9,7 @@ use strata_asm_logs::{CheckpointTipUpdate, constants::CHECKPOINT_TIP_UPDATE_LOG_
 use strata_asm_proto_checkpoint::{CheckpointState, CheckpointSubprotocol};
 use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
+use strata_params::is_l1_reorg_safe;
 use strata_primitives::prelude::*;
 use strata_state::asm_state::AsmState;
 use tracing::*;
@@ -206,7 +207,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         current_l1_tip: L1Height,
     ) -> Option<L1Checkpoint> {
         let prev_finalized = self.finalized_epoch;
-        let finality_depth = self.ctx.l1_reorg_safe_depth().max(1);
+        let finality_depth = self.ctx.l1_reorg_safe_depth();
         let mut latest_finalized: Option<L1Checkpoint> = None;
 
         while let Some(candidate) = self.observed_checkpoints.front() {
@@ -219,10 +220,11 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
                 continue;
             }
 
-            let confirmations = current_l1_tip
-                .saturating_sub(candidate.l1_reference.l1_commitment.height())
-                .saturating_add(1);
-            if confirmations < finality_depth {
+            if !is_l1_reorg_safe(
+                candidate.l1_reference.l1_commitment.height(),
+                current_l1_tip,
+                finality_depth,
+            ) {
                 break;
             }
 
