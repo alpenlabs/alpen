@@ -9,6 +9,7 @@ use crate::{
 
 impl UpdateProofPubParams {
     pub fn new(
+        seq_no: u64,
         cur_state: ProofState,
         new_state: ProofState,
         message_inputs: Vec<MessageEntry>,
@@ -17,6 +18,7 @@ impl UpdateProofPubParams {
         extra_data: Vec<u8>,
     ) -> Self {
         Self {
+            seq_no,
             cur_state,
             new_state,
             message_inputs: message_inputs
@@ -28,6 +30,10 @@ impl UpdateProofPubParams {
                 .try_into()
                 .expect("extra data must fit within SSZ max length"),
         }
+    }
+
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
     }
 
     pub fn cur_state(&self) -> ProofState {
@@ -140,6 +146,7 @@ mod tests {
 
     fn update_proof_pub_params_strategy() -> impl Strategy<Value = UpdateProofPubParams> {
         (
+            any::<u64>(),
             proof_state_strategy(),
             proof_state_strategy(),
             prop::collection::vec(message_entry_strategy(), 0..3),
@@ -148,8 +155,17 @@ mod tests {
             prop::collection::vec(any::<u8>(), 0..32),
         )
             .prop_map(
-                |(cur_state, new_state, message_inputs, ledger_refs, outputs, extra_data)| {
+                |(
+                    seq_no,
+                    cur_state,
+                    new_state,
+                    message_inputs,
+                    ledger_refs,
+                    outputs,
+                    extra_data,
+                )| {
                     UpdateProofPubParams {
+                        seq_no,
                         cur_state,
                         new_state,
                         message_inputs: message_inputs

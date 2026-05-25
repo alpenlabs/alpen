@@ -199,6 +199,9 @@ impl ProofSpec for AcctSpec {
                 PaasError::PermanentFailure(format!("batch {batch_id} not in storage"))
             })?;
         let da_refs = da_refs_from_status(batch_id, status)?;
+        let update_seq_no = batch.update_seq_no().ok_or_else(|| {
+            PaasError::PermanentFailure(format!("batch {batch_id} has no update seq_no"))
+        })?;
 
         // 3. Previous EE account state.
         //
@@ -373,6 +376,7 @@ impl ProofSpec for AcctSpec {
             })?;
 
         let pub_params = UpdateProofPubParams::new(
+            update_seq_no,
             cur_state,
             new_state,
             messages,

@@ -88,6 +88,9 @@ pub struct EeVerificationState<'a, E: ExecutionEnvironment> {
     /// Current verified chain tip.
     cur_verified_exec_blkid: Hash,
 
+    /// Current verified execution state root.
+    cur_verified_exec_state_root: Hash,
+
     /// Tracks the total value sent in this update.
     ///
     /// Not sure why we're doing this after all.
@@ -129,6 +132,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
             ee,
             chunk_predicate_key,
             cur_verified_exec_blkid: state.last_exec_blkid(),
+            cur_verified_exec_state_root: state.last_exec_state_root(),
             total_val_sent: 0.into(),
             cur_balance: state.tracked_balance(),
             expected_outputs,
@@ -150,6 +154,10 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
 
     pub fn cur_verified_exec_blkid(&self) -> Hash {
         self.cur_verified_exec_blkid
+    }
+
+    pub fn cur_verified_exec_state_root(&self) -> Hash {
+        self.cur_verified_exec_state_root
     }
 
     pub fn cur_balance(&self) -> BitcoinAmount {
@@ -263,6 +271,7 @@ impl<'a, E: ExecutionEnvironment> EeVerificationState<'a, E> {
 
         // Advance the verified tip.
         self.cur_verified_exec_blkid = transition.tip_exec_blkid();
+        self.cur_verified_exec_state_root = transition.tip_state_root();
 
         Ok(())
     }
@@ -324,6 +333,7 @@ impl<'a, E: ExecutionEnvironment> Clone for EeVerificationState<'a, E> {
             ee: self.ee,
             chunk_predicate_key: self.chunk_predicate_key,
             cur_verified_exec_blkid: self.cur_verified_exec_blkid,
+            cur_verified_exec_state_root: self.cur_verified_exec_state_root,
             total_val_sent: self.total_val_sent,
             cur_balance: self.cur_balance,
             expected_outputs: self.expected_outputs.clone(),

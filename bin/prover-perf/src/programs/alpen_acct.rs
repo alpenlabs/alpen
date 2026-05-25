@@ -77,6 +77,7 @@ fn prepare_input() -> EeAcctProofInput {
     let extra_data_bytes = encode_to_vec(&extra_data).expect("encode extra data");
 
     let pub_params = UpdateProofPubParams::new(
+        0,
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, 0),
         vec![],

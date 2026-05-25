@@ -12,7 +12,9 @@ use strata_ee_acct_runtime::{
     EeVerificationState, UpdateBuilder,
 };
 use strata_ee_acct_types::{DecodedEeMessageData, EeAccountState, EnvError, UpdateExtraData};
-use strata_ee_chain_types::{ChunkTransition, ExecInputs, ExecOutputs, SubjectDepositData};
+use strata_ee_chain_types::{
+    ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs, SubjectDepositData,
+};
 use strata_msg_fmt::Msg as MsgTrait;
 use strata_predicate::PredicateKey;
 use strata_simple_ee::SimpleExecutionEnvironment;
@@ -130,6 +132,7 @@ pub fn verify_update(
     let post_root = post_state.compute_state_root();
 
     let pub_params = UpdateProofPubParams::new(
+        operation.seq_no(),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),
@@ -240,6 +243,8 @@ pub(crate) fn build_update_operation(
 pub(crate) fn simple_chunk(
     parent: Hash,
     tip: Hash,
+    tip_state_root: Hash,
+    tip_exec_header_summary: ExecHeaderSummary,
     deposits: Vec<SubjectDepositData>,
     outputs: ExecOutputs,
 ) -> ChunkTransition {
@@ -247,17 +252,37 @@ pub(crate) fn simple_chunk(
     for d in deposits {
         inputs.add_subject_deposit(d);
     }
-    ChunkTransition::new(parent, tip, inputs, outputs)
+    ChunkTransition::new(
+        parent,
+        tip,
+        tip_state_root,
+        tip_exec_header_summary,
+        inputs,
+        outputs,
+    )
+}
+
+pub(crate) fn empty_exec_header_summary() -> ExecHeaderSummary {
+    ExecHeaderSummary::new(Vec::new())
 }
 
 /// Creates a [`ChunkTransition`] for testing (thin wrapper).
 pub(crate) fn create_chunk_transition(
     parent: Hash,
     tip: Hash,
+    tip_state_root: Hash,
+    tip_exec_header_summary: ExecHeaderSummary,
     inputs: ExecInputs,
     outputs: ExecOutputs,
 ) -> ChunkTransition {
-    ChunkTransition::new(parent, tip, inputs, outputs)
+    ChunkTransition::new(
+        parent,
+        tip,
+        tip_state_root,
+        tip_exec_header_summary,
+        inputs,
+        outputs,
+    )
 }
 
 /// Wraps chunk transitions into [`ChunkInput`]s with empty proofs.
@@ -287,6 +312,7 @@ pub(crate) fn verify_with_chunks(
     let post_root = post_state.compute_state_root();
 
     let pub_params = UpdateProofPubParams::new(
+        operation.seq_no(),
         ProofState::new(pre_root, 0),
         ProofState::new(post_root, operation.processed_messages().len() as u64),
         operation.processed_messages().to_vec(),

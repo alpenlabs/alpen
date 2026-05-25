@@ -1,5 +1,16 @@
 import io
 
+MAX_EXEC_HEADER_SUMMARY_BYTES = 1024
+
+### Opaque execution-header summary for a chunk tip.
+###
+### The EE-specific proof code interprets these bytes according to the concrete
+### execution environment. The generic chunk transition only commits to the
+### bytes so account proofs can bind to the same tip metadata.
+class ExecHeaderSummary(Container):
+    ### Opaque execution-header summary bytes.
+    opaque_bytes: List[uint8, MAX_EXEC_HEADER_SUMMARY_BYTES]
+
 ### Description of the state transition and IO captured in a chunk.
 class ChunkTransition(Container):
     ### Previous exec blkid being built on top of.
@@ -7,6 +18,12 @@ class ChunkTransition(Container):
 
     ### New tip exec blkid.
     tip_exec_blkid: Bytes32
+
+    ### State root of the chunk's tip block.
+    tip_state_root: Bytes32
+
+    ### Opaque execution-header summary of the chunk's tip block.
+    tip_exec_header_summary: ExecHeaderSummary
 
     ### Inputs processed in the chunk.
     inputs: io.ExecInputs

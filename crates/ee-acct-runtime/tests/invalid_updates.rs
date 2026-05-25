@@ -11,7 +11,7 @@ use std::iter;
 
 use common::{
     build_update_operation, create_chunk_transition, create_deposit_message, create_initial_state,
-    create_vstate, simple_chunk, verify_update,
+    create_vstate, empty_exec_header_summary, simple_chunk, verify_update,
 };
 use strata_acct_types::{AccountId, BitcoinAmount, Hash, SubjectId};
 use strata_codec::encode_to_vec;
@@ -175,7 +175,14 @@ fn test_builder_rejects_wrong_parent() {
     // Chunk with wrong parent
     let wrong_parent = Hash::new([0xCC; 32]);
     let tip = Hash::new([0xDD; 32]);
-    let chunk = simple_chunk(wrong_parent, tip, vec![], ExecOutputs::new_empty());
+    let chunk = simple_chunk(
+        wrong_parent,
+        tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        vec![],
+        ExecOutputs::new_empty(),
+    );
 
     let result = builder.accept_chunk_transition(&chunk);
     assert!(
@@ -209,6 +216,8 @@ fn test_builder_rejects_wrong_deposit() {
     let chunk = simple_chunk(
         builder.cur_tip_blkid(),
         Hash::new([0xEE; 32]),
+        Hash::zero(),
+        empty_exec_header_summary(),
         vec![wrong_deposit],
         ExecOutputs::new_empty(),
     );
@@ -249,7 +258,14 @@ fn test_builder_advances_tip() {
         PendingInputEntry::Deposit(d) => d.clone(),
     };
     let tip1 = Hash::new([0xAA; 32]);
-    let chunk1 = simple_chunk(initial_tip, tip1, vec![d1], ExecOutputs::new_empty());
+    let chunk1 = simple_chunk(
+        initial_tip,
+        tip1,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        vec![d1],
+        ExecOutputs::new_empty(),
+    );
     builder.accept_chunk_transition(&chunk1).expect("chunk 1");
 
     assert_eq!(builder.cur_tip_blkid(), tip1);
@@ -261,7 +277,14 @@ fn test_builder_advances_tip() {
         PendingInputEntry::Deposit(d) => d.clone(),
     };
     let tip2 = Hash::new([0xBB; 32]);
-    let chunk2 = simple_chunk(tip1, tip2, vec![d2], ExecOutputs::new_empty());
+    let chunk2 = simple_chunk(
+        tip1,
+        tip2,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        vec![d2],
+        ExecOutputs::new_empty(),
+    );
     builder.accept_chunk_transition(&chunk2).expect("chunk 2");
 
     assert_eq!(builder.cur_tip_blkid(), tip2);
@@ -281,6 +304,8 @@ fn test_process_decoded_transition_happy_path() {
     let transition = create_chunk_transition(
         parent,
         tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
         ExecInputs::new_empty(),
         ExecOutputs::new_empty(),
     );
@@ -312,6 +337,8 @@ fn test_chain_linkage_mismatch() {
     let transition = create_chunk_transition(
         wrong_parent,
         tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
         ExecInputs::new_empty(),
         ExecOutputs::new_empty(),
     );
@@ -361,7 +388,14 @@ fn test_deposit_mismatch_in_chunk() {
     let mut inputs = ExecInputs::new_empty();
     inputs.add_subject_deposit(wrong_deposit);
 
-    let transition = create_chunk_transition(parent, tip, inputs, ExecOutputs::new_empty());
+    let transition = create_chunk_transition(
+        parent,
+        tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        inputs,
+        ExecOutputs::new_empty(),
+    );
 
     let predicate_key = PredicateKey::always_accept();
     let mut vstate = create_vstate(
@@ -405,7 +439,14 @@ fn test_input_count_mismatch() {
     let mut inputs = ExecInputs::new_empty();
     inputs.add_subject_deposit(deposit);
 
-    let transition = create_chunk_transition(parent, tip, inputs, ExecOutputs::new_empty());
+    let transition = create_chunk_transition(
+        parent,
+        tip,
+        Hash::zero(),
+        empty_exec_header_summary(),
+        inputs,
+        ExecOutputs::new_empty(),
+    );
 
     let predicate_key = PredicateKey::always_accept();
     let mut vstate = create_vstate(

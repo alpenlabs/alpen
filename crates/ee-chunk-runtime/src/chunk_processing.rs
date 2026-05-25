@@ -158,6 +158,9 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
     if computed_new_tip_blkid != tsn.tip_exec_blkid() {
         return Err(EnvError::MismatchedChainSegment);
     }
+    if &new_tip_header.get_exec_header_summary() != tsn.tip_exec_header_summary() {
+        return Err(EnvError::MismatchedChainSegment);
+    }
 
     // 2. Make sure the state matches the parent block's state root.
     let computed_pre_sr = state.compute_state_root()?;
@@ -182,6 +185,9 @@ pub fn verify_chunk_transition<E: ExecutionEnvironment>(
     if computed_post_sr != new_tip_header.get_state_root() {
         return Err(EnvError::MismatchedChainSegment);
     }
+    if computed_post_sr != tsn.tip_state_root() {
+        return Err(EnvError::MismatchedChainSegment);
+    }
 
     Ok(())
 }
@@ -193,7 +199,7 @@ mod tests {
     use strata_ee_acct_types::{
         BlockAssembler, ExecBlock, ExecBlockOutput, ExecHeader, ExecPayload,
     };
-    use strata_ee_chain_types::{ExecInputs, ExecOutputs};
+    use strata_ee_chain_types::{ExecHeaderSummary, ExecInputs, ExecOutputs};
     use strata_simple_ee::{
         SimpleBlock, SimpleBlockBody, SimpleExecutionEnvironment, SimpleHeader,
         SimpleHeaderIntrinsics, SimplePartialState, SimpleTransaction,
@@ -323,5 +329,88 @@ mod tests {
         // Verify final balances: alice=1000-200-300-100=400, bob=200+300+100=600
         assert_eq!(state.accounts().get(&alice()), Some(&400));
         assert_eq!(state.accounts().get(&bob()), Some(&600));
+    }
+
+    #[test]
+    fn verify_chunk_transition_rejects_wrong_tip_state_root() {
+        let ee = SimpleExecutionEnvironment;
+
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 1000);
+        let initial_state = SimplePartialState::new(accounts);
+
+        let prev_header =
+            SimpleHeader::new(Hash::zero(), initial_state.compute_state_root().unwrap(), 0);
+        let prev_blkid = prev_header.compute_block_id();
+        let (block, inputs, outputs, _post_state) = build_block(
+            &ee,
+            &initial_state,
+            prev_blkid,
+            1,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 200,
+            }]),
+            ExecInputs::new_empty(),
+        );
+        let tip_blkid = block.get_header().compute_block_id();
+
+        let chunk_transition = ChunkTransition::new(
+            prev_blkid,
+            tip_blkid,
+            Hash::from([9u8; 32]),
+            block.get_header().get_exec_header_summary(),
+            inputs.clone(),
+            outputs.clone(),
+        );
+        let chunk = Chunk::new(vec![ChunkBlock::new(&inputs, &outputs, block)]);
+        let mut state = initial_state;
+
+        let err = verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut state, &chunk)
+            .expect_err("wrong tip state root must be rejected");
+        assert!(matches!(err, EnvError::MismatchedChainSegment));
+    }
+
+    #[test]
+    fn verify_chunk_transition_rejects_wrong_tip_header_summary() {
+        let ee = SimpleExecutionEnvironment;
+
+        let mut accounts = BTreeMap::new();
+        accounts.insert(alice(), 1000);
+        let initial_state = SimplePartialState::new(accounts);
+
+        let prev_header =
+            SimpleHeader::new(Hash::zero(), initial_state.compute_state_root().unwrap(), 0);
+        let prev_blkid = prev_header.compute_block_id();
+        let (block, inputs, outputs, post_state) = build_block(
+            &ee,
+            &initial_state,
+            prev_blkid,
+            1,
+            SimpleBlockBody::new(vec![SimpleTransaction::Transfer {
+                from: alice(),
+                to: bob(),
+                value: 200,
+            }]),
+            ExecInputs::new_empty(),
+        );
+        let tip_blkid = block.get_header().compute_block_id();
+        let tip_state_root = post_state.compute_state_root().unwrap();
+
+        let chunk_transition = ChunkTransition::new(
+            prev_blkid,
+            tip_blkid,
+            tip_state_root,
+            ExecHeaderSummary::new(vec![1]),
+            inputs.clone(),
+            outputs.clone(),
+        );
+        let chunk = Chunk::new(vec![ChunkBlock::new(&inputs, &outputs, block)]);
+        let mut state = initial_state;
+
+        let err = verify_chunk_transition(&chunk_transition, &ee, &prev_header, &mut state, &chunk)
+            .expect_err("wrong tip header summary must be rejected");
+        assert!(matches!(err, EnvError::MismatchedChainSegment));
     }
 }

@@ -70,7 +70,7 @@ pub(crate) fn build_snark_withdrawal_json(
     //
     // The mock withdrawal does not advance the snark account's inner state
     // or inbox index, so `cur_state == new_state == proof_state`.
-    let claim_ssz = sign_claim_ssz(&proof_state, &proof_state, &outputs);
+    let claim_ssz = sign_claim_ssz(seq_no, &proof_state, &proof_state, &outputs);
     let signature = bip340_test_sign(&claim_ssz);
     let update_proof_hex = hex::encode(signature);
 
@@ -99,11 +99,13 @@ pub(crate) fn build_snark_withdrawal_json(
 /// Reconstructs the `UpdateProofPubParams` claim the OL builds in
 /// `snark_acct_sys::compute_update_claim` and returns its SSZ encoding.
 fn sign_claim_ssz(
+    seq_no: u64,
     cur_state: &ProofState,
     new_state: &ProofState,
     outputs: &UpdateOutputs,
 ) -> Vec<u8> {
     let pub_params = UpdateProofPubParams::new(
+        seq_no,
         cur_state.clone(),
         new_state.clone(),
         Vec::<MessageEntry>::new(),
@@ -177,10 +179,11 @@ mod tests {
         target_bytes[31] = 0x42;
         let target = AccountId::new(target_bytes);
         let inner_state = Hash::from([1u8; 32]);
+        let seq_no = 5;
 
         let json = build_snark_withdrawal_json(
             target,
-            5,
+            seq_no,
             inner_state,
             3,
             b"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_vec(),
@@ -197,7 +200,7 @@ mod tests {
         let decoded = UpdateOperationData::from_ssz_bytes(&ssz_bytes).expect("valid SSZ");
 
         // Verify decoded fields
-        assert_eq!(decoded.seq_no(), 5);
+        assert_eq!(decoded.seq_no(), seq_no);
         assert_eq!(decoded.new_proof_state().inner_state(), inner_state);
         assert_eq!(decoded.new_proof_state().next_inbox_msg_idx(), 3);
         assert_eq!(decoded.processed_messages().len(), 0);
@@ -291,10 +294,11 @@ mod tests {
         target_bytes[31] = 0x42;
         let target = AccountId::new(target_bytes);
         let inner_state = Hash::from([1u8; 32]);
+        let seq_no = 5;
 
         let json = build_snark_withdrawal_json(
             target,
-            5,
+            seq_no,
             inner_state,
             3,
             b"bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4".to_vec(),
@@ -316,7 +320,7 @@ mod tests {
                 .expect("withdrawal message payload bytes must fit within SSZ max length");
         let output_message = OutputMessage::new(BRIDGE_GATEWAY_ACCT_ID, msg_payload);
         let outputs = UpdateOutputs::new(vec![], vec![output_message]);
-        let claim_ssz = sign_claim_ssz(&proof_state, &proof_state, &outputs);
+        let claim_ssz = sign_claim_ssz(seq_no, &proof_state, &proof_state, &outputs);
 
         let proof_hex = json["payload"]["update_proof"].as_str().unwrap();
         let proof_bytes = hex::decode(proof_hex).unwrap();

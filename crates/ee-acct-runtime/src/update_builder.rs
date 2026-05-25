@@ -217,15 +217,9 @@ impl<'i, E: ExecutionEnvironment> UpdateBuilder<'i, E> {
             )
             .map_err(|_| BuilderError::OutputOverflow)?;
 
-        // 4. Advance tip and consumed count.
-        //
-        // TODO(STR-1369): bind chunk verification to the tip execution state
-        // root and advance `cur_tip_state_root` here. `ChunkTransition`
-        // currently carries the parent/tip block ids plus IO, but not the
-        // verified post-state root, so `UpdateExtraData.new_tip_state_root`
-        // remains the initial account state's execution root for updates built
-        // through this chunk-aware path.
+        // 4. Advance tip data and consumed count.
         self.cur_tip_blkid = transition.tip_exec_blkid();
+        self.cur_tip_state_root = transition.tip_state_root();
         self.inputs_consumed += deposits.len();
 
         Ok(())

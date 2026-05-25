@@ -18,7 +18,7 @@ use strata_acct_types::Hash;
 use strata_codec::encode_to_vec;
 use strata_ee_acct_types::{ExecBlock, ExecHeader};
 use strata_ee_chain_types::{
-    ChunkTransition, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer,
+    ChunkTransition, ExecHeaderSummary, ExecInputs, ExecOutputs, OutputMessage, OutputTransfer,
 };
 use strata_ee_chunk_runtime::{PrivateInput, RawBlockData, RawChunkData};
 use strata_evm_ee::{EvmBlock, EvmBlockBody, EvmExecutionEnvironment, EvmHeader};
@@ -235,6 +235,11 @@ impl ProofSpec for ChunkSpec {
         let mut aggregated_inputs = ExecInputs::new_empty();
         let mut aggregated_outputs = ExecOutputs::new_empty();
         let mut tip_blkid = parent_blkid;
+        // Safe placeholder values: `block_hashes` was checked non-empty above
+        // and the witness block count must match it, so the loop below always
+        // overwrites these with the terminal block's verified metadata.
+        let mut tip_state_root = Hash::zero();
+        let mut tip_exec_header_summary = ExecHeaderSummary::new(Vec::new());
 
         for (block_hash, alloy_block) in block_hashes.iter().zip(&alloy_blocks) {
             // Authoritative inputs/outputs from ExecBlockRecord.
@@ -256,6 +261,8 @@ impl ProofSpec for ChunkSpec {
             let body = EvmBlockBody::from_alloy_body(alloy_block.body().clone());
             let block = EvmBlock::new(evm_header, body);
             tip_blkid = block.get_header().compute_block_id();
+            tip_state_root = block.get_header().get_state_root();
+            tip_exec_header_summary = block.get_header().get_exec_header_summary();
 
             extend_exec_inputs(&mut aggregated_inputs, &block_inputs);
             extend_exec_outputs(&mut aggregated_outputs, &block_outputs);
@@ -275,6 +282,8 @@ impl ProofSpec for ChunkSpec {
         let chunk_transition = ChunkTransition::new(
             parent_blkid,
             tip_blkid,
+            tip_state_root,
+            tip_exec_header_summary,
             aggregated_inputs,
             aggregated_outputs,
         );

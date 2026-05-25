@@ -70,6 +70,8 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
     let body = EvmBlockBody::from_alloy_body(witness.current_block.body().clone());
     let block = EvmBlock::new(evm_header, body);
     let tip_blkid: Hash = block.get_header().compute_block_id();
+    let tip_state_root = block.get_header().get_state_root();
+    let tip_exec_header_summary = block.get_header().get_exec_header_summary();
 
     let chain_spec: Arc<reth_chainspec::ChainSpec> =
         Arc::new((&witness.genesis).try_into().unwrap());
@@ -84,6 +86,8 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
     let chunk_transition = strata_ee_chain_types::ChunkTransition::new(
         parent_blkid,
         tip_blkid,
+        tip_state_root,
+        tip_exec_header_summary,
         inputs.clone(),
         outputs.clone(),
     );

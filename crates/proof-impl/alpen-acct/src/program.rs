@@ -151,6 +151,7 @@ mod tests {
 
         // With zero chunks and no state change, pre == post state root.
         let pub_params = UpdateProofPubParams::new(
+            0,
             ProofState::new(state_root, 0),
             ProofState::new(state_root, 0),
             vec![],
