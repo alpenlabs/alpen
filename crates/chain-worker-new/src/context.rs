@@ -424,7 +424,7 @@ fn build_indexing_writes(
 /// sync has no per-block attribution, so update records carry `update_meta:
 /// None` and inbox records carry `block_commitment: None`. RPC readers treat
 /// these as epoch-scoped rows.
-fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> IndexingWrites {
+pub(crate) fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> IndexingWrites {
     let indexer_writes = output.indexer_writes();
 
     let created_accounts: Vec<AccountId> = indexer_writes
@@ -466,7 +466,7 @@ fn build_checkpoint_indexing_writes(output: &OLBlockExecutionOutput) -> Indexing
 /// historical nodes from [`MmrIndexManager`] to generate proofs for later snark
 /// account updates, so the chain worker mirrors each accepted inbox append into
 /// the proof index. The operation is idempotent for crash-restart retries.
-fn index_inbox_mmr_writes(
+pub(crate) fn index_inbox_mmr_writes(
     mmr_index_mgr: &MmrIndexManager,
     output: &OLBlockExecutionOutput,
 ) -> WorkerResult<()> {
