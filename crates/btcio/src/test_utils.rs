@@ -51,7 +51,7 @@ pub struct TestBitcoinClient {
     /// Behavior for `send_raw_transaction`.
     pub send_raw_transaction_mode: SendRawTransactionMode,
     /// Value returned by the mock wallet UTXO.
-    pub utxo_amount_sats: i64,
+    pub utxo_amount_sats: u64,
 }
 
 /// Configures how [`TestBitcoinClient`] responds to `send_raw_transaction`.
@@ -82,7 +82,7 @@ impl TestBitcoinClient {
         self
     }
 
-    pub fn with_utxo_amount_sats(mut self, sats: i64) -> Self {
+    pub fn with_utxo_amount_sats(mut self, sats: u64) -> Self {
         self.utxo_amount_sats = sats;
         self
     }
@@ -249,6 +249,8 @@ impl Reader for TestBitcoinClient {
             incremental_relay_fee: None,
             unbroadcast_count: Some(0),
             full_rbf: None,
+            permit_bare_multisig: None,
+            max_data_carrier_size: None,
         })
     }
 }
@@ -377,7 +379,7 @@ impl Wallet for TestBitcoinClient {
             label: "test".to_string(),
             script_pubkey: ScriptBuf::from_hex("001478a93a5b649de9deabd9494ae9bc41f3c9c13837")
                 .unwrap(),
-            amount: SignedAmount::from_sat(self.utxo_amount_sats),
+            amount: Amount::from_sat(self.utxo_amount_sats),
             confirmations: self.confs as u32,
             spendable: true,
             solvable: true,

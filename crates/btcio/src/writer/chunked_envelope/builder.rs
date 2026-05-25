@@ -192,7 +192,7 @@ fn build_multi_output_commit(
 ) -> Result<Transaction, EnvelopeError> {
     let spendable: Vec<ListUnspentItem> = utxos
         .into_iter()
-        .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT as i64)
+        .filter(|u| u.spendable && u.solvable && u.amount.to_sat() > BITCOIN_DUST_LIMIT)
         .collect();
 
     let p2tr_outputs: Vec<TxOut> = artifacts
@@ -280,7 +280,7 @@ mod tests {
     use bitcoin::{
         opcodes::all::OP_RETURN,
         secp256k1::{rand, Keypair, Secp256k1},
-        Network, ScriptBuf, SignedAmount, Txid,
+        Network, ScriptBuf, Txid,
     };
     use bitcoind_async_client::corepc_types::model::ListUnspentItem;
 
@@ -308,7 +308,7 @@ mod tests {
                 vout: 0,
                 address: address.as_unchecked().clone(),
                 script_pubkey: ScriptBuf::new(),
-                amount: SignedAmount::from_btc(100.0).unwrap(),
+                amount: Amount::from_btc(100.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
@@ -325,7 +325,7 @@ mod tests {
                 vout: 0,
                 address: address.as_unchecked().clone(),
                 script_pubkey: ScriptBuf::new(),
-                amount: SignedAmount::from_btc(50.0).unwrap(),
+                amount: Amount::from_btc(50.0).unwrap(),
                 confirmations: 100,
                 spendable: true,
                 solvable: true,
@@ -416,7 +416,7 @@ mod tests {
             vout: 0,
             address: address.as_unchecked().clone(),
             script_pubkey: ScriptBuf::new(),
-            amount: SignedAmount::from_sat(1000),
+            amount: Amount::from_sat(1_000),
             confirmations: 100,
             spendable: true,
             solvable: true,
