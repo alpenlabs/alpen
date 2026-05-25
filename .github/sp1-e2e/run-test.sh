@@ -32,8 +32,8 @@ export BITCOIN_NETWORK=signet
 export BITCOIND_RPC_URL=http://localhost:38332
 export CHECKPOINT_PREDICATE=sp1-groth16
 export ALPEN_PREDICATE=sp1-groth16
-export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/testnet-chain.json"
-export CHAIN_SPEC=testnet
+export ALPEN_CHAIN_CONFIG="${REPO_ROOT}/crates/reth/chainspec/src/res/alpen-dev-chain.json"
+export CHAIN_SPEC=dev
 
 # --- Low-level helpers ---
 
@@ -312,6 +312,82 @@ assert_proofs() {
     exit 1
 }
 
+compile_contract() {
+    echo "=== Compiling Counter contract ==="
+    local build_dir
+    build_dir=$(mktemp -d)
+    cp -r "${SCRIPT_DIR}/contracts" "${build_dir}/src"
+
+    docker run --rm \
+        -v "${build_dir}:/app" -w /app \
+        --entrypoint forge \
+        ghcr.io/foundry-rs/foundry:latest \
+        build --json >/dev/null 2>&1
+
+    CONTRACT_BYTECODE=$(python3 -c "
+import json
+with open('${build_dir}/out/Counter.sol/Counter.json') as f:
+    print(json.load(f)['bytecode']['object'])
+")
+    rm -rf "${build_dir}"
+
+    if [ -z "${CONTRACT_BYTECODE}" ]; then
+        echo "FAIL: forge build failed"
+        exit 1
+    fi
+    echo "  Compiled (${#CONTRACT_BYTECODE} chars)"
+}
+
+deploy_and_interact_contract() {
+    echo "=== Deploy + interact with contract ==="
+    local privkey="ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    local rpc="http://localhost:8545"
+    local increment_sig="0xd09de08a"
+    local get_sig="0x6d4ce63c"
+    local n_interactions=10
+
+    echo "  Deploying Counter..."
+    local deploy_out
+    deploy_out=$(docker run --rm --network host --entrypoint cast \
+        ghcr.io/foundry-rs/foundry:latest \
+        send --private-key "${privkey}" --rpc-url "${rpc}" \
+        --create "${CONTRACT_BYTECODE}" --json)
+    local contract
+    contract=$(echo "${deploy_out}" | python3 -c "import json,sys; print(json.load(sys.stdin)['contractAddress'])")
+    local deploy_block
+    deploy_block=$(echo "${deploy_out}" | python3 -c "import json,sys; print(int(json.load(sys.stdin)['blockNumber'],16))")
+    echo "  Deployed at ${contract} (block ${deploy_block})"
+
+    echo "  Sending ${n_interactions} increment() txs..."
+    local pids=()
+    for i in $(seq 1 ${n_interactions}); do
+        docker run --rm --network host --entrypoint cast \
+            ghcr.io/foundry-rs/foundry:latest \
+            send --private-key "${privkey}" --rpc-url "${rpc}" \
+            "${contract}" "${increment_sig}" --json >/dev/null 2>&1 &
+        pids+=($!)
+    done
+
+    local failed=0
+    for pid in "${pids[@]}"; do
+        wait "${pid}" || ((failed++))
+    done
+    echo "  Sent ${n_interactions} txs (${failed} failed)"
+
+    local count_hex
+    count_hex=$(docker run --rm --network host --entrypoint cast \
+        ghcr.io/foundry-rs/foundry:latest \
+        call "${contract}" "${get_sig}" --rpc-url "${rpc}" 2>/dev/null)
+    local count=$((count_hex))
+    echo "  Counter value: ${count}"
+
+    if [ "${count}" -lt 1 ]; then
+        echo "FAIL: Counter should be > 0 after interactions"
+        exit 1
+    fi
+    echo "PASS: Contract deployed and interacted with (counter=${count})"
+}
+
 assert_no_always_accept() {
     local vk
     vk=$(get_snark_update_vk)
@@ -325,11 +401,13 @@ assert_no_always_accept() {
 # --- Orchestration ---
 
 preflight_cleanup
+compile_contract
 start_signet_fast
 restart_signet_slow
 extract_datatool
 generate_params
 start_sequencer_stack
+deploy_and_interact_contract
 assert_proofs
 assert_no_always_accept
 
