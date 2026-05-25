@@ -181,9 +181,7 @@ fn load_observed_checkpoints<C: CsmWorkerContext>(
 
 /// Returns the latest observation whose L1 ref meets the depth threshold.
 ///
-/// Iterates forward; the last match wins (latest finalized). Returns the
-/// borrowed checkpoint so callers can both derive `EpochCommitment::from(&_)`
-/// and reconstruct the durable `ClientState` finality field from it.
+/// Iterates forward; the last match wins (latest finalized).
 fn derive_finalized_checkpoint<'a, I>(
     observed: I,
     current_l1_tip: L1Height,

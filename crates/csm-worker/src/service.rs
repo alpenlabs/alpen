@@ -53,16 +53,8 @@ impl<C: CsmWorkerContext + 'static> SyncService for CsmWorkerService<C> {
 
         let prev_confirmed_epoch = state.confirmed_epoch;
 
-        // Process `asm_block` and any blocks that might have been skipped.
-        //
-        // On error we bail out before touching finality: `advance_finalization`
-        // and `refresh_finalized_checkpoint` would otherwise persist a
-        // `ClientState` row keyed on the failed block, and bootstrap
-        // (`fetch_most_recent_client_state`) would treat that as committed on
-        // restart — silently dropping the retry the gap-fill path is meant to
-        // guarantee. Per-block intermediate progress from successful gap-fill
-        // commits is already persisted and published by `commit_block`, so
-        // skipping the trailing finality work here doesn't lose it.
+        // Bail before touching finality: persisting a `ClientState` row at a
+        // failed block would make bootstrap skip the retry gap-fill guarantees.
         if let Err(e) = state.process_asm_block(asm_block, asm_status.logs()) {
             error!(%asm_block, err = ?e, "Failed to process ASM block");
             return Ok(Response::Continue);
