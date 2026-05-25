@@ -181,13 +181,6 @@ fn main() {
 
             info!(?params, sequencer = ext.sequencer, "Starting EE Node");
 
-            #[cfg(feature = "sequencer")]
-            let da_args = if ext.sequencer {
-                Some(resolve_da_args(&ext)?)
-            } else {
-                None
-            };
-
             // Resolve btcio writer config up front so flag misuse surfaces before I/O.
             #[cfg(feature = "sequencer")]
             let writer_config = if ext.sequencer {
@@ -387,7 +380,7 @@ fn main() {
                     }
                 });
 
-            // Install state diff exex for sequencer nodes.
+            // Install state diff exex for sequencer DA.
             // The exex persists per-block state diffs that the blob provider reads.
             #[cfg(feature = "sequencer")]
             if ext.sequencer {
@@ -396,10 +389,7 @@ fn main() {
                     |ctx| async { Ok(StateDiffGenerator::new(ctx, state_diff_db).start()) }
                 });
                 info!(target: "alpen-client", "installed StateDiffGenerator exex for DA");
-            }
 
-            #[cfg(feature = "sequencer")]
-            if ext.sequencer {
                 // Per-block accessed-state capture. Re-executes each
                 // committed block with a `CacheDBProvider` to record the
                 // read set + bytecodes, which the chunk-builder consumes
@@ -499,9 +489,6 @@ fn main() {
                     storage.clone(),
                 );
 
-                let (magic_bytes, btc_url, btc_user, btc_pass) =
-                    da_args.expect("resolve_da_args requires DA args for sequencer mode");
-
                 let (latest_batch, _) = require_latest_batch(storage.as_ref()).await?;
 
                 let batch_sealing_policy =
@@ -591,6 +578,13 @@ fn main() {
                 );
 
                 // --- DA pipeline ---
+                //
+                // clap `requires_all` on --sequencer guarantees all DA args are present.
+                let magic_bytes = ext.ee_da_magic_bytes.expect("enforced by clap");
+                let btc_url = ext.btc_rpc_url.as_ref().expect("enforced by clap");
+                let btc_user = ext.btc_rpc_user.as_ref().expect("enforced by clap");
+                let btc_pass = ext.btc_rpc_password.as_ref().expect("enforced by clap");
+
                 // Create BtcioParams directly from CLI args.
                 let btcio_params =
                     BtcioParams::new(ext.l1_reorg_safe_depth, magic_bytes, ext.genesis_l1_height);
@@ -598,8 +592,8 @@ fn main() {
                 // Bitcoin RPC client.
                 let btc_client = Arc::new(
                     BtcClient::new(
-                        btc_url,
-                        Auth::UserPass(btc_user, btc_pass),
+                        btc_url.clone(),
+                        Auth::UserPass(btc_user.clone(), btc_pass.clone()),
                         Some(ext.btcio_retry_count),
                         Some(ext.btcio_retry_interval),
                         None,
@@ -640,7 +634,7 @@ fn main() {
 
                 let writer_config = writer_config
                     .clone()
-                    .expect("writer_config resolved at startup when EE DA is configured");
+                    .expect("writer_config resolved at startup when --sequencer is set");
                 let sequencer_keypair = sequencer_keypair.ok_or_else(|| {
                     eyre::eyre!("EE sequencer DA reveal signing needs sequencer Keypair")
                 })?;
@@ -841,6 +835,8 @@ fn main() {
                     .spawn_critical("ee_batch_lifecycle", batch_lifecycle_task);
                 node.task_executor
                     .spawn_critical("ee_update_submitter", update_submitter_task);
+                // TODO: proof generation
+                // TODO: post update to OL
             }
 
             health_check_state.mark_ready();
@@ -949,11 +945,15 @@ pub struct AdditionalConfig {
     #[arg(long, required = false)]
     pub db_retry_count: Option<u16>,
 
-    /// Run the node as a sequencer. Requires the `sequencer` feature and a
-    /// `SEQUENCER_PRIVATE_KEY` environment variable. Sequencer mode requires
-    /// all DA-related arguments (`--ee-da-magic-bytes`, `--btc-rpc-url`,
-    /// `--btc-rpc-user`, `--btc-rpc-password`).
-    #[arg(long, default_value_t = false)]
+    /// Run the node as a sequencer. Requires the `sequencer` feature,
+    /// a `SEQUENCER_PRIVATE_KEY` environment variable, and all DA-related
+    /// arguments (`--ee-da-magic-bytes`, `--btc-rpc-url`, `--btc-rpc-user`,
+    /// `--btc-rpc-password`).
+    #[arg(
+        long,
+        default_value_t = false,
+        requires_all = ["ee_da_magic_bytes", "btc_rpc_url", "btc_rpc_user", "btc_rpc_password"],
+    )]
     pub sequencer: bool,
 
     /// Sequencer's public key (hex-encoded, 32 bytes) for signature validation.
@@ -966,15 +966,15 @@ pub struct AdditionalConfig {
     #[arg(long, required = false, value_parser = parse_magic_bytes)]
     pub ee_da_magic_bytes: Option<MagicBytes>,
 
-    /// Bitcoin Core RPC URL. Required in sequencer mode.
+    /// Bitcoin Core RPC URL. Required when `--sequencer` is set.
     #[arg(long, required = false)]
     pub btc_rpc_url: Option<String>,
 
-    /// Bitcoin Core RPC username. Required in sequencer mode.
+    /// Bitcoin Core RPC username. Required when `--sequencer` is set.
     #[arg(long, required = false)]
     pub btc_rpc_user: Option<String>,
 
-    /// Bitcoin Core RPC password. Required in sequencer mode.
+    /// Bitcoin Core RPC password. Required when `--sequencer` is set.
     #[arg(long, required = false)]
     pub btc_rpc_password: Option<String>,
 
@@ -1209,28 +1209,6 @@ impl From<BtcioMempoolTierArg> for MempoolExplorerFeePolicy {
     }
 }
 
-#[cfg(feature = "sequencer")]
-type DaArgs = (MagicBytes, String, String, String);
-
-/// Resolves Bitcoin DA configuration from CLI flags.
-#[cfg(feature = "sequencer")]
-fn resolve_da_args(ext: &AdditionalConfig) -> eyre::Result<DaArgs> {
-    match (
-        ext.ee_da_magic_bytes,
-        ext.btc_rpc_url.clone(),
-        ext.btc_rpc_user.clone(),
-        ext.btc_rpc_password.clone(),
-    ) {
-        (Some(magic_bytes), Some(btc_url), Some(btc_user), Some(btc_pass)) => {
-            Ok((magic_bytes, btc_url, btc_user, btc_pass))
-        }
-        _ => Err(eyre::eyre!(
-            "--sequencer requires --ee-da-magic-bytes, --btc-rpc-url, \
-             --btc-rpc-user, and --btc-rpc-password"
-        )),
-    }
-}
-
 /// Builds [`WriterConfig`] from CLI flags. Empty-string mempool URL is
 /// treated as absent so docker-compose `${VAR:-}` doesn't yield `Some("")`.
 #[cfg(feature = "sequencer")]
@@ -1308,17 +1286,6 @@ fn log_writer_config(cfg: &WriterConfig) {
 mod resolve_writer_config_tests {
     use super::*;
 
-    fn sequencer_argv<'a>(extra: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-        let mut argv = vec![
-            "alpen-client".to_owned(),
-            "--sequencer".to_owned(),
-            "--sequencer-pubkey".to_owned(),
-            "0".repeat(64),
-        ];
-        argv.extend(extra.into_iter().map(str::to_owned));
-        argv
-    }
-
     fn args(
         policy: BtcioFeePolicyArg,
         fee_rate: Option<u64>,
@@ -1330,39 +1297,6 @@ mod resolve_writer_config_tests {
         cfg.btcio_fee_rate = fee_rate;
         cfg.btcio_mempool_base_url = mempool_url.map(str::to_owned);
         cfg
-    }
-
-    #[test]
-    fn sequencer_requires_da_args() {
-        let cfg = <AdditionalConfig as clap::Parser>::parse_from(sequencer_argv([]));
-        assert!(cfg.sequencer);
-        let err = resolve_da_args(&cfg).unwrap_err();
-        assert!(err.to_string().contains("--sequencer requires"));
-    }
-
-    #[test]
-    fn sequencer_accepts_da_args() {
-        let cfg = <AdditionalConfig as clap::Parser>::parse_from(sequencer_argv([
-            "--ee-da-magic-bytes",
-            "ALPN",
-            "--btc-rpc-url",
-            "http://127.0.0.1:18443",
-            "--btc-rpc-user",
-            "user",
-            "--btc-rpc-password",
-            "pass",
-        ]));
-        assert_eq!(resolve_da_args(&cfg).unwrap().1, "http://127.0.0.1:18443");
-    }
-
-    #[test]
-    fn sequencer_rejects_partial_da_args() {
-        let cfg = <AdditionalConfig as clap::Parser>::parse_from(sequencer_argv([
-            "--ee-da-magic-bytes",
-            "ALPN",
-        ]));
-        let err = resolve_da_args(&cfg).unwrap_err();
-        assert!(err.to_string().contains("--sequencer requires"));
     }
 
     #[test]

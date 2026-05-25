@@ -69,7 +69,7 @@ jobs:
 
       - name: Build Cargo project
         run: |
-          cargo build --locked -p alpen-client --no-default-features --features sequencer --bin alpen-client
+          cargo build --locked -p alpen-client --bin alpen-client
 
       - name: Run alpen EEST env in fntests
         env:
