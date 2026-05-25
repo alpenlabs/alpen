@@ -45,7 +45,6 @@ impl EvmPartialState {
     /// Creates a new EvmPartialState from an EthereumState with witness data.
     ///
     /// This performs expensive one-time operations optimized for zkVM execution:
-    /// - Hashes all bytecodes once
     /// - Seals all ancestor headers (computes their hashes once)
     /// - Validates header chain integrity
     /// - Builds block_hashes lookup map once
@@ -57,15 +56,9 @@ impl EvmPartialState {
     /// Panics if the header chain is invalid (block numbers or parent hashes don't match).
     pub fn new(
         ethereum_state: EthereumState,
-        bytecodes: Vec<Bytecode>,
+        bytecodes: BTreeMap<B256, Bytecode>,
         ancestor_headers: Vec<Header>,
     ) -> Self {
-        // Index bytecodes by their hash for O(log n) lookup
-        let bytecodes = bytecodes
-            .into_iter()
-            .map(|code| (code.hash_slow(), code))
-            .collect();
-
         // Seal ancestor headers once (compute hashes) and index by block number
         let ancestor_headers: BTreeMap<u64, Sealed<Header>> = ancestor_headers
             .into_iter()
@@ -111,10 +104,8 @@ impl EvmPartialState {
     }
 
     // NOTE: same comment as `add_executed_block`
-    pub fn add_bytecodes(&mut self, new_bytecodes: Vec<Bytecode>) {
-        for bytecode in new_bytecodes {
-            let hash = bytecode.hash_slow(); // Hash once
-            // BTreeMap insert only adds if key doesn't exist
+    pub fn add_bytecodes(&mut self, new_bytecodes: BTreeMap<B256, Bytecode>) {
+        for (hash, bytecode) in new_bytecodes {
             self.bytecodes.entry(hash).or_insert(bytecode);
         }
     }

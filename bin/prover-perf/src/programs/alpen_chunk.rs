@@ -53,7 +53,15 @@ pub(super) fn prepare_input() -> EeChunkProofInput {
 
     let pre_state = EvmPartialState::new(
         witness.parent_state.clone(),
-        witness.bytecodes.clone(),
+        // This RSP fixture stores bytecodes as a Vec without original code-hash
+        // keys. Re-hashing keeps the fixture behavior; production range
+        // witnesses preserve the AccessedStateGenerator keys instead.
+        witness
+            .bytecodes
+            .clone()
+            .into_iter()
+            .map(|bytecode| (bytecode.hash_slow(), bytecode))
+            .collect(),
         witness.ancestor_headers.clone(),
     );
 
