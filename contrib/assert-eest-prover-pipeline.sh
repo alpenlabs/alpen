@@ -89,10 +89,23 @@ fi
 rpc() {
     local method="$1"
     local params="${2:-[]}"
+    local attempt
+    local response
 
-    curl -sf -X POST "${RPC_ENDPOINT}" \
-        -H "Content-Type: application/json" \
-        -d "{\"jsonrpc\":\"2.0\",\"method\":\"${method}\",\"params\":${params},\"id\":1}"
+    for ((attempt = 1; attempt <= 5; attempt++)); do
+        if response="$(
+            curl -sf -X POST "${RPC_ENDPOINT}" \
+                -H "Content-Type: application/json" \
+                -d "{\"jsonrpc\":\"2.0\",\"method\":\"${method}\",\"params\":${params},\"id\":1}"
+        )" && [[ -n "${response}" ]]; then
+            printf '%s\n' "${response}"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "JSON-RPC request failed or returned an empty response: ${method}" >&2
+    return 1
 }
 
 bitcoin_rpc_endpoint() {
@@ -107,10 +120,23 @@ bitcoin_rpc_endpoint() {
 bitcoin_rpc() {
     local method="$1"
     local params="${2:-[]}"
+    local attempt
+    local response
 
-    curl -sf -X POST "$(bitcoin_rpc_endpoint)" \
-        -H "Content-Type: application/json" \
-        -d "{\"jsonrpc\":\"1.0\",\"method\":\"${method}\",\"params\":${params},\"id\":1}"
+    for ((attempt = 1; attempt <= 5; attempt++)); do
+        if response="$(
+            curl -sf -X POST "$(bitcoin_rpc_endpoint)" \
+                -H "Content-Type: application/json" \
+                -d "{\"jsonrpc\":\"1.0\",\"method\":\"${method}\",\"params\":${params},\"id\":1}"
+        )" && [[ -n "${response}" ]]; then
+            printf '%s\n' "${response}"
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "Bitcoin JSON-RPC request failed or returned an empty response: ${method}" >&2
+    return 1
 }
 
 json_result() {
@@ -119,7 +145,11 @@ import json
 import os
 import sys
 
-response = json.loads(os.environ["RPC_RESPONSE"])
+raw_response = os.environ["RPC_RESPONSE"].strip()
+if not raw_response:
+    print("empty JSON-RPC response", file=sys.stderr)
+    sys.exit(1)
+response = json.loads(raw_response)
 if "error" in response and response["error"] is not None:
     print(response["error"], file=sys.stderr)
     sys.exit(1)
@@ -142,7 +172,11 @@ import json
 import os
 import sys
 
-response = json.loads(os.environ["RPC_RESPONSE"])
+raw_response = os.environ["RPC_RESPONSE"].strip()
+if not raw_response:
+    print("empty JSON-RPC response", file=sys.stderr)
+    sys.exit(1)
+response = json.loads(raw_response)
 if "error" in response and response["error"] is not None:
     print(response["error"], file=sys.stderr)
     sys.exit(1)
@@ -180,7 +214,11 @@ import json
 import os
 import sys
 
-response = json.loads(os.environ["RPC_RESPONSE"])
+raw_response = os.environ["RPC_RESPONSE"].strip()
+if not raw_response:
+    print("empty JSON-RPC response", file=sys.stderr)
+    sys.exit(1)
+response = json.loads(raw_response)
 if "error" in response and response["error"] is not None:
     print(response["error"], file=sys.stderr)
     sys.exit(1)
@@ -194,7 +232,13 @@ mine_bitcoin_blocks() {
     fi
 
     if [[ -z "${MINING_ADDRESS:-}" ]]; then
-        MINING_ADDRESS="$(json_result "$(bitcoin_rpc getnewaddress)")"
+        local address_response
+        if ! address_response="$(bitcoin_rpc getnewaddress)"; then
+            return 1
+        fi
+        if ! MINING_ADDRESS="$(json_result "${address_response}")"; then
+            return 1
+        fi
     fi
 
     bitcoin_rpc generatetoaddress "[${BITCOIN_BLOCKS_PER_POLL},\"${MINING_ADDRESS}\"]" >/dev/null
@@ -226,12 +270,15 @@ echo "waiting for EEST target block ${TARGET_BLOCK_NUMBER} (${TARGET_BLOCK_HASH}
 START_SECONDS="$(date +%s)"
 
 while true; do
-    STATUS="$(block_status "${TARGET_BLOCK_HASH}")"
-    echo "EEST target block status: number=${TARGET_BLOCK_NUMBER} status=${STATUS}"
+    if STATUS="$(block_status "${TARGET_BLOCK_HASH}")"; then
+        echo "EEST target block status: number=${TARGET_BLOCK_NUMBER} status=${STATUS}"
 
-    if [[ "${STATUS}" == "confirmed" || "${STATUS}" == "finalized" ]]; then
-        echo "EEST-generated blocks reached externally confirmed EE/OL status"
-        exit 0
+        if [[ "${STATUS}" == "confirmed" || "${STATUS}" == "finalized" ]]; then
+            echo "EEST-generated blocks reached externally confirmed EE/OL status"
+            exit 0
+        fi
+    else
+        echo "unable to fetch EEST target block status; retrying" >&2
     fi
 
     NOW_SECONDS="$(date +%s)"
@@ -241,6 +288,8 @@ while true; do
         exit 1
     fi
 
-    mine_bitcoin_blocks
+    if ! mine_bitcoin_blocks; then
+        echo "unable to mine Bitcoin blocks while polling; retrying" >&2
+    fi
     sleep "${POLL_SECONDS}"
 done
