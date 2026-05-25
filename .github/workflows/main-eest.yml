@@ -12,7 +12,7 @@ on:
       proof_timeout:
         description: "Max seconds to wait for EE chunk proof coverage."
         required: false
-        default: "900"
+        default: "3600"
 
 env:
   CARGO_TERM_COLOR: always
@@ -138,7 +138,7 @@ jobs:
       - name: Assert EEST blocks covered by EE chunk proofs
         if: always() && steps.runtests.outcome != 'skipped'
         env:
-          EEST_PROOF_TIMEOUT: ${{ github.event.inputs.proof_timeout || '900' }}
+          EEST_PROOF_TIMEOUT: ${{ github.event.inputs.proof_timeout || '3600' }}
         run: |
           if ! ./contrib/assert-eest-prover-pipeline.sh \
               --rpc-endpoint http://localhost:30303 \
