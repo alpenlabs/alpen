@@ -177,10 +177,6 @@ where
                 RemoteProofStatus::Requested | RemoteProofStatus::InProgress => {
                     sleep(poll_interval).await;
                 }
-                RemoteProofStatus::Unknown => {
-                    tracing::warn!(%proof_id, "unknown remote proof status, retrying");
-                    sleep(poll_interval).await;
-                }
             }
         }
 

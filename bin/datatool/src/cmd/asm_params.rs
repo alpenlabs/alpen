@@ -2,7 +2,7 @@
 
 use std::{fs, num::NonZero, str::FromStr};
 
-use bitcoin::{secp256k1::PublicKey, XOnlyPublicKey};
+use bitcoin::{XOnlyPublicKey, hashes::{Hash, hash160}, secp256k1::PublicKey};
 use strata_asm_params::{
     AdministrationInitConfig, AsmParams, BridgeV1InitConfig, CheckpointInitConfig,
     ConfirmationDepths, SubprotocolInstance,
