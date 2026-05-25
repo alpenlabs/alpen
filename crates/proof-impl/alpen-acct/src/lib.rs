@@ -11,8 +11,12 @@ use strata_predicate::PredicateKey;
 use strata_snark_acct_runtime::ArchivedPrivateInput as ArchivedUpdatePrivateInput;
 use zkaleido::ZkVmEnvSerde;
 
+mod da_inclusion;
 mod program;
 
+pub use da_inclusion::{
+    bitcoin_merkle_root, bitcoin_merkle_root_from_archived_proof, bitcoin_merkle_root_from_proof,
+};
 pub use program::{EeAcctProgram, EeAcctProofInput};
 
 /// Guest entry point for EE account update proof generation.
