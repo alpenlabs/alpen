@@ -310,7 +310,7 @@ async fn scan_single_unapplied_epoch_above_genesis() {
 
 #[tokio::test]
 async fn scan_errors_when_not_reorg_safe() {
-    // l1_tip=105, l1_ref height=104, reorg_safe_depth=3 => depth=1 < 3.
+    // l1_tip=105, l1_ref height=104, reorg_safe_depth=3 => depth=2 < 3.
     let epoch1 = make_epoch(1, 10, 0x01);
     let ctx = MockCtx::new(3, 105).add_epoch(epoch1, make_l1_ref(104), None);
 
@@ -321,7 +321,7 @@ async fn scan_errors_when_not_reorg_safe() {
         err,
         CheckpointSyncError::NotReorgSafe {
             epoch,
-            depth: 1,
+            depth: 2,
             required: 3,
         } if epoch == epoch1
     ));

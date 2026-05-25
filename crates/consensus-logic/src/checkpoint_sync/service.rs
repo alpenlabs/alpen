@@ -4,6 +4,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use serde::Serialize;
 use strata_csm_types::CheckpointState;
+use strata_params::{is_l1_reorg_safe, l1_confirmations};
 use strata_primitives::EpochCommitment;
 use strata_service::{AsyncService, Response, Service, ServiceBuilder, ServiceMonitor};
 use strata_tasks::TaskExecutor;
@@ -66,7 +67,22 @@ where
 
     async fn process_input(state: &mut Self::State, input: Self::Msg) -> anyhow::Result<Response> {
         match input {
-            CheckpointSyncEvent::NewCsmStateUpdate => state.handle_new_client_state().await?,
+            CheckpointSyncEvent::NewCsmStateUpdate => match state.handle_new_client_state().await {
+                Ok(()) => {}
+                // Wait condition, not a failure: the L1 tip will advance and the
+                // next CSM update will re-trigger the scan.
+                Err(CheckpointSyncError::NotReorgSafe {
+                    epoch,
+                    depth,
+                    required,
+                }) => {
+                    debug!(
+                        %epoch, depth, required,
+                        "checkpoint not reorg-safe yet, will retry on next CSM update"
+                    );
+                }
+                Err(e) => return Err(e.into()),
+            },
             CheckpointSyncEvent::Abort => {
                 warn!("checkpoint sync received abort signal, shutting down");
                 return Ok(Response::ShouldExit);
@@ -132,7 +148,21 @@ async fn initialize_css_inner_state(
         return Ok(InnerState::new(None));
     };
 
-    let last_applied_epoch = find_and_apply_unapplied_epochs(ctx, cur_finalized).await?;
+    let last_applied_epoch = match find_and_apply_unapplied_epochs(ctx, cur_finalized).await {
+        Ok(v) => v,
+        Err(CheckpointSyncError::NotReorgSafe {
+            epoch,
+            depth,
+            required,
+        }) => {
+            debug!(
+                %epoch, depth, required,
+                "finalized checkpoint not reorg-safe at startup, deferring to next CSM update"
+            );
+            return Ok(InnerState::new(None));
+        }
+        Err(e) => return Err(e),
+    };
     if let Some(epoch) = last_applied_epoch {
         if epoch.epoch() > 0 {
             debug!(%epoch, "re-finalizing last applied epoch at startup");
@@ -213,7 +243,7 @@ pub(crate) async fn scan_unapplied_epochs(
             .await?
             .ok_or(CheckpointSyncError::MissingL1Ref(cur_finalized))?;
 
-        let depth = l1_tip_height.saturating_sub(l1_ref.block_height());
+        let depth = l1_confirmations(l1_ref.block_height(), l1_tip_height);
         debug!(
             ?reorg_safe_depth,
             ?depth,
@@ -222,7 +252,7 @@ pub(crate) async fn scan_unapplied_epochs(
             "l1 ref for checkpoint"
         );
 
-        if depth < reorg_safe_depth {
+        if !is_l1_reorg_safe(l1_ref.block_height(), l1_tip_height, reorg_safe_depth) {
             return Err(CheckpointSyncError::NotReorgSafe {
                 epoch: cur_finalized,
                 depth,
