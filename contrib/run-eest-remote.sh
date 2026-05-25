@@ -13,6 +13,7 @@ Options:
   --tx-wait-timeout SEC   Transaction wait timeout. Default: 120.
   --repo URL              execution-spec-tests repository.
   --checkout-dir DIR      Clone/use this directory. Default: execution-spec-tests.
+  --pytest-args ARGS      Optional pytest selector/options passed to EEST.
   -h, --help              Show this help.
 EOF
 }
@@ -24,6 +25,7 @@ RPC_SEED_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 TX_WAIT_TIMEOUT="120"
 EEST_REPO="https://github.com/alpenlabs/execution-spec-tests"
 CHECKOUT_DIR="execution-spec-tests"
+PYTEST_ARGS_STRING=""
 
 while (($#)); do
     case "$1" in
@@ -53,6 +55,10 @@ while (($#)); do
             ;;
         --checkout-dir)
             CHECKOUT_DIR="${2:?missing value for --checkout-dir}"
+            shift 2
+            ;;
+        --pytest-args)
+            PYTEST_ARGS_STRING="${2:?missing value for --pytest-args}"
             shift 2
             ;;
         -h|--help)
@@ -109,6 +115,14 @@ if [[ "${FORK}" == "Prague" ]]; then
     fi
 fi
 
+PYTEST_ARGS=()
+if [[ -n "${PYTEST_ARGS_STRING}" ]]; then
+    mapfile -t PYTEST_ARGS < <(
+        python3 -c 'import shlex, sys; print("\n".join(shlex.split(sys.argv[1])))' \
+            "${PYTEST_ARGS_STRING}"
+    )
+fi
+
 uv run --with solc-select solc-select use 0.8.24 --always-install
 
 uv run --with solc-select execute remote \
@@ -118,4 +132,5 @@ uv run --with solc-select execute remote \
     "--rpc-seed-key=${RPC_SEED_KEY}" \
     "--rpc-chain-id=${RPC_CHAIN_ID}" \
     "--tx-wait-timeout=${TX_WAIT_TIMEOUT}" \
-    -v
+    -v \
+    "${PYTEST_ARGS[@]}"

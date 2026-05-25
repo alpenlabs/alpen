@@ -3,34 +3,26 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: assert-eest-prover-pipeline.sh --rpc-endpoint URL [options]
+Usage: assert-eest-prover-pipeline.sh --rpc-endpoint URL --end-block N [options]
 
 Options:
   --rpc-endpoint URL       Execution JSON-RPC endpoint.
-  --target-block-number N  Block number whose status must become confirmed/finalized.
-                            Defaults to eth_blockNumber minus --target-depth
-                            at assertion start.
-  --target-depth N         Depth behind eth_blockNumber to target when
-                            --target-block-number is not set. Default: 0.
-  --advanced-from N        Assert the target block is greater than this block number.
-  --min-confirmed-advance N
-                            With --advanced-from, accept any confirmed/finalized
-                            block in the range [advanced-from + N, target].
+  --start-block N          First EEST EE block number to require proof coverage for.
+                            Default: 1.
+  --end-block N            Last EEST EE block number to require proof coverage for.
   --bitcoin-rpc-url URL    Optional Bitcoin RPC URL used to mine regtest blocks while polling.
   --bitcoin-wallet NAME    Optional wallet name appended as /wallet/NAME for Bitcoin RPC.
   --bitcoin-blocks N       Bitcoin blocks to mine per poll when --bitcoin-rpc-url is set.
                             Default: 4.
-  --timeout SEC            Max wait for block status. Default: 900.
+  --timeout SEC            Max wait for chunk proof coverage. Default: 900.
   --poll SEC               Poll interval. Default: 5.
   -h, --help               Show this help.
 EOF
 }
 
 RPC_ENDPOINT=""
-TARGET_BLOCK_NUMBER=""
-TARGET_DEPTH="0"
-ADVANCED_FROM=""
-MIN_CONFIRMED_ADVANCE=""
+START_BLOCK="1"
+END_BLOCK=""
 BITCOIN_RPC_URL=""
 BITCOIN_WALLET=""
 BITCOIN_BLOCKS_PER_POLL="4"
@@ -43,20 +35,12 @@ while (($#)); do
             RPC_ENDPOINT="${2:?missing value for --rpc-endpoint}"
             shift 2
             ;;
-        --target-block-number)
-            TARGET_BLOCK_NUMBER="${2:?missing value for --target-block-number}"
+        --start-block)
+            START_BLOCK="${2:?missing value for --start-block}"
             shift 2
             ;;
-        --target-depth)
-            TARGET_DEPTH="${2:?missing value for --target-depth}"
-            shift 2
-            ;;
-        --advanced-from)
-            ADVANCED_FROM="${2:?missing value for --advanced-from}"
-            shift 2
-            ;;
-        --min-confirmed-advance)
-            MIN_CONFIRMED_ADVANCE="${2:?missing value for --min-confirmed-advance}"
+        --end-block)
+            END_BLOCK="${2:?missing value for --end-block}"
             shift 2
             ;;
         --bitcoin-rpc-url)
@@ -97,18 +81,24 @@ if [[ -z "${RPC_ENDPOINT}" ]]; then
     exit 1
 fi
 
+if [[ -z "${END_BLOCK}" ]]; then
+    echo "--end-block is required" >&2
+    usage >&2
+    exit 1
+fi
+
+if [[ ! "${START_BLOCK}" =~ ^[0-9]+$ ]] || ((START_BLOCK < 1)); then
+    echo "--start-block must be a positive decimal integer" >&2
+    exit 1
+fi
+
+if [[ ! "${END_BLOCK}" =~ ^[0-9]+$ ]] || ((END_BLOCK < START_BLOCK)); then
+    echo "--end-block must be a decimal integer greater than or equal to --start-block" >&2
+    exit 1
+fi
+
 if [[ ! "${BITCOIN_BLOCKS_PER_POLL}" =~ ^[0-9]+$ ]] || ((BITCOIN_BLOCKS_PER_POLL < 1)); then
     echo "--bitcoin-blocks must be a positive decimal integer" >&2
-    exit 1
-fi
-
-if [[ ! "${TARGET_DEPTH}" =~ ^[0-9]+$ ]]; then
-    echo "--target-depth must be a decimal integer" >&2
-    exit 1
-fi
-
-if [[ -n "${MIN_CONFIRMED_ADVANCE}" && ! "${MIN_CONFIRMED_ADVANCE}" =~ ^[0-9]+$ ]]; then
-    echo "--min-confirmed-advance must be a decimal integer" >&2
     exit 1
 fi
 
@@ -166,12 +156,11 @@ bitcoin_rpc() {
 }
 
 json_result() {
-    RPC_RESPONSE="$1" python3 - <<'PY'
+    python3 -c '
 import json
-import os
 import sys
 
-raw_response = os.environ["RPC_RESPONSE"].strip()
+raw_response = sys.stdin.read().strip()
 if not raw_response:
     print("empty JSON-RPC response", file=sys.stderr)
     sys.exit(1)
@@ -187,121 +176,60 @@ if isinstance(result, (dict, list)):
     print(json.dumps(result))
 else:
     print(result)
-PY
+'
 }
 
-block_number() {
-    local response
-    response="$(rpc eth_blockNumber)"
-    RPC_RESPONSE="${response}" python3 - <<'PY'
+chunk_proof_coverage() {
+    rpc alpen_getChunkProofCoverage "[${START_BLOCK},${END_BLOCK}]" | json_result
+}
+
+coverage_summary() {
+    python3 -c '
 import json
-import os
 import sys
 
-raw_response = os.environ["RPC_RESPONSE"].strip()
-if not raw_response:
-    print("empty JSON-RPC response", file=sys.stderr)
-    sys.exit(1)
-response = json.loads(raw_response)
-if "error" in response and response["error"] is not None:
-    print(response["error"], file=sys.stderr)
-    sys.exit(1)
-print(int(response["result"], 16))
-PY
-}
+coverage = json.loads(sys.stdin.read())
+ranges = coverage["ranges"]
+ready = [r for r in ranges if r["status"] == "proof_ready"]
+pending = [r for r in ranges if r["status"] != "proof_ready"]
+covered = bool(coverage["covered"])
+first_uncovered = coverage.get("first_uncovered_block")
 
-block_by_number() {
-    local block_number="$1"
-    local block_hex
-    printf -v block_hex '0x%x' "${block_number}"
-    json_result "$(rpc eth_getBlockByNumber "[\"${block_hex}\",false]")"
-}
+print(
+    "EEST chunk proof coverage: "
+    "requested={}..{} "
+    "covered={} "
+    "first_uncovered={} "
+    "proof_ready_ranges={} "
+    "total_ranges={}".format(
+        coverage["start_block"],
+        coverage["end_block"],
+        str(covered).lower(),
+        first_uncovered,
+        len(ready),
+        len(ranges),
+    )
+)
 
-block_hash_for_number() {
-    BLOCK_JSON="$(block_by_number "$1")" python3 - <<'PY'
-import json
-import os
-import sys
+if ready:
+    last_ready = max(r["end_block"] for r in ready)
+    print("latest proof-ready chunk ends at block {}".format(last_ready))
 
-block = json.loads(os.environ["BLOCK_JSON"])
-if block is None:
-    print("block not found", file=sys.stderr)
-    sys.exit(1)
-print(block["hash"])
-PY
-}
+for chunk in pending[:5]:
+    print(
+        "pending chunk: "
+        "idx={} "
+        "range={}..{} "
+        "status={}".format(
+            chunk["chunk_index"],
+            chunk["start_block"],
+            chunk["end_block"],
+            chunk["status"],
+        )
+    )
 
-block_status() {
-    local block_hash="$1"
-    local response
-    response="$(rpc alpen_getBlockStatus "[\"${block_hash}\"]")"
-    RPC_RESPONSE="${response}" python3 - <<'PY'
-import json
-import os
-import sys
-
-raw_response = os.environ["RPC_RESPONSE"].strip()
-if not raw_response:
-    print("empty JSON-RPC response", file=sys.stderr)
-    sys.exit(1)
-response = json.loads(raw_response)
-if "error" in response and response["error"] is not None:
-    print(response["error"], file=sys.stderr)
-    sys.exit(1)
-print(response["result"]["status"])
-PY
-}
-
-is_confirmed_or_finalized() {
-    local status="$1"
-    [[ "${status}" == "confirmed" || "${status}" == "finalized" ]]
-}
-
-block_status_for_number() {
-    local block_number="$1"
-    local block_hash
-    local status
-
-    block_hash="$(block_hash_for_number "${block_number}")"
-    status="$(block_status "${block_hash}")"
-    printf '%s %s\n' "${block_hash}" "${status}"
-}
-
-find_confirmed_block_in_range() {
-    local lower_block_number="$1"
-    local upper_block_number="$2"
-    local low="${lower_block_number}"
-    local high="${upper_block_number}"
-    local found_block_number=""
-    local found_block_hash=""
-    local found_status=""
-
-    while ((low <= high)); do
-        local mid=$(((low + high) / 2))
-        local status_result
-        local block_hash
-        local status
-
-        if ! status_result="$(block_status_for_number "${mid}")"; then
-            return 2
-        fi
-        read -r block_hash status <<<"${status_result}"
-
-        if is_confirmed_or_finalized "${status}"; then
-            found_block_number="${mid}"
-            found_block_hash="${block_hash}"
-            found_status="${status}"
-            low=$((mid + 1))
-        else
-            high=$((mid - 1))
-        fi
-    done
-
-    if [[ -z "${found_block_number}" ]]; then
-        return 1
-    fi
-
-    printf '%s %s %s\n' "${found_block_number}" "${found_block_hash}" "${found_status}"
+sys.exit(0 if covered else 1)
+'
 }
 
 mine_bitcoin_blocks() {
@@ -314,7 +242,7 @@ mine_bitcoin_blocks() {
         if ! address_response="$(bitcoin_rpc getnewaddress)"; then
             return 1
         fi
-        if ! MINING_ADDRESS="$(json_result "${address_response}")"; then
+        if ! MINING_ADDRESS="$(printf '%s\n' "${address_response}" | json_result)"; then
             return 1
         fi
     fi
@@ -322,82 +250,25 @@ mine_bitcoin_blocks() {
     bitcoin_rpc generatetoaddress "[${BITCOIN_BLOCKS_PER_POLL},\"${MINING_ADDRESS}\"]" >/dev/null
 }
 
-if [[ -z "${TARGET_BLOCK_NUMBER}" ]]; then
-    CURRENT_BLOCK_NUMBER="$(block_number)"
-    if ((CURRENT_BLOCK_NUMBER > TARGET_DEPTH)); then
-        TARGET_BLOCK_NUMBER=$((CURRENT_BLOCK_NUMBER - TARGET_DEPTH))
-    else
-        TARGET_BLOCK_NUMBER=0
-    fi
-fi
-
-if [[ ! "${TARGET_BLOCK_NUMBER}" =~ ^[0-9]+$ ]]; then
-    echo "--target-block-number must be a decimal integer" >&2
-    exit 1
-fi
-
-if [[ -n "${ADVANCED_FROM}" ]]; then
-    if [[ ! "${ADVANCED_FROM}" =~ ^[0-9]+$ ]]; then
-        echo "--advanced-from must be a decimal integer" >&2
-        exit 1
-    fi
-    if ((TARGET_BLOCK_NUMBER <= ADVANCED_FROM)); then
-        echo "EEST did not advance the chain: before=${ADVANCED_FROM} after=${TARGET_BLOCK_NUMBER}" >&2
-        exit 1
-    fi
-fi
-
-LOWER_TARGET_BLOCK_NUMBER=""
-if [[ -n "${MIN_CONFIRMED_ADVANCE}" ]]; then
-    if [[ -z "${ADVANCED_FROM}" ]]; then
-        echo "--min-confirmed-advance requires --advanced-from" >&2
-        exit 1
-    fi
-
-    LOWER_TARGET_BLOCK_NUMBER=$((ADVANCED_FROM + MIN_CONFIRMED_ADVANCE))
-    if ((TARGET_BLOCK_NUMBER < LOWER_TARGET_BLOCK_NUMBER)); then
-        echo "EEST did not advance enough for confirmed status assertion: before=${ADVANCED_FROM} min_advance=${MIN_CONFIRMED_ADVANCE} target=${TARGET_BLOCK_NUMBER}" >&2
-        exit 1
-    fi
-
-    echo "waiting for an EEST target block in [${LOWER_TARGET_BLOCK_NUMBER}, ${TARGET_BLOCK_NUMBER}] to become confirmed or finalized"
-else
-    TARGET_BLOCK_HASH="$(block_hash_for_number "${TARGET_BLOCK_NUMBER}")"
-    echo "waiting for EEST target block ${TARGET_BLOCK_NUMBER} (${TARGET_BLOCK_HASH}) to become confirmed or finalized"
-fi
-
+echo "waiting for EE chunk proofs to cover EEST block range ${START_BLOCK}..${END_BLOCK}"
 START_SECONDS="$(date +%s)"
 
 while true; do
-    if [[ -n "${MIN_CONFIRMED_ADVANCE}" ]]; then
-        if FOUND_BLOCK="$(find_confirmed_block_in_range "${LOWER_TARGET_BLOCK_NUMBER}" "${TARGET_BLOCK_NUMBER}")"; then
-            read -r FOUND_BLOCK_NUMBER FOUND_BLOCK_HASH STATUS <<<"${FOUND_BLOCK}"
-            echo "EEST target block status: number=${FOUND_BLOCK_NUMBER} hash=${FOUND_BLOCK_HASH} status=${STATUS}"
-            echo "EEST-generated blocks reached externally confirmed EE/OL status"
-            exit 0
-        else
-            FIND_STATUS=$?
-            if ((FIND_STATUS == 2)); then
-                echo "unable to fetch EEST target block range status; retrying" >&2
-            else
-                echo "EEST target block status: range=${LOWER_TARGET_BLOCK_NUMBER}..${TARGET_BLOCK_NUMBER} status=pending"
-            fi
-        fi
-    elif STATUS="$(block_status "${TARGET_BLOCK_HASH}")"; then
-        echo "EEST target block status: number=${TARGET_BLOCK_NUMBER} status=${STATUS}"
-
-        if is_confirmed_or_finalized "${STATUS}"; then
-            echo "EEST-generated blocks reached externally confirmed EE/OL status"
+    if COVERAGE="$(chunk_proof_coverage)"; then
+        if SUMMARY="$(printf '%s\n' "${COVERAGE}" | coverage_summary)"; then
+            echo "${SUMMARY}"
+            echo "EEST block range is covered by EE chunk proofs"
             exit 0
         fi
+        echo "${SUMMARY}"
     else
-        echo "unable to fetch EEST target block status; retrying" >&2
+        echo "unable to fetch EEST chunk proof coverage; retrying" >&2
     fi
 
     NOW_SECONDS="$(date +%s)"
     ELAPSED_SECONDS=$((NOW_SECONDS - START_SECONDS))
     if ((ELAPSED_SECONDS >= TIMEOUT_SECONDS)); then
-        echo "timed out waiting for EEST target block ${TARGET_BLOCK_NUMBER} to become confirmed/finalized" >&2
+        echo "timed out waiting for EE chunk proofs to cover EEST block range ${START_BLOCK}..${END_BLOCK}" >&2
         exit 1
     fi
 

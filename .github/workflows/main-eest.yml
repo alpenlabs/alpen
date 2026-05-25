@@ -3,7 +3,16 @@ name: Ethereum Execution Spec tests against main branch (via fntests).
 on:
   schedule:
     - cron: "30 1 * * *" # every day at 1:30 AM UTC
-  workflow_dispatch: # manual run
+  workflow_dispatch:
+    inputs:
+      eest_pytest_args:
+        description: "Optional EEST pytest selector/options for subset debugging."
+        required: false
+        default: ""
+      proof_timeout:
+        description: "Max seconds to wait for EE chunk proof coverage."
+        required: false
+        default: "900"
 
 env:
   CARGO_TERM_COLOR: always
@@ -101,34 +110,43 @@ jobs:
             exit 1
           fi
 
-      - name: Capture EEST start block
+      - name: Run tests
+        id: runtests
+        env:
+          EEST_PYTEST_ARGS: ${{ github.event.inputs.eest_pytest_args || '' }}
         run: |
-          START_BLOCK="$(curl -sf -X POST http://localhost:30303 \
+          args=(
+            --rpc-endpoint http://localhost:30303
+            --fork Prague
+            --tx-wait-timeout 120
+          )
+          if [[ -n "${EEST_PYTEST_ARGS}" ]]; then
+            args+=(--pytest-args "${EEST_PYTEST_ARGS}")
+          fi
+          ./contrib/run-eest-remote.sh "${args[@]}"
+        continue-on-error: true
+
+      - name: Capture EEST end block
+        if: always() && steps.runtests.outcome != 'skipped'
+        run: |
+          END_BLOCK="$(curl -sf -X POST http://localhost:30303 \
             -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
             | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["result"], 16))')"
-          echo "EEST_START_BLOCK=${START_BLOCK}" >> "${GITHUB_ENV}"
+          echo "EEST_END_BLOCK=${END_BLOCK}" >> "${GITHUB_ENV}"
 
-      - name: Run tests
-        id: runtests
-        run: |
-          ./contrib/run-eest-remote.sh \
-            --rpc-endpoint http://localhost:30303 \
-            --fork Prague \
-            --tx-wait-timeout 120
-        continue-on-error: true
-
-      - name: Assert EEST blocks reached confirmed EE/OL status
+      - name: Assert EEST blocks covered by EE chunk proofs
         if: always() && steps.runtests.outcome != 'skipped'
+        env:
+          EEST_PROOF_TIMEOUT: ${{ github.event.inputs.proof_timeout || '900' }}
         run: |
           if ! ./contrib/assert-eest-prover-pipeline.sh \
               --rpc-endpoint http://localhost:30303 \
               --bitcoin-rpc-url http://user:password@localhost:18444 \
               --bitcoin-wallet testwallet \
-              --advanced-from "${EEST_START_BLOCK}" \
-              --min-confirmed-advance 500 \
-              --target-depth 20 \
-              --timeout 900; then
+              --start-block 1 \
+              --end-block "${EEST_END_BLOCK}" \
+              --timeout "${EEST_PROOF_TIMEOUT}"; then
             cat functional-tests/alpen_eest_env.screen.log || true
             [ ! -d functional-tests/_dd ] || find functional-tests/_dd -type f -name "service.log" -print -exec tail -200 {} \;
             exit 1
