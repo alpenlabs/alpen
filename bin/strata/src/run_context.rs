@@ -79,16 +79,14 @@ impl RunContext {
         &self.service_handles.chain_worker_handle
     }
 
-    /// Returns the fork choice manager handle.
+    /// Returns the fork-choice manager handle if this node runs FCM.
     ///
-    /// Only called on the sequencer RPC path, where the node always runs FCM.
-    #[cfg(feature = "sequencer")]
-    pub(crate) fn fcm_handle(&self) -> &Arc<FcmServiceHandle> {
+    /// `Some` for sequencer nodes today; future block-syncing fullnodes will
+    /// also return `Some`. Checkpoint-sync nodes return `None`.
+    pub(crate) fn fcm_handle(&self) -> Option<&Arc<FcmServiceHandle>> {
         match &self.service_handles.sync_handle {
-            SyncServiceHandle::Fcm(handle) => handle,
-            SyncServiceHandle::Css(_) => {
-                panic!("fcm_handle requested on a non-sequencer (checkpoint sync) node")
-            }
+            SyncServiceHandle::Fcm(handle) => Some(handle),
+            SyncServiceHandle::Css(_) => None,
         }
     }
 
@@ -113,8 +111,8 @@ impl RunContext {
 /// Sequencer-specific service handles.
 ///
 /// Groups handles for services that only run on sequencer node: L1 broadcast,
-/// envelope signing, and block assembly. Stored as `Option` in [`ServiceHandles`]
-/// since fullnodes don't run these services.
+/// envelope signing, and block assembly. Stored as `Option` in
+/// [`ServiceHandles`] since fullnodes don't run these services.
 #[cfg(feature = "sequencer")]
 pub(crate) struct SequencerServiceHandles {
     /// Handle for broadcasting L1 transactions using [`strata_btcio`].
