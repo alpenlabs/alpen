@@ -69,7 +69,7 @@ jobs:
 
       - name: Build Cargo project
         run: |
-          cargo build --locked -p alpen-client --bin alpen-client
+          cargo build --locked -F sequencer -F debug-utils -F test-mode -F debug-asm -F prover --bin strata --bin strata-signer --bin alpen-client --bin strata-datatool --bin strata-test-cli --bin strata-dbtool
 
       - name: Run alpen EEST env in fntests
         env:
@@ -81,9 +81,10 @@ jobs:
           export PATH="${NEWPATH}:${PATH}"
           which alpen-client
           cd functional-tests
-          screen -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_eest
-          if ! ../contrib/wait-for-json-rpc.sh http://localhost:30303 120; then
-            find _dd -type f -name "service.log" -print -exec tail -100 {} \; || true
+          screen -L -Logfile alpen_eest_env.screen.log -dmS alpen_eest_env uv run python entry.py --keep-alive alpen_eest
+          if ! ../contrib/wait-for-json-rpc.sh http://localhost:30303 240; then
+            cat alpen_eest_env.screen.log || true
+            [ ! -d _dd ] || find _dd -type f -name "service.log" -print -exec tail -100 {} \;
             exit 1
           fi
 
