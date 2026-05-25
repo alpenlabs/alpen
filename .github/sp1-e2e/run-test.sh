@@ -316,20 +316,23 @@ compile_contract() {
     echo "=== Compiling Counter contract ==="
     local build_dir
     build_dir=$(mktemp -d)
+    chmod 777 "${build_dir}"
     cp -r "${SCRIPT_DIR}/contracts" "${build_dir}/src"
 
     docker run --rm \
         -v "${build_dir}:/app" -w /app \
         --entrypoint forge \
         ghcr.io/foundry-rs/foundry:latest \
-        build --json >/dev/null 2>&1
+        build 2>&1
 
     CONTRACT_BYTECODE=$(python3 -c "
 import json
 with open('${build_dir}/out/Counter.sol/Counter.json') as f:
     print(json.load(f)['bytecode']['object'])
 ")
-    rm -rf "${build_dir}"
+    docker run --rm -v "${build_dir}:/app" -w /app --entrypoint rm \
+        ghcr.io/foundry-rs/foundry:latest -rf /app/out /app/cache 2>/dev/null || true
+    rm -rf "${build_dir}" 2>/dev/null || true
 
     if [ -z "${CONTRACT_BYTECODE}" ]; then
         echo "FAIL: forge build failed"
