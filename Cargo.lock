@@ -15409,10 +15409,12 @@ dependencies = [
  "bitcoin",
  "borsh",
  "serde",
+ "strata-asm-proto-checkpoint-types",
  "strata-btc-types",
  "strata-checkpoint-types",
  "strata-identifiers",
  "strata-primitives",
+ "strata-test-utils",
 ]
 
 [[package]]

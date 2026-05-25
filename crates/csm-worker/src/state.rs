@@ -2,7 +2,7 @@
 
 use std::{collections::VecDeque, sync::Arc};
 
-use strata_csm_types::{CheckpointL1Ref, ClientState};
+use strata_csm_types::{ClientState, ClientUpdateOutput, L1Checkpoint};
 use strata_identifiers::Epoch;
 use strata_primitives::prelude::*;
 use strata_service::ServiceState;
@@ -44,7 +44,7 @@ pub struct CsmWorkerState<C: CsmWorkerContext> {
     ///
     /// Items are appended after a successful block commit and consumed as
     /// finalized depth progresses.
-    pub(crate) observed_checkpoints: VecDeque<(EpochCommitment, CheckpointL1Ref)>,
+    pub(crate) observed_checkpoints: VecDeque<L1Checkpoint>,
 }
 
 // TODO(STR-3491): Use typed errors instead of `anyhow!`
@@ -70,23 +70,54 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         let mut observed_checkpoints =
             load_observed_checkpoints(&ctx, observation_start_epoch, current_l1_tip)?;
 
-        let finalized_from_l1_refs =
-            derive_finalized_epoch(observed_checkpoints.iter(), current_l1_tip, finality_depth);
+        let finalized_from_l1_refs = derive_finalized_checkpoint(
+            observed_checkpoints.iter(),
+            current_l1_tip,
+            finality_depth,
+        )
+        .cloned();
+        let finalized_from_l1_refs_epoch =
+            finalized_from_l1_refs.as_ref().map(EpochCommitment::from);
         let finalized_epoch =
-            max_epoch_commitment(baseline_finalized_epoch, finalized_from_l1_refs);
+            max_epoch_commitment(baseline_finalized_epoch, finalized_from_l1_refs_epoch);
 
         // Confirmed means "observed on L1" and may be finalized. If we only loaded
         // observations after finalized, fall back to finalized when no newer observed entry exists.
         let confirmed_epoch = observed_checkpoints
             .back()
-            .map(|(epoch, _)| *epoch)
+            .map(EpochCommitment::from)
             .or(finalized_epoch);
+
+        // If derived finality outpaces what's persisted, refresh ClientState
+        // before pruning so downstream readers (chain worker, RPC, status
+        // channel) don't lag the worker's view. Without this, a restart that
+        // happens after the observation was committed but before
+        // `refresh_finalized_checkpoint` durably landed would prune the
+        // candidate here and leave `ClientState::get_declared_final_epoch`
+        // behind until a later epoch finalized.
+        let last_committed_state = if let Some(newly_finalized) = finalized_from_l1_refs.as_ref()
+            && baseline_finalized_epoch
+                .is_none_or(|baseline| baseline.epoch() < newly_finalized.tip.epoch)
+        {
+            let refreshed = ClientState::new(
+                Some(newly_finalized.clone()),
+                cur_state.get_last_checkpoint(),
+            );
+            ctx.put_client_state_update(
+                &cur_block,
+                ClientUpdateOutput::new(refreshed.clone(), vec![]),
+            )?;
+            ctx.publish_client_state(refreshed.clone(), cur_block);
+            Arc::new(refreshed)
+        } else {
+            Arc::new(cur_state)
+        };
 
         // Keep only non-finalized candidates for incremental tip-driven advancement.
         if let Some(finalized) = finalized_epoch {
             while observed_checkpoints
                 .front()
-                .is_some_and(|(epoch, _)| epoch.epoch() <= finalized.epoch())
+                .is_some_and(|checkpoint| checkpoint.tip.epoch <= finalized.epoch())
             {
                 observed_checkpoints.pop_front();
             }
@@ -95,7 +126,7 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
         Ok(Self {
             ctx,
             last_asm_block: Some(cur_block),
-            last_committed_state: Arc::new(cur_state),
+            last_committed_state,
             last_processed_epoch: None,
             confirmed_epoch,
             finalized_epoch,
@@ -112,13 +143,15 @@ impl<C: CsmWorkerContext> CsmWorkerState<C> {
 /// Loads observed checkpoint candidates from the OL checkpoint DB via `ctx`,
 /// starting from `start_epoch`.
 ///
-/// Only epochs with both a canonical commitment and an L1 ref are included.
-/// Used at startup to populate the incremental finalization queue.
+/// Only epochs with both a canonical commitment and a complete observation
+/// (payload + L1 ref) are included. Used at startup to populate the
+/// incremental finalization queue and reconstruct the latest finalized
+/// `L1Checkpoint` view of `ClientState`.
 fn load_observed_checkpoints<C: CsmWorkerContext>(
     ctx: &C,
     start_epoch: Epoch,
     current_l1_tip: L1Height,
-) -> anyhow::Result<VecDeque<(EpochCommitment, CheckpointL1Ref)>> {
+) -> anyhow::Result<VecDeque<L1Checkpoint>> {
     let Some(last_l1_ref_commitment) = ctx.get_last_checkpoint_l1_ref_epoch()? else {
         return Ok(VecDeque::new());
     };
@@ -132,37 +165,40 @@ fn load_observed_checkpoints<C: CsmWorkerContext>(
         let Some(observation) = ctx.get_checkpoint_l1_ref(commitment)? else {
             continue;
         };
+        let Some(payload) = ctx.get_checkpoint_payload(commitment)? else {
+            continue;
+        };
 
         if observation.l1_commitment.height() > current_l1_tip {
             continue;
         }
 
-        observed.push_back((commitment, observation));
+        observed.push_back(L1Checkpoint::new(*payload.new_tip(), observation));
     }
 
     Ok(observed)
 }
 
-/// Returns the latest epoch commitment whose observation meets the depth threshold.
+/// Returns the latest observation whose L1 ref meets the depth threshold.
 ///
 /// Iterates forward; the last match wins (latest finalized).
-fn derive_finalized_epoch<'a, I>(
+fn derive_finalized_checkpoint<'a, I>(
     observed: I,
     current_l1_tip: L1Height,
     finality_depth: u32,
-) -> Option<EpochCommitment>
+) -> Option<&'a L1Checkpoint>
 where
-    I: Iterator<Item = &'a (EpochCommitment, CheckpointL1Ref)>,
+    I: Iterator<Item = &'a L1Checkpoint>,
 {
     let mut latest_finalized = None;
     let finality_depth = finality_depth.max(1);
 
-    for (commitment, observation) in observed {
+    for checkpoint in observed {
         let confirmations = current_l1_tip
-            .saturating_sub(observation.l1_commitment.height())
+            .saturating_sub(checkpoint.l1_reference.l1_commitment.height())
             .saturating_add(1);
         if confirmations >= finality_depth {
-            latest_finalized = Some(*commitment);
+            latest_finalized = Some(checkpoint);
         }
     }
 
@@ -194,7 +230,7 @@ mod tests {
 
     use strata_asm_proto_checkpoint_types::test_utils::create_test_checkpoint_payload;
     use strata_checkpoint_types::EpochSummary;
-    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput};
+    use strata_csm_types::{CheckpointL1Ref, ClientState, ClientUpdateOutput, L1Checkpoint};
     use strata_db_store_sled::test_utils::get_test_sled_backend;
     use strata_identifiers::{Buf32, L1BlockId, RBuf32};
     use strata_params::Params;
@@ -307,8 +343,117 @@ mod tests {
         assert_eq!(state.finalized_epoch, Some(commitment_1));
         assert_eq!(state.observed_checkpoints.len(), 1);
         assert_eq!(
-            state.observed_checkpoints.front().map(|(epoch, _)| *epoch),
+            state
+                .observed_checkpoints
+                .front()
+                .map(EpochCommitment::from),
             Some(commitment_2)
+        );
+
+        // The in-memory `last_committed_state` must reflect the refreshed
+        // finality so downstream readers (chain worker, RPC) immediately see
+        // the worker's view rather than the stale on-disk value.
+        assert_eq!(
+            state.last_committed_state.get_declared_final_epoch(),
+            Some(commitment_1),
+            "bootstrap must refresh in-memory ClientState to the derived finality"
+        );
+
+        // The same refreshed state must be persisted at `cur_block` so the
+        // next restart loads finality consistent with the worker's view —
+        // without it, `fetch_most_recent_client_state` would return the stale
+        // pre-refresh state and the candidate (already pruned from the queue)
+        // could never be re-derived.
+        let (persisted_block, persisted_state) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        let cur_block = L1BlockCommitment::new(20, L1BlockId::default());
+        assert_eq!(
+            persisted_block, cur_block,
+            "refreshed ClientState must be keyed on the same cur_block"
+        );
+        assert_eq!(
+            persisted_state.get_declared_final_epoch(),
+            Some(commitment_1)
+        );
+    }
+
+    /// Bootstrap must not rewrite ClientState when the on-disk state already
+    /// matches (or exceeds) the depth-derived finality — otherwise restarts
+    /// would churn the storage with redundant rows.
+    #[test]
+    fn test_state_new_does_not_refresh_when_baseline_matches() {
+        let params = create_test_params();
+        let (storage, status_channel) = create_test_storage_and_status(params.clone());
+        let ol_checkpoint = storage.ol_checkpoint();
+
+        let payload_1 = create_test_checkpoint_payload(1);
+        let ol_terminal_1 = *payload_1.new_tip().l2_commitment();
+        let summary_1 = EpochSummary::new(
+            1,
+            ol_terminal_1,
+            L2BlockCommitment::new(0, L2BlockId::default()),
+            L1BlockCommitment::new(17, L1BlockId::default()),
+            Buf32::zero(),
+        );
+        let commitment_1 = summary_1.get_epoch_commitment();
+        ol_checkpoint
+            .insert_epoch_summary_blocking(summary_1)
+            .expect("insert epoch 1 summary");
+        let l1_ref_1 = CheckpointL1Ref::new(
+            L1BlockCommitment::new(17, L1BlockId::default()),
+            RBuf32::from([1; 32]),
+            RBuf32::from([2; 32]),
+        );
+        ol_checkpoint
+            .put_checkpoint_l1_observation_blocking(
+                commitment_1,
+                payload_1.clone(),
+                l1_ref_1.clone(),
+            )
+            .expect("insert epoch 1 observation");
+
+        // Seed the on-disk ClientState so its `last_finalized_checkpoint`
+        // already reflects epoch 1 — bootstrap should observe this and skip
+        // the refresh path.
+        let baseline = ClientState::new(
+            Some(L1Checkpoint::new(*payload_1.new_tip(), l1_ref_1)),
+            None,
+        );
+        let baseline_block = L1BlockCommitment::new(20, L1BlockId::default());
+        storage
+            .client_state()
+            .put_update_blocking(
+                &baseline_block,
+                ClientUpdateOutput::new(baseline.clone(), vec![]),
+            )
+            .expect("seed baseline client state");
+
+        let ctx = StubCtx::new(
+            storage.clone(),
+            status_channel,
+            4,
+            params.rollup.magic_bytes,
+            params.rollup.genesis_l1_view.blk,
+        );
+        let state = CsmWorkerState::new(ctx).expect("state init");
+
+        assert_eq!(state.finalized_epoch, Some(commitment_1));
+        assert_eq!(
+            state.last_committed_state.get_declared_final_epoch(),
+            Some(commitment_1)
+        );
+
+        let (_, persisted_state) = storage
+            .client_state()
+            .fetch_most_recent_state()
+            .expect("query client state")
+            .expect("client state row");
+        assert_eq!(
+            persisted_state, baseline,
+            "bootstrap must not rewrite ClientState when baseline already matches"
         );
     }
 }
