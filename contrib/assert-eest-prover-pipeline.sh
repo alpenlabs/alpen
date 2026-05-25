@@ -13,6 +13,9 @@ Options:
   --target-depth N         Depth behind eth_blockNumber to target when
                             --target-block-number is not set. Default: 0.
   --advanced-from N        Assert the target block is greater than this block number.
+  --min-confirmed-advance N
+                            With --advanced-from, accept any confirmed/finalized
+                            block in the range [advanced-from + N, target].
   --bitcoin-rpc-url URL    Optional Bitcoin RPC URL used to mine regtest blocks while polling.
   --bitcoin-wallet NAME    Optional wallet name appended as /wallet/NAME for Bitcoin RPC.
   --bitcoin-blocks N       Bitcoin blocks to mine per poll when --bitcoin-rpc-url is set.
@@ -27,6 +30,7 @@ RPC_ENDPOINT=""
 TARGET_BLOCK_NUMBER=""
 TARGET_DEPTH="0"
 ADVANCED_FROM=""
+MIN_CONFIRMED_ADVANCE=""
 BITCOIN_RPC_URL=""
 BITCOIN_WALLET=""
 BITCOIN_BLOCKS_PER_POLL="4"
@@ -49,6 +53,10 @@ while (($#)); do
             ;;
         --advanced-from)
             ADVANCED_FROM="${2:?missing value for --advanced-from}"
+            shift 2
+            ;;
+        --min-confirmed-advance)
+            MIN_CONFIRMED_ADVANCE="${2:?missing value for --min-confirmed-advance}"
             shift 2
             ;;
         --bitcoin-rpc-url)
@@ -96,6 +104,11 @@ fi
 
 if [[ ! "${TARGET_DEPTH}" =~ ^[0-9]+$ ]]; then
     echo "--target-depth must be a decimal integer" >&2
+    exit 1
+fi
+
+if [[ -n "${MIN_CONFIRMED_ADVANCE}" && ! "${MIN_CONFIRMED_ADVANCE}" =~ ^[0-9]+$ ]]; then
+    echo "--min-confirmed-advance must be a decimal integer" >&2
     exit 1
 fi
 
@@ -239,6 +252,58 @@ print(response["result"]["status"])
 PY
 }
 
+is_confirmed_or_finalized() {
+    local status="$1"
+    [[ "${status}" == "confirmed" || "${status}" == "finalized" ]]
+}
+
+block_status_for_number() {
+    local block_number="$1"
+    local block_hash
+    local status
+
+    block_hash="$(block_hash_for_number "${block_number}")"
+    status="$(block_status "${block_hash}")"
+    printf '%s %s\n' "${block_hash}" "${status}"
+}
+
+find_confirmed_block_in_range() {
+    local lower_block_number="$1"
+    local upper_block_number="$2"
+    local low="${lower_block_number}"
+    local high="${upper_block_number}"
+    local found_block_number=""
+    local found_block_hash=""
+    local found_status=""
+
+    while ((low <= high)); do
+        local mid=$(((low + high) / 2))
+        local status_result
+        local block_hash
+        local status
+
+        if ! status_result="$(block_status_for_number "${mid}")"; then
+            return 2
+        fi
+        read -r block_hash status <<<"${status_result}"
+
+        if is_confirmed_or_finalized "${status}"; then
+            found_block_number="${mid}"
+            found_block_hash="${block_hash}"
+            found_status="${status}"
+            low=$((mid + 1))
+        else
+            high=$((mid - 1))
+        fi
+    done
+
+    if [[ -z "${found_block_number}" ]]; then
+        return 1
+    fi
+
+    printf '%s %s %s\n' "${found_block_number}" "${found_block_hash}" "${found_status}"
+}
+
 mine_bitcoin_blocks() {
     if [[ -z "${BITCOIN_RPC_URL}" ]]; then
         return
@@ -282,16 +347,46 @@ if [[ -n "${ADVANCED_FROM}" ]]; then
     fi
 fi
 
-TARGET_BLOCK_HASH="$(block_hash_for_number "${TARGET_BLOCK_NUMBER}")"
-echo "waiting for EEST target block ${TARGET_BLOCK_NUMBER} (${TARGET_BLOCK_HASH}) to become confirmed or finalized"
+LOWER_TARGET_BLOCK_NUMBER=""
+if [[ -n "${MIN_CONFIRMED_ADVANCE}" ]]; then
+    if [[ -z "${ADVANCED_FROM}" ]]; then
+        echo "--min-confirmed-advance requires --advanced-from" >&2
+        exit 1
+    fi
+
+    LOWER_TARGET_BLOCK_NUMBER=$((ADVANCED_FROM + MIN_CONFIRMED_ADVANCE))
+    if ((TARGET_BLOCK_NUMBER < LOWER_TARGET_BLOCK_NUMBER)); then
+        echo "EEST did not advance enough for confirmed status assertion: before=${ADVANCED_FROM} min_advance=${MIN_CONFIRMED_ADVANCE} target=${TARGET_BLOCK_NUMBER}" >&2
+        exit 1
+    fi
+
+    echo "waiting for an EEST target block in [${LOWER_TARGET_BLOCK_NUMBER}, ${TARGET_BLOCK_NUMBER}] to become confirmed or finalized"
+else
+    TARGET_BLOCK_HASH="$(block_hash_for_number "${TARGET_BLOCK_NUMBER}")"
+    echo "waiting for EEST target block ${TARGET_BLOCK_NUMBER} (${TARGET_BLOCK_HASH}) to become confirmed or finalized"
+fi
 
 START_SECONDS="$(date +%s)"
 
 while true; do
-    if STATUS="$(block_status "${TARGET_BLOCK_HASH}")"; then
+    if [[ -n "${MIN_CONFIRMED_ADVANCE}" ]]; then
+        if FOUND_BLOCK="$(find_confirmed_block_in_range "${LOWER_TARGET_BLOCK_NUMBER}" "${TARGET_BLOCK_NUMBER}")"; then
+            read -r FOUND_BLOCK_NUMBER FOUND_BLOCK_HASH STATUS <<<"${FOUND_BLOCK}"
+            echo "EEST target block status: number=${FOUND_BLOCK_NUMBER} hash=${FOUND_BLOCK_HASH} status=${STATUS}"
+            echo "EEST-generated blocks reached externally confirmed EE/OL status"
+            exit 0
+        else
+            FIND_STATUS=$?
+            if ((FIND_STATUS == 2)); then
+                echo "unable to fetch EEST target block range status; retrying" >&2
+            else
+                echo "EEST target block status: range=${LOWER_TARGET_BLOCK_NUMBER}..${TARGET_BLOCK_NUMBER} status=pending"
+            fi
+        fi
+    elif STATUS="$(block_status "${TARGET_BLOCK_HASH}")"; then
         echo "EEST target block status: number=${TARGET_BLOCK_NUMBER} status=${STATUS}"
 
-        if [[ "${STATUS}" == "confirmed" || "${STATUS}" == "finalized" ]]; then
+        if is_confirmed_or_finalized "${STATUS}"; then
             echo "EEST-generated blocks reached externally confirmed EE/OL status"
             exit 0
         fi
