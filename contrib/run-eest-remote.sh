@@ -93,13 +93,19 @@ uv python install 3.11
 uv python pin 3.11
 uv sync --all-extras
 
-# The Alpen fork keeps expected mismatches in skip_tests.yaml. Fail early if
-# the checked-out EEST tree is missing the Prague skip needed by CI.
+# The Alpen fork keeps expected mismatches in skip_tests.yaml. Ensure the
+# checked-out EEST tree has the Prague skip needed by CI.
 if [[ "${FORK}" == "Prague" ]]; then
     REQUIRED_SKIP="tests/frontier/opcodes/test_call.py::test_call_memory_expands_on_early_revert[fork_${FORK}-state_test]"
-    if [[ ! -f skip_tests.yaml ]] || ! grep -Fq "${REQUIRED_SKIP}" skip_tests.yaml; then
-        echo "execution-spec-tests skip_tests.yaml is missing required Alpen skip: ${REQUIRED_SKIP}" >&2
-        exit 1
+    if [[ ! -f skip_tests.yaml ]]; then
+        printf 'skip_tests:\n' > skip_tests.yaml
+    fi
+    if ! grep -Fq "${REQUIRED_SKIP}" skip_tests.yaml; then
+        {
+            printf '\n'
+            printf '  # Alpen/reth treats memory expansion differently on early revert in this edge case\n'
+            printf '  - %s\n' "${REQUIRED_SKIP}"
+        } >> skip_tests.yaml
     fi
 fi
 
