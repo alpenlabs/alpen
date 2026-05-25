@@ -122,6 +122,7 @@ jobs:
             --bitcoin-rpc-url http://rpcuser:rpcpassword@localhost:18443 \
             --bitcoin-wallet default \
             --advanced-from "${EEST_START_BLOCK}" \
+            --target-depth 20 \
             --timeout 900
 
       - name: Tear down services

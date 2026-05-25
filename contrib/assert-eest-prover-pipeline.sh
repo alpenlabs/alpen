@@ -8,7 +8,10 @@ Usage: assert-eest-prover-pipeline.sh --rpc-endpoint URL [options]
 Options:
   --rpc-endpoint URL       Execution JSON-RPC endpoint.
   --target-block-number N  Block number whose status must become confirmed/finalized.
-                            Defaults to eth_blockNumber at assertion start.
+                            Defaults to eth_blockNumber minus --target-depth
+                            at assertion start.
+  --target-depth N         Depth behind eth_blockNumber to target when
+                            --target-block-number is not set. Default: 0.
   --advanced-from N        Assert the target block is greater than this block number.
   --bitcoin-rpc-url URL    Optional Bitcoin RPC URL used to mine regtest blocks while polling.
   --bitcoin-wallet NAME    Optional wallet name appended as /wallet/NAME for Bitcoin RPC.
@@ -22,6 +25,7 @@ EOF
 
 RPC_ENDPOINT=""
 TARGET_BLOCK_NUMBER=""
+TARGET_DEPTH="0"
 ADVANCED_FROM=""
 BITCOIN_RPC_URL=""
 BITCOIN_WALLET=""
@@ -37,6 +41,10 @@ while (($#)); do
             ;;
         --target-block-number)
             TARGET_BLOCK_NUMBER="${2:?missing value for --target-block-number}"
+            shift 2
+            ;;
+        --target-depth)
+            TARGET_DEPTH="${2:?missing value for --target-depth}"
             shift 2
             ;;
         --advanced-from)
@@ -83,6 +91,11 @@ fi
 
 if [[ ! "${BITCOIN_BLOCKS_PER_POLL}" =~ ^[0-9]+$ ]] || ((BITCOIN_BLOCKS_PER_POLL < 1)); then
     echo "--bitcoin-blocks must be a positive decimal integer" >&2
+    exit 1
+fi
+
+if [[ ! "${TARGET_DEPTH}" =~ ^[0-9]+$ ]]; then
+    echo "--target-depth must be a decimal integer" >&2
     exit 1
 fi
 
@@ -245,7 +258,12 @@ mine_bitcoin_blocks() {
 }
 
 if [[ -z "${TARGET_BLOCK_NUMBER}" ]]; then
-    TARGET_BLOCK_NUMBER="$(block_number)"
+    CURRENT_BLOCK_NUMBER="$(block_number)"
+    if ((CURRENT_BLOCK_NUMBER > TARGET_DEPTH)); then
+        TARGET_BLOCK_NUMBER=$((CURRENT_BLOCK_NUMBER - TARGET_DEPTH))
+    else
+        TARGET_BLOCK_NUMBER=0
+    fi
 fi
 
 if [[ ! "${TARGET_BLOCK_NUMBER}" =~ ^[0-9]+$ ]]; then

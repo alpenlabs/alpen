@@ -121,12 +121,17 @@ jobs:
       - name: Assert EEST blocks reached confirmed EE/OL status
         if: always() && steps.runtests.outcome != 'skipped'
         run: |
-          ./contrib/assert-eest-prover-pipeline.sh \
-            --rpc-endpoint http://localhost:30303 \
-            --bitcoin-rpc-url http://user:password@localhost:18444 \
-            --bitcoin-wallet testwallet \
-            --advanced-from "${EEST_START_BLOCK}" \
-            --timeout 900
+          if ! ./contrib/assert-eest-prover-pipeline.sh \
+              --rpc-endpoint http://localhost:30303 \
+              --bitcoin-rpc-url http://user:password@localhost:18444 \
+              --bitcoin-wallet testwallet \
+              --advanced-from "${EEST_START_BLOCK}" \
+              --target-depth 20 \
+              --timeout 900; then
+            cat functional-tests/alpen_eest_env.screen.log || true
+            [ ! -d functional-tests/_dd ] || find functional-tests/_dd -type f -name "service.log" -print -exec tail -200 {} \;
+            exit 1
+          fi
 
       - name: Stop service
         if: always()
