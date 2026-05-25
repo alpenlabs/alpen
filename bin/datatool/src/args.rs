@@ -53,6 +53,7 @@ pub(crate) enum Subcommand {
     Xpriv(SubcXpriv),
     SeqPubkey(SubcSeqPubkey),
     SeqPrivkey(SubcSeqPrivkey),
+    OpPubkey(SubcOpPubkey),
     Params(SubcParams),
     AsmParams(SubcAsmParams),
     OlParams(SubcOlParams),
@@ -112,6 +113,18 @@ pub(crate) struct SubcSeqPrivkey {
     pub(crate) key_from_env: bool,
 }
 
+/// Derive the operator compressed public key from a master xpriv.
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(
+    subcommand,
+    name = "genoppubkey",
+    description = "derives an operator compressed public key from a master xpriv"
+)]
+pub(crate) struct SubcOpPubkey {
+    #[argh(option, description = "reads key from specified file", short = 'f')]
+    pub(crate) key_file: PathBuf,
+}
+
 /// Generate a network's param file from inputs.
 #[derive(FromArgs, PartialEq, Debug)]
 #[argh(
@@ -136,24 +149,24 @@ pub(crate) struct SubcParams {
 
     #[argh(
         option,
-        description = "sequencer pubkey (default unchecked)",
+        description = "sequencer x-only public key, 32-byte hex (default unchecked)",
         short = 's'
     )]
-    pub(crate) seqkey: Option<String>,
+    pub(crate) seq_pk: Option<String>,
 
     #[argh(
         option,
-        description = "add a bridge operator key (master xpriv, must be at least one, appended after file keys)",
+        description = "add a bridge operator compressed public key (33-byte hex, 02/03 prefix)",
         short = 'b'
     )]
-    pub(crate) opkey: Vec<String>,
+    pub(crate) op_pk: Vec<String>,
 
     #[argh(
         option,
-        description = "read bridge operator keys (master xpriv) by line from file",
+        description = "read bridge operator compressed public keys by line from file",
         short = 'B'
     )]
-    pub(crate) opkeys: Option<PathBuf>,
+    pub(crate) op_pks: Option<PathBuf>,
 
     #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
     pub(crate) deposit_sats: Option<String>,
@@ -220,24 +233,24 @@ pub(crate) struct SubcAsmParams {
 
     #[argh(
         option,
-        description = "sequencer pubkey (default unchecked)",
+        description = "sequencer x-only public key, 32-byte hex (default unchecked)",
         short = 's'
     )]
-    pub(crate) seqkey: Option<String>,
+    pub(crate) seq_pk: Option<String>,
 
     #[argh(
         option,
-        description = "add a bridge operator key (master xpriv)",
+        description = "add a bridge operator compressed public key (33-byte hex, 02/03 prefix)",
         short = 'b'
     )]
-    pub(crate) opkey: Vec<String>,
+    pub(crate) op_pk: Vec<String>,
 
     #[argh(
         option,
-        description = "read bridge operator keys (master xpriv) by line from file",
+        description = "read bridge operator compressed public keys by line from file",
         short = 'B'
     )]
-    pub(crate) opkeys: Option<PathBuf>,
+    pub(crate) op_pks: Option<PathBuf>,
 
     #[argh(option, description = "deposit amount in sats (default \"10 BTC\")")]
     pub(crate) deposit_sats: Option<String>,

@@ -4,13 +4,8 @@ use std::{fs, path::Path, str::FromStr};
 
 use alloy_genesis::Genesis;
 use alloy_primitives::B256;
-use bitcoin::{
-    bip32::{Xpriv, Xpub},
-    secp256k1::SECP256K1,
-    Amount, XOnlyPublicKey,
-};
+use bitcoin::{secp256k1::PublicKey, Amount, XOnlyPublicKey};
 use reth_chainspec::ChainSpec;
-use strata_key_derivation::error::KeyError;
 use strata_l1_txfmt::MagicBytes;
 use strata_params::{CredRule, ProofPublishMode, RollupParams};
 use strata_predicate::PredicateKey;
@@ -43,10 +38,10 @@ const DEFAULT_EPOCH_SLOTS: u32 = 64;
 /// Either writes to a file or prints to stdout depending on the provided options.
 pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> {
     // Parse the sequencer key, trimming whitespace for convenience.
-    let seqkey = match cmd.seqkey.as_ref().map(|s| s.trim()) {
-        Some(seqkey) => {
-            let xpub = Xpub::from_str(seqkey)?;
-            Some(Buf32(xpub.to_x_only_pub().serialize()))
+    let seqkey = match cmd.seq_pk.as_ref().map(|s| s.trim()) {
+        Some(pk_hex) => {
+            let xonly = XOnlyPublicKey::from_str(pk_hex)?;
+            Some(Buf32(xonly.serialize()))
         }
         None => None,
     };
@@ -58,10 +53,10 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
         ctx,
     )?;
 
-    // Parse each of the operator keys.
+    // Parse each of the operator public keys.
     let mut opkeys = Vec::new();
 
-    if let Some(opkeys_path) = cmd.opkeys {
+    if let Some(opkeys_path) = cmd.op_pks {
         let opkeys_str = fs::read_to_string(opkeys_path)?;
 
         for line in opkeys_str.lines() {
@@ -70,12 +65,12 @@ pub(super) fn exec(cmd: SubcParams, ctx: &mut CmdContext) -> anyhow::Result<()> 
                 continue;
             }
 
-            opkeys.push(Xpriv::from_str(line)?);
+            opkeys.push(PublicKey::from_str(line.trim())?);
         }
     }
 
-    for key in cmd.opkey {
-        opkeys.push(Xpriv::from_str(&key)?);
+    for key in &cmd.op_pk {
+        opkeys.push(PublicKey::from_str(key.trim())?);
     }
 
     // Parse the deposit size str.
@@ -164,8 +159,8 @@ struct ParamsConfig {
     genesis_l1_view: GenesisL1View,
     /// Sequencer's key.
     seqkey: Option<Buf32>,
-    /// Operators' master keys.
-    opkeys: Vec<Xpriv>,
+    /// Operators' compressed public keys.
+    opkeys: Vec<PublicKey>,
     /// Verifier's key.
     checkpoint_predicate: PredicateKey,
     /// Amount of sats to deposit.
@@ -178,7 +173,7 @@ struct ParamsConfig {
 
 /// Constructs the parameters for a Strata network.
 // TODO convert this to also initialize the sync params
-fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
+fn construct_params(config: ParamsConfig) -> anyhow::Result<RollupParams> {
     let cr = config
         .seqkey
         .map(CredRule::SchnorrKey)
@@ -187,7 +182,7 @@ fn construct_params(config: ParamsConfig) -> Result<RollupParams, KeyError> {
     let opkeys: Vec<XOnlyPublicKey> = config
         .opkeys
         .iter()
-        .map(|o| o.to_keypair(SECP256K1).x_only_public_key().0)
+        .map(|pk| pk.x_only_public_key().0)
         .collect();
 
     Ok(RollupParams {

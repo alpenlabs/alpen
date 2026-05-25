@@ -1,4 +1,4 @@
-//! `genseqpubkey` subcommand: generates a sequencer pubkey from a master xpriv.
+//! `genseqpubkey` subcommand: derives the sequencer x-only public key from a master xpriv.
 
 use strata_key_derivation::sequencer::SequencerKeys;
 
@@ -9,16 +9,16 @@ use crate::{
 
 /// Executes the `genseqpubkey` subcommand.
 ///
-/// Generates the sequencer [`Xpub`](bitcoin::bip32::Xpub) from the provided
-/// [`Xpriv`](bitcoin::bip32::Xpriv) and prints it to stdout.
+/// Derives the sequencer x-only public key (32-byte hex) from the provided
+/// master [`Xpriv`](bitcoin::bip32::Xpriv) and prints it to stdout.
 pub(super) fn exec(cmd: SubcSeqPubkey, _ctx: &mut CmdContext) -> anyhow::Result<()> {
     let Some(xpriv) = resolve_xpriv(&cmd.key_file, cmd.key_from_env, SEQKEY_ENVVAR)? else {
         anyhow::bail!("privkey unset");
     };
 
     let seq_keys = SequencerKeys::new(&xpriv)?;
-    let seq_xpub = seq_keys.derived_xpub();
-    println!("{seq_xpub}");
+    let xonly = seq_keys.derived_xpub().to_x_only_pub();
+    println!("{xonly}");
 
     Ok(())
 }
