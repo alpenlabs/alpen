@@ -41,6 +41,19 @@ jobs:
       - name: Cleanup Space
         uses: ./.github/actions/cleanup # zizmor: ignore[unpinned-uses]
 
+      - name: Install bitcoind
+        env:
+          BITCOIND_VERSION: "30.2"
+          BITCOIND_ARCH: "x86_64-linux-gnu"
+        run: |
+          curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          curl -fsSLO --proto "=https" --tlsv1.3 "https://bitcoincore.org/bin/bitcoin-core-$BITCOIND_VERSION/SHA256SUMS"
+          sha256sum --ignore-missing --check SHA256SUMS
+          tar xzf "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+          sudo install -m 0755 -t /usr/local/bin bitcoin-"$BITCOIND_VERSION"/bin/*
+          bitcoind --version
+          rm -rf SHA256SUMS "bitcoin-$BITCOIND_VERSION" "bitcoin-$BITCOIND_VERSION-$BITCOIND_ARCH.tar.gz"
+
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
