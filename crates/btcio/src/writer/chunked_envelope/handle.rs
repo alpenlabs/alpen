@@ -13,7 +13,6 @@ use bitcoin::{consensus::encode::deserialize as btc_deserialize, key::Keypair, A
 use bitcoind_async_client::{
     error::ClientError,
     traits::{Broadcaster, Reader, Signer, Wallet},
-    Client,
 };
 use strata_config::btcio::WriterConfig;
 use strata_db_types::types::{
@@ -129,15 +128,18 @@ impl ChunkedEnvelopeHandle {
 ///
 /// Returns a `(handle, future)` pair. The caller is responsible for spawning the
 /// future on whatever executor it uses (e.g. alpen ee `task_executor`).
-pub fn create_chunked_envelope_task(
-    bitcoin_client: Arc<Client>,
+pub fn create_chunked_envelope_task<R>(
+    bitcoin_client: Arc<R>,
     config: Arc<WriterConfig>,
     btcio_params: BtcioParams,
     sequencer_address: Address,
     sequencer_keypair: Keypair,
     ops: Arc<ChunkedEnvelopeOps>,
     broadcast_handle: Arc<L1BroadcastHandle>,
-) -> anyhow::Result<(Arc<ChunkedEnvelopeHandle>, impl Future<Output = ()>)> {
+) -> anyhow::Result<(Arc<ChunkedEnvelopeHandle>, impl Future<Output = ()>)>
+where
+    R: Reader + Signer + Wallet + Broadcaster + Send + Sync + 'static,
+{
     let watcher_state = ChunkedEnvelopeWatcherState::recover(ops.as_ref())?;
     let handle = Arc::new(ChunkedEnvelopeHandle::new(ops.clone()));
 
